@@ -8,15 +8,17 @@ How releases are built, signed and published. When a release may happen is in
 Installs and upgrades accept a release only if its `SHA256SUMS` is signed by the
 maintainer's release key (an ed25519 ssh key; `ssh-keygen -Y`, built into macOS). Its public
 half is in `release-signers` and in `scripts/install.sh`, and every package carries it, so
-`terminum upgrade` checks with the key of the build already installed. Once, in your own
-terminal:
+`terminum upgrade` checks with the key of the build already installed. The key is the
+maintainer's one release key, shared with iterm-enhancer: `~/.config/iterm-enhancer/release-key`
+(`TM_RELEASE_KEY` names another), its passphrase in the login Keychain; terminum signs with it
+in its own namespace, `terminum-release`, so a signature of one product never verifies as the
+other's. On a Mac without that key, once, in your own terminal:
 
 ```bash
-make signing-key        # ~/.config/terminum/release-key (TM_RELEASE_KEY); writes the public half
+make signing-key        # the key (TM_RELEASE_KEY); writes the public half
 git add release-signers scripts/install.sh && git commit -m "Release key"
-ssh-keygen -p -f ~/.config/terminum/release-key                     # give it a passphrase
-ssh-add --apple-use-keychain ~/.config/terminum/release-key \
-  && ssh-add -d ~/.config/terminum/release-key.pub                    # keep it in the Keychain, not loaded
+ssh-add --apple-use-keychain ~/.config/iterm-enhancer/release-key \
+  && ssh-add -d ~/.config/iterm-enhancer/release-key.pub              # keep it in the Keychain, not loaded
 ```
 
 Then a release is one command, with no prompt: `make release TAG=vX.Y.Z` refuses unless the
@@ -36,7 +38,10 @@ exists only on the maintainer's Mac (and its backups). Left: whoever controls th
 maintainer's GitHub account can replace a release's `install.sh`, which a *first*
 `curl | sh` trusts; a program running as the maintainer while the Keychain is unlocked can
 sign. Keep the key and its passphrase backed up: a new key makes existing installs refuse
-upgrades until they are installed again with the one-line installer.
+upgrades until they are installed again with the one-line installer. The key is shared with
+iterm-enhancer, so a leaked key is replaced for both: a new key in both repositories'
+`release-signers` and `install.sh`, a release of each, and every install of each installed
+again with its one-line installer.
 
 ## Builds for remote hosts
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Make the maintainer's release key once (AC-86): an ed25519 ssh key outside the
-repository (TM_RELEASE_KEY, default ~/.config/terminum/release-key; ssh-keygen
-asks for a passphrase), and its public half in release-signers and install.sh, which every
-package carries. Run it in your own terminal, then commit the two files.
+repository (TM_RELEASE_KEY, default ~/.config/iterm-enhancer/release-key: the maintainer's one
+release key, shared with iterm-enhancer; ssh-keygen asks for a passphrase), and its public
+half in release-signers and install.sh, which every package carries. Run it in your own
+terminal, then commit the two files.
 
     python3 scripts/signing_key.py
 """
@@ -15,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 NAMESPACE = "terminum-release"
-KEY = Path(os.environ.get("TM_RELEASE_KEY") or Path.home() / ".config/terminum/release-key")
+KEY = Path(os.environ.get("TM_RELEASE_KEY") or Path.home() / ".config/iterm-enhancer/release-key")
 
 
 def signers_line(pub):

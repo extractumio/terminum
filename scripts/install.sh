@@ -13,7 +13,7 @@
 set -eu
 
 # the maintainer's release key (make signing-key writes it; the same as release-signers)
-SIGNERS=''
+SIGNERS='terminum-release namespaces="terminum-release" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILXEkieNRfwJy2GLquHnQptia7ORU0+2kR4mUr+GB80A'
 
 fail() { echo "install.sh: $*" >&2; exit 1; }
 

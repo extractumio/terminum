@@ -13,3 +13,4 @@ __pycache__/
 dist/
 # personal instructions for AI agents
 CLAUDE.local.md
+MEMORY.md
