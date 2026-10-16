@@ -1,0 +1,124 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// The harness of e2e_panel.mjs: a sandbox folder, a private tmux server (`tmux -L tm-test-panel`)
+// with two shell panes in it, a private terminumd on port 47932 with its own TM_HOME and state
+// folder, the sign-in through its CLI socket, and the check helpers. Nothing here touches the
+// user's tmux server, sign-ins or workspaces.
+
+import { execFileSync, spawn } from "node:child_process";
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
+
+export const PORT = Number(process.env.TM_TEST_PORT ?? 47932);
+export const TMUX_SOCKET = "tm-test-panel";
+const HERE = path.dirname(new URL(import.meta.url).pathname);
+export const BIN = process.env.TM_BIN ?? path.resolve(HERE, "../../terminumd/target/debug/terminumd");
+export const SB = fs.realpathSync(fs.mkdtempSync("/tmp/tm-e2e-")); // the sandbox: the only writable root
+// short folders: the CLI socket's path must stay under 104 bytes
+const HOME = fs.mkdtempSync("/tmp/tmh-");
+const APP = fs.mkdtempSync("/tmp/tma-");
+export const base = `http://127.0.0.1:${PORT}`;
+
+/** terminumd's CLI socket: sign-in codes and health (`fetch` cannot use a Unix socket). */
+export const SOCKET = path.join(APP, "terminumd.sock");
+export const onSocket = (method, p, body) => new Promise((resolve, reject) => {
+  const req = http.request({ socketPath: SOCKET, method, path: p, headers: { "Content-Type": "application/json" } }, (res) => {
+    let text = ""; res.on("data", (d) => (text += d)); res.on("end", () => resolve({ status: res.statusCode, text }));
+  });
+  req.on("error", reject);
+  req.end(body === undefined ? undefined : JSON.stringify(body));
+});
+
+// ── sandbox ──────────────────────────────────────────────────────────────────
+fs.mkdirSync(`${SB}/src`); fs.mkdirSync(`${SB}/docs`);
+fs.writeFileSync(`${SB}/README.md`, "# Sandbox\n\nSee [guide](docs/guide.md) and [web](https://example.com).\n\n![logo](docs/logo.png)\n\n<img src=x onerror=alert(1)>\n");
+fs.writeFileSync(`${SB}/docs/guide.md`, "# Guide\n\nBack to [readme](../README.md#sandbox) or [the page](page.html#sec2).\n");
+fs.writeFileSync(`${SB}/docs/page.html`, '<!doctype html><title>Page</title><h1>HTML page</h1><p><a href="../README.md#sandbox">to readme</a> <a href="guide.md">to guide</a></p><img src="logo.png"><img src="http://leak.example.invalid/x.png"><meta name="referrer" content="unsafe-url"><style>img[src*="t="]{background:url(http://leak.example.invalid/css)}</style><script>parent.document.title="PWNED"</script><div style="height:3000px"></div><p id="sec2">Section two</p>');
+fs.writeFileSync(`${SB}/src/main.rs`, 'fn main() {\n    println!("hi");\n}\n');
+fs.writeFileSync(`${SB}/app.py`, "print(1)\n");
+for (const f of "abcde") fs.writeFileSync(`${SB}/${f}.log`, f);
+for (const d of ["src/a/b", "node_modules/x", ".git/objects"]) fs.mkdirSync(`${SB}/${d}`, { recursive: true });
+// a 1×1 PNG
+fs.writeFileSync(`${SB}/docs/logo.png`, Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64"));
+
+// ── the private tmux server: plain sh panes, so typed text is easy to read back ─
+const TMUX = execFileSync("/bin/sh", ["-c", "command -v tmux"], { encoding: "utf8" }).trim();
+const shellEnv = { PATH: "/usr/bin:/bin", HOME, TERM: "xterm-256color", LANG: "en_US.UTF-8", PS1: "$ ", ENV: "" };
+export const tmux = (...args) => execFileSync(TMUX, ["-f", "/dev/null", "-L", TMUX_SOCKET, ...args], { env: shellEnv, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+const removeDirs = () => { for (const d of [SB, HOME, APP]) fs.rmSync(d, { recursive: true, force: true }); };
+let panes;
+try {
+  try { tmux("kill-server"); } catch { /* none left over */ }
+  tmux("new-session", "-d", "-s", "main", "-x", "120", "-y", "30", "-c", SB, "/bin/sh");
+  tmux("new-window", "-t", "main", "-c", `${SB}/src`, "/bin/sh");
+  panes = tmux("list-panes", "-s", "-t", "main", "-F", "#{pane_id}").trim().split("\n");
+} catch (e) { removeDirs(); throw e; }
+/** The state keys of the two panes (`tmux:<host>:<socket>:%N`): A in the sandbox, B in src. */
+export const PANE_A = `tmux:local:${TMUX_SOCKET}:${panes[0]}`;
+export const PANE_B = `tmux:local:${TMUX_SOCKET}:${panes[1]}`;
+/** The panel's own workspace key of a pane (embed.ts pinKey). */
+export const wsKey = (pane, host = "") => `web:${JSON.stringify([host, pane])}`;
+/** What pane `pane` shows now (its typed line included). */
+export const capture = (pane) => tmux("capture-pane", "-p", "-t", pane.split(":").pop());
+/** Clears the pane's command line (typed text, never run). */
+export const clearLine = (pane) => tmux("send-keys", "-t", pane.split(":").pop(), "C-u");
+/** The panel pinned to `pane` in folder `cwd` (as the page names it in the frame's URL). */
+export const panelUrl = (pane = PANE_A, cwd = SB, host = null) =>
+  `${base}/fb/?${new URLSearchParams({ key: pane, cwd, ...(host ? { host } : {}) })}`;
+
+// ── terminumd ────────────────────────────────────────────────────────────────
+// terminumd plays the build the UI bundle was made for, or every panel would reload itself (AC-16)
+const UI_BUILD = fs.readFileSync(path.resolve(HERE, "../.build-id"), "utf8").trim();
+async function start(env = {}) {
+  const p = spawn(BIN, [], {
+    env: {
+      ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: TMUX_SOCKET,
+      TM_WRITABLE_ROOTS: SB, TM_LOG: "warn", TM_BUILD_ID: UI_BUILD, ...env,
+    },
+    stdio: ["ignore", "ignore", "inherit"],
+  });
+  for (let i = 0; i < 100; i++) {
+    try { await fetch(base + "/"); if ((await onSocket("GET", "/health")).status === 200) break; } catch { /* starting */ }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return p;
+}
+let server = await start();
+export const stopServer = () => new Promise((r) => { if (server.exitCode !== null) return r(); server.once("exit", r); server.kill(); });
+/** terminumd is back (`env`: as another build, TM_BUILD_ID). */
+export async function bringBack(env = {}) { server = await start(env); }
+/** terminumd goes away for `gapMs` (a restart); `during` runs meanwhile. */
+export async function restartServer(gapMs, during = () => {}) {
+  await stopServer();
+  during();
+  await new Promise((r) => setTimeout(r, gapMs));
+  await bringBack();
+}
+
+/** Signs `page`'s browser context in as `terminum open` does: a one-time code from the CLI
+ *  socket, redeemed at /open/<code>, whose page carries the new sign-in in
+ *  <meta name="tm-session">; it goes into the origin's storage under "tm.session", where the
+ *  page's signin.js puts it. Taken from the answer here, so the check does not depend on the
+ *  page's scripts. Returns the secret. */
+export async function signIn(page) {
+  const { code } = JSON.parse((await onSocket("POST", "/code")).text);
+  const html = await (await fetch(`${base}/open/${code}`)).text();
+  const secret = html.match(/<meta name="tm-session" content="([0-9a-f]{64})">/)?.[1];
+  if (!secret) throw new Error("no sign-in in /open/<code>");
+  await page.goto(`${base}/custom.css`);              // any document of the origin will do
+  await page.evaluate((s) => localStorage.setItem("tm.session", s), secret);
+  return secret;
+}
+
+export const results = [];
+export const check = (name, ok, extra = "") => { results.push(ok); console.log(`${ok ? "PASS" : "FAIL"} ${name}${extra ? " — " + extra : ""}`); };
+export const within = async (name, fn, ms = 5000) => {
+  const t0 = Date.now();
+  try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }
+};
+
+export function cleanup() {
+  server.kill();
+  try { tmux("kill-server"); } catch { /* gone */ }
+  removeDirs();
+}

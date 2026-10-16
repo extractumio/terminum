@@ -1,0 +1,297 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! One tmux control client (`tmux -C … attach`, or the same over ssh for a host): a child
+//! process whose stdin takes commands, one a line, and whose stdout carries notices and the
+//! answers (`%begin … %end|%error`) in the order the commands were written (AC-01, AC-03).
+//!
+//! A line holding several commands (`a ; b`) is answered by several blocks, and a failing
+//! one stops the rest, so every command is a line of its own: callers pipeline lines, never
+//! join them. A command left unanswered for `ANSWER_WAIT` kills the client (AC-14).
+
+use std::collections::VecDeque;
+use std::process::Stdio;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::process::{Child, Command};
+use tokio::sync::{mpsc, oneshot};
+
+/// A command not answered within this long means a hung client: it is killed (AC-14).
+pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
+/// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
+const STDERR_KEPT: usize = 4096;
+
+/// What a control client tells besides answers. `%output` is only a wake-up: its content
+/// is never parsed (the screen comes from `capture-pane`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Notice {
+    /// a pane printed something: `%N`
+    Output(String),
+    /// windows, panes, layouts or sessions changed: the list is read again
+    Changed,
+    /// tmux paused a pane's output (flow control): `%N`
+    Pause(String),
+}
+
+/// An answer: the block's lines, or tmux's error text.
+pub type Answer = Result<Vec<String>, String>;
+
+struct Pending {
+    reply: oneshot::Sender<Answer>,
+    at: Instant,
+}
+
+/// A running control client. Dropping the last handle kills the process.
+pub struct Control {
+    lines: mpsc::UnboundedSender<(String, oneshot::Sender<Answer>)>,
+    alive: Arc<AtomicBool>,
+    /// why it ended (ssh's or tmux's last words), once it has
+    pub ended: Arc<Mutex<Option<String>>>,
+    /// set once the first answer arrived: the client attached
+    pub attached: Arc<AtomicBool>,
+    pid: Option<u32>,
+    pending: Arc<Mutex<VecDeque<Pending>>>,
+}
+
+impl Control {
+    /// Starts `cmd` (stdin, stdout, stderr piped). Notices go to `notices`; when the process
+    /// ends, `notices` gets nothing more and `done` is fired with the reason.
+    pub fn spawn(mut cmd: Command, notices: mpsc::UnboundedSender<Notice>, done: oneshot::Sender<String>) -> std::io::Result<Control> {
+        cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+        let mut child: Child = cmd.spawn()?;
+        let pid = child.id();
+        let mut stdin = child.stdin.take().expect("piped");
+        let stdout = child.stdout.take().expect("piped");
+        let mut stderr = child.stderr.take().expect("piped");
+        let (tx, mut rx) = mpsc::unbounded_channel::<(String, oneshot::Sender<Answer>)>();
+        let pending: Arc<Mutex<VecDeque<Pending>>> = Arc::default();
+        let alive = Arc::new(AtomicBool::new(true));
+        let attached = Arc::new(AtomicBool::new(false));
+        let ended: Arc<Mutex<Option<String>>> = Arc::default();
+        let errors: Arc<Mutex<Vec<u8>>> = Arc::default();
+
+        // writer: the lines queued now (a frame's display and capture, a batch of keys), their
+        // waiters in line, one write; once stdin is closed, new lines fail at once (those
+        // waiting end with the reader or their timeout)
+        let (p, a) = (pending.clone(), alive.clone());
+        tokio::spawn(async move {
+            let mut bytes = Vec::new();
+            while let Some(first) = rx.recv().await {
+                let mut next = Some(first);
+                while let Some((line, reply)) = next {
+                    if a.load(Ordering::Relaxed) {
+                        p.lock().push_back(Pending { reply, at: Instant::now() });
+                        bytes.extend_from_slice(line.as_bytes());
+                        bytes.push(b'\n');
+                    } else {
+                        let _ = reply.send(Err("tmux is not connected".into()));
+                    }
+                    next = rx.try_recv().ok();
+                }
+                if !bytes.is_empty() && (stdin.write_all(&bytes).await.is_err() || stdin.flush().await.is_err()) {
+                    a.store(false, Ordering::Relaxed);
+                }
+                bytes.clear();
+            }
+        });
+
+        // stderr: kept, for the reason an ssh or tmux ended
+        let e = errors.clone();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 1024];
+            while let Ok(n) = stderr.read(&mut buf).await {
+                if n == 0 {
+                    break;
+                }
+                let mut kept = e.lock();
+                kept.extend_from_slice(&buf[..n]);
+                let over = kept.len().saturating_sub(STDERR_KEPT);
+                kept.drain(..over);
+            }
+        });
+
+        // reader: notices and answers; at the end every waiter learns why
+        let (p, a, att, end) = (pending.clone(), alive.clone(), attached.clone(), ended.clone());
+        tokio::spawn(async move {
+            let mut reader = BufReader::with_capacity(1 << 16, stdout);
+            let mut block: Option<(String, bool)> = None; // (the %begin's "time num flags", ours)
+            let mut lines: Vec<String> = Vec::new();
+            let mut buf = Vec::with_capacity(4096);
+            let mut exit_reason = None;
+            loop {
+                buf.clear();
+                match reader.read_until(b'\n', &mut buf).await {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                if buf.last() == Some(&b'\n') {
+                    buf.pop();
+                }
+                if let Some((id, ours)) = &block {
+                    let end = end_of(&buf, id);
+                    if end.is_none() {
+                        if *ours {
+                            lines.push(String::from_utf8_lossy(&buf).into_owned());
+                        }
+                        continue;
+                    }
+                    let ok = end == Some(true);
+                    if *ours {
+                        att.store(true, Ordering::Relaxed);
+                        let taken = std::mem::take(&mut lines);
+                        if let Some(w) = p.lock().pop_front() {
+                            let _ = w.reply.send(if ok { Ok(taken) } else { Err(taken.join("\n")) });
+                        }
+                    } else {
+                        att.store(true, Ordering::Relaxed);
+                    }
+                    block = None;
+                    continue;
+                }
+                if let Some(rest) = buf.strip_prefix(b"%begin ") {
+                    let id = String::from_utf8_lossy(rest).into_owned();
+                    let ours = id.rsplit(' ').next().and_then(|f| f.parse::<u32>().ok()).is_some_and(|f| f & 1 == 1);
+                    block = Some((id, ours));
+                    lines.clear();
+                    continue;
+                }
+                if let Some(n) = notice(&buf) {
+                    let _ = notices.send(n);
+                } else if let Some(rest) = buf.strip_prefix(b"%exit") {
+                    exit_reason = Some(String::from_utf8_lossy(rest).trim().to_string());
+                }
+            }
+            a.store(false, Ordering::Relaxed);
+            let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| "tmux exited".into());
+            for w in p.lock().drain(..) {
+                let _ = w.reply.send(Err(why.clone()));
+            }
+            *end.lock() = Some(why.clone());
+            let _ = done.send(why);
+        });
+
+        // watchdog: a command unanswered for ANSWER_WAIT means a hung client (AC-14)
+        let (p, a) = (pending.clone(), alive.clone());
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if !a.load(Ordering::Relaxed) {
+                    break;
+                }
+                let late = p.lock().front().is_some_and(|w| w.at.elapsed() > ANSWER_WAIT);
+                if late {
+                    tracing::warn!(event = "tmux.timeout", pid = ?pid, "control client timed out");
+                    if let Some(pid) = pid {
+                        // SAFETY: a signal to our own child process
+                        unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+                    }
+                    break;
+                }
+            }
+            let _ = child.wait().await;
+        });
+
+        Ok(Control { lines: tx, alive, ended, attached, pid, pending })
+    }
+
+    pub fn alive(&self) -> bool {
+        self.alive.load(Ordering::Relaxed)
+    }
+
+    /// How long the oldest unanswered command has waited (zero when none waits).
+    pub fn waiting(&self) -> Duration {
+        self.pending.lock().front().map_or(Duration::ZERO, |w| w.at.elapsed())
+    }
+
+    /// Writes one command line now; the answer arrives in order. Lines are never empty
+    /// (an empty line detaches a control client) and never hold a newline.
+    pub fn send(&self, line: String) -> oneshot::Receiver<Answer> {
+        let (tx, rx) = oneshot::channel();
+        debug_assert!(!line.trim().is_empty() && !line.contains('\n'));
+        if line.trim().is_empty() || line.contains(['\n', '\r']) {
+            let _ = tx.send(Err("a tmux command must be one non-empty line".into()));
+            return rx;
+        }
+        if self.lines.send((line, tx)).is_err() {
+            let (tx, rx) = oneshot::channel();
+            let _ = tx.send(Err("tmux is not connected".into()));
+            return rx;
+        }
+        rx
+    }
+
+    /// One command and its answer.
+    pub async fn run(&self, line: impl Into<String>) -> Answer {
+        let rx = self.send(line.into());
+        match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
+            Ok(Ok(a)) => a,
+            Ok(Err(_)) => Err("tmux is not connected".into()),
+            Err(_) => Err("tmux did not answer".into()),
+        }
+    }
+
+    /// Several commands written at once (one round trip), answered in order.
+    pub async fn run_all(&self, lines: Vec<String>) -> Vec<Answer> {
+        let waiting: Vec<_> = lines.into_iter().map(|l| self.send(l)).collect();
+        let mut out = Vec::with_capacity(waiting.len());
+        for rx in waiting {
+            out.push(match tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(1), rx).await {
+                Ok(Ok(a)) => a,
+                Ok(Err(_)) => Err("tmux is not connected".into()),
+                Err(_) => Err("tmux did not answer".into()),
+            });
+        }
+        out
+    }
+
+    /// Ends the client (its process is killed when the last handle goes too).
+    pub fn kill(&self) {
+        if let Some(pid) = self.pid.filter(|_| self.alive()) {
+            // SAFETY: a signal to our own child process
+            unsafe { libc::kill(pid as i32, libc::SIGTERM) };
+        }
+    }
+}
+
+impl Drop for Control {
+    fn drop(&mut self) {
+        self.kill();
+    }
+}
+
+/// `Some(true)` for the `%end`, `Some(false)` for the `%error` that closes block `id`.
+fn end_of(line: &[u8], id: &str) -> Option<bool> {
+    let (ok, rest) = if let Some(r) = line.strip_prefix(b"%end ") {
+        (true, r)
+    } else {
+        let r = line.strip_prefix(b"%error ")?;
+        (false, r)
+    };
+    (rest == id.as_bytes()).then_some(ok)
+}
+
+/// A notice line outside blocks, or None for lines that need nothing.
+fn notice(line: &[u8]) -> Option<Notice> {
+    // only the first two words are read: the rest of a %output line is the pane's bytes
+    let mut words = line.splitn(3, |b| *b == b' ');
+    let kind = std::str::from_utf8(words.next()?).ok()?;
+    let arg = words.next().and_then(|a| std::str::from_utf8(a).ok());
+    match kind {
+        "%output" | "%extended-output" => arg.filter(|p| p.starts_with('%')).map(|p| Notice::Output(p.to_string())),
+        "%pause" => arg.map(|p| Notice::Pause(p.to_string())),
+        "%window-add" | "%window-close" | "%unlinked-window-add" | "%unlinked-window-close" | "%window-renamed"
+        | "%unlinked-window-renamed" | "%layout-change" | "%session-changed" | "%sessions-changed" | "%session-renamed"
+        | "%session-window-changed" | "%window-pane-changed" | "%pane-mode-changed" | "%client-session-changed" => Some(Notice::Changed),
+        _ => None,
+    }
+}
+
+fn last_line(bytes: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(bytes).lines().map(str::trim).rfind(|l| !l.is_empty()).map(str::to_string)
+}
+
+#[cfg(test)]
+#[path = "control_tests.rs"]
+mod tests;

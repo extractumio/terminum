@@ -1,0 +1,203 @@
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+"""Helpers for the Python e2e checks of terminumd (standard library only): a private
+terminumd (its own state folders, port and tmux socket, never the user's), its CLI socket,
+a sign-in from a one-time code, a page's WebSocket with its Origin and sign-in, and the
+checks' record and summary."""
+import base64
+import hashlib
+import hmac
+import http.client
+import json
+import os
+import re
+import shutil
+import socket
+import struct
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BIN = os.environ.get("TERMINUMD_BIN", os.path.join(ROOT, "terminumd", "target", "debug", "terminumd"))
+results = []
+
+
+def check(name, ok, extra=""):
+    results.append(bool(ok))
+    print(f"{'PASS' if ok else 'FAIL'} {name}{' — ' + str(extra) if extra else ''}")
+
+
+def summary():
+    """Prints "N/M passed" and exits 0 when there were checks and all passed, else 1."""
+    print(f"{sum(results)}/{len(results)} passed")
+    sys.exit(0 if results and all(results) else 1)
+
+
+def tmux_on(socket_name, *args):
+    """What tmux prints for args on the private server `socket_name`."""
+    return subprocess.run(["tmux", "-L", socket_name, *args], capture_output=True, text=True).stdout
+
+
+def wait_layout(ws, pred, timeout=5):
+    """The groups of the first layout message for which pred(groups) holds, or None."""
+    m = ws.until(lambda m: m["t"] == "layout" and pred(m["groups"]), timeout)
+    return m["groups"] if m else None
+
+
+class WS:
+    """A page's WebSocket: JSON messages in and out."""
+
+    def __init__(self, port, path="/ws", origin=None, protocols=None):
+        self.s = socket.create_connection(("127.0.0.1", port), timeout=10)
+        key = base64.b64encode(os.urandom(16)).decode()
+        head = [f"GET {path} HTTP/1.1", f"Host: 127.0.0.1:{port}", "Upgrade: websocket", "Connection: Upgrade",
+                f"Sec-WebSocket-Key: {key}", "Sec-WebSocket-Version: 13", f"Origin: {origin or f'http://127.0.0.1:{port}'}"]
+        if protocols:
+            head.append("Sec-WebSocket-Protocol: " + ", ".join(protocols))
+        self.s.sendall(("\r\n".join(head) + "\r\n\r\n").encode())
+        resp = b""
+        while b"\r\n\r\n" not in resp:
+            byte = self.s.recv(1)
+            if not byte:
+                break
+            resp += byte
+        self.status = int(resp.split(b" ")[1]) if resp else 0
+        self.buf = b""
+
+    def _read(self, n):
+        while len(self.buf) < n:
+            data = self.s.recv(65536)
+            if not data:
+                raise EOFError("closed")
+            self.buf += data
+        out, self.buf = self.buf[:n], self.buf[n:]
+        return out
+
+    def recv(self, timeout=10):
+        self.s.settimeout(timeout)
+        while True:
+            b1, b2 = self._read(2)
+            n = b2 & 0x7F
+            if n == 126:
+                n = struct.unpack("!H", self._read(2))[0]
+            elif n == 127:
+                n = struct.unpack("!Q", self._read(8))[0]
+            data = self._read(n)
+            if b1 & 0x0F == 1:
+                return json.loads(data)
+            if b1 & 0x0F == 8:
+                raise EOFError("closed")
+
+    def until(self, pred, timeout=10):
+        """The first message for which pred(m) holds, or None after `timeout` seconds."""
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                m = self.recv(max(0.1, end - time.time()))
+            except (socket.timeout, TimeoutError):
+                return None
+            if pred(m):
+                return m
+        return None
+
+    def send(self, obj):
+        data = json.dumps(obj).encode()
+        mask, n = os.urandom(4), len(data)
+        if n < 126:
+            head = bytes([0x81, 0x80 | n])
+        elif n < 65536:
+            head = bytes([0x81, 0x80 | 126]) + struct.pack("!H", n)
+        else:
+            head = bytes([0x81, 0x80 | 127]) + struct.pack("!Q", n)
+        self.s.sendall(head + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(data)))
+
+    def close(self):
+        self.s.close()
+
+
+def unix_request(path, method, url, body=None):
+    """(status, decoded JSON or text) of a request on a Unix socket."""
+    class Conn(http.client.HTTPConnection):
+        def connect(self):
+            self.sock = socket.socket(socket.AF_UNIX)
+            self.sock.settimeout(30)
+            self.sock.connect(path)
+    c = Conn("localhost")
+    c.request(method, url, body=json.dumps(body) if body is not None else None, headers={"Content-Type": "application/json"})
+    r = c.getresponse()
+    text = r.read().decode()
+    try:
+        return r.status, json.loads(text)
+    except ValueError:
+        return r.status, text
+
+
+class Terminumd:
+    """A private terminumd: temporary TM_HOME and TM_APP_DIR, its own port and tmux socket."""
+
+    def __init__(self, port, tmux_socket, env=None):
+        self.port, self.tmux_socket = port, tmux_socket
+        self.root = tempfile.mkdtemp(prefix="tme-", dir="/tmp")   # short: Unix socket paths end at 104 bytes
+        self.home, self.app = os.path.join(self.root, "h"), os.path.join(self.root, "a")
+        self.env = {**os.environ, "TM_HOME": self.home, "TM_APP_DIR": self.app, "TM_PORT": str(port),
+                    "TM_TMUX_SOCKET": tmux_socket, "TM_LOG": "info", **(env or {})}
+        self.env.pop("TMUX", None)
+        self.proc = None
+        self.log_path = os.path.join(self.root, "terminumd.log")
+
+    @property
+    def sock(self):
+        return os.path.join(self.app, "terminumd.sock")
+
+    def start(self):
+        subprocess.run(["tmux", "-L", self.tmux_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        log = open(self.log_path, "a")
+        self.proc = subprocess.Popen([BIN], env=self.env, stdout=log, stderr=log)
+        for _ in range(100):
+            if os.path.exists(self.sock):
+                try:
+                    if unix_request(self.sock, "GET", "/health")[0] == 200:
+                        return self
+                except OSError:
+                    pass
+            time.sleep(0.1)
+        raise RuntimeError("terminumd did not start: " + self.log())
+
+    def stop(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            self.proc.wait(10)
+
+    def cleanup(self):
+        self.stop()
+        subprocess.run(["tmux", "-L", self.tmux_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        shutil.rmtree(self.root, ignore_errors=True)
+
+    def log(self):
+        try:
+            return open(self.log_path).read()[-4000:]
+        except OSError:
+            return ""
+
+    def health(self):
+        return unix_request(self.sock, "GET", "/health")[1]
+
+    def signin(self):
+        """A page's sign-in secret, from a one-time code as `terminum open` gets it."""
+        code = unix_request(self.sock, "POST", "/code", {})[1]["code"]
+        page = urllib.request.urlopen(f"http://127.0.0.1:{self.port}/open/{code}").read().decode()
+        return re.search(r'name="tm-session" content="([0-9a-f]+)"', page).group(1)
+
+    def page(self, secret=None):
+        """A signed-in page's WebSocket (its first messages are not read yet)."""
+        ws = WS(self.port, protocols=["tm", secret or self.signin()])
+        assert ws.status == 101, f"WebSocket refused: {ws.status}"
+        return ws
+
+
+def proof(secret, n):
+    """What a page expects from /api/hello for its sign-in (AC-09)."""
+    key = hmac.new(secret.encode(), b"tm-proof-key", hashlib.sha256).digest()
+    return hmac.new(key, ("tm-hello-v1:" + n).encode(), hashlib.sha256).hexdigest()

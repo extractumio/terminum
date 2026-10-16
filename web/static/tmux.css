@@ -1,0 +1,82 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* What terminum adds to the page: host groups (AC-81), the list foot's forms (AC-07), Screen mode
+   (AC-05), the confirmation dialog, the host menu. */
+
+/* a host's group: its name in cornflower blue, its state after it; rows name the host in violet (.host) */
+.grp.hostgrp h2 .label { color: cornflowerblue; }
+.grp.reconnecting h2 .label, .grp.off h2 .label { opacity: .75; }
+.grp.failed h2 .label { color: color-mix(in srgb, #ff6b5e 70%, cornflowerblue); white-space: normal; }
+.grp h2 .hostbtn { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+.grp h2 .hostbtn:hover, .grp h2 .hostbtn[aria-expanded="true"] { color: var(--t-fg); background: var(--chrome-2); }
+/* a group's "copy the attach command" (tmux -L … attach / ssh -t …) */
+.grp h2 .attach { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); opacity: .7; }
+.grp h2 .attach:hover, .grp h2 .attach:focus-visible { color: var(--t-fg); background: var(--chrome-2); opacity: 1; }
+#hostmenu { position: fixed; z-index: 31; width: 180px; display: flex; flex-direction: column; padding: 4px; border-radius: 10px;
+  background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
+#hostmenu[hidden] { display: none; }
+#hostmenu button { height: 32px; padding: 0 10px; border-radius: 7px; text-align: left; }
+#hostmenu button:hover, #hostmenu button:focus-visible { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); }
+#hostmenu button[data-action="remove"] { color: color-mix(in srgb, #ff6b5e 80%, var(--t-fg)); }
+
+/* the list foot's forms: New session, Add host */
+.footform { margin: 0 10px 6px; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px;
+  background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
+.footform[hidden] { display: none; }
+.footform input { font: inherit; font-size: 16px; color: inherit; background: var(--chrome); border: 1px solid var(--line);
+  border-radius: 8px; padding: 7px 10px; min-width: 0; }
+.footform p { margin: 0; font-size: 12.5px; color: #ff8a7f; }
+.footform p:empty { display: none; }
+.footform p.hint { color: var(--muted); line-height: 1.35; }
+.footform .sshline { display: flex; align-items: center; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; }
+.footform .sshline:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.footform .sshline span { padding-left: 10px; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
+.footform .sshline input { flex: 1; border: 0; background: none; outline: none; padding-left: 6px; }
+.footform .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
+.footform .tick input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
+.footform .tick span { color: var(--muted); font-size: 12.5px; }
+.footform .row { display: flex; gap: 6px; }
+.footform button { height: 32px; padding: 0 14px; border-radius: 7px; --edge: var(--line); }
+.footform .primary { background: var(--accent); color: var(--t-bg); --edge: transparent; --focus: var(--t-bg); font-weight: 600; }
+
+/* the menu's list of sessions a window can move to */
+#movelist { display: flex; flex-direction: column; padding-left: 16px; }
+#movelist[hidden] { display: none; }
+#menu button.row:disabled { opacity: .4; cursor: default; }
+
+/* Screen mode: the exact grid, no history, no Lines buttons; the header says so */
+body.screenmode .lines-mode { display: none !important; }
+#term.screenmode #hist, #term.screenmode #note { display: none; }
+#term.screenmode .ln.spare { display: block; }
+#scrlabel { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; max-width: 40vw; overflow: hidden;
+  text-overflow: ellipsis; background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); color: var(--t-fg); }
+#scrlabel.warn { background: color-mix(in srgb, #c98a1b 70%, var(--chrome-2)); }
+#scrlabel[hidden] { display: none; }
+
+/* the restore report's linked panes and its close button */
+#restored .link { padding: 0; color: inherit; text-decoration: underline; font-weight: 600; }
+#restored .x { flex: none; width: 28px; height: 28px; border-radius: 6px; color: inherit; font-size: 18px; }
+#restored .x:hover { background: rgba(255, 255, 255, .18); }
+
+/* a question before something that cannot be undone (Close pane, Remove host) */
+#confirmbox { background: var(--chrome); color: var(--t-fg); border: 1px solid var(--line); border-radius: 14px;
+  width: min(420px, calc(100vw - 32px)); padding: 16px; }
+#confirmbox::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
+#confirmbox p { margin: 0 0 14px; line-height: 1.45; }
+#confirmbox .actions { display: flex; justify-content: flex-end; gap: 8px; }
+#confirmbox .actions button { height: 40px; padding: 0 16px; border-radius: 10px; background: var(--chrome-2); }
+#confirmbox .primary { background: color-mix(in srgb, #d0453a 85%, var(--chrome)) !important; color: #fff; font-weight: 600; }
+
+/* a newer release (AC-17): the header's chip and its menu */
+#updchip { height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
+  background: color-mix(in srgb, #2f7d4f 55%, var(--chrome-2)); color: var(--t-fg); }
+#updchip[hidden], #updmenu[hidden] { display: none; }
+#updmenu { position: fixed; z-index: 31; width: 230px; display: flex; flex-direction: column; padding: 4px; border-radius: 10px;
+  background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
+#updmenu button { height: 34px; padding: 0 10px; border-radius: 7px; text-align: left; }
+#updmenu button:hover, #updmenu button:focus-visible { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); }
+
+/* dialogs, forms and the search box speak in the terminal's font */
+dialog, .footform, #findbox, #asks, dialog input, dialog textarea, dialog button, .footform input, .footform button, #findbox input { font-family: var(--term-font); }
+/* ... and at its size; a touch screen's fields keep 16px, below which iOS zooms in on focus */
+dialog, .footform, #findbox, #asks, .footform input, #findq, #marknote, #pastebox textarea { font-size: var(--size); }
+@media (pointer: coarse) { .footform input, #findq, #marknote, #pastebox textarea { font-size: 16px; } }

@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// Bundles the panel into dist/ (embedded into terminumd by rust-embed, served under /fb/).
+// Language grammars are split into lazy chunks, so the first load stays small.
+import * as esbuild from "esbuild";
+import { cpSync, rmSync, writeFileSync } from "node:fs";
+
+const watch = process.argv.includes("--watch");
+const build = process.env.TM_BUILD ?? "dev";
+rmSync("dist", { recursive: true, force: true });
+cpSync("public", "dist", { recursive: true });
+writeFileSync(".build-id", build + "\n"); // the browser test runs its terminumd as this build
+const ctx = await esbuild.context({
+  // renderers.js: the web app's output widgets' renderers (AC-56); it shares chunks with the panel
+  entryPoints: ["src/main.ts", { in: "src/web-widgets.ts", out: "renderers" }],
+  bundle: true,
+  splitting: true,
+  format: "esm",
+  outdir: "dist",
+  chunkNames: "chunks/[name]-[hash]",
+  minify: !watch,
+  sourcemap: watch ? "inline" : false,
+  target: ["safari16"],
+  loader: { ".svg": "text" },  // icons are inlined as markup (src/icons.ts)
+  define: { __BUILD__: JSON.stringify(build) }, // the build id (AC-34)
+  logLevel: "info",
+});
+if (watch) await ctx.watch();
+else { await ctx.rebuild(); await ctx.dispose(); }

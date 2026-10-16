@@ -1,0 +1,153 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! Tests of titles.rs (AC-01, AC-39): what the session list shows for a pane.
+
+use super::*;
+
+const HOME: &str = "/Users/alex";
+
+fn pane(window_name: &str, auto: bool, title: &str, command: &str, path: &str) -> PaneFields {
+    PaneFields {
+        session: "main".into(),
+        window_index: 1,
+        window_id: "@1".into(),
+        window_name: window_name.into(),
+        automatic_rename: auto,
+        pane_id: "%3".into(),
+        pane_index: 0,
+        pane_title: title.into(),
+        command: command.into(),
+        path: path.into(),
+        alternate_on: false,
+        pane_active: true,
+        host_name: "mac.example".into(),
+    }
+}
+
+fn shown(i: &Item) -> (String, Vec<String>) {
+    (i.title.clone(), i.sub.clone())
+}
+
+fn strs(v: &[&str]) -> Vec<String> {
+    v.iter().map(|s| s.to_string()).collect()
+}
+
+#[test]
+fn ac01_a_named_window_and_its_second_pane() {
+    let first = pane("api", false, "mac.example", "claude", "/Users/alex/work/api");
+    let second = PaneFields { pane_id: "%4".into(), pane_index: 1, command: "zsh".into(), ..first.clone() };
+    let a = item(&first, 1, 2, HOME);
+    let b = item(&second, 2, 2, HOME);
+    assert_eq!(shown(&a), ("api".into(), strs(&["claude", "~/work/api"])));
+    assert_eq!((a.pane, a.agent, a.shell), (1, Some("claude"), false));
+    assert_eq!(shown(&b), ("zsh".into(), strs(&["~/work/api"])), "\"zsh · ~/work/api\"");
+    assert_eq!((b.pane, b.agent, b.shell), (2, None, true));
+}
+
+#[test]
+fn a_window_tmux_names_shows_the_panes_title_without_marks() {
+    let p = pane("claude", true, "\u{2733} Fix the list", "claude", "/Users/alex/p");
+    let i = item(&p, 1, 1, HOME);
+    assert_eq!(shown(&i), ("Fix the list".into(), strs(&["claude", "~/p"])));
+    assert_eq!((i.pane, i.agent), (0, Some("claude")));
+    let spinning = pane("claude", true, "\u{25d0} Fix the list", "claude", "/Users/alex/p");
+    assert_eq!(item(&spinning, 1, 1, HOME).title, "Fix the list");
+}
+
+#[test]
+fn else_its_program() {
+    let i = item(&pane("zsh", true, "mac.example", "zsh", "/Users/alex"), 1, 1, HOME);
+    assert_eq!(shown(&i), ("zsh".into(), strs(&["~"])));
+    assert!(i.shell);
+    let empty = item(&pane("", true, "", "", ""), 1, 1, HOME);
+    assert_eq!(shown(&empty), ("tmux window".into(), vec![]));
+}
+
+#[test]
+fn titles_that_say_nothing_are_ignored() {
+    for t in ["mac.example", "mac", "ssh", "zsh", "tmux", "Claude", "\u{2733} claude", ""] {
+        let i = item(&pane("vim", true, t, "vim", "/Users/alex/p"), 1, 1, HOME);
+        assert_eq!(shown(&i), ("vim".into(), strs(&["~/p"])), "{t:?}");
+    }
+}
+
+#[test]
+fn a_name_the_user_gave_stays_the_title() {
+    // the live name and the pane's own title after the program and the folder
+    let named = item(&pane("api", false, "Fix the list", "claude", "/home/alex/p"), 1, 1, "/home/alex");
+    assert_eq!(shown(&named), ("api".into(), strs(&["claude", "~/p", "Fix the list"])));
+    let auto = item(&pane("claude", true, "Fix the list", "claude", "/home/alex/p"), 1, 1, "/home/alex");
+    assert_eq!(shown(&auto), ("Fix the list".into(), strs(&["claude", "~/p"])));
+    // a pane titled "ssh" from before, now running claude in a window the user named
+    let stale = item(&pane("Build the databases", false, "ssh", "claude", "/home/alex/p"), 1, 1, "/home/alex");
+    assert_eq!(shown(&stale), ("Build the databases".into(), strs(&["claude", "~/p"])));
+    // the window's name repeated as the pane's title
+    let same = pane("Demo stand preparation and fixes", false, "Demo stand preparation and fixes", "claude", "/home/alex/p");
+    let i = item(&same, 1, 1, "/home/alex");
+    assert_eq!(shown(&i), ("Demo stand preparation and fixes".into(), strs(&["claude", "~/p"])));
+    assert_eq!(i.agent, Some("claude"));
+}
+
+#[test]
+fn a_windows_other_panes_are_named_for_themselves() {
+    let sub = item(&pane("Orange notes", false, "pragmatic", "node", "/Users/alex"), 2, 6, HOME);
+    assert_eq!((shown(&sub), sub.pane), (("pragmatic".into(), strs(&["node", "~"])), 2));
+    let shell = item(&pane("Orange notes", false, "mac.example", "bash", "/Users/alex"), 6, 6, HOME);
+    assert_eq!(shown(&shell), ("bash".into(), strs(&["~"])));
+    let nothing = item(&pane("Orange notes", false, "", "", ""), 3, 6, HOME);
+    assert_eq!(nothing.title, "Shell");
+}
+
+#[test]
+fn agents() {
+    assert_eq!(item(&pane("codex", true, "", "node", "/x"), 1, 1, HOME).agent, Some("codex"), "by the window's name");
+    assert_eq!(item(&pane("work", false, "\u{2733} Plan", "2.1.295", "/x"), 1, 1, HOME).agent, Some("claude"),
+               "by Claude Code's marks");
+    assert_eq!(item(&pane("work", false, "Plan", "vim", "/x"), 1, 1, HOME).agent, None);
+    assert_eq!(agent_of(" Claude "), Some("claude"));
+    assert_eq!(agent_of("claudette"), None);
+}
+
+#[test]
+fn marks_and_folders() {
+    assert_eq!(bare("\u{2733} \u{273b} Title"), "Title");
+    assert_eq!(bare("\u{23fa} x"), "x");
+    assert_eq!(bare("\u{2733}"), "\u{2733}", "nothing else left");
+    assert_eq!(bare("plain * star"), "plain * star");
+    assert_eq!(tilde("/Users/alex/p", HOME), "~/p");
+    assert_eq!(tilde("/Users/alex", "/Users/alex/"), "~");
+    assert_eq!(tilde("/Users/alexander/p", HOME), "/Users/alexander/p");
+    assert_eq!(tilde("/home/alex/p", HOME), "/home/alex/p", "another home than the host's");
+    assert_eq!(tilde("/home/alex/p", ""), "~/p", "no home known");
+    assert_eq!(tilde("/Users/", ""), "/Users/");
+    assert_eq!(tilde("/opt/x", ""), "/opt/x");
+}
+
+#[test]
+fn list_panes_rows() {
+    let row = "main\t1\t@2\tapi\t0\t%3\t0\t\u{2733} Fix\tclaude\t/Users/alex/work/api\t0\t1\tmac.example";
+    let p = parse_list_panes(row).unwrap();
+    assert_eq!((p.session.as_str(), p.window_index, p.window_id.as_str(), p.window_name.as_str()), ("main", 1, "@2", "api"));
+    assert_eq!((p.automatic_rename, p.pane_id.as_str(), p.pane_index, p.pane_title.as_str()), (false, "%3", 0, "\u{2733} Fix"));
+    assert_eq!((p.command.as_str(), p.path.as_str(), p.alternate_on, p.pane_active), ("claude", "/Users/alex/work/api", false, true));
+    assert_eq!(p.host_name, "mac.example");
+    assert_eq!(parse_list_panes(&format!("{row}\n")), Some(p));
+    assert_eq!(parse_list_panes("main\t1\t@2\ta\tb\t0\t%3\t0\tt\tc\t/p\t0\t1\th"), None, "a tab in a name");
+    assert_eq!(parse_list_panes(&row.replacen("\t1\t", "\tx\t", 1)), None);
+    assert_eq!(parse_list_panes(""), None);
+    let old = parse_list_panes("s\t1\t@1\tzsh\t\t%1\t0\tt\tzsh\t/\t0\t1\th").unwrap();
+    assert!(old.automatic_rename, "a tmux that does not say: a command's name is tmux's");
+    let named = parse_list_panes("s\t1\t@1\tmy api\t\t%1\t0\tt\tzsh\t/\t0\t1\th").unwrap();
+    assert!(!named.automatic_rename);
+}
+
+#[test]
+fn tmux_rows_parse_and_its_default_title_is_ignored() {
+    let Some(s) = crate::testutil::Tmux::start("titles", (80, 20), "sleep 30") else { return };
+    let text = s.read(&["list-panes", "-a", "-F", LIST_PANES_FORMAT]);
+    let p = parse_list_panes(text.lines().next().unwrap()).expect("tmux's row parses");
+    assert!(p.pane_id.starts_with('%') && p.window_id.starts_with('@') && !p.host_name.is_empty());
+    assert_eq!(p.pane_title, p.host_name, "tmux titles a pane with the host's name");
+    let i = item(&p, 1, 1, "");
+    assert_ne!(i.title, p.host_name);
+    assert!(!i.sub.contains(&p.host_name));
+}

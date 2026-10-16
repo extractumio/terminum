@@ -1,0 +1,128 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! The pages (browser tabs) connected over `/ws` (AC-01–AC-07): each shows one pane at a
+//! time. A page that stops reading is dropped, never waited for (a phone that sleeps).
+
+pub mod bookmarks;
+pub mod client;
+pub mod find;
+pub mod folds;
+pub mod hist;
+pub mod marks;
+pub mod search;
+pub mod sessions;
+pub mod sizing;
+pub mod stream;
+pub mod trace;
+pub mod timing;
+pub mod typing;
+pub mod upload;
+pub mod ws;
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+
+use parking_lot::Mutex;
+use serde_json::Value;
+use tokio::sync::mpsc;
+
+/// Pages per terminumd (iterm-enhancer's 100 windows, AC-20 limits): the 101st is refused.
+pub const MAX_PAGES: usize = 100;
+/// Messages a page may have waiting; a page that falls this far behind is dropped.
+const BACKLOG: usize = 512;
+
+pub const CLOSED: &str = "This pane has closed. Pick another one.";
+
+/// One connected page.
+pub struct Page {
+    pub id: u64,
+    /// from the web listener (a phone over the network): fewer rights (§9 table)
+    pub web: bool,
+    tx: mpsc::Sender<String>,
+    closed: AtomicBool,
+    pub state: Mutex<client::State>,
+    /// its part of the latency trace (AC-38)
+    pub tracer: Mutex<trace::Tracer>,
+}
+
+impl Page {
+    /// Queues a message; a page whose queue is full is closed (it reconnects and starts anew).
+    pub fn send(&self, text: String) -> bool {
+        if self.closed.load(Ordering::Relaxed) {
+            return false;
+        }
+        match self.tx.try_send(text) {
+            Ok(()) => true,
+            Err(_) => {
+                tracing::warn!(event = "page.dropped", page = self.id, reason = "not reading");
+                self.close();
+                false
+            }
+        }
+    }
+
+    pub fn send_json(&self, v: &Value) -> bool {
+        self.send(v.to_string())
+    }
+
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Relaxed);
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::Relaxed) || self.tx.is_closed()
+    }
+}
+
+#[derive(Default)]
+pub struct Pages {
+    next: AtomicU64,
+    list: Mutex<HashMap<u64, Arc<Page>>>,
+}
+
+impl Pages {
+    /// A new page and the receiving end of its queue, or None when there are too many.
+    pub fn add(&self, web: bool, recorder: Arc<trace::Recorder>) -> Option<(Arc<Page>, mpsc::Receiver<String>)> {
+        let mut list = self.list.lock();
+        list.retain(|_, p| !p.is_closed());
+        if list.len() >= MAX_PAGES {
+            return None;
+        }
+        let (tx, rx) = mpsc::channel(BACKLOG);
+        let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
+        let page = Arc::new(Page { id, web, tx, closed: AtomicBool::new(false), state: Mutex::new(client::State::default()), tracer: Mutex::new(trace::Tracer::new(recorder)) });
+        list.insert(id, page.clone());
+        Some((page, rx))
+    }
+
+    pub fn remove(&self, id: u64) {
+        self.list.lock().remove(&id);
+    }
+
+    pub fn all(&self) -> Vec<Arc<Page>> {
+        self.list.lock().values().filter(|p| !p.is_closed()).cloned().collect()
+    }
+
+    pub fn count(&self) -> usize {
+        self.all().len()
+    }
+
+    /// Whether any page is looking (not hidden): the list is refreshed only then.
+    pub fn any_active(&self) -> bool {
+        self.all().iter().any(|p| !p.state.lock().paused)
+    }
+
+    /// The same message to every page (encoded once).
+    pub fn tell(&self, text: &str) {
+        for p in self.all() {
+            p.send(text.to_string());
+        }
+    }
+
+    /// Every web listener page is signed out (web access went off, AC-10).
+    pub fn close_web(&self) {
+        for p in self.all().into_iter().filter(|p| p.web) {
+            p.close();
+        }
+    }
+}

@@ -1,0 +1,497 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! Folds of a pane's history (AC-32): parts the page shows as one line, which terminumd does
+//! not send until the user asks. Two thirds of a coding agent's history is the diffs of its
+//! edits, the scripts it ran and their output; a file listing can be thousands of nearly equal
+//! lines. A port of iterm-enhancer's fold.py: the regular expressions are written out by hand
+//! with Python's `str` rules (code points, Unicode whitespace); `History` keeps what one page
+//! has, the stream sends the rest.
+
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::BTreeMap;
+
+const CMD_KEEP: usize = 1; // a long command: its line and this many more stay,
+const CMD_MIN: usize = 2; // at least this many more fold
+const OUT_KEEP: usize = 8; // a long tool output: likewise
+const OUT_MIN: usize = 8;
+const DIFF_MIN: usize = 6; // an edit's diff folds from this many lines
+const SAME_MIN: usize = 20; // nearly equal lines: from 20, the first 3 and last 2 stay
+const SAME_HEAD: usize = 3;
+const SAME_TAIL: usize = 2;
+const BLOB_MIN: usize = 3; // rows of encoded data
+const REPEAT_MIN: usize = 5; // one line again and again (an input box redrawn into the history)
+const BLANK_MIN: usize = 3; // blank lines in a row before an agent's ⏺ or ⎿ (rows its redraw left empty)
+/// Lines looked at around new ones: a fold may start or end there.
+pub const CONTEXT: i64 = 1000;
+/// Seconds between looks at lines that scrolled into the history.
+pub const SCAN_EVERY: f64 = 1.0;
+
+const EDITS: [&str; 6] = ["Updated", "Added", "Removed", "Created", "Wrote", "Deleted"];
+const NOTEWORTHY: [&str; 8] = ["error", "fail", "fatal", "exception", "panic", "denied", "refused", "warn"];
+
+/// A fold of `folds`: row indexes, inclusive.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowFold {
+    pub from: usize,
+    pub to: usize,
+    pub label: String,
+}
+
+/// A fold told to the page: absolute line numbers, inclusive; serialized {"n", "to", "label"}.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct Fold {
+    pub n: i64,
+    pub to: i64,
+    pub label: String,
+}
+
+// ---------- Python's str rules ----------
+
+/// Python's `str.isspace()`: Unicode whitespace and the separators U+001C..U+001F.
+pub fn is_py_space(c: char) -> bool {
+    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
+}
+
+/// Python's `str.strip()`.
+pub fn py_strip(s: &str) -> &str {
+    s.trim_matches(is_py_space)
+}
+
+/// Python's `str.rstrip()`.
+pub fn py_rstrip(s: &str) -> &str {
+    s.trim_end_matches(is_py_space)
+}
+
+/// Python's `\w` on `str`: a letter, a digit or "_".
+pub fn is_word(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
+
+/// Python's `\d` (decimal digits): ASCII and the common other scripts' digits.
+fn is_digit(c: char) -> bool {
+    c.is_ascii_digit()
+        || matches!(c as u32, 0x0660..=0x0669 | 0x06F0..=0x06F9 | 0x0966..=0x096F | 0x09E6..=0x09EF | 0x0E50..=0x0E59 | 0xFF10..=0xFF19)
+}
+
+fn chars(s: &str) -> usize {
+    s.chars().count()
+}
+
+/// A line as the page gets it ({"r": runs, "e": hard}): its text.
+pub fn text_of(line: &Value) -> String {
+    let mut out = String::new();
+    for run in line["r"].as_array().into_iter().flatten() {
+        match &run[0] {
+            Value::String(t) => out.push_str(t),
+            Value::Array(cells) => cells.iter().filter_map(Value::as_str).for_each(|c| out.push_str(c)),
+            _ => {}
+        }
+    }
+    out
+}
+
+// ---------- the patterns ----------
+
+/// `^⏺ [\w.-]+\(`: Claude Code's tool call, "⏺ Bash(…".
+fn is_tool(t: &str) -> bool {
+    let Some(rest) = t.strip_prefix("⏺ ") else { return false };
+    let name = rest.find(|c: char| !(is_word(c) || c == '.' || c == '-')).unwrap_or(rest.len());
+    name > 0 && rest[name..].starts_with('(')
+}
+
+/// `^ {2}⎿ `: its result's first line.
+fn is_result(t: &str) -> bool {
+    t.starts_with("  ⎿ ")
+}
+
+/// `^ {2}⎿ +(Updated|Added|Removed|Created|Wrote|Deleted)\b`: the word, when an edit's.
+fn edit_of(t: &str) -> Option<&'static str> {
+    let rest = t.strip_prefix("  ⎿")?;
+    let word = rest.trim_start_matches(' ');
+    if word.len() == rest.len() {
+        return None;
+    }
+    EDITS.into_iter().find(|w| word.strip_prefix(w).is_some_and(|after| !after.chars().next().is_some_and(is_word)))
+}
+
+fn is_blob_char(c: char) -> bool {
+    c.is_ascii_alphanumeric() || "+/=_-".contains(c)
+}
+
+/// A row of encoded data (base64, base64url, hex): digits and letters mixed, not a word or a rule.
+pub fn is_blob(text: &str) -> bool {
+    let t = py_strip(text);
+    let mut seen: Vec<char> = Vec::new();
+    for c in t.chars() {
+        if !seen.contains(&c) {
+            seen.push(c);
+        }
+    }
+    t.len() >= 40 && t.chars().all(is_blob_char) && t.chars().any(|c| c.is_ascii_digit()) && t.chars().any(|c| c.is_ascii_alphabetic()) && seen.len() >= 12
+}
+
+/// `error|fail|fatal|…` case aside: a line that says something went wrong.
+fn noteworthy(text: &str) -> bool {
+    let low: String = text.chars().map(|c| match c {
+        'ı' => 'i',
+        'ſ' => 's',
+        _ => c.to_lowercase().next().unwrap_or(c),
+    }).collect();
+    NOTEWORTHY.iter().any(|w| low.contains(w))
+}
+
+fn is_path_char(c: char) -> bool {
+    is_word(c) || ".@+-".contains(c)
+}
+
+/// `(?:[~/][\w.@+-]*)+/[\w.@+-]+` → "/p". A chain of segments, each "~" or "/" and its name
+/// chars, matches up to its last segment from the second on that is "/" and a name.
+fn sub_paths(text: &str) -> String {
+    let cs: Vec<char> = text.chars().collect();
+    let (mut out, mut i) = (String::new(), 0);
+    while i < cs.len() {
+        if cs[i] != '~' && cs[i] != '/' {
+            out.push(cs[i]);
+            i += 1;
+            continue;
+        }
+        let (mut segs, mut j) = (Vec::new(), i); // (start, end) of each segment
+        while j < cs.len() && (cs[j] == '~' || cs[j] == '/') {
+            let s = j;
+            j += 1;
+            while j < cs.len() && is_path_char(cs[j]) {
+                j += 1;
+            }
+            segs.push((s, j));
+        }
+        match (1..segs.len()).rev().find(|&k| cs[segs[k].0] == '/' && segs[k].1 > segs[k].0 + 1) {
+            Some(k) => {
+                out.push_str("/p");
+                cs[segs[k].1..j].iter().for_each(|&c| out.push(c));
+            }
+            None => cs[i..j].iter().for_each(|&c| out.push(c)),
+        }
+        i = j;
+    }
+    out
+}
+
+/// Each maximal run of chars `keep` accepts, `min` long or longer, becomes `to`.
+fn sub_runs(text: &str, keep: impl Fn(char) -> bool, min: usize, to: &str) -> String {
+    let (mut out, mut run) = (String::new(), String::new());
+    let flush = |run: &mut String, out: &mut String| {
+        if !run.is_empty() {
+            out.push_str(if chars(run) >= min { to } else { run });
+            run.clear();
+        }
+    };
+    for c in text.chars() {
+        if keep(c) {
+            run.push(c);
+        } else {
+            flush(&mut run, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut run, &mut out);
+    out
+}
+
+/// A line's shape: paths, long words and numbers aside. Said in words, not in a name, a
+/// failure stays itself (".../errors.js" in a listing is one of many).
+pub fn shape(text: &str) -> String {
+    let t = sub_paths(text);
+    let t = sub_runs(&t, is_blob_char, 24, "t");
+    let t = sub_runs(&t, is_digit, 1, "0");
+    let t = sub_runs(&t, is_py_space, 1, " ");
+    let mut out = py_strip(&t).to_string();
+    if noteworthy(&t) {
+        out.push('!');
+        out.push_str(&t);
+    }
+    out
+}
+
+fn size_of(n: usize) -> String {
+    if n < 1024 { format!("{n} B") } else { format!("{:.1} KB", n as f64 / 1024.0) }
+}
+
+// ---------- folds ----------
+
+/// Folds of `rows` (a run of a pane's history, oldest first: (text, hard end)), in order. Rows
+/// tmux wrapped are one line. Only a part that is whole is folded: one that may go on after
+/// the last row is left for when more has come. `newest` false: newer rows exist past `rows`
+/// (a window of a long history), so a run of data or of nearly equal lines ends there for now.
+pub fn folds<S: AsRef<str>>(rows: &[(S, bool)], newest: bool) -> Vec<RowFold> {
+    let stripped: Vec<&str> = rows.iter().map(|(t, _)| py_rstrip(t.as_ref())).collect();
+    let mut out = blobs(&stripped, newest); // rows of data: counted as rows; the rest by lines
+    let mut spans: Vec<(usize, usize, String)> = Vec::new();
+    let mut cur: Option<(usize, usize, String)> = None;
+    for (k, (t, eol)) in rows.iter().enumerate() {
+        let mut c = cur.take().unwrap_or((k, k, String::new()));
+        c.1 = k;
+        c.2.push_str(t.as_ref());
+        if *eol { spans.push(c) } else { cur = Some(c) }
+    }
+    spans.extend(cur);
+    let lines: Vec<&str> = spans.iter().map(|s| s.2.as_str()).collect();
+    for f in line_folds(&lines, newest) {
+        let (a, b) = (spans[f.from].0, spans[f.to].1);
+        if !out.iter().any(|x| x.from <= b && a <= x.to) {
+            out.push(RowFold { from: a, to: b, label: f.label });
+        }
+    }
+    out.sort_by_key(|f| f.from);
+    out
+}
+
+/// Runs of BLOB_MIN or more rows of encoded data, the next row after them come.
+fn blobs(text: &[&str], newest: bool) -> Vec<RowFold> {
+    let (mut out, n, mut i) = (Vec::new(), text.len(), 0);
+    while i < n {
+        let mut j = i;
+        while j < n && is_blob(text[j]) {
+            j += 1;
+        }
+        if j - i >= BLOB_MIN && (j < n || !newest) {
+            let data: usize = text[i..j].iter().map(|t| chars(py_strip(t))).sum();
+            let hex = text[i..j].iter().all(|t| py_strip(t).chars().all(|c| c.is_ascii_hexdigit()));
+            let kind = if hex { "hex" } else { "base64" };
+            out.push(RowFold { from: i, to: j - 1, label: format!("⋯ {} of {kind} · {} lines", size_of(data), j - i) });
+        }
+        i = j.max(i + 1);
+    }
+    out
+}
+
+struct Taken {
+    out: Vec<RowFold>,
+    taken: Vec<bool>,
+}
+
+impl Taken {
+    fn fold(&mut self, a: usize, b: usize, label: String) {
+        if a <= b && !self.taken[a..=b].iter().any(|t| *t) {
+            self.out.push(RowFold { from: a, to: b, label });
+            self.taken[a..=b].iter_mut().for_each(|t| *t = true);
+        }
+    }
+}
+
+/// Lines after i that go on (indented at least `indent`, blank lines between them too: a
+/// script's), up to the last one that does, and whether a line that does not go on comes after
+/// them (blank lines at the history's end may still be inside them).
+fn cont(text: &[&str], i: usize, indent: usize) -> (usize, bool) {
+    let (mut j, mut last) = (i + 1, i);
+    while j < text.len() {
+        if !py_strip(text[j]).is_empty() {
+            let lead = text[j].chars().take(indent).filter(|c| *c == ' ').count();
+            if lead < indent || is_result(text[j]) {
+                break;
+            }
+            last = j;
+        }
+        j += 1;
+    }
+    (last + 1, j < text.len())
+}
+
+fn line_folds(lines: &[&str], newest: bool) -> Vec<RowFold> {
+    let text: Vec<&str> = lines.iter().map(|t| py_rstrip(t)).collect();
+    let n = text.len();
+    let mut f = Taken { out: Vec::new(), taken: vec![false; n] };
+    for (i, t) in text.iter().enumerate() {
+        if is_tool(t) {
+            // the command a tool ran, its lines
+            let (j, ends) = cont(&text, i, 4);
+            if ends && j - (i + 1) >= CMD_KEEP + CMD_MIN {
+                let k = j - (i + 1) - CMD_KEEP;
+                f.fold(i + 1 + CMD_KEEP, j - 1, format!("⋯ {k} more lines of the command"));
+            }
+        } else if is_result(t) {
+            // a tool's result: a diff, or output
+            let (j, ends) = cont(&text, i, 5);
+            let k = j - (i + 1);
+            if !ends {
+                continue;
+            }
+            match edit_of(t) {
+                Some(w) if k >= DIFF_MIN => {
+                    let what = if w == "Created" || w == "Wrote" { "of the file" } else { "of diff" };
+                    f.fold(i + 1, j - 1, format!("⋯ {k} lines {what}"));
+                }
+                None if k >= OUT_KEEP + OUT_MIN => {
+                    f.fold(i + 1 + OUT_KEEP, j - 1, format!("⋯ {} more lines of output", k - OUT_KEEP));
+                }
+                _ => {}
+            }
+        }
+    }
+    let short = |t: &str| chars(py_strip(t)) <= 3;
+    let mut i = 0; // one line again and again, maybe with blank or 1-3 character lines between
+    while i < n {
+        let t = py_strip(text[i]);
+        if chars(t) <= 3 || f.taken[i] || text[i].starts_with('⏺') {
+            i += 1;
+            continue;
+        }
+        let (mut j, mut last, mut copies) = (i + 1, i, 1);
+        while j < n && !f.taken[j] && (py_strip(text[j]) == t || short(text[j])) {
+            if py_strip(text[j]) == t {
+                (copies, last) = (copies + 1, j);
+            }
+            j += 1;
+        }
+        if copies >= REPEAT_MIN && (j < n || !newest) {
+            f.fold(i + 1, last, format!("⋯ {} more copies of this line", copies - 1));
+            i = last + 1;
+        } else {
+            i += 1;
+        }
+    }
+    let mut i = 0; // nearly equal lines: a listing, a log
+    while i < n {
+        let s = (!py_strip(text[i]).is_empty() && !f.taken[i]).then(|| shape(text[i]));
+        let mut j = i + 1;
+        if let Some(s) = &s {
+            while j < n && !f.taken[j] && !py_strip(text[j]).is_empty() && shape(text[j]) == *s {
+                j += 1;
+            }
+            if j - i >= SAME_MIN && (j < n || !newest) && !text[i].starts_with('⏺') {
+                let k = j - i - SAME_HEAD - SAME_TAIL;
+                f.fold(i + SAME_HEAD, j - 1 - SAME_TAIL, format!("⋯ {k} similar lines"));
+            }
+        }
+        i = if s.is_some() { j } else { i + 1 };
+    }
+    let mut i = 0; // blank lines in a row before a coding agent's next message or result (its
+    while i < n {
+        // redraw left them; a file's own stay)
+        let mut j = i;
+        while j < n && py_strip(text[j]).is_empty() && !f.taken[j] {
+            j += 1;
+        }
+        if j - i >= BLANK_MIN && j < n && (text[j].starts_with('⏺') || is_result(text[j])) {
+            f.fold(i, j - 1, format!("⋯ {} blank lines", j - i));
+        }
+        i = j.max(i + 1);
+    }
+    f.out.sort_by_key(|x| x.from);
+    f.out
+}
+
+// ---------- what one page has ----------
+
+/// What one page has of a pane's history, for folding: the text of the lines it was sent and
+/// the folds it was told of (absolute line numbers).
+pub struct History {
+    keep: usize,                    // lines kept (the page's own limit)
+    text: BTreeMap<i64, (String, bool)>, // n -> (text, hard end)
+    told: BTreeMap<i64, i64>,       // first n -> last n of a fold told
+    pending: bool,                  // lines scrolled off since the last look
+    scanned: f64,                   // when they were last looked at
+}
+
+impl History {
+    pub fn new(keep: usize) -> Self {
+        History { keep, text: BTreeMap::new(), told: BTreeMap::new(), pending: false, scanned: 0.0 }
+    }
+
+    #[cfg(test)]
+    /// Lines kept for folding (the page's limit and CONTEXT more).
+    pub fn known(&self) -> usize {
+        self.text.len()
+    }
+
+    /// Lines first.. as the page is to get them, and the folds found. `bulk` (opening the
+    /// pane, older lines): a folded line is null, sent only when asked for. Else (lines that
+    /// scrolled off the screen, which the page has already): sent as they are; their folds
+    /// come from scan(), at most every SCAN_EVERY seconds.
+    pub fn take(&mut self, first: i64, lines: Vec<Value>, bulk: bool) -> (Vec<Value>, Vec<Fold>) {
+        for (k, line) in lines.iter().enumerate() {
+            self.text.insert(first + k as i64, (text_of(line), line["e"].as_bool().unwrap_or(false)));
+        }
+        let cap = self.keep + CONTEXT as usize;
+        if self.text.len() > cap {
+            let oldest: Vec<i64> = self.text.keys().take(self.text.len() - cap).copied().collect();
+            for n in oldest {
+                self.text.remove(&n);
+            }
+            let low = *self.text.keys().next().expect("lines kept");
+            self.told.retain(|_, b| *b >= low); // folds the page has no more
+        }
+        if !bulk {
+            self.pending = self.pending || !lines.is_empty();
+            return (lines, Vec::new());
+        }
+        let len = lines.len() as i64;
+        let found = self.find(first, first + len + CONTEXT); // newer lines known: the end of a fold
+        let mut out = lines;
+        for f in &found {
+            for n in f.n.max(first)..=f.to.min(first + len - 1) {
+                out[(n - first) as usize] = Value::Null;
+            }
+        }
+        (out, found)
+    }
+
+    /// Whether lines scrolled off since the last look, SCAN_EVERY seconds ago or more.
+    pub fn due(&self, now: f64) -> bool {
+        self.pending && now - self.scanned >= SCAN_EVERY
+    }
+
+    /// Folds among the newest lines (they scrolled off the screen meanwhile).
+    pub fn scan(&mut self, now: f64) -> Vec<Fold> {
+        (self.pending, self.scanned) = (false, now);
+        let Some(&last) = self.text.keys().next_back() else { return Vec::new() };
+        self.find(last + 1 - CONTEXT, last + 1)
+    }
+
+    /// New folds among the known lines from lo (a contiguous run of them, up to hi).
+    pub fn find(&mut self, lo: i64, hi: i64) -> Vec<Fold> {
+        let mut ns: Vec<i64> = Vec::new();
+        for n in lo..hi {
+            if self.text.contains_key(&n) {
+                ns.push(n);
+            } else if !ns.is_empty() {
+                break;
+            }
+        }
+        let newest = ns.last().is_none_or(|l| Some(l) == self.text.keys().next_back());
+        let rows: Vec<(&str, bool)> = ns.iter().map(|n| (self.text[n].0.as_str(), self.text[n].1)).collect();
+        let mut found = Vec::new();
+        for f in folds(&rows, newest) {
+            let (a, mut b, mut label) = (ns[f.from], ns[f.to], f.label);
+            let told: Vec<i64> = self.told.iter().filter(|&(x, y)| *x <= b && a <= *y).map(|(x, _)| *x).collect();
+            if let Some(&low) = told.iter().min() {
+                // told already, or part of one told; nearly equal lines going on into a fold
+                // told with newer lines (an older page of a long listing): the older part folds
+                b = low - 1;
+                let overlaps = self.told.iter().any(|(x, y)| *x <= b && a <= *y);
+                if !label.ends_with("similar lines") || b - a + 1 < (SAME_HEAD + SAME_TAIL) as i64 || overlaps {
+                    continue;
+                }
+                label = format!("⋯ {} similar lines", b - a + 1);
+            }
+            self.told.insert(a, b);
+            found.push(Fold { n: a, to: b, label });
+        }
+        found
+    }
+
+    /// a..b lies in folds the page was told of, one after another (it may ask only for such
+    /// lines; it shows back-to-back folds of nearly equal lines as one).
+    pub fn told(&self, mut a: i64, b: i64) -> bool {
+        while a <= b {
+            match self.told.range(..=a).next_back() {
+                Some((_, &y)) if a <= y => a = y + 1,
+                _ => return false,
+            }
+        }
+        true
+    }
+}
+
+#[cfg(test)]
+#[path = "folds_tests.rs"]
+mod tests;

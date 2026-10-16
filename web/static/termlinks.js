@@ -1,0 +1,67 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// Clicks and taps on web addresses and file paths in the terminal (AC-52): the text under the
+// pointer, taken with the rows it was wrapped over, and what opening it means.
+import { pointAt } from "./cursor.js";
+import { absolutePath, tokenAt } from "./links.js";
+import { continues, joinedText, offsetOf } from "./rowtext.js";
+
+const rowOf = (el) => (el?.classList?.contains("ln") ? el : null);
+
+/** The address or path at viewport point (x, y) of the terminal, or null. */
+export function linkAt(x, y) {
+  const p = pointAt(x, y);
+  if (!p) return null;
+  let first = p.row;
+  while (rowOf(first.previousElementSibling) && continues(first.previousElementSibling)) first = first.previousElementSibling;
+  const rows = [];
+  for (let el = first; el; el = rowOf(el.nextElementSibling)) { rows.push(el); if (!continues(el)) break; }
+  // the text as the underline reads it (rowtext.js); indentation left out at a broken word is no link
+  const { text, pieces } = joinedText(rows), at0 = offsetOf(pieces, p.node, p.offset);
+  return at0 < 0 ? null : tokenAt(text, Math.max(0, at0 - p.before));
+}
+
+/** Opens a token: an address in a new tab of this browser, a path in File. */
+export async function openLink(tok, { paneInfo, openFile, toast }) {
+  if (tok.kind === "url") {
+    window.open(tok.value, "_blank", "noopener,noreferrer");
+    return;
+  }
+  const pane = await paneInfo();
+  if (!pane) return toast("The Mac does not answer.");
+  if (pane.error) return toast(pane.error, 6000);
+  const path = absolutePath(tok.value, pane.cwd, pane.home);
+  if (!path) return toast(`Cannot tell where ${tok.value} is: this session's folder is not known.`, 6000);
+  openFile(path, pane.host ?? null);
+}
+
+// With a mouse a link opens with ⌘ (Ctrl elsewhere; on a Mac Ctrl+click is the context menu):
+// a plain click is for the terminal (the keyboard, selecting).
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform);
+const held = (e) => (MAC ? e.metaKey : e.ctrlKey);
+
+/** Pointer feedback and clicks for a terminal element; `tap(x, y)` is for touch screens. A path
+ *  is a link only when actions.state(path) says its file is there (as it is underlined); when
+ *  the pane's folder is not known a click says why (openLink). */
+export function bindLinks(term, actions) {
+  const usable = (x, y) => {
+    const tok = linkAt(x, y);
+    return tok && (tok.kind === "url" || actions.state(tok.value) !== "no") ? tok : null;
+  };
+  let frame = 0;
+  term.addEventListener("mousemove", (e) => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => { frame = 0; term.classList.toggle("onlink", held(e) && !!usable(e.clientX, e.clientY)); });
+  });
+  term.addEventListener("mouseleave", () => term.classList.remove("onlink"));
+  addEventListener("keyup", (e) => { if (!held(e)) term.classList.remove("onlink"); });
+  term.addEventListener("click", (e) => {
+    if (e.button !== 0 || !held(e) || String(getSelection())) return;   // a click that ends a selection opens nothing
+    const tok = usable(e.clientX, e.clientY);
+    if (tok) { e.preventDefault(); void openLink(tok, actions); }
+  });
+  return (x, y) => {
+    const tok = usable(x, y);
+    if (tok) void openLink(tok, actions);
+    return !!tok;
+  };
+}

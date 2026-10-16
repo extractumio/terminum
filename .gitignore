@@ -1,0 +1,15 @@
+# build output
+terminumd/target/
+ui/node_modules/
+ui/dist/
+ui/.build-id
+# local tooling and caches
+.playwright-cli/
+.DS_Store
+__pycache__/
+*.pyc
+# remote agents: pinned cross toolchain and build output
+.toolchain/
+dist/
+# personal instructions for AI agents
+CLAUDE.local.md

@@ -1,0 +1,439 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The chrome wears the shown session's iTerm2 profile: every surface is a mix of the profile's
+   background and foreground, and the accent is its cursor color. */
+:root {
+  --t-bg: #000000; --t-fg: #c7c7c7; --accent: #c7c7c7; --sel: #3a5a8a; --selfg: #ffffff;
+  --size: 13px;
+  --chrome: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg));
+  --chrome-2: color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));
+  --line: color-mix(in srgb, var(--t-fg) 16%, var(--t-bg));
+  --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --term-font: TermFont, Menlo, "SF Mono", ui-monospace, monospace;   /* the theme's font (app.js) */
+  --nav-w: 300px; --side-w: 380px;
+  --local: #4f9dff; --remote: #a98bff;     /* where a session runs: this Mac or another host */
+  color-scheme: dark light;
+}
+@font-face { font-family: TermFont; src: local("Menlo-Regular"); }
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--t-bg); color: var(--t-fg); overscroll-behavior: none; }
+body { font: 14px/1.35 var(--ui); overflow: hidden; -webkit-text-size-adjust: 100%; }
+button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; touch-action: manipulation; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+svg circle { fill: currentColor; stroke: none; }
+svg.lu { width: var(--s, 16px); height: var(--s, 16px); stroke-width: 2; stroke-linejoin: round; flex: 0 0 auto; }
+svg.lu circle { fill: none; stroke: currentColor; }
+/* Only terminal text is selectable: a long press on a button or label must not select it. */
+#bar, #nav, #hotkeys, #menu, #bottom, #paused, #toast, .winhead, button { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* --app-h is the visible height (it shrinks while the iOS keyboard is up); see app.js. */
+#app { display: grid; grid-template-columns: var(--nav-w) 1fr; grid-template-rows: minmax(0, 1fr); height: var(--app-h, 100dvh); }
+#app.nav-hidden { grid-template-columns: 0 1fr; }
+#app.nav-hidden #nav { visibility: hidden; }
+#nav { position: relative; }
+#navgrip { position: absolute; top: 0; right: -4px; width: 8px; height: 100%; cursor: col-resize; z-index: 6; touch-action: none; }
+#navgrip:hover, #navgrip:focus-visible { background: color-mix(in srgb, var(--accent) 45%, transparent); outline: none; }
+
+/* ---------- navigator ---------- */
+#nav { background: var(--chrome); border-right: 1px solid var(--line); display: flex; flex-direction: column;
+  min-width: 0; padding-top: env(safe-area-inset-top); }
+.nav-head { display: flex; align-items: center; gap: 8px; height: 56px; padding: 0 10px; border-bottom: 1px solid var(--line); }
+.search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px;
+  border-radius: 8px; background: var(--chrome-2); border: 1px solid transparent; color: var(--muted); }
+.search:focus-within { border-color: var(--accent); }
+#filter { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--t-fg); background: none; border: 0; outline: 0; padding: 0; }
+#filter::placeholder { color: var(--muted); }
+.search kbd { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+#sessions { overflow-y: auto; flex: 1; padding: 8px 8px 12px; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; }
+.grp ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+
+/* group header: chevron, name, tmux session, count, + */
+.grp h2 { position: relative; display: flex; align-items: center; gap: 6px; height: 30px; margin: 0; padding: 0 2px 0 0; font-size: 12.5px; font-weight: 600; }
+.grp h2 .toggle { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 6px; text-align: left; font-weight: inherit; }
+.grp h2 .toggle:hover { background: var(--chrome-2); }
+.grp h2 .toggle .lu { color: var(--muted); flex: 0 0 auto; transition: transform .15s; }
+.grp h2 .toggle[aria-expanded="false"] .lu { transform: rotate(-90deg); }
+.grp h2 .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grp h2 .tsess { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 500;
+  color: cornflowerblue; background: color-mix(in srgb, cornflowerblue 15%, transparent); border-radius: 999px; padding: 1px 8px; }
+.grp h2 .where { color: var(--muted); font-weight: 400; }
+.grp h2 .count { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.grp h2 .count.on { color: var(--accent); font-weight: 600; }
+.grp h2 .new { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border-radius: 7px;
+  --edge: var(--line); background: var(--chrome); color: var(--muted); }
+.grp h2 .new:hover { background: var(--chrome-2); color: var(--t-fg); --edge: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); }
+
+/* row: dot | title and meta | state */
+.grp li { position: relative; }
+.item { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) 18px; column-gap: 8px; align-items: start;
+  padding: 8px 10px 8px 8px; border-radius: 8px; text-align: left; }
+.item:hover { background: color-mix(in srgb, var(--t-fg) 8%, var(--chrome)); }
+.item.on { background: color-mix(in srgb, var(--accent) 16%, var(--chrome)); }
+/* a session's bar, as tall as its two lines: full for the shown session, half for the others;
+   it breathes while the session's agent works */
+.pbar { width: 4px; align-self: stretch; min-height: 30px; margin: 1px 3px; border-radius: 2px; background: var(--dot); opacity: .5; }
+.pbar.on { opacity: 1; }
+.pbar.busy { animation: breathe 1.6s ease-in-out infinite; }
+.pbar.on.busy { animation-name: breathe-on; }
+@keyframes breathe { 50% { opacity: .15; } }
+@keyframes breathe-on { 50% { opacity: .45; } }
+/* a working agent: a ring of the dot's color grows from it and fades, as a radar ping */
+@media (prefers-reduced-motion: reduce) { .pbar.busy { animation: none; } }
+.item .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.item .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.item .idx { flex: 0 0 auto; width: 14px; text-align: right; color: var(--muted); font: 11px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.item .t { min-width: 0; font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.s { display: flex; gap: 6px; min-width: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; }
+.s > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.s > .sep, .s > .host, .s > .prog { flex: none; }
+.s > .last { flex-shrink: 1000; min-width: 6ch; }   /* the title (else the folder) gives way first, down to a few letters */
+.s .sep { color: color-mix(in srgb, var(--t-fg) 25%, var(--t-bg)); }
+.item .s { padding-left: 20px; }
+.host { color: var(--remote); font-weight: 500; }
+.s .ag-claude { color: #f0b48a; }     /* pale orange */
+.s .ag-codex { color: #c9b8ff; }      /* pale violet */
+.item .st { display: grid; place-items: center; padding-top: 2px; }
+/* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
+#sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }
+.item.child { padding-top: 4px; padding-bottom: 4px; }
+.item.child .t { font-size: 12.5px; font-weight: 400; }
+.item.child .idx { display: none; }
+.item.child .s { padding-left: 0; }                         /* no tab number to line up with */
+
+/* agent states (Lucide): amber hourglass, orange question (pulsing), red alert, green check */
+.state { display: inline-grid; place-items: center; flex: 0 0 auto; }
+.state.working { color: #e0af68; }
+.state.waiting { color: #1a1b26; background: #ffb020; border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, #ffb020 35%, transparent), 0 0 10px #ffb020;
+  animation: ask 1s steps(2, jump-none) infinite; }
+.state.failed { color: #f7768e; }
+@keyframes ask { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .state.waiting { animation: none; } }
+
+/* drag handles: in the gutter, shown on hover; a finger long-presses the row's grip */
+.grip { position: absolute; left: -9px; top: 9px; width: 14px; height: 20px; display: grid; place-items: center; color: var(--muted);
+  cursor: grab; touch-action: none; opacity: 0; z-index: 1; }
+.grp h2 .grip { top: 5px; }
+.grp li:hover .grip, .grp h2:hover .grip, .grip:focus-visible { opacity: .8; }
+@media (hover: none) { .grip { opacity: .35; } }
+#sessions.reordering, #sessions.reordering * { cursor: grabbing; user-select: none; }
+.dragging { opacity: .7; }
+.dragging .item { background: var(--chrome-2); box-shadow: 0 8px 24px color-mix(in srgb, #000 45%, transparent); }
+.empty { color: var(--muted); padding: 16px 10px; margin: 0; }
+#scrim { display: none; }
+
+/* foot: New session and Add host, and their forms above them (tmux.css) */
+.nav-foot { padding: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+#newsessbtn, #addhostbtn { width: 100%; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 8px;
+  --edge: var(--line); background: var(--chrome); font-weight: 500; }
+#newsessbtn:hover, #newsessbtn[aria-expanded="true"], #addhostbtn:hover, #addhostbtn[aria-expanded="true"] { background: var(--chrome-2); }
+.nav-title { display: none; }
+
+/* ---------- main column ---------- */
+#main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
+#bar { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 10px 0 14px;
+  padding-top: env(safe-area-inset-top); background: var(--chrome); border-bottom: 1px solid var(--line); }
+.icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; flex: 0 0 auto; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); }
+.icon:hover { background: var(--chrome-2); color: var(--t-fg); }
+#app:not(.nav-hidden) #navbtn { display: none; }
+#current { flex: 1; min-width: 0; display: flex; align-items: center; cursor: pointer; border-radius: 8px; }
+/* The title block is a two-column grid: a 16px column holds the agent's state over the profile's
+   dot, centered on one axis; the title and the details start together 8px right of it. Rows are
+   22px and 16px whatever they hold, so the block is 40px and centers on the 44px buttons. */
+#current .lines { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+#current .tline { display: flex; align-items: center; gap: 8px; min-width: 0; height: 22px; }
+#current .t { font-size: 15px; line-height: 22px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#curstate { flex: 0 0 16px; height: 16px; display: grid; place-items: center; }
+#rename { flex: 0 0 auto; width: 28px; height: 28px; margin: -3px 0 -3px -4px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
+#rename:hover { color: var(--t-fg); background: var(--chrome-2); }
+/* the header's details: one line of text that ends in an ellipsis, so the folder at its end
+   gives way first; it starts with the title, after the state's column */
+#curbar { flex: 0 0 auto; display: flex; height: 40px; margin-right: 6px; }
+#curbar:empty { display: none; }
+#curbar .pbar { margin: 0; }
+#cursub { display: block; height: 16px; line-height: 16px; text-overflow: ellipsis; padding-left: 24px; }
+#cursub > span { display: inline; }
+#cursub > .sep { margin: 0 6px; }
+#cursub:empty { display: none; }
+#term.onlink { cursor: pointer; }
+/* addresses and paths that open (linkmarks.js) */
+::highlight(lnk) { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); }
+#term.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
+#renamebox { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
+#renamebox input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--accent);
+  background: var(--chrome-2); color: inherit; font: inherit; font-size: 16px; outline: 0; }
+#tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+#tools .divider { width: 1px; height: 22px; background: var(--line); }
+#tools button[aria-pressed="true"], #tools button[aria-expanded="true"] { background: var(--chrome-2); color: var(--t-fg); }
+.seg { display: inline-flex; padding: 2px; border-radius: 8px; background: color-mix(in srgb, var(--t-fg) 5%, var(--t-bg)); border: 1px solid var(--line); }
+.seg button { height: 26px; padding: 0 11px; border-radius: 6px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.seg button:hover { color: var(--t-fg); }
+#tools .seg button[aria-pressed="true"], #menu .seg button[aria-pressed="true"], #views button[aria-selected="true"] {
+  background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); color: var(--t-fg); font-weight: 500; }
+#views button:disabled { opacity: .35; cursor: default; }
+
+#status { background: color-mix(in srgb, #d0453a 85%, var(--t-bg)); color: #fff; padding: 6px 12px; }
+#restored { background: color-mix(in srgb, #2f7d4f 80%, var(--t-bg)); color: #fff; padding: 4px 12px; }
+#stall, #sized { background: color-mix(in srgb, #c98a1b 80%, var(--t-bg)); color: #fff; padding: 6px 12px; }
+#restored { display: flex; align-items: center; gap: 8px; }
+#restored[hidden] { display: none; }
+#restored > span { flex: 1; }
+/* other sessions waiting for an answer: cards at the terminal's top right; on a phone, slim
+   lines across it under the header */
+#asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 12px; z-index: 7; width: min(340px, calc(100% - 24px));
+  display: flex; flex-direction: column; gap: 6px; }
+#asks[hidden] { display: none; }
+#asks .ask { display: flex; align-items: center; border-radius: 10px; background: var(--chrome-2); color: var(--t-fg);
+  border: 1px solid color-mix(in srgb, #ffb020 60%, var(--line)); box-shadow: 0 8px 24px color-mix(in srgb, #000 40%, transparent); }
+#asks .go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 4px 9px 12px; text-align: left; font-size: 13px; }
+#asks .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#asks .state { flex: 0 0 18px; height: 18px; }
+#asks .more { flex: none; color: var(--muted); font-size: 12px; }
+#asks .more:empty { display: none; }
+#asks .x { flex: 0 0 auto; width: 32px; height: 32px; margin-right: 4px; display: grid; place-items: center; border-radius: 8px; color: var(--muted); }
+#asks .ask[hidden] { display: none; }
+#asks .go:hover .what { text-decoration: underline; }
+#asks .x:hover { color: var(--t-fg); background: color-mix(in srgb, var(--t-fg) 10%, transparent); }
+@media (max-width: 860px) {
+  #asks { position: static; margin: 6px 8px 0; width: auto; gap: 4px; }   /* under the header and its view tabs, not over them */
+  #asks .ask { border-radius: 8px; }
+  #asks .go { padding: 5px 4px 5px 10px; font-size: 12.5px; gap: 8px; }
+  #asks .x { width: 30px; height: 28px; }
+}
+
+/* ---------- terminal ---------- */
+#term { flex: 1; overflow: auto; padding: 4px 8px; background: var(--t-bg); color: var(--t-fg); outline: none;
+  font-family: var(--term-font); font-size: var(--size); line-height: 1.25;
+  font-variant-ligatures: none; overscroll-behavior: contain; -webkit-text-size-adjust: none;
+  -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; }
+#hist, #screen { display: contents; }
+/* Wrap: lines flow inline; only a hard line end breaks. Padding a program added up to iTerm's
+   width is hidden (it would stick out of a narrow screen), prose the program wrapped at iTerm's
+   width is re-joined, and separator lines are cut to one row. A hard line end breaks the line
+   (the zero-width space keeps a blank line one row high); each paragraph is a block of its own
+   (term.js), as iOS Safari selects nothing in a long run of inline lines. */
+#term.wrap { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
+#term.wrap .ln { display: inline; }
+#term.wrap .ln.eol::before { content: "\200B"; }
+#term.wrap .ln.eol::after { content: "\A"; }
+#term.wrap .ln.eol.join::after { content: " "; }
+#term.wrap .ln.eol.join.glue::after { content: none; }   /* a word the program broke at the row's edge */
+#term.wrap .ln.eol.join.curend::after { content: none; }   /* the cursor's cell is the space (term.js cursorLast) */
+#term.wrap .ln.cont .lead { display: none; }
+#term.wrap .tail { display: none; }
+#term.wrap .ln.rule { display: block; white-space: pre; overflow: hidden; height: 1.25em; }
+#term.wrap .ln.rule::after { content: none; }
+/* a long separator: its characters hidden (copied as they are), a line across the view instead */
+#term .ln.rule.full { display: block; width: auto; height: 1.25em; overflow: hidden; white-space: pre; -webkit-text-fill-color: transparent;
+  background: linear-gradient(var(--rule-color), var(--rule-color)) center / 100% var(--rule-width) no-repeat; }
+#term .ln.spare { display: none; }      /* empty rows below the screen's last text and cursor (term.js) */
+#term.grid { white-space: pre; }
+#term.grid .ln { display: block; min-height: 1.25em; width: max-content; }
+#term .c1, #term .c2 { display: inline-block; text-align: center; white-space: pre; }
+#term .c1 { width: 1ch; }
+#term .c2 { width: 2ch; }
+#term ::selection { background: var(--sel); color: var(--selfg); }
+#term:not(.focused) .cur { background: transparent !important; color: inherit !important;
+  outline: 1px solid var(--accent); outline-offset: -1px; }
+#note { margin: 4px 0 10px; color: var(--muted); font: 12px var(--ui); white-space: normal; }
+/* Output widgets (AC-56, widgets.css inside): a region's first row holds its widget and starts
+   on a line of its own; its other rows are hidden while it is rendered */
+#term .ln.wg-host { display: block; width: auto; min-height: 0; }
+#term .ln.wg-host::before, #term .ln.wg-host::after, #term.wrap .ln.eol.wg-host::before, #term.wrap .ln.eol.wg-host::after { content: none; }
+#term .ln.wg-hid { display: none; }
+
+/* The full-screen viewer of an image or a diagram (zoom.js) */
+#zoom { position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, #000 88%, transparent); color: #eee;
+  touch-action: none; -webkit-user-select: none; user-select: none; }
+#zoom[hidden] { display: none; }
+#zoom .zstage { position: absolute; inset: 0; overflow: hidden; cursor: grab; }
+#zoom .zstage:active { cursor: grabbing; }
+#zoom .zstage img { position: absolute; left: 0; top: 0; transform-origin: 0 0; max-width: none; max-height: none; will-change: transform; }
+#zoom .ztools { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: calc(10px + env(safe-area-inset-right)); display: flex; gap: 6px; }
+#zoom .ztools button { min-width: 40px; height: 40px; border-radius: 10px; --edge: #fff3; background: #222c; color: #eee;
+  font: 15px var(--ui); padding: 0 10px; }
+#zoom .zcap { position: absolute; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); margin: 0;
+  font: 12px var(--ui); text-align: center; color: #ccc; overflow-wrap: anywhere; pointer-events: none; }
+
+#toast { position: absolute; left: 50%; bottom: calc(16px + var(--keys-h, 0px)); transform: translateX(-50%);
+  z-index: 6; margin: 0; padding: 6px 14px; border-radius: 999px; font-size: 13px; white-space: nowrap;
+  background: var(--t-fg); color: var(--t-bg); }
+/* over the terminal's top (term.js places it); taps go through to what is under it */
+#paused { position: absolute; top: calc(56px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+  z-index: 5; pointer-events: none; margin: 0; padding: 5px 12px; border-radius: 999px; font-size: 12px; white-space: nowrap;
+  background: var(--chrome-2); border: 1px solid var(--line); color: var(--t-fg); }
+#bottom { position: absolute; right: 16px; bottom: calc(16px + var(--keys-h, 0px)); width: 40px; height: 40px;
+  border-radius: 50%; display: grid; place-items: center; background: var(--chrome-2); border: 1px solid var(--line); }
+
+/* the latency trace's badge (trace.js, AC-55): small, out of the terminal's way */
+#tracebadge { position: fixed; top: calc(4px + env(safe-area-inset-top)); right: 8px; z-index: 30; padding: 2px 8px;
+  border-radius: 10px; --edge: var(--line); background: var(--chrome-2); color: var(--muted);
+  font: 500 11px/16px ui-monospace, Menlo, monospace; opacity: .9; }
+
+/* ---------- floating keyboard and hot keys buttons (touch screens and narrow windows) ---------- */
+#fabs { display: none; position: absolute; right: 12px; z-index: 6; gap: 10px;
+  bottom: calc(12px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }
+#fabs button { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--chrome-2) 85%, transparent); border: 1px solid var(--line);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  box-shadow: 0 4px 14px color-mix(in srgb, #000 35%, transparent); }
+#fabs button[aria-pressed="true"], #fabs #copyfab { background: var(--accent); color: var(--t-bg); }
+@media (hover: none), (max-width: 860px) {
+  #fabs { display: flex; }
+  #keysbtn { display: none !important; }
+  #bottom { right: 14px; bottom: calc(66px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }
+  #term { padding-bottom: 60px; }      /* the last line scrolls clear of the buttons */
+}
+/* A coding agent's input box as a panel, its status lines behind the ⓘ button (agentbox.js) */
+#fabs #footfab { display: none; }
+#term.wrap .ln.rule.labelled { white-space: pre-wrap; height: auto; }   /* a long title wraps rather than being cut */
+@media (hover: none), (max-width: 860px) {
+  body:has(#term.wrap.hasbox) #fabs #footfab { display: grid; }
+  #term.wrap .blk.inbox { margin: 8px 0 4px; padding: 5px 10px 6px; border-radius: 12px; min-height: calc(2.5em + 13px);   /* two rows at least */
+    border: 1px solid color-mix(in srgb, var(--t-fg) 24%, transparent); background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg)); }
+  #term.wrap .inbox .ln.rule { display: none; }                /* its rules go, the top one's title too */
+  #term.wrap .blk.foot { margin: 0 2px 4px; }
+  #term.wrap:not(.showfoot) .foot .ln.status { display: none; }
+  #term.wrap.showfoot .foot .ln.status { font-size: 11.5px; opacity: .85; }
+  /* what a phone does without in an agent's pane: whole-line key hints, and the spaces that push
+     a notice to the right edge */
+  #term.wrap.hasbox .ln.keyhint { display: none; }
+  #term.wrap .ln.ralign .lead { display: none; }
+}
+/* A mouse and a hardware keyboard need no keyboard button. */
+@media (hover: hover) { #fabs #kbdbtn, #fabs #copyfab { display: none; } }
+/* The context trace's copy button (?trace=2, tracebuf.js): left of ⓘ, alone on a computer */
+body.ctxtrace #fabs { display: flex; }
+#fabs #tracefab { width: auto; padding: 0 12px; font: 600 12px/1 ui-monospace, Menlo, monospace; }
+@media (hover: hover) and (min-width: 861px) { body.ctxtrace #fabs > :not(#tracefab) { display: none; } }
+
+/* ---------- hot keys panel ---------- */
+#hotkeys { background: var(--chrome); border-top: 1px solid var(--line);
+  padding: 8px 8px max(8px, env(safe-area-inset-bottom)); }
+#hotkeys .keys { display: flex; flex-direction: column; gap: 6px; max-width: 640px; margin: 0 auto; }
+.keyrow { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.key { height: 40px; min-width: 0; padding: 0 2px; display: grid; place-items: center; border-radius: 9px;
+  background: var(--chrome-2); --edge: var(--line); font-size: clamp(12px, 3.6vw, 14px); font-weight: 500; line-height: 1;
+  white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.key:active { transform: translateY(1px); background: color-mix(in srgb, var(--t-fg) 16%, var(--chrome-2)); }
+.key.strong { background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); --edge: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.key[aria-pressed="true"] { background: var(--accent); color: var(--t-bg); --edge: var(--accent); --focus: var(--t-bg); }
+
+/* ---------- settings menu ---------- */
+#menu { position: fixed; top: 52px; right: 8px; z-index: 30; width: min(320px, calc(100vw - 16px));
+  background: var(--chrome); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+  box-shadow: 0 12px 32px color-mix(in srgb, #000 45%, transparent); }
+#menu .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  padding: 10px; border-radius: 8px; text-align: left; }
+#menu .row small { display: block; color: var(--muted); font-size: 12px; }
+#menu label.row:hover, #menu button.row:hover { background: var(--chrome-2); }
+#menu input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
+.stepper { display: flex; align-items: center; gap: 4px; }
+.stepper button { width: 32px; height: 32px; border-radius: 8px; background: var(--chrome-2); font-size: 18px; }
+.stepper output { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; }
+#menu .danger { color: color-mix(in srgb, #ff6b5e 80%, var(--t-fg)); border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px; margin-top: 4px; }
+
+/* ---------- sign-in and paste ---------- */
+#login { max-width: 360px; margin: 18vh auto 0; padding: 0 24px; display: flex; flex-direction: column; gap: 8px; }
+#login h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
+#login p { margin: 0 0 16px; color: var(--muted); }
+#login label { font-size: 13px; color: var(--muted); }
+#login input, #pastebox textarea { font: inherit; font-size: 16px; color: inherit; background: var(--chrome-2);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+#loginerr { min-height: 1.35em; color: #ff8a7f !important; margin: 0 !important; }
+#login button, #pastebox .primary { height: 44px; border-radius: 10px; background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
+#pastebox { background: var(--chrome); color: var(--t-fg); border: 1px solid var(--line); border-radius: 14px;
+  width: min(480px, calc(100vw - 32px)); padding: 16px; }
+#pastebox::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
+#pastebox form { display: flex; flex-direction: column; gap: 10px; }
+#pastebox textarea { font-family: TermFont, Menlo, monospace; font-size: 16px; resize: vertical; }
+#pastebox .actions { display: flex; justify-content: flex-end; gap: 8px; }
+#pastebox .actions button { height: 40px; padding: 0 16px; border-radius: 10px; background: var(--chrome-2); }
+
+/* Off-screen but focusable; 16px stops iOS from zooming on focus. */
+#kbd { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; resize: none;
+  z-index: 3; color: transparent; caret-color: transparent; background: transparent; }
+
+.narrow-only { display: none !important; }
+
+/* ---------- phones and narrow windows: the navigator becomes a drawer ---------- */
+@media (max-width: 860px) {
+  #app, #app.nav-hidden { grid-template-columns: 1fr; }
+  #navgrip { display: none; }
+  #nav { position: fixed; inset: 0 auto 0 0; width: min(88vw, 360px); z-index: 20; transform: translateX(-102%);
+    transition: transform .2s ease; visibility: visible !important; box-shadow: 8px 0 24px color-mix(in srgb, #000 35%, transparent); }
+  #app.nav-open #nav { transform: none; }
+  #app.nav-open #scrim { display: block; position: fixed; inset: 0; z-index: 10; background: color-mix(in srgb, #000 45%, transparent); }
+  #app:not(.nav-hidden) #navbtn { display: grid; }
+  .wide-only { display: none !important; }
+  .narrow-only { display: flex !important; }
+  /* the session list: a sheet over the whole screen, finger-sized */
+  #nav { width: 100vw; border-right: 0; box-shadow: none; }
+  .nav-title { align-items: center; justify-content: space-between; padding: 12px 12px 4px 16px; }
+  .nav-title h1 { margin: 0; font-size: 22px; font-weight: 600; }
+  .nav-title .icon, #bar .icon { width: 44px; height: 44px; border-radius: 12px; }
+  .nav-head { height: auto; padding: 4px 16px 10px; border-bottom: 0; }
+  .search { height: 44px; border-radius: 12px; padding: 0 12px; }
+  #filter { font-size: 16px; }
+  #sessions { padding: 0 10px 12px; gap: 14px; }
+  .grp h2 { height: 40px; font-size: 13.5px; }
+  .grp h2 .new { width: 40px; height: 40px; border-radius: 10px; }
+  .item { min-height: 60px; grid-template-columns: 10px minmax(0, 1fr) 22px; column-gap: 10px; padding: 10px 12px; border-radius: 12px; }
+  .item .t { font-size: 15px; }
+  .item .s { font-size: 12.5px; }
+  .nav-foot { padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
+  #newsessbtn, #addhostbtn { height: 48px; border-radius: 12px; font-size: 15px; }
+  /* the header: title row, then the view switch across the width */
+  #bar { flex-wrap: wrap; gap: 4px 4px; padding: env(safe-area-inset-top) 8px 8px; }
+  #current { order: 1; align-self: flex-start; padding-top: 11px; }   /* the title row centers on ☰ and ⋯ (44px) */
+  #navbtn, #menubtn { align-self: flex-start; }
+  #renamebox { order: 1; }
+  #navbtn { order: 0; }
+  #tools { display: contents; }
+  #menubtn { order: 2; }
+  #views { order: 3; flex-basis: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 3px; border-radius: 10px; }
+  #views button { height: 34px; justify-content: center; font-size: 13.5px; border-radius: 8px; }
+}
+/* wide screens: the terminal is always shown; Files and File are toggles beside it */
+body.wide #views { background: none; border: 0; padding: 0; gap: 4px; }
+body.wide #views button[data-view="term"] { display: none; }
+body.wide #views button { height: 30px; --edge: var(--line); border-radius: 8px; }
+body.wide #views button[aria-selected="true"] { --edge: color-mix(in srgb, var(--accent) 45%, var(--line)); color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--chrome)); }
+@media (prefers-reduced-motion: reduce) { #nav, .grp h2 .toggle svg { transition: none; } }
+
+/* ---------- views: Terminal, Files, File ---------- */
+#main > iframe.view, #filewin > iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--t-bg); }
+#filewin { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
+/* below 1400px View fills the page: a way back to the terminal where the thumb is */
+#backterm { position: absolute; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2; height: 40px;
+  display: flex; align-items: center; gap: 4px; padding: 0 14px 0 8px; border-radius: 20px; font-weight: 600; font-size: 13px;
+  background: var(--accent); color: var(--t-bg); box-shadow: 0 6px 18px color-mix(in srgb, #000 45%, transparent); }
+body.wide #backterm { display: none; }
+#viewnote { flex: 1; margin: 0; padding: 24px 16px; color: var(--muted); }
+body:not([data-shown="term"]) .term-only, body:not([data-shown="term"]) #hotkeys,
+body:not([data-shown="term"]) #bottom, body:not([data-shown="term"]) #paused { display: none !important; }
+
+/* ---------- 1400px and wider: Files docked on the right, File a window over the terminal ---------- */
+.winhead { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 0 16px;
+  background: var(--chrome); border-bottom: 1px solid var(--line); font-size: 14px; font-weight: 600; }
+body.wide #main { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto auto auto minmax(0, 1fr) auto; }
+body.wide #main > * { grid-column: 1 / 2; }   /* both lines: an absolute child's auto end is the edge */
+body.wide #bar { grid-row: 1; }
+body.wide #status { grid-row: 2; }
+body.wide #restored { grid-row: 3; }
+body.wide #stall { grid-row: 4; }
+body.wide #sized { grid-row: 5; }
+body.wide #term { grid-row: 6; }
+body.wide #hotkeys { grid-row: 7; }
+/* Positioned children are placed in the terminal's column, not over the docked Files. */
+body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs, body.wide #asks { grid-row: 1 / -1; }
+body.docked #sidehead { display: flex; grid-column: 2; grid-row: 1; min-height: 56px; border-left: 1px solid var(--line); }
+body.docked #files, body.docked #viewnote { grid-column: 2; grid-row: 2 / -1; width: var(--side-w);
+  height: auto; align-self: stretch; border-left: 1px solid var(--line); }
+body.wide #filewin { position: absolute; grid-row: 6; z-index: 7; top: 12px; right: 16px; bottom: 16px;
+  width: min(820px, calc(100% - 32px)); border: 1px solid var(--line); border-radius: 12px; overflow: hidden;
+  background: var(--chrome); box-shadow: 0 16px 40px color-mix(in srgb, #000 50%, transparent); }
+body.wide #filewin .winhead { display: flex; }
