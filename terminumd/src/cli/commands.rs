@@ -83,7 +83,31 @@ pub fn web_line(web: &Value) -> String {
         return "web access: off (terminum web on)".into();
     }
     let urls: Vec<String> = web["urls"].as_array().map(|u| u.iter().map(text).collect()).unwrap_or_default();
+    if web["loopback"].as_bool() == Some(true) {
+        return format!("web access: on — {} only, for a proxy on this Mac (tailscale serve)", web_addr(web));
+    }
     format!("web access: on — {}", if urls.is_empty() { "no address".into() } else { urls.join(", ") })
+}
+
+/// The web listener's host as the status gives it; every interface when it does not.
+fn web_host(web: &Value) -> &str {
+    web["host"].as_str().unwrap_or("0.0.0.0")
+}
+
+/// Where a proxy on this Mac reaches the web listener: `host:port`, 127.0.0.1 for every interface.
+pub(crate) fn web_addr(web: &Value) -> String {
+    let port = match web["port"].as_u64() {
+        Some(p) => p.to_string(),
+        None => {
+            let first = web["urls"].get(0).and_then(Value::as_str).unwrap_or("");
+            first.trim_end_matches('/').rsplit_once(':').map_or(crate::auth::web::DEFAULT_PORT.to_string(), |(_, p)| p.to_string())
+        }
+    };
+    match web_host(web) {
+        "0.0.0.0" | "::" => format!("127.0.0.1:{port}"),
+        h if h.contains(':') => format!("[{h}]:{port}"),
+        h => format!("{h}:{port}"),
+    }
 }
 
 /// The status report from /health (AC-08).
@@ -203,10 +227,13 @@ pub fn web(ctx: &Ctx, cmd: Option<&str>) -> Result<(), String> {
     if web["error"].as_str().is_some_and(|e| !e.is_empty()) || !web["enabled"].as_bool().unwrap_or(true) {
         return Err(web_line(web));
     }
-    let urls: Vec<String> = web["urls"].as_array().map(|u| u.iter().map(text).collect()).unwrap_or_default();
-    ctx.say(format!("web access: on — {}", urls.join(", ")));
-    let port = urls.first().map_or("8765", |u| u.trim_end_matches('/').rsplit(':').next().unwrap_or("8765"));
-    ctx.say(format!("Plain HTTP: on a network you do not trust, serve it over HTTPS: tailscale serve --bg {port}"));
+    ctx.say(web_line(web));
+    let serve = format!("tailscale serve --bg --https=443 http://{} (it replaces what port 443 serves: see tailscale serve status)", web_addr(web));
+    ctx.say(match web_host(web) {
+        _ if web["loopback"].as_bool() == Some(true) => format!("To serve it to your tailnet over HTTPS: {serve}"),
+        "0.0.0.0" | "::" => format!("Plain HTTP on every network of this Mac. For HTTPS only, set \"host\": \"127.0.0.1\" in web.json (terminum web off, then on) and serve it to your tailnet: {serve}"),
+        _ => format!("Plain HTTP: on a network you do not trust, serve it over HTTPS: {serve}"),
+    });
     Ok(())
 }
 

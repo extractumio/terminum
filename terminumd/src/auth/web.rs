@@ -14,7 +14,8 @@ use super::crypto::{hex, pbkdf2_sha256, same_bytes, unhex};
 use super::store;
 
 pub const FILE: &str = "web.json";
-pub const DEFAULT_PORT: u16 = 8765;
+/// Not iterm-enhancer's 8765: people run both while they move over.
+pub const DEFAULT_PORT: u16 = 48080;
 pub const ITERATIONS: u32 = 200_000;
 pub const MIN_PASSWORD: usize = 8;
 /// What a request may carry before it is signed in (a sign-in, a JSON action).

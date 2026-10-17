@@ -159,7 +159,31 @@ fn web_on_asks_for_a_password_when_there_is_none() {
     let paths: Vec<String> = s.requests.lock().iter().map(|r| r.1.clone()).collect();
     assert_eq!(paths, ["/web/on", "/web/password", "/web/on"]);
     assert!(said(&ctx).contains(&"web access: on — http://192.0.2.7:8765/".to_string()));
-    assert!(said(&ctx).last().unwrap().ends_with("tailscale serve --bg 8765"));
+    assert_eq!(said(&ctx).last().unwrap(), "Plain HTTP on every network of this Mac. For HTTPS only, set \"host\": \"127.0.0.1\" in web.json (terminum web off, then on) and serve it to your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:8765 (it replaces what port 443 serves: see tailscale serve status)");
+}
+
+#[test]
+fn web_on_for_this_mac_only_says_how_to_serve_it_to_the_tailnet() {
+    let home = Home::new();
+    let ctx = home.ctx(&[]);
+    let on = fixed(200, json!({"ok": true, "web": {"enabled": true, "urls": [], "host": "127.0.0.1", "port": 48090, "loopback": true, "error": null}}));
+    let _s = serve(&ctx.sock(), routes(vec![("POST /web/on", on)]));
+    run(&ctx, Cmd::Web(Some("on".into()))).unwrap();
+    assert!(said(&ctx).contains(&"web access: on — 127.0.0.1:48090 only, for a proxy on this Mac (tailscale serve)".to_string()));
+    assert_eq!(said(&ctx).last().unwrap(), "To serve it to your tailnet over HTTPS: tailscale serve --bg --https=443 http://127.0.0.1:48090 (it replaces what port 443 serves: see tailscale serve status)");
+}
+
+#[test]
+fn the_web_line_names_where_a_proxy_reaches_the_listener() {
+    use crate::cli::commands::{web_addr, web_line};
+    let web = |host: &str, loopback: bool| json!({"enabled": true, "urls": if loopback { json!([]) } else { json!([format!("http://{host}:9000/")]) }, "host": host, "port": 9000, "loopback": loopback});
+    assert_eq!(web_line(&web("::1", true)), "web access: on — [::1]:9000 only, for a proxy on this Mac (tailscale serve)");
+    assert_eq!(web_line(&web("localhost", true)), "web access: on — localhost:9000 only, for a proxy on this Mac (tailscale serve)");
+    assert_eq!(web_line(&web("192.0.2.7", false)), "web access: on — http://192.0.2.7:9000/");
+    assert_eq!(web_addr(&web("192.0.2.7", false)), "192.0.2.7:9000");
+    assert_eq!(web_addr(&web("::", false)), "127.0.0.1:9000");
+    assert_eq!(web_addr(&json!({"urls": ["http://192.0.2.7:8765/"]})), "127.0.0.1:8765", "an older terminumd: no host, no port");
+    assert_eq!(web_addr(&json!({"urls": []})), "127.0.0.1:48080");
 }
 
 #[test]

@@ -68,7 +68,7 @@ fn a_broken_hash_matches_nothing_and_says_why() {
 fn defaults_fill_what_is_not_set_and_other_keys_are_kept() {
     let dir = fresh_dir("web-defaults");
     let cfg = WebConfig::load(&dir).unwrap();
-    assert_eq!((cfg.enabled, cfg.port, cfg.host.as_str(), cfg.history), (false, 8765, "0.0.0.0", 10_000));
+    assert_eq!((cfg.enabled, cfg.port, cfg.host.as_str(), cfg.history), (false, 48080, "0.0.0.0", 10_000));
     assert!(cfg.allow_hosts.is_empty() && cfg.password.is_none());
     fs::write(dir.join(FILE), r#"{"enabled": true, "port": 9000, "password": null, "note": {"x": 1}}"#).unwrap();
     let cfg = WebConfig::load(&dir).unwrap();

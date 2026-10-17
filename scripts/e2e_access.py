@@ -94,6 +94,8 @@ def main():
             json.dump(web, f)
         st, body = unix_request(t.sock, "POST", "/web/on", {})
         check("AC-10 web access goes on with its addresses", st == 200 and body["web"]["enabled"], body)
+        check("AC-10 a listener on 127.0.0.1 is said to be for a proxy, with no network address",
+              body["web"]["urls"] == [] and body["web"]["loopback"] is True and body["web"]["port"] == WEB_PORT, body["web"])
         check("AC-10 web.json holds a salted PBKDF2 hash, 0600", web["password"]["iterations"] >= 100000 and "correct" not in open(cfg).read() and mode(cfg) == 0o600)
         wh = {"Host": f"127.0.0.2:{WEB_PORT}"}
         own = f"localhost:{WEB_PORT}"
@@ -117,6 +119,11 @@ def main():
         st, body, _ = raw(WEB_PORT, "POST", "/fb/api/terminal/cd", {**wh, "Cookie": token}, b"{}")
         check("AC-10 terminal actions are the Mac's own page's only (not_here)", st == 403 and body["error"] == "not_here", (st, body))
         ws = WS(WEB_PORT, origin=f"http://{lan}:{WEB_PORT}")
+        st, body = unix_request(t.sock, "POST", "/web/password", {"password": "battery staple"})
+        st2, _, _ = raw(WEB_PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": wh["Host"], "Cookie": token})
+        st3, _, _ = raw(WEB_PORT, "POST", "/auth/login", wh, json.dumps({"password": "battery staple"}).encode())
+        check("AC-10 a new password while on restarts the listener: the old cookie is refused, the new password signs in",
+              st == 200 and st2 == 401 and st3 == 204, (st, body, st2, st3))
         st, body = unix_request(t.sock, "POST", "/web/off", {})
         time.sleep(0.5)
         try:

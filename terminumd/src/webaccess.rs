@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Web access (AC-10): the second listener (off by default, `0.0.0.0:8765`) for a phone or
+//! Web access (AC-10): the second listener (off by default, `0.0.0.0:48080`) for a phone or
 //! another computer, with a password (PBKDF2, brakes) and an HttpOnly cookie. Switched on and
 //! off by the CLI over the socket; off signs every browser out. Before a sign-in a request
 //! carries at most 4 KB, its head arrives within 10 s, at most 64 connections are open.
@@ -25,6 +25,8 @@ use crate::auth::websignin::{self, cookie_header, cookie_value, Login, WebAuth, 
 pub struct Web {
     auth: Mutex<Option<Arc<WebAuth>>>,
     stop: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
+    /// The accept loop: it holds the listener until it returns.
+    serving: Mutex<Option<tokio::task::JoinHandle<()>>>,
     status: Mutex<Value>,
     allow: Mutex<Vec<String>>,
     names: Mutex<Vec<String>>,
@@ -126,20 +128,55 @@ async fn start(app: &Shared, cfg: &WebConfig) -> Result<Value, String> {
     if app.web.stop.lock().is_some() {
         return Ok(status(app)); // running already (a password change restarts it: see set_password)
     }
-    let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| {
-        let msg = format!("port {} is in use or not allowed ({e}): set another \"port\" in web.json", cfg.port);
+    let fail = |why: String| {
+        let msg = format!("port {} is {why}: set another \"port\" in web.json", cfg.port);
         *app.web.status.lock() = json!({"enabled": false, "urls": [], "error": msg});
         msg
-    })?;
+    };
+    if loopback_taken(&cfg.host, cfg.port) {
+        return Err(fail("in use on 127.0.0.1 by another program".into()));
+    }
+    let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| fail(format!("in use or not allowed ({e})")))?;
     let sessions = Arc::new(WebSessions::load(&app.cfg.dir, &hash.salt));
     *app.web.auth.lock() = Some(Arc::new(WebAuth::new(hash, sessions)));
     let (tx, rx) = tokio::sync::watch::channel(false);
     *app.web.stop.lock() = Some(tx);
-    let urls: Vec<String> = addresses().into_iter().filter(|a| !a.contains(':') && !a.starts_with("127.")).map(|a| format!("http://{a}:{}/", cfg.port)).collect();
-    *app.web.status.lock() = json!({"enabled": true, "urls": urls, "error": null});
+    let urls = urls(&cfg.host, cfg.port, addresses());
+    *app.web.status.lock() = json!({"enabled": true, "urls": urls, "host": cfg.host, "port": cfg.port, "loopback": is_loopback(&cfg.host), "error": null});
     tracing::info!(event = "web.on", addr);
-    tokio::spawn(serve(app.clone(), listener, rx));
+    *app.web.serving.lock() = Some(tokio::spawn(serve(app.clone(), listener, rx)));
     Ok(status(app))
+}
+
+fn is_loopback(host: &str) -> bool {
+    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
+}
+
+/// The addresses a browser signs in at: this Mac's network ones (IPv4) for a listener on every
+/// interface, else the one it listens on; none on loopback, which only a proxy on this Mac
+/// reaches (a sign-in at a loopback name is refused: its cookie would reach every local port).
+fn urls(host: &str, port: u16, addrs: Vec<String>) -> Vec<String> {
+    let url = |a: &str| if a.contains(':') { format!("http://[{a}]:{port}/") } else { format!("http://{a}:{port}/") };
+    match host {
+        "0.0.0.0" | "::" => addrs.into_iter().filter(|a| !a.contains(':') && !a.starts_with("127.")).map(|a| url(&a)).collect(),
+        h if is_loopback(h) => Vec::new(),
+        h => vec![url(h)],
+    }
+}
+
+/// Another program listens on loopback at `port` while terminumd would listen on every
+/// interface. macOS binds the wildcard beside it without an error, and this Mac's own browsers
+/// would then reach that program (AC-10). A trial bind of 127.0.0.1 (and ::1 for `::`) fails
+/// only when a socket holds that exact address, not beside terminumd's own wildcard listener;
+/// Linux refuses the wildcard bind itself.
+fn loopback_taken(host: &str, port: u16) -> bool {
+    let held = |ip: &str| std::net::TcpListener::bind((ip, port)).is_err_and(|e| e.kind() == std::io::ErrorKind::AddrInUse);
+    cfg!(target_os = "macos")
+        && match host {
+            "0.0.0.0" => held("127.0.0.1"),
+            "::" => held("127.0.0.1") || held("::1"),
+            _ => false,
+        }
 }
 
 /// Closes the listener and every connection; every browser is signed out (AC-10).
@@ -206,6 +243,11 @@ pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String>
     cfg.save(&dir).map_err(|e| format!("web.json not saved: {e}"))?;
     websignin::forget(&dir);
     stop(app);
+    // the old accept loop still holds the port until it returns
+    let serving = app.web.serving.lock().take();
+    if let Some(task) = serving {
+        let _ = task.await;
+    }
     apply(app).await
 }
 
@@ -272,4 +314,39 @@ pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
         res.headers_mut().insert(header::SET_COOKIE, v);
     }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn addrs() -> Vec<String> {
+        ["127.0.0.1", "192.0.2.7", "100.64.0.9", "::1", "fe80::1"].map(String::from).to_vec()
+    }
+
+    #[test]
+    fn the_printed_addresses_are_the_ones_that_answer() {
+        assert_eq!(urls("0.0.0.0", 48080, addrs()), ["http://192.0.2.7:48080/", "http://100.64.0.9:48080/"]);
+        for host in ["127.0.0.1", "localhost", "::1"] {
+            assert!(urls(host, 48080, addrs()).is_empty(), "{host}");
+        }
+        assert_eq!(urls("192.0.2.7", 9000, addrs()), ["http://192.0.2.7:9000/"]);
+        assert_eq!(urls("2001:db8::7", 9000, addrs()), ["http://[2001:db8::7]:9000/"]);
+        assert!(is_loopback("127.0.0.1") && is_loopback("::1") && is_loopback("localhost") && !is_loopback("0.0.0.0"));
+    }
+
+    #[test]
+    fn a_port_another_program_holds_on_loopback_is_taken_for_every_interface() {
+        let other = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = other.local_addr().unwrap().port();
+        assert_eq!(loopback_taken("0.0.0.0", port), cfg!(target_os = "macos"));
+        assert_eq!(loopback_taken("::", port), cfg!(target_os = "macos"));
+        assert!(!loopback_taken("127.0.0.1", port), "a listener on 127.0.0.1 itself is refused by its own bind");
+        // terminumd's own wildcard listener (restarting after a new password) is not another
+        // program; a port of its own, as tests in parallel may take one freed here
+        let own = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
+        assert!(!loopback_taken("0.0.0.0", own.local_addr().unwrap().port()));
+        let six = std::net::TcpListener::bind("[::1]:0").unwrap();
+        assert_eq!(loopback_taken("::", six.local_addr().unwrap().port()), cfg!(target_os = "macos"));
+    }
 }

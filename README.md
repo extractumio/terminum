@@ -82,11 +82,83 @@ host's group does. Each attached session on a host is one more ssh connection.
 
 ```bash
 terminum web password         # at least 8 characters
-terminum web on               # prints the addresses (http://<mac>:8765/)
+terminum web on               # prints the addresses (http://<mac>:48080/)
 terminum web off              # closes the listener and signs every browser out
 ```
 
 Over a network you do not trust, use HTTPS through `tailscale serve`.
+
+### Over Tailscale
+
+Use this to open terminum at `https://<mac>.<tailnet>.ts.net` from your tailnet only.
+
+1. Let terminum listen only on this Mac, on a free port. Put this in
+   `~/.terminum/state/web.json` (keep the other keys when the file exists), then
+   `terminum web off` if web access is on:
+
+   ```json
+   { "port": 48080, "host": "127.0.0.1" }
+   ```
+
+2. Set the password and switch web access on:
+
+   ```bash
+   terminum web on      # asks for a password the first time
+   ```
+
+3. Serve it over HTTPS. This replaces what port 443 served: move another service first (below).
+
+   ```bash
+   tailscale serve --bg --https=443 http://127.0.0.1:48080
+   ```
+
+4. Open `https://<mac>.<tailnet>.ts.net/` on a device in your tailnet and sign in with the
+   password.
+
+Tailscale gives one name per machine. Another service on it, such as iterm-enhancer on 8765,
+gets a port of its own:
+
+```bash
+tailscale serve --https=443 off                            # if it had the address without a port
+tailscale serve --bg --https=8443 http://127.0.0.1:8765    # it moves to https://<mac>.<tailnet>.ts.net:8443
+tailscale serve status                                     # :443 → 48080 (terminum), :8443 → 8765
+```
+
+Notes:
+
+- Give `--https` every time: `tailscale serve --bg 48080` also serves port 443, and replaces
+  what is served there without a word.
+- `http://<mac>.<tailnet>.ts.net` does not open: `tailscale serve` cannot redirect port 80 to
+  HTTPS. Type the `https://` address.
+- terminum answers to any `*.ts.net` name. Another name a proxy forwards goes in `allow_hosts`
+  in `web.json`.
+- To also reach terminum over plain HTTP on your local network, set `"host": "0.0.0.0"`.
+- To stop serving it: `tailscale serve --https=443 off`.
+
+A name of its own, such as `https://terminum.<tailnet>.ts.net`, is a Tailscale Service. It
+can be served only by a tagged machine (`tag:personal` below):
+
+1. In the tailnet policy (admin console → Access controls), let your devices reach the
+   service and let the Mac host it without a manual approval:
+
+   ```json
+   "grants": [{ "src": ["tag:personal"], "dst": ["svc:terminum"], "ip": ["tcp:443"] }],
+   "autoApprovers": { "services": { "svc:terminum": ["tag:personal"] } }
+   ```
+
+2. In admin console → Services, define `terminum` with the endpoint `tcp:443`.
+3. Then, on the Mac:
+
+   ```bash
+   tailscale serve --service=svc:terminum --https=443 http://127.0.0.1:48080
+   ```
+
+   `autoApprovers` approves only a host that advertises after the service is defined. Approve
+   the Mac on the service's page when it advertised earlier, or without `autoApprovers`.
+4. Open `https://terminum.<tailnet>.ts.net/`. It is an address of its own, with its own
+   sign-in.
+
+To remove it: `tailscale serve clear svc:terminum`.
 
 ## Remote hosts
 
