@@ -2,13 +2,13 @@
 //! Typing and pasting into the shown pane (AC-03). Text goes as `send-keys -l`, special keys
 //! by tmux's names (tmux encodes them for the pane's mode), never raw control characters.
 //! Keys that arrive while earlier ones are on their way go together in the next round
-//! trip, in order: a held key comes out at its repeat rate. A bracketed paste goes through
+//! trip, in order: a held key comes out at its repeat rate. Mouse reports (AC-06) share the
+//! queue, so a trackpad's wheel on a far host is one `send-keys -H` a round trip, in order
+//! with the keys, and never holds up the page's next messages. A bracketed paste goes through
 //! a tmux buffer (`paste-buffer -p`), so a program that asked for it gets its markers.
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::time::Instant;
-
 
 use super::client::error;
 use super::Page;
@@ -27,6 +27,8 @@ pub struct Typed {
     pane: String,
     key: String,
     data: String,
+    /// a mouse report's bytes (`data` empty)
+    mouse: Vec<u8>,
     k: Option<super::trace::KeyRec>,
 }
 
@@ -47,9 +49,16 @@ pub fn typed(app: &Shared, page: &Arc<Page>, data: String, k: Option<u64>) {
     let (server, pane, key) = (s.server.clone(), s.pane.clone(), s.key.clone());
     drop(st);
     let k = super::timing::arrived(page, k);
+    queue(app, page, Typed { server, pane, key, data, mouse: Vec::new(), k });
+}
+
+/// Mouse report bytes for the shown pane `pane` (state key `key`) of `server` (AC-06).
+pub fn mouse(app: &Shared, page: &Arc<Page>, server: Arc<Server>, pane: String, key: String, bytes: Vec<u8>) {
+    queue(app, page, Typed { server, pane, key, data: String::new(), mouse: bytes, k: None });
+}
+
+fn queue(app: &Shared, page: &Arc<Page>, item: Typed) {
     let mut st = page.state.lock();
-    let item = Typed { server, pane, key, data, k };
-    st.typed_at = Some(Instant::now());
     st.queue.items.push_back(item);
     if st.queue.running {
         return;
@@ -81,13 +90,23 @@ async fn run(app: Shared, page: Arc<Page>) {
             out
         };
         let (server, pane, key) = (batch[0].server.clone(), batch[0].pane.clone(), batch[0].key.clone());
-        let data: String = batch.iter().map(|t| t.data.as_str()).collect();
+        let keys = batch.iter().any(|t| t.mouse.is_empty());
         let ks: Vec<Option<super::trace::KeyRec>> = batch.iter_mut().map(|t| t.k.take()).collect();
         let Some(client) = server.client(&pane) else {
-            error(&page, format!("Not connected: tmux on {} does not answer — the keys were not sent", server.label()), Some(&key));
+            let what = if keys { "the keys were not sent" } else { "the mouse event was not sent" };
+            error(&page, format!("Not connected: tmux on {} does not answer — {what}", server.label()), Some(&key));
             continue;
         };
-        let result = send(&app, &client, &server, &pane, &data).await;
+        let mut result = Ok(());
+        for run in runs(&batch) {
+            result = match run {
+                Run::Keys(data) => send(&app, &client, &server, &pane, &data).await,
+                Run::Mouse(bytes) => client.run(mouse_line(&pane, &bytes)).await.map(drop).map_err(|e| format!("Mouse event not sent: {e}")),
+            };
+            if result.is_err() {
+                break;
+            }
+        }
         super::timing::typed(&page, ks, "keys");
         if let Err(e) = result {
             error(&page, e, Some(&key));
@@ -99,8 +118,36 @@ async fn run(app: Shared, page: Arc<Page>) {
                 s.ctl.wake.notify_one();
             }
         }
-        super::sizing::typed(&app, &page).await;
+        if keys {
+            super::sizing::typed(&app, &page).await;
+        }
     }
+}
+
+/// A batch in order as runs of one kind: keys joined, mouse reports joined; a run is a round
+/// trip of its own (typing while scrolling on a host: one each, rare and short).
+enum Run {
+    Keys(String),
+    Mouse(Vec<u8>),
+}
+
+fn runs(batch: &[Typed]) -> Vec<Run> {
+    let mut out: Vec<Run> = Vec::new();
+    for t in batch {
+        match (out.last_mut(), t.mouse.is_empty()) {
+            (Some(Run::Keys(d)), true) => d.push_str(&t.data),
+            (Some(Run::Mouse(b)), false) => b.extend_from_slice(&t.mouse),
+            (_, true) => out.push(Run::Keys(t.data.clone())),
+            (_, false) => out.push(Run::Mouse(t.mouse.clone())),
+        }
+    }
+    out
+}
+
+/// Mouse reports as one tmux command: their bytes in hex.
+fn mouse_line(pane: &str, bytes: &[u8]) -> String {
+    let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!("send-keys -t {pane} -H {}", hex.join(" "))
 }
 
 /// Hands `data` to tmux: bracketed pastes through a buffer, the rest as keys.
@@ -199,6 +246,23 @@ pub fn double_quoted(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn item(data: &str, mouse: &[u8]) -> Typed {
+        let link = crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: "tm-test".into(), conf: "/dev/null".into() };
+        let server = Server::new("local", "tm-test", link, Arc::new(tokio::sync::Notify::new()));
+        Typed { server, pane: "%1".into(), key: String::new(), data: data.into(), mouse: mouse.to_vec(), k: None }
+    }
+
+    #[test]
+    fn a_batch_keeps_its_order_and_joins_each_kind() {
+        let batch = [item("a", b""), item("b", b""), item("", b"\x1b[<64;1;1M"), item("", b"\x1b[<64;1;1M"), item("c", b"")];
+        let got: Vec<String> = runs(&batch).into_iter().map(|r| match r {
+            Run::Keys(d) => format!("keys:{d}"),
+            Run::Mouse(b) => format!("mouse:{}", String::from_utf8_lossy(&b)),
+        }).collect();
+        assert_eq!(got, ["keys:ab", "mouse:\x1b[<64;1;1M\x1b[<64;1;1M", "keys:c"]);
+        assert_eq!(mouse_line("%3", b"\x1b["), "send-keys -t %3 -H 1b 5b");
+    }
 
     #[test]
     fn parts_never_split_a_character() {

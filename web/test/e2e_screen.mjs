@@ -95,7 +95,8 @@ export async function webScreen(browser, name) {
       const b = r.getBoundingClientRect();
       return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
     }, [x, y]);
-    const mice = () => sent.filter((m) => m.t === "mouse").map((m) => `${m.action}:${m.button}@${m.x},${m.y}`);
+    const mice = () => sent.filter((m) => m.t === "mouse").map((m) => `${m.action}:${m.button}@${m.x},${m.y}` + (m.count ? `x${m.count}` : ""));
+    const stepsIn = (list) => list.reduce((n, e) => n + Number(e.match(/x(\d+)$/)?.[1] ?? 1), 0);
     const n1 = mice().length;
     if (!phone) {
       const a = await at(10, 1), b = await at(14, 1);
@@ -114,6 +115,17 @@ export async function webScreen(browser, name) {
       check("AC-06 mouse: a click, a drag, a right click and the wheel go to the program with 0-based cells",
         got.filter((e) => !e.startsWith("move")).join() === ["press:0@10,1", "release:0@10,1", "press:0@10,1", "release:0@14,1", "press:2@10,1",
           "release:2@10,1", "wheelup:0@10,1", "wheeldown:0@10,1"].join() && got.includes("move:0@14,1") && shift?.mods?.shift === false, JSON.stringify(got));
+      // a trackpad: 24 small events, 120 px in all, are a step a text line, sent as one message
+      const n2 = mice().length;
+      const lines = await page.evaluate(([x, y]) => {
+        const term = document.getElementById("term");
+        for (let i = 0; i < 24; i++) term.dispatchEvent(new WheelEvent("wheel", { deltaY: 5, deltaMode: 0, clientX: x, clientY: y, bubbles: true, cancelable: true }));
+        return Math.floor(120 / parseFloat(getComputedStyle(term).lineHeight));
+      }, [a.x, a.y]);
+      await pause(page, 200);
+      const pad = mice().slice(n2);
+      check("AC-06 mouse: a trackpad's small wheel events are a step a text line, a frame's steps one message with their count",
+        pad.length === 1 && pad[0].startsWith("wheeldown:0@10,1") && stepsIn(pad) === lines, JSON.stringify({ pad, lines }));
     } else {
       const a = await at(3, 2);
       await page.touchscreen.tap(a.x, a.y);
@@ -136,7 +148,7 @@ export async function webScreen(browser, name) {
       await pause(page, 200);
       const got = mice().slice(n1);
       check("AC-06 touch: a tap is a click, a two-finger tap a right click, a swipe the wheel, a long press nothing",
-        got.slice(0, 4).join() === "press:0@3,2,release:0@3,2,press:2@3,2,release:2@3,2" && got.slice(4).length >= 2
+        got.slice(0, 4).join() === "press:0@3,2,release:0@3,2,press:2@3,2,release:2@3,2" && stepsIn(got.slice(4)) >= 2
           && got.slice(4).every((e) => e.startsWith("wheeldown:0@3,2")), JSON.stringify(got));
     }
     frame({ alt: true, mouse: false });

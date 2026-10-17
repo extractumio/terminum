@@ -142,27 +142,30 @@ def main():
               traced and traced["tr"]["ks"][0])
         check("AC-38 the trace is written without typed text", files and '"k":77' in body.replace(" ", "") and '"z"' not in body, files)
 
-        # AC-06: a program that asked for the mouse gets SGR reports for clicks and the wheel
+        # AC-06: a program that asked for the mouse gets SGR reports for clicks and the wheel (a
+        # page's frame of wheel steps as one message with their count), in order with the keys
         reader = os.path.join(work, "mouse.py")
         with open(reader, "w") as f:
             f.write("import os, sys, termios, tty\n"
                     "fd = sys.stdin.fileno(); old = termios.tcgetattr(fd); tty.setraw(fd)\n"
                     "sys.stdout.write('\\x1b[?1049h\\x1b[?1000h\\x1b[?1002h\\x1b[?1006h'); sys.stdout.flush()\n"
                     "got = b''\n"
-                    "while got.count(b'M') + got.count(b'm') < 3: got += os.read(fd, 64)\n"
+                    "while got.count(b'M') + got.count(b'm') < 6: got += os.read(fd, 64)\n"
                     "termios.tcsetattr(fd, termios.TCSADRAIN, old)\n"
                     "sys.stdout.write('\\x1b[?1006l\\x1b[?1002l\\x1b[?1000l\\x1b[?1049l')\n"
-                    "print('MOUSE', got.decode().replace('\\x1b', 'ESC'))\n")
+                    "print('MOUSE', got.decode().replace('\\x1b[<', '<'))\n")
         ws.send({"t": "in", "data": f"python3 {reader}\r"})
         alt = ws.until(lambda m: m["t"] == "screen" and m.get("alt") and m.get("mouse"), 8)
         check("AC-06 a frame says the program asked for the mouse", alt is not None)
         ws.send({"t": "mouse", "x": 9, "y": 4, "button": 0, "action": "press", "mods": {}})
         ws.send({"t": "mouse", "x": 9, "y": 4, "button": 0, "action": "release", "mods": {}})
-        ws.send({"t": "mouse", "x": 2, "y": 3, "button": 0, "action": "wheeldown", "mods": {}})
+        ws.send({"t": "mouse", "x": 2, "y": 3, "button": 0, "action": "wheeldown", "mods": {}, "count": 3})
+        ws.send({"t": "in", "data": "k"})
+        ws.send({"t": "mouse", "x": 2, "y": 3, "button": 0, "action": "wheelup", "mods": {}})
         got = screen_with(ws, "MOUSE", 8)
         line = text_of(got["ch"]) if got else ""
-        check("AC-06 clicks and the wheel arrive as SGR mouse reports (1-based cells)",
-              "ESC[<0;10;5M" in line and "ESC[<0;10;5m" in line and "ESC[<65;3;4M" in line, line.strip()[-80:])
+        check("AC-06 clicks and the wheel arrive as SGR mouse reports (1-based cells), a count as that many, in order with a key",
+              "MOUSE <0;10;5M<0;10;5m<65;3;4M<65;3;4M<65;3;4Mk<64;3;4M" in line, line.strip()[-80:])
 
         # AC-13: a second page that types takes the size
         other = t.page()

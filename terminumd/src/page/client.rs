@@ -38,8 +38,6 @@ pub struct State {
     pub paused: bool,
     /// when this page last made a window, session or split (one a second, AC-07)
     pub last_new: Option<Instant>,
-    /// when this page last typed (sizing policy `latest`, AC-13)
-    pub typed_at: Option<Instant>,
     /// Screen mode asked for this pane
     pub screen: bool,
     /// per pane: auto | always | never (AC-05)

@@ -101,7 +101,26 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
   }
   const mods = (e) => ({ shift: !!e.shiftKey, alt: !!e.altKey, ctrl: !!e.ctrlKey });
   function report(action, at, button, e) {
+    flushSteps();                                 // the wheel's steps first (a key typed meanwhile may pass them: a frame)
     if (at) send({ t: "mouse", x: at.x, y: at.y, button, action, mods: mods(e ?? {}) });
+  }
+  // The wheel: one step a text line scrolled, at most one an event (a trackpad sends many small
+  // ones; a wheel's notch is one step), as xterm.js does; a frame's steps go as one message
+  // with their count, which terminumd sends in one round trip (AC-06).
+  let steps = null, stepFrame = 0, lines = 0;
+  function step(action, at, e) {
+    if (!at) return;
+    if (steps && steps.action !== action) flushSteps();
+    steps ??= { action, mods: mods(e ?? {}), n: 0 };
+    Object.assign(steps, { at, n: steps.n + 1 });
+    stepFrame ||= requestAnimationFrame(flushSteps);
+  }
+  function flushSteps() {
+    cancelAnimationFrame(stepFrame);
+    stepFrame = 0;
+    const s = steps;
+    steps = null;
+    if (s) send({ t: "mouse", x: s.at.x, y: s.at.y, button: 0, action: s.action, mods: s.mods, ...(s.n > 1 ? { count: s.n } : {}) });
   }
   const BUTTON = { 0: 0, 1: 1, 2: 2 };
   let held = null;                                // a mouse button down: {button, x, y}
@@ -128,7 +147,11 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
   term.addEventListener("wheel", (e) => {
     if (!mouseOn() || !e.deltaY) return;
     e.preventDefault();
-    report(e.deltaY < 0 ? "wheelup" : "wheeldown", cellAt(e.clientX, e.clientY), 0, e);
+    const line = parseFloat(getComputedStyle(term).lineHeight) || 16;
+    lines += e.deltaMode === 1 ? e.deltaY : e.deltaMode === 2 ? e.deltaY * (view.screen.length || 24) : e.deltaY / line;
+    if (Math.abs(lines) < 1) return;
+    step(lines < 0 ? "wheelup" : "wheeldown", cellAt(e.clientX, e.clientY), e);
+    lines %= 1;
   }, { passive: false });
 
   // Touch: a tap is a click, a two-finger tap a right click, a swipe the wheel; a long press
@@ -146,12 +169,12 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
     if (!touch.moved && Math.hypot(t.clientX - touch.x, t.clientY - touch.y) < 10) return;
     touch.moved = true;
     e.preventDefault();                           // the swipe is the program's: Screen mode has no history
-    const step = parseFloat(getComputedStyle(term).lineHeight) || 16;
+    const line = parseFloat(getComputedStyle(term).lineHeight) || 16;
     const at = cellAt(touch.x, touch.y);
-    while (Math.abs(t.clientY - touch.rest) >= step) {
+    while (Math.abs(t.clientY - touch.rest) >= line) {
       const up = t.clientY > touch.rest;          // a finger moving down shows what is above
-      report(up ? "wheelup" : "wheeldown", at, 0, e);
-      touch.rest += up ? step : -step;
+      step(up ? "wheelup" : "wheeldown", at, e);
+      touch.rest += up ? line : -line;
     }
   }, { passive: false });
   term.addEventListener("touchend", (e) => {

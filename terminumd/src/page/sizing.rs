@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 use parking_lot::Mutex;
 use serde_json::{json, Value};
 
-use super::client::{error, Shown};
+use super::client::Shown;
 use super::Page;
 use crate::app::Shared;
 use crate::screen::frame::Fields;
@@ -286,7 +286,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
                 st.screenmode.insert(key, mode);
             }
         }
-        "mouse" => mouse_event(page, msg).await,
+        "mouse" => mouse_event(app, page, msg),
         _ => {}
     }
 }
@@ -356,17 +356,20 @@ async fn unzoom(app: &Shared, page: &Arc<Page>) {
 }
 
 /// A click, drag or wheel in Screen mode, as the mouse report a terminal would send (AC-06).
-async fn mouse_event(page: &Arc<Page>, msg: &Value) {
-    let Some((server, pane, f)) = shown_window(page) else { return };
+/// A mouse report for the shown pane: queued with the keys (typing.rs), never awaited here.
+fn mouse_event(app: &Shared, page: &Arc<Page>, msg: &Value) {
+    let Some((server, pane, key, f)) = (|| {
+        let st = page.state.lock();
+        let s = st.shown.as_ref()?;
+        Some((s.server.clone(), s.pane.clone(), s.key.clone(), s.ctl.fields.lock().clone()?))
+    })() else {
+        return;
+    };
     if !f.mouse {
         return; // the program did not ask for the mouse: nothing is sent
     }
     let Some(bytes) = from_message(msg, f.mouse_sgr) else { return };
-    let hex: Vec<String> = bytes.iter().map(|b| format!("{b:02x}")).collect();
-    let line = format!("send-keys -t {pane} -H {}", hex.join(" "));
-    if let Some(Err(e)) = server.run_all_on(&pane, vec![line]).await.into_iter().next() {
-        error(page, format!("Mouse event not sent: {e}"), None);
-    }
+    super::typing::mouse(app, page, server, pane, key, bytes);
 }
 
 /// The page's `mouse` message as the bytes of a report.
@@ -375,5 +378,11 @@ fn from_message(msg: &Value, sgr: bool) -> Option<Vec<u8>> {
     let m = &msg["mods"];
     let mods = mouse::Mods { shift: m["shift"].as_bool().unwrap_or(false), meta: m["alt"].as_bool().unwrap_or(false), ctrl: m["ctrl"].as_bool().unwrap_or(false) };
     let coord = |k: &str| msg[k].as_u64().filter(|v| *v < 10_000).map(|v| v as u16);
-    mouse::report(coord("x")?, coord("y")?, button, action, mods, sgr)
+    let one = mouse::report(coord("x")?, coord("y")?, button, action, mods, sgr)?;
+    // the wheel's steps of one frame of the page come as one message with their count
+    let n = if msg["action"].as_str().is_some_and(|a| a.starts_with("wheel")) { msg["count"].as_u64().unwrap_or(1).clamp(1, WHEEL_MAX) as usize } else { 1 };
+    Some(one.repeat(n))
 }
+
+/// Most wheel steps one message carries.
+const WHEEL_MAX: u64 = 100;
