@@ -90,7 +90,13 @@ Over a network you do not trust, use HTTPS through `tailscale serve`.
 
 ### Over Tailscale
 
-Use this to open terminum at `https://<mac>.<tailnet>.ts.net` from your tailnet only.
+Tailscale gives one name per machine, `https://<mac>.<tailnet>.ts.net`, with one service on
+each port. Pick where terminum goes:
+
+| Setup | terminum at | Steps |
+| --- | --- | --- |
+| Nothing else on the Mac's name | `https://<mac>.<tailnet>.ts.net/` | 1–4 below |
+| Another service keeps the Mac's name (such as iterm-enhancer) | `https://terminum.<tailnet>.ts.net/` | 1–2 below, then the Tailscale Service |
 
 1. Let terminum listen only on this Mac, on a free port. Put this in
    `~/.terminum/state/web.json` (keep the other keys when the file exists), then
@@ -115,8 +121,8 @@ Use this to open terminum at `https://<mac>.<tailnet>.ts.net` from your tailnet 
 4. Open `https://<mac>.<tailnet>.ts.net/` on a device in your tailnet and sign in with the
    password.
 
-Tailscale gives one name per machine. Another service on it, such as iterm-enhancer on 8765,
-gets a port of its own:
+Without a tagged machine for a Service, another service on the Mac's name can move to a port
+of its own instead, such as iterm-enhancer on 8765:
 
 ```bash
 tailscale serve --https=443 off                            # if it had the address without a port
@@ -134,9 +140,14 @@ Notes:
   in `web.json`.
 - To also reach terminum over plain HTTP on your local network, set `"host": "0.0.0.0"`.
 - To stop serving it: `tailscale serve --https=443 off`.
+- `tailscale serve --bg` and `--service` are kept by tailscaled and come back after a restart
+  of the Mac. The program behind each address must be running too: terminumd starts at login;
+  iterm-enhancer runs only while iTerm2 is open.
 
-A name of its own, such as `https://terminum.<tailnet>.ts.net`, is a Tailscale Service. It
-can be served only by a tagged machine (`tag:personal` below):
+#### A name of its own: a Tailscale Service
+
+`https://terminum.<tailnet>.ts.net` is a Tailscale Service. It leaves the Mac's name to another
+service, and it can be served only by a tagged machine (`tag:personal` below):
 
 1. In the tailnet policy (admin console → Access controls), let your devices reach the
    service and let the Mac host it without a manual approval:
@@ -157,6 +168,14 @@ can be served only by a tagged machine (`tag:personal` below):
    the Mac on the service's page when it advertised earlier, or without `autoApprovers`.
 4. Open `https://terminum.<tailnet>.ts.net/`. It is an address of its own, with its own
    sign-in.
+
+5. Give the Mac's name back to the other service if step 3 of the first list took it (it then
+   opened terminum under both names), and check:
+
+   ```bash
+   tailscale serve --bg --https=443 http://127.0.0.1:8765   # the Mac's name → iterm-enhancer
+   tailscale serve status   # <mac>…:443 → 8765; terminum…ts.net (svc:terminum) → 48080
+   ```
 
 To remove it: `tailscale serve clear svc:terminum`.
 
