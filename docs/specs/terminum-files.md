@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.3.1 |
+| Version | 0.3.2 |
 | Date | 2026-10-15 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.2 | 2026-10-16 | Owner: a file made with New File… opens where a click opens files (View in the page), not in the panel's own editor under the tree (AC-70). |
 | 0.3.1 | 2026-10-15 | AC-51: terminumd tells the page when the shown pane's folder changes (read with every frame); the page no longer asks again 0.7 s after Enter. |
 | 0.3.0 | 2026-10-15 | Owner: no App (the Mac's browser and an iPhone are the clients): "Open in Window" and the App's viewer window go; the private tmux server. |
 | 0.2.0 | 2026-10-15 | Pragmatic review: the panel stays in its proxied mode under `/fb/` with its `web:` workspace keys (`ui/src/embed.ts`), so it needs no edit; the files API paths are the page's `/fb/api/*`. |
@@ -457,7 +458,7 @@ Scenario: AC-69 edge — names win, folders and tabs
 Scenario: AC-70 happy path — a wide page
   Given the page is at least 1400 px wide
   Then Files is docked on the right, full height, until its × closes it (remembered per browser); the Files button opens and closes it; it wears the shown pane's theme
-  When the user opens a file
+  When the user opens a file (a click in the tree, or a file just made with New File…: it never opens under the tree inside the page)
   Then View is a window over the terminal with its tabs and a bar showing the full path (selectable, with a copy button and a toast "Copied …"); × or closing its last file closes it; the terminal keeps its keys
 
 Scenario: AC-70 happy path — a narrow page
@@ -708,4 +709,5 @@ curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{
 Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromium against a private terminumd and a private tmux server → 128 checks pass; `cd ui && npx tsc -p . && npm test` → 28 pass; `cargo test` (the moved fbd modules) → pass; `web/test/e2e_live.mjs` (Files docked beside the terminal, the pane's folder) → pass.
 
 - [x] AC-51 … AC-71 — `ui/test/e2e_panel.mjs` (tree, viewer, Markdown, workspaces across reload and restart, edit and conflicts, create, rename, Trash, terminal insert and cd into a tmux pane, watcher, keyboard, filter, images, hidden files, multi-select, links, expand all, icons) → pass; `scripts/bench_ls.sh` on a 500,000-entry folder (10 runs, a new terminumd each): first page p95 333 ms (budget 2.5 s), a random cached page p95 9 ms, RSS 33 MB → pass.
+- [x] AC-70 (2026-10-16) — a new file opens in the page's View: `web/test/e2e_live.mjs` "a new file opens in View, where a click opens files, not under the tree" in Chromium and WebKit; it fails with the panel's own editor (checked by reverting the fix).
 - [ ] AC-72, AC-73 — backlog, not implemented.

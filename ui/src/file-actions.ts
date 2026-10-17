@@ -11,6 +11,8 @@ interface CommitHost {
   current(): boolean;
   tree: Tree;
   viewer: Viewer;
+  /** opens a file as a click in the tree does (in the page's View when there is one, AC-70) */
+  open(path: string): void;
   changed(): void;
 }
 
@@ -26,7 +28,7 @@ export async function commitPath(mode: EditMode, dir: string, name: string, path
     } else {
       created = (await api<{ path: string }>("POST", `/api/fs/${mode === "folder" ? "mkdir" : "touch"}`, { body: { parent: dir, name }, host: ctx.host })).path;
       if (!ctx.current()) return null;
-      if (mode === "file") ctx.viewer.open(created);
+      if (mode === "file") ctx.open(created);
     }
     await ctx.tree.refreshDirs([dir]);
     if (!ctx.current()) return null;

@@ -201,7 +201,7 @@ const stream = new Stream({
 function commit(mode: EditMode, dir: string, name: string, path?: string): Promise<string | null> {
   const host = scope, paneKey = key;
   return commitPath(mode, dir, name, path, {
-    host, current: () => scope === host && key === paneKey, tree, viewer, changed: scheduleSave,
+    host, current: () => scope === host && key === paneKey, tree, viewer, open: openFile, changed: scheduleSave,
   });
 }
 
