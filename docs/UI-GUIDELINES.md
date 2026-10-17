@@ -12,7 +12,7 @@ is next changed. CLAUDE.md and the specs win over this file.
 | Terminal first | The terminal gets the space; chrome is one header row, one list, floating buttons only where the thumb is. Nothing covers terminal text without a way to dismiss it. |
 | IDE-standard | Controls look and behave like VS Code / iTerm2 / macOS: segmented controls, ghost icon buttons, popover menus, modal dialogs for irreversible actions. No novel widgets. |
 | Fail loud, in place | An error shows where the action was taken (form line, banner, toast) with terminumd's words; never only in the console. |
-| Phone = finger-sized | Under `(max-width: 860px)` or `(pointer: coarse)` every tappable target is ≥ 44 × 44 px (≥ 40 inside a list row whose height is 40); text fields are 16px (iOS zooms below). |
+| Phone = finger-sized | Under `(max-width: 860px)` or `(pointer: coarse)` every tappable target is ≥ 44 × 44 px (≥ 40 inside a list row whose height is 40); text fields keep their role's size (§4.6: the viewport's `maximum-scale=1` stops iOS zooming in on focus). |
 | Theme-driven colors | Surfaces, text, lines and accent derive from the session's theme (`--t-bg`, `--t-fg`, `--accent`). Fixed hues only for meaning that must not change with the theme (§2.2), and they must read on a light theme too. |
 | One look per kind | Two controls of the same kind share one class and one rule. Style by class; ids are for behavior and tests. |
 | Calm motion | Transitions ≤ 200 ms; every animation has a `prefers-reduced-motion: reduce` off-switch. |
@@ -30,7 +30,7 @@ is next changed. CLAUDE.md and the specs win over this file.
 | `--muted` | Secondary text, idle icons, placeholders (`fg 58%`). |
 | `--accent` | The theme's cursor color: selection, focus ring, primary button fill, active tab. |
 | `--sel`, `--selfg` | Terminal text selection. |
-| `--size` | Terminal font size; also dialogs, footer forms, find box (tmux.css). |
+| `--size` | Terminal font size; also dialogs, footer forms and their fields, find box (tmux.css). |
 | `--ui`, `--term-font` | Chrome font; terminal font (also forms and dialogs, §4.6). |
 
 The Panel has its own names (`ui/src/style.css`: `--bg`, `--bg-2`, `--bg-hover`, `--fg-dim`,
@@ -189,7 +189,8 @@ there, not into the file of the feature that first needed it.
 | This computer | this Mac | local, localhost |
 
 6. **Fonts by role**: dialogs, footer forms, the find box and waiting cards use `--term-font` at
-   `--size` (tmux.css; popups follow the terminal's size), and touch fields stay 16px. Chrome
+   `--size` (tmux.css; popups follow the terminal's size), fields too: the viewport's
+   `maximum-scale=1` keeps iOS from zooming in on a field below 16px. Chrome
    (header, list, menus, footer buttons, banners, toast) uses `--ui` at the §2.3 scale. A new
    popup follows the first rule.
 
@@ -222,7 +223,7 @@ screenshots you looked at. A copy-only change needs §4 and one screenshot.
 - [ ] Long text: a long session/host name, a long error and toast, a 300px and a 640px sidebar;
       nothing overflows the viewport or covers what it should not.
 - [ ] Empty and error states (no sessions, no bookmarks, a failed host, terminumd's refusal).
-- [ ] `--size` at 10 and 20: forms and dialogs follow it; touch fields stay 16px.
+- [ ] `--size` at 10 and 20: forms, their fields and dialogs follow it, on a touch screen too.
 - [ ] Banners, waiting cards, toast and find box shown together do not overlap.
 - [ ] No new raw hex outside §2.2 in the changed lines (a hex you touch becomes its token); no rule styling one `#id` where a sibling class exists.
 - [ ] Files ≤ 500 lines; `node web/test/e2e_all.mjs` and, for the Panel, `cd ui && node test/e2e_panel.mjs` pass.

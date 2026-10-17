@@ -210,12 +210,8 @@ async fn kill(app: &Shared, id: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Host and restore actions: the Mac's own page only (§9 "What each listener allows").
+/// Host, attach and restore actions, from either listener's page (§9 "What each listener allows").
 pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
-    if page.web {
-        error(page, "Not available from the network: use the Mac's browser or the terminum command.", None);
-        return;
-    }
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     let result = match t {
         "addhost" => crate::hosts::add(app, &s("name"), &s("recipe"), msg["files"].as_bool().unwrap_or(false)).await.map(|name| {

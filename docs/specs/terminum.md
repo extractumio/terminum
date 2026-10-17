@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.9.3 |
+| Version | 0.9.4 |
 | Date | 2026-10-17 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.9.4 | 2026-10-17 | Owner, on an iPad over `tailscale serve`: the web listener's page offered Add host and Attach tmux sessions but terminumd refused them, so the form waited on "Looking for running sessions…" and the refusal stayed in the page's banner; the form's fields were 16 px beside the form's text at the terminal's size. Now host, attach and restore actions work from the web listener's page too (its password already opens a shell as the user, so they add no power); fields follow the terminal's size on touch screens too, the viewport's `maximum-scale=1` keeping iOS from zooming in on focus (pinching still zooms on iOS; Chrome on Android, not a stated client, also stops pinch zoom). Pragmatic review applied: no pending form for the listing, which answers with a list and never an error (AC-10, AC-89). |
 | 0.9.3 | 2026-10-17 | Owner, serving terminum through `tailscale serve` beside iterm-enhancer: the web listener's default port was 8765, iterm-enhancer's, and on macOS a wildcard bind succeeds beside a program on `127.0.0.1` of the same port, so `terminum web on` opened 0.0.0.0:8765 without a word; with `host` 127.0.0.1 it printed this Mac's network addresses, which do not answer; its hint `tailscale serve --bg <port>` takes port 443 from whatever served it. Now the default port is 48080; a port another program holds on 127.0.0.1 is in use for a wildcard listener too; a listener on loopback is said to be for a proxy on this Mac, with its address; a new password waits for the old listener to close before the new one binds (pragmatic review: the CLI named 127.0.0.1 for every host, `::` had the same hole, the wildcard's hint suggested a proxy closes plain HTTP, and the restart race; all applied; the race did not reproduce here, so its check covers the behavior only); the hint is the full `tailscale serve --bg --https=443 http://127.0.0.1:<port>` and says it replaces what port 443 serves. A web.json that names its port keeps it (terminumd writes the port into each file it saves). AC-10. |
 | 0.9.2 | 2026-10-17 | Owner: scrolling Codex (it asks for the mouse) on a host lagged seconds behind the trackpad. Measured through a stand-in ssh 25 ms each way: 120 wheel events in 1.2 s were drawn 5.8 s after the last, as each mouse message waited for its own round trip, and the page's next messages (keys too) waited behind it. Now the page makes a step of each text line scrolled, at most one an event (as xterm.js), and sends a frame's steps as one message with `count`; terminumd queues mouse reports with the keys, in order, one `send-keys -H` a round trip for what came meanwhile, never awaited in the page's message loop: drawn 0.11 s after the last (AC-06). Pragmatic review applied: the key of a mouse report read with its pane, the right words when a mouse report finds no tmux; kept: a batch of keys and mouse reports is a round trip a run (rare and short), one step at most an event (xterm.js; a native terminal sends one a line, uncapped). The page's own drawing was measured apart: 30 full 50-row frames a second in Screen mode's Wrap, no long task, 60 frames a second in Chromium and WebKit. |
 | 0.9.1 | 2026-10-16 | Owner: Codex in a host's own session, only looked at, was drawn as Fit at about 11 px where iterm-enhancer shows it at the chosen 13 px. A full-screen program in a pane wider than the view that this page does not size (a session of the user's own tmux only looked at, another screen's size, a refused resize; with Screen mode "never" in Wrap) is drawn by iterm-enhancer's frame rule (its spec 0.44.0): a frame (at least half of the rows with text reach past the columns that fit at the chosen size: mc, htop) as Fit, as Grid at the chosen size when Fit would go below 7 px; rows that end at their text (Codex, a coding agent's full-screen mode, vim) re-flow as Wrap at the chosen size; a frame stays one while a third of its rows reach past the view. A pane this page sizes stays Fit until its resize lands. Pragmatic review applied: the rule only where no resize of this page's comes (it first applied while one was on its way too), hysteresis, the "never" case a sentence of its own (AC-05, AC-13, AC-89). |
@@ -823,7 +824,9 @@ What each listener allows:
 |---|---|---|
 | page, `/ws` (screens, typing, sessions, bookmarks, search, traces), `/fb/` files (ls, file, raw, fs/*, workspace, prefs), uploads | yes | yes |
 | `/fb/api/os/*` (Finder, default app), `/fb/api/terminal/*` (insert a path, cd) | yes | 403 `not_here` |
-| `addhost`, `hostaction`, `web on/off`, update actions, `signout` of others | CLI over the socket only | 403 |
+| `addhost`, `hostaction`, `addtmux`, `detachtmux`, `tmuxsessions`, `restore` (page messages) | yes | yes |
+| `updatechoice` (page message) | yes | ignored |
+| `web on/off`, `signout` of others | CLI over the socket only | CLI over the socket only |
 | `/api/hello` | yes | yes |
 
 | Method and path | Purpose | Case |

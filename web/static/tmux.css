@@ -71,9 +71,8 @@ body.screenmode .lines-mode { display: none !important; }
 
 /* dialogs, forms and the search box speak in the terminal's font */
 dialog, .footform, #findbox, #asks, dialog input, dialog textarea, dialog button, .footform input, .footform button, #findbox input { font-family: var(--term-font); }
-/* ... and at its size; a touch screen's fields keep 16px, below which iOS zooms in on focus */
-dialog, .footform, #findbox, #asks, .footform input, #findq, #marknote, #pastebox textarea { font-size: var(--size); }
-@media (pointer: coarse) { .footform :is(input, select), #findq, #marknote, #pastebox textarea { font-size: 16px; } }
+/* ... and at its size, fields too (the viewport's maximum-scale keeps iOS from zooming in on a small one) */
+dialog, .footform, #findbox, #asks, .footform :is(input, select), #findq, #marknote, #pastebox textarea { font-size: var(--size); }
 
 /* the shown pane's quick shell (AC-88): below the terminal or on its left, its share dragged at its edge */
 #termrow { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }

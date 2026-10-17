@@ -73,9 +73,10 @@ export async function webTmux(browser, name) {
       status: document.getElementById("status").hidden }));
     const sized = await page.evaluate(() => ({ field: getComputedStyle(document.getElementById("newsessname")).fontSize,
       form: getComputedStyle(document.getElementById("newsess")).fontSize, size: getComputedStyle(document.documentElement).getPropertyValue("--size").trim(),
-      touch: matchMedia("(pointer: coarse)").matches }));
-    check("AC-07 New session: the form speaks at the terminal's size; a touch screen's field keeps 16px (iOS zooms in below)",
-      sized.form === sized.size && sized.field === (sized.touch ? "16px" : sized.size), JSON.stringify(sized));
+      on: getComputedStyle(document.getElementById("addtmuxon")).fontSize,
+      viewport: document.querySelector('meta[name="viewport"]').content }));
+    check("AC-07 New session: the form and its fields speak at the terminal's size, on a touch screen too (maximum-scale keeps iOS from zooming in)",
+      sized.form === sized.size && sized.field === sized.size && sized.on === sized.size && /maximum-scale=1\b/.test(sized.viewport), JSON.stringify(sized));
     await page.fill("#newsessname", "scratch");
     await page.keyboard.press("Enter");
     await pause(page, 300);
