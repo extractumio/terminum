@@ -17,11 +17,15 @@ use crate::tmux::{args, Server};
 /// One new window, session or split a second per page (AC-07).
 const NEW_EVERY: Duration = Duration::from_secs(1);
 
-/// The server and session a group id names (a bare name is a local session).
+/// The server and session a group id names (`Server::group_prefix`; a bare name is a session
+/// of the private server).
 fn group(app: &Shared, wid: &str) -> Option<(Arc<Server>, String)> {
     match wid.split_once('/') {
         Some(("local", s)) => Some((app.tmux.local.clone(), s.to_string())),
-        Some((h, s)) => app.tmux.host(h).map(|srv| (srv, s.to_string())),
+        Some((h, s)) => match h.strip_prefix("local:") {
+            Some(socket) => app.tmux.attached(socket),
+            None => app.tmux.host(h),
+        }.map(|srv| (srv, s.to_string())),
         None if !wid.is_empty() => Some((app.tmux.local.clone(), wid.to_string())),
         None => None,
     }
@@ -32,7 +36,7 @@ fn home_of(server: &Server) -> String {
 }
 
 /// A pane's folder for a new window there: "~" (with a note) when its name cannot be used.
-async fn folder_of(server: &Server, pane: &str) -> (String, Option<String>) {
+pub(super) async fn folder_of(server: &Server, pane: &str) -> (String, Option<String>) {
     let cwd = server.run(format!("display -p -t {pane} '#{{pane_current_path}}'")).await.ok().and_then(|l| l.into_iter().next()).unwrap_or_default();
     if cwd.is_empty() {
         return (home_of(server), None);
@@ -44,12 +48,12 @@ async fn folder_of(server: &Server, pane: &str) -> (String, Option<String>) {
 }
 
 /// tmux's answer as one line of words.
-fn said(e: &str) -> String {
+pub(super) fn said(e: &str) -> String {
     let e = e.lines().next().unwrap_or("").trim();
     if e.is_empty() { "tmux refused it".into() } else { e.to_string() }
 }
 
-fn allowed_now(page: &Page) -> bool {
+pub(super) fn allowed_now(page: &Page) -> bool {
     let mut st = page.state.lock();
     if st.last_new.is_some_and(|t| t.elapsed() < NEW_EVERY) {
         return false;
@@ -93,7 +97,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
 async fn new_window(app: &Shared, page: &Page, wid: &str) -> Result<(), String> {
     let (server, session) = group(app, wid).ok_or("That session is gone.")?;
     // after the shown pane's window, in its folder, when it is in this session
-    let shown = page.state.lock().shown.as_ref().filter(|s| s.server.name == server.name).map(|s| s.pane.clone());
+    let shown = page.state.lock().shown.as_ref().filter(|s| s.server.id() == server.id()).map(|s| s.pane.clone());
     let place = match &shown {
         Some(pane) => server.run(format!("display -p -t {pane} '#{{session_name}}\t#{{window_id}}'")).await.ok().and_then(|l| l.into_iter().next())
             .and_then(|l| l.split_once('\t').map(|(s, w)| (s.to_string(), w.to_string()))).filter(|(s, _)| *s == session),
@@ -133,7 +137,7 @@ async fn split(app: &Shared, page: &Page, id: &str, how: &str) -> Result<(), Str
     Ok(())
 }
 
-async fn window_of(server: &Server, pane: &str) -> Result<String, String> {
+pub(super) async fn window_of(server: &Server, pane: &str) -> Result<String, String> {
     server.run(format!("display -p -t {pane} '#{{window_id}}'")).await.ok().and_then(|l| l.into_iter().next()).filter(|w| w.starts_with('@')).ok_or_else(|| super::CLOSED.to_string())
 }
 
@@ -164,7 +168,7 @@ async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String>
     let mut want: Vec<String> = Vec::new();
     for id in ids.iter().filter_map(Value::as_str) {
         let Some((s, pane)) = app.tmux.resolve(id) else { continue };
-        if s.name != server.name {
+        if s.id() != server.id() {
             continue;
         }
         if let Ok(w) = window_of(&server, &pane).await
@@ -190,10 +194,9 @@ async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String>
 /// "Move to session…": the window goes to the end of another session of its server.
 async fn move_window(app: &Shared, id: &str, to: &str) -> Result<(), String> {
     let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
-    let session = match to.split_once('/') {
-        Some((srv, s)) if srv == server.name => s.to_string(),
-        Some(_) => return Err("A window moves only between sessions of its own tmux server.".into()),
-        None => to.to_string(),
+    let session = match group(app, to) {
+        Some((srv, s)) if srv.id() == server.id() => s,
+        _ => return Err("A window moves only between sessions of its own tmux server.".into()),
     };
     let window = window_of(&server, &pane).await?;
     server.run(format!("move-window -s {window} -t {}", args::quote(&format!("={session}:")))).await.map_err(|e| format!("Not moved: {}", said(&e)))?;
@@ -219,6 +222,28 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
             page.send_json(&json!({"t": "hostadded", "name": name}));
         }),
         "hostaction" => crate::hosts::action(app, &s("name"), &s("action")).await,
+        // AC-89: a place is its server's id (`local:<socket>`, `<host>:default`)
+        "addtmux" => {
+            let names: Vec<String> = msg["sessions"].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            crate::attach::Place::parse(app, &s("server")).and_then(|place| crate::attach::add(app, &place, &names).map(|()| {
+                page.send_json(&json!({"t": "tmuxadded", "server": place.id(), "sessions": names}));
+            }))
+        }
+        "detachtmux" => match crate::attach::Place::parse(app, &s("server")) {
+            Ok(place) => crate::attach::detach(app, &place, &s("session")).await,
+            Err(e) => Err(e),
+        },
+        "tmuxsessions" => {
+            let (server, running) = match crate::attach::Place::parse(app, &s("server")) {
+                Ok(place) => (place.id(), crate::attach::running(app, &place).await),
+                Err(_) => (s("server"), Vec::new()),
+            };
+            // `ends`: those tmux destroys once terminum is their last client (destroy-unattached)
+            let names: Vec<&str> = running.iter().map(|r| r.name.as_str()).collect();
+            let ends: Vec<&str> = running.iter().filter(|r| r.ends).map(|r| r.name.as_str()).collect();
+            page.send_json(&json!({"t": "tmuxsessions", "server": server, "names": names, "ends": ends}));
+            return;
+        }
         "restore" => crate::restore::again(app).await,
         _ => Ok(()),
     };

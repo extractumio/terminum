@@ -20,6 +20,7 @@ fn pane(window_name: &str, auto: bool, title: &str, command: &str, path: &str) -
         alternate_on: false,
         pane_active: true,
         host_name: "mac.example".into(),
+        ..Default::default()
     }
 }
 
@@ -124,19 +125,19 @@ fn marks_and_folders() {
 
 #[test]
 fn list_panes_rows() {
-    let row = "main\t1\t@2\tapi\t0\t%3\t0\t\u{2733} Fix\tclaude\t/Users/alex/work/api\t0\t1\tmac.example";
+    let row = "main\t1\t@2\tapi\t0\t%3\t0\t\u{2733} Fix\tclaude\t/Users/alex/work/api\t0\t1\tmac.example\t\t\t$1";
     let p = parse_list_panes(row).unwrap();
     assert_eq!((p.session.as_str(), p.window_index, p.window_id.as_str(), p.window_name.as_str()), ("main", 1, "@2", "api"));
     assert_eq!((p.automatic_rename, p.pane_id.as_str(), p.pane_index, p.pane_title.as_str()), (false, "%3", 0, "\u{2733} Fix"));
     assert_eq!((p.command.as_str(), p.path.as_str(), p.alternate_on, p.pane_active), ("claude", "/Users/alex/work/api", false, true));
-    assert_eq!(p.host_name, "mac.example");
+    assert_eq!((p.host_name.as_str(), p.session_id.as_str()), ("mac.example", "$1"));
     assert_eq!(parse_list_panes(&format!("{row}\n")), Some(p));
-    assert_eq!(parse_list_panes("main\t1\t@2\ta\tb\t0\t%3\t0\tt\tc\t/p\t0\t1\th"), None, "a tab in a name");
+    assert_eq!(parse_list_panes("main\t1\t@2\ta\tb\t0\t%3\t0\tt\tc\t/p\t0\t1\th\t\t\t$1"), None, "a tab in a name");
     assert_eq!(parse_list_panes(&row.replacen("\t1\t", "\tx\t", 1)), None);
     assert_eq!(parse_list_panes(""), None);
-    let old = parse_list_panes("s\t1\t@1\tzsh\t\t%1\t0\tt\tzsh\t/\t0\t1\th").unwrap();
+    let old = parse_list_panes("s\t1\t@1\tzsh\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1").unwrap();
     assert!(old.automatic_rename, "a tmux that does not say: a command's name is tmux's");
-    let named = parse_list_panes("s\t1\t@1\tmy api\t\t%1\t0\tt\tzsh\t/\t0\t1\th").unwrap();
+    let named = parse_list_panes("s\t1\t@1\tmy api\t\t%1\t0\tt\tzsh\t/\t0\t1\th\t\t\t$1").unwrap();
     assert!(!named.automatic_rename);
 }
 

@@ -249,3 +249,9 @@ html.viewer-mode #pathbar { display: flex; align-items: center; gap: 6px; flex: 
 #vbody .scroll.doc:has(> .html-doc) { overflow: hidden; }
 .html-doc { display: block; width: 100%; height: 100%; border: 0; background: var(--bg); }
 
+/* the keyboard's place, and a finger's size on a touch screen (docs/UI-GUIDELINES.md §1, §2.6) */
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (pointer: coarse) {
+  :root, html.themed { --row: max(36px, calc(var(--t-size, 13) * 1.6px)); }
+  button.icon { width: 36px; height: 36px; }
+}

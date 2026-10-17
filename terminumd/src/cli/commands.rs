@@ -263,6 +263,35 @@ pub fn hosts_action(ctx: &Ctx, action: &str, name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// `terminum tmux`: the attached sessions of the user's own tmux and their state (AC-89).
+pub fn tmux_list(ctx: &Ctx) -> Result<(), String> {
+    let answer = checked(ctx, "GET", "/tmux", None)?;
+    let list = answer["attached"].as_array().cloned().unwrap_or_default();
+    if list.is_empty() {
+        ctx.say("No session of your tmux is attached: terminum tmux attach <session>");
+    }
+    for x in list {
+        let on = match (x["host"].as_str(), x["socket"].as_str().unwrap_or("default")) {
+            (Some(h), _) => format!(" (on {h})"),
+            (None, "default") => String::new(),
+            (None, socket) => format!(" (tmux -L {socket})"),
+        };
+        ctx.say(format!("{}{on}: {}", x["session"].as_str().unwrap_or("?"), x["state"].as_str().unwrap_or("?")));
+    }
+    Ok(())
+}
+
+/// `flag`: "socket" or "host" (empty: plain `tmux` here).
+pub fn tmux_action(ctx: &Ctx, action: &str, session: &str, flag: &str, value: &str) -> Result<(), String> {
+    let mut body = json!({"session": session});
+    if !flag.is_empty() {
+        body[flag] = json!(value);
+    }
+    checked(ctx, "POST", &format!("/tmux/{action}"), Some(body))?;
+    ctx.say(if action == "attach" { format!("Attached {session}: it shows in the list while it runs") } else { format!("Detached {session}: it goes on running in your tmux") });
+    Ok(())
+}
+
 // ── import, logs ────────────────────────────────────────────────────────────
 
 /// terminumd holds its state in memory and would write it over the imported files: it is

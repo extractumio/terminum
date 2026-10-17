@@ -108,9 +108,14 @@ export class Views {
     });
   }
 
+  /** The answer to paneInfo() (a quick shell's page has no Files to load). */
+  answered(m) {
+    for (const w of this.waiters?.splice(0) ?? []) w(m);
+  }
+
   /** The server's answer to "files": the pane's key, folder and host, or why there are none. */
   onFiles(m) {
-    for (const w of this.waiters?.splice(0) ?? []) w(m);
+    this.answered(m);
     this.filesError = m.error ?? null;
     if (!m.error && this.filesShown) {         // the Files frame loads only while it is shown
       const q = new URLSearchParams({ key: m.key, cwd: m.cwd ?? "" });

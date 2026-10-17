@@ -14,6 +14,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { check, playwright, results, runningIn, within } from "./check.mjs";
+import { livePaste } from "./e2e_livepaste.mjs";
+import { liveQuick } from "./e2e_livequick.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -68,14 +70,29 @@ async function wide(browser, name) {
   await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))`);
   await page.keyboard.press("Enter");
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("live-42"), null, { timeout: 5000 }));
+  await livePaste(page, { home: HOME, name });
   const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
+  await liveQuick(page, { tmux, work: WORK });
   tmux("new-window", "-d", "-n", "byhand");
   await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction(() => document.getElementById("sessions").innerText.includes("byhand"), null, { timeout: 3000 }));
   await within("AC-70 Files is docked and shows the pane's folder", async () => {
     const frame = await (await page.waitForSelector("#files:not([hidden])", { timeout: 5000 })).contentFrame();
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
   });
+  const files = await (await page.$("#files")).contentFrame();
+  await files.click("#new-file");
+  await files.waitForSelector("#tree input", { timeout: 3000 }).catch(() => {});
+  await page.keyboard.type(`fresh-${name}.txt`);                // the folder is shared by both browsers
+  await page.keyboard.press("Enter");
+  await within("AC-70 a new file opens in View, where a click opens files, not under the tree", async () => {
+    await page.waitForSelector("#filewin:not([hidden])", { timeout: 5000 });
+    const view = await (await page.$("#file")).contentFrame();
+    await view.waitForSelector(`.tab.active .tname:text("fresh-${name}.txt")`, { timeout: 5000 });
+    if (await files.$(".tab")) throw new Error("a tab opened in Files too");
+  });
+  await page.click("#fileclose");
+  await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");
   await within("AC-05 a full-screen program switches the page to Screen mode", () => page.waitForFunction(() => document.body.innerText.includes("Screen ·") || document.getElementById("term").classList.contains("screenmode"), null, { timeout: 5000 }));

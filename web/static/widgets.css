@@ -22,7 +22,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .seg button { border-radius: 0; border: 0; }
 :host(.wg-raw) .seg [data-act="raw"], :host(:not(.wg-raw)) .seg [data-act="on"] {
   background: color-mix(in srgb, var(--t-fg) 16%, transparent); font-weight: 600; }
-.err { flex-basis: 100%; color: #ef7b7b; white-space: pre-wrap; }
+.err { flex-basis: 100%; color: var(--danger, #ff6b5e); white-space: pre-wrap; }
 svg.lu { width: var(--s, 14px); height: var(--s, 14px); fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
 

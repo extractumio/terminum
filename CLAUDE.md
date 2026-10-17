@@ -4,8 +4,8 @@ Binding on humans and AI (`AGENTS.md` symlinks here); every rule is a MUST unles
 otherwise. This file holds principles, terms and dos and don'ts; behavior, limits and
 evidence live in the specs (`docs/specs/terminum.md` and its siblings), usage in
 `README.md`, the threat model in `SECURITY.md`, the release procedure in
-`docs/RELEASING.md`. Write compactly: one precise sentence over a paragraph, a table where
-denser, no narration.
+`docs/RELEASING.md`, the UI's look and its change checklist in `docs/UI-GUIDELINES.md`.
+Write compactly: one precise sentence over a paragraph, a table where denser, no narration.
 
 ## Project
 
@@ -112,7 +112,8 @@ framework), a plain-JavaScript web page (ES modules, no bundler). No native app.
 - `make test`, `cd ui && node test/e2e_panel.mjs`, `node web/test/e2e_all.mjs`, and for
   remote changes `scripts/e2e_remote.py`,
   `scripts/security_check.sh` pass on the delivered tree; no new warnings.
-- Changed files reviewed and simplified; affected docs and the spec updated.
+- Changed files reviewed and simplified; affected docs and the spec updated; a UI change holds
+  the checklist of `docs/UI-GUIDELINES.md` §6.
 - The delivery states what changed, why, how it was verified, excluded scope and
   **Noticed, not fixed**; the running install is updated with `make install` when the
   user asks for it.

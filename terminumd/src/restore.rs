@@ -15,7 +15,8 @@ use crate::app::Shared;
 use crate::tmux::server::{plain, Link};
 
 const EVERY: Duration = Duration::from_secs(5);
-const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{window_name}\t#{window_layout}";
+/// with a quick shell's mark (AC-88): those are not restored
+const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{@tm-quick}\t#{window_name}\t#{window_layout}";
 const PANES: &str = "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}";
 
 #[derive(Default)]
@@ -101,10 +102,11 @@ async fn checkpoint(app: &Shared) -> Option<Value> {
     let procs = ssh_commands(&ssh_ttys).await;
     let mut sessions: Vec<Value> = Vec::new();
     for w in &wins {
-        let f: Vec<&str> = w.splitn(4, '\t').collect();
-        if f.len() < 4 {
+        let f: Vec<&str> = w.splitn(5, '\t').collect();
+        if f.len() < 5 || !f[2].is_empty() {
             continue;
         }
+        let f = [f[0], f[1], f[3], f[4]];
         let mut ps = Vec::new();
         for p in fields.iter().filter(|g| g[1] == f[1]) {
             let mut k = kind(p[3], p[4], &procs);

@@ -13,6 +13,7 @@ mod activation;
 mod agent;
 mod api_fs;
 mod app;
+mod attach;
 mod auth;
 mod cli;
 mod config;
@@ -200,6 +201,7 @@ async fn serve() {
     tracing::info!(event = "start", port = env.port, pid = std::process::id(), build = config::build_id(), socket = %env.tmux_socket);
     tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());
     hosts::sync(&app);
+    attach::sync(&app);
     if let Err(e) = webaccess::apply(&app).await {
         tracing::warn!(event = "web.off", why = %e);
     }
@@ -211,7 +213,22 @@ async fn serve() {
     tokio::spawn(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
         tokio::select! { _ = tokio::signal::ctrl_c() => {}, _ = term.recv() => {} }
-        // its tmux control clients end with it, run by launchd or not
+        // the user's own tmux windows get their size back, here and on hosts, all at once (AC-89);
+        // the tmux control clients end with terminumd
+        let releases = stopping.tmux.all().into_iter().flat_map(|server| {
+            let only = server.only.lock().clone();
+            let sessions: Vec<Option<String>> = match only {
+                Some(_) if server.is_users() => vec![None],
+                Some(list) => list.into_iter().map(Some).collect(),
+                None => Vec::new(),
+            };
+            let app = stopping.clone();
+            sessions.into_iter().map(move |s| {
+                let (app, server) = (app.clone(), server.clone());
+                async move { page::sizing::release(&app, &server, s.as_deref()).await }
+            })
+        }).collect::<Vec<_>>();
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), futures_util::future::join_all(releases)).await;
         for server in stopping.tmux.all() {
             server.kill_clients();
         }

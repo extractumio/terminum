@@ -182,3 +182,31 @@ fn the_locator_finds_values_and_their_lines() {
     assert_eq!(line_of(text, &[Seg::Key("a"), Seg::Key("b"), Seg::Index(9)]), 1);
     assert!(is_name("work") && is_name("tm-test.2") && !is_name(".hidden") && !is_name("a/b") && !is_name(""));
 }
+
+/// AC-89: sessions of the user's own tmux, by socket; terminum's own socket is refused.
+#[test]
+fn attach_names_sessions_by_socket() {
+    let (s, m) = parse(r#"{"attach": {"default": ["work", "notes"], "x y": ["a"], "other": ["a:b"]}}"#);
+    assert_eq!(s.attach, BTreeMap::from([("default".to_string(), vec!["work".to_string(), "notes".to_string()])]));
+    assert_eq!(m, vec!["settings.json: attach.other must be a list of tmux session names, under a socket name".to_string(),
+        "settings.json: attach.x y must be a list of tmux session names, under a socket name".to_string()]);
+    let (s, m) = parse(r#"{"attach": {"terminum": ["main"]}}"#);
+    assert!(s.attach.is_empty());
+    assert_eq!(m, vec!["settings.json: attach.terminum is terminum's own tmux server: its sessions are listed anyway".to_string()]);
+    let p = tmp("attach");
+    std::fs::write(&p, "{\n  \"port\": 47901\n}\n").unwrap();
+    save_object(&p, "attach", |a| { a.insert("default".into(), json!(["work"])); }).unwrap();
+    let text = std::fs::read_to_string(&p).unwrap();
+    assert!(text.starts_with("{\n  \"port\": 47901,\n  \"attach\": {"), "{text}");
+    assert_eq!(load(&p).0.attach["default"], vec!["work".to_string()]);
+}
+
+/// AC-89: a host's attached sessions are kept in its record; a bad list is said and dropped.
+#[test]
+fn a_hosts_attached_sessions_are_checked() {
+    let (s, m) = parse(r#"{"hosts": {"devbox": {"ssh": ["devbox"], "attach": ["work", "api"]}, "b": {"ssh": ["b"], "attach": ["terminum"]}, "c": {"ssh": ["c"], "attach": "x"}}}"#);
+    assert_eq!(crate::attach::names_of(&s.hosts["devbox"]), vec!["work".to_string(), "api".to_string()]);
+    assert!(s.hosts["b"].get("attach").is_none() && s.hosts["c"].get("attach").is_none() && s.hosts["c"]["ssh"] == json!(["c"]));
+    assert_eq!(m, vec!["settings.json: hosts.b.attach must be a list of tmux session names (not terminum)".to_string(),
+        "settings.json: hosts.c.attach must be a list of tmux session names (not terminum)".to_string()]);
+}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Checks of terminum's own parts of the session list and the page against a fake terminumd
 // (fake.mjs), at a wide and a phone size: "New session" (AC-07), a host's group and its menu,
-// "Add host" (AC-81), the restore report and Restore again (AC-15), settings.json's page
+// "Add host" (AC-81), "Attach tmux sessions" here and on hosts (AC-89), the restore report and Restore again (AC-15), settings.json's page
 // defaults, messages and hot keys, and custom.css (AC-18, AC-19), and the page's words.
 
 import { check, runningIn } from "./check.mjs";
@@ -59,6 +59,12 @@ export async function webTmux(browser, name) {
 
     // New session: an inline name; terminumd's refusal shows in the form; done, the form goes
     await drawer();
+    const foot = await page.evaluate(() => [...document.querySelectorAll(".nav-foot > button")].map((b) => {
+      const s = getComputedStyle(b);
+      return [b.id, [s.height, s.width, s.backgroundColor, s.borderRadius, s.paddingLeft, s.fontWeight, s.justifyContent].join(" ")];
+    }));
+    check("the session list's footer buttons look alike (a shared class, not one rule per id)",
+      foot.length === 4 && new Set(foot.map(([, look]) => look)).size === 1, JSON.stringify(foot));
     await page.click("#newsessbtn");
     await page.fill("#newsessname", "bad:name");
     await page.keyboard.press("Enter");
@@ -95,7 +101,7 @@ export async function webTmux(browser, name) {
 
     // a host's group: cornflower blue, its state; rows name the host in violet; its menu
     const host = (state, extra = {}) => group("devbox", [item("tmux:devbox:default:%1", "build", { host: "devbox", sub: ["make", "~/src"] })],
-      { host: "devbox", state, ...extra });
+      { host: "devbox", state, new: state === "attached" ? "New window" : null, ...extra });   // as terminumd: no tmux, no new window
     f.say({ t: "layout", groups: [...LAYOUT, host("reconnecting", { why: "reconnecting (2 s)" })] });
     await pause(page);
     const seen = await page.evaluate(() => { const g = document.querySelector('#sessions .grp[data-wid="devbox/terminum"]'), c = (el) => getComputedStyle(el).color;
@@ -105,6 +111,7 @@ export async function webTmux(browser, name) {
     f.say({ t: "layout", groups: [...LAYOUT, host("failed", { why: "Permission denied (publickey)", session: "terminum", attach: ATTACH })] });
     await pause(page);
     const failed = await page.textContent('#sessions .grp[data-wid="devbox/terminum"] h2 .label');
+    check("AC-81 a host group that is not attached offers no new window", await page.isHidden('#sessions .grp[data-wid="devbox/terminum"] h2 .new'));
     const tsess = await page.evaluate(() => { const h = document.querySelector('#sessions .grp[data-wid="devbox/terminum"] h2');
       return { sess: h.querySelector(".tsess")?.textContent, copy: h.querySelector(".attach")?.title }; });
     check("AC-01 a group names its tmux session and has a copy button for the attach command",
@@ -125,6 +132,80 @@ export async function webTmux(browser, name) {
     check("AC-81 host group: its menu retries now, turns it off, removes it (asked first)",
       offered.join() === "Retry now,Off,Remove" && retry?.name === "devbox" && retry.action === "retry" && /^Remove devbox\?/.test(ask)
         && last("hostaction").action === "remove", JSON.stringify({ offered, retry, remove: last("hostaction") }));
+
+    // Attach tmux sessions (AC-89): "On" this Mac or a host, the running sessions as ticks, a name for one
+    // that does not run yet; a late answer for another place is ignored; a group that waits; detach
+    if (await page.isHidden("#addtmuxbtn")) await drawer();
+    await page.click("#addtmuxbtn");
+    const asked = last("tmuxsessions");
+    f.say({ t: "tmuxsessions", server: "devbox:default", names: ["late"] });
+    f.say({ t: "tmuxsessions", server: "local:default", names: ["work", "notes"], ends: ["notes"] });
+    await pause(page);
+    const ticks = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks input")].map((b) => b.value));
+    const warned = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks .tick")].map((l) => [l.querySelector("input").value, l.querySelector("span")?.textContent ?? ""]));
+    check("AC-89 a session tmux destroys with its last client (destroy-unattached) is said beside its tick",
+      warned.length === 2 && warned[0][1] === "" && /destroy-unattached is on: tmux closes it when terminum is its last client/.test(warned[1][1]), JSON.stringify(warned));
+    await page.check('#addtmuxticks input[value="work"]');
+    await page.fill("#addtmuxname", "later");
+    await page.keyboard.press("Enter");
+    await pause(page);
+    const waiting = await page.isVisible("#addtmux");
+    f.say({ t: "tmuxadded", server: "local:default", sessions: ["work", "later"] });
+    await pause(page);
+    check("AC-89 Attach tmux sessions: on this Mac, the running sessions are ticks (a late answer for another place ignored); ticked and named attach in one message; it closes once attached",
+      JSON.stringify(asked) === JSON.stringify({ t: "tmuxsessions", server: "local:default" }) && ticks.join() === "work,notes" && waiting
+        && JSON.stringify(last("addtmux")) === JSON.stringify({ t: "addtmux", server: "local:default", sessions: ["work", "later"] })
+        && await page.isHidden("#addtmux"), JSON.stringify({ asked, ticks, waiting, sent: last("addtmux") }));
+    const own = group("later", [], { wid: "local:default/later", attached: "default", where: "tmux", server: "local:default",
+      state: "absent", why: "not running on your tmux: attached when it starts" });
+    f.say({ t: "layout", groups: [...LAYOUT, own] });
+    await pause(page);
+    const absent = await page.textContent('#sessions .grp[data-wid="local:default/later"] h2 .label');
+    await page.click('#sessions .grp[data-wid="local:default/later"] .hostbtn');
+    const detach = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
+    await page.click('#hostmenu button[data-action="detach"]');
+    await pause(page, 100);
+    check("AC-89 a session of the user's tmux that does not run is a group saying so; its menu detaches it",
+      absent === "later · not running on your tmux: attached when it starts" && detach.join() === "Detach from terminum"
+        && JSON.stringify(last("detachtmux")) === JSON.stringify({ t: "detachtmux", server: "local:default", session: "later" }), JSON.stringify({ absent, detach }));
+
+    // a host's other sessions (AC-89): offered once a host just added is attached; later by its icon and menu
+    await page.click("#addhostbtn");
+    await page.fill("#addhostssh", "alex@box.example");
+    await page.keyboard.press("Enter");
+    await pause(page);
+    f.say({ t: "hostadded", name: "box" });
+    const boxg = (state, others) => group("box", [item("tmux:box:default:%1", "build", { host: "box" })], { host: "box", session: "terminum", state, others, server: "box:default" });
+    f.say({ t: "layout", groups: [...LAYOUT, boxg("reconnecting", 0)] });
+    await pause(page);
+    const early = await page.isVisible("#addtmux");
+    f.say({ t: "layout", groups: [...LAYOUT, boxg("attached", 2)] });
+    await pause(page);
+    const offered2 = { open: await page.isVisible("#addtmux"), on: await page.inputValue("#addtmuxon"), asked: last("tmuxsessions") };
+    f.say({ t: "tmuxsessions", server: "box:default", names: ["api", "db"] });
+    await pause(page);
+    const boxTicks = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks input")].map((b) => `${b.value}:${b.checked}`));
+    await page.click("#addtmuxcancel");
+    check("AC-89 after Add host, once the host is attached with other sessions, Attach tmux sessions opens on it with them unticked",
+      !early && offered2.open && offered2.on === "box:default" && offered2.asked?.server === "box:default" && boxTicks.join() === "api:false,db:false",
+      JSON.stringify({ early, offered2, boxTicks }));
+    const icon = await page.getAttribute('#sessions .grp[data-wid="box/terminum"] h2 .import', "title");
+    await page.click('#sessions .grp[data-wid="box/terminum"] h2 .import');
+    await pause(page);
+    const byIcon = { open: await page.isVisible("#addtmux"), on: await page.inputValue("#addtmuxon") };
+    await page.click("#addtmuxcancel");
+    await page.click('#sessions .grp[data-wid="box/terminum"] .hostbtn');
+    const boxMenu = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
+    await page.click('#hostmenu button[data-action="import"]');
+    await pause(page);
+    const byMenu = await page.inputValue("#addtmuxon");
+    await page.click("#addtmuxcancel");
+    f.say({ t: "layout", groups: [...LAYOUT, boxg("attached", 0)] });
+    await pause(page);
+    const none = await page.isHidden('#sessions .grp[data-wid="box/terminum"] h2 .import');
+    check("AC-89 later: the host's import icon (with the count) and its menu item open Attach tmux sessions on it; no icon when nothing else runs",
+      icon === "Attach tmux sessions running on box (2)" && byIcon.open && byIcon.on === "box:default" && boxMenu.join() === "Retry now,Off,Attach tmux sessions…,Remove"
+        && byMenu === "box:default" && none, JSON.stringify({ icon, byIcon, boxMenu, byMenu, none }));
     if (phone) await page.click("#drawerclose");
 
     // the restore report, and Restore again after it

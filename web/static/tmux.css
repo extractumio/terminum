@@ -3,39 +3,36 @@
    (AC-05), the confirmation dialog, the host menu. */
 
 /* a host's group: its name in cornflower blue, its state after it; rows name the host in violet (.host) */
-.grp.hostgrp h2 .label { color: cornflowerblue; }
-.grp.reconnecting h2 .label, .grp.off h2 .label { opacity: .75; }
-.grp.failed h2 .label { color: color-mix(in srgb, #ff6b5e 70%, cornflowerblue); white-space: normal; }
-.grp h2 .hostbtn { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); }
-.grp h2 .hostbtn:hover, .grp h2 .hostbtn[aria-expanded="true"] { color: var(--t-fg); background: var(--chrome-2); }
-/* a group's "copy the attach command" (tmux -L … attach / ssh -t …) */
-.grp h2 .attach { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--muted); opacity: .7; }
-.grp h2 .attach:hover, .grp h2 .attach:focus-visible { color: var(--t-fg); background: var(--chrome-2); opacity: 1; }
+.grp.hostgrp h2 .label { color: var(--host-label); }
+.grp.reconnecting h2 .label, .grp.off h2 .label, .grp.absent h2 .label { opacity: .75; }
+.grp.failed h2 .label { color: color-mix(in srgb, var(--danger) 70%, var(--host-label)); white-space: normal; }
 #hostmenu { position: fixed; z-index: 31; width: 180px; display: flex; flex-direction: column; padding: 4px; border-radius: 10px;
   background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
 #hostmenu[hidden] { display: none; }
-#hostmenu button { height: 32px; padding: 0 10px; border-radius: 7px; text-align: left; }
-#hostmenu button:hover, #hostmenu button:focus-visible { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); }
-#hostmenu button[data-action="remove"] { color: color-mix(in srgb, #ff6b5e 80%, var(--t-fg)); }
+#hostmenu button[data-action="remove"] { color: color-mix(in srgb, var(--danger) 80%, var(--t-fg)); }
 
-/* the list foot's forms: New session, Add host */
+/* the list foot's forms: New session, Add host, Attach tmux sessions */
 .footform { margin: 0 10px 6px; display: flex; flex-direction: column; gap: 6px; padding: 8px; border-radius: 10px;
   background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
 .footform[hidden] { display: none; }
 .footform input { font: inherit; font-size: 16px; color: inherit; background: var(--chrome); border: 1px solid var(--line);
   border-radius: 8px; padding: 7px 10px; min-width: 0; }
-.footform p { margin: 0; font-size: 12.5px; color: #ff8a7f; }
+.footform p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
 .footform p:empty { display: none; }
-.footform p.hint { color: var(--muted); line-height: 1.35; }
-.footform .sshline { display: flex; align-items: center; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; }
-.footform .sshline:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
-.footform .sshline span { padding-left: 10px; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
-.footform .sshline input { flex: 1; border: 0; background: none; outline: none; padding-left: 6px; }
+.footform [role="alert"] { color: var(--danger); }
+.footform .lead { display: flex; align-items: center; background: var(--chrome); border: 1px solid var(--line); border-radius: 8px; }
+.footform .lead:focus-within { outline: 2px solid var(--accent); outline-offset: -1px; }
+.footform .lead span { padding-left: 10px; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
+.footform .lead :is(input, select) { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding-left: 6px; }
+.footform select { font: inherit; color: inherit; height: 34px; }
+#addtmuxticks { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
+#addtmuxticks:empty { display: none; }
 .footform .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
 .footform .tick input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
 .footform .tick span { color: var(--muted); font-size: 12.5px; }
+.footform .tick.ends span { flex-basis: 100%; padding-left: 22px; color: color-mix(in srgb, var(--danger) 80%, var(--t-fg)); }   /* a session that can be lost */
 .footform .row { display: flex; gap: 6px; }
-.footform button { height: 32px; padding: 0 14px; border-radius: 7px; --edge: var(--line); }
+.footform button { height: 32px; padding: 0 14px; border-radius: 7px; --edge: var(--line); }   /* 44 on a phone (controls.css) */
 .footform .primary { background: var(--accent); color: var(--t-bg); --edge: transparent; --focus: var(--t-bg); font-weight: 600; }
 
 /* the menu's list of sessions a window can move to */
@@ -49,7 +46,7 @@ body.screenmode .lines-mode { display: none !important; }
 #term.screenmode .ln.spare { display: block; }
 #scrlabel { font-size: 12.5px; padding: 3px 10px; border-radius: 999px; white-space: nowrap; max-width: 40vw; overflow: hidden;
   text-overflow: ellipsis; background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); color: var(--t-fg); }
-#scrlabel.warn { background: color-mix(in srgb, #c98a1b 70%, var(--chrome-2)); }
+#scrlabel.warn { background: color-mix(in srgb, var(--warn-fill) 70%, var(--chrome-2)); }
 #scrlabel[hidden] { display: none; }
 
 /* the restore report's linked panes and its close button */
@@ -62,21 +59,43 @@ body.screenmode .lines-mode { display: none !important; }
   width: min(420px, calc(100vw - 32px)); padding: 16px; }
 #confirmbox::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
 #confirmbox p { margin: 0 0 14px; line-height: 1.45; }
-#confirmbox .actions { display: flex; justify-content: flex-end; gap: 8px; }
-#confirmbox .actions button { height: 40px; padding: 0 16px; border-radius: 10px; background: var(--chrome-2); }
-#confirmbox .primary { background: color-mix(in srgb, #d0453a 85%, var(--chrome)) !important; color: #fff; font-weight: 600; }
+#confirmbox .actions .primary { background: var(--danger-fill); color: #fff; --focus: #fff; }   /* the irreversible verb */
 
 /* a newer release (AC-17): the header's chip and its menu */
 #updchip { height: 26px; padding: 0 10px; border-radius: 999px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
-  background: color-mix(in srgb, #2f7d4f 55%, var(--chrome-2)); color: var(--t-fg); }
+  background: color-mix(in srgb, var(--ok-fill) 55%, var(--chrome-2)); color: var(--t-fg); }
 #updchip[hidden], #updmenu[hidden] { display: none; }
 #updmenu { position: fixed; z-index: 31; width: 230px; display: flex; flex-direction: column; padding: 4px; border-radius: 10px;
   background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
-#updmenu button { height: 34px; padding: 0 10px; border-radius: 7px; text-align: left; }
-#updmenu button:hover, #updmenu button:focus-visible { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); }
+
 
 /* dialogs, forms and the search box speak in the terminal's font */
 dialog, .footform, #findbox, #asks, dialog input, dialog textarea, dialog button, .footform input, .footform button, #findbox input { font-family: var(--term-font); }
 /* ... and at its size; a touch screen's fields keep 16px, below which iOS zooms in on focus */
 dialog, .footform, #findbox, #asks, .footform input, #findq, #marknote, #pastebox textarea { font-size: var(--size); }
-@media (pointer: coarse) { .footform input, #findq, #marknote, #pastebox textarea { font-size: 16px; } }
+@media (pointer: coarse) { .footform :is(input, select), #findq, #marknote, #pastebox textarea { font-size: 16px; } }
+
+/* the shown pane's quick shell (AC-88): below the terminal or on its left, its share dragged at its edge */
+#termrow { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+#termrow.left { flex-direction: row-reverse; }
+body.wide #termrow { grid-row: 6; }
+#termrow > #term { flex: 1 1 0; min-width: 0; min-height: 0; }
+#quick { flex: 0 0 var(--quick, 33%); display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--t-bg); }
+#quick[hidden], #quickgrip[hidden], body:not([data-shown="term"]) #quick, body:not([data-shown="term"]) #quickgrip { display: none; }
+#quick .qbar { display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 10px; font-size: 12px; color: var(--muted);
+  background: var(--chrome); border-top: 1px solid var(--line); }
+#termrow.left #quick .qbar { border-top: 0; border-bottom: 1px solid var(--line); }
+#quick .qtitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#quick .qbar .icon { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; }
+#quick .qbar .icon:hover { color: var(--t-fg); background: var(--chrome-2); }
+#quickframe { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--t-bg); }
+#quickgrip { flex: 0 0 5px; cursor: row-resize; background: var(--line); touch-action: none; }
+#termrow.left #quickgrip { cursor: col-resize; }
+#quickgrip:hover, #quickgrip:focus-visible, #termrow.dragging #quickgrip { background: var(--accent); outline: none; }
+#termrow.dragging iframe { pointer-events: none; }
+#quickbtn[aria-pressed="true"] { color: var(--accent); }
+
+/* a page in embed mode is only a terminal: the quick shell inside its pane's page */
+body.embed #nav, body.embed #scrim, body.embed #bar, body.embed #asks, body.embed #restored, body.embed #sized, body.embed #stall,
+body.embed #sidehead, body.embed #files, body.embed #filewin, body.embed #viewnote, body.embed #fabs, body.embed #hotkeys { display: none !important; }
+body.embed #app { grid-template-columns: 1fr; }

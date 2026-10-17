@@ -12,6 +12,9 @@
   --term-font: TermFont, Menlo, "SF Mono", ui-monospace, monospace;   /* the theme's font (app.js) */
   --nav-w: 300px; --side-w: 380px;
   --local: #4f9dff; --remote: #a98bff;     /* where a session runs: this Mac or another host */
+  --host-label: cornflowerblue;              /* a host's group name and a group's session pill */
+  /* fixed hues by meaning (docs/UI-GUIDELINES.md §2.2): fills carry white text at ≥ 4.5:1 on any theme */
+  --danger: #ff6b5e; --danger-fill: #b3372e; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020;
   color-scheme: dark light;
 }
 @font-face { font-family: TermFont; src: local("Menlo-Regular"); }
@@ -50,21 +53,18 @@ svg.lu circle { fill: none; stroke: currentColor; }
 #sessions { overflow-y: auto; flex: 1; padding: 8px 8px 12px; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; }
 .grp ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
 
-/* group header: chevron, name, tmux session, count, + */
+/* group header: chevron, name, tmux session, count; its buttons (copy, import, +, ⋯) in controls.css */
 .grp h2 { position: relative; display: flex; align-items: center; gap: 6px; height: 30px; margin: 0; padding: 0 2px 0 0; font-size: 12.5px; font-weight: 600; }
 .grp h2 .toggle { flex: 1; min-width: 0; height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border-radius: 6px; text-align: left; font-weight: inherit; }
 .grp h2 .toggle:hover { background: var(--chrome-2); }
 .grp h2 .toggle .lu { color: var(--muted); flex: 0 0 auto; transition: transform .15s; }
 .grp h2 .toggle[aria-expanded="false"] .lu { transform: rotate(-90deg); }
-.grp h2 .label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.grp h2 .tsess { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 500;
-  color: cornflowerblue; background: color-mix(in srgb, cornflowerblue 15%, transparent); border-radius: 999px; padding: 1px 8px; }
+.grp h2 .label { min-width: 6ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }   /* the session pill (.tsess) gives way first */
+.grp h2 .tsess { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 500;
+  color: var(--host-label); background: color-mix(in srgb, var(--host-label) 15%, transparent); border-radius: 999px; padding: 1px 8px; }
 .grp h2 .where { color: var(--muted); font-weight: 400; }
 .grp h2 .count { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
 .grp h2 .count.on { color: var(--accent); font-weight: 600; }
-.grp h2 .new { flex: 0 0 auto; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border-radius: 7px;
-  --edge: var(--line); background: var(--chrome); color: var(--muted); }
-.grp h2 .new:hover { background: var(--chrome-2); color: var(--t-fg); --edge: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); }
 
 /* row: dot | title and meta | state */
 .grp li { position: relative; }
@@ -93,8 +93,8 @@ svg.lu circle { fill: none; stroke: currentColor; }
 .s .sep { color: color-mix(in srgb, var(--t-fg) 25%, var(--t-bg)); }
 .item .s { padding-left: 20px; }
 .host { color: var(--remote); font-weight: 500; }
-.s .ag-claude { color: #f0b48a; }     /* pale orange */
-.s .ag-codex { color: #c9b8ff; }      /* pale violet */
+.s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
+.s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
 .item .st { display: grid; place-items: center; padding-top: 2px; }
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
 #sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }
@@ -105,10 +105,10 @@ svg.lu circle { fill: none; stroke: currentColor; }
 
 /* agent states (Lucide): amber hourglass, orange question (pulsing), red alert, green check */
 .state { display: inline-grid; place-items: center; flex: 0 0 auto; }
-.state.working { color: #e0af68; }
-.state.waiting { color: #1a1b26; background: #ffb020; border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, #ffb020 35%, transparent), 0 0 10px #ffb020;
+.state.working { color: color-mix(in srgb, #e0af68 60%, var(--t-fg)); }
+.state.waiting { color: #1a1b26; background: var(--waiting); border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, var(--waiting) 35%, transparent), 0 0 10px var(--waiting);
   animation: ask 1s steps(2, jump-none) infinite; }
-.state.failed { color: #f7768e; }
+.state.failed { color: var(--danger); }
 @keyframes ask { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .state.waiting { animation: none; } }
 
@@ -124,11 +124,12 @@ svg.lu circle { fill: none; stroke: currentColor; }
 .empty { color: var(--muted); padding: 16px 10px; margin: 0; }
 #scrim { display: none; }
 
-/* foot: New session and Add host, and their forms above them (tmux.css) */
+/* foot: New session, Bookmarks, Add host, Attach tmux sessions, and their forms above them (tmux.css) */
 .nav-foot { padding: 10px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
-#newsessbtn, #addhostbtn { width: 100%; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 8px;
+.footbtn { width: 100%; height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 8px;
   --edge: var(--line); background: var(--chrome); font-weight: 500; }
-#newsessbtn:hover, #newsessbtn[aria-expanded="true"], #addhostbtn:hover, #addhostbtn[aria-expanded="true"] { background: var(--chrome-2); }
+.footbtn[aria-expanded="true"] { background: var(--chrome-2); }
+@media (hover: hover) { .footbtn:hover { background: var(--chrome-2); } }
 .nav-title { display: none; }
 
 /* ---------- main column ---------- */
@@ -136,7 +137,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
 #bar { display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 0 10px 0 14px;
   padding-top: env(safe-area-inset-top); background: var(--chrome); border-bottom: 1px solid var(--line); }
 .icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; flex: 0 0 auto; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); }
-.icon:hover { background: var(--chrome-2); color: var(--t-fg); }
+@media (hover: hover) { .icon:hover { background: var(--chrome-2); color: var(--t-fg); } }
 #app:not(.nav-hidden) #navbtn { display: none; }
 #current { flex: 1; min-width: 0; display: flex; align-items: center; cursor: pointer; border-radius: 8px; }
 /* The title block is a two-column grid: a 16px column holds the agent's state over the profile's
@@ -174,9 +175,9 @@ svg.lu circle { fill: none; stroke: currentColor; }
   background: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); color: var(--t-fg); font-weight: 500; }
 #views button:disabled { opacity: .35; cursor: default; }
 
-#status { background: color-mix(in srgb, #d0453a 85%, var(--t-bg)); color: #fff; padding: 6px 12px; }
-#restored { background: color-mix(in srgb, #2f7d4f 80%, var(--t-bg)); color: #fff; padding: 4px 12px; }
-#stall, #sized { background: color-mix(in srgb, #c98a1b 80%, var(--t-bg)); color: #fff; padding: 6px 12px; }
+#status { background: var(--danger-fill); color: #fff; padding: 6px 12px; }
+#restored { background: var(--ok-fill); color: #fff; padding: 4px 12px; }
+#stall, #sized { background: var(--warn-fill); color: #fff; padding: 6px 12px; }
 #restored { display: flex; align-items: center; gap: 8px; }
 #restored[hidden] { display: none; }
 #restored > span { flex: 1; }
@@ -186,7 +187,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
   display: flex; flex-direction: column; gap: 6px; }
 #asks[hidden] { display: none; }
 #asks .ask { display: flex; align-items: center; border-radius: 10px; background: var(--chrome-2); color: var(--t-fg);
-  border: 1px solid color-mix(in srgb, #ffb020 60%, var(--line)); box-shadow: 0 8px 24px color-mix(in srgb, #000 40%, transparent); }
+  border: 1px solid color-mix(in srgb, var(--waiting) 60%, var(--line)); box-shadow: 0 8px 24px color-mix(in srgb, #000 40%, transparent); }
 #asks .go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 9px 4px 9px 12px; text-align: left; font-size: 13px; }
 #asks .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #asks .state { flex: 0 0 18px; height: 18px; }
@@ -258,7 +259,8 @@ svg.lu circle { fill: none; stroke: currentColor; }
   font: 12px var(--ui); text-align: center; color: #ccc; overflow-wrap: anywhere; pointer-events: none; }
 
 #toast { position: absolute; left: 50%; bottom: calc(16px + var(--keys-h, 0px)); transform: translateX(-50%);
-  z-index: 6; margin: 0; padding: 6px 14px; border-radius: 999px; font-size: 13px; white-space: nowrap;
+  z-index: 6; margin: 0; padding: 6px 14px; border-radius: 14px; font-size: 13px; text-align: center;
+  width: max-content; max-width: min(560px, calc(100% - 32px)); overflow-wrap: anywhere;   /* a long message wraps, inside the column */
   background: var(--t-fg); color: var(--t-bg); }
 /* over the terminal's top (term.js places it); taps go through to what is under it */
 #paused { position: absolute; top: calc(56px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
@@ -333,7 +335,7 @@ body.ctxtrace #fabs { display: flex; }
 .stepper { display: flex; align-items: center; gap: 4px; }
 .stepper button { width: 32px; height: 32px; border-radius: 8px; background: var(--chrome-2); font-size: 18px; }
 .stepper output { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; }
-#menu .danger { color: color-mix(in srgb, #ff6b5e 80%, var(--t-fg)); border-top: 1px solid var(--line);
+#menu .danger { color: color-mix(in srgb, var(--danger) 80%, var(--t-fg)); border-top: 1px solid var(--line);
   border-radius: 0 0 8px 8px; margin-top: 4px; }
 
 /* ---------- sign-in and paste ---------- */
@@ -343,15 +345,13 @@ body.ctxtrace #fabs { display: flex; }
 #login label { font-size: 13px; color: var(--muted); }
 #login input, #pastebox textarea { font: inherit; font-size: 16px; color: inherit; background: var(--chrome-2);
   border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
-#loginerr { min-height: 1.35em; color: #ff8a7f !important; margin: 0 !important; }
-#login button, #pastebox .primary { height: 44px; border-radius: 10px; background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
+#loginerr { min-height: 1.35em; color: var(--danger) !important; margin: 0 !important; }
+#login button { height: 44px; border-radius: 10px; background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
 #pastebox { background: var(--chrome); color: var(--t-fg); border: 1px solid var(--line); border-radius: 14px;
   width: min(480px, calc(100vw - 32px)); padding: 16px; }
 #pastebox::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
 #pastebox form { display: flex; flex-direction: column; gap: 10px; }
 #pastebox textarea { font-family: TermFont, Menlo, monospace; font-size: 16px; resize: vertical; }
-#pastebox .actions { display: flex; justify-content: flex-end; gap: 8px; }
-#pastebox .actions button { height: 40px; padding: 0 16px; border-radius: 10px; background: var(--chrome-2); }
 
 /* Off-screen but focusable; 16px stops iOS from zooming on focus. */
 #kbd { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; resize: none;
@@ -385,7 +385,9 @@ body.ctxtrace #fabs { display: flex; }
   .item .t { font-size: 15px; }
   .item .s { font-size: 12.5px; }
   .nav-foot { padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
-  #newsessbtn, #addhostbtn { height: 48px; border-radius: 12px; font-size: 15px; }
+  .footbtn { height: 48px; border-radius: 12px; font-size: 15px; }
+  #toast { bottom: calc(68px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }   /* above the floating buttons */
+  #updchip { order: 2; align-self: flex-start; margin-top: 9px; }   /* before ⋯, not between ☰ and the title */
   /* the header: title row, then the view switch across the width */
   #bar { flex-wrap: wrap; gap: 4px 4px; padding: env(safe-area-inset-top) 8px 8px; }
   #current { order: 1; align-self: flex-start; padding-top: 11px; }   /* the title row centers on ☰ and ⋯ (44px) */
@@ -429,7 +431,8 @@ body.wide #sized { grid-row: 5; }
 body.wide #term { grid-row: 6; }
 body.wide #hotkeys { grid-row: 7; }
 /* Positioned children are placed in the terminal's column, not over the docked Files. */
-body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs, body.wide #asks { grid-row: 1 / -1; }
+body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs { grid-row: 1 / -1; }
+body.wide #asks { grid-row: 6 / -1; top: 48px; }   /* under the banners and the find button, never over them */
 body.docked #sidehead { display: flex; grid-column: 2; grid-row: 1; min-height: 56px; border-left: 1px solid var(--line); }
 body.docked #files, body.docked #viewnote { grid-column: 2; grid-row: 2 / -1; width: var(--side-w);
   height: auto; align-self: stretch; border-left: 1px solid var(--line); }

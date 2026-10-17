@@ -1,0 +1,41 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Controls shared by kind (docs/UI-GUIDELINES.md §3): one rule per kind, whatever file owns the
+   feature. Loaded after the feature sheets, before custom.css. */
+
+/* a dialog's actions: Cancel, then the primary verb in the accent (the bookmark's in its color,
+   an irreversible one in --danger-fill: marks.css, tmux.css) */
+dialog .actions { display: flex; justify-content: flex-end; gap: 8px; }
+dialog .actions button { height: 40px; padding: 0 16px; border-radius: 10px; background: var(--chrome-2); }
+dialog .actions .primary { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
+
+/* a group header's buttons: copy the attach command, import a host's sessions, + new window, ⋯;
+   one size; + keeps an edge as the group's own action */
+.grp h2 :is(.attach, .import, .new, .hostbtn) { flex: none; width: 26px; height: 26px; display: grid; place-items: center; padding: 0;
+  border-radius: 7px; color: var(--muted); }
+.grp h2 .new { --edge: var(--line); background: var(--chrome); }
+.grp h2 .hostbtn[aria-expanded="true"] { color: var(--t-fg); background: var(--chrome-2); }
+@media (hover: hover) {
+  .grp h2 :is(.attach, .import, .new, .hostbtn):hover { color: var(--t-fg); background: var(--chrome-2); }
+  .grp h2 .new:hover { --edge: color-mix(in srgb, var(--t-fg) 30%, var(--t-bg)); }
+}
+
+/* popover menus: the host's ⋯, the update chip's */
+:is(#hostmenu, #updmenu) button { height: 34px; padding: 0 10px; border-radius: 7px; text-align: left; }
+:is(#hostmenu, #updmenu) button:focus-visible { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); }
+@media (hover: hover) { :is(#hostmenu, #updmenu) button:hover { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); } }
+
+/* a phone or a narrow window: every target a finger's size (44px; 40 inside a 40px row) */
+@media (max-width: 860px) {
+  .grp h2 .toggle { height: 40px; }
+  .grp h2 :is(.attach, .import, .new, .hostbtn) { width: 40px; height: 40px; border-radius: 10px; }
+  .footform button, #findbox button, dialog .actions button, :is(#hostmenu, #updmenu) button { height: 44px; border-radius: 12px; }
+  #findbox .icon { width: 44px; }
+  #findfab { width: 44px; height: 44px; }
+  #rename { width: 40px; height: 40px; }
+  .stepper button { width: 44px; height: 44px; }
+  #markbar button { height: 40px; }
+  #markbar button.icon { width: 40px; }
+  #menu .row { min-height: 44px; }
+  #asks .x { width: 40px; height: 40px; }
+  .seg button { height: 34px; }   /* a segment in a full-width row */
+}

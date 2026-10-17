@@ -8,7 +8,7 @@ const $ = (id) => document.getElementById(id);
 
 /** current(): the shown pane's {group, item} or null; groups(): the layout's; pick(id) opens a
  *  pane; signOut() for the web listener's Sign out; copy(text) to the clipboard. */
-export function paneMenu({ send, current, groups, pick, signOut, copy }) {
+export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) {
   function open() { syncItems(); $("menu").hidden = false; $("menubtn").setAttribute("aria-expanded", "true"); }
   function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); hideMoves(); }
   $("menubtn").onclick = (e) => { e.stopPropagation(); $("menu").hidden ? open() : close(); };
@@ -18,17 +18,19 @@ export function paneMenu({ send, current, groups, pick, signOut, copy }) {
   const targets = () => {
     const found = current();
     if (!found) return [];
-    return groups().filter((g) => g.kind === "tmux" && g.wid && g.wid !== found.group.wid && (g.host ?? null) === (found.group.host ?? null));
+    return groups().filter((g) => g.kind === "tmux" && g.wid && g.wid !== found.group.wid && (g.host ?? null) === (found.group.host ?? null) && g.server === found.group.server);
   };
   function syncItems() {
     const found = current();
-    for (const id of ["splitright", "splitbelow", "closepane"]) $(id).disabled = !found;
+    for (const id of ["splitright", "splitbelow", "quickbelow", "quickleft", "closepane"]) $(id).disabled = !found;
     $("movewin").hidden = !targets().length;
   }
 
   const paneSend = (m) => { const found = current(); close(); if (found) send({ ...m, id: found.item.id }); };
   $("splitright").onclick = () => paneSend({ t: "split", how: "right" });
   $("splitbelow").onclick = () => paneSend({ t: "split", how: "below" });
+  $("quickbelow").onclick = () => { close(); quick("bottom"); };     // AC-88
+  $("quickleft").onclick = () => { close(); quick("left"); };
   $("closepane").onclick = async () => {
     const found = current();
     close();

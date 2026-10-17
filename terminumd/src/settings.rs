@@ -2,15 +2,19 @@
 //! `~/.terminum/settings.json` (AC-19, AC-12, AC-13, AC-15; hosts records of AC-87): every key
 //! optional with its documented default. A wrong value keeps the default for that key and says
 //! so in a message the page shows as a toast; an unknown key is reported once; a file that does
-//! not parse keeps every default. `save_hosts` rewrites only the `hosts` value in the text, so
-//! the user's order, spacing and other keys stay as written. Also the JSON locator the theme
-//! and hot keys files use to name the line of a bad value.
+//! not parse keeps every default. Writes (settings_save.rs) replace only the text of one key's
+//! value, so the user's order, spacing and other keys stay as written. Also the JSON locator
+//! the theme and hot keys files use to name the line of a bad value.
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
 use serde_json::{Map, Value, json};
+
+#[path = "settings_save.rs"]
+mod save;
+pub use save::{save_hosts, save_object, write_atomic};
 
 /// Theme, settings and hot keys files larger than this are refused (spec: limits).
 pub const MAX_BYTES: usize = 64 * 1024;
@@ -63,6 +67,8 @@ pub struct Settings {
     pub page: PageSettings,
     /// Host records as written (`ssh`, `files`, `helper`, `theme`): the hosts module judges them.
     pub hosts: Map<String, Value>,
+    /// Sessions of the user's own tmux servers on this Mac, by socket (AC-89).
+    pub attach: BTreeMap<String, Vec<String>>,
     /// The messages of the last parse, for the page (`page_json`).
     pub messages: Vec<String>,
 }
@@ -82,6 +88,7 @@ impl Default for Settings {
             },
             page: PageSettings { text_size: 13, lines: "wrap".into(), screen_mode: "auto".into(), widgets: true, folds: true },
             hosts: Map::new(),
+            attach: BTreeMap::new(),
             messages: Vec::new(),
         }
     }
@@ -179,6 +186,9 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
             Ok(_) => m.bad("expected an object"),
         }
     }
+    if s.attach.remove(&s.tmux_socket).is_some() {
+        m.bad(format!("attach.{} is terminum's own tmux server: its sessions are listed anyway", s.tmux_socket));
+    }
     s.messages = m.0.clone();
     (s, m.0)
 }
@@ -247,10 +257,32 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
             }
         }
         "hosts" => match v {
-            Value::Object(o) => s.hosts = o.clone(),
+            Value::Object(o) => {
+                s.hosts = o.clone();
+                // a host's attached sessions (AC-89): names tmux takes, never its `terminum`
+                for (name, rec) in s.hosts.iter_mut() {
+                    let Some(list) = rec.get("attach") else { continue };
+                    let ok = list.as_array().is_some_and(|a| a.iter().all(|n| n.as_str().is_some_and(|n| n != "terminum" && crate::tmux::args::check_session_name(n).is_ok())));
+                    if !ok {
+                        m.bad(format!("hosts.{name}.attach must be a list of tmux session names (not terminum)"));
+                        if let Some(o) = rec.as_object_mut() {
+                            o.remove("attach");
+                        }
+                    }
+                }
+            }
             Value::Null => {}
             _ => m.bad("hosts must be an object"),
         },
+        "attach" => {
+            for (socket, v) in members(v, "attach", m) {
+                let names: Option<Vec<String>> = v.as_array().and_then(|a| a.iter().map(|n| n.as_str().and_then(|n| crate::tmux::args::check_session_name(n).ok())).collect());
+                match names {
+                    Some(n) if is_name(socket) => { s.attach.insert(socket.to_string(), n); }
+                    _ => m.bad(format!("attach.{socket} must be a list of tmux session names, under a socket name")),
+                }
+            }
+        }
         _ => m.bad(format!("unknown key {key}")),
     }
 }
@@ -277,52 +309,6 @@ pub fn load(path: &Path) -> (Settings, Vec<String>) {
             (s, m)
         }
     }
-}
-
-/// Changes the `hosts` object with `f` and writes the file atomically, replacing only the
-/// text of that value (or adding the key): the rest of the file stays byte for byte. A file
-/// that does not parse is left alone: its line is reported for the user to fix first.
-pub fn save_hosts(path: &Path, f: impl FnOnce(&mut Map<String, Value>)) -> Result<(), String> {
-    let text = match fs::read_to_string(path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(format!("{FILE}: cannot be read: {e}")),
-    };
-    if text.len() > MAX_BYTES {
-        return Err(format!("{FILE}: larger than 64 KB, not read"));
-    }
-    let top: Value = if text.trim().is_empty() {
-        json!({})
-    } else {
-        serde_json::from_str(&text)
-            .map_err(|e| format!("{FILE}: line {}: {}; fix it first", e.line().max(1), syntax_message(&e)))?
-    };
-    let Some(obj) = top.as_object() else { return Err(format!("{FILE}: expected an object")) };
-    let mut hosts = match obj.get("hosts") {
-        Some(Value::Object(h)) => h.clone(),
-        None | Some(Value::Null) => Map::new(),
-        Some(_) => return Err(format!("{FILE}: hosts must be an object")),
-    };
-    f(&mut hosts);
-    let rendered = serde_json::to_string_pretty(&Value::Object(hosts)).map_err(|e| e.to_string())?.replace('\n', "\n  ");
-    let out = if text.trim().is_empty() {
-        format!("{{\n  \"hosts\": {rendered}\n}}\n")
-    } else if let Some(sp) = locate(&text, &[Seg::Key("hosts")]) {
-        format!("{}{rendered}{}", &text[..sp.start], &text[sp.end..])
-    } else {
-        let end = text.rfind('}').ok_or_else(|| format!("{FILE}: expected an object"))?;
-        let head = text[..end].trim_end();
-        let comma = if obj.is_empty() { "" } else { "," };
-        format!("{head}{comma}\n  \"hosts\": {rendered}\n{}", &text[end..])
-    };
-    write_atomic(path, out.as_bytes()).map_err(|e| format!("{FILE}: cannot be written: {e}"))
-}
-
-/// Write beside the file, keep its permissions, then rename over it.
-pub fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    fs::create_dir_all(dir)?;
-    crate::config::write_replacing(path, data, 0o666, fs::metadata(path).ok().map(|m| m.permissions()))
 }
 
 /// A step of a path into a JSON document.

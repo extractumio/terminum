@@ -6,7 +6,8 @@ import { findItem, metaLine, profileBar, renderNav, stateIcon } from "./nav.js";
 import { textForm } from "./render.js";
 import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
-import { navTools } from "./navtools.js";
+import { askConfirm, navTools } from "./navtools.js";
+import { embedded, quickShell } from "./quick.js";
 import { paneMenu } from "./menu.js";
 import { screenMode } from "./screenmode.js";
 import { pageSettings } from "./settings.js";
@@ -28,13 +29,15 @@ const narrow = matchMedia("(max-width: 860px)");
 const touch = matchMedia("(hover: none)");
 const LINES = ["wrap", "grid", "fit"];   // the Lines modes (view modes below)
 
+// a quick shell's page (embed mode, AC-88) reads this browser's choices and keeps none of its own
 const store = {
   get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
+  set(k, v) { if (embedded) return; try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* private mode */ } },
 };
+if (embedded) document.body.classList.add("embed");
 
 const st = {
-  groups: [], sid: store.get("sid", null),
+  groups: [], sid: embedded ?? store.get("sid", null),
   mode: store.get("mode", {}), size: store.get("size", null), resized: false,
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true),
@@ -46,7 +49,7 @@ const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => 
   onOpen: (ws) => {
     trace.connected(send, ws);
     if (st.sid) select(st.sid, true);
-    focusTerminal();                               // a computer types into the chat at once; a phone opens no keyboard
+    if (!embedded || focusAsked) focusTerminal();  // a computer types into the chat at once; a phone opens no keyboard
     active = true;                                 // a new connection streams until told otherwise
     syncActive();
   } });
@@ -87,7 +90,9 @@ const shownFiles = paneFiles(() => views.paneInfo(), undefined, signedUrl);
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const views = new Views({ send, store, onShow: () => { view.keepBottom(applyFit); marks(); }, onBack: () => focusTerminal() });
 // Addresses open in a new tab here, paths in File (on the pane's host).
-const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile: (p, host) => views.open(p, host), toast, state: shownFiles.state });
+// (a quick shell's page has no View: its pane's page opens it)
+const openFile = (p, host) => (embedded ? parent.postMessage({ type: "tm-open", path: p, host }, location.origin) : views.open(p, host));
+const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile, toast, state: shownFiles.state });
 // Where a tap moves the cursor (a shell or a coding agent), on the cursor's row it does so, also
 // over a path typed there; elsewhere a tap there opens a link.
 function tapLink(x, y) {
@@ -162,10 +167,12 @@ $("upload").addEventListener("change", () => { const f = $("upload").files[0]; i
 files.bindDrop($("term"));
 
 
-const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null,
+const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
 const menu = paneMenu({ send, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
-  pick: (id) => pick(id), signOut: () => conn.signOut(), copy: (text) => input.copySelection(text) });
+  pick: (id) => pick(id), signOut: () => conn.signOut(), copy: (text) => input.copySelection(text), quick: (side) => quick.open(side) });
+const quick = quickShell({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, item: (id) => findItem(st.groups, id)?.item,
+  pick: (id) => pick(id), askConfirm, narrow });
 
 // ---------- the keys go back to the terminal (a computer only) ----------
 // With a mouse and a hardware keyboard, typing goes to the terminal again when the user comes
@@ -189,11 +196,21 @@ for (const b of [document.querySelector('button[data-view="term"]'), $("backterm
 // panes' captures with it. On a computer so does a page out of focus (the user works in another
 // window); focus in the Files frame is still this page's.
 let active = true;                             // as terminumd takes a page that connects
+let parentActive = true;                       // embed mode: its pane's page is looked at
+let focusAsked = false;                        // embed mode: its pane's page gave it the keys
 function syncActive() {
-  const now = !document.hidden && (!computer.matches || document.hasFocus());
+  const now = !document.hidden && (!computer.matches || document.hasFocus() || (!!embedded && parentActive));
   if (now !== active) send({ t: now ? "resume" : "pause" });
   active = now;
+  quick.active(now);
 }
+addEventListener("message", (e) => {
+  if (e.origin !== location.origin) return;
+  if (!embedded && e.source === $("quickframe").contentWindow && e.data?.type === "tm-open") return views.open(String(e.data.path), e.data.host ?? null);
+  if (!embedded || e.source !== parent) return;
+  if (e.data?.type === "tm-focus") { focusAsked = true; focusTerminal(); }
+  if (e.data?.type === "tm-active") { parentActive = !!e.data.on; syncActive(); }
+});
 document.addEventListener("visibilitychange", syncActive);
 addEventListener("focus", syncActive);
 addEventListener("blur", () => setTimeout(syncActive, 0));   // the focus may have gone into the Files frame
@@ -203,7 +220,7 @@ function onMessage(m) {
   trace.received(m);
   bookmarks.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; st.ran = false; reminders.layout(m.groups); drawNav(); tools.layoutCame(m.groups); break;
+    case "layout": st.groups = m.groups; st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); tools.layoutCame(m.groups); break;
     case "theme": applyTheme(m.theme); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -215,12 +232,15 @@ function onMessage(m) {
     case "screen": view.onScreen(m); screen.sync(); break;
     case "sized": screen.onSized(m); break;
     case "settings": settings.apply(m); break;
-    case "restore": menu.showRestore(m.report); break;
+    case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "fit": st.resized = m.on; syncControls(); break;
-    case "files": views.onFiles(m); break;
-    case "hostadded": tools.hostAdded(); break;
+    case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
+    case "quickmade": quick.made(m); break;
+    case "hostadded": tools.hostAdded(m.name); break;
+    case "tmuxadded": tools.tmuxAdded(); break;
+    case "tmuxsessions": tools.tmuxChoices(m); break;
     case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
-    case "update": menu.showUpdate(m.latest); break;
+    case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
     case "stall": tools.showStall(m); break;
     case "build": conn.checkBuild(m.id); break;
@@ -237,22 +257,28 @@ const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   else send({ t: "reorder", group: parent.dataset.wid, ids });
 }, () => drawNav());                                // a layout may have come while dragging
 
-function pick(id) { select(id); closeDrawer(); focusTerminal(); }
+function pick(id) {
+  const of = !narrow.matches && findItem(st.groups, id)?.item.quickOf;   // a quick shell's row: its pane, with it
+  select(of || id); closeDrawer();
+  if (of) quick.focus(); else focusTerminal();
+}
 const reminders = waitingCards($("asks"), pick);
 function drawNav() {
+  if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);
   reminders.show(st.sid);
   if (reorder.dragging()) return;                  // the next layout redraws it
   renderNav($("sessions"), ordered(st.groups, store.get("groupOrder", [])), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
-    (wid) => send({ t: "new", group: wid }), bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true));
+    (wid) => send({ t: "new", group: wid }), bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux);
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
     const first = st.groups.flatMap((g) => g.items)[0];
     if (first) select(first.id);
     else showCurrent(null);
     if (!st.sid && narrow.matches) openDrawer();
-    return;
+    return quick.sync();
   }
   showCurrent(found);
+  quick.sync();
 }
 
 function toggleGroup(key) {

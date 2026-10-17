@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.7.1 |
+| Version | 0.9.0 |
 | Date | 2026-10-16 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,8 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.9.0 | 2026-10-16 | Owner: AC-89 also on hosts: sessions of a host's own tmux (the server its `terminum` session is on) attached by name (`hosts.<name>.attach`), offered after Add host and by an icon on the host's group with the count of its other sessions; one Attach tmux sessions form for this Mac and hosts ("On", running sessions as ticks, one message for several names); messages name the server by id. Pragmatic review: one control client per session (tmux sends `%output` only for the client's session; checked on 3.6a), host session clients one at a time with back-off 1…30 s, attached by session id (`$N`: no name in the host's shell), `-E` on hosts too, the host's link waits on its `terminum` client only, sized windows marked `@tm-sized` and released on reconnect and on host change. |
+| 0.8.0 | 2026-10-16 | Owner: AC-88 quick shell (a tmux window of its own marked `@tm-quick <pane>`, shown under or beside its pane by a second page in embed mode `/?embed=<key>`; computers only; listed under its pane; not restored); AC-89 sessions of the user's own tmux attached by name (`attach` in settings.json, `terminum tmux`, "Add tmux"; servers told apart by `<host>:<socket>`, group ids `local:<socket>/<session>`; no sizing until the page types). Pasted images go to `~/.terminum/tmp` here and on hosts (AC-36). Pragmatic review: window not split-window (a page sizes the window it shows), an iframe of the page not a second view (a page holds one pane), servers keyed by id before attaching a second local one. |
 | 0.7.1 | 2026-10-16 | AC-01: a row's window number names its host on hover ("This machine" here). Dialogs, forms and search speak at the terminal's size; a touch screen's fields keep 16 px (iOS zooms in below). |
 | 0.7.0 | 2026-10-15 | Owner: the server is named terminumd, after the app (was terminusd): launchd agent `io.terminum.terminumd`; starting or stopping it unloads `io.terminum.terminusd` and removes its plist first (it holds the port); a rollback to a build of the old name is refused. |
 | 0.6.0 | 2026-10-15 | Owner: a group's copy button gives the command that attaches another terminal (AC-01); dialogs, forms and search use the terminal's font; the shipped remote theme stays violet while the system is light. |
@@ -83,7 +85,7 @@ Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-01 | Which tmux server holds local terminals: the user's default server (sessions shared with any `tmux attach`) or a private `-L terminum` server? | Owner | resolved | A private server: socket `terminum`, started by terminumd with its own config `~/.terminum/tmux.conf` (history-limit 12000, window-size latest (terminumd sets `manual` per window while a page sizes it, AC-13), extended-keys on, focus-events on, escape-time 0; the user may edit it), so the user's sessions and `~/.tmux.conf` are never touched and every pane has terminumd's options; `tmux -L terminum attach` from any terminal still works. Owner, 2026-10-15. |
+| OQ-01 | Which tmux server holds local terminals: the user's default server (sessions shared with any `tmux attach`) or a private `-L terminum` server? | Owner | resolved | A private server: socket `terminum`, started by terminumd with its own config `~/.terminum/tmux.conf` (history-limit 12000, window-size latest (terminumd sets `manual` per window while a page sizes it, AC-13), extended-keys on, focus-events on, escape-time 0; the user may edit it), so the user's sessions and `~/.tmux.conf` are never touched and every pane has terminumd's options; `tmux -L terminum attach` from any terminal still works. Owner, 2026-10-15. Since 0.8.0 the user may also attach sessions of their own server by name (AC-89); terminumd still never starts it or makes sessions there. |
 | OQ-02 | How many control clients: one per server, or one per session? | Claude | resolved | One per session for notices and typing (safe whatever AS-06 says), plus one bulk client per server for history pages, search, `list-panes` and layout reads, so a bulk read never queues ahead of an echo. 2026-10-15 |
 | OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The client that typed last, as tmux's `window-size latest`; a client that only reads keeps Wrap or Fit (AC-13). Owner, 2026-10-15. |
 | OQ-04 | Does the App replace the browser for daily use on the Mac, or is a browser tab pinned to the Dock enough? | Owner | resolved | No App: the clients to build and test for are a browser on the Mac (wide screen, 1400 px and more) and Safari on an iPhone (mobile). AC-11 dropped. Owner, 2026-10-15. |
@@ -114,6 +116,8 @@ Open questions:
 | AC-18 | [SHOULD / P1] | On a touch screen or a narrow window the hot keys panel, the keyboard button and the floating buttons work as in iterm-enhancer, and the panel's layout comes from a file the user can change. |
 | AC-19 | [SHOULD / P1] | The user customizes the page with a stylesheet of their own (`custom.css`) and settings in `settings.json`, with the page reloading when they change and refusing nothing silently. |
 | AC-20 | [SHOULD / P1] | terminumd stays within its budgets: under 60 MB with 60 panes and two pages, under 0.5 % CPU idle, a key echoed in 25 ms median on the Mac, a frame encoded in 3 ms; the page under 150 MB with 10,000 lines. |
+| AC-88 | [SHOULD / P1] | On a computer the user opens a quick shell for the shown pane, below it or on its left, in the pane's folder: a terminal of its own taking a third of the view, resized by dragging its edge and closed with its ×; it stays with its pane until closed. |
+| AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started, closed or resized by merely looking, and shows while it does not run as a group that says so. |
 
 ## 5. BDD scenarios
 
@@ -571,6 +575,73 @@ Scenario: AC-20 failure — a budget is missed
   Then the bench exits non-zero naming the number and the budget; the Definition of Done is not met until it passes on the delivered tree
 ```
 
+### AC-88 — Quick shell [SHOULD / P1]
+
+```gherkin
+Scenario: AC-88 happy path — open, use, close
+  Given the page on a computer shows pane %3 (claude) in /Users/alex/work/api
+  When the user presses the quick shell button in the header (or "Quick shell below" / "Quick shell on the left" in the menu)
+  Then terminumd runs "new-window -d -a -t @2 -c '/Users/alex/work/api'" and marks the new window with "@tm-quick %3", and the page shows its shell under the terminal (or on its left) in a third of the view, its keys going there while it has the focus; its row in the list sits under %3's, as "quick shell"
+  When the user drags the edge between the two
+  Then both terminals resize when the drag ends (6 rows or 20 columns at least, 80 % at most), and this browser remembers the share for that side
+  When the user presses ⇄ on its bar
+  Then it moves to the other side
+  When the user presses its ×
+  Then terminumd closes the window ("kill-window"), at once when only a shell runs in it, after "Close the quick shell? The program running in it (npm) ends." otherwise
+Scenario: AC-88 happy path — it stays with its pane
+  When the user shows another pane and comes back to %3, or reloads the page, or opens %3 on another computer
+  Then %3's quick shell shows again where it was; one pane has at most one quick shell (the button focuses it)
+  When the user clicks the quick shell's row in the list
+  Then the page shows %3 with its quick shell focused
+Scenario: AC-88 edge — a phone, a lost pane, a reboot
+  Given a phone or a narrow window
+  Then there is no quick shell button; the menu's "Quick shell" shows the quick shell's pane as the shown pane (the list leads back to %3)
+  When %3 closes while its quick shell lives
+  Then the quick shell is listed as an ordinary window (nothing is lost)
+  When the layout is restored after a reboot (AC-15)
+  Then quick shells are not restored
+Scenario: AC-88 edge — a host
+  Given the shown pane runs on host devbox
+  Then the quick shell opens on devbox in the pane's folder there
+```
+
+### AC-89 — Sessions of the user's own tmux [SHOULD / P1]
+
+```gherkin
+Scenario: AC-89 happy path — attach by name
+  Given the user's own tmux (plain "tmux", socket "default") runs session "work"
+  When the user presses "Attach tmux sessions" at the list's foot ("On: This Mac"; the sessions running there that are not attached are ticks, one with tmux's destroy-unattached on saying beside its tick "destroy-unattached is on: tmux closes it when terminum is its last client and lets go", the field names one that does not run yet) and ticks "work" (one message attaches all ticked and named, all or none), or runs "terminum tmux attach work"
+  Then settings.json gets "attach": {"default": ["work"]}, terminumd attaches it as a control client (never starting that server, never making or closing a session there), and within 2 s the list shows group "work" with its windows and panes, marked "tmux", its copy button "tmux attach -t =work"
+  And its panes are used as terminum's own: screens, typing, Files, a new window, a split, rename, bookmarks
+Scenario: AC-89 happy path — sizing
+  When the user opens a pane of "work"
+  Then its window keeps its size: looking never resizes what the user's own terminals show
+  When the user types there (or presses "Fit to this screen")
+  Then it is sized as any pane (AC-13); another terminal attached to "work" sees the window at that size, as tmux does for two clients
+Scenario: AC-89 happy path — not running, detach
+  Given "later" is attached and does not run (or the user's tmux does not run)
+  Then the list shows group "later" with "not running on your tmux: attached when it starts" (or "your tmux is not running (/tmp/tmux-501/default)"), and it attaches within 2 s of starting
+  When the user picks "Detach from terminum" in the group's ⋯ menu (or runs "terminum tmux detach work")
+  Then the group goes and the session goes on running in the user's tmux
+Scenario: AC-89 happy path — a host's own sessions
+  Given host "devbox" is attached (AC 81) and its tmux (the server its session "terminum" is on) also runs "work" and "api"
+  Then the host's group shows an import icon, its tooltip "Attach tmux sessions running on devbox (2)"; the host's ⋯ menu has "Attach tmux sessions…"
+  When the user has just added "devbox" in Add host, or presses that icon or menu item
+  Then the Attach tmux sessions form opens with "On: devbox" and "work" and "api" as ticks (unticked); Cancel leaves the icon for later
+  When the user ticks "work" and presses "Attach" (or runs "terminum tmux attach work --host devbox")
+  Then settings.json gets hosts.devbox.attach ["work"], terminumd attaches it over a second ssh connection ("tmux -u -C attach-session -E -f ignore-size -t '$3'": by session id, so no name reaches the host's shell) and the list shows group "work" on devbox with its panes, Files through the host's agent; sizing, absent, detach and release as on this Mac
+  And while devbox is not attached, "work" shows with the host's state ("reconnecting (4 s)", "off", "failed: …"); removing devbox forgets it
+Scenario: AC-89 edge — many sessions on a host
+  Then the host's session connections start one at a time, after its "terminum" connection answered; one that ends is started again after 1, 2, 4 … 30 s, never in a loop; the host's link is judged by its "terminum" connection alone (when it drops, all the host's connections end and come back with it)
+Scenario: AC-89 failure — refused
+  When the user attaches a session attached already, one of terminum's own server ("main") or a host's "terminum", a name with ":" or ".", or a 33rd session (hosts and this Mac together)
+  Then the form (or the command) says why and nothing changes
+Scenario: AC-89 edge — the user's tmux.conf
+  Then terminumd's control clients are clients of the user's server ("tmux -N … attach-session -E": they never start it, and the session's environment is not updated from terminumd's): hooks such as client-attached and plugins such as tmux-resurrect see them; a session attached on a server of another tmux version says tmux's own message ("protocol version mismatch")
+  When the user detaches a session, terminum stops, or the socket goes from settings.json
+  Then the windows terminumd sized there get tmux's own size back ("set-option -w -u window-size"); terminumd marks each window it sizes there "@tm-sized", so after a crash or a dropped host link the marked windows no page shows get their size back when the server is attached again
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -832,6 +903,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 |---|---|---|---|
 | `port` / `TM_PORT` | `47900` | `47901` | loopback port |
 | `tmux.socket` / `TM_TMUX_SOCKET` | `terminum` | `tm-test` | the local server's `-L` name (OQ-01); its config `~/.terminum/tmux.conf` |
+| `attach` | `{}` | `{"default": ["work"]}` | sessions of the user's own tmux servers on this Mac by `-L` socket ("default": plain `tmux`); a host's are `hosts.<name>.attach` (terminum-remote.md); at most 32 in all (AC-89) |
 | `tmux.history` | `12000` | `20000` | `history-limit` written into `~/.terminum/tmux.conf` (TM_HISTORY plus a margin) |
 | `TM_HISTORY` | `10000` | `20000` | lines a page may load |
 | `size` | `latest` | `largest` | sizing policy (AC-13) |
@@ -971,3 +1043,7 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] AC-18 — `cargo test hotkeys::` and `web/test/e2e_all.mjs` (a layout from settings, a bad key refused) → pass.
 - [x] AC-19 — `cargo test settings::` and `web/test/e2e_live.mjs` (custom.css live, a wrong setting toasted once) → pass.
 - [x] AC-20 — `scripts/bench_load.py` (60 panes, 2 pages, 1 minute): RSS 16.4 MB, CPU 0.06 %, idle 0.00 %; 5 minutes: RSS max 17.5 MB, CPU 0.10 %, idle 0.02 %; `scripts/bench_echo.py`: p50 11.2 ms, p95 14.9 ms; `cargo bench --bench frame`: 0.21 ms per 200×60 frame. The comparison with the iTerm2 stack was not run.
+- [x] AC-88 (2026-10-16) — `web/test/e2e_livequick.mjs` (in `e2e_live.mjs`, Chromium and WebKit at 1400×900): opens below in the pane's folder as a marked window, takes the keys (none reach the pane), listed under its pane, a third of the view, dragged larger and remembered, ⇄ to the left, back after a reload where it was, × closes the window; `cargo test quick_shells_are_tagged_under_their_pane` (tagging, a quick shell's own, a second one, a gone pane); `scripts/e2e_restore.py` (not in the checkpoint) → pass. Not checked by a test: the phone path (the menu shows the quick pane itself) and a quick shell on a host.
+- [x] AC-89 (2026-10-16) — `scripts/e2e_attach.py` against a second private server standing for the user's own (`-L tm-test-own`): attach by name, kept in settings.json, its copy command, refusals (twice, terminum's own), a session not running yet shows and attaches when it starts, no resize by looking (also after a later size) and a resize after typing, the private server's same window id untouched, the environment not updated (`-E`), New window there, `terminum tmux`, detach leaves it running at tmux's own size → 15/15; the size and environment checks fail without their fixes (checked); `cargo test` (servers told apart by socket, `attach` settings); `web/test/e2e_tmux.mjs` (the form with its choices, a waiting group, Detach) in Chromium and WebKit.
+- [x] AC-89 destroy-unattached and AC 81 no new window without tmux (2026-10-16) — `e2e_attach.py`: the choices name a session held by a client with destroy-unattached on in `ends`; `e2e_remote.py`: a failed host's group has no `new`; `e2e_tmux.mjs`: the warning beside that tick only, no "+" on a host that is not attached; `cargo test` (`list-sessions` lines read with the option's values off, on, keep-last).
+- [x] AC-89 on hosts (2026-10-16) — `scripts/e2e_hostattach.py` through `scripts/fake_ssh.py` (a private tmux server for the host's): the host's other sessions counted and offered by name, `terminum` and an unknown host refused, attach by name kept in the host's record, one more ssh connection attached by id with `-E` (no name in its command), the environment kept, no resize by looking and a marked resize after typing, a client that keeps ending started again with back-off (≤ 4 starts in 6 s; 30 without it, checked), the host's link dropping (sessions wait with its state, come back with it), a marked window no page sizes reclaimed on reconnect (fails without `reclaim`, checked), `terminum tmux` naming the host, detach, a removed host's sized window given its size back (fails without the release, checked) → 17/17; `e2e_attach.py` 15/15 and `e2e_remote.py` 22/22 on the same tree; `cargo test` (a host's attached sessions shown and the user's, attach command by id only, `hosts.*.attach` checked); `web/test/e2e_tmux.mjs` (On and ticks, a late answer ignored, one message for ticked and named, the offer after Add host once attached, the import icon with its count and the menu item, none without others) in Chromium and WebKit at both sizes.

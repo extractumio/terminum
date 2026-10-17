@@ -25,7 +25,8 @@ PORT, LOCAL_SOCKET, REMOTE_SOCKET = 47961, "tm-test-rlocal", "tm-test-remote"
 
 
 def host_group(layout, name):
-    return next((g for g in layout if g.get("host") == name), None)
+    """The host's own group (its `terminum` session or its state), not a session attached there (AC 89)."""
+    return next((g for g in layout if g.get("host") == name and not g.get("attached")), None)
 
 
 def api(t, secret, path, host=None, method="GET", body=None, headers=None):
@@ -102,7 +103,8 @@ def main():
         st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refused", "recipe": "alex@refused.example"})
         failed = wait_layout(ws, lambda gs: (g := host_group(gs, "refused")) is not None and g.get("state") == "failed", 10)
         why = (host_group(failed or [], "refused") or {}).get("why", "")
-        check("AC-81 an ssh that fails says why", "Permission denied (publickey)" in why, why)
+        check("AC-81 an ssh that fails says why, and offers no new window (no tmux to make it in)",
+              "Permission denied (publickey)" in why and (host_group(failed or [], "refused") or {}).get("new") is None, host_group(failed or [], "refused"))
         unix_request(t.sock, "POST", "/hosts/remove", {"name": "refused"})
 
         st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2200"})
@@ -150,7 +152,7 @@ def main():
         st, body = api(t, secret, "/paste?sid=" + urllib.request.quote(item["id"]), method="POST", body=png,
                        headers={"Content-Type": "image/png", "Origin": f"http://127.0.0.1:{PORT}"})
         path = (body or {}).get("path", "")
-        check("AC-85 a pasted image is saved on the host", st == 200 and path.startswith(remote_home + "/.cache/terminum/paste/") and os.path.exists(path), body)
+        check("AC-85 a pasted image is saved on the host", st == 200 and path.startswith(remote_home + "/.terminum/tmp/") and os.path.exists(path), body)
 
         # a host set up before the server was named terminumd has only terminusd-agent: it is
         # started, answers with its old build, and is replaced by this build's helper (AC-84)

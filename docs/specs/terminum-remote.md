@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux se
 
 | Field | Value |
 |---|---|
-| Version | 0.5.0 |
-| Date | 2026-10-15 |
+| Version | 0.6.0 |
+| Date | 2026-10-16 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.0 | 2026-10-16 | Owner: OQ-81 amended: the host's other tmux sessions stay hidden unless the user attaches them by name (AC 89, `hosts.<name>.attach`); each attached session is a further ssh connection. |
 | 0.5.0 | 2026-10-15 | Owner: the helper is `terminumd-agent` (was `terminusd-agent`): a host with only the old one has it started, sees its old build and replaces it (AC-84); install and removal delete the old files. |
 | 0.4.0 | 2026-10-15 | Owner: Add host reads as `ssh <what you type>`; Name optional (the destination's host); "Browse its files" ticked in Add host enables files once attached (AC-81, AC-83). |
 | 0.3.0 | 2026-10-15 | Owner: OQ-81 resolved: a host is one ssh string; terminumd creates the session `terminum` on the host when it is missing and holds it; windows and panes are made inside it; no session option. terminumd named. |
@@ -64,7 +65,7 @@ Open questions:
 
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
-| OQ-81 | Does a host attach all its tmux sessions or one named session? | Owner | resolved | One session per host, named `terminum`: the user gives only the ssh string; terminumd runs `tmux -C new-session -A -s terminum` on the host, creating it when missing, and makes windows and panes inside it; other sessions on the host are not shown. Owner, 2026-10-15. |
+| OQ-81 | Does a host attach all its tmux sessions or one named session? | Owner | resolved | One session per host, named `terminum`: the user gives only the ssh string; terminumd runs `tmux -C new-session -A -s terminum` on the host, creating it when missing, and makes windows and panes inside it; other sessions on the host are not shown. Owner, 2026-10-15. Amended 2026-10-16: the user may attach other sessions of that tmux by name (AC 89); they are counted on the host's group, never listed or touched until attached. |
 | OQ-82 | Should the files helper be installed with the host, without the Enable click? | Owner | open | Proposed: keep the click (nothing is copied to a host without it), as iterm-enhancer's AC 38. |
 
 ## 4. Acceptance cases
@@ -86,7 +87,7 @@ Open questions:
 ```gherkin
 Scenario: AC-81 happy path — add a host
   When the user presses "Add host" under the session list and types "alex@devbox.example -p 2222" after its "ssh" label (what follows `ssh` in a shell: a Host of ~/.ssh/config as is, a leading "ssh" dropped) and leaves Name empty (or runs "terminum hosts add devbox 'alex@devbox.example -p 2222'")
-  Then terminumd records it in settings.json hosts (destination and allowlisted options: -p, -l, -i, -J, -4, -6, -C; anything else refused with "option not allowed: -o" (also -F: a config file can hold ProxyCommand); a destination starting with "-" refused), starts "ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -p 2222 -- alex@devbox.example 'tmux -u -C new-session -A -f ignore-size -s terminum'" (`--` before the destination: ssh reads everything after the destination as the command) (the remote command quoted for the host's shell; -A creates the session when missing and attaches otherwise, without -D, so the host's other clients stay attached) and within 5 s the list shows the group "devbox" in cornflower blue with the windows and panes of that session, every row naming the host in violet; other sessions on the host are not shown (OQ-81)
+  Then terminumd records it in settings.json hosts (destination and allowlisted options: -p, -l, -i, -J, -4, -6, -C; anything else refused with "option not allowed: -o" (also -F: a config file can hold ProxyCommand); a destination starting with "-" refused), starts "ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=2 -p 2222 -- alex@devbox.example 'tmux -u -C new-session -A -f ignore-size -s terminum'" (`--` before the destination: ssh reads everything after the destination as the command) (the remote command quoted for the host's shell; -A creates the session when missing and attaches otherwise, without -D, so the host's other clients stay attached) and within 5 s the list shows the group "devbox" in cornflower blue with the windows and panes of that session, every row naming the host in violet; other sessions on the host are not shown until the user attaches them by name (OQ-81, AC 89)
   And an empty Name is the destination's host ("alex@devbox.example" → "devbox", "10.0.0.5" as is); a name so made that another host has is refused with "devbox is already a host: give this one a name"; a typed Name of an existing host replaces its recipe
   And [+] on the group, splits and "New session" make windows and panes inside "terminum" on the host (AC 07)
   And opening a pane, typing, Screen mode, sizing, widgets, bookmarks and search work as for a local pane; the key is "tmux:devbox:default:%N"
@@ -102,7 +103,7 @@ Scenario: AC-81 edge — the pane's folder and programs
 
 Scenario: AC-81 failure — ssh fails
   When ssh exits before "%begin" (unknown host key, a password needed, tmux missing on the host)
-  Then the group reads "devbox: <ssh's last line>" (BatchMode: "Permission denied (publickey)", "tmux: command not found"), nothing is retried faster than the back-off, and the log has ssh's full output; "Retry now" in the group's menu retries at once
+  Then the group reads "devbox: <ssh's last line>" (BatchMode: "Permission denied (publickey)", "tmux: command not found"), nothing is retried faster than the back-off, and the log has ssh's full output; "Retry now" in the group's menu retries at once; while the host is not attached (connecting, reconnecting, failed, off) its group has no "+ New window": there is no tmux to make it in
 ```
 
 ### AC-82 — Files on a host [SHOULD / P1]
@@ -177,7 +178,7 @@ Scenario: AC-84 failure — the update fails
 Scenario: AC-85 happy path — an image into a remote pane
   Given the page shows a devbox pane whose files are enabled
   When the user pastes an image
-  Then terminumd writes it through the agent to "~/.cache/terminum/paste/<utc>-<8 hex>.png" on devbox (0700, 0600) and the page pastes that path quoted, no Enter (AC 36)
+  Then terminumd writes it through the agent to "~/.terminum/tmp/<utc>-<8 hex>.png" on devbox (0700, 0600) and the page pastes that path quoted, no Enter (AC 36)
 
 Scenario: AC-85 failure — not enabled or too slow
   When devbox's files are not enabled
@@ -294,6 +295,7 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 | Key | Default | Example | Effect |
 |---|---|---|---|
 | `hosts.<name>.ssh` | — | `["-J", "bastion", "alex@devbox.example"]` | recipe (allowlist) |
+| `hosts.<name>.attach` | `[]` | `["work"]` | sessions of the host's tmux attached by name (AC 89), each over its own ssh connection |
 | `hosts.<name>.files` | `null` | `enabled` | files helper state: `enabled`, `declined`, `wanted` (ticked in Add host, until set up) or `null` |
 | `TM_SSH` | `ssh` | `/opt/homebrew/bin/ssh` | the ssh binary |
 
@@ -311,12 +313,13 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 |---|---|---|
 | Hosts | 32 | "At most 32 hosts" |
 | Reconnect back-off | 1, 2, 4 … 30 s | — |
+| ssh connections per host | 1 + one per attached session (AC 89) + the files tunnel | sessions start one at a time, back-off 1 … 30 s each |
 | Agent answers | 64 MB; 30 s idle, 120 s total | request fails, connection freed |
 | Helper copy | 60 s | failure shown, retry later |
 
 ### Security
 
-The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`, `RemoteCommand=none` for the agent tunnel); a host is its record, never a name it reports; the agent's token on stdin; answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only. Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
+The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`, `RemoteCommand=none` for the agent tunnel); a host is its record, never a name it reports; the agent's token on stdin; answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC 89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
 
 ### Compatibility
 

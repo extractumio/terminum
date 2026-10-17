@@ -147,6 +147,7 @@ pub async fn follow(app: Shared) {
             let (s, msgs) = crate::settings::load(&app.looks.home.join("settings.json"));
             *app.looks.settings.write() = s;
             app.looks.note(msgs);
+            crate::attach::sync(&app);
             retheme = true;
         }
         if changed.contains(&"themes") {

@@ -22,7 +22,7 @@ const EVERY: Duration = Duration::from_secs(1);
 /// The smallest grid terminumd sizes a pane to (AC-05: smaller is refused by the page).
 const MIN: (u16, u16) = (20, 5);
 
-/// Who sized which window: (server, @window) -> its record.
+/// Who sized which window: (server id, @window) -> its record.
 #[derive(Default)]
 pub struct Sizes(Mutex<HashMap<(String, String), Win>>);
 
@@ -52,11 +52,16 @@ fn shown_window(page: &Page) -> Option<(Arc<Server>, String, Fields)> {
     Some((s.server.clone(), s.pane.clone(), f))
 }
 
+/// Whether `pane` is in a session of the user's own tmux, attached by name (AC-89).
+fn users_pane(server: &Server, pane: &str) -> bool {
+    server.is_users() || server.session_of(pane).is_some_and(|s| server.users(&s))
+}
+
 /// Pages showing `window` of `server` now.
 fn viewers(app: &Shared, server: &Server, window: &str) -> Vec<Arc<Page>> {
     app.pages.all().into_iter().filter(|p| {
         let st = p.state.lock();
-        st.shown.as_ref().is_some_and(|s| s.server.name == server.name && s.ctl.fields.lock().as_ref().is_some_and(|f| f.window == window))
+        st.shown.as_ref().is_some_and(|s| s.server.id() == server.id() && s.ctl.fields.lock().as_ref().is_some_and(|f| f.window == window))
     }).collect()
 }
 
@@ -85,7 +90,7 @@ async fn resize(app: &Shared, page: &Arc<Page>) {
     };
     let (Some((server, pane, f)), Some(grid)) = (shown_window(page), view) else { return };
     let (cols, rows) = (grid.0.max(MIN.0) as usize, grid.1.max(MIN.1) as usize);
-    let key = (server.name.clone(), f.window.clone());
+    let key = (server.id(), f.window.clone());
     let split = f.panes > 1;
     if split && !screen {
         return; // a split window keeps its layout; the page reads its pane in Wrap or Fit
@@ -101,6 +106,10 @@ async fn resize(app: &Shared, page: &Arc<Page>) {
     if (f.width, f.height) != (cols, rows) || (split && !done) {
         cmds.push(format!("set-option -w -t {} window-size manual", f.window));
         cmds.push(format!("resize-window -t {} -x {cols} -y {rows}", f.window));
+        if users_pane(&server, &pane) {
+            // marked: a crash or a dropped link still gives it its size back (`reclaim`)
+            cmds.push(format!("set-option -w -t {} {SIZED} 1", f.window));
+        }
         win.manual = true;
     }
     win.by = Some(page.id);
@@ -124,13 +133,16 @@ async fn resize(app: &Shared, page: &Arc<Page>) {
     }
 }
 
+/// The window option marking a window of the user's that terminumd sized (AC-89).
+const SIZED: &str = "@tm-sized";
+
 fn shown_key(page: &Page) -> String {
     page.state.lock().shown.as_ref().map(|s| s.key.clone()).unwrap_or_default()
 }
 
 /// The pane's window should have `page`'s grid now (it opened it first, typed, or sizes it).
 async fn claim(app: &Shared, page: &Arc<Page>, force: bool) {
-    let Some((server, _, f)) = shown_window(page) else { return };
+    let Some((server, pane, f)) = shown_window(page) else { return };
     let (has_view, screen) = {
         let st = page.state.lock();
         (st.view.is_some(), st.screen)
@@ -138,10 +150,14 @@ async fn claim(app: &Shared, page: &Arc<Page>, force: bool) {
     if !has_view {
         return;
     }
-    let key = (server.name.clone(), f.window.clone());
+    let key = (server.id(), f.window.clone());
     let by = app.sizes.0.lock().get(&key).and_then(|w| w.by);
     let p = policy(app);
     let mine = by == Some(page.id);
+    // a window of the user's own tmux: only once this page typed there (or fits it), AC-89
+    if users_pane(&server, &pane) && !(force || mine) {
+        return;
+    }
     let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id));
     let take = screen
         || match p.as_str() {
@@ -173,7 +189,12 @@ pub async fn opened(_app: &Shared, page: &Arc<Page>) {
 
 /// The shown pane's first frame (its fields stored): this page sizes the window when nobody does.
 pub fn first_frame(app: &Shared, page: &Arc<Page>, server: &Server, window: &str) {
-    if !app.sizes.0.lock().contains_key(&(server.name.clone(), window.to_string())) {
+    // a session of the user's own tmux is sized only when the page types or fits (AC-89):
+    // merely looking never changes what their terminal shows
+    if shown_window(page).is_none_or(|(_, pane, _)| users_pane(server, &pane)) {
+        return;
+    }
+    if !app.sizes.0.lock().contains_key(&(server.id(), window.to_string())) {
         later(app, page, false);
     }
 }
@@ -181,7 +202,7 @@ pub fn first_frame(app: &Shared, page: &Arc<Page>, server: &Server, window: &str
 /// The page typed: under `latest` its grid wins (AC-13).
 pub async fn typed(app: &Shared, page: &Arc<Page>) {
     let Some((server, _, f)) = shown_window(page) else { return };
-    let by = app.sizes.0.lock().get(&(server.name.clone(), f.window.clone())).and_then(|w| w.by);
+    let by = app.sizes.0.lock().get(&(server.id(), f.window.clone())).and_then(|w| w.by);
     if by != Some(page.id) && policy(app) == "latest" {
         later(app, page, true);
     }
@@ -191,7 +212,7 @@ pub async fn typed(app: &Shared, page: &Arc<Page>) {
 /// back to tmux's policy; a fitted one gets its size back; a zoom made for Screen mode ends.
 pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     let Some(f) = old.ctl.fields.lock().clone() else { return };
-    let key = (old.server.name.clone(), f.window.clone());
+    let key = (old.server.id(), f.window.clone());
     let others = viewers(app, &old.server, &f.window).into_iter().any(|p| p.id != page.id);
     let win = {
         let mut g = app.sizes.0.lock();
@@ -214,6 +235,7 @@ pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     }
     if win.manual && !others {
         cmds.push(format!("set-option -w -u -t {} window-size", f.window));
+        cmds.push(format!("set-option -w -u -t {} {SIZED}", f.window));
     }
     if !cmds.is_empty() {
         let _ = old.server.run_all_on(&old.pane, cmds).await;
@@ -243,14 +265,14 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         "fit" => {
             let (c, r) = grid();
             let Some((server, _, f)) = shown_window(page) else { return };
-            app.sizes.0.lock().entry((server.name.clone(), f.window.clone())).or_default().fitted.get_or_insert((f.width, f.height));
+            app.sizes.0.lock().entry((server.id(), f.window.clone())).or_default().fitted.get_or_insert((f.width, f.height));
             page.state.lock().view = Some((c, r));
             resize(app, page).await;
             page.send_json(&json!({"t": "fit", "on": true}));
         }
         "unfit" => {
             if let Some((server, pane, f)) = shown_window(page) {
-                let fitted = app.sizes.0.lock().get_mut(&(server.name.clone(), f.window.clone())).and_then(|w| w.fitted.take());
+                let fitted = app.sizes.0.lock().get_mut(&(server.id(), f.window.clone())).and_then(|w| w.fitted.take());
                 if let Some((c, r)) = fitted {
                     let _ = server.run_all_on(&pane, vec![format!("resize-window -t {} -x {c} -y {r}", f.window)]).await;
                 }
@@ -269,10 +291,65 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     }
 }
 
+/// terminumd lets go of windows of the user's own tmux (a session detached, the server dropped,
+/// terminumd stopping, AC-89): those it gave `window-size manual` go back to tmux's own size,
+/// so the user's terminal is never left at a browser's size. `session`: only its windows.
+pub async fn release(app: &Shared, server: &Server, session: Option<&str>) {
+    let windows: Option<Vec<String>> = match session {
+        Some(s) => match server.run(format!("list-windows -t {} -F '#{{window_id}}'", crate::tmux::args::quote(&format!("={s}")))).await {
+            Ok(w) => Some(w),
+            Err(_) => return,
+        },
+        None => None,
+    };
+    let id = server.id();
+    let mine: Vec<String> = {
+        let mut g = app.sizes.0.lock();
+        let keys: Vec<(String, String)> = g.keys().filter(|(s, w)| *s == id && windows.as_ref().is_none_or(|ws| ws.contains(w))).cloned().collect();
+        keys.into_iter().filter_map(|k| g.remove(&k).filter(|w| w.manual).map(|_| k.1)).collect()
+    };
+    for w in mine {
+        let _ = server.run_all(vec![format!("set-option -w -u -t {w} window-size"), format!("set-option -w -u -t {w} {SIZED}")]).await;
+    }
+}
+
+/// `reclaim` once per connection (generation) of a server holding the user's sessions.
+pub fn reclaim_once(app: &Shared, server: &Arc<Server>) {
+    static DONE: parking_lot::Mutex<std::collections::BTreeMap<String, u64>> = parking_lot::const_mutex(std::collections::BTreeMap::new());
+    let has = server.is_users() || server.only.lock().as_ref().is_some_and(|o| !o.is_empty());
+    let generation = server.generation.load(std::sync::atomic::Ordering::Relaxed);
+    if !has || !server.connected() || DONE.lock().insert(server.id(), generation) == Some(generation) {
+        return;
+    }
+    let (app, server) = (app.clone(), server.clone());
+    tokio::spawn(async move { reclaim(&app, &server).await });
+}
+
+/// The user's windows terminumd sized (marked `@tm-sized`) that no page sizes now get tmux's
+/// own size back: after terminumd or a host's link ended without `release` (AC-89). Once per
+/// connection of a server that has the user's sessions.
+pub async fn reclaim(app: &Shared, server: &Server) {
+    let Ok(lines) = server.run(format!("list-windows -a -F '#{{window_id}}\t#{{session_name}}\t#{{{SIZED}}}'")).await else { return };
+    let id = server.id();
+    let held: Vec<String> = app.sizes.0.lock().keys().filter(|(s, _)| *s == id).map(|(_, w)| w.clone()).collect();
+    let mut cmds = Vec::new();
+    for l in lines {
+        let f: Vec<&str> = l.split('\t').collect();
+        if let [w, session, "1"] = f[..] && (server.is_users() || server.users(session)) && !held.iter().any(|h| h == w) {
+            cmds.push(format!("set-option -w -u -t {w} window-size"));
+            cmds.push(format!("set-option -w -u -t {w} {SIZED}"));
+        }
+    }
+    if !cmds.is_empty() {
+        tracing::info!(event = "sizing.reclaim", server = %id, windows = cmds.len() / 2);
+        let _ = server.run_all(cmds).await;
+    }
+}
+
 /// Screen mode ended: a zoom terminumd made for it ends too.
 async fn unzoom(app: &Shared, page: &Arc<Page>) {
     let Some((server, pane, f)) = shown_window(page) else { return };
-    let zoomed = app.sizes.0.lock().get_mut(&(server.name.clone(), f.window.clone())).is_some_and(|w| std::mem::take(&mut w.zoomed));
+    let zoomed = app.sizes.0.lock().get_mut(&(server.id(), f.window.clone())).is_some_and(|w| std::mem::take(&mut w.zoomed));
     if zoomed && f.zoomed {
         let _ = server.run_all_on(&pane, vec![format!("resize-pane -Z -t {pane}")]).await;
     }

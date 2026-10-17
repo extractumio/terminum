@@ -1,0 +1,181 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+"""Sessions of a host's own tmux attached by name (terminum.md AC-89 on a host), at the page's
+protocol, against a private terminumd, with this Mac playing the host through
+scripts/fake_ssh.py (a private tmux server stands for the host's). Checks: the host's other
+sessions counted and offered, attach by id over one more ssh connection, keys and screens,
+sizing only after typing, a client that keeps ending started again with back-off, the host's
+link dropping and coming back, windows given their size back (reclaim, detach, host removed).
+
+    python3 scripts/e2e_hostattach.py      (needs terminumd built: cd terminumd && cargo build)
+"""
+import json
+import os
+import signal
+import sys
+import time
+from functools import partial
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PORT, LOCAL, REMOTE = 47966, "tm-test-hal", "tm-test-hrem"
+remote = partial(tmux_on, REMOTE)
+
+
+def own(groups):
+    return next((g for g in groups or [] if g.get("host") == "devbox" and not g.get("attached")), None)
+
+
+def att(groups, label):
+    return next((g for g in groups or [] if g.get("host") == "devbox" and g.get("attached") and g["label"] == label), None)
+
+
+def size_of(target):
+    return remote("display", "-p", "-t", target, "#{window_width}x#{window_height} #{window-size} #{@tm-sized}").strip()
+
+
+def ssh_runs(pids, what):
+    try:
+        return [line.split(" ", 2) for line in open(pids) if what in line]
+    except FileNotFoundError:
+        return []
+
+
+def drop(pids, what):
+    for pid, _, _ in ssh_runs(pids, what):
+        try:
+            os.kill(int(pid), signal.SIGTERM)
+        except (ProcessLookupError, ValueError):
+            pass
+
+
+def settle(ws, seconds):
+    """The newest layout within `seconds` (one alike is not sent again)."""
+    last, end = None, time.time() + seconds
+    while time.time() < end:
+        last = wait_layout(ws, lambda gs: True, max(0.1, end - time.time())) or last
+    return last
+
+
+def main():
+    t = Terminumd(PORT, LOCAL, env={"DISPLAY": ":tm-test"})
+    home = os.path.join(t.root, "remote-home")
+    os.makedirs(home)
+    pids = os.path.join(t.root, "ssh-pids")
+    t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=REMOTE, FAKE_SSH_PIDS=pids)
+    remote("kill-server")
+    for s in ("work", "api"):
+        remote("-f", "/dev/null", "new-session", "-d", "-s", s, "-c", home, "-x", "90", "-y", "30")
+    try:
+        t.start()
+        ws = t.page()
+        unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example"})
+        groups = wait_layout(ws, lambda gs: (g := own(gs)) and g["items"] and g.get("others") == 2, 10)
+        check("AC-89 a host's group counts the other sessions of its tmux, never lists them",
+              groups and not any(g.get("label") in ("work", "api") for g in groups), own(groups or []))
+        ws.send({"t": "tmuxsessions", "server": "devbox:default"})
+        offer = ws.until(lambda m: m["t"] == "tmuxsessions", 5)
+        check("AC-89 the host's running sessions are offered by name, terminum's own not",
+              offer and offer["server"] == "devbox:default" and sorted(offer["names"]) == ["api", "work"], offer)
+
+        ws.send({"t": "addtmux", "server": "devbox:default", "sessions": ["terminum"]})
+        refused = ws.until(lambda m: m["t"] == "error", 5)
+        ws.send({"t": "addtmux", "server": "nohost:default", "sessions": ["work"]})
+        nohost = ws.until(lambda m: m["t"] == "error", 5)
+        check("AC-89 the host's terminum session and an unknown host are refused",
+              refused and "terminum's own session on devbox" in refused["msg"] and nohost and "no host named nohost" in nohost["msg"], [refused, nohost])
+
+        ws.send({"t": "addtmux", "server": "devbox:default", "sessions": ["work"]})
+        added = ws.until(lambda m: m["t"] in ("tmuxadded", "error"), 5)
+        groups = wait_layout(ws, lambda gs: (g := att(gs, "work")) and g["items"], 10)
+        g = att(groups, "work") or {"items": [{}]}
+        check("AC-89 a host's session is attached by name and listed with its panes, apart from the host's own",
+              added and added["t"] == "tmuxadded" and g["wid"] == "devbox/work" and g["items"][0].get("id", "").startswith("tmux:devbox:default:%")
+              and g["items"][0].get("host") == "devbox" and own(groups) and own(groups).get("others") == 1, [added, g])
+        rec = json.load(open(os.path.join(t.home, "settings.json")))["hosts"]["devbox"]
+        check("AC-89 it is kept in the host's record", rec.get("attach") == ["work"], rec)
+        for _ in range(50):      # listed from the host's list at once; its own client follows
+            if runs := ssh_runs(pids, "attach-session"):
+                break
+            time.sleep(0.1)
+        check("AC-89 it is one more ssh connection, attached by id with -E (no name in the host's shell)",
+              len(runs) == 1 and "attach-session -E -f ignore-size -t '$" in runs[0][2] and "work" not in runs[0][2], runs)
+        env = remote("show-environment", "-t", "work", "DISPLAY").strip()
+        check("AC-89 attaching leaves the host session's environment as it was", ":tm-test" not in env, env)
+
+        pane = g["items"][0]["id"]
+        before = size_of("work:")
+        ws.send({"t": "sub", "id": pane})
+        ws.until(lambda m: m["t"] == "screen", 5)
+        ws.send({"t": "size", "cols": 100, "rows": 32, "typing": False})
+        looked = ws.until(lambda m: m["t"] == "sized", 2)
+        check("AC-89 opening a host's session does not resize it", not looked and size_of("work:") == before, [before, size_of("work:")])
+        ws.send({"t": "in", "data": "echo host-own-$((6*7))\r", "k": 1})
+        echo = ws.until(lambda m: m["t"] == "screen" and "host-own-42" in json.dumps(m.get("ch")), 10)
+        sized = ws.until(lambda m: m["t"] == "sized", 5) or size_of("work:")
+        check("AC-89 typing reaches it, and sizes it (marked @tm-sized)", echo and size_of("work:") == "100x32 manual 1", [bool(echo), size_of("work:")])
+
+        # a session client that keeps ending is started again after 1, 2, 4 … s, never in a loop
+        start, end = len(ssh_runs(pids, "attach-session")), time.time() + 6
+        while time.time() < end:
+            drop(pids, "attach-session")
+            time.sleep(0.2)
+        spawned = len(ssh_runs(pids, "attach-session")) - start
+        check("AC-89 a host's session client that keeps ending is started again with back-off", 1 <= spawned <= 4, spawned)
+        groups = wait_layout(ws, lambda gs: (x := att(gs, "work")) and x["items"], 15)
+        ws.send({"t": "sub", "id": pane})
+        ws.until(lambda m: m["t"] == "screen", 5)
+        ws.send({"t": "in", "data": "echo back-$((2+3))\r", "k": 1})
+        check("AC-89 then it comes back: typing reaches it again",
+              ws.until(lambda m: m["t"] == "screen" and "back-5" in json.dumps(m.get("ch")), 15) is not None)
+
+        # the host's link drops: its sessions wait with its state, and come back with it
+        remote("set-option", "-w", "-t", "api:", "window-size", "manual")
+        remote("set-option", "-w", "-t", "api:", "@tm-sized", "1")
+        unix_request(t.sock, "POST", "/tmux/attach", {"session": "api", "host": "devbox"})
+        wait_layout(ws, lambda gs: (x := att(gs, "api")) and x["items"], 15)
+        drop(pids, "new-session")
+        lost = wait_layout(ws, lambda gs: (x := att(gs, "work")) and x.get("state") == "absent", 10)
+        why = (att(lost or [], "work") or {}).get("why", "")
+        check("AC-89 while the host is not attached its sessions show with its state", "devbox" in why, why)
+        back = wait_layout(ws, lambda gs: (x := att(gs, "work")) and x["items"] and (y := att(gs, "api")) and y["items"], 20)
+        check("AC-89 they come back with the host", back is not None)
+        for _ in range(30):
+            if "manual" not in size_of("api:"):
+                break
+            time.sleep(0.2)
+        check("AC-89 a window marked @tm-sized that no page sizes gets its size back on reconnect (reclaim)",
+              "manual" not in size_of("api:"), size_of("api:"))
+
+        listed = unix_request(t.sock, "GET", "/tmux")[1]["attached"]
+        check("AC-89 terminum tmux lists the host's sessions with the host",
+              [(x["session"], x["host"]) for x in listed] == [("work", "devbox"), ("api", "devbox")], listed)
+
+        ws.send({"t": "detachtmux", "server": "devbox:default", "session": "api"})
+        groups = wait_layout(ws, lambda gs: not att(gs, "api"), 5)
+        check("AC-89 detaching forgets a host's session and leaves it running", groups is not None and "api" in remote("ls"), remote("ls"))
+
+        # removing the host gives the user's windows their size back, sessions go on
+        ws.send({"t": "sub", "id": pane})
+        ws.until(lambda m: m["t"] == "screen", 5)
+        ws.send({"t": "size", "cols": 96, "rows": 28, "typing": True})
+        ws.send({"t": "in", "data": "\r", "k": 1})
+        ws.until(lambda m: m["t"] == "sized", 5)
+        held = size_of("work:")
+        st, _ = unix_request(t.sock, "POST", "/hosts/remove", {"name": "devbox"})
+        for _ in range(30):
+            if "manual" not in size_of("work:"):
+                break
+            time.sleep(0.2)
+        check("AC-89 a removed host's attached windows get their size back and run on",
+              held == "96x28 manual 1" and st == 200 and "manual" not in size_of("work:") and "work" in remote("ls"), [held, st, size_of("work:")])
+    finally:
+        t.cleanup()
+        remote("kill-server")
+    return summary()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

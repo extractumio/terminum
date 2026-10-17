@@ -57,6 +57,27 @@ The page asks terminumd to prove it knows the page's sign-in before sending it, 
 sign-in in its own origin's storage, never in its address or a cookie (see
 [SECURITY.md](SECURITY.md)). `tmux -L terminum attach` from any terminal shows the same sessions.
 
+- **Quick shell**: the button in the header (or "Quick shell below" / "on the left" in the menu)
+  opens a shell of its own under the shown pane, in its folder, for quick commands; drag its edge
+  to size it, ⇄ moves it, × closes it. It is a tmux window marked with its pane, listed under it.
+- **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
+  host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
+
+## Your own tmux sessions
+
+```bash
+terminum tmux attach work                 # or "Attach tmux sessions" under the list: a session of plain `tmux`
+terminum tmux attach work --socket dev    # one of `tmux -L dev`
+terminum tmux attach work --host devbox   # one of a host's tmux (the import icon on its group)
+terminum tmux                             # what is attached and whether it runs
+terminum tmux detach work                 # terminum forgets it; it goes on running
+```
+
+terminum shows the session as one of its own, but never starts that tmux server, never makes
+or closes a session there, and resizes its windows only once you type in the page. When you
+add a host whose tmux runs other sessions, terminum offers them; later the import icon on the
+host's group does. Each attached session on a host is one more ssh connection.
+
 ## A phone or another computer
 
 ```bash
@@ -77,7 +98,7 @@ terminum hosts off|on|retry|remove|files-remove devbox
 ```
 
 A host is its ssh string (options `-p -l -i -J -4 -6 -C`); terminumd holds its tmux session
-`terminum` over ssh, reconnects after a drop, and browses its files through a helper it copies
+`terminum` over ssh (and the host's other sessions you attach, above), reconnects after a drop, and browses its files through a helper it copies
 only after you enable it.
 
 ## Configure
@@ -86,7 +107,7 @@ Everything is in `~/.terminum/` and is read again within a second of a change:
 
 | File | What |
 |---|---|
-| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `themes` rules (by host and session), `page` defaults (`textSize`, `lines`, `screenMode`, `widgets`, `folds`), `hosts` |
+| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `themes` rules (by host and session), `page` defaults (`textSize`, `lines`, `screenMode`, `widgets`, `folds`), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
 | `themes/*.json` | colors, ANSI palette, font; `local.json` and `remote.json` ship as defaults |
 | `hotkeys.json` | the hot keys panel's rows (`"F5"`, `"C-r"`, `"text:git status"`, `"Paste"`) |
 | `custom.css` | your stylesheet, loaded after the page's own |

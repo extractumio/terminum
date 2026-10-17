@@ -33,6 +33,11 @@ pub struct PaneFields {
     pub pane_active: bool,
     /// tmux's `#{host}`: the title tmux gives a pane by default, which means nothing.
     pub host_name: String,
+    /// a quick shell's window: the pane it belongs to (`@tm-quick`, AC-88), and its side
+    pub quick_for: String,
+    pub quick_side: String,
+    /// the session's id (`$N`): a host's session client attaches by it (AC-89)
+    pub session_id: String,
 }
 
 /// What the list shows for a pane.
@@ -51,19 +56,19 @@ pub struct Item {
 /// The `list-panes -F` format [`parse_list_panes`] reads, fields separated by tabs.
 pub const LIST_PANES_FORMAT: &str = "#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
 #{automatic-rename}\t#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t\
-#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}";
+#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}";
 
 /// Whether `s` is a name tmux could have given a window after its command (`claude`, `zsh`).
 fn auto_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || ".+@-".contains(c))
 }
 
-/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 13 fields (a name
+/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 16 fields (a name
 /// holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
 /// does not say) counts as on when the window's name looks like a command.
 pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
     let f: Vec<&str> = line.trim_end_matches(['\r', '\n']).split('\t').collect();
-    if f.len() != 13 {
+    if f.len() != 16 {
         return None;
     }
     let flag = |s: &str| s == "1";
@@ -81,6 +86,9 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         alternate_on: flag(f[10]),
         pane_active: flag(f[11]),
         host_name: f[12].into(),
+        quick_for: f[13].into(),
+        quick_side: f[14].into(),
+        session_id: f[15].into(),
     })
 }
 

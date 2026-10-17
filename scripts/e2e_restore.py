@@ -36,6 +36,8 @@ def main():
         tmux("new-window", "-t", "main:", "-n", "docs", "-c", f"{work}/docs")
         tmux("send-keys", "-t", "main:docs", "export SECRET_TOKEN=abc123; echo private-output", "Enter")
         tmux("new-session", "-d", "-s", "notes", "-c", f"{work}/notes")
+        quick = tmux("new-window", "-d", "-t", "main:", "-n", "quick", "-P", "-F", "#{window_id}").strip()
+        tmux("set-option", "-w", "-t", quick, "@tm-quick", "%0")   # a quick shell (AC-88): not restored
         layout = os.path.join(t.app, "layout.json")
         saved = None
         for _ in range(30):
@@ -47,6 +49,7 @@ def main():
         check("AC-15 a checkpoint is written within 5 s of a change", saved and len(saved["sessions"]) == 2, saved and [s["name"] for s in saved["sessions"]])
         text = open(layout).read()
         check("AC-15 layout.json holds no output or environment", "private-output" not in text and "abc123" not in text)
+        check("AC-88 a quick shell is not in the checkpoint", '"quick"' not in text and quick.startswith("@"), quick)
         t.stop()
         tmux("kill-server")
         t.env["TM_BOOT_ID"] = "boot-B"

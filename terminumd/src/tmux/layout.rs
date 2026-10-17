@@ -21,14 +21,23 @@ pub struct Read {
     pub panes: HashMap<String, String>,
     /// every pane key, for workspace expiry (AC-71)
     pub keys: Vec<String>,
+    /// every session the server has, shown or not: name and `$id` (a host's offer, AC-89)
+    pub sessions: Vec<(String, String)>,
 }
 
 /// Reads `server`'s panes; `theme(session)` names the theme a session wears (its dot).
 pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
     let lines = server.run(format!("list-panes -a -F '{LIST_PANES_FORMAT}'")).await?;
-    // a host shows only the session terminumd holds there, never the host's others (OQ-81)
-    let panes: Vec<PaneFields> = lines.iter().filter_map(|l| titles::parse_list_panes(l))
-        .filter(|p| server.is_local() || p.session == HOST_SESSION).collect();
+    let all: Vec<PaneFields> = lines.iter().filter_map(|l| titles::parse_list_panes(l)).collect();
+    let mut sessions: Vec<(String, String)> = Vec::new();
+    for p in &all {
+        if !sessions.iter().any(|(n, _)| *n == p.session) {
+            sessions.push((p.session.clone(), p.session_id.clone()));
+        }
+    }
+    // a host shows the session terminumd holds there and those the user attached, never the
+    // host's others (OQ-81, AC-89)
+    let panes: Vec<PaneFields> = all.into_iter().filter(|p| server.shows(&p.session)).collect();
     let agents = agent_states(server, states, &panes).await;
     let mut groups: Vec<Value> = Vec::new();
     let mut map = HashMap::new();
@@ -46,6 +55,7 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, them
         ps.sort_by_key(|p| (p.window_index, p.pane_index));
         let profile = theme(&session);
         let mut items = Vec::new();
+        let mut panes_of = Vec::new();
         let mut i = 0;
         while i < ps.len() {
             let w = ps[i].window_id.clone();
@@ -60,20 +70,76 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, them
                     "profile": profile, "agent": it.agent, "shell": it.shell && !p.alternate_on,
                     "state": state.map(|s| s.as_str()), "window": p.window_id, "alt": p.alternate_on,
                 }));
+                panes_of.push(*p);
             }
             i += n;
         }
-        let label = if server.is_local() { session.clone() } else { server.name.clone() };
-        groups.push(json!({
+        let items = quick_rows(server, items, &panes_of);
+        let users = server.users(&session);
+        let label = if server.is_local() || users { session.clone() } else { server.name.clone() };
+        let mut g = json!({
             "kind": "tmux", "label": label, "session": (!server.is_local()).then(|| session.clone()), "attach": attach_command(server, &session),
-            "where": "", "host": (!server.is_local()).then(|| server.name.clone()),
-            "wid": format!("{}/{session}", server.name), "new": "New window", "pool": null, "items": items,
-        }));
+            "where": "", "host": (!server.is_local()).then(|| server.name.clone()), "server": server.id(),
+            "wid": format!("{}/{session}", server.group_prefix()), "new": "New window", "pool": null, "items": items,
+        });
+        if users {
+            attached_fields(&mut g, server);
+        }
+        groups.push(g);
     }
-    Ok(Read { groups, panes: map, keys })
+    Ok(Read { groups, panes: map, keys, sessions })
 }
 
-/// The group a host shows while it is not attached (AC-81): its state and why.
+/// Quick shells (AC-88): the rows of a window marked `@tm-quick %N`, whose pane %N is in the
+/// same session and not in a quick shell itself, get `quickOf` (the page lists them under
+/// %N's), and %N's row names the first such window (`quick`, `quickSide`). Any other mark (the
+/// pane gone, a second quick shell) leaves an ordinary window. Rows keep tmux's order.
+fn quick_rows(server: &Server, mut items: Vec<Value>, panes: &[&PaneFields]) -> Vec<Value> {
+    let mut of_window: HashMap<&str, usize> = HashMap::new();     // quick window -> its parent row
+    let mut has: std::collections::HashSet<usize> = std::collections::HashSet::new();
+    for p in panes {
+        if p.quick_for.is_empty() || of_window.contains_key(p.window_id.as_str()) {
+            continue;
+        }
+        let parent = panes.iter().position(|x| x.pane_id == p.quick_for && x.window_id != p.window_id && x.quick_for.is_empty());
+        if let Some(i) = parent.filter(|i| !has.contains(i)) {
+            has.insert(i);
+            of_window.insert(p.window_id.as_str(), i);
+            items[i]["quick"] = json!(server.key(&p.pane_id));
+            items[i]["quickSide"] = json!(if p.quick_side == "left" { "left" } else { "bottom" });
+        }
+    }
+    for (row, p) in items.iter_mut().zip(panes) {
+        if let Some(&i) = of_window.get(p.window_id.as_str()) {
+            row["quickOf"] = json!(server.key(&panes[i].pane_id));
+            if let Some(sub) = row["sub"].as_array_mut() {
+                sub.insert(0, json!("quick shell"));
+            }
+        }
+    }
+    items
+}
+
+/// An attached session's group (AC-89): which of the user's tmux servers it is on (the page
+/// tells them apart by `server`); its label is its name, so no session chip.
+fn attached_fields(g: &mut Value, server: &Server) {
+    g["where"] = json!(if server.socket == "default" { "tmux".to_string() } else { format!("tmux -L {}", server.socket) });
+    g["attached"] = json!(server.socket);
+    g["session"] = Value::Null;
+}
+
+/// The group of an attached session that does not run (AC-89): it attaches when it appears.
+pub fn absent_group(server: &Server, session: &str, why: &str) -> Value {
+    let host = (!server.is_local()).then(|| server.name.clone());
+    let mut g = json!({"kind": "tmux", "label": session, "session": null, "attach": attach_command(server, session), "host": host,
+        "server": server.id(), "wid": format!("{}/{session}", server.group_prefix()), "new": null, "pool": null, "items": [],
+        "state": "absent", "why": why});
+    attached_fields(&mut g, server);
+    g
+}
+
+/// The group a host shows while it is not attached (AC-81): its state and why; no new window
+/// while there is no tmux to make it in.
 pub fn host_group(server: &Server, files: Option<&str>) -> Value {
     let status = server.status.lock().clone();
     let (state, why) = match &status {
@@ -83,9 +149,9 @@ pub fn host_group(server: &Server, files: Option<&str>) -> Value {
         Status::Failed { why } => ("failed", why.clone()),
         Status::Off => ("off", "off".to_string()),
     };
-    json!({"kind": "tmux", "label": server.name, "session": HOST_SESSION, "attach": attach_command(server, HOST_SESSION), "where": "", "host": server.name,
+    json!({"kind": "tmux", "label": server.name, "session": HOST_SESSION, "attach": attach_command(server, HOST_SESSION), "where": "", "host": server.name, "server": server.id(),
            "wid": format!("{}/{}", server.name, HOST_SESSION),
-           "new": "New window", "pool": null, "items": [], "state": state, "why": why, "files": files})
+           "new": (state == "attached").then_some("New window"), "pool": null, "items": [], "state": state, "why": why, "files": files})
 }
 
 /// One word for a POSIX shell: as is when plain, else single-quoted.
@@ -102,6 +168,7 @@ fn sh(s: &str) -> String {
 pub fn attach_command(server: &Server, session: &str) -> String {
     let attach = format!("tmux attach -t {}", sh(&format!("={session}")));
     match &server.link {
+        Link::Local { socket, .. } if socket == "default" => attach,
         Link::Local { socket, .. } => format!("tmux -L {} attach -t {}", sh(socket), sh(&format!("={session}"))),
         Link::Ssh { args, .. } => {
             let recipe: Vec<String> = super::super::hosts::recipe::argv(args).iter().map(|a| sh(a)).collect();
@@ -172,5 +239,27 @@ mod tests {
             Arc::new(tokio::sync::Notify::new()));
         assert_eq!(attach_command(&local, "main"), "tmux -L terminum attach -t =main");
         assert_eq!(attach_command(&local, "my work's"), "tmux -L terminum attach -t '=my work'\\''s'");
+    }
+
+    /// AC-88: rows are only tagged, in tmux's order; a quick shell of a quick shell, a second
+    /// one of a pane, one whose pane is gone, stay ordinary windows.
+    #[test]
+    fn quick_shells_are_tagged_under_their_pane() {
+        let s = Server::new("local", "terminum", Link::Local { tmux: "tmux".into(), socket: "terminum".into(), conf: "/dev/null".into() },
+            Arc::new(tokio::sync::Notify::new()));
+        let pane = |id: &str, w: &str, of: &str| PaneFields { pane_id: id.into(), window_id: w.into(), quick_for: of.into(), quick_side: "left".into(), ..Default::default() };
+        let ps = [pane("%1", "@1", ""), pane("%2", "@2", "%1"), pane("%3", "@3", "%2"), pane("%4", "@4", "%1"), pane("%5", "@5", "%9")];
+        let rows: Vec<Value> = ps.iter().map(|p| json!({"id": s.key(&p.pane_id), "sub": ["zsh"]})).collect();
+        let refs: Vec<&PaneFields> = ps.iter().collect();
+        let out = quick_rows(&s, rows, &refs);
+        let ids: Vec<&str> = out.iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["tmux:local:terminum:%1", "tmux:local:terminum:%2", "tmux:local:terminum:%3", "tmux:local:terminum:%4", "tmux:local:terminum:%5"]);
+        assert_eq!((out[0]["quick"].as_str(), out[0]["quickSide"].as_str()), (Some("tmux:local:terminum:%2"), Some("left")));
+        assert_eq!(out[1]["quickOf"], "tmux:local:terminum:%1");
+        assert_eq!(out[1]["sub"], json!(["quick shell", "zsh"]));
+        for (i, why) in [(2, "a quick shell's own"), (3, "a second one"), (4, "its pane gone")] {
+            assert!(out[i].get("quickOf").is_none() && out[i].get("quick").is_none(), "{why}");
+        }
+        assert!(out[1].get("quick").is_none(), "a quick shell is never a parent");
     }
 }

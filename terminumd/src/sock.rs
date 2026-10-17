@@ -99,6 +99,8 @@ pub fn routes(app: Shared) -> Router {
         .route("/signout", post(signout))
         .route("/hosts", get(hosts))
         .route("/hosts/{action}", post(host_action))
+        .route("/tmux", get(tmux_list))
+        .route("/tmux/{action}", post(tmux_action))
         .route("/restore", post(restore))
         .with_state(app)
 }
@@ -116,8 +118,9 @@ fn rss_mb() -> f64 {
 async fn health(State(app): State<Shared>) -> Json<Value> {
     let servers: Vec<Value> = app.tmux.all().iter().map(|s| {
         let groups = app.layout.read().as_array().cloned().unwrap_or_default();
-        let mine: Vec<&Value> = groups.iter().filter(|g| if s.is_local() { g["host"].is_null() } else { g["host"] == s.name.as_str() }).collect();
-        json!({"name": s.name, "socket": s.socket, "state": *s.status.lock(), "connected": s.connected(),
+        let mine: Vec<&Value> = groups.iter().filter(|g| g["server"] == s.id().as_str()).collect();
+        let name = if s.is_users() { s.label() } else { s.name.clone() };
+        json!({"name": name, "socket": s.socket, "state": *s.status.lock(), "connected": s.connected(),
                "sessions": mine.iter().filter_map(|g| g["wid"].as_str()).collect::<Vec<_>>(),
                "panes": mine.iter().map(|g| g["items"].as_array().map_or(0, Vec::len)).sum::<usize>()})
     }).collect();
@@ -201,6 +204,59 @@ async fn host_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>
             Json(json!({"ok": true, "name": name, "hosts": crate::hosts::list(&app)})).into_response()
         }
         Err(e) => err(StatusCode::CONFLICT, "host", e),
+    }
+}
+
+/// `terminum tmux`: each attached session, here and on hosts, and whether it runs (AC-89).
+async fn tmux_list(State(app): State<Shared>) -> Json<Value> {
+    use crate::attach::Place;
+    let groups = app.layout.read().as_array().cloned().unwrap_or_default();
+    let attached: Vec<Value> = crate::attach::every(&app).into_iter().map(|(place, s)| {
+        let g = groups.iter().find(|g| !g["attached"].is_null() && g["server"] == place.id().as_str() && g["label"] == s.as_str());
+        let state = match g {
+            Some(g) if g["state"] == "absent" => g["why"].as_str().unwrap_or("not running").to_string(),
+            Some(g) => format!("attached, {} panes", g["items"].as_array().map_or(0, Vec::len)),
+            None => "not read yet".into(),
+        };
+        let (socket, host) = match &place {
+            Place::Local(socket) => (Some(socket.clone()), None),
+            Place::Host(h) => (None, Some(h.clone())),
+        };
+        json!({"session": s, "socket": socket, "host": host, "server": place.id(), "state": state})
+    }).collect();
+    Json(json!({"attached": attached}))
+}
+
+#[derive(Deserialize, Default)]
+struct TmuxBody {
+    #[serde(default)]
+    session: String,
+    #[serde(default)]
+    socket: String,
+    #[serde(default)]
+    host: String,
+}
+
+/// `terminum tmux attach|detach <session> [--socket S | --host H]` (AC-89).
+async fn tmux_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>, Json(b): Json<TmuxBody>) -> Response {
+    let id = match (b.host.as_str(), b.socket.as_str()) {
+        ("", "") => String::new(),
+        ("", socket) => format!("local:{socket}"),
+        (host, _) => format!("{host}:default"),
+    };
+    let place = crate::attach::Place::parse(&app, &id);
+    let result = match (action.as_str(), place) {
+        (_, Err(e)) => Err(e),
+        ("attach", Ok(p)) => crate::attach::add(&app, &p, std::slice::from_ref(&b.session)),
+        ("detach", Ok(p)) => crate::attach::detach(&app, &p, &b.session).await,
+        _ => Err(format!("unknown tmux action: {action}")),
+    };
+    match result {
+        Ok(()) => {
+            crate::manager::refresh(&app).await;
+            Json(json!({"ok": true})).into_response()
+        }
+        Err(e) => err(StatusCode::CONFLICT, "tmux", e),
     }
 }
 

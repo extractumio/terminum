@@ -32,6 +32,9 @@ pub const NO_TMUX: &str = "tmux is needed for terminals: brew install tmux";
 /// The session a host's control client holds (OQ-81).
 pub const HOST_SESSION: &str = "terminum";
 
+/// A host's session client started (AC-89): its session and how the start went.
+pub type Started = (String, Result<(), String>);
+
 /// What the list says about a server.
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(tag = "state", rename_all = "lowercase")]
@@ -70,6 +73,11 @@ pub struct Server {
     extended: Mutex<Option<(u64, bool)>>,
     /// a host's `HOME`, as read once per generation
     home: Mutex<Option<(u64, String)>>,
+    /// the user's own sessions attached by name (AC-89): on a server of the user's own on
+    /// this Mac all it lists; on a host besides `terminum`; `None` for the private server
+    pub only: Mutex<Option<Vec<String>>>,
+    /// a host's session clients started again after an end: session -> (delay s, not before, started)
+    pub tries: Mutex<HashMap<String, (u64, std::time::Instant, std::time::Instant)>>,
 }
 
 impl Server {
@@ -87,11 +95,48 @@ impl Server {
             generation: AtomicU64::new(0),
             extended: Mutex::new(None),
             home: Mutex::new(None),
+            only: Mutex::new(None),
+            tries: Mutex::default(),
         })
+    }
+
+    /// One of the user's own tmux servers on this Mac, attached by session (AC-89).
+    pub fn is_users(&self) -> bool {
+        self.is_local() && self.only.lock().is_some()
+    }
+
+    /// Whether `session` is one of the user's own, attached by name (AC-89): never sized by
+    /// looking, its windows given their size back.
+    pub fn users(&self, session: &str) -> bool {
+        self.only.lock().as_ref().is_some_and(|o| o.iter().any(|s| s == session))
+    }
+
+    /// Whether the list shows `session`: the user's attached ones, a host's `terminum`
+    /// (OQ-81), every session of the private server.
+    pub fn shows(&self, session: &str) -> bool {
+        self.users(session) || if self.is_local() { self.only.lock().is_none() } else { session == HOST_SESSION }
+    }
+
+    /// The session of `pane`, as of the last list.
+    pub fn session_of(&self, pane: &str) -> Option<String> {
+        self.inner.lock().panes.get(pane).cloned()
+    }
+
+    /// The first part of a group id `<prefix>/<session>`: "local" for the private server, the
+    /// host's name, `local:<socket>` for an attached server.
+    pub fn group_prefix(&self) -> String {
+        if self.is_users() { self.id() } else { self.name.clone() }
     }
 
     pub fn is_local(&self) -> bool {
         matches!(self.link, Link::Local { .. })
+    }
+
+    /// The server's own name among all (`<host>:<socket>`, a pane key's middle): this Mac may
+    /// have more than one (the private one, the user's own attached, AC-89), so a name alone
+    /// does not tell two apart, and their `@N` windows clash.
+    pub fn id(&self) -> String {
+        format!("{}:{}", self.name, self.socket)
     }
 
     /// The key of pane `%N` here: `tmux:<host>:<socket>:%N`.
@@ -119,6 +164,14 @@ impl Server {
         }
     }
 
+    /// Commands on the bulk client, written at once, answered in order.
+    pub async fn run_all(&self, lines: Vec<String>) -> Vec<Answer> {
+        match self.bulk() {
+            Some(c) => c.run_all(lines).await,
+            None => lines.iter().map(|_| Err(format!("tmux on {} is not connected", self.label()))).collect(),
+        }
+    }
+
     /// Commands on the control client of `pane`'s session, written at once, answered in order.
     pub async fn run_all_on(&self, pane: &str, lines: Vec<String>) -> Vec<Answer> {
         match self.client(pane) {
@@ -127,8 +180,14 @@ impl Server {
         }
     }
 
-    pub fn label(&self) -> &str {
-        if self.is_local() { "this Mac" } else { &self.name }
+    /// The server in words: "this Mac", "your tmux" (`tmux -L <socket>` for another socket), a host.
+    pub fn label(&self) -> String {
+        match (self.is_users(), self.socket.as_str()) {
+            (true, "default") => "your tmux".into(),
+            (true, s) => format!("tmux -L {s}"),
+            _ if self.is_local() => "this Mac".into(),
+            _ => self.name.clone(),
+        }
     }
 
     /// The pane -> session map of the last list.
@@ -247,7 +306,7 @@ impl Server {
             if inner.bulk.as_ref().is_some_and(|c| c.alive()) {
                 return Ok(());
             }
-            let c = Arc::new(self.spawn(HOST_SESSION, false)?);
+            let c = Arc::new(self.spawn(HOST_SESSION, false, host_command())?);
             inner.sessions.insert(HOST_SESSION.into(), c.clone());
             inner.bulk = Some(c);
             drop(inner);
@@ -256,14 +315,14 @@ impl Server {
         }
         for s in sessions {
             if !inner.sessions.contains_key(s) {
-                let c = self.spawn(s, false)?;
+                let c = self.spawn(s, false, String::new())?;
                 inner.sessions.insert(s.clone(), Arc::new(c));
                 spawned = true;
             }
         }
         if !inner.bulk.as_ref().is_some_and(|c| c.alive()) {
             inner.bulk = match sessions.first() {
-                Some(first) => Some(Arc::new(self.spawn(first, true)?)),
+                Some(first) => Some(Arc::new(self.spawn(first, true, String::new())?)),
                 None => None,
             };
             spawned = true;
@@ -275,10 +334,40 @@ impl Server {
         Ok(())
     }
 
-    /// A control client for `session`; `bulk`: it takes no pane output.
-    fn spawn(self: &Arc<Self>, session: &str, bulk: bool) -> Result<Control, String> {
+    /// A host's clients of the user's sessions (AC-89) in line with `up` (name, `$id`): those
+    /// not running or ended go (the ended named in the answer), and one more starts when every
+    /// other has answered and `due(name)` (its back-off) allows, named with how its start went;
+    /// `terminum`'s client stays.
+    pub fn host_sessions(self: &Arc<Self>, up: &[(String, String)], due: impl Fn(&str) -> bool) -> (Vec<String>, Option<Started>) {
+        let mut inner = self.inner.lock();
+        let mut ended = Vec::new();
+        inner.sessions.retain(|s, c| {
+            if !c.alive() && s != HOST_SESSION {
+                ended.push(s.clone());
+            }
+            s == HOST_SESSION || (c.alive() && up.iter().any(|(n, _)| n == s))
+        });
+        if !inner.sessions.values().all(|c| c.attached.load(Ordering::Relaxed)) {
+            return (ended, None);
+        }
+        let Some((name, id)) = up.iter().find(|(n, _)| !inner.sessions.contains_key(n) && due(n)) else { return (ended, None) };
+        let started = self.spawn(name, false, host_attach_command(id)).map(|c| {
+            inner.sessions.insert(name.clone(), Arc::new(c));
+        });
+        (ended, Some((name.clone(), started)))
+    }
+
+    /// A control client for `session`; `bulk`: it takes no pane output; `remote`: a host's command.
+    fn spawn(self: &Arc<Self>, session: &str, bulk: bool, remote: String) -> Result<Control, String> {
         let flags = if bulk { "ignore-size,no-output" } else { "ignore-size" };
         let cmd = match &self.link {
+            // the user's own server (AC-89): never started by us (-N), and its sessions keep
+            // their environment (-E: no update-environment from terminumd's)
+            Link::Local { tmux, socket, .. } if self.is_users() => {
+                let mut c = plain(tmux);
+                c.args(["-N", "-C", "-u", "-L", socket, "attach-session", "-E", "-f", flags, "-t"]).arg(format!("={session}"));
+                c
+            }
             Link::Local { tmux, socket, .. } => {
                 let mut c = plain(tmux);
                 c.args(["-C", "-u", "-L", socket, "attach-session", "-f", flags, "-t"]).arg(format!("={session}"));
@@ -287,7 +376,7 @@ impl Server {
             Link::Ssh { ssh, args } => {
                 let mut c = Command::new(ssh);
                 c.args(["-T", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2"]);
-                c.args(crate::hosts::recipe::argv(args)).arg(host_command());
+                c.args(crate::hosts::recipe::argv(args)).arg(remote);
                 c.env_remove("TMUX").env_remove("TMUX_PANE");
                 c
             }
@@ -318,6 +407,13 @@ impl Server {
 /// the session `terminum`, created when missing; `-A` without `-D` leaves other clients.
 pub fn host_command() -> String {
     format!("tmux -u -C new-session -A -f ignore-size -s {HOST_SESSION}")
+}
+
+/// The remote command of a client of the user's session `$N` on a host (AC-89): by id, so no
+/// name reaches the host's shell; `-E`: the session's environment is not updated from ssh's.
+pub fn host_attach_command(id: &str) -> String {
+    let id: String = id.chars().filter(|c| *c == '$' || c.is_ascii_digit()).collect();
+    format!("tmux -u -C attach-session -E -f ignore-size -t '{id}'")
 }
 
 /// A tmux command with a UTF-8 locale (launchd gives none: tmux would draw `_` for every
@@ -362,6 +458,13 @@ async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceive
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// AC-89: a host's session client attaches by id, never a name the host's shell would read.
+    #[test]
+    fn a_hosts_session_is_attached_by_its_id() {
+        assert_eq!(host_attach_command("$12"), "tmux -u -C attach-session -E -f ignore-size -t '$12'");
+        assert_eq!(host_attach_command("$1'; rm -rf ~"), "tmux -u -C attach-session -E -f ignore-size -t '$1'");
+    }
 
     #[test]
     fn keys_name_host_socket_and_pane() {

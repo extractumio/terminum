@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The session list's tools (AC-07, AC-52, AC-81): its width, "New session" and "Add host" at its
-// foot, a host group's menu (retry, off, on, remove), the line for a tmux server that does not
+// The session list's tools (AC-07, AC-52, AC-81, AC-89): its width, "New session", "Add host" and
+// "Attach tmux sessions" (addtmux.js) at its foot, a host group's menu (retry, off, on, remove, attach its
+// tmux sessions) and an attached session's (detach), the line for a tmux server that does not
 // answer, the pencil that names the shown pane, and the page's confirmation dialog.
+
+import { addTmux } from "./addtmux.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -17,7 +20,7 @@ export function askConfirm(text, yes) {
 }
 
 /** Wires the tools; `current()` is the shown pane's {group, item} or null, `onResize()` refits the terminal. */
-export function navTools({ send, store, current, onResize, onRenamed }) {
+export function navTools({ send, store, current, groups, onResize, onRenamed }) {
   // The session list's width, dragged at its border (wide screens), remembered per browser.
   const NAV_MIN = 200, NAV_MAX = 640;
   function setNavWidth(px, save) {
@@ -58,8 +61,9 @@ export function navTools({ send, store, current, onResize, onRenamed }) {
   // Inline forms at the list's foot: one open at a time; Esc or a second press closes it. The
   // form waits for terminumd: its error shows in the form, a new session closes it.
   let pending = null;                              // the form whose request is on its way
+  const FORMS = ["newsess", "addhost", "addtmux"];
   function openForm(id, button) {
-    for (const [f, b] of [["newsess", "newsessbtn"], ["addhost", "addhostbtn"]]) {
+    for (const [f, b] of FORMS.map((f) => [f, `${f}btn`])) {
       const on = f === id && $(f).hidden;
       $(f).hidden = !on;
       $(b).setAttribute("aria-expanded", String(on));
@@ -70,7 +74,9 @@ export function navTools({ send, store, current, onResize, onRenamed }) {
   const closeForm = (id) => { $(id).hidden = true; $(`${id}btn`).setAttribute("aria-expanded", "false"); if (pending === id) pending = null; };
   $("newsessbtn").onclick = () => openForm("newsess", true);
   $("addhostbtn").onclick = () => openForm("addhost", true);
-  for (const f of ["newsess", "addhost"]) {
+  const tmux = addTmux({ send, groups, openForm, closeForm, setPending: (f) => { pending = f; } });
+  $("addtmuxbtn").onclick = () => { if ($("addtmux").hidden) tmux.open(); else closeForm("addtmux"); };
+  for (const f of FORMS) {
     $(f).addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closeForm(f); } });
     $(`${f}cancel`).onclick = () => closeForm(f);
   }
@@ -97,23 +103,31 @@ export function navTools({ send, store, current, onResize, onRenamed }) {
     return true;
   }
   /** A new layout: the session or host asked for is there, and its form closes. */
-  function layoutCame(groups) {
-    const has = (name) => groups.some((g) => g.wid === name || g.label === name || g.host === name);
+  function layoutCame(gs) {
+    const has = (name) => gs.some((g) => g.wid === name || g.label === name || g.host === name);
     if (pending === "newsess" && has($("newsessname").value.trim())) { closeForm("newsess"); $("newsessname").value = ""; }
+    tmux.layoutCame(gs);
   }
-  /** terminumd added the host (its group follows in a layout): the form closes. */
-  function hostAdded() {
+  /** terminumd added the host (its group follows in a layout): the form closes; once the host
+   *  is attached its other tmux sessions are offered (AC-89). */
+  function hostAdded(name) {
     if (pending !== "addhost") return;
     closeForm("addhost");
     $("addhostname").value = $("addhostssh").value = "";
     $("addhostfiles").checked = false;
+    tmux.hostAdded(name);
+  }
+  /** terminumd attached the sessions: the form closes. */
+  function tmuxAdded() {
+    if (pending === "addtmux") tmux.added();
   }
 
-  // A host group's menu (AC-81): retry now, off or on, remove (asked first).
+  // A host group's menu (AC-81): retry now, off or on, remove (asked first); an attached
+  // session's (AC-89): detach, which leaves the session running.
   function hostMenu(g, button) {
     const box = $("hostmenu");
-    if (!box.hidden && box.dataset.host === g.host) return hideHostMenu();
-    box.dataset.host = g.host;
+    if (!box.hidden && box.dataset.host === g.wid) return hideHostMenu();
+    box.dataset.host = g.wid;
     const act = (label, action, ask) => {
       const b = document.createElement("button");
       b.type = "button"; b.textContent = label; b.dataset.action = action;
@@ -124,8 +138,16 @@ export function navTools({ send, store, current, onResize, onRenamed }) {
       };
       return b;
     };
-    box.replaceChildren(act("Retry now", "retry"), g.state === "off" ? act("On", "on") : act("Off", "off"),
-      act("Remove", "remove", `Remove ${g.host}? Its tmux session on the host keeps running; terminum stops showing it.`));
+    const item = (label, action, run) => {
+      const b = document.createElement("button");
+      b.type = "button"; b.textContent = label; b.dataset.action = action;
+      b.onclick = () => { hideHostMenu(); run(); };
+      return b;
+    };
+    if (g.attached) box.replaceChildren(item("Detach from terminum", "detach", () => send({ t: "detachtmux", server: g.server, session: g.label })));
+    else box.replaceChildren(act("Retry now", "retry"), g.state === "off" ? act("On", "on") : act("Off", "off"),
+      ...(g.state === "attached" ? [item("Attach tmux sessions…", "import", () => tmux.open(`${g.host}:default`))] : []),
+      act("Remove", "remove", `Remove ${g.host}? Its tmux sessions on the host keep running; terminum stops showing them.`));
     const r = button.getBoundingClientRect();
     box.style.top = `${r.bottom + 4}px`;
     box.style.left = `${Math.max(8, r.right - 180)}px`;
@@ -140,17 +162,18 @@ export function navTools({ send, store, current, onResize, onRenamed }) {
 
   // ---------- a tmux server not answering (AC-03, AC-14) ----------
   // Screens, keys and histories wait for it: say so, with the time it has not answered.
-  const stalls = new Map();                        // server -> since (performance.now())
+  const stalls = new Map();                        // server id -> [what, since (performance.now())]
   let stallTimer = 0;
   function showStall(m) {
-    if (m.ok) stalls.delete(m.server ?? "local");
-    else if (!stalls.has(m.server ?? "local")) stalls.set(m.server ?? "local", performance.now() - (m.ms ?? 0));
+    const key = m.key ?? m.server ?? "local", what = m.what ?? `tmux on ${(m.server ?? "local") === "local" ? "this Mac" : m.server}`;
+    if (m.ok) stalls.delete(key);
+    else if (!stalls.has(key)) stalls.set(key, [what, performance.now() - (m.ms ?? 0)]);
     clearInterval(stallTimer);
     $("stall").hidden = !stalls.size;
     if (!stalls.size) return;
     const say = () => {
-      $("stall").textContent = [...stalls].map(([server, since]) =>
-        `tmux on ${server === "local" ? "this Mac" : server} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". ");
+      $("stall").textContent = [...stalls.values()].map(([what, since]) =>
+        `${what} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". ");
     };
     say();
     stallTimer = setInterval(say, 1000);
@@ -183,5 +206,5 @@ export function navTools({ send, store, current, onResize, onRenamed }) {
   });
   $("renamename").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); endRename(true); } });
 
-  return { showStall, formError, layoutCame, hostAdded, hostMenu, endRename, renaming: () => !$("renamebox").hidden };
+  return { showStall, formError, layoutCame, hostAdded, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
 }

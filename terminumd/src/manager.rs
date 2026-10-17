@@ -82,8 +82,16 @@ fn set_problem(app: &Shared, problem: Option<String>) {
 /// One server's groups and pane keys (when `keys` is asked for); false when it could not be read.
 async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) -> (Vec<Value>, Vec<String>, bool) {
     let local = server.is_local();
-    if !local && !server.connected() {
-        return (vec![layout::host_group(&server, crate::hosts::files_state(app, &server.name).as_deref())], Vec::new(), false);
+    if server.is_users() && !server.connected() {
+        return (Vec::new(), Vec::new(), true);
+    }
+    if !local && !server.attached() {
+        // judged by its `terminum` client; the user's sessions there wait with the host's state
+        let g = layout::host_group(&server, crate::hosts::files_state(app, &server.name).as_deref());
+        let why = format!("{}: {}", server.name, g["why"].as_str().unwrap_or_default());
+        let mut gs = vec![g];
+        gs.extend(crate::attach::host_waiting(&server, &why));
+        return (gs, Vec::new(), false);
     }
     let host = (!local).then(|| server.name.clone());
     let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
@@ -93,13 +101,19 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
             let mut gs = read.groups;
             if !local {
                 let files = crate::hosts::files_state(app, &server.name);
-                if gs.is_empty() {
-                    gs.push(layout::host_group(&server, files.as_deref()));
+                if !gs.iter().any(|g| g["attached"].is_null()) {
+                    gs.insert(0, layout::host_group(&server, files.as_deref()));
                 }
+                let (absent, others) = crate::attach::ensure_host(&server, &read.sessions);
                 for g in gs.iter_mut().filter(|g| g["state"].is_null()) {
                     g["state"] = json!("attached");
                     g["files"] = json!(files);
                 }
+                // the host's own group offers the other sessions running there (AC-89)
+                if let Some(g) = gs.iter_mut().find(|g| g["attached"].is_null()) {
+                    g["others"] = json!(others);
+                }
+                gs.extend(absent);
             }
             let live = if keys {
                 read.keys.iter().map(|k| format!("web:{}", json!([host.clone().unwrap_or_default(), k]))).collect()
@@ -123,16 +137,23 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
 pub async fn refresh(app: &Shared) {
     let _one = app.refreshing.lock().await;
     ensure_local(app).await;
+    let ensured = futures_util::future::join_all(app.tmux.attached_all().iter().map(crate::attach::ensure)).await;
+    let users_sure = ensured.iter().all(|(_, sure)| *sure);
+    let absent: Vec<Value> = ensured.into_iter().flat_map(|(gs, _)| gs).collect();
     let home = crate::config::home().display().to_string();
     let due = app.inventory_at.lock().is_none_or(|t| t.elapsed() > INVENTORY);
     let reads = futures_util::future::join_all(app.tmux.all().into_iter().map(|s| read_server(app, s, &home, due))).await;
-    let complete = reads.iter().all(|(_, _, ok)| *ok);
+    let complete = users_sure && reads.iter().all(|(_, _, ok)| *ok);
+    for server in app.tmux.all() {
+        crate::page::sizing::reclaim_once(app, &server);
+    }
     let mut groups: Vec<Value> = Vec::new();
     let mut live: HashSet<String> = HashSet::new();
     for (gs, keys, _) in reads {
         groups.extend(gs);
         live.extend(keys);
     }
+    groups.extend(absent);
     {
         let mut last = app.layout.write();
         if last.as_array() != Some(&groups) {
@@ -184,12 +205,14 @@ async fn stalls(app: Shared) {
         tokio::time::sleep(Duration::from_millis(500)).await;
         for server in app.tmux.all() {
             let waited = server.bulk().map_or(Duration::ZERO, |c| c.waiting());
-            let label = server.label().to_string();
-            if waited >= STALL && stalled.insert(server.name.clone()) {
-                tracing::warn!(event = "tmux.stall", server = %server.name, ms = waited.as_millis() as u64);
-                app.pages.tell(&json!({"t": "stall", "server": label, "ok": false, "ms": waited.as_millis() as u64}).to_string());
-            } else if waited < STALL && stalled.remove(&server.name) {
-                app.pages.tell(&json!({"t": "stall", "server": label, "ok": true}).to_string());
+            let label = server.label();
+            // the page keys its line by the server's id; `what` names it (your tmux has no "on")
+            let what = if server.is_users() { label.clone() } else { format!("tmux on {label}") };
+            if waited >= STALL && stalled.insert(server.id()) {
+                tracing::warn!(event = "tmux.stall", server = %server.id(), ms = waited.as_millis() as u64);
+                app.pages.tell(&json!({"t": "stall", "server": label, "key": server.id(), "what": what, "ok": false, "ms": waited.as_millis() as u64}).to_string());
+            } else if waited < STALL && stalled.remove(&server.id()) {
+                app.pages.tell(&json!({"t": "stall", "server": label, "key": server.id(), "what": what, "ok": true}).to_string());
             }
         }
     }

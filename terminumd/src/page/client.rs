@@ -76,7 +76,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "files" => files(app, page).await,
         "size" | "fit" | "unfit" | "screenmode" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
         "new" | "newsession" | "split" | "rename" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
-        "addhost" | "hostaction" | "restore" => super::sessions::admin(app, page, t, &msg).await,
+        "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
+        "addhost" | "hostaction" | "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);

@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="find.css">
 <link rel="stylesheet" href="shapes.css">
 <link rel="stylesheet" href="tmux.css">
+<link rel="stylesheet" href="controls.css">
 <!-- The user's own stylesheet (~/.terminum/custom.css, AC-19): after the page's, so it wins. -->
 <link id="customcss" rel="stylesheet" href="/custom.css">
 </head>
@@ -40,7 +41,7 @@
       <div class="row"><button class="primary" type="submit">Create</button><button id="newsesscancel" type="button">Cancel</button></div>
     </form>
     <form id="addhost" class="footform" hidden>
-      <label class="sshline"><span>ssh</span><input id="addhostssh" maxlength="300" autocomplete="off" autocapitalize="off"
+      <label class="lead"><span>ssh</span><input id="addhostssh" maxlength="300" autocomplete="off" autocapitalize="off"
         autocorrect="off" spellcheck="false" aria-label="ssh" placeholder="devbox or alex@devbox.example -p 2222" enterkeyhint="go"></label>
       <p class="hint">As after <code>ssh</code> in a terminal: a Host of ~/.ssh/config, or user@host with -p -l -i -J. Your keys sign in; ssh must not ask for a password.</p>
       <input id="addhostname" maxlength="32" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
@@ -49,18 +50,30 @@
       <p id="addhosterr" role="alert"></p>
       <div class="row"><button class="primary" type="submit">Add host</button><button id="addhostcancel" type="button">Cancel</button></div>
     </form>
+    <form id="addtmux" class="footform" hidden>
+      <label class="lead"><span>On</span><select id="addtmuxon" aria-label="Where your tmux runs"></select></label>
+      <div id="addtmuxticks" role="group" aria-label="Sessions running there"></div>
+      <input id="addtmuxname" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        aria-label="Another session, by name" placeholder="Another session, by name" enterkeyhint="go">
+      <p class="hint">Sessions of your own tmux there. They stay yours: terminum never closes them, and shows one as soon as it runs.</p>
+      <p id="addtmuxerr" role="alert"></p>
+      <div class="row"><button class="primary" type="submit">Attach</button><button id="addtmuxcancel" type="button">Cancel</button></div>
+    </form>
     <div id="marklist" hidden></div>
     <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
       aria-valuemin="200" aria-valuemax="640"></div>
     <div class="nav-foot">
-      <button id="newsessbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
+      <button id="newsessbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New session</span>
       </button>
-      <button id="marksbtn" type="button" aria-expanded="false" aria-controls="marklist" title="Every bookmark, also of sessions that closed">
+      <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marklist" title="Every bookmark, also of sessions that closed">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span>Bookmarks</span><span id="markcount" class="count"></span>
       </button>
-      <button id="addhostbtn" type="button" aria-expanded="false" aria-controls="addhost" title="The tmux session of another computer, over ssh">
+      <button id="addhostbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addhost" title="The tmux session of another computer, over ssh">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg><span>Add host</span>
+      </button>
+      <button id="addtmuxbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addtmux" title="Show sessions of your own tmux, on this Mac or a host, by their names">
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg><span>Attach tmux sessions</span>
       </button>
     </div>
   </aside>
@@ -93,6 +106,7 @@
         </div>
         <span id="scrlabel" class="term-only" title="A full-screen program, drawn as its exact grid" hidden>Screen</span>
         <button id="updchip" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="updmenu" title="A newer release of terminum" hidden></button>
+        <button id="quickbtn" class="icon wide-only term-only" type="button" title="Quick shell below, in this pane's folder" aria-label="Quick shell"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/><path d="m7 9 2 2-2 2"/></svg></button>
         <span class="divider wide-only term-only"></span>
         <button id="keysbtn" class="icon wide-only term-only" type="button" aria-pressed="false" aria-controls="hotkeys" title="Hot keys"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M10 8h.01"/><path d="M12 12h.01"/><path d="M14 8h.01"/><path d="M16 12h.01"/><path d="M18 8h.01"/><path d="M6 8h.01"/><path d="M7 16h10"/><path d="M8 12h.01"/><rect x="2" y="4" width="20" height="16" rx="2"/></svg></button>
         <div id="views" class="seg" role="tablist" aria-label="View">
@@ -109,7 +123,18 @@
     <div id="sized" role="status" hidden></div>
     <div id="asks" aria-live="polite" hidden></div>
     <!-- No whitespace inside: the terminal uses white-space: pre. -->
+    <div id="termrow">
     <main id="term" class="wrap view"><p id="note" hidden>Older lines are not loaded. The browser keeps the most recent part of long histories to stay fast.</p><div id="hist"></div><div id="screen"></div></main>
+    <!-- The shown pane's quick shell (AC-88): a page of its own in embed mode, below or on the left. -->
+    <div id="quickgrip" role="separator" tabindex="0" aria-label="Size of the quick shell" hidden></div>
+    <section id="quick" aria-label="Quick shell" hidden>
+      <div class="qbar"><span class="qtitle">Quick shell</span>
+        <button id="quickflip" class="icon" type="button" title="Move it to the other side" aria-label="Move the quick shell to the other side"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/></svg></button>
+        <button id="quickclose" class="icon" type="button" title="Close the quick shell" aria-label="Close the quick shell"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      </div>
+      <iframe id="quickframe" title="Quick shell"></iframe>
+    </section>
+    </div>
     <!-- At 1400px and wider Files is docked on the right and File floats over the terminal. -->
     <div id="sidehead" class="winhead"><span>Files</span>
       <button id="sideclose" class="icon" type="button" aria-label="Close the Files panel"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -207,6 +232,8 @@
     <button id="resize" class="row" type="button"><span><span class="label">Fit to this screen</span><small>Resizes the pane in tmux until you restore it</small></span></button>
     <button id="splitright" class="row" type="button"><span>Split right</span></button>
     <button id="splitbelow" class="row" type="button"><span>Split below</span></button>
+    <button id="quickbelow" class="row" type="button"><span>Quick shell below<small>A shell of its own in this pane's folder</small></span></button>
+    <button id="quickleft" class="row wide-only" type="button"><span>Quick shell on the left</span></button>
     <button id="movewin" class="row" type="button" aria-expanded="false" aria-controls="movelist" hidden><span>Move window to session…</span></button>
     <div id="movelist" hidden></div>
     <button id="closepane" class="row" type="button"><span>Close pane<small>Ends the program running in it</small></span></button>

@@ -13,7 +13,7 @@ body:has(#markcopy:not([hidden])) #findfab { visibility: hidden; }   /* a select
 #findq { flex: 1 1 160px; min-width: 0; height: 32px; padding: 0 8px; border-radius: 7px; border: 1px solid var(--line);
   background: var(--t-bg); color: var(--t-fg); font: inherit; font-size: 16px; }
 #findbox button { height: 32px; border-radius: 7px; }
-#findbox .primary { padding: 0 12px; background: var(--t-fg); color: var(--t-bg); font-weight: 600; }
+#findbox .primary { padding: 0 12px; background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
 #findbox .icon { width: 32px; display: grid; place-items: center; }
 #findbox .icon:hover { background: color-mix(in srgb, var(--t-fg) 10%, var(--chrome-2)); }
 #findn { flex: 1 0 100%; order: 9; padding: 0 4px; font-size: 12px; color: var(--muted); }

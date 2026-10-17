@@ -112,18 +112,21 @@ export function hostState(g) {
   if (g.state === "reconnecting") return ` · ${g.why || "reconnecting"}`;
   if (g.state === "failed") return `: ${g.why || "failed"}`;
   if (g.state === "off") return " · off";
+  if (g.state === "absent") return ` · ${g.why || "not running"}`;
   return "";
 }
 
 // A group's header collapses and expands it; while a filter is typed every match is shown. A
-// host's group has a menu of its own (onHost(group, button)), also while it has no rows.
-export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, onNew, marked = new Set(), onHost = null, onCopy = null) {
+// host's group has a menu of its own (onHost(group, button)), also while it has no rows, and
+// while its tmux runs other sessions an icon that offers them (onImport(group), AC-89).
+export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, onNew, marked = new Set(), onHost = null, onCopy = null, onImport = null) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   let shown = 0;
   for (const g of groups) {
     const items = g.items.filter((it) => matches(it, q));
-    if (!items.length && !(g.host && !q)) continue;
+    const own = g.host || g.attached;            // a host's group, or a session of the user's tmux (AC-89)
+    if (!items.length && !(own && !q)) continue;
     shown += items.length;
     const key = groupKey(g);
     const closed = !q && collapsed.has(key);
@@ -135,11 +138,11 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));
     t.addEventListener("click", () => onToggle(key));
-    t.append(icon("chevron-down", 14), el("span", "label", g.label + (g.host ? hostState(g) : "")));
+    t.append(icon("chevron-down", 14), el("span", "label", g.label + (own ? hostState(g) : "")));
     if (g.session) t.append(el("span", "tsess", g.session));      // a tmux group: its session's name; the rows name the host
     else if (g.host && g.host !== g.label) t.append(el("span", "host", g.host));
     if (g.where) t.append(el("span", "where", g.where));
-    const count = el("span", "count", String(g.items.length));
+    const count = el("span", "count", g.items.length ? String(g.items.length) : "");   // a group without rows says its state instead
     count.title = `${g.items.length} pane${g.items.length === 1 ? "" : "s"}`;
     if (closed && items.some((it) => it.id === current)) count.classList.add("on");   // the shown session is inside
     t.append(count);
@@ -153,6 +156,15 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       c.addEventListener("click", (e) => { e.stopPropagation(); onCopy(g.attach); });
       h.append(c);
     }
+    if (g.host && !g.attached && g.others > 0 && onImport) {
+      const n = el("button", "import");
+      n.type = "button";
+      n.title = `Attach tmux sessions running on ${g.host} (${g.others})`;
+      n.setAttribute("aria-label", n.title);
+      n.append(icon("import", 14));
+      n.addEventListener("click", (e) => { e.stopPropagation(); onImport(g); });
+      h.append(n);
+    }
     if (g.wid && g.new) {
       const n = el("button", "new");
       n.type = "button";
@@ -162,11 +174,11 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       n.addEventListener("click", () => onNew(g.wid));
       h.append(n);
     }
-    if (g.host && onHost) {
+    if (own && onHost) {
       const m = el("button", "hostbtn");
       m.type = "button";
-      m.title = `${g.host}: retry, off, on, remove`;
-      m.setAttribute("aria-label", `Host ${g.host}`);
+      m.title = g.attached ? `${g.label}: detach from terminum` : `${g.host}: retry, off, on, remove`;
+      m.setAttribute("aria-label", g.attached ? `Session ${g.label} of your tmux${g.host ? ` on ${g.host}` : ""}` : `Host ${g.host}`);
       m.setAttribute("aria-haspopup", "true");
       m.append(icon("ellipsis", 14));
       m.addEventListener("click", (e) => { e.stopPropagation(); onHost(g, m); });
@@ -176,16 +188,22 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     if (!closed) {
       const ul = el("ul");
       if (g.wid) ul.dataset.wid = g.wid;
-      // a tab's panes after its first (a coding agent's subagents) go under it; a filter shows them flat
+      // a tab's panes after its first (a coding agent's subagents) go under it, and a pane's quick
+      // shell (AC-88) under that pane wherever tmux has its window; a filter shows them flat
+      const quickOf = new Map();
+      if (!q) for (const it of items) if (it.quickOf && items.some((x) => x.id === it.quickOf)) quickOf.set(it.quickOf, [...(quickOf.get(it.quickOf) ?? []), it]);
       let parent = null;
+      const kid = (it) => {
+        if (!parent.kids) parent.append(parent.kids = el("ul", "kids"));
+        parent.kids.append(row(it, current, onPick, false, true, marked));
+      };
+      const quicks = (it) => { for (const k of quickOf.get(it.id) ?? []) kid(k); };
       for (const it of items) {
-        if (!q && it.pane > 1 && parent) {
-          if (!parent.kids) parent.append(parent.kids = el("ul", "kids"));
-          parent.kids.append(row(it, current, onPick, false, true, marked));
-          continue;
-        }
+        if (quickOf.has(it.quickOf)) continue;     // listed under its pane
+        if (!q && it.pane > 1 && parent) { kid(it); quicks(it); continue; }
         parent = row(it, current, onPick, !!g.wid && !q, false, marked);
         ul.append(parent);
+        quicks(it);
       }
       sec.append(ul);
     }

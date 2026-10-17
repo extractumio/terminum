@@ -63,17 +63,29 @@ pub fn sync(app: &Shared) {
             }
         };
         let off = rec["off"].as_bool().unwrap_or(false);
-        let same = app.tmux.host(name).is_some_and(|s| matches!(&s.link, Link::Ssh { args: a, .. } if *a == args));
-        if same && runs.contains_key(name) && !off {
+        let attach = crate::attach::names_of(rec);
+        let same = app.tmux.host(name).filter(|s| matches!(&s.link, Link::Ssh { args: a, .. } if *a == args));
+        if let Some(s) = same.as_ref().filter(|_| runs.contains_key(name) && !off) {
+            // only its attached sessions changed: those let go get their windows' size back
+            let gone: Vec<String> = s.only.lock().replace(attach.clone()).unwrap_or_default().into_iter().filter(|x| !attach.contains(x)).collect();
+            if !gone.is_empty() {
+                let (app, s) = (app.clone(), s.clone());
+                tokio::spawn(async move {
+                    for x in gone {
+                        crate::page::sizing::release(&app, &s, Some(&x)).await;
+                    }
+                });
+            }
             continue;
         }
         if let Some(r) = runs.remove(name) {
             r.task.abort();
         }
         if let Some(old) = app.tmux.remove_host(name) {
-            old.disconnect();
+            let_go(app, old);
         }
         let server = Server::new(name, "default", Link::Ssh { ssh: ssh_bin(), args }, app.dirty.clone());
+        *server.only.lock() = Some(attach);
         app.tmux.add_host(server.clone());
         if off {
             *server.status.lock() = Status::Off;
@@ -91,14 +103,29 @@ pub fn sync(app: &Shared) {
     }
     for s in app.tmux.hosts() {
         if !recs.contains_key(&s.name) {
-            s.disconnect();
             app.tmux.remove_host(&s.name);
             tunnel::stop(app, &s.name);
+            let_go(app, s);
         }
     }
     *app.hosts.broken.lock() = broken;
     drop(runs);
     app.dirty.notify_one();
+}
+
+/// A host's server replaced, off or removed: the user's windows sized there get their size
+/// back while its link still lives (AC-89), then its clients end.
+fn let_go(app: &Shared, old: Arc<Server>) {
+    let app = app.clone();
+    tokio::spawn(async move {
+        let sessions = old.only.lock().clone().unwrap_or_default();
+        if old.attached() {
+            for s in sessions {
+                let _ = tokio::time::timeout(Duration::from_secs(2), crate::page::sizing::release(&app, &old, Some(&s))).await;
+            }
+        }
+        old.disconnect();
+    });
 }
 
 /// Holds a host's control client: connects, waits while it lives, reconnects with back-off.
@@ -119,12 +146,15 @@ async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
                 backoff = 1;
                 app.dirty.notify_one();
                 tunnel::reconcile(&app, &server.name);
-                while server.connected() {
+                // judged by its `terminum` client alone: the user's session clients (AC-89)
+                // end and come back with it
+                while server.attached() {
                     tokio::select! {
                         _ = server.ended.notified() => {}
                         _ = tokio::time::sleep(Duration::from_secs(5)) => {}
                     }
                 }
+                server.disconnect();
                 let why = "connection lost".to_string();
                 tracing::warn!(event = "host.lost", host = %server.name, retry_s = backoff);
                 *server.status.lock() = Status::Reconnecting { why, retry_s: backoff };
@@ -205,6 +235,15 @@ fn save(app: &Shared, f: impl FnOnce(&mut Map<String, Value>)) -> Result<(), Str
     *app.looks.settings.write() = s;
     sync(app);
     Ok(())
+}
+
+/// Changes host `name`'s record (its attached sessions, AC-89) and applies it.
+pub fn update(app: &Shared, name: &str, f: impl FnOnce(&mut Value)) -> Result<(), String> {
+    save(app, |h| {
+        if let Some(r) = h.get_mut(name) {
+            f(r);
+        }
+    })
 }
 
 /// remove, off, on, retry, enable, decline, files-remove.

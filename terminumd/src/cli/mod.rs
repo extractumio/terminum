@@ -34,6 +34,9 @@ usage: terminum [command]
                           as after ssh in a shell; no name: the destination's host;
                           --files: browse its files (copies a helper once attached)
   hosts remove|enable|files-remove|off|on|retry <name>
+  tmux                    the sessions of your own tmux attached by name, here and on hosts
+  tmux attach|detach <session> [--socket S | --host H]
+                          show a session of your tmux (tmux -L S, or on host H) in terminum, or stop
   upgrade [--to vX.Y.Z]   download a release, check it, install it
   rollback                back to the build before
   restart                 load the launchd agent again (a new port; a port taken back)
@@ -42,8 +45,8 @@ usage: terminum [command]
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";
 
-const COMMANDS: [&str; 15] = [
-    "status", "open", "web", "signout", "hosts", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+const COMMANDS: [&str; 16] = [
+    "status", "open", "web", "signout", "hosts", "tmux", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -62,6 +65,9 @@ pub enum Cmd {
     Hosts(Option<String>, Option<String>, Vec<String>),
     /// `hosts add [<name>] '<recipe>' [--files]`
     HostsAdd { name: Option<String>, recipe: Vec<String>, files: bool },
+    /// `tmux [attach|detach <session> [--socket S | --host H]]` (AC-89): action, session, and
+    /// where ("socket" or "host", and its value; empty: plain `tmux` here)
+    Tmux(Option<(String, String, String, String)>),
     Upgrade(Option<String>),
     Rollback,
     Restart,
@@ -117,6 +123,13 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
             }
             _ => Err(usage("usage: terminum hosts [add|remove|enable|files-remove|off|on|retry] <name>")),
         },
+        "tmux" => match rest {
+            [] => Ok(Cmd::Tmux(None)),
+            [a, session] if a == "attach" || a == "detach" => Ok(Cmd::Tmux(Some((a.clone(), session.clone(), String::new(), String::new())))),
+            [a, session, f, v] if (a == "attach" || a == "detach") && (f == "--socket" || f == "--host") =>
+                Ok(Cmd::Tmux(Some((a.clone(), session.clone(), f[2..].to_string(), v.clone())))),
+            _ => Err(usage("usage: terminum tmux [attach|detach <session> [--socket S | --host H]]")),
+        },
         "upgrade" => match rest {
             [] => Ok(Cmd::Upgrade(None)),
             [to, tag] if to == "--to" => Ok(Cmd::Upgrade(Some(tag.clone()))),
@@ -168,6 +181,8 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         Cmd::HostsAdd { name, recipe, files } => commands::hosts_add(ctx, name.as_deref(), &recipe, files)?,
         Cmd::Hosts(Some(h), Some(_), recipe) if !recipe.is_empty() => return Err(format!("usage: terminum hosts {h} <name>")),
         Cmd::Hosts(Some(h), Some(name), _) => commands::hosts_action(ctx, &h, &name)?,
+        Cmd::Tmux(None) => commands::tmux_list(ctx)?,
+        Cmd::Tmux(Some((action, session, flag, value))) => commands::tmux_action(ctx, &action, &session, &flag, &value)?,
         Cmd::Upgrade(tag) => return upgrade::upgrade(ctx, tag.as_deref()),
         Cmd::Import => commands::import_state(ctx)?,
         Cmd::Logs { lines, follow } => commands::logs(ctx, lines, follow)?,
