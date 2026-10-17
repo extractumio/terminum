@@ -17,6 +17,7 @@ import { paneFiles } from "./panefiles.js";
 import { bindLinks } from "./termlinks.js";
 import { copyButton } from "./touchcopy.js";
 import { TermView } from "./term.js";
+import { fitPx, frameMode } from "./frame.js";
 import { Views } from "./views.js";
 import { uploads } from "./upload.js";
 import { waitingCards } from "./waiting.js";
@@ -36,6 +37,7 @@ const store = {
 };
 if (embedded) document.body.classList.add("embed");
 
+const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
 const st = {
   groups: [], sid: embedded ?? store.get("sid", null),
   mode: store.get("mode", {}), size: store.get("size", null), resized: false,
@@ -380,7 +382,7 @@ function applyTheme(theme) {
 }
 
 function setSize(px, save = true) {
-  st.size = Math.max(7, Math.min(28, Math.round(px)));
+  st.size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, Math.round(px)));
   document.documentElement.style.setProperty("--size", `${st.size}px`);
   $("sizeval").textContent = st.size;
   if (save) store.set("size", st.size);
@@ -391,17 +393,23 @@ function setSize(px, save = true) {
 // Wrap: lines re-flow to the screen. Grid: tmux's exact layout at the chosen text size.
 // Fit: tmux's exact layout scaled down so a whole line fits the screen width; the pane is not
 // touched. (Fitting the pane to the screen is a separate menu action, as it changes its size.)
-// Screen mode (screenmode.js) shows a full-screen program as its grid, as Fit when the pane is
-// wider than the view or sized for another screen; with Screen mode "never", Wrap shows it as
-// Fit while it runs. The buttons keep the mode chosen.
+// Screen mode (screenmode.js) shows a full-screen program as its grid, as Fit while the pane
+// waits for this view's size. A pane this page does not size (another screen's size, a session
+// of the user's own tmux only looked at), and Wrap with Screen mode "never", show a program
+// wider than the view as frame.js says: a frame as Fit (Grid below SIZE_MIN), text re-flowed.
+// The buttons keep the mode chosen.
 
 // The mode is remembered per pane, and the one chosen last is the default for every other.
 const MODES_KEPT = 100;
 // Until the user picks one: settings.json's page.lines, else Wrap, on every screen.
 function mode() { return st.mode[st.sid] ?? store.get("modeDefault", LINES.includes(settings.page().lines) ? settings.page().lines : "wrap"); }
 function shownMode() {
-  if (screen.on() || screen.elsewhere()) return screen.elsewhere() || view.tooWide() ? "fit" : "grid";
-  return view.alt && view.tooWide() && mode() === "wrap" ? "fit" : mode();
+  const own = !!findItem(st.groups, st.sid)?.group.attached;   // the user's tmux: sized only once typed in (AC-89)
+  if (screen.on() || screen.elsewhere()) {
+    if (screen.elsewhere() || (own && view.tooWide())) return frameMode(view, SIZE_MIN) ?? "wrap";
+    return view.tooWide() ? "fit" : "grid";
+  }
+  return (mode() === "wrap" && frameMode(view, SIZE_MIN)) || mode();
 }
 function setMode(m, chosen = true) {
   delete st.mode[st.sid];                          // re-added last: the oldest choices go first
@@ -417,11 +425,9 @@ function applyFit() {
   const term = $("term"), m = shownMode();
   term.classList.toggle("wrap", m === "wrap");
   term.classList.toggle("grid", m !== "wrap");
-  if (m !== "fit" || !view.cols) { term.style.fontSize = ""; return; }
-  const px = Math.floor(((view.inner().w - 1) / view.cols / view.charRatio()) * 10) / 10;
-  term.style.fontSize = `${Math.min(px, view.chosenSize() + 4)}px`;
+  term.style.fontSize = m === "fit" && view.cols ? `${fitPx(view)}px` : "";
 }
-view.onCols = () => view.keepBottom(applyFit);
+view.onCols = view.onFrame = () => view.keepBottom(applyFit);   // the width changed, or a frame began or ended
 view.onAlt = () => { screen.sync(); view.keepBottom(applyFit); };
 document.fonts?.addEventListener("loadingdone", () => { view.ratio = 0; view.keepBottom(applyFit); });
 

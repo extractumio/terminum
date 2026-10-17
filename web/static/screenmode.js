@@ -5,7 +5,8 @@
 // pause (at most once a second), which under the "latest" policy makes this page size the pane.
 // Screen mode draws a full-screen program (tmux's alternate screen, or a pane set to "always")
 // as its exact grid: no history, no Lines buttons, "Screen · <program>" in the header, the pane
-// sized to this view. A pane another screen sized is drawn as Fit until this page types.
+// sized to this view. A pane another screen sized is drawn as Wrap draws a wider one (app.js)
+// until this page types.
 // While a program asked for the mouse, clicks, drags, the wheel and taps go to it.
 
 const $ = (id) => document.getElementById(id);
@@ -164,7 +165,7 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
 
   return {
     on: () => on, mouseOn, mode, setMode, sync,
-    /** Fit until this page types: another screen sized the pane. */
+    /** Another screen sized the pane: drawn as a wider pane until this page types. */
     elsewhere: () => !!elsewhere,
     /** A pane was opened: its Screen mode and this view's size go to terminumd. */
     opened() {
@@ -182,7 +183,7 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
       typedAt = performance.now();
       sendSize(true);
     },
-    /** terminumd sized the pane: another screen's size (or a refused resize) is drawn as Fit and said. */
+    /** terminumd sized the pane: another screen's size (or a refused resize) is said and drawn as a wider pane. */
     onSized(m) {
       elsewhere = m.mine && !m.error ? null : { cols: m.cols, rows: m.rows, error: m.error };
       showSized();

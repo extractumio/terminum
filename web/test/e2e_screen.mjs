@@ -5,7 +5,7 @@
 // sized for another screen, and the mouse reports of clicks, drags, the wheel and taps.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, line, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, LAYOUT, line, openPage, pause, SIZES } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
 const ROWS = Array.from({ length: 6 }, (_, i) => line(`${i}123456789012345678901234567890`));
@@ -54,6 +54,8 @@ export async function webScreen(browser, name) {
 
     // Screen mode on the alternate screen, and back
     frame({ alt: true });
+    await pause(page, 200);
+    frame({ alt: true, cols: sizes().at(-1).cols });   // terminumd sized the pane to this view
     await pause(page, 200);
     const on = await page.evaluate(() => ({ body: document.body.classList.contains("screenmode"), label: document.getElementById("scrlabel").textContent,
       labelShown: !document.getElementById("scrlabel").hidden, hist: getComputedStyle(document.getElementById("hist")).display,
@@ -144,16 +146,41 @@ export async function webScreen(browser, name) {
     await pause(page);
     check("AC-06 mouse: a program that did not ask for the mouse gets no events", mice().length === n2);
 
-    // sized for another screen: drawn as Fit and said, until this page types
+    // a pane wider than the view: waiting for this view's size, Fit; one this page does not size
+    // (a session of the user's own tmux only looked at, AC-89): text re-flows at the chosen size,
+    // a frame is Fit, or Grid past 7 px, and stays one while a third of its rows still reach past
+    const wide = (cols, txt) => frame({ alt: true, mouse: false, cols, ch: ROWS.map((_, i) => [i, line(txt(i, cols))]) });
+    const shown = () => page.evaluate(() => {
+      const t = document.getElementById("term"), cs = getComputedStyle(t);
+      return { wrap: t.classList.contains("wrap"), px: parseFloat(cs.fontSize), size: parseFloat(cs.getPropertyValue("--size")), sideways: t.scrollWidth > t.clientWidth + 1 };
+    });
+    const look = async (cols, txt) => { wide(cols, txt); await pause(page, 200); return shown(); };
+    const text = (i) => `• Ran cat plugin/src/vpatch-frozen.ts ${i}`, box = (i, cols) => `│${String(i).padEnd(cols - 2, "─")}│`;
+    const waiting = await look(200, text);
+    f.say({ t: "layout", groups: [{ ...LAYOUT[0], attached: "default" }, ...LAYOUT.slice(1)] });
+    await pause(page);
+    const reflowed = await look(210, text), framed = await look(120, box);
+    const third = await look(120, (i, cols) => (i < 2 ? box(i, cols) : text(i))), less = await look(120, (i, cols) => (i < 1 ? box(i, cols) : text(i)));
+    const huge = await look(600, box);
+    check("AC-05 Screen mode: a wider pane waiting for this view's size is Fit; one it does not size shows text re-flowed at the chosen size, a frame as Fit (Grid under 7 px)",
+      !waiting.wrap && reflowed.wrap && reflowed.px === reflowed.size && !framed.wrap
+        && (phone ? framed.px === framed.size && framed.sideways : framed.px < framed.size && framed.px >= 7)
+        && !huge.wrap && huge.px === huge.size && huge.sideways, JSON.stringify({ waiting, reflowed, framed, huge }));
+    check("AC-05 Screen mode: a frame stays one while a third of its rows reach past the view, and re-flows under that",
+      !third.wrap && less.wrap, JSON.stringify({ third, less }));
+    f.say({ t: "layout", groups: LAYOUT });
+    frame({ alt: true, mouse: false });
+
+    // sized for another screen: said, and drawn as a wider pane, until this page types
     f.say({ t: "sized", sid: SID, cols: 180, rows: 50, mine: false });
     await pause(page);
     const sized = await page.evaluate(() => ({ text: document.getElementById("sized").textContent, shown: !document.getElementById("sized").hidden,
-      fit: !!document.getElementById("term").style.fontSize }));
+      wrap: document.getElementById("term").classList.contains("wrap") }));
     await page.evaluate(() => document.getElementById("kbd").focus());
     await page.keyboard.type("x");
     await pause(page);
-    check("AC-13 sized: another screen's size is said and drawn as Fit until this page types",
-      sized.shown && sized.text === "Sized for another screen (180×50)" && sized.fit && await page.isHidden("#sized"), JSON.stringify(sized));
+    check("AC-13 sized: another screen's size is said, its text re-flowed, until this page types",
+      sized.shown && sized.text === "Sized for another screen (180×50)" && sized.wrap && await page.isHidden("#sized"), JSON.stringify(sized));
     f.say({ t: "sized", sid: SID, cols: 180, rows: 50, mine: true, error: "size too small" });
     await pause(page);
     const refused = await page.evaluate(() => !document.getElementById("sized").hidden && document.getElementById("sized").textContent);

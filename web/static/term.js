@@ -3,6 +3,7 @@
 import { inputBox, parkedCaret, statusKey } from "./agentbox.js";
 import { cursorCol, typedEnd, withCursor } from "./cursor.js";
 import { lineRec, palette } from "./render.js";
+import { framed } from "./frame.js";
 import { glued, inputWraps, wrapsInto } from "./rejoin.js";
 
 const LOAD_OLDER_AT = 300;   // px from the top that triggers loading older lines
@@ -72,6 +73,7 @@ export class TermView {
     this.top = 0;            // the screen's first line
     this.alt = false;        // the pane shows its alternate screen (a full-screen program)
     this.mouse = false;      // its program asked for the mouse
+    this.frame = false;      // and draws a frame wider than the view (frame.js), as last told
     this.queued = []; this.pending = null;
     this.box = this.idle = this.caret = null;    // another pane's (or a cleared screen's) input box and status lines
     this.histEl.replaceChildren(); this.screenEl.replaceChildren();
@@ -420,6 +422,8 @@ export class TermView {
       }
       this.onRows?.(false);
     });
+    const frame = framed(this);                      // judged on the rows now shown
+    if (frame !== this.frame) { this.frame = frame; this.onFrame?.(); }
     if (performance.now() < (this.followUntil ?? 0)) this.showCursor();
     this.onDrawn?.();
   }

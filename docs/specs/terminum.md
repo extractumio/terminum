@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.9.0 |
+| Version | 0.9.1 |
 | Date | 2026-10-16 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.9.1 | 2026-10-16 | Owner: Codex in a host's own session, only looked at, was drawn as Fit at about 11 px where iterm-enhancer shows it at the chosen 13 px. A full-screen program in a pane wider than the view that this page does not size (a session of the user's own tmux only looked at, another screen's size, a refused resize; with Screen mode "never" in Wrap) is drawn by iterm-enhancer's frame rule (its spec 0.44.0): a frame (at least half of the rows with text reach past the columns that fit at the chosen size: mc, htop) as Fit, as Grid at the chosen size when Fit would go below 7 px; rows that end at their text (Codex, a coding agent's full-screen mode, vim) re-flow as Wrap at the chosen size; a frame stays one while a third of its rows reach past the view. A pane this page sizes stays Fit until its resize lands. Pragmatic review applied: the rule only where no resize of this page's comes (it first applied while one was on its way too), hysteresis, the "never" case a sentence of its own (AC-05, AC-13, AC-89). |
 | 0.9.0 | 2026-10-16 | Owner: AC-89 also on hosts: sessions of a host's own tmux (the server its `terminum` session is on) attached by name (`hosts.<name>.attach`), offered after Add host and by an icon on the host's group with the count of its other sessions; one Attach tmux sessions form for this Mac and hosts ("On", running sessions as ticks, one message for several names); messages name the server by id. Pragmatic review: one control client per session (tmux sends `%output` only for the client's session; checked on 3.6a), host session clients one at a time with back-off 1…30 s, attached by session id (`$N`: no name in the host's shell), `-E` on hosts too, the host's link waits on its `terminum` client only, sized windows marked `@tm-sized` and released on reconnect and on host change. |
 | 0.8.0 | 2026-10-16 | Owner: AC-88 quick shell (a tmux window of its own marked `@tm-quick <pane>`, shown under or beside its pane by a second page in embed mode `/?embed=<key>`; computers only; listed under its pane; not restored); AC-89 sessions of the user's own tmux attached by name (`attach` in settings.json, `terminum tmux`, "Add tmux"; servers told apart by `<host>:<socket>`, group ids `local:<socket>/<session>`; no sizing until the page types). Pasted images go to `~/.terminum/tmp` here and on hosts (AC-36). Pragmatic review: window not split-window (a page sizes the window it shows), an iframe of the page not a second view (a page holds one pane), servers keyed by id before attaching a second local one. |
 | 0.7.1 | 2026-10-16 | AC-01: a row's window number names its host on hover ("This machine" here). Dialogs, forms and search speak at the terminal's size; a touch screen's fields keep 16 px (iOS zooms in below). |
@@ -257,10 +258,18 @@ Scenario: AC-05 edge — the view changes size
   Then the pane is resized to the new grid within 300 ms (debounced) and the program redraws; a grid under 20×5 is refused: the view keeps the last size and says "Too small for Screen mode"
 Scenario: AC-05 edge — two clients show the pane
   Given the Mac's browser shows %5 at 180×50 and the iPhone opens it
-  Then the policy of AC-13 decides the size; the client whose size lost shows the grid as Fit (scaled) and says "Sized for another screen (180×50)" until it types
+  Then the policy of AC-13 decides the size; the client whose size lost draws the pane as a wider one (below) and says "Sized for another screen (180×50)" until it types
+Scenario: AC-05 edge — a pane wider than the view that this page does not size
+  Given Screen mode is on and the pane is wider than the view at the chosen text size, sized by something else: a session of the user's own tmux only looked at (AC-89), another screen's size, a refused resize
+  When the program draws a frame (at least half of the rows with text on them reach past the columns that fit: mc, htop, an agent with its side panel open; a frame stays one while a third of them still do, so a few long lines do not flip the view)
+  Then it is shown as Fit, or as Grid at the chosen size when Fit would make the text smaller than 7 px (the smallest size the − and + buttons allow; its left part in sight, the rest by scrolling sideways)
+  When its rows end at their text (Codex, a coding agent's full-screen mode, vim, a plain tmux)
+  Then they re-flow as Wrap at the chosen size: Codex in a pane wider than the view is read at the chosen 13 px, not scaled down to about 11 px
+  And Wrap with Screen mode "never" shows a full-screen program wider than the view the same way
+  And a pane this page sizes is drawn as Fit only until its resize lands (no re-flow in between)
 Scenario: AC-05 failure — the resize is refused
   When "resize-window" answers %error ("size too small", a window the user set manual with a lock)
-  Then the page stays in Screen mode at the pane's own size, scaled as Fit, and the header says why
+  Then the page stays in Screen mode at the pane's own size, drawn as a wider pane (above), and the header says why
 ```
 
 ### AC-06 — Mouse and touch in Screen mode [SHOULD / P1]
@@ -446,7 +455,7 @@ Scenario: AC-13 edge — another tmux client is attached
   Then terminumd's control client is attached with "-f ignore-size" (AS-02) and "window-size manual" on the windows it sizes: both clients see the size terminumd set; a window no page shows keeps tmux's own policy (latest) for that client
 Scenario: AC-13 failure — the resize is refused
   When "resize-window" answers %error
-  Then the view shows the grid scaled (Fit) with "Sized for another screen (<cols>×<rows>)" and the log has the error; nothing is retried faster than once a second
+  Then the view draws the pane as a wider one (AC-05) with "Sized for another screen (<cols>×<rows>)" and the log has the error; nothing is retried faster than once a second
 ```
 
 ### AC-14 — Lifecycle [MUST / P0]
@@ -615,7 +624,7 @@ Scenario: AC-89 happy path — attach by name
   And its panes are used as terminum's own: screens, typing, Files, a new window, a split, rename, bookmarks
 Scenario: AC-89 happy path — sizing
   When the user opens a pane of "work"
-  Then its window keeps its size: looking never resizes what the user's own terminals show
+  Then its window keeps its size: looking never resizes what the user's own terminals show; a full-screen program wider than the view is drawn as AC-05 says (text re-flowed at the chosen size, a frame as Fit or Grid)
   When the user types there (or presses "Fit to this screen")
   Then it is sized as any pane (AC-13); another terminal attached to "work" sees the window at that size, as tmux does for two clients
 Scenario: AC-89 happy path — not running, detach
@@ -757,7 +766,7 @@ Today is iterm-enhancer 0.42 (`../iterm-enhancer`); the page and panel are inher
 | AC-02 | Screens from `async_get_screen_contents`, diffed per row, history by iTerm2's line numbers. | `capture-pane` reader, SGR encoder producing the same `{"r","e"}` lines, history numbering (AS-04). | `iterm-enhancer/bridge/fbbridge/web/mirror.py:166`, `screen.py:43`, `web/static/term.js:1` |
 | AC-03 | Text through iTerm2, special keys by tmux names for -CC panes only. | All keys by name, paste through tmux buffers, CSI u by hex. | `iterm-enhancer/bridge/fbbridge/web/tmuxkeys.py:57`, `web/static/input.js:1` |
 | AC-04 | Wrap, Grid, Fit in the page. | None in the page; Wrap is a no-op when the pane fits (AC-13). | `web/static/term.js:1`, `web/static/rejoin.js:1` |
-| AC-05 | The alternate screen forces Fit in Wrap; no resize. | Screen mode, resize to the view, menu override. | `iterm-enhancer/bridge/fbbridge/web/mirror.py:219` |
+| AC-05 | In Wrap a full-screen frame wider than the view shows as Fit (Grid under 7 px), its text re-flows; no resize. | Screen mode, resize to the view, menu override. | `iterm-enhancer/bridge/fbbridge/web/mirror.py:219` |
 | AC-06 | no mouse in the web app | everything | — |
 | AC-07 | New tab, new window, rename, reorder, merge through iTerm2. | tmux commands; split and close new; merge becomes move. | `iterm-enhancer/bridge/fbbridge/web/newsession.py:50`, `merge.py:1`, `rename.py:41` |
 | AC-08 | AutoLaunch script, `iterm-enhancer` CLI (Python), versioned builds. | launchd agent holding the port (socket activation), `terminum` CLI built into terminumd (no Python), a tmux check. | `iterm-enhancer/scripts/install.py:1` |
@@ -1028,7 +1037,7 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] AC-02 — `cargo test screen::` (SGR, rows, a real tmux capture, numbering incl. tmux's trims at its limit); `scripts/e2e_core.py` (history then screen, 3000 lines appended with their numbers, older lines, clear-history reset) → pass. Not done: a comparison with iterm-enhancer's frames on 20 fixtures (no iTerm2 here).
 - [x] AC-03 — `scripts/e2e_core.py` (text, keys by name, a 20 KB bracketed paste through a buffer, refused control characters), `cargo test tmux::keys` (round trip into a raw pane; `shift_enter_is_csi_u_only_for_programs_that_ask`: S-Enter by name with extended-keys on, as bytes with it off) → pass; `scripts/bench_echo.py` → p50 11.2 ms, p95 14.9 ms.
 - [x] AC-04 — `web/test/e2e_all.mjs` (inherited Wrap, Grid, Fit cases) → pass.
-- [x] AC-05 — `web/test/e2e_live.mjs` (vim switches the page to Screen mode within ~30 ms and back) and `web/test/e2e_all.mjs` (screen cases) → pass; `scripts/e2e_sizing.py` (mc in a 48×30 Screen mode: the window 48×30, the menu bar whole, the key bar on row 30 as mc lays it out for 48 columns (six keys), F9 and ↓ open a menu, F10 quits and the frame leaves the alternate screen; in a split window the pane is zoomed to 48×30 and unzoomed after) → 16/16 pass.
+- [x] AC-05 — `web/test/e2e_live.mjs` (vim switches the page to Screen mode within ~30 ms and back) and `web/test/e2e_all.mjs` (screen cases) → pass; `scripts/e2e_sizing.py` (mc in a 48×30 Screen mode: the window 48×30, the menu bar whole, the key bar on row 30 as mc lays it out for 48 columns (six keys), F9 and ↓ open a menu, F10 quits and the frame leaves the alternate screen; in a split window the pane is zoomed to 48×30 and unzoomed after) → 16/16 pass. Update 0.9.1 (a pane wider than the view that the page does not size): `web/test/e2e_screen.mjs` in Chromium and WebKit at both sizes (a wider pane waiting for this view's size is Fit; in a session of the user's own tmux Codex-like text rows in a 210-column pane re-flow at the chosen size, a 120-column frame is Fit at the wide size and Grid on the phone, under 7 px, a 600-column frame is Grid at the chosen size, sideways, a frame with a third of its rows wide stays one and with a sixth re-flows; another screen's size re-flows text; each fails when its part of the fix is undone: the old "Fit" rule, the hysteresis, the own-tmux condition, the frame told on each frame).
 - [x] AC-06 — `scripts/e2e_core.py` (a program printing its reports gets SGR click, release and wheel reports at 1-based cells) and `web/test/e2e_all.mjs` (mouse messages) → pass.
 - [x] AC-07 — `scripts/e2e_core.py` (new window in the shown pane's folder named `it's #(id) $HOME`, nothing run; split; refused and new sessions; rename keeping `#`; move; close; one a second) and `cargo test tmux::args` (round trip of `a#{pane_id}`, `#(id)`, `#S`, `$HOME`, `~x`, `a;b`, `it's`) → pass.
 - [x] AC-08 — `scripts/e2e_install.sh` (temporary HOME, direct mode instead of launchd; each package installed by its own terminumd run as `install`, as install.sh does: install, the package holds no script, `bin/terminum` is the build's terminumd, health over the socket, tmux missing, port in use, status, open; with AC-16 42 checks) → PASS. `cargo test cli::` (77 cases ported from the Python suites and added: install, upgrade, rollback, import, the plist checked with `plutil` incl. `Sockets`, launchctl verbs against a stub: bootstrap, `kickstart -k` only for a loaded agent even when its plist would change, bootout + bootstrap for a failed kickstart and for `restart`, a port unbindable at bootstrap loaded again until bound with one progress line, failing after the deadline, failing at once with a listener, the guard for the live label, install.sh's signature, checksum and replay checks with the arch-picked terminumd) → pass. Real launchd, opt-in (`TM_LAUNCHD_TEST=1 cargo test --test launchd`, agent `io.terminum.test-<pid>` on a free port): the port refused to a squatter with and without SO_REUSEPORT while terminumd runs, is SIGKILLed and is kickstarted; a connection made while it was dead is answered after the restart; `terminum restart` right after it (its TIME_WAIT on the port, which blocks a user program's bind for ~30 s) ends with launchd holding the port (observed: launchd bound at once, no retry needed); `/health` reports launchd's port; a port taken at bootstrap gives "port <p> was held by another program when launchd loaded terminum: free it, then run `terminum restart`" in `restart` and `status`, and `terminum restart` takes it back once free → PASS (33 s; nothing left in `launchctl list`). `make package` → `dist/package/terminum` holds `BUILD`, `AGENT_ID`, `release-signers`, licenses, README and terminumd for macOS arm64/x86_64 and Linux x86_64/arm64, no `.py`. Not done: the one-line install from a published release (none exists).
