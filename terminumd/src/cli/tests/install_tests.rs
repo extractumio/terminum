@@ -49,7 +49,8 @@ fn fresh_install_upgrade_same_build_and_prune() {
     let root = &t.ctx.root;
     t.install("a").unwrap();
     assert_eq!((t.link("current").as_deref(), t.running().as_deref()), (Some("a"), Some("a")));
-    assert!(said(&t.ctx).contains(&"Installed a. Open http://127.0.0.1:47900/open/c0de (valid 60 s) — or run: terminum open".to_string()));
+    assert!(said(&t.ctx).contains(&"Installed a. Open http://127.0.0.1:48080/ and sign in with your password (terminum open)".to_string()));
+    assert!(said(&t.ctx).contains(&"Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes the Mac's name; a name of its own: README \"Over Tailscale\")".to_string()));
     assert!(std::fs::read_link(root.join("builds/a/terminumd")).unwrap().to_string_lossy().starts_with("agents/macos-"), "the Mac's own terminumd");
     assert!(root.join("builds/a/agents/linux-x86_64/terminumd").is_file(), "the helpers for hosts come along");
     assert_eq!(t.command(), root.join("builds/a/terminumd"), "the command is the build's terminumd");
@@ -79,7 +80,7 @@ fn a_build_that_does_not_come_up_is_rolled_back() {
     t.install("z").unwrap();
     t.install("a").unwrap();
     let msg = install::install(&t.ctx, &package(&t.home, "b", None, true)).unwrap_err();
-    assert!(msg.starts_with("Upgrade to b failed (no answer as b within 3 s; terminumd does not answer: port 47900 is in use"), "{msg}");
+    assert!(msg.starts_with("Upgrade to b failed (no answer as b within 3 s; terminumd does not answer: port 48080 is in use"), "{msg}");
     assert!(msg.ends_with("rolled back to a — see ~/.terminum/logs/"), "{msg}");
     assert_eq!((t.link("current"), t.link("previous"), t.running()), (Some("a".into()), Some("z".into()), Some("a".into())), "the build before stays the one to roll back to");
     assert_eq!(t.command(), t.ctx.root.join("builds/a/terminumd"), "the command stays the working build's");
@@ -92,7 +93,7 @@ fn a_build_that_does_not_come_up_is_rolled_back() {
 fn a_first_install_that_does_not_come_up_says_so() {
     let t = T::new();
     let msg = install::install(&t.ctx, &package(&t.home, "a", None, true)).unwrap_err();
-    assert!(msg.contains("Install of a failed") && msg.contains("port 47900 is in use"), "{msg}");
+    assert!(msg.contains("Install of a failed") && msg.contains("port 48080 is in use"), "{msg}");
     assert!(t.ctx.bin().join("terminum").exists(), "the command is there to say why");
 }
 
@@ -209,7 +210,7 @@ fn restart_in_direct_mode_starts_terminumd_again() {
     let pid = launch::health(&t.ctx).unwrap()["pid"].clone();
     install::restart(&t.ctx).unwrap();
     assert_ne!(launch::health(&t.ctx).unwrap()["pid"], pid);
-    assert!(said(&t.ctx).last().unwrap().starts_with("Restarted terminumd: build a, port 47900"));
+    assert!(said(&t.ctx).last().unwrap().starts_with("Restarted terminumd: build a, port 48080"));
 }
 
 // The result line and the PATH tip: colors only on a terminal that takes them, and no tip

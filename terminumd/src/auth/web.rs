@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Web access (AC-10): `web.json` in the app folder (0600), off unless switched on, with the
-//! password kept as a salted PBKDF2-SHA256 hash in iterm-enhancer's format (`config.py`), and
-//! the limits a request has before it is signed in. The sign-in itself (brakes, sessions, the
-//! cookie) is `websignin.rs`.
+//! The password (AC-10): `web.json` in the app folder (0600) holds it as a salted
+//! PBKDF2-SHA256 hash in iterm-enhancer's format (`config.py`), and the names a proxy may
+//! forward besides `*.ts.net`. Until a password is set no browser signs in. Checking a password
+//! (brakes) is `websignin.rs`; the sign-ins it makes are `signin.rs`'s.
 
 use std::path::Path;
-use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -14,56 +13,39 @@ use super::crypto::{hex, pbkdf2_sha256, same_bytes, unhex};
 use super::store;
 
 pub const FILE: &str = "web.json";
-/// Not iterm-enhancer's 8765: people run both while they move over.
-pub const DEFAULT_PORT: u16 = 48080;
 pub const ITERATIONS: u32 = 200_000;
 pub const MIN_PASSWORD: usize = 8;
-/// What a request may carry before it is signed in (a sign-in, a JSON action).
+/// What a sign-in request may carry.
 pub const SMALL_BODY: usize = 4096;
-/// Time for a request's head (and a small body) to arrive.
-pub const HEAD_TIMEOUT: Duration = Duration::from_secs(10);
-/// Connections open at once on the web listener; more are refused.
-pub const MAX_CONNECTIONS: usize = 64;
 /// Iterations a stored hash may ask for: more is a broken (or hostile) file, not a password.
 const MAX_ITERATIONS: u32 = 10_000_000;
+/// Keys of the second listener of 0.5.0 and before (`terminum web on`): dropped when read.
+const OBSOLETE: [&str; 4] = ["enabled", "host", "port", "history"];
 
 /// web.json. Keys terminumd does not know are kept as they are.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WebConfig {
-    pub enabled: bool,
-    pub port: u16,
-    pub host: String,
-    /// Lines a network page may load.
-    pub history: u32,
-    /// Names served besides this Mac's own (a name a proxy forwards, say).
+    /// Names served besides 127.0.0.1, localhost and `*.ts.net` (a name another proxy forwards).
     pub allow_hosts: Vec<String>,
     pub password: Option<PasswordHash>,
     #[serde(flatten)]
     pub other: Map<String, Value>,
 }
 
-impl Default for WebConfig {
-    fn default() -> WebConfig {
-        WebConfig {
-            enabled: false,
-            port: DEFAULT_PORT,
-            host: "0.0.0.0".into(),
-            history: 10_000,
-            allow_hosts: Vec::new(),
-            password: None,
-            other: Map::new(),
-        }
-    }
-}
-
 impl WebConfig {
     /// The settings in `dir`, defaults for what is not set. Err: why the file cannot be read;
-    /// the caller keeps web access off and says so (the file is left for the user to fix).
+    /// no browser signs in and the page says so (the file is left for the user to fix).
     pub fn load(dir: &Path) -> Result<WebConfig, String> {
         match store::read(&dir.join(FILE))? {
             None => Ok(WebConfig::default()),
-            Some(v) if v.is_object() => serde_json::from_value(v).map_err(|e| format!("{FILE} cannot be read: {e}")),
+            Some(v) if v.is_object() => {
+                let mut cfg: WebConfig = serde_json::from_value(v).map_err(|e| format!("{FILE} cannot be read: {e}"))?;
+                for k in OBSOLETE {
+                    cfg.other.remove(k);
+                }
+                Ok(cfg)
+            }
             Some(_) => Err(format!("{FILE} is not a JSON object")),
         }
     }
@@ -73,14 +55,12 @@ impl WebConfig {
         store::write_private(&dir.join(FILE), &serde_json::to_value(self).map_err(std::io::Error::other)?)
     }
 
-    /// Whether the listener should run, or why not: on, with a password that can be checked.
-    pub fn ready(&self) -> Result<bool, String> {
-        if !self.enabled {
-            return Ok(false);
-        }
+    /// The password browsers sign in with: None until one is set, Err when the stored one is
+    /// broken (no browser signs in then either).
+    pub fn usable_password(&self) -> Result<Option<PasswordHash>, String> {
         match &self.password {
-            None => Err("Set a password first: terminum web password".into()),
-            Some(p) => p.check().map(|_| true).map_err(|e| format!("{FILE} holds a broken password; set it again: terminum web password ({e})")),
+            None => Ok(None),
+            Some(p) => p.check().map(|_| Some(p.clone())).map_err(|e| format!("{FILE} holds a broken password; set it again: terminum password ({e})")),
         }
     }
 }

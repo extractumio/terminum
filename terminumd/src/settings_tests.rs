@@ -11,7 +11,7 @@ fn tmp(name: &str) -> std::path::PathBuf {
 fn missing_or_empty_gives_every_default_and_no_message() {
     let (s, m) = parse("");
     assert_eq!((s.clone(), m.is_empty()), (Settings::default(), true));
-    assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.size, s.restore), (47900, "terminum", 12000, Size::Latest, true));
+    assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.size, s.restore), (48080, "terminum", 12000, Size::Latest, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
     assert_eq!(s.page_json(), json!({"textSize": 13, "lines": "wrap", "screenMode": "auto", "widgets": true, "folds": true, "messages": []}));
@@ -55,7 +55,7 @@ fn the_ac19_table_messages_word_for_word() {
 fn a_wrong_value_keeps_only_that_default() {
     let (s, m) = parse(r#"{"page": {"textSize": 15, "lines": "spiral", "widgets": "yes"}, "port": 0, "restore": 1}"#);
     assert_eq!(s.page.text_size, 15);
-    assert_eq!((s.page.lines.as_str(), s.page.widgets, s.port, s.restore), ("wrap", true, 47900, true));
+    assert_eq!((s.page.lines.as_str(), s.page.widgets, s.port, s.restore), ("wrap", true, 48080, true));
     for want in ["page.lines must be wrap, grid or fit", "page.widgets must be true or false", "port must be 1–65535", "restore must be true or false"] {
         assert!(m.contains(&format!("settings.json: {want}")), "{want}: {m:?}");
     }

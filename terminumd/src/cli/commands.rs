@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The commands that talk to a running terminumd over its socket (AC-08 … AC-10, AC-87):
-//! status, open, signout, web, hosts; and import and logs, which work on its files.
+//! status, open, password, signout, hosts; and import and logs, which work on its files.
 
 use std::time::Duration;
 
@@ -12,25 +12,15 @@ use super::{importer, install, launch, sockhttp};
 pub const HOST_ACTIONS: [&str; 6] = ["remove", "enable", "files-remove", "off", "on", "retry"];
 const MIN_PASSWORD: usize = 8;
 
-/// terminumd refused: its error code and message.
-pub struct Refused {
-    pub code: Option<String>,
-    pub text: String,
-}
-
-/// The answer of terminumd; Ok(Err) for a refusal, Err when it is down (with why).
-fn call(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<Result<Value, Refused>, String> {
+/// The answer of terminumd; Err with its message when it refused or is down.
+fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
     let (status, answer) = sockhttp::call(&ctx.sock(), method, path, body.as_ref(), Duration::from_secs(5))
         .map_err(|_| format!("{} (see: terminum status)", launch::describe(ctx, None, None)))?;
-    let code = answer.as_ref().and_then(|a| a.get("error")).and_then(Value::as_str).filter(|s| !s.is_empty()).map(str::to_string);
-    if status >= 400 || code.is_some() {
-        return Ok(Err(Refused { code, text: sockhttp::message(answer.as_ref(), status) }));
+    let refused = answer.as_ref().and_then(|a| a.get("error")).and_then(Value::as_str).is_some_and(|s| !s.is_empty());
+    if status >= 400 || refused {
+        return Err(sockhttp::message(answer.as_ref(), status));
     }
-    Ok(Ok(answer.filter(Value::is_object).unwrap_or_else(|| json!({}))))
-}
-
-fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
-    call(ctx, method, path, body)?.map_err(|r| r.text)
+    Ok(answer.filter(Value::is_object).unwrap_or_else(|| json!({})))
 }
 
 // ── status ──────────────────────────────────────────────────────────────────
@@ -74,40 +64,23 @@ fn sessions_text(sessions: &Value) -> String {
     }
 }
 
-pub fn web_line(web: &Value) -> String {
-    let enabled = web["enabled"].as_bool().unwrap_or(false);
-    if let Some(e) = web["error"].as_str().filter(|e| !e.is_empty()) {
-        return format!("web access: {} — {e}", if enabled { "on" } else { "off" });
-    }
-    if !enabled {
-        return "web access: off (terminum web on)".into();
-    }
-    let urls: Vec<String> = web["urls"].as_array().map(|u| u.iter().map(text).collect()).unwrap_or_default();
-    if web["loopback"].as_bool() == Some(true) {
-        return format!("web access: on — {} only, for a proxy on this Mac (tailscale serve)", web_addr(web));
-    }
-    format!("web access: on — {}", if urls.is_empty() { "no address".into() } else { urls.join(", ") })
+/// The page's address on this Mac.
+pub fn page_url(port: &Value) -> String {
+    format!("http://127.0.0.1:{}/", if port.is_null() { crate::settings::DEFAULT_PORT.to_string() } else { text(port) })
 }
 
-/// The web listener's host as the status gives it; every interface when it does not.
-fn web_host(web: &Value) -> &str {
-    web["host"].as_str().unwrap_or("0.0.0.0")
+/// How other devices reach the page: HTTPS through `tailscale serve` (README "Over Tailscale").
+pub fn serve_hint(port: &Value) -> String {
+    format!("Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 {} \
+             (it takes the Mac's name; a name of its own: README \"Over Tailscale\")", page_url(port).trim_end_matches('/'))
 }
 
-/// Where a proxy on this Mac reaches the web listener: `host:port`, 127.0.0.1 for every interface.
-pub(crate) fn web_addr(web: &Value) -> String {
-    let port = match web["port"].as_u64() {
-        Some(p) => p.to_string(),
-        None => {
-            let first = web["urls"].get(0).and_then(Value::as_str).unwrap_or("");
-            first.trim_end_matches('/').rsplit_once(':').map_or(crate::auth::web::DEFAULT_PORT.to_string(), |(_, p)| p.to_string())
-        }
-    };
-    match web_host(web) {
-        "0.0.0.0" | "::" => format!("127.0.0.1:{port}"),
-        h if h.contains(':') => format!("[{h}]:{port}"),
-        h => format!("{h}:{port}"),
+/// Whether browsers can sign in: a password is set, or why not.
+pub fn password_line(password: &Value) -> String {
+    if let Some(e) = password["error"].as_str().filter(|e| !e.is_empty()) {
+        return format!("password:   not usable — {e}");
     }
+    if password["set"].as_bool() == Some(true) { "password:   set".into() } else { "password:   not set — no browser signs in: terminum password".into() }
 }
 
 /// The status report from /health (AC-08).
@@ -115,8 +88,8 @@ pub fn status_lines(h: &Value) -> Vec<String> {
     let field = |k: &str| if h[k].is_null() { "?".to_string() } else { text(&h[k]) };
     let mut out = vec![
         format!("terminumd:  running, build {}, pid {}, up {}", field("build"), field("pid"), uptime(h["uptime_s"].as_u64().unwrap_or(0))),
-        format!("page:       http://127.0.0.1:{}/ (sign in: terminum open)", field("port")),
-        web_line(&h["web"]),
+        format!("page:       {} (other devices: tailscale serve, HTTPS)", page_url(&h["port"])),
+        password_line(&h["password"]),
     ];
     let tmux_ok = h["tmux"]["ok"].as_bool().unwrap_or(true);
     if !tmux_ok {
@@ -157,22 +130,28 @@ pub fn status(ctx: &Ctx) {
     ctx.say(format!("builds:     current {}, previous {}", link("current"), link("previous")));
 }
 
-// ── open, signout, web ──────────────────────────────────────────────────────
+// ── open, password, signout ─────────────────────────────────────────────────
 
+/// `terminum open`: the page in this Mac's browser; it signs in with the password.
 pub fn open_page(ctx: &Ctx, print_only: bool) -> Result<(), String> {
-    let answer = checked(ctx, "POST", "/code", None)?;
-    let Some(url) = answer["url"].as_str().filter(|u| !u.is_empty()) else { return Err("terminumd gave no link".into()) };
-    ctx.say(format!("{url} (valid 60 s, once)"));
+    let h = launch::health(ctx).ok_or_else(|| format!("{} (see: terminum status)", launch::describe(ctx, None, None)))?;
+    if h["password"]["set"].as_bool() != Some(true) {
+        return Err(match h["password"]["error"].as_str().filter(|e| !e.is_empty()) {
+            Some(e) => format!("No browser can sign in: {e}"),
+            None => "No password is set yet, so no browser can sign in: run terminum password, then terminum open".into(),
+        });
+    }
+    let url = page_url(&h["port"]);
+    ctx.say(format!("{url} (sign in with your password)"));
     if !print_only {
-        let _ = std::process::Command::new(&ctx.opener).arg(url).status();
+        let _ = std::process::Command::new(&ctx.opener).arg(&url).status();
     }
     Ok(())
 }
 
 pub fn signout(ctx: &Ctx) -> Result<(), String> {
-    let answer = checked(ctx, "POST", "/signout", Some(json!({"all": true})))?;
-    let n = answer["revoked"].as_u64().map(|n| format!(" ({n})")).unwrap_or_default();
-    ctx.say(format!("Signed out every page on this Mac{n}. Sign in again with: terminum open"));
+    checked(ctx, "POST", "/signout", None)?;
+    ctx.say("Signed out every browser; each signs in again with the password.");
     Ok(())
 }
 
@@ -180,7 +159,7 @@ fn ask_password(ctx: &Ctx) -> Result<String, String> {
     let pw = match ctx.var("TM_WEB_PASSWORD") {
         Some(pw) => pw.to_string(),
         None => {
-            let pw = super::term::read_secret("Web access password (8 or more characters): ")?;
+            let pw = super::term::read_secret("Password for terminum's page (8 or more characters): ")?;
             if super::term::read_secret("Again: ")? != pw {
                 return Err("The two passwords differ; nothing changed.".into());
             }
@@ -193,47 +172,12 @@ fn ask_password(ctx: &Ctx) -> Result<String, String> {
     Ok(pw)
 }
 
-pub fn web(ctx: &Ctx, cmd: Option<&str>) -> Result<(), String> {
-    match cmd {
-        None | Some("status") => {
-            let h = launch::health(ctx).ok_or_else(|| format!("web access: unknown — {}", launch::describe(ctx, None, None)))?;
-            ctx.say(web_line(&h["web"]));
-            return Ok(());
-        }
-        Some("password") => {
-            checked(ctx, "POST", "/web/password", Some(json!({"password": ask_password(ctx)?})))?;
-            ctx.say("web access: password set; browsers signed in before must sign in again");
-            return Ok(());
-        }
-        Some("off") => {
-            checked(ctx, "POST", "/web/off", None)?;
-            ctx.say("web access: off; every browser is signed out");
-            return Ok(());
-        }
-        _ => {}
-    }
-    let answer = match call(ctx, "POST", "/web/on", None)? {
-        Ok(a) => a,
-        Err(e) if e.code.as_deref() != Some("no_password") && !e.text.starts_with("Set a password first") => {
-            return Err(format!("web access: not on — {}", e.text));
-        }
-        Err(_) => {
-            ctx.say("Web access needs a password first.");
-            checked(ctx, "POST", "/web/password", Some(json!({"password": ask_password(ctx)?})))?;
-            call(ctx, "POST", "/web/on", None)?.map_err(|again| format!("web access: not on — {}", again.text))?
-        }
-    };
-    let web = if answer["web"].is_object() { &answer["web"] } else { &answer };
-    if web["error"].as_str().is_some_and(|e| !e.is_empty()) || !web["enabled"].as_bool().unwrap_or(true) {
-        return Err(web_line(web));
-    }
-    ctx.say(web_line(web));
-    let serve = format!("tailscale serve --bg --https=443 http://{} (it replaces what port 443 serves: see tailscale serve status)", web_addr(web));
-    ctx.say(match web_host(web) {
-        _ if web["loopback"].as_bool() == Some(true) => format!("To serve it to your tailnet over HTTPS: {serve}"),
-        "0.0.0.0" | "::" => format!("Plain HTTP on every network of this Mac. For HTTPS only, set \"host\": \"127.0.0.1\" in web.json (terminum web off, then on) and serve it to your tailnet: {serve}"),
-        _ => format!("Plain HTTP: on a network you do not trust, serve it over HTTPS: {serve}"),
-    });
+/// `terminum password`: every browser, here and on other devices, signs in with it.
+pub fn password(ctx: &Ctx) -> Result<(), String> {
+    checked(ctx, "POST", "/password", Some(json!({"password": ask_password(ctx)?})))?;
+    ctx.say("Password set; browsers signed in before sign in again with it. Open the page: terminum open");
+    let port = launch::health(ctx).map(|h| h["port"].clone()).unwrap_or(Value::Null);
+    ctx.say(serve_hint(&port));
     Ok(())
 }
 

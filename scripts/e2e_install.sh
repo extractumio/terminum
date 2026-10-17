@@ -77,7 +77,8 @@ for d in "${dirs[@]}"; do [ -x "$d/tmux" ] || notmux=${notmux:+$notmux:}$d; done
 out=$(PATH=$notmux install_pkg e2e-a 2>&1); rc=$?
 echo "$out" | sed 's/^/     | /'
 check "install exits 0" [ $rc = 0 ]
-check "install prints the sign-in link" has "$out" "Installed e2e-a. Open http://127.0.0.1:$port/open/"
+check "install says to set the password first" has "$out" "Installed e2e-a. Set the password every browser signs in with: terminum password; then open http://127.0.0.1:$port/"
+check "install says how other devices reach it" has "$out" "tailscale serve --bg --https=443 http://127.0.0.1:$port (it takes the Mac's name"
 check "install says tmux is needed" has "$out" "tmux is needed for terminals: brew install tmux"
 check "terminumd reports e2e-a on the socket" is_build e2e-a
 check "current → e2e-a" link current e2e-a
@@ -89,9 +90,13 @@ check "the command is the build's terminumd" [ "$(readlink "$root/bin/terminum")
 out=$("$root/bin/terminum" status 2>&1)
 check "status names the build and port" has "$out" "running, build e2e-a"
 check "status names the page" has "$out" "http://127.0.0.1:$port/"
-check "status says web access is off" has "$out" "web access: off"
+check "status says no password is set" has "$out" "password:   not set"
 out=$("$root/bin/terminum" open --print 2>&1)
-check "open --print gives a link" has "$out" "http://127.0.0.1:$port/open/"
+check "open without a password says how to set one" has "$out" "run terminum password, then terminum open"
+out=$(TM_WEB_PASSWORD='install check password' "$root/bin/terminum" password 2>&1)
+check "password sets it" has "$out" "Password set"
+out=$("$root/bin/terminum" open --print 2>&1)
+check "open --print gives the page" has "$out" "http://127.0.0.1:$port/ (sign in with your password)"
 
 # AC-16: upgrade, rollback, a broken build
 out=$(install_pkg e2e-b 2>&1); rc=$?

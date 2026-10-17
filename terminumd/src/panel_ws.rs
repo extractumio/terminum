@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The Files panel's event socket (`/fb/api/ws`, AC-61): file changes (`fs-change`), workspace
 //! writes, rescans after a host's stream reconnected. The guard checked the sign-in and the
-//! Origin before the upgrade; the first frame is the state (the build: AC-16).
+//! Origin before the upgrade; the first frame is the state (the build: AC-16). A sign-in revoked
+//! later (Sign out, `terminum signout`, a new password) ends the socket at the next ping.
 
 use std::time::Duration;
 
@@ -28,10 +29,12 @@ pub async fn socket(State(app): State<Shared>, headers: HeaderMap, ws: WebSocket
     let rx = app.bus.subscribe(); // before the first state, so nothing falls between them
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
     let ws = if offered.split(',').any(|p| p.trim() == "tm") { ws.protocols(["tm"]) } else { ws };
-    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(rx, s))
+    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
+    let secret = crate::auth::checks::signin_secret("GET", None, header).unwrap_or_default();
+    ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, secret, rx, s))
 }
 
-async fn serve(mut rx: Receiver<Event>, ws: WebSocket) {
+async fn serve(app: Shared, secret: String, mut rx: Receiver<Event>, ws: WebSocket) {
     let (mut tx, mut incoming) = ws.split();
     let state = Event::State(json!({"version": 1, "bridge": true, "build": crate::config::build_id()}));
     if !send(&mut tx, frame(&state)).await {
@@ -49,7 +52,14 @@ async fn serve(mut rx: Receiver<Event>, ws: WebSocket) {
                 };
                 if !send(&mut tx, frame(&e)).await { return }
             }
-            _ = ping.tick() => if !send(&mut tx, Message::Ping(Default::default())).await { return },
+            _ = ping.tick() => {
+                // an agent's socket comes with its token (agent_guard), not a sign-in
+                if !app.cfg.agent && !app.signins.check(&secret) {
+                    send(&mut tx, Message::Close(None)).await;
+                    return;
+                }
+                if !send(&mut tx, Message::Ping(Default::default())).await { return }
+            }
             m = incoming.next() => if !matches!(m, Some(Ok(Message::Ping(_) | Message::Pong(_) | Message::Text(_) | Message::Binary(_)))) { return },
         }
     }

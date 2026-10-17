@@ -7,7 +7,7 @@ import { askConfirm } from "./navtools.js";
 const $ = (id) => document.getElementById(id);
 
 /** current(): the shown pane's {group, item} or null; groups(): the layout's; pick(id) opens a
- *  pane; signOut() for the web listener's Sign out; copy(text) to the clipboard. */
+ *  pane; signOut() for Sign out (this browser's sign-in ends); copy(text) to the clipboard. */
 export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) {
   function open() { syncItems(); $("menu").hidden = false; $("menubtn").setAttribute("aria-expanded", "true"); }
   function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); hideMoves(); }

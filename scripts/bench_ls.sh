@@ -12,11 +12,11 @@ pid=""
 trap '[ -n "$pid" ] && kill $pid 2>/dev/null; tmux -L "$tsock" kill-server 2>/dev/null; rm -rf "$home"' EXIT
 export TM_PORT=47899 TM_HOME=$home TM_APP_DIR=$home/state TM_TMUX_SOCKET=$tsock TM_LOG=warn
 url="http://127.0.0.1:47899/fb/api/ls?path=$dir"
-signin() { # a one-time code over the socket, then the sign-in the page gets for it
-  local link
-  link=$(curl -s --unix-socket "$TM_APP_DIR/terminumd.sock" -X POST -H 'Content-Type: application/json' -d '{}' \
-         http://localhost/code | python3 -c 'import json,sys; print(json.load(sys.stdin)["url"])')
-  curl -s "$link" | python3 -c 'import re,sys; print(re.search(r"name=\"tm-session\" content=\"([^\"]+)\"", sys.stdin.read()).group(1))'
+signin() { # a password over the socket (as `terminum password`), then the sign-in /auth/login gives for it
+  curl -s -o /dev/null --unix-socket "$TM_APP_DIR/terminumd.sock" -X POST -H 'Content-Type: application/json' \
+       -d '{"password":"bench password"}' http://localhost/password
+  curl -s -X POST -H 'Content-Type: application/json' -d '{"password":"bench password"}' http://127.0.0.1:47899/auth/login \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["secret"])'
 }
 cold=(); warm=()
 for _ in $(seq "$runs"); do

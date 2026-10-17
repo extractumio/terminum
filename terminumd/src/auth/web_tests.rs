@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-10: web.json and the password's hash.
+//! AC-09: web.json and the password's hash.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -12,7 +12,7 @@ fn the_password_is_kept_as_a_salted_hash_only() {
     let dir = fresh_dir("web-hash");
     let stored = PasswordHash::new("correct horse").unwrap();
     assert_eq!(stored.iterations, ITERATIONS);
-    let cfg = WebConfig { enabled: true, password: Some(stored.clone()), ..WebConfig::default() };
+    let cfg = WebConfig { password: Some(stored.clone()), ..WebConfig::default() };
     cfg.save(&dir).unwrap();
     let text = fs::read_to_string(dir.join(FILE)).unwrap();
     assert!(!text.contains("correct horse"));
@@ -65,25 +65,26 @@ fn a_broken_hash_matches_nothing_and_says_why() {
 }
 
 #[test]
-fn defaults_fill_what_is_not_set_and_other_keys_are_kept() {
+fn defaults_fill_what_is_not_set_old_keys_go_and_other_keys_are_kept() {
     let dir = fresh_dir("web-defaults");
     let cfg = WebConfig::load(&dir).unwrap();
-    assert_eq!((cfg.enabled, cfg.port, cfg.host.as_str(), cfg.history), (false, 48080, "0.0.0.0", 10_000));
     assert!(cfg.allow_hosts.is_empty() && cfg.password.is_none());
-    fs::write(dir.join(FILE), r#"{"enabled": true, "port": 9000, "password": null, "note": {"x": 1}}"#).unwrap();
+    // 0.5.0's second listener: enabled, host, port and history go
+    fs::write(dir.join(FILE), r#"{"enabled": true, "host": "0.0.0.0", "port": 9000, "history": 5, "password": null, "note": {"x": 1}}"#).unwrap();
     let cfg = WebConfig::load(&dir).unwrap();
-    assert_eq!((cfg.enabled, cfg.port, cfg.history), (true, 9000, 10_000));
+    assert_eq!(cfg.other.keys().collect::<Vec<_>>(), ["note"]);
     cfg.save(&dir).unwrap();
-    let raw: Value = serde_json::from_str(&fs::read_to_string(dir.join(FILE)).unwrap()).unwrap();
-    assert_eq!(raw["note"]["x"], 1);
+    let raw: serde_json::Value = serde_json::from_str(&fs::read_to_string(dir.join(FILE)).unwrap()).unwrap();
+    assert_eq!(raw["note"], serde_json::json!({"x": 1}));
     assert_eq!(raw["allow_hosts"], serde_json::json!([]));
+    assert!(raw.get("port").is_none() && raw.get("enabled").is_none());
     fs::remove_dir_all(&dir).ok();
 }
 
 #[test]
-fn a_file_that_cannot_be_read_keeps_web_access_off_and_says_why() {
+fn a_file_that_cannot_be_read_signs_no_one_in_and_says_why() {
     let dir = fresh_dir("web-broken");
-    for raw in ["{not json", "[]", r#"{"port": "x"}"#, r#"{"port": 70000}"#, r#"{"password": "plain"}"#, r#"{"enabled": 1}"#] {
+    for raw in ["{not json", "[]", r#"{"allow_hosts": "x"}"#, r#"{"password": "plain"}"#] {
         fs::write(dir.join(FILE), raw).unwrap();
         let why = WebConfig::load(&dir).unwrap_err();
         assert!(why.contains("web.json"), "{raw}: {why}");
@@ -93,14 +94,11 @@ fn a_file_that_cannot_be_read_keeps_web_access_off_and_says_why() {
 }
 
 #[test]
-fn web_access_runs_only_when_on_with_a_usable_password() {
-    let off = WebConfig::default();
-    assert_eq!(off.ready(), Ok(false));
-    let no_password = WebConfig { enabled: true, ..WebConfig::default() };
-    assert!(no_password.ready().unwrap_err().contains("terminum web password"));
-    let broken = WebConfig { enabled: true, password: Some(PasswordHash { salt: "x".into(), iterations: 1, hash: "00".into() }),
-                             ..WebConfig::default() };
-    assert!(broken.ready().unwrap_err().contains("broken password"));
-    let on = WebConfig { enabled: true, password: Some(PasswordHash::with_salt("password1", b"s", 1)), ..WebConfig::default() };
-    assert_eq!(on.ready(), Ok(true));
+fn browsers_sign_in_only_with_a_usable_password() {
+    assert_eq!(WebConfig::default().usable_password(), Ok(None));
+    let broken = WebConfig { password: Some(PasswordHash { salt: "x".into(), iterations: 1, hash: "00".into() }), ..WebConfig::default() };
+    assert!(broken.usable_password().unwrap_err().contains("broken password; set it again: terminum password"));
+    let set = PasswordHash::with_salt("password1", b"s", 1);
+    let on = WebConfig { password: Some(set.clone()), ..WebConfig::default() };
+    assert_eq!(on.usable_password(), Ok(Some(set)));
 }

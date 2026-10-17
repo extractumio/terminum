@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-08 … AC-10, AC-87: the `terminum` command against a terminumd socket served in the
-//! test (status, open, web, signout, hosts), when terminumd is down, and its command line.
+//! AC-08, AC-09, AC-87: the `terminum` command against a terminumd socket served in the
+//! test (status, open, password, signout, hosts), when terminumd is down, and its command line.
 
 use super::*;
 use crate::cli::{commands, parse, run, wanted, Cmd};
 
 fn health() -> Value {
-    json!({"build": "v0.3.0", "pid": 4242, "uptime_s": 7380, "port": 47900,
-           "web": {"enabled": false, "urls": [], "error": null},
+    json!({"build": "v0.3.0", "pid": 4242, "uptime_s": 7380, "port": 48080,
+           "password": {"set": true, "error": null},
            "servers": [{"name": "local", "socket": "terminum", "sessions": ["main", "notes"], "panes": 5,
                         "state": {"state": "attached"}, "connected": true}],
            "hosts": [{"name": "devbox", "state": "reconnecting", "files": "enabled", "why": "ssh exited 255"}],
@@ -57,23 +57,23 @@ fn status_tells_what_runs() {
     let _s = t.serve(HashMap::new());
     let (err, out) = t.cli(&["status"]);
     assert_eq!(err, None);
-    for line in ["terminumd:  running, build v0.3.0, pid 4242, up 2h 3m", "page:       http://127.0.0.1:47900/ (sign in: terminum open)",
-                 "web access: off (terminum web on)", "tmux:       local: 2 sessions (main, notes), 5 panes, attached",
+    for line in ["terminumd:  running, build v0.3.0, pid 4242, up 2h 3m", "page:       http://127.0.0.1:48080/ (other devices: tailscale serve, HTTPS)",
+                 "password:   set", "tmux:       local: 2 sessions (main, notes), 5 panes, attached",
                  "host:       devbox: reconnecting, files enabled — ssh exited 255", "pages:      1 connected", "builds:     current -, previous -"] {
         assert!(out.contains(&line.to_string()), "{line} not in {out:?}");
     }
 }
 
 #[test]
-fn status_names_web_addresses_and_a_missing_tmux() {
+fn status_names_a_missing_password_and_a_missing_tmux() {
     let t = T::new();
     let mut h = health();
     h["servers"] = json!([]);
-    h["web"] = json!({"enabled": true, "urls": ["http://192.0.2.7:8765/"]});
+    h["password"] = json!({"set": false, "error": null});
     h["tmux"] = json!({"ok": false, "message": "tmux is needed for terminals: brew install tmux"});
     let _s = t.serve(routes(vec![("GET /health", fixed(200, h))]));
     let (_, out) = t.cli(&[]);
-    assert!(out.contains(&"web access: on — http://192.0.2.7:8765/".to_string()));
+    assert!(out.contains(&"password:   not set — no browser signs in: terminum password".to_string()));
     assert!(out.contains(&"tmux:       tmux is needed for terminals: brew install tmux".to_string()));
 }
 
@@ -81,10 +81,10 @@ fn status_names_web_addresses_and_a_missing_tmux() {
 fn status_when_terminumd_is_down_says_why() {
     let t = T::new();
     std::fs::create_dir_all(t.ctx.log_dir()).unwrap();
-    std::fs::write(t.ctx.log(), format!("ERROR terminumd::sock: msg=\"{}\"\n", crate::activation::unbound_message(47900))).unwrap();
+    std::fs::write(t.ctx.log(), format!("ERROR terminumd::sock: msg=\"{}\"\n", crate::activation::unbound_message(48080))).unwrap();
     let (err, out) = t.cli(&["status"]);
     assert_eq!(err, None);
-    assert_eq!(out[0], "terminumd:  not running — terminumd does not answer: port 47900 was held by another program when launchd loaded terminum: free it, then run `terminum restart`");
+    assert_eq!(out[0], "terminumd:  not running — terminumd does not answer: port 48080 was held by another program when launchd loaded terminum: free it, then run `terminum restart`");
     assert_eq!(out[1], "            log: ~/.terminum/logs/terminumd.log");
 }
 
@@ -99,7 +99,7 @@ fn status_flags_a_port_launchd_does_not_hold() {
     crate::cli::launch::start(&ctx).unwrap();
     std::fs::write(ctx.root.join("settings.json"), r#"{"port": 47901}"#).unwrap();
     crate::cli::commands::status(&ctx);
-    assert!(said(&ctx).contains(&"port:       settings.json says 47901, launchd holds 47900: run terminum restart".to_string()), "{:?}", said(&ctx));
+    assert!(said(&ctx).contains(&"port:       settings.json says 47901, launchd holds 48080: run terminum restart".to_string()), "{:?}", said(&ctx));
 }
 
 #[test]
@@ -109,103 +109,60 @@ fn commands_need_terminumd() {
 }
 
 #[test]
-fn open_asks_for_a_code_and_opens_it() {
+fn open_opens_the_page_once_a_password_is_set() {
     let t = T::new();
-    let s = t.serve(routes(vec![("POST /code", fixed(200, json!({"code": "c0de", "url": "http://127.0.0.1:47900/open/c0de"})))]));
+    let _s = t.serve(HashMap::new());
     let (err, out) = t.cli(&["open"]);
     assert_eq!(err, None);
-    assert_eq!(out, ["http://127.0.0.1:47900/open/c0de (valid 60 s, once)"]);
-    assert_eq!(t.opened(), ["http://127.0.0.1:47900/open/c0de"]);
-    let last = s.requests.lock().last().cloned().unwrap();
-    assert_eq!((last.0.as_str(), last.1.as_str(), last.3.as_deref()), ("POST", "/code", Some("application/json")));
+    assert_eq!(out, ["http://127.0.0.1:48080/ (sign in with your password)"]);
+    assert_eq!(t.opened(), ["http://127.0.0.1:48080/"]);
     let (_, out) = t.cli(&["open", "--print"]);
     assert_eq!(t.opened().len(), 1, "--print only prints");
-    assert!(out[0].contains("http://127.0.0.1:47900/open/c0de"));
+    assert!(out[0].contains("http://127.0.0.1:48080/"));
+}
+
+#[test]
+fn open_without_a_password_says_how_to_set_one() {
+    let t = T::new();
+    let mut h = health();
+    h["password"] = json!({"set": false, "error": null});
+    let _s = t.serve(routes(vec![("GET /health", fixed(200, h))]));
+    let (err, _) = t.cli(&["open"]);
+    assert_eq!(err.as_deref(), Some("No password is set yet, so no browser can sign in: run terminum password, then terminum open"));
+    assert!(t.opened().is_empty());
 }
 
 #[test]
 fn signout() {
     let t = T::new();
-    let s = t.serve(routes(vec![("POST /signout", fixed(200, json!({"ok": true, "revoked": 3})))]));
-    let (_, out) = t.cli(&["signout"]);
-    assert_eq!(s.requests.lock().last().unwrap().2, Some(json!({"all": true})));
-    assert!(out[0].starts_with("Signed out every page on this Mac (3)"));
+    let s = t.serve(routes(vec![("POST /signout", fixed(200, json!({"ok": true})))]));
+    let (err, out) = t.cli(&["signout"]);
+    assert_eq!(err, None);
+    assert_eq!(s.requests.lock().last().unwrap().1, "/signout");
+    assert_eq!(out, ["Signed out every browser; each signs in again with the password."]);
 }
 
 #[test]
-fn web_password_is_at_least_8() {
+fn the_password_is_at_least_8_and_says_how_other_devices_reach_the_page() {
     let home = Home::new();
     let ctx = home.ctx(&[("TM_WEB_PASSWORD", "short")]);
-    let s = serve(&ctx.sock(), routes(vec![("POST /web/password", fixed(200, json!({"ok": true})))]));
-    let err = run(&ctx, Cmd::Web(Some("password".into()))).unwrap_err();
+    let s = serve(&ctx.sock(), routes(vec![("POST /password", fixed(200, json!({"ok": true}))), ("GET /health", fixed(200, health()))]));
+    let err = run(&ctx, Cmd::Password).unwrap_err();
     assert!(err.contains("at least 8"), "{err}");
     assert!(s.requests.lock().is_empty(), "refused passwords are never sent");
     let ctx = home.ctx(&[("TM_WEB_PASSWORD", "correct horse")]);
-    run(&ctx, Cmd::Web(Some("password".into()))).unwrap();
-    assert_eq!(s.requests.lock().last().unwrap().2, Some(json!({"password": "correct horse"})));
+    run(&ctx, Cmd::Password).unwrap();
+    assert_eq!(s.requests.lock().iter().find(|r| r.1 == "/password").unwrap().2, Some(json!({"password": "correct horse"})));
+    assert_eq!(said(&ctx), ["Password set; browsers signed in before sign in again with it. Open the page: terminum open",
+                            "Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes the Mac's name; a name of its own: README \"Over Tailscale\")"]);
 }
 
 #[test]
-fn web_on_asks_for_a_password_when_there_is_none() {
+fn a_refused_password_says_why() {
     let home = Home::new();
-    let ctx = home.ctx(&[("TM_WEB_PASSWORD", "long enough")]);
-    let tries = Arc::new(AtomicUsize::new(0));
-    let on: Route = Box::new(move |_| match tries.fetch_add(1, Ordering::Relaxed) {
-        0 => (409, json!({"error": "web", "message": "Set a password first: terminum web password"})),
-        _ => (200, json!({"ok": true, "web": {"enabled": true, "urls": ["http://192.0.2.7:8765/"], "error": null}})),
-    });
-    let s = serve(&ctx.sock(), routes(vec![("POST /web/on", on), ("POST /web/password", fixed(200, json!({"ok": true})))]));
-    run(&ctx, Cmd::Web(Some("on".into()))).unwrap();
-    let paths: Vec<String> = s.requests.lock().iter().map(|r| r.1.clone()).collect();
-    assert_eq!(paths, ["/web/on", "/web/password", "/web/on"]);
-    assert!(said(&ctx).contains(&"web access: on — http://192.0.2.7:8765/".to_string()));
-    assert_eq!(said(&ctx).last().unwrap(), "Plain HTTP on every network of this Mac. For HTTPS only, set \"host\": \"127.0.0.1\" in web.json (terminum web off, then on) and serve it to your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:8765 (it replaces what port 443 serves: see tailscale serve status)");
-}
-
-#[test]
-fn web_on_for_this_mac_only_says_how_to_serve_it_to_the_tailnet() {
-    let home = Home::new();
-    let ctx = home.ctx(&[]);
-    let on = fixed(200, json!({"ok": true, "web": {"enabled": true, "urls": [], "host": "127.0.0.1", "port": 48090, "loopback": true, "error": null}}));
-    let _s = serve(&ctx.sock(), routes(vec![("POST /web/on", on)]));
-    run(&ctx, Cmd::Web(Some("on".into()))).unwrap();
-    assert!(said(&ctx).contains(&"web access: on — 127.0.0.1:48090 only, for a proxy on this Mac (tailscale serve)".to_string()));
-    assert_eq!(said(&ctx).last().unwrap(), "To serve it to your tailnet over HTTPS: tailscale serve --bg --https=443 http://127.0.0.1:48090 (it replaces what port 443 serves: see tailscale serve status)");
-}
-
-#[test]
-fn the_web_line_names_where_a_proxy_reaches_the_listener() {
-    use crate::cli::commands::{web_addr, web_line};
-    let web = |host: &str, loopback: bool| json!({"enabled": true, "urls": if loopback { json!([]) } else { json!([format!("http://{host}:9000/")]) }, "host": host, "port": 9000, "loopback": loopback});
-    assert_eq!(web_line(&web("::1", true)), "web access: on — [::1]:9000 only, for a proxy on this Mac (tailscale serve)");
-    assert_eq!(web_line(&web("localhost", true)), "web access: on — localhost:9000 only, for a proxy on this Mac (tailscale serve)");
-    assert_eq!(web_line(&web("192.0.2.7", false)), "web access: on — http://192.0.2.7:9000/");
-    assert_eq!(web_addr(&web("192.0.2.7", false)), "192.0.2.7:9000");
-    assert_eq!(web_addr(&web("::", false)), "127.0.0.1:9000");
-    assert_eq!(web_addr(&json!({"urls": ["http://192.0.2.7:8765/"]})), "127.0.0.1:8765", "an older terminumd: no host, no port");
-    assert_eq!(web_addr(&json!({"urls": []})), "127.0.0.1:48080");
-}
-
-#[test]
-fn web_on_says_why_not() {
-    let t = T::new();
-    let answer = Arc::new(Mutex::new(json!({"error": "web", "message": "web.json holds a broken password"})));
-    let a = answer.clone();
-    let _s = t.serve(routes(vec![("POST /web/on", Box::new(move |_| {
-        let v = a.lock().clone();
-        (if v["error"].is_string() { 409 } else { 200 }, v)
-    }))]));
-    assert_eq!(t.cli(&["web", "on"]).0.as_deref(), Some("web access: not on — web.json holds a broken password"));
-    *answer.lock() = json!({"ok": true, "web": {"enabled": false, "urls": [], "error": "port 8765 is in use: choose another in web.json"}});
-    assert_eq!(t.cli(&["web", "on"]).0.as_deref(), Some("web access: off — port 8765 is in use: choose another in web.json"));
-}
-
-#[test]
-fn web_off_and_status() {
-    let t = T::new();
-    let _s = t.serve(routes(vec![("POST /web/off", fixed(200, json!({"ok": true})))]));
-    assert!(t.cli(&["web", "off"]).1[0].contains("every browser is signed out"));
-    assert_eq!(t.cli(&["web"]).1, ["web access: off (terminum web on)"]);
+    let ctx = home.ctx(&[("TM_WEB_PASSWORD", "correct horse")]);
+    let _s = serve(&ctx.sock(), routes(vec![("POST /password", fixed(409, json!({"error": "password", "message": "web.json not saved: disk full"})))]));
+    assert_eq!(run(&ctx, Cmd::Password).unwrap_err(), "web.json not saved: disk full");
 }
 
 #[test]
@@ -278,7 +235,7 @@ fn the_command_line() {
     assert_eq!(p(&["logs", "-n", "5", "-f"]), Ok(Cmd::Logs { lines: 5, follow: true }));
     assert_eq!(p(&["logs"]), Ok(Cmd::Logs { lines: 50, follow: false }));
     assert_eq!(p(&["restart"]), Ok(Cmd::Restart));
-    for bad in [&["frobnicate"][..], &["status", "x"], &["web", "maybe"], &["logs", "-n", "x"], &["hosts", "frob", "x"], &["upgrade", "v1"]] {
+    for bad in [&["frobnicate"][..], &["status", "x"], &["password", "x"], &["logs", "-n", "x"], &["hosts", "frob", "x"], &["upgrade", "v1"]] {
         assert!(p(bad).is_err(), "{bad:?}");
     }
 }

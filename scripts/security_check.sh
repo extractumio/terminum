@@ -68,20 +68,23 @@ PY
 
 if [ -n "${TM_PORT:-}" ] && [ -n "${TM_APP_DIR:-}" ]; then
   app=$TM_APP_DIR; b="http://127.0.0.1:$TM_PORT"; sock="$app/terminumd.sock"
-  [ "$TM_PORT" != 47900 ] || { echo "Refusing port 47900, the live terminumd's: run it against a private one" >&2; exit 1; }
+  [ "$TM_PORT" != 48080 ] || { echo "Refusing port 48080, the live terminumd's: run it against a private one" >&2; exit 1; }
   if python3 -c 'import os,sys; from pathlib import Path; sys.exit(Path(sys.argv[1]).resolve() == (Path.home() / ".terminum/state").resolve())' "$app"; then :; else
     echo "Refusing the live state folder: run it against a private terminumd (TM_APP_DIR=<its short folder>)" >&2; exit 1
   fi
   code() { curl -s -o /dev/null -w '%{http_code}' -m 5 "$@"; }
   check() { # name expected actual
     if [ "$2" = "$3" ]; then echo "ok   $1 → $3"; else echo "FAIL $1 → $3 (want $2)"; fail=1; fi; }
-  url=$(curl -s -m 5 --unix-socket "$sock" -X POST -H 'Content-Type: application/json' -d '{}' http://localhost/code \
-        | python3 -c 'import json,sys; print(json.load(sys.stdin).get("url", ""))' 2>/dev/null)
-  # the sign-in the page gets for a code (never printed)
-  secret=$(curl -s -m 5 "$url" | python3 -c 'import re,sys; m = re.search(r"name=\"tm-session\" content=\"([^\"]+)\"", sys.stdin.read()); print(m.group(1) if m else "")')
-  [ -n "$secret" ] || { echo "FAIL no sign-in from a code (POST /code on the socket, then GET /open/<code>)"; exit 1; }
+  # a password set over the socket (as `terminum password`), then the sign-in /auth/login gives (never printed)
+  pw='security check password'
+  curl -s -o /dev/null -m 5 --unix-socket "$sock" -X POST -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" http://localhost/password
+  secret=$(curl -s -m 5 -X POST -H 'Content-Type: application/json' -d "{\"password\":\"$pw\"}" "$b/auth/login" \
+           | python3 -c 'import json,sys; print(json.load(sys.stdin).get("secret", ""))' 2>/dev/null)
+  [ -n "$secret" ] || { echo "FAIL no sign-in from the password (POST /password on the socket, then POST /auth/login)"; exit 1; }
   ws=(-H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==')
-  check "spent code"                410 "$(code "$url")"
+  check "wrong password"            401 "$(code -X POST -H 'Content-Type: application/json' -d '{"password":"wrong one"}' "$b/auth/login")"
+  check "tailscale funnel"          403 "$(code -H 'Tailscale-Funnel-Request: ?1' -H "X-TM-Session: $secret" "$b/fb/api/state")"
+  check "forwarded: Finder"         403 "$(code -X POST -H 'X-Forwarded-Host: mac.tail1234.ts.net' -H 'Content-Type: application/json' -H "X-TM-Session: $secret" -d '{}' "$b/fb/api/os/reveal")"
   check "no sign-in: /ws"           401 "$(code "${ws[@]}" "$b/ws")"
   check "no sign-in: files"         401 "$(code "$b/fb/api/state")"
   check "wrong sign-in"             401 "$(code -H 'X-TM-Session: nope' "$b/fb/api/state")"
@@ -91,8 +94,9 @@ if [ -n "${TM_PORT:-}" ] && [ -n "${TM_APP_DIR:-}" ]; then
   check "bad content type"          415 "$(code -X POST -H 'Content-Type: text/plain' -H "X-TM-Session: $secret" -d '{}' "$b/fb/api/fs/mkdir")"
   check "sign-in in query on write" 401 "$(code -X PUT -H 'Content-Type: application/json' -d '{}' "$b/fb/api/prefs?t=$secret")"
   check "internal over TCP"         404 "$(code -H "X-TM-Session: $secret" "$b/internal/state")"
-  check "socket routes over TCP"    404 "$(code -X POST -H 'Content-Type: application/json' -H "X-TM-Session: $secret" -d '{}' "$b/code")"
-  check "hello needs no sign-in"    200 "$(code "$b/api/hello?n=00112233445566778899aabbccddeeff")"
+  check "socket routes over TCP"    404 "$(code -X POST -H 'Content-Type: application/json' -H "X-TM-Session: $secret" -d '{"password":"x"}' "$b/password")"
+  sid=$(printf %s "$secret" | shasum -a 256 | cut -c1-16)
+  check "hello needs no sign-in"    200 "$(code "$b/api/hello?n=00112233445566778899aabbccddeeff&id=$sid")"
   check "device file"               400 "$(code -H "X-TM-Session: $secret" "$b/fb/api/raw?path=/dev/zero")"
   check "relative path"             400 "$(code -H "X-TM-Session: $secret" "$b/fb/api/file?path=../../etc/passwd")"
   check "socket: health"            200 "$(code --unix-socket "$sock" http://localhost/health)"

@@ -1,269 +1,103 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Web access (AC-10): the second listener (off by default, `0.0.0.0:48080`) for a phone or
-//! another computer, with a password (PBKDF2, brakes) and an HttpOnly cookie. Switched on and
-//! off by the CLI over the socket; off signs every browser out. Before a sign-in a request
-//! carries at most 4 KB, its head arrives within 10 s, at most 64 connections are open.
+//! The password (AC-09): every browser signs in with it, the Mac's own at 127.0.0.1 and other
+//! devices through `tailscale serve`. Set by the CLI over the socket (`terminum password`);
+//! until it is set no browser signs in and the page says how to set it. The right password
+//! gets a sign-in (`auth::signin`); wrong ones meet the brakes (`auth::websignin`).
 
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicUsize, Ordering};
 
 use axum::extract::{ConnectInfo, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use hyper_util::rt::{TokioIo, TokioTimer};
 use parking_lot::Mutex;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::auth::web::{PasswordHash, WebConfig, HEAD_TIMEOUT, MAX_CONNECTIONS};
-use crate::auth::websignin::{self, cookie_header, cookie_value, Login, WebAuth, WebSessions, COOKIE};
+use crate::auth::web::{PasswordHash, WebConfig};
+use crate::auth::websignin::{self, Login, WebAuth};
+
+/// The cookie sign-ins of 0.5.0's second listener: removed, every device signs in again.
+const OLD_SESSIONS: &str = "web-sessions.json";
 
 #[derive(Default)]
 pub struct Web {
+    /// The password's check; None while no usable password is set.
     auth: Mutex<Option<Arc<WebAuth>>>,
-    stop: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
-    /// The accept loop: it holds the listener until it returns.
-    serving: Mutex<Option<tokio::task::JoinHandle<()>>>,
-    status: Mutex<Value>,
+    /// Why there is no usable password (web.json cannot be read, a broken hash).
+    error: Mutex<Option<String>>,
     allow: Mutex<Vec<String>>,
-    names: Mutex<Vec<String>>,
 }
 
-/// web.json's allowed names and this Mac's own (the Host check, AC-10).
-pub fn host_lists(app: &Shared) -> (Vec<String>, Vec<String>) {
-    (app.web.allow.lock().clone(), app.web.names.lock().clone())
+/// web.json's `allow_hosts` (the Host check, AC-09).
+pub fn allow_hosts(app: &Shared) -> Vec<String> {
+    app.web.allow.lock().clone()
 }
 
-/// The web listener's cookie names a live sign-in.
-pub fn cookie_ok(app: &Shared, headers: &HeaderMap) -> bool {
-    let token = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()).and_then(|c| cookie_value(c, COOKIE).map(str::to_string));
-    let auth = app.web.auth.lock().clone();
-    matches!((token, auth), (Some(t), Some(a)) if a.sessions().check(&t))
-}
-
-/// `{"enabled", "urls", "error"}` for `terminum status` and the CLI.
+/// `{"set", "error"}` for `terminum status` and the page.
 pub fn status(app: &Shared) -> Value {
-    app.web.status.lock().clone()
+    json!({"set": app.web.auth.lock().is_some(), "error": app.web.error.lock().clone()})
 }
 
-/// This Mac's names and addresses: the host name, `<name>.local`, its interfaces' addresses.
-fn own_names() -> Vec<String> {
-    let mut out = Vec::new();
-    if let Some(name) = crate::config::host_name() {
-        let short = name.split('.').next().unwrap_or("").to_string();
-        out.extend([name.clone(), format!("{short}.local"), short]);
+/// Reads web.json: the password and the allowed names. A new check comes with it, so the
+/// brakes start over (a new password, `terminum signout`).
+pub fn apply(app: &Shared) {
+    if let Err(e) = std::fs::remove_file(app.cfg.dir.join(OLD_SESSIONS))
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(event = "web.old_sessions_not_removed", error = %e);
     }
-    out.extend(addresses());
-    out.sort();
-    out.dedup();
-    out.retain(|n| !n.is_empty());
-    out
-}
-
-/// The IPv4 and IPv6 addresses of this Mac's interfaces.
-fn addresses() -> Vec<String> {
-    let mut out = Vec::new();
-    let mut ifap: *mut libc::ifaddrs = std::ptr::null_mut();
-    // SAFETY: getifaddrs allocates a list freed below with freeifaddrs; each entry is read only
-    unsafe {
-        if libc::getifaddrs(&mut ifap) != 0 {
-            return out;
-        }
-        let mut p = ifap;
-        while !p.is_null() {
-            let a = (*p).ifa_addr;
-            if !a.is_null() {
-                match (*a).sa_family as i32 {
-                    libc::AF_INET => {
-                        let s = &*(a as *const libc::sockaddr_in);
-                        out.push(std::net::Ipv4Addr::from(u32::from_be(s.sin_addr.s_addr)).to_string());
-                    }
-                    libc::AF_INET6 => {
-                        let s = &*(a as *const libc::sockaddr_in6);
-                        out.push(std::net::Ipv6Addr::from(s.sin6_addr.s6_addr).to_string());
-                    }
-                    _ => {}
-                }
-            }
-            p = (*p).ifa_next;
-        }
-        libc::freeifaddrs(ifap);
-    }
-    out
-}
-
-/// Reads web.json and starts or stops the listener to match it.
-pub async fn apply(app: &Shared) -> Result<Value, String> {
-    let cfg = match WebConfig::load(&app.cfg.dir) {
-        Ok(c) => c,
-        Err(e) => {
-            stop(app);
-            *app.web.status.lock() = json!({"enabled": false, "urls": [], "error": e});
-            return Err(e);
-        }
+    let (auth, error, allow) = match WebConfig::load(&app.cfg.dir) {
+        Err(e) => (None, Some(e), Vec::new()),
+        Ok(cfg) => match cfg.usable_password() {
+            Ok(hash) => (hash.map(|h| Arc::new(WebAuth::new(h))), None, cfg.allow_hosts),
+            Err(e) => (None, Some(e), cfg.allow_hosts),
+        },
     };
-    *app.web.allow.lock() = cfg.allow_hosts.clone();
-    *app.web.names.lock() = own_names();
-    match cfg.ready() {
-        Ok(true) => start(app, &cfg).await,
-        Ok(false) => {
-            stop(app);
-            *app.web.status.lock() = json!({"enabled": false, "urls": [], "error": null});
-            Ok(status(app))
-        }
-        Err(e) => {
-            stop(app);
-            *app.web.status.lock() = json!({"enabled": false, "urls": [], "error": e});
-            Err(e)
-        }
+    if let Some(e) = &error {
+        tracing::warn!(event = "web.no_password", why = %e);
     }
+    *app.web.auth.lock() = auth;
+    *app.web.error.lock() = error;
+    *app.web.allow.lock() = allow;
 }
 
-async fn start(app: &Shared, cfg: &WebConfig) -> Result<Value, String> {
-    let hash = cfg.password.clone().expect("ready() checked");
-    let addr = format!("{}:{}", cfg.host, cfg.port);
-    if app.web.stop.lock().is_some() {
-        return Ok(status(app)); // running already (a password change restarts it: see set_password)
-    }
-    let fail = |why: String| {
-        let msg = format!("port {} is {why}: set another \"port\" in web.json", cfg.port);
-        *app.web.status.lock() = json!({"enabled": false, "urls": [], "error": msg});
-        msg
-    };
-    if loopback_taken(&cfg.host, cfg.port) {
-        return Err(fail("in use on 127.0.0.1 by another program".into()));
-    }
-    let listener = tokio::net::TcpListener::bind(&addr).await.map_err(|e| fail(format!("in use or not allowed ({e})")))?;
-    let sessions = Arc::new(WebSessions::load(&app.cfg.dir, &hash.salt));
-    *app.web.auth.lock() = Some(Arc::new(WebAuth::new(hash, sessions)));
-    let (tx, rx) = tokio::sync::watch::channel(false);
-    *app.web.stop.lock() = Some(tx);
-    let urls = urls(&cfg.host, cfg.port, addresses());
-    *app.web.status.lock() = json!({"enabled": true, "urls": urls, "host": cfg.host, "port": cfg.port, "loopback": is_loopback(&cfg.host), "error": null});
-    tracing::info!(event = "web.on", addr);
-    *app.web.serving.lock() = Some(tokio::spawn(serve(app.clone(), listener, rx)));
+/// `terminum password`: a new password (at least 8 characters); every sign-in goes and every
+/// page closes, so each browser signs in with the new one.
+pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String> {
+    let hash = PasswordHash::new(password)?;
+    let a = app.clone();
+    crate::http::blocking(move || {
+        let mut cfg = WebConfig::load(&a.cfg.dir)?;
+        cfg.password = Some(hash);
+        cfg.save(&a.cfg.dir).map_err(|e| format!("web.json not saved: {e}"))
+    })
+    .await
+    .map_err(|_| "the password could not be saved".to_string())??;
+    // the new check first, then the sign-ins go: a login the old password passed meanwhile
+    // either made its sign-in before (revoked here) or finds its check replaced (`login`)
+    apply(app);
+    let a = app.clone();
+    crate::http::blocking(move || a.signins.revoke_all())
+        .await
+        .map_err(|_| "the old sign-ins could not be removed".to_string())?
+        .map_err(|e| format!("the old sign-ins could not be removed: {e}"))?;
+    app.pages.close_all();
     Ok(status(app))
 }
 
-fn is_loopback(host: &str) -> bool {
-    host == "localhost" || host.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
-}
-
-/// The addresses a browser signs in at: this Mac's network ones (IPv4) for a listener on every
-/// interface, else the one it listens on; none on loopback, which only a proxy on this Mac
-/// reaches (a sign-in at a loopback name is refused: its cookie would reach every local port).
-fn urls(host: &str, port: u16, addrs: Vec<String>) -> Vec<String> {
-    let url = |a: &str| if a.contains(':') { format!("http://[{a}]:{port}/") } else { format!("http://{a}:{port}/") };
-    match host {
-        "0.0.0.0" | "::" => addrs.into_iter().filter(|a| !a.contains(':') && !a.starts_with("127.")).map(|a| url(&a)).collect(),
-        h if is_loopback(h) => Vec::new(),
-        h => vec![url(h)],
-    }
-}
-
-/// Another program listens on loopback at `port` while terminumd would listen on every
-/// interface. macOS binds the wildcard beside it without an error, and this Mac's own browsers
-/// would then reach that program (AC-10). A trial bind of 127.0.0.1 (and ::1 for `::`) fails
-/// only when a socket holds that exact address, not beside terminumd's own wildcard listener;
-/// Linux refuses the wildcard bind itself.
-fn loopback_taken(host: &str, port: u16) -> bool {
-    let held = |ip: &str| std::net::TcpListener::bind((ip, port)).is_err_and(|e| e.kind() == std::io::ErrorKind::AddrInUse);
-    cfg!(target_os = "macos")
-        && match host {
-            "0.0.0.0" => held("127.0.0.1"),
-            "::" => held("127.0.0.1") || held("::1"),
-            _ => false,
-        }
-}
-
-/// Closes the listener and every connection; every browser is signed out (AC-10).
-pub fn stop(app: &Shared) {
-    if let Some(tx) = app.web.stop.lock().take() {
-        let _ = tx.send(true);
-        tracing::info!(event = "web.off");
-    }
-    if let Some(a) = app.web.auth.lock().take() {
-        a.sessions().close();
-    }
-    app.pages.close_web();
-}
-
-async fn serve(app: Shared, listener: tokio::net::TcpListener, mut stop: tokio::sync::watch::Receiver<bool>) {
-    let open = Arc::new(AtomicUsize::new(0));
-    let router = crate::routes::pages(app.clone(), crate::routes::Side::Web);
-    loop {
-        let (stream, peer) = tokio::select! {
-            a = listener.accept() => match a { Ok(a) => a, Err(_) => continue },
-            _ = stop.changed() => return,
-        };
-        if open.load(Ordering::Relaxed) >= MAX_CONNECTIONS {
-            drop(stream);
-            continue;
-        }
-        open.fetch_add(1, Ordering::Relaxed);
-        let (open, router, mut stop) = (open.clone(), router.clone(), stop.clone());
-        tokio::spawn(async move {
-            let svc = hyper::service::service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
-                req.extensions_mut().insert(ConnectInfo(peer));
-                let r = router.clone();
-                async move { Ok::<_, std::convert::Infallible>(tower_call(r, req).await) }
-            });
-            let conn = hyper::server::conn::http1::Builder::new()
-                .timer(TokioTimer::new())
-                .header_read_timeout(HEAD_TIMEOUT)
-                .serve_connection(TokioIo::new(stream), svc)
-                .with_upgrades();
-            tokio::pin!(conn);
-            tokio::select! {
-                _ = conn.as_mut() => {}
-                _ = stop.changed() => conn.as_mut().graceful_shutdown(),
-            }
-            open.fetch_sub(1, Ordering::Relaxed);
-        });
-    }
-}
-
-async fn tower_call(router: axum::Router, req: hyper::Request<hyper::body::Incoming>) -> Response {
-    use tower::ServiceExt;
-    match router.oneshot(req.map(axum::body::Body::new)).await {
-        Ok(r) => r,
-        Err(e) => match e {},
-    }
-}
-
-/// `terminum web password`: a new password (at least 8 characters); sign-ins of the old go.
-pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String> {
-    let hash = PasswordHash::new(password)?;
-    let dir = app.cfg.dir.clone();
-    let mut cfg = WebConfig::load(&dir)?;
-    cfg.password = Some(hash);
-    cfg.save(&dir).map_err(|e| format!("web.json not saved: {e}"))?;
-    websignin::forget(&dir);
-    stop(app);
-    // the old accept loop still holds the port until it returns
-    let serving = app.web.serving.lock().take();
-    if let Some(task) = serving {
-        let _ = task.await;
-    }
-    apply(app).await
-}
-
-/// `terminum web on|off`.
-pub async fn switch(app: &Shared, on: bool) -> Result<Value, String> {
-    let dir = app.cfg.dir.clone();
-    let mut cfg = WebConfig::load(&dir)?;
-    cfg.enabled = on;
-    if on {
-        cfg.ready()?;
-    }
-    cfg.save(&dir).map_err(|e| format!("web.json not saved: {e}"))?;
-    if !on {
-        stop(app);
-    }
-    apply(app).await
+/// `terminum signout`: every browser signs in again, and the brakes start over.
+pub async fn sign_out_all(app: &Shared) -> Result<(), String> {
+    apply(app); // first, as in `set_password`: a login in flight then signs no one in
+    let a = app.clone();
+    crate::http::blocking(move || a.signins.revoke_all())
+        .await
+        .map_err(|_| "the sign-ins could not be removed".to_string())?
+        .map_err(|e| e.to_string())?;
+    app.pages.close_all();
+    Ok(())
 }
 
 #[derive(Deserialize)]
@@ -274,28 +108,36 @@ pub struct LoginBody {
 
 /// The address a sign-in counts against: the peer, or behind `tailscale serve` (a loopback
 /// peer) X-Forwarded-For's last entry.
-fn address(headers: &HeaderMap, peer: Option<SocketAddr>) -> String {
-    let ip = peer.map_or(std::net::IpAddr::from([0, 0, 0, 0]), |p| p.ip());
-    websignin::client_address(ip, headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()))
+fn address(headers: &HeaderMap, peer: SocketAddr) -> String {
+    websignin::client_address(peer.ip(), headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()))
 }
 
-fn secure(headers: &HeaderMap) -> bool {
-    headers.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) == Some("https")
-}
+/// How to set the password, said where it is missing.
+pub const NO_PASSWORD: &str = "No password is set yet. On the Mac, run: terminum password";
 
-/// `POST /auth/login {"password"}` on the web listener.
+/// `POST /auth/login {"password"}` → `{"secret"}`: the page keeps it (signin.js).
 pub async fn login(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<SocketAddr>, headers: HeaderMap, Json(b): Json<LoginBody>) -> Response {
     let Some(auth) = app.web.auth.lock().clone() else {
-        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"reason": "off"}))).into_response();
+        let message = app.web.error.lock().clone().unwrap_or_else(|| NO_PASSWORD.into());
+        return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"reason": "no_password", "message": message}))).into_response();
     };
-    let sec = secure(&headers);
-    match auth.login(b.password, address(&headers, Some(peer)), sec).await {
-        Login::SignedIn(token) => {
-            let mut res = StatusCode::NO_CONTENT.into_response();
-            if let Ok(v) = HeaderValue::from_str(&cookie_header(&token, sec)) {
-                res.headers_mut().insert(header::SET_COOKIE, v);
+    match auth.login(b.password, address(&headers, peer)).await {
+        Login::Right => {
+            let a = app.clone();
+            match crate::http::blocking(move || a.signins.create("password")).await {
+                Ok(Ok(secret)) if !current(&app, &auth) => {
+                    // the password changed while this one was checked: no sign-in from the old one
+                    let a = app.clone();
+                    let _ = crate::http::blocking(move || a.signins.revoke(&secret)).await;
+                    (StatusCode::UNAUTHORIZED, Json(json!({"reason": "wrong", "retry": 0}))).into_response()
+                }
+                Ok(Ok(secret)) => {
+                    tracing::info!(event = "signin.created", signins = app.signins.count());
+                    Json(json!({"secret": secret})).into_response()
+                }
+                Ok(Err(e)) => (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"reason": "failed", "message": format!("The sign-in could not be saved: {e}")}))).into_response(),
+                Err(r) => r,
             }
-            res
         }
         Login::Wrong { retry } => (StatusCode::UNAUTHORIZED, Json(json!({"reason": "wrong", "retry": retry}))).into_response(),
         Login::Locked { retry } => (StatusCode::TOO_MANY_REQUESTS, Json(json!({"reason": "locked", "retry": retry}))).into_response(),
@@ -303,50 +145,19 @@ pub async fn login(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<Soc
     }
 }
 
-/// `POST /auth/logout`: this browser's sign-in ends.
-pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
-    let token = headers.get(header::COOKIE).and_then(|v| v.to_str().ok()).and_then(|c| cookie_value(c, COOKIE).map(str::to_string));
-    if let (Some(t), Some(a)) = (token, app.web.auth.lock().clone()) {
-        a.sessions().sign_out(&t);
-    }
-    let mut res = StatusCode::NO_CONTENT.into_response();
-    if let Ok(v) = HeaderValue::from_str(&cookie_header("", secure(&headers))) {
-        res.headers_mut().insert(header::SET_COOKIE, v);
-    }
-    res
+/// `auth` is still the password's check (no new password since it was taken).
+fn current(app: &Shared, auth: &Arc<WebAuth>) -> bool {
+    app.web.auth.lock().as_ref().is_some_and(|now| Arc::ptr_eq(now, auth))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn addrs() -> Vec<String> {
-        ["127.0.0.1", "192.0.2.7", "100.64.0.9", "::1", "fe80::1"].map(String::from).to_vec()
-    }
-
-    #[test]
-    fn the_printed_addresses_are_the_ones_that_answer() {
-        assert_eq!(urls("0.0.0.0", 48080, addrs()), ["http://192.0.2.7:48080/", "http://100.64.0.9:48080/"]);
-        for host in ["127.0.0.1", "localhost", "::1"] {
-            assert!(urls(host, 48080, addrs()).is_empty(), "{host}");
+/// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any).
+pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
+    if let Some(secret) = crate::auth::checks::signin_secret("POST", None, header) {
+        let a = app.clone();
+        if let Ok(Err(e)) = crate::http::blocking(move || a.signins.revoke(&secret)).await {
+            tracing::warn!(event = "signout.unsaved", error = %e);
         }
-        assert_eq!(urls("192.0.2.7", 9000, addrs()), ["http://192.0.2.7:9000/"]);
-        assert_eq!(urls("2001:db8::7", 9000, addrs()), ["http://[2001:db8::7]:9000/"]);
-        assert!(is_loopback("127.0.0.1") && is_loopback("::1") && is_loopback("localhost") && !is_loopback("0.0.0.0"));
     }
-
-    #[test]
-    fn a_port_another_program_holds_on_loopback_is_taken_for_every_interface() {
-        let other = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let port = other.local_addr().unwrap().port();
-        assert_eq!(loopback_taken("0.0.0.0", port), cfg!(target_os = "macos"));
-        assert_eq!(loopback_taken("::", port), cfg!(target_os = "macos"));
-        assert!(!loopback_taken("127.0.0.1", port), "a listener on 127.0.0.1 itself is refused by its own bind");
-        // terminumd's own wildcard listener (restarting after a new password) is not another
-        // program; a port of its own, as tests in parallel may take one freed here
-        let own = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
-        assert!(!loopback_taken("0.0.0.0", own.local_addr().unwrap().port()));
-        let six = std::net::TcpListener::bind("[::1]:0").unwrap();
-        assert_eq!(loopback_taken("::", six.local_addr().unwrap().port()), cfg!(target_os = "macos"));
-    }
+    StatusCode::NO_CONTENT.into_response()
 }

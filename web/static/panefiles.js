@@ -132,7 +132,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
       // an <img> sends no header: its URL carries the sign-in (signin.js signedUrl)
       if (!place) return { error: "this session's folder is not known" };
       const url = await sign(`/fb/api/raw?${query({ path: place.path }, place.host)}`);
-      return url ? { url, path: place.path } : { error: "terminum's server could not prove itself: run terminum open" };
+      return url ? { url, path: place.path } : { error: "terminum's server could not prove itself" };
     },
     /** fn() when files turned out to be there or the pane's folder changed (at most every 250 ms). */
     listen(fn) { listeners.add(fn); },

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Who may use terminumd, end to end (terminum.md AC-09, AC-10) against a private terminumd:
-the table of refused requests, the one-time code, the hello proof, the private socket and
-files, web access with its password, cookie, brakes and switch-off.
+"""Who may use terminumd, end to end (terminum.md AC-09) against a private terminumd: the
+password (none set, too short, its hash, brakes), the sign-in it gets, the table of refused
+requests, what a forwarded request (tailscale serve) may not do, Tailscale Funnel, the hello
+proof, the private socket and files, sign-out, a new password, the files of 0.5.0 dropped.
 
     python3 scripts/e2e_access.py      (needs terminumd built: cd terminumd && cargo build)
 """
@@ -16,7 +17,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import WS, Terminumd, check, proof, results, summary, unix_request  # noqa: E402
 
-PORT, WEB_PORT, SOCKET = 47964, 47965, "tm-test-access"
+PORT, SOCKET = 47964, "tm-test-access"
 
 
 def raw(port, method, path, headers=None, body=b""):
@@ -37,35 +38,93 @@ def raw(port, method, path, headers=None, body=b""):
         return status, rest.decode(errors="replace"), head.decode()
 
 
+def closed(ws, timeout=3):
+    """The page's WebSocket is closed by terminumd within `timeout` seconds."""
+    try:
+        while True:
+            ws.recv(timeout)
+    except EOFError:
+        return True
+    except (socket.timeout, TimeoutError):
+        return False
+
+
+def login(password, headers=None):
+    """POST /auth/login on the Mac's own name: (status, body)."""
+    h = {"Host": f"127.0.0.1:{PORT}", "Content-Type": "application/json", **(headers or {})}
+    st, body, _ = raw(PORT, "POST", "/auth/login", h, json.dumps({"password": password}).encode())
+    return st, body
+
+
 def main():
     t = Terminumd(PORT, SOCKET)
     try:
+        # the files of 0.5.0: a code sign-in, cookie sign-ins, the second listener's keys
+        os.makedirs(t.app, mode=0o700)
+        for name, content in [("local-sessions.json", {"items": []}), ("web-sessions.json", {"salt": "s", "sessions": {}}),
+                              ("web.json", {"enabled": True, "host": "0.0.0.0", "port": 48080, "history": 10000, "allow_hosts": []})]:
+            with open(os.path.join(t.app, name), "w") as f:
+                json.dump(content, f)
         t.start()
-        secret = t.signin()
         host = f"127.0.0.1:{PORT}"
+        mode = lambda p: stat.S_IMODE(os.stat(p).st_mode)
+        check("AC-09 the sign-ins of 0.5.0 are dropped: local-sessions.json and web-sessions.json are gone",
+              not os.path.exists(os.path.join(t.app, "local-sessions.json")) and not os.path.exists(os.path.join(t.app, "web-sessions.json")))
+
+        # no password yet
+        st, body, _ = raw(PORT, "GET", "/auth/check", {"Host": host})
+        check("AC-09 with no password set the page is told how to set one", st == 401 and body.get("login") == "none"
+              and "terminum password" in body.get("message", ""), (st, body))
+        st, body = login("anything at all")
+        check("AC-09 with no password set no one signs in (503 no_password)", st == 503 and body.get("reason") == "no_password", (st, body))
+        check("AC-09 terminum status says no password is set", t.health()["password"] == {"set": False, "error": None}, t.health()["password"])
+        st, body = unix_request(t.sock, "POST", "/password", {"password": "short"})
+        check("AC-09 a password under 8 characters is refused", st == 409, body)
+        st, body = unix_request(t.sock, "POST", "/password", {"password": "correct horse"})
+        cfg = os.path.join(t.app, "web.json")
+        web = json.load(open(cfg))
+        check("AC-09 web.json holds a salted PBKDF2 hash, 0600, without 0.5.0's listener keys",
+              st == 200 and web["password"]["iterations"] >= 100000 and "correct" not in open(cfg).read() and mode(cfg) == 0o600
+              and not {"enabled", "host", "port", "history"} & set(web), (st, sorted(web)))
+
+        # the password and its brakes
+        t0 = time.time()
+        st, body = login("wrong pass")
+        st2, body2 = login("wrong again")
+        check("AC-09 a wrong password is refused and holds the next one", st == 401 and body["reason"] == "wrong" and time.time() - t0 >= 1.9,
+              (st, round(time.time() - t0, 1)))
+        st, body = login("correct horse")
+        secret = body.get("secret", "") if isinstance(body, dict) else ""
+        check("AC-09 the right password gets a 256-bit sign-in in the body, no cookie", st == 200 and len(secret) == 64, (st, body))
         sess = {"Host": host, "X-TM-Session": secret}
+
         cases = [
             ("GET /ws (no sign-in)", "GET", "/ws", {"Host": host, "Upgrade": "websocket", "Connection": "Upgrade", "Origin": f"http://{host}"}, 401, "bad_session"),
             ("GET /fb/api/ls, Host: evil.example", "GET", "/fb/api/ls?path=/tmp", {**sess, "Host": f"evil.example:{PORT}"}, 403, "bad_host"),
             ("GET /ws with a sign-in, Origin: http://evil.example", "GET", "/ws", {**sess, "Upgrade": "websocket", "Connection": "Upgrade",
                                                                                       "Sec-WebSocket-Key": "x", "Sec-WebSocket-Version": "13", "Origin": "http://evil.example"}, 403, "bad_origin"),
             ("POST /fb/api/fs/mkdir with a sign-in, Content-Type: text/plain", "POST", "/fb/api/fs/mkdir", {**sess, "Content-Type": "text/plain"}, 415, "bad_content_type"),
+            ("POST /fb/api/terminal/cd forwarded by tailscale serve", "POST", "/fb/api/terminal/cd",
+             {**sess, "Content-Type": "application/json", "Origin": f"http://{host}", "X-Forwarded-Host": "mac.tail1234.ts.net"}, 403, "not_here"),
+            ("GET / through Tailscale Funnel", "GET", "/", {"Host": "mac.tail1234.ts.net", "Tailscale-Funnel-Request": "?1"}, 403, "funnel"),
             ("GET /internal/anything over TCP", "GET", "/internal/state", sess, 404, "not_found"),
             ("GET /fb/api/ls without a sign-in", "GET", "/fb/api/ls?path=/tmp", {"Host": host}, 401, "bad_session"),
             ("GET /fb/api/ls with a wrong sign-in", "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": "0" * 64}, 401, "bad_session"),
+            ("GET /open/<code> (0.5.0's sign-in link)", "GET", "/open/0123456789abcdef", {"Host": host}, 404, "not_found"),
         ]
         for name, method, path, headers, status, code in cases:
             st, body, _ = raw(PORT, method, path, headers)
             check(f"AC-09 {name} → {status} {code}", st == status and isinstance(body, dict) and body.get("error") == code, (st, body))
         st, body, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", sess)
         check("AC-09 a signed-in request is answered", st == 200 and body.get("status") in ("ready", "loading"), st)
+        ts = {"Host": "mac.tail1234.ts.net", "X-Forwarded-Host": "mac.tail1234.ts.net", "X-Forwarded-For": "100.64.0.7",
+              "X-Forwarded-Proto": "https", "X-TM-Session": secret}
+        st, body, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", ts)
+        check("AC-09 the same sign-in works through tailscale serve's name", st == 200, st)
         st, body, _ = raw(PORT, "GET", "/fb/api/raw?path=/etc/hosts&t=" + secret, {"Host": host})
         check("AC-09 an image's GET may carry the sign-in as ?t=", st == 200, st)
-        code = unix_request(t.sock, "POST", "/code", {})[1]["code"]
-        first = raw(PORT, "GET", f"/open/{code}", {"Host": host})
-        again = raw(PORT, "GET", f"/open/{code}", {"Host": host})
-        check("AC-09 a code opens the page once; again → 410", first[0] == 200 and again[0] == 410 and "used already" in str(again[1]), (first[0], again[0]))
-        check("AC-09 the page with a sign-in is not cached and has a strict CSP", "no-store" in first[2] and "script-src 'self'" in first[2])
+        st, body, _ = raw(PORT, "GET", "/auth/check", sess)
+        check("AC-09 /auth/check says signed in", st == 204, st)
         n = "0123456789abcdef0123456789abcdef"
         import hashlib
         sid = hashlib.sha256(secret.encode()).hexdigest()[:16]
@@ -73,64 +132,43 @@ def main():
         check("AC-09 the server proves it holds the page's sign-in", st == 200 and body["proof"] == proof(secret, n))
         st, body, _ = raw(PORT, "GET", f"/api/hello?n={n}&id={'f' * 16}", {"Host": host})
         check("AC-09 an unknown sign-in gets no proof", st == 404 and body["error"] == "unknown_signin", (st, body))
-        mode = lambda p: stat.S_IMODE(os.stat(p).st_mode)
-        check("AC-09 the state folder is 0700, the socket and sign-ins private",
-              mode(t.app) == 0o700 and mode(os.path.join(t.app, "local-sessions.json")) == 0o600, oct(mode(t.app)))
-        st, body = unix_request(t.sock, "POST", "/signout", {})
-        st2, body2, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", sess)
-        check("AC-09 terminum signout signs every page out", st == 200 and st2 == 401, (st, st2))
+        check("AC-09 the state folder is 0700, the sign-ins private",
+              mode(t.app) == 0o700 and mode(os.path.join(t.app, "signins.json")) == 0o600, oct(mode(t.app)))
 
-        # AC-10 web access
-        st, body = unix_request(t.sock, "POST", "/web/on", {})
-        check("AC-10 web access needs a password first", st == 409 and "password" in body["message"], body)
-        st, body = unix_request(t.sock, "POST", "/web/password", {"password": "short"})
-        check("AC-10 a password under 8 characters is refused", st == 409, body)
-        cfg = os.path.join(t.app, "web.json")
-        st, body = unix_request(t.sock, "POST", "/web/password", {"password": "correct horse"})
-        with open(cfg) as f:
-            web = json.load(f)
-        web["port"], web["host"] = WEB_PORT, "127.0.0.1"   # never on the network during a test
-        with open(cfg, "w") as f:
-            json.dump(web, f)
-        st, body = unix_request(t.sock, "POST", "/web/on", {})
-        check("AC-10 web access goes on with its addresses", st == 200 and body["web"]["enabled"], body)
-        check("AC-10 a listener on 127.0.0.1 is said to be for a proxy, with no network address",
-              body["web"]["urls"] == [] and body["web"]["loopback"] is True and body["web"]["port"] == WEB_PORT, body["web"])
-        check("AC-10 web.json holds a salted PBKDF2 hash, 0600", web["password"]["iterations"] >= 100000 and "correct" not in open(cfg).read() and mode(cfg) == 0o600)
-        wh = {"Host": f"127.0.0.2:{WEB_PORT}"}
-        own = f"localhost:{WEB_PORT}"
-        st, body, _ = raw(WEB_PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": own})
-        check("AC-10 the network page needs a sign-in", st == 401, st)
-        st, body, _ = raw(WEB_PORT, "GET", "/", {"Host": f"evil.example:{WEB_PORT}"})
-        check("AC-10 a Host that is not this Mac's is refused", st == 403 and body["error"] == "bad_host", st)
-        names = [n for n in t.health()["web"].get("urls", [])]
-        lan = names[0].split("//")[1].split(":")[0] if names else socket.gethostname()
-        wh = {"Host": f"{lan}:{WEB_PORT}", "Origin": f"http://{lan}:{WEB_PORT}", "Content-Type": "application/json"}
-        t0 = time.time()
-        st, body, _ = raw(WEB_PORT, "POST", "/auth/login", wh, json.dumps({"password": "wrong pass"}).encode())
-        st2, body2, _ = raw(WEB_PORT, "POST", "/auth/login", wh, json.dumps({"password": "wrong again"}).encode())
-        check("AC-10 a wrong password is refused and holds the next one", st == 401 and body["reason"] == "wrong" and time.time() - t0 >= 1.9, (st, round(time.time() - t0, 1)))
-        st, body, head = raw(WEB_PORT, "POST", "/auth/login", wh, json.dumps({"password": "correct horse"}).encode())
-        cookie = next((l.split(":", 1)[1].strip() for l in head.split("\r\n") if l.lower().startswith("set-cookie:")), "")
-        check("AC-10 the right password gives an HttpOnly, SameSite=Strict cookie", st == 204 and "HttpOnly" in cookie and "SameSite=Strict" in cookie, cookie[:60])
-        token = cookie.split(";")[0]
-        st, body, _ = raw(WEB_PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": wh["Host"], "Cookie": token})
-        check("AC-10 the cookie signs the network page in", st == 200, st)
-        st, body, _ = raw(WEB_PORT, "POST", "/fb/api/terminal/cd", {**wh, "Cookie": token}, b"{}")
-        check("AC-10 terminal actions are the Mac's own page's only (not_here)", st == 403 and body["error"] == "not_here", (st, body))
-        ws = WS(WEB_PORT, origin=f"http://{lan}:{WEB_PORT}")
-        st, body = unix_request(t.sock, "POST", "/web/password", {"password": "battery staple"})
-        st2, _, _ = raw(WEB_PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": wh["Host"], "Cookie": token})
-        st3, _, _ = raw(WEB_PORT, "POST", "/auth/login", wh, json.dumps({"password": "battery staple"}).encode())
-        check("AC-10 a new password while on restarts the listener: the old cookie is refused, the new password signs in",
-              st == 200 and st2 == 401 and st3 == 204, (st, body, st2, st3))
-        st, body = unix_request(t.sock, "POST", "/web/off", {})
-        time.sleep(0.5)
-        try:
-            refused = socket.create_connection(("127.0.0.1", WEB_PORT), timeout=2) is None
-        except OSError:
-            refused = True
-        check("AC-10 web access off closes the listener", st == 200 and refused, st)
+        # sign-out: one browser, every browser, a new password
+        st, other = login("correct horse")
+        other = other["secret"]
+        st, _, _ = raw(PORT, "POST", "/auth/logout", {**sess, "Content-Type": "application/json", "Origin": f"http://{host}"}, b"{}")
+        st1, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", sess)
+        st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": other})
+        check("AC-09 Sign out ends that browser's sign-in only", st == 204 and st1 == 401 and st2 == 200, (st, st1, st2))
+        ws = t.page(other)
+        panel = WS(PORT, path="/fb/api/ws", protocols=["tm", other])
+        panel.recv()                                   # its first frame, the state
+        st, body = unix_request(t.sock, "POST", "/signout", {})
+        st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": other})
+        check("AC-09 terminum signout signs every browser out and closes its page", st == 200 and st2 == 401 and closed(ws), (st, st2))
+        check("AC-09 a Files panel's socket of a revoked sign-in ends at its next ping (15 s)", panel.status == 101 and closed(panel, 17))
+        st, third = login("correct horse")
+        st, body = unix_request(t.sock, "POST", "/password", {"password": "battery staple"})
+        st2, _, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host, "X-TM-Session": third["secret"]})
+        st3, _ = login("correct horse")
+        st4, _ = login("battery staple")
+        check("AC-09 a new password signs everyone out; only it signs in", st == 200 and st2 == 401 and st3 == 401 and st4 == 200,
+              (st, st2, st3, st4))
+
+        # brakes: guesses from the tailnet do not keep the owner out once the CLI acts
+        tailnet = {"Host": "mac.tail1234.ts.net", "Origin": "https://mac.tail1234.ts.net", "X-Forwarded-For": "100.64.0.9",
+                   "X-Forwarded-Host": "mac.tail1234.ts.net"}
+        for i in range(5):
+            login("guess %d" % i, tailnet)
+        st, body = login("battery staple", tailnet)
+        check("AC-09 five wrong passwords from one address make it wait, the right one too", st == 429 and body["reason"] == "locked", (st, body))
+        st, body = login("battery staple")
+        check("AC-09 another address is not held by them", st == 200, (st, body))
+        unix_request(t.sock, "POST", "/signout", {})
+        st, body = login("battery staple", tailnet)
+        check("AC-09 terminum signout starts the brakes over", st == 200, (st, body))
         ws.close()
     finally:
         if not all(results):

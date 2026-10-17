@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The page against a real private terminumd and a real private tmux server (never the
-// user's): sign-in from a one-time code, the list following tmux, a pane's screen, typing,
+// user's): sign-in with the password, the list following tmux, a pane's screen, typing,
 // sizing for the view, Screen mode for a full-screen program, Files docked beside the
 // terminal, custom.css, settings and themes changed live, and a terminumd restart.
 // Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size.
@@ -49,9 +49,16 @@ async function start() {
   throw new Error("terminumd did not start");
 }
 const stop = () => new Promise((r) => { if (!proc || proc.exitCode !== null) return r(); proc.once("exit", r); proc.kill(); });
+// The password, set once as `terminum password` does (a new one would sign every page out).
+const PASSWORD = "correct horse battery";
+let passwordSet = false;
+/** Signs in as a person does: the page's password form. */
 const signIn = async (page) => {
-  const { code } = await onSocket("POST", "/code", {});
-  await page.goto(`${BASE}/open/${code}`);
+  if (!passwordSet) passwordSet = (await onSocket("POST", "/password", { password: PASSWORD }))?.ok === true;
+  await page.goto(`${BASE}/`);
+  await page.waitForSelector("#login:not([hidden])", { timeout: 10000 });
+  await page.fill("#password", PASSWORD);
+  await page.press("#password", "Enter");
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
 };
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
@@ -63,7 +70,7 @@ async function wide(browser, name) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await signIn(page);
-  check("AC-09 the page signs in from a one-time code; its address holds no secret", new URL(page.url()).pathname === "/" && !page.url().includes("open"));
+  check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/" && !new URL(page.url()).search);
   check("AC-09 the sign-in is kept in the origin's storage", await page.evaluate(() => /^[0-9a-f]{64}$/.test(localStorage.getItem("tm.session") ?? "")));
   check("AC-01 the list shows the session main", (await page.textContent("#sessions")).includes("main"));
   await within("AC-02 the shown pane's screen is drawn", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 5000 }));

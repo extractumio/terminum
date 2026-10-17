@@ -40,7 +40,7 @@ fn the_plist() {
     assert_eq!((p["RunAtLoad"].clone(), p["KeepAlive"].clone(), p["ThrottleInterval"].clone()), (json!(true), json!(true), json!(1)));
     assert_eq!(p["StandardOutPath"], root.join("logs/terminumd.log").display().to_string());
     assert_eq!(p["StandardErrorPath"], p["StandardOutPath"]);
-    assert_eq!(p["Sockets"]["Listeners"], json!({"SockNodeName": "127.0.0.1", "SockServiceName": "47900", "SockFamily": "IPv4", "SockType": "stream"}));
+    assert_eq!(p["Sockets"]["Listeners"], json!({"SockNodeName": "127.0.0.1", "SockServiceName": "48080", "SockFamily": "IPv4", "SockType": "stream"}));
     let path: Vec<&str> = p["EnvironmentVariables"]["PATH"].as_str().unwrap().split(':').collect();
     assert_eq!(path[..2], ["/opt/homebrew/bin", "/usr/local/bin"]);
     assert_eq!(path.last(), Some(&"/opt/other/bin"), "the installing shell's own folders follow");
@@ -51,7 +51,7 @@ fn the_plist() {
     assert!(p["EnvironmentVariables"].get("TM_HOME").is_none(), "default folders are not pinned");
     assert_eq!(mode(&root.join("logs/terminumd.log")), 0o600, "made private before launchd opens it");
     assert_eq!(mode(&root.join("state")), 0o700);
-    assert_eq!(launch::plist_port(&ctx), Some(47900));
+    assert_eq!(launch::plist_port(&ctx), Some(48080));
 }
 
 #[test]
@@ -276,16 +276,16 @@ fn with_log(text: &str) -> (Home, Ctx) {
 fn the_last_error_is_the_reason() {
     let (_h, ctx) = with_log(concat!(
         "2026-10-15T09:00:00Z level=error event=x msg=\"an old one\"\n",
-        "2026-10-15T09:00:01Z level=error event=listen msg=\"port 47900 is in use (set `port` in ~/.terminum/settings.json)\"\n",
+        "2026-10-15T09:00:01Z level=error event=listen msg=\"port 48080 is in use (set `port` in ~/.terminum/settings.json)\"\n",
         "2026-10-15T09:00:01Z level=info event=exit\n"
     ));
-    assert_eq!(launch::log_reason(&ctx, None).as_deref(), Some("port 47900 is in use (set `port` in ~/.terminum/settings.json)"));
-    assert_eq!(launch::describe(&ctx, None, None), "terminumd does not answer: port 47900 is in use (set `port` in ~/.terminum/settings.json)");
+    assert_eq!(launch::log_reason(&ctx, None).as_deref(), Some("port 48080 is in use (set `port` in ~/.terminum/settings.json)"));
+    assert_eq!(launch::describe(&ctx, None, None), "terminumd does not answer: port 48080 is in use (set `port` in ~/.terminum/settings.json)");
 }
 
 #[test]
 fn terminumds_own_error_lines_give_the_reason() {
-    let msg = crate::activation::unbound_message(47900);
+    let msg = crate::activation::unbound_message(48080);
     let (_h, ctx) = with_log(&format!("error: {msg}\n2026-10-15T09:00:01.000000Z ERROR terminumd::sock: event=\"start.failed\" msg=\"{msg}\"\n"));
     assert_eq!(launch::log_reason(&ctx, None), Some(msg));
     let (_h, ctx) = with_log("2026-10-15T09:00:01Z INFO terminumd: event=start NOERRORS=1\n");

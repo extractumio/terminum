@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The CLI's way in (AC-08, AC-09): `~/.terminum/state/terminumd.sock`, a Unix socket in the
-//! private state folder, never a sign-in over TCP. `terminum status`, `open`, `web`,
-//! `signout` and `hosts` talk to it; another program cannot, nor can it hold the TCP port
-//! unnoticed: a port another program held means codes may have reached it.
+//! private state folder, never a sign-in over TCP. `terminum status`, `open`, `password`,
+//! `signout` and `hosts` talk to it; another program cannot.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
@@ -94,8 +93,7 @@ pub fn no_port(msg: String) -> ! {
 pub fn routes(app: Shared) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/code", post(code))
-        .route("/web/{action}", post(web))
+        .route("/password", post(password))
         .route("/signout", post(signout))
         .route("/hosts", get(hosts))
         .route("/hosts/{action}", post(host_action))
@@ -127,18 +125,12 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
     let problem = app.tmux_problem.lock().clone();
     Json(json!({
         "build": crate::config::build_id(), "pid": std::process::id(), "uptime_s": app.started.elapsed().as_secs(),
-        "port": app.cfg.port, "web": crate::webaccess::status(&app), "servers": servers,
+        "port": app.cfg.port, "password": crate::webaccess::status(&app), "servers": servers,
         "hosts": crate::hosts::list(&app), "pages": app.pages.count(),
         "tmux": {"ok": problem.is_none(), "message": problem},
         "signins": app.signins.count(), "workspaces": app.store.len(),
         "denied_requests": app.denied.load(Ordering::Relaxed), "rss_mb": rss_mb(),
     }))
-}
-
-/// `terminum open`: a one-time code and the address that spends it (AC-09).
-async fn code(State(app): State<Shared>) -> Json<Value> {
-    let code = app.codes.issue();
-    Json(json!({"code": code, "url": format!("http://127.0.0.1:{}/open/{code}", app.cfg.port)}))
 }
 
 #[derive(Deserialize, Default)]
@@ -147,33 +139,19 @@ struct Password {
     password: String,
 }
 
-/// `terminum web on|off|password` (AC-10).
-async fn web(State(app): State<Shared>, UrlPath(action): UrlPath<String>, body: Option<Json<Password>>) -> Response {
-    let result = match action.as_str() {
-        "on" => crate::webaccess::switch(&app, true).await,
-        "off" => crate::webaccess::switch(&app, false).await,
-        "password" => crate::webaccess::set_password(&app, &body.map(|b| b.0.password).unwrap_or_default()).await,
-        "status" => Ok(crate::webaccess::status(&app)),
-        _ => return err(StatusCode::NOT_FOUND, "not_found", "web on, off, password or status"),
-    };
-    match result {
-        Ok(v) => Json(json!({"ok": true, "web": v})).into_response(),
-        Err(e) => err(StatusCode::CONFLICT, "web", e),
+/// `terminum password` (AC-09).
+async fn password(State(app): State<Shared>, body: Option<Json<Password>>) -> Response {
+    match crate::webaccess::set_password(&app, &body.map(|b| b.0.password).unwrap_or_default()).await {
+        Ok(v) => Json(json!({"ok": true, "password": v})).into_response(),
+        Err(e) => err(StatusCode::CONFLICT, "password", e),
     }
 }
 
-/// `terminum signout`: every local page signs in again (AC-09).
+/// `terminum signout`: every browser signs in again (AC-09).
 async fn signout(State(app): State<Shared>) -> Response {
-    let a = app.clone();
-    match crate::http::blocking(move || a.signins.revoke_all()).await {
-        Ok(Ok(())) => {
-            for p in app.pages.all().into_iter().filter(|p| !p.web) {
-                p.close();
-            }
-            Json(json!({"ok": true})).into_response()
-        }
-        Ok(Err(e)) => err(StatusCode::INTERNAL_SERVER_ERROR, "not_saved", e.to_string()),
-        Err(r) => r,
+    match crate::webaccess::sign_out_all(&app).await {
+        Ok(()) => Json(json!({"ok": true})).into_response(),
+        Err(e) => err(StatusCode::INTERNAL_SERVER_ERROR, "not_saved", e),
     }
 }
 

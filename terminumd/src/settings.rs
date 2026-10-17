@@ -18,6 +18,8 @@ pub use save::{save_hosts, save_object, write_atomic};
 
 /// Theme, settings and hot keys files larger than this are refused (spec: limits).
 pub const MAX_BYTES: usize = 64 * 1024;
+/// The page's port on 127.0.0.1: not iterm-enhancer's 8765, which people run beside it.
+pub const DEFAULT_PORT: u16 = 48080;
 const FILE: &str = "settings.json";
 
 /// The sizing policy (AC-13).
@@ -76,7 +78,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Settings {
-            port: 47900,
+            port: DEFAULT_PORT,
             tmux_socket: "terminum".into(),
             tmux_history: 12000,
             size: Size::Latest,

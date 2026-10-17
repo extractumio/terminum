@@ -1,28 +1,27 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Who may ask what over TCP (AC-09, AC-10): the HTTP guard's decisions as pure functions, so
-//! the table of refused requests is tested without a server. The guard computes `signed_in`
-//! (the loopback sign-in from `signin_secret`, the web listener's from its cookie) and answers
-//! a `Denial` as `{"error": code, "message": message}` with its status.
+//! Who may ask what over TCP (AC-09): the HTTP guard's decisions as pure functions, so the
+//! table of refused requests is tested without a server. The one listener is 127.0.0.1:<port>;
+//! other devices reach it through a proxy on this Mac (`tailscale serve`). The guard computes
+//! `signed_in` (from `signin_secret`) and `forwarded` (from the header names) and answers a
+//! `Denial` as `{"error": code, "message": message}` with its status.
 //!
 //! Order, first refusal wins: `/internal/*` is 404 (served only on the CLI socket); a path
 //! that could be judged as one thing and routed as another (dot segments; `%` in an API path)
-//! is 400; the exact Host (DNS rebinding); on the web listener a sign-in through a loopback
-//! name (its cookie would reach every local port) and what only the Mac may do (`not_here`);
-//! the sign-in; the Origin; the Content-Type of a write.
+//! is 400; Tailscale Funnel (the public internet); the Host (DNS rebinding); what only the
+//! Mac's own browser may do (`not_here`); the sign-in; the Origin; the Content-Type of a write.
 //!
-//! Host and session actions (`addhost`, `hostaction`, web on/off, `signout`) have no TCP
-//! route at all: they are the CLI socket's, and the WebSocket refuses them off loopback.
+//! Host and session actions (`addhost`, `hostaction`, `password`, `signout`) have no TCP route
+//! at all: they are the CLI socket's.
 
 use serde_json::{json, Value};
 
-/// The listener a request came in on, with what its Host check needs.
+/// The listener, with what its Host check needs.
 #[derive(Clone, Copy, Debug)]
-pub enum Listener<'a> {
-    /// 127.0.0.1:<port>, the Mac's browser.
-    Loopback { port: u16 },
-    /// The network listener: `allow` from web.json's `allow_hosts`, `own_names` this Mac's
-    /// names and addresses (host name, `<name>.local`, its network addresses).
-    Web { allow: &'a [String], own_names: &'a [String] },
+pub struct Listener<'a> {
+    /// 127.0.0.1:<port>
+    pub port: u16,
+    /// web.json's `allow_hosts`: names another proxy forwards
+    pub allow: &'a [String],
 }
 
 /// A refused request.
@@ -56,22 +55,39 @@ pub fn host_name(host: &str) -> String {
     name.to_ascii_lowercase()
 }
 
-/// The loopback listener answers only to its own address: `127.0.0.1:<port>`, exactly.
-pub fn host_ok_loopback(host: &str, port: u16) -> bool {
-    host == format!("127.0.0.1:{port}")
+/// Which kind of name a request asked for, or None when it is not served (DNS rebinding: a
+/// page of another site whose DNS name points at this Mac sends that name).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HostKind {
+    /// `127.0.0.1:<port>`, exactly: the Mac's own browser (plain HTTP)
+    Loopback,
+    /// `*.ts.net`: `tailscale serve`, always HTTPS
+    Tailnet,
+    /// web.json's `allow_hosts`: another proxy, HTTP or HTTPS
+    Allowed,
 }
 
-/// The web listener answers to this Mac's own names and addresses, web.json's `allow_hosts` and
-/// Tailscale names (`*.ts.net`); a page of another site whose DNS name points at this Mac sends
-/// that name and is refused (DNS rebinding).
-pub fn host_ok_web(host: &str, allow: &[String], own_names: &[String]) -> bool {
+pub fn host_kind(host: &str, listener: &Listener) -> Option<HostKind> {
+    if host == format!("127.0.0.1:{}", listener.port) {
+        return Some(HostKind::Loopback);
+    }
     let name = host_name(host);
-    let known = |list: &[String]| list.iter().any(|n| n.eq_ignore_ascii_case(&name));
-    !name.is_empty()
-        && (matches!(name.as_str(), "localhost" | "127.0.0.1" | "::1")
-            || known(allow)
-            || known(own_names)
-            || name.strip_suffix(".ts.net").is_some_and(|n| !n.is_empty() && !n.ends_with('.')))
+    if name.is_empty() || matches!(name.as_str(), "127.0.0.1" | "localhost" | "::1") {
+        return None;
+    }
+    if name.strip_suffix(".ts.net").is_some_and(|n| !n.is_empty() && !n.ends_with('.')) {
+        return Some(HostKind::Tailnet);
+    }
+    listener.allow.iter().any(|n| n.eq_ignore_ascii_case(&name)).then_some(HostKind::Allowed)
+}
+
+/// The page's own origins for a request to `host`: the scheme its kind of name is served with.
+pub fn expected_origins(kind: HostKind, host: &str) -> Vec<String> {
+    match kind {
+        HostKind::Loopback => vec![format!("http://{host}")],
+        HostKind::Tailnet => vec![format!("https://{host}")],
+        HostKind::Allowed => vec![format!("http://{host}"), format!("https://{host}")],
+    }
 }
 
 /// An Origin is one of the page's own, exactly (browsers send it serialized: scheme, host, port).
@@ -79,13 +95,15 @@ pub fn origin_ok(origin: &str, expected: &[String]) -> bool {
     expected.iter().any(|e| e == origin)
 }
 
-/// The page's own origins for a request: the loopback page's, or on the web listener the Host
-/// the browser asked for, over HTTP or behind an HTTPS proxy (`tailscale serve`).
-pub fn expected_origins(listener: &Listener, host: &str) -> Vec<String> {
-    match listener {
-        Listener::Loopback { port } => vec![format!("http://127.0.0.1:{port}")],
-        Listener::Web { .. } => vec![format!("http://{host}"), format!("https://{host}")],
-    }
+/// A request a proxy forwarded: it names a forwarding header. `tailscale serve` passes the
+/// browser's Host through as it came, so the Host never says where a request came from; it
+/// always adds X-Forwarded-Host, and the Tailscale-* headers for a tailnet user (and removes
+/// those a client sent). Fail closed: any of them is a forwarded request.
+pub fn is_forwarded<'a>(mut names: impl Iterator<Item = &'a str>) -> bool {
+    names.any(|n| {
+        let n = n.to_ascii_lowercase();
+        n == "forwarded" || n.starts_with("x-forwarded-") || n.starts_with("tailscale-")
+    })
 }
 
 /// `path` without repeated slashes, so `//fb/api/os/x` is judged as `/fb/api/os/x`.
@@ -105,7 +123,7 @@ fn under(path: &str, prefix: &str) -> bool {
 }
 
 /// Requests that read or change terminals, sessions or files: everything but the page's own
-/// files, `/api/hello`, `/open/<code>` and the web listener's sign-in.
+/// files, `/api/hello` and the sign-in (`/auth/*`).
 pub fn needs_signin(path: &str) -> bool {
     let p = tidy(path);
     p == "/ws" || p == "/paste" || p == "/upload" || (under(&p, "/api") && p != "/api/hello") || under(&p, "/fb/api")
@@ -117,11 +135,6 @@ pub fn needs_signin(path: &str) -> bool {
 fn mac_only(path: &str) -> bool {
     let p = tidy(path);
     ["/fb/api/os", "/fb/api/terminal", "/api/os", "/api/terminal"].iter().any(|prefix| under(&p, prefix))
-}
-
-/// The web listener's sign-in.
-fn is_signin(path: &str) -> bool {
-    matches!(path, "/login" | "/auth/login")
 }
 
 /// A path whose meaning depends on who decodes it: `.` or `..` segments anywhere, `%` in an
@@ -143,9 +156,11 @@ fn is_json(content_type: Option<&str>) -> bool {
 }
 
 /// Allows or refuses a request before any handler runs. `header(name)` gives a request header
-/// by its lowercase name; `signed_in` says whether the request carries a valid sign-in.
+/// by its lowercase name; `forwarded` says a proxy forwarded it (`is_forwarded`); `signed_in`
+/// whether it carries a valid sign-in. Ok: whether it is the Mac's own browser's (not
+/// forwarded, at a loopback name), which alone may use Finder and the like.
 pub fn decide(listener: &Listener, method: &str, path: &str, header: impl Fn(&str) -> Option<String>,
-              signed_in: bool) -> Result<(), Denial> {
+              forwarded: bool, signed_in: bool) -> Result<bool, Denial> {
     let p = tidy(path);
     if under(&p, "/internal") {
         return Err(Denial::new(404, "not_found", "Not found"));
@@ -153,19 +168,15 @@ pub fn decide(listener: &Listener, method: &str, path: &str, header: impl Fn(&st
     if ambiguous(&p) {
         return Err(Denial::new(400, "bad_path", "The path has dot segments or escapes"));
     }
+    if header("tailscale-funnel-request").is_some() {
+        return Err(Denial::new(403, "funnel", "terminum is not served on the public internet (tailscale funnel): use tailscale serve"));
+    }
     let host = header("host").unwrap_or_default();
-    let host_ok = match listener {
-        Listener::Loopback { port } => host_ok_loopback(&host, *port),
-        Listener::Web { allow, own_names } => host_ok_web(&host, allow, own_names),
-    };
-    if !host_ok {
+    let Some(kind) = host_kind(&host, listener) else {
         return Err(Denial::new(403, "bad_host", format!("Host {} is not allowed", clip(&host))));
-    }
-    let web = matches!(listener, Listener::Web { .. });
-    if web && is_signin(&p) && matches!(host_name(&host).as_str(), "localhost" | "127.0.0.1" | "::1") {
-        return Err(Denial::new(403, "bad_host", "Sign in with this Mac's network name: a cookie for a loopback name reaches every local port"));
-    }
-    if web && mac_only(&p) {
+    };
+    let local = kind == HostKind::Loopback && !forwarded;
+    if !local && mac_only(&p) {
         return Err(Denial::new(403, "not_here", "Only the Mac's own browser can do this"));
     }
     if needs_signin(&p) && !signed_in {
@@ -174,10 +185,10 @@ pub fn decide(listener: &Listener, method: &str, path: &str, header: impl Fn(&st
     let write = !matches!(method, "GET" | "HEAD");
     let upload = write && (p == "/paste" || p == "/upload");
     // A browser names the page on every write and WebSocket; only these may lack an Origin:
-    // a write on the loopback listener that comes from no page at all.
-    let origin_needed = is_websocket(&p, &header) || upload || (write && matches!(listener, Listener::Web { .. }));
+    // a write from no page at all, on this Mac and not forwarded.
+    let origin_needed = is_websocket(&p, &header) || upload || (write && !local);
     match header("origin") {
-        Some(origin) if !origin_ok(&origin, &expected_origins(listener, &host)) => {
+        Some(origin) if !origin_ok(&origin, &expected_origins(kind, &host)) => {
             return Err(Denial::new(403, "bad_origin", format!("Origin {} is not allowed", clip(&origin))));
         }
         None if origin_needed => return Err(Denial::new(403, "bad_origin", "Origin is required")),
@@ -186,7 +197,7 @@ pub fn decide(listener: &Listener, method: &str, path: &str, header: impl Fn(&st
     if write && !upload && !is_json(header("content-type").as_deref()) {
         return Err(Denial::new(415, "bad_content_type", "Content-Type must be application/json"));
     }
-    Ok(())
+    Ok(local)
 }
 
 /// A header value as quoted in a message, at most 200 characters.
@@ -194,7 +205,7 @@ fn clip(s: &str) -> String {
     s.chars().take(200).collect()
 }
 
-/// The loopback sign-in a request presents: the `X-TM-Session` header; on a GET (an `<img>`) the
+/// The sign-in a request presents: the `X-TM-Session` header; on a GET (an `<img>`) the
 /// query's `t=`; on a WebSocket the second of the subprotocols `tm, <secret>` (the answer
 /// selects `tm`).
 pub fn signin_secret(method: &str, query: Option<&str>, header: impl Fn(&str) -> Option<String>) -> Option<String> {

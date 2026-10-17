@@ -37,7 +37,7 @@ pub const CLOSED: &str = "This pane has closed. Pick another one.";
 /// One connected page.
 pub struct Page {
     pub id: u64,
-    /// from the web listener (a phone over the network): fewer rights (§9 table)
+    /// not the Mac's own browser (through a proxy: a phone over the tailnet): fewer rights (§9 table)
     pub web: bool,
     tx: mpsc::Sender<String>,
     closed: AtomicBool,
@@ -66,8 +66,10 @@ impl Page {
         self.send(v.to_string())
     }
 
+    /// The page's socket ends now: the writer wakes (on a message never sent) and closes it.
     pub fn close(&self) {
         self.closed.store(true, Ordering::Relaxed);
+        let _ = self.tx.try_send(String::new());
     }
 
     pub fn is_closed(&self) -> bool {
@@ -120,9 +122,9 @@ impl Pages {
         }
     }
 
-    /// Every web listener page is signed out (web access went off, AC-10).
-    pub fn close_web(&self) {
-        for p in self.all().into_iter().filter(|p| p.web) {
+    /// Every page closes: their browsers sign in again (a new password, `terminum signout`).
+    pub fn close_all(&self) {
+        for p in self.all() {
             p.close();
         }
     }

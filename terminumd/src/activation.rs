@@ -113,7 +113,7 @@ mod tests {
         // what launchd hands when the port was taken at bootstrap: a socket on 0.0.0.0:0
         let l = std::net::TcpListener::bind("0.0.0.0:0").unwrap();
         assert!(matches!(judge(l), Activation::Unbound));
-        assert!(unbound_message(47900).contains("free it, then run `terminum restart`"));
+        assert!(unbound_message(48080).contains("free it, then run `terminum restart`"));
     }
 
     #[test]

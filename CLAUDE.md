@@ -19,7 +19,7 @@ framework), a plain-JavaScript web page (ES modules, no bundler). No native app.
 
 | Term | Meaning |
 | --- | --- |
-| terminumd | `terminumd/`: the server on `127.0.0.1:47900`; the control-mode client of every tmux server (local and over ssh), screens and history, typing, sessions, listings, file operations, workspaces, watcher, the embedded UI; web access on a second listener when it is on |
+| terminumd | `terminumd/`: the server on `127.0.0.1:48080` (other devices through `tailscale serve`); the control-mode client of every tmux server (local and over ssh), screens and history, typing, sessions, listings, file operations, workspaces, watcher, the embedded UI |
 | tmux server | where terminals live: a private local server (`tmux -L terminum`, config `~/.terminum/tmux.conf`, started by terminumd) and, per remote host, `ssh <host> tmux -C`; tmux is the terminal emulator, terminumd never parses VT sequences |
 | Control client | terminumd's `tmux -C attach` process per server: notifications (`%output`, `%layout-change`, `%window-add`…) in, commands (`capture-pane`, `send-keys`, `new-window`…) out |
 | Page | `web/static/`: the UI in the browser: session list, terminal, Files and View |
@@ -46,9 +46,11 @@ framework), a plain-JavaScript web page (ES modules, no bundler). No native app.
   etag-checked and keep metadata; delete means Trash; a conflict asks; closing a pane asks.
 
 ### 2. Security and secrets
-- terminumd is reachable only by its clients: loopback with a sign-in from a one-time code for
-  the Mac's browser, the web listener (off by default) with a password and a cookie; exact Host,
-  Origin and Content-Type checks on writes; writes only under Roots, judged on resolved
+- terminumd is reachable only by its clients: it listens on loopback only, other devices come
+  through `tailscale serve` (HTTPS); every browser signs in with the password set by `terminum
+  password` (a header sign-in, never a cookie); exact Host, Origin and Content-Type checks on
+  writes; forwarded requests may not use Finder or type paths; Tailscale Funnel is refused;
+  writes only under Roots, judged on resolved
   paths (a symlink is judged where it lives for rename and trash).
 - The Page runs no content from terminals or files: Markdown raw HTML off, `javascript:`
   links dropped, remote images not loaded, CSP `script-src 'self'`, no navigation away;

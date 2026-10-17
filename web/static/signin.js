@@ -1,26 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The page's local sign-in (AC-09). The page served at /open/<code> carries the sign-in in a
-// meta tag: it moves into this origin's storage (127.0.0.1:47900 only) and leaves the page and
-// its address. Every same-origin request then carries it as X-TM-Session, an image's URL as
-// ?t=, the WebSocket as its subprotocol; but only after the server proved it knows it
-// (/api/hello), so another program on the port while terminumd is down never sees it. A page
-// of the web listener holds none: its HttpOnly cookie goes by itself.
+// The page's sign-in (AC-09). The password (POST /auth/login, the form in conn.js) gets a
+// secret that this page keeps in its origin's storage (that origin only: 127.0.0.1:48080, or
+// the tailnet name), never in its address or a cookie. Every same-origin request then
+// carries it as X-TM-Session, an image's URL as ?t=, the WebSocket as its subprotocol; but
+// only after the server proved it knows it (/api/hello), so another program on the port
+// while terminumd is down never sees it.
 // Imported first by app.js, before anything fetches.
 
 const KEY = "tm.session";
 const enc = new TextEncoder();
 let secret = null;
-{
-  const meta = document.querySelector('meta[name="tm-session"]');
-  if (meta) {
-    secret = meta.content || null;
-    meta.remove();
-    try { if (secret) localStorage.setItem(KEY, secret); } catch { /* private mode: kept for this page only */ }
-    history.replaceState(null, "", "/");
-  } else {
-    try { secret = localStorage.getItem(KEY); } catch { secret = null; }
-  }
+try { secret = localStorage.getItem(KEY); } catch { secret = null; }
+
+/** The sign-in the password got: kept, and sent from now on. */
+export function adopt(s) {
+  secret = s;
+  proof = null;
+  try { localStorage.setItem(KEY, s); } catch { /* private mode: kept for this page only */ }
 }
+
+/** Whether the page holds a sign-in. */
+export const held = () => secret !== null;
 
 /** A signed-out sign-in is dropped: it is never sent again. */
 export function forget() {
@@ -85,7 +85,7 @@ window.fetch = async (input, init = {}) => {
   if (s) {
     const p = await prove();
     if (p === "unknown") refused(true);
-    if (p !== "ok") throw new TypeError(p === "unknown" ? "Signed out: run terminum open" : p === "down" ? "terminum's server is not running" : "terminum's server could not prove itself: run terminum open");
+    if (p !== "ok") throw new TypeError(p === "unknown" ? "Signed out: sign in again" : p === "down" ? "terminum's server is not running" : "terminum's server could not prove itself");
     headers = new Headers(init.headers ?? (input instanceof Request ? input.headers : undefined));
     headers.set("X-TM-Session", s);
   }

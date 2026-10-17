@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Helpers for the Python e2e checks of terminumd (standard library only): a private
 terminumd (its own state folders, port and tmux socket, never the user's), its CLI socket,
-a sign-in from a one-time code, a page's WebSocket with its Origin and sign-in, and the
+a sign-in with the password, a page's WebSocket with its Origin and sign-in, and the
 checks' record and summary."""
 import base64
 import hashlib
@@ -9,7 +9,6 @@ import hmac
 import http.client
 import json
 import os
-import re
 import shutil
 import socket
 import struct
@@ -184,11 +183,18 @@ class Terminumd:
     def health(self):
         return unix_request(self.sock, "GET", "/health")[1]
 
+    PASSWORD = "correct horse battery"
+
     def signin(self):
-        """A page's sign-in secret, from a one-time code as `terminum open` gets it."""
-        code = unix_request(self.sock, "POST", "/code", {})[1]["code"]
-        page = urllib.request.urlopen(f"http://127.0.0.1:{self.port}/open/{code}").read().decode()
-        return re.search(r'name="tm-session" content="([0-9a-f]+)"', page).group(1)
+        """A page's sign-in secret, as the password form gets it; the password is set first
+        (as `terminum password`) when there is none (a new one would sign every page out)."""
+        if not self.health()["password"]["set"]:
+            st, body = unix_request(self.sock, "POST", "/password", {"password": self.PASSWORD})
+            assert st == 200, f"no password: {body}"
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/auth/login", method="POST",
+                                     data=json.dumps({"password": self.PASSWORD}).encode(),
+                                     headers={"Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(req))["secret"]
 
     def page(self, secret=None):
         """A signed-in page's WebSocket (its first messages are not read yet)."""

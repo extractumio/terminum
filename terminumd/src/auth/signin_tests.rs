@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! AC-09: codes, the sign-ins' file and the hello proof.
+//! AC-09: the sign-ins' file and the hello proof.
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -11,37 +11,9 @@ const SECRET: &str = "0000000000000000000000000000000000000000000000000000000000
 const NONCE: &str = "00112233445566778899aabbccddeeff";
 
 #[test]
-fn a_code_opens_once_and_only_for_60_seconds() {
-    let codes = Codes::new();
-    let t0 = Instant::now();
-    let code = codes.issue_at(t0);
-    assert_eq!(code.len(), 32, "128 random bits");
-    assert_ne!(code, codes.issue_at(t0));
-    assert_eq!(codes.redeem_at(&code, t0 + Duration::from_secs(59)), Redeem::Ok);
-    assert_eq!(codes.redeem_at(&code, t0 + Duration::from_secs(59)), Redeem::Spent, "spent on first use");
-    let late = codes.issue_at(t0);
-    assert_eq!(codes.redeem_at(&late, t0 + CODE_TTL), Redeem::Spent, "expired");
-    assert_eq!(codes.redeem("never-issued"), Redeem::Spent);
-    assert_eq!(codes.redeem(""), Redeem::Spent);
-    let page = crate::http::code_spent_page();
-    assert_eq!(page.status(), 410, "the page that answers a spent code");
-}
-
-#[test]
-fn expired_codes_do_not_pile_up() {
-    let codes = Codes::new();
-    let t0 = Instant::now();
-    for _ in 0..50 {
-        codes.issue_at(t0);
-    }
-    codes.issue_at(t0 + CODE_TTL + Duration::from_secs(1));
-    assert_eq!(codes.live.lock().len(), 1);
-}
-
-#[test]
 fn a_sign_in_outlives_a_restart_and_the_file_holds_no_secret() {
     let dir = fresh_dir("signin-restart");
-    let secret = Signins::load(&dir).create("terminum open").unwrap();
+    let secret = Signins::load(&dir).create("password").unwrap();
     assert_eq!(secret.len(), 64, "256 random bits");
     let again = Signins::load(&dir);
     assert!(again.check(&secret), "a restarted terminumd knows it");
@@ -53,7 +25,7 @@ fn a_sign_in_outlives_a_restart_and_the_file_holds_no_secret() {
     let stored: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let item = &stored["items"][0];
     assert_eq!(item["sha256"], sha256_hex(secret.as_bytes()));
-    assert_eq!(item["by"], "terminum open");
+    assert_eq!(item["by"], "password");
     for field in ["sha256", "id", "proof_key"] {
         assert!(!again.check(item[field].as_str().unwrap()), "{field} from the file is not a sign-in");
     }
@@ -100,6 +72,32 @@ fn signout_revokes_every_sign_in_also_after_a_restart() {
     assert!(!s.check(&a) && !s.check(&b));
     let again = Signins::load(&dir);
     assert!(!again.check(&a) && again.count() == 0);
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn a_page_that_signs_out_takes_only_its_own_sign_in() {
+    let dir = fresh_dir("signin-one");
+    let s = Signins::load(&dir);
+    let (a, b) = (s.create("password").unwrap(), s.create("password").unwrap());
+    s.revoke(&a).unwrap();
+    assert!(!s.check(&a) && s.check(&b));
+    let again = Signins::load(&dir);
+    assert!(!again.check(&a) && again.check(&b), "also after a restart");
+    s.revoke("not one of them").unwrap();
+    assert_eq!(s.count(), 1);
+    fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn the_sign_ins_of_0_5_0_are_all_dropped() {
+    // their secrets stay in the storage of 127.0.0.1:47900, which any program may serve now
+    let dir = fresh_dir("signin-old");
+    let old = Signins::load(&dir).create("terminum open").unwrap();
+    fs::rename(dir.join(FILE), dir.join(OLD_FILE)).unwrap();
+    let s = Signins::load(&dir);
+    assert!(!s.check(&old) && s.count() == 0);
+    assert!(!dir.join(OLD_FILE).exists(), "removed");
     fs::remove_dir_all(&dir).ok();
 }
 

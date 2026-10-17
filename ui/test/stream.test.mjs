@@ -10,7 +10,7 @@ const API = `
   export class ApiError extends Error {}
   export const proveServer = () => new Promise((resolve) => globalThis.proofs.push(resolve));
   export const forgetProof = () => {};
-  export const socketUrl = () => "ws://127.0.0.1:47900/fb/api/ws";
+  export const socketUrl = () => "ws://127.0.0.1:48080/fb/api/ws";
   export const socketProtocols = () => ["tm", "secret"];
 `;
 const stubApi = {

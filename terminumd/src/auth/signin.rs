@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Local sign-ins (AC-09). Only the CLI, over the private Unix socket, gets a one-time code
-//! (`Codes`); the browser opens `/open/<code>` and terminumd answers the page with a sign-in, a
-//! 256-bit secret the page keeps in its origin's storage and sends as `X-TM-Session`.
-//! `Signins` keeps at most 20 of them for 30 days in `local-sessions.json` (0600), never the
-//! secret itself.
+//! Sign-ins (AC-09). The right password (`POST /auth/login`, websignin.rs) gets the browser a
+//! sign-in: a 256-bit secret the page keeps in its origin's storage and sends as
+//! `X-TM-Session` (not a cookie: a cookie on 127.0.0.1 would reach every local port).
+//! `Signins` keeps at most 20 of them for 30 days in `signins.json` (0600), never the secret
+//! itself.
 //!
 //! The hello proof: another program may hold the port while terminumd is down, so before the
 //! page sends its secret it asks `GET /api/hello?n=<nonce>&id=<id>` and checks the answer.
@@ -21,10 +21,8 @@
 //! secret (SHA-256 and HMAC do not invert) nor a sign-in: `check` wants the secret, whose
 //! SHA-256 is stored; whoever reads the 0600 file is this user already.
 
-use std::collections::HashMap;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -34,57 +32,15 @@ use super::checks::Denial;
 use super::crypto::{hex, hmac_sha256, random_hex, same, sha256_hex, unhex};
 use super::store;
 
-/// How long a code opens the page.
-pub const CODE_TTL: Duration = Duration::from_secs(60);
 /// Sign-ins kept; a new one beyond drops the oldest.
 pub const MAX_SIGNINS: usize = 20;
 /// How long a sign-in lasts, in seconds (30 days).
 pub const SIGNIN_TTL_S: u64 = 30 * 86400;
-pub const FILE: &str = "local-sessions.json";
-
-/// What a code opened.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Redeem {
-    Ok,
-    /// Unknown, expired or used: the page answers 410 (`http::code_spent_page`).
-    Spent,
-}
-
-/// One-time codes: 128 random bits, valid 60 s, spent on first use. Kept in memory only, as
-/// their SHA-256, so a lookup's time says nothing of a code.
-#[derive(Default)]
-pub struct Codes {
-    live: Mutex<HashMap<String, Instant>>,
-}
-
-impl Codes {
-    pub fn new() -> Codes {
-        Codes::default()
-    }
-
-    pub fn issue(&self) -> String {
-        self.issue_at(Instant::now())
-    }
-
-    pub fn redeem(&self, code: &str) -> Redeem {
-        self.redeem_at(code, Instant::now())
-    }
-
-    fn issue_at(&self, now: Instant) -> String {
-        let code = random_hex::<16>();
-        let mut live = self.live.lock();
-        live.retain(|_, until| *until > now);
-        live.insert(sha256_hex(code.as_bytes()), now + CODE_TTL);
-        code
-    }
-
-    fn redeem_at(&self, code: &str, now: Instant) -> Redeem {
-        match self.live.lock().remove(&sha256_hex(code.as_bytes())) {
-            Some(until) if until > now => Redeem::Ok,
-            _ => Redeem::Spent,
-        }
-    }
-}
+pub const FILE: &str = "signins.json";
+/// The sign-ins of 0.5.0 and before (one-time codes, origin 127.0.0.1:47900): their secrets
+/// stay in that origin's storage, which any program may serve once the port is free, so they
+/// are all dropped, never carried over.
+const OLD_FILE: &str = "local-sessions.json";
 
 /// The sign-in's name in `/api/hello`: the first 16 hex digits of its SHA-256.
 pub fn signin_id(secret: &str) -> String {
@@ -118,7 +74,7 @@ struct Item {
     proof_key: String,
     /// Seconds since 1970.
     expires: u64,
-    /// What made it (the CLI command, for `terminum signout` to list).
+    /// What made it ("password").
     by: String,
 }
 
@@ -128,7 +84,7 @@ impl Item {
     }
 }
 
-/// The local sign-ins, in memory and in `<app dir>/local-sessions.json`. `create` and
+/// The sign-ins, in memory and in `<app dir>/signins.json`. `create`, `revoke` and
 /// `revoke_all` write the file (blocking: an async caller runs them off its workers); `check`
 /// and `hello` read memory only, never waiting for a write (`writer` serializes the writes;
 /// `items` is held only to read or swap).
@@ -140,8 +96,14 @@ pub struct Signins {
 
 impl Signins {
     /// The sign-ins in `dir`'s file, the expired ones dropped. A file that cannot be read is
-    /// set aside as `local-sessions.json.bak` and terminumd starts without sign-ins.
+    /// set aside as `signins.json.bak` and terminumd starts without sign-ins; the file of
+    /// 0.5.0 and before is removed.
     pub fn load(dir: &Path) -> Signins {
+        if let Err(e) = std::fs::remove_file(dir.join(OLD_FILE))
+            && e.kind() != io::ErrorKind::NotFound
+        {
+            tracing::warn!(event = "signin.old_not_removed", error = %e);
+        }
         let path = dir.join(FILE);
         let items = store::read_or_set_aside(&path, |v| {
             serde_json::from_value::<Vec<Item>>(v.get("items").cloned().unwrap_or_default())
@@ -191,7 +153,18 @@ impl Signins {
         self.items.lock().iter().fold(false, |found, i| found | (same(&i.sha256, &digest) && i.expires > now))
     }
 
-    /// `terminum signout`: every page signs in again. Err: the file still holds them, and so
+    /// The page signs out: its sign-in goes, in memory at once and in the file. Err: the
+    /// file still holds it, and so does memory.
+    pub fn revoke(&self, secret: &str) -> io::Result<()> {
+        let digest = sha256_hex(secret.as_bytes());
+        let _writing = self.writer.lock();
+        let next: Vec<Item> = self.items.lock().iter().filter(|i| !same(&i.sha256, &digest)).cloned().collect();
+        self.save(&next)?;
+        *self.items.lock() = next;
+        Ok(())
+    }
+
+    /// `terminum signout`, a new password: every page signs in again. Err: the file still holds them, and so
     /// does memory (a restart would bring them back otherwise).
     pub fn revoke_all(&self) -> io::Result<()> {
         let _writing = self.writer.lock();
@@ -217,7 +190,7 @@ impl Signins {
         let items = self.items.lock();
         let key = items.iter().find(|i| same(&i.id, &id.to_ascii_lowercase()) && i.expires > now).map(|i| i.proof_key.clone());
         key.map(|k| proof(&k, nonce))
-            .ok_or_else(|| Denial::new(404, "unknown_signin", "Signed out: run terminum open"))
+            .ok_or_else(|| Denial::new(404, "unknown_signin", "Signed out: sign in again"))
     }
 
     fn save(&self, items: &[Item]) -> io::Result<()> {

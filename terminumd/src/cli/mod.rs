@@ -24,11 +24,10 @@ const ADD_USAGE: &str = "usage: terminum hosts add [<name>] '<ssh destination an
 const USAGE: &str = "\
 usage: terminum [command]
 
-  status                  what runs: build, pid, port, web access, tmux, hosts, pages
-  open [--print]          a one-time sign-in link for this Mac's browser (60 s)
-  web [status|on|off|password]
-                          web access for other devices (a password of 8+ characters)
-  signout                 sign out every page on this Mac
+  status                  what runs: build, pid, port, password, tmux, hosts, pages
+  open [--print]          the page in this Mac's browser (http://127.0.0.1:48080/)
+  password                the password every browser signs in with (8+ characters)
+  signout                 sign out every browser
   hosts                   the remote hosts and their state
   hosts add [<name>] '<ssh destination and options>' [--files]
                           as after ssh in a shell; no name: the destination's host;
@@ -46,7 +45,7 @@ usage: terminum [command]
   install                 install the package this terminumd came in";
 
 const COMMANDS: [&str; 16] = [
-    "status", "open", "web", "signout", "hosts", "tmux", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+    "status", "open", "password", "signout", "hosts", "tmux", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -60,7 +59,7 @@ pub fn wanted(args: &[String]) -> bool {
 pub enum Cmd {
     Status,
     Open { print: bool },
-    Web(Option<String>),
+    Password,
     Signout,
     Hosts(Option<String>, Option<String>, Vec<String>),
     /// `hosts add [<name>] '<recipe>' [--files]`
@@ -90,6 +89,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
     match cmd.as_str() {
         "status" => none(Cmd::Status),
         "signout" => none(Cmd::Signout),
+        "password" => none(Cmd::Password),
         "rollback" => none(Cmd::Rollback),
         "restart" => none(Cmd::Restart),
         "uninstall" => none(Cmd::Uninstall),
@@ -101,11 +101,6 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
             [] => Ok(Cmd::Open { print: false }),
             [p] if p == "--print" => Ok(Cmd::Open { print: true }),
             _ => Err(usage("usage: terminum open [--print]")),
-        },
-        "web" => match rest {
-            [] => Ok(Cmd::Web(None)),
-            [w] if ["status", "on", "off", "password"].contains(&w.as_str()) => Ok(Cmd::Web(Some(w.clone()))),
-            _ => Err(usage("usage: terminum web [status|on|off|password]")),
         },
         "hosts" => match rest {
             [] => Ok(Cmd::Hosts(None, None, vec![])),
@@ -175,7 +170,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         Cmd::Status => commands::status(ctx),
         Cmd::Open { print } => commands::open_page(ctx, print)?,
         Cmd::Signout => commands::signout(ctx)?,
-        Cmd::Web(w) => commands::web(ctx, w.as_deref())?,
+        Cmd::Password => commands::password(ctx)?,
         Cmd::Hosts(None, ..) => commands::hosts_list(ctx)?,
         Cmd::Hosts(Some(h), None, _) => return Err(format!("usage: terminum hosts {h} <name>")),
         Cmd::HostsAdd { name, recipe, files } => commands::hosts_add(ctx, name.as_deref(), &recipe, files)?,

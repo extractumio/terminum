@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Test doubles for the command: a temporary home every path derives from, a terminumd socket
 //! served in a thread, fake packages whose terminumd is this test binary answering /health
-//! and /code on the socket (no real terminumd, no launchd, no tmux), and a stub launchctl.
+//! on the socket (no real terminumd, no launchd, no tmux), and a stub launchctl.
 
 mod cmd_tests;
 mod import_tests;
@@ -159,13 +159,13 @@ pub fn fixed(status: u16, answer: Value) -> Route {
 
 /// The health a fake terminumd answers.
 pub fn fake_health(build: &str) -> Value {
-    json!({"build": build, "pid": std::process::id(), "uptime_s": 1, "port": 47900,
-           "web": {"enabled": false, "urls": [], "error": null}, "servers": [], "hosts": [], "pages": 0,
+    json!({"build": build, "pid": std::process::id(), "uptime_s": 1, "port": 48080,
+           "password": {"set": true, "error": null}, "servers": [], "hosts": [], "pages": 0,
            "tmux": {"ok": true, "message": ""}})
 }
 
 /// Not a test: this test binary playing terminumd in a fake package (TM_FAKE_TERMINUMD=1),
-/// serving /health as TM_FAKE_BUILD and /code on the socket until it is killed.
+/// serving /health as TM_FAKE_BUILD on the socket until it is killed.
 #[test]
 fn fake_terminumd() {
     if std::env::var("TM_FAKE_TERMINUMD").as_deref() != Ok("1") {
@@ -177,7 +177,6 @@ fn fake_terminumd() {
     let sock = PathBuf::from(std::env::var("TM_APP_DIR").unwrap_or_else(|_| format!("{root}/state"))).join("terminumd.sock");
     let mut routes: HashMap<String, Route> = HashMap::new();
     routes.insert("GET /health".into(), fixed(200, fake_health(&build)));
-    routes.insert("POST /code".into(), fixed(200, json!({"code": "c0de", "url": "http://127.0.0.1:47900/open/c0de"})));
     eprintln!("level=info event=start build={build}");
     let _served = serve(&sock, routes);
     loop {
@@ -193,7 +192,7 @@ pub fn package(home: &Home, build: &str, answers: Option<&str>, crash: bool) -> 
     let _ = std::fs::remove_dir_all(&pkg);
     let exe = std::env::current_exe().unwrap();
     let run = if crash {
-        "echo '2026-10-15T09:00:00.000Z level=error event=listen msg=\"port 47900 is in use (set `port` in ~/.terminum/settings.json)\"'\nexit 1".to_string()
+        "echo '2026-10-15T09:00:00.000Z level=error event=listen msg=\"port 48080 is in use (set `port` in ~/.terminum/settings.json)\"'\nexit 1".to_string()
     } else {
         format!("exec /usr/bin/env TM_FAKE_TERMINUMD=1 TM_FAKE_BUILD='{build}' '{}' --exact cli::tests::fake_terminumd --nocapture --test-threads=1 -q", exe.display())
     };

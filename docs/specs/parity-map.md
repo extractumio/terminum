@@ -7,7 +7,7 @@ Every acceptance case of iterm-enhancer's `docs/specs/iterm-enhancer.md` and whe
 | AC 01 tree follows cwd | AC 51 | `#{pane_current_path}`, one mode instead of three |
 | AC 02, 03, 04, 05, 08–13, 15–19, 21–24, 29, 31, 32 (files) | AC 52…AC 69 | kept as they are |
 | AC 06 install, AC 33, 34, 35, 40 | AC 08, AC 16 | launchd instead of AutoLaunch; versioned builds, rollback, signed releases kept |
-| AC 07 token, AC 28 outdated link | AC 09 | a one-time code gives the page a sign-in it keeps per origin and sends as a header (no token in the URL, no cookie); the proof and the checks kept; an expired sign-in says so |
+| AC 07 token, AC 28 outdated link | AC 09 | the password gives the page a sign-in it keeps per origin and sends as a header (no token in the URL, no cookie); the proof and the checks kept; an expired sign-in shows the password form |
 | AC 14 theme from the profile | AC 12 | theme files of our own; the defaults are the owner's profiles |
 | AC 20 (dropped) | — | — |
 | AC 25, 27, 36, 41 panel per iTerm2 window | AC 70 | a browser tab shows a pane and its Files panel; no window binding problem; 100 pages (AC 20) |

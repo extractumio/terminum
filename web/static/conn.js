@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The page's connection to terminumd (AC-09, AC-14, AC-16): the WebSocket and its reconnects,
-// what a refused one means (signed out: run terminum open; the web listener: its password
-// form), and the build check that reloads a page of another build once.
+// what a refused one means (the password form; or, while no password is set, how to set
+// one), and the build check that reloads a page of another build once.
 import * as signin from "./signin.js";
 
 const $ = (id) => document.getElementById(id);
@@ -39,7 +39,7 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
     if (p === "unknown") return signedOut();
     if (p === "bad") {                             // asked again later, less and less often
       downSince ||= performance.now();
-      status("terminum's server could not prove itself: run terminum open");
+      status("terminum's server could not prove itself");
       timer = setTimeout(connect, unproven = Math.min(unproven * 2, 30000));
       return;
     }
@@ -50,35 +50,35 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
     sock.onclose = async () => {
       if (ws !== sock || stopped) return;
       signin.invalidate();                          // another program may hold the port now
-      const why = await authCheck();
-      if (why === "password") return showLogin();
-      if (why === "code") return signedOut();
+      if (await askSignIn()) return;
       lost();
     };
   }
 
-  /** null when signed in or terminumd does not answer, else how to sign in: "password" or "code". */
-  async function authCheck() {
+  /** Signed out (or never signed in): the password form, or how to set a password while
+   *  none is set. False when signed in or terminumd does not answer. */
+  async function askSignIn() {
     const r = await fetch("/auth/check").catch(() => null);
-    if (r?.status !== 401) return null;
+    if (r?.status !== 401) return false;
     const m = await r.json().catch(() => ({}));
-    return m.login === "password" ? "password" : "code";
+    const had = signin.held();
+    signin.forget();                               // refused: never sent again
+    if (m.login === "none") showLogin(m.message || "No password is set yet. On the Mac, run: terminum password", true);
+    else showLogin(had ? "Signed out: sign in again." : "");
+    return true;
   }
 
-  // An expired or revoked sign-in: said once, nothing retried; the page stays as it is, unsaved
-  // edits in View included, until the user runs terminum open (a new page).
+  // An expired or revoked sign-in: dropped, and the password form shown; the page behind it
+  // stays as it is, unsaved edits in View included.
   function signedOut() {
-    stopped = true;
     clearTimeout(timer);
     signin.forget();
-    status("Signed out: run terminum open");
+    showLogin("Signed out: sign in again.");
   }
   signin.onRefused(async (known) => {
     if (stopped) return;
     if (known) return signedOut();
-    const why = await authCheck();
-    if (why === "password") showLogin();
-    else if (why === "code") signedOut();
+    await askSignIn();
   });
 
   function send(m) {
@@ -86,29 +86,39 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
     return false;
   }
 
-  function showLogin(message = "") {
+  /** The password form with `message`; `none`: no password is set, so the form waits. */
+  function showLogin(message = "", none = false) {
     stopped = true;
     $("app").hidden = true; $("login").hidden = false;
     $("loginerr").textContent = message;
+    $("password").disabled = none;
+    $("login").querySelector("button").disabled = none;
+    if (none) return void (timer = setTimeout(() => { stopped = false; connect(); }, 5000));   // until it is set
     $("password").focus();
   }
-  function signedIn() { $("login").hidden = true; $("app").hidden = false; }
+  // The form's field gives up the keys, so picking a pane gives them to the terminal again.
+  function signedIn() {
+    if (document.activeElement === $("password")) $("password").blur();
+    $("login").hidden = true; $("app").hidden = false;
+  }
 
   $("login").addEventListener("submit", async (e) => {
     e.preventDefault();
     $("loginerr").textContent = "";
     const r = await fetch("/auth/login", { method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ password: $("password").value }) }).catch(() => null);
-    if (!r) return showLogin("terminum's server does not answer. Check that web access is on.");
-    if (r.ok) { $("password").value = ""; stopped = false; return connect(); }
+    if (!r) return showLogin("terminum's server does not answer.");
     const m = await r.json().catch(() => ({}));
-    const why = { wrong: "Wrong password.", locked: "Too many wrong passwords." }[m.reason] ?? "Sign-in failed.";
+    if (r.ok && m.secret) { $("password").value = ""; signin.adopt(m.secret); stopped = false; return connect(); }
+    if (m.reason === "no_password") return showLogin(m.message, true);
+    const why = { wrong: "Wrong password.", locked: "Too many wrong passwords." }[m.reason] ?? (m.message || "Sign-in failed.");
     showLogin(why + (m.retry ? ` Try again in ${m.retry} s.` : ""));
   });
 
   async function signOut() {
     const was = ws; ws = null; was?.close();
-    await fetch("/auth/logout", { method: "POST" }).catch(() => {});
+    await fetch("/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => {});
+    signin.forget();
     showLogin();
   }
 

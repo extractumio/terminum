@@ -47,7 +47,7 @@ pub fn service_env(ctx: &Ctx) -> Vec<(String, String)> {
     env
 }
 
-/// The page's port as terminumd reads it from settings.json (47900 by default).
+/// The page's port as terminumd reads it from settings.json (48080 by default).
 pub fn port(ctx: &Ctx) -> u16 {
     crate::settings::load(&ctx.root.join("settings.json")).0.port
 }
@@ -184,6 +184,14 @@ fn bootout(ctx: &Ctx) -> Result<(), String> {
     launchctl(ctx, &["bootout", &target(ctx)])?;
     let deadline = Instant::now() + Duration::from_secs(5);
     while loaded(ctx)? && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    // launchd says unloaded before the old terminumd has exited, and one that bound the port
+    // itself (0.5.0's web listener on 48080) would still hold it: launchd's bind at the next
+    // bootstrap would then fail for good. Wait until nothing answers on the port.
+    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port(ctx)));
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok() && Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(100));
     }
     Ok(())
@@ -419,7 +427,7 @@ fn msg_field(line: &str) -> Option<&str> {
 }
 
 /// The last error terminumd logged (after `since`, else in its last 16 KB), e.g.
-/// "port 47900 is in use (set `port` in ~/.terminum/settings.json)".
+/// "port 48080 is in use (set `port` in ~/.terminum/settings.json)".
 pub fn log_reason(ctx: &Ctx, since: Option<u64>) -> Option<String> {
     use std::io::{Read, Seek, SeekFrom};
     let mut f = std::fs::File::open(ctx.log()).ok()?;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! terminumd — terminum's server. The control client of a private tmux server (and of each
-//! remote host's over ssh), it serves one page to the browser on 127.0.0.1 (and, when web
-//! access is on, to other devices): the session list, screens, typing, sessions, the Files
+//! remote host's over ssh), it serves one page on 127.0.0.1, signed in with a password, to the
+//! Mac's browser and, through `tailscale serve`, to other devices: the session list, screens, typing, sessions, the Files
 //! panel and its API. `--agent` runs it on a remote host as the files agent (AC-82). Run by
 //! the name `terminum`, or with a command (`terminumd install`), it is the CLI (cli/).
 
@@ -89,7 +89,6 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         agent_states: Mutex::new(tmux::agentstate::States::new()),
         sizes: Default::default(),
         looks,
-        codes: auth::signin::Codes::new(),
         signins: auth::signin::Signins::load(&dir),
         web: Default::default(),
         hosts: Default::default(),
@@ -202,9 +201,7 @@ async fn serve() {
     tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());
     hosts::sync(&app);
     attach::sync(&app);
-    if let Err(e) = webaccess::apply(&app).await {
-        tracing::warn!(event = "web.off", why = %e);
-    }
+    webaccess::apply(&app);
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(looks::follow(app.clone()));
     tokio::spawn(restore::follow(app.clone()));
@@ -234,6 +231,6 @@ async fn serve() {
         }
         exit_with(&stopping.store, "signal");
     });
-    let router = routes::pages(app, routes::Side::Loopback);
+    let router = routes::pages(app);
     axum::serve(listener, router.into_make_service_with_connect_info::<std::net::SocketAddr>()).await.unwrap();
 }

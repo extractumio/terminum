@@ -1,29 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The routes of each listener (spec §9 "What each listener allows"): the loopback one for
-//! the Mac's browser, the web listener for other devices, an agent's Unix socket; and the
-//! guard in front of them (auth::checks decides, AC-09, AC-10).
+//! The routes of the page's listener (spec §9 "What each request may do"), for the Mac's
+//! browser and, through `tailscale serve`, other devices; an agent's Unix socket; and the
+//! guard in front of them (auth::checks decides, AC-09).
 
 use axum::extract::{DefaultBodyLimit, Path as UrlPath, Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
-use axum::{Extension, Json, Router};
+use axum::{Json, Router};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::app::Shared;
 use crate::auth::checks::{self, Listener};
-use crate::auth::signin::Redeem;
 use crate::http::{self, err};
 use crate::page::ws::FromWeb;
-
-/// Which listener a router serves.
-#[derive(Clone, Copy, PartialEq)]
-pub enum Side {
-    Loopback,
-    Web,
-}
 
 /// The Files API as fbd had it (`/api/*`): under `/fb` for pages, at the root of an agent.
 fn files_api(app: &Shared) -> Router<Shared> {
@@ -51,28 +43,26 @@ fn files_api(app: &Shared) -> Router<Shared> {
         .layer(middleware::from_fn_with_state(app.clone(), crate::remote::route))
 }
 
-/// The routes of a page listener (loopback or web).
-pub fn pages(app: Shared, side: Side) -> Router {
-    let mut r = Router::new()
+/// The routes of the page's listener.
+pub fn pages(app: Shared) -> Router {
+    Router::new()
         .route("/", get(index))
         .route("/ws", get(crate::page::ws::socket))
         .route("/api/hello", get(hello))
         .route("/api/settings", get(settings))
         .route("/custom.css", get(custom_css))
         .route("/auth/check", get(check))
+        .route("/auth/login", post(crate::webaccess::login).layer(DefaultBodyLimit::max(crate::auth::web::SMALL_BODY)))
+        .route("/auth/logout", post(crate::webaccess::logout))
         .route("/paste", post(crate::page::upload::paste).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
         .route("/upload", post(crate::page::upload::upload).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
         .route("/fb", get(|| async { axum::response::Redirect::permanent("/fb/") }))
         .route("/view", get(view))
         .route("/fb/", get(panel))
         .route("/fb/{*path}", get(panel_asset))
-        .nest("/fb", files_api(&app));
-    r = match side {
-        Side::Loopback => r.route("/open/{code}", get(open)),
-        Side::Web => r.route("/auth/login", post(crate::webaccess::login).layer(DefaultBodyLimit::max(crate::auth::web::SMALL_BODY))).route("/auth/logout", post(crate::webaccess::logout)),
-    };
-    r.fallback(static_file)
-        .layer(middleware::from_fn_with_state((app.clone(), side), guard))
+        .nest("/fb", files_api(&app))
+        .fallback(static_file)
+        .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)
 }
 
@@ -84,32 +74,30 @@ pub fn agent(app: Shared) -> Router {
         .with_state(app)
 }
 
-/// Whether a request carries a valid sign-in for its listener.
-fn signed_in(app: &Shared, side: Side, req: &Request) -> bool {
+/// Whether a request carries a valid sign-in.
+fn signed_in(app: &Shared, req: &Request) -> bool {
     let h = req.headers();
     let header = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    match side {
-        Side::Loopback => checks::signin_secret(req.method().as_str(), req.uri().query(), header).is_some_and(|s| app.signins.check(&s)),
-        Side::Web => crate::webaccess::cookie_ok(app, h),
-    }
+    checks::signin_secret(req.method().as_str(), req.uri().query(), header).is_some_and(|s| app.signins.check(&s))
 }
 
-async fn guard(State((app, side)): State<(Shared, Side)>, mut req: Request, next: Next) -> Response {
-    let ok = signed_in(&app, side, &req);
-    let (allow, names) = crate::webaccess::host_lists(&app);
-    let listener = match side {
-        Side::Loopback => Listener::Loopback { port: app.cfg.port },
-        Side::Web => Listener::Web { allow: &allow, own_names: &names },
-    };
+async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Response {
+    let ok = signed_in(&app, &req);
+    let allow = crate::webaccess::allow_hosts(&app);
+    let listener = Listener { port: app.cfg.port, allow: &allow };
     let h = req.headers().clone();
     let header = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    if let Err(d) = checks::decide(&listener, req.method().as_str(), req.uri().path(), header, ok) {
-        app.denied.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        tracing::warn!(event = "auth.denied", reason = d.code, path = %req.uri().path());
-        let status = StatusCode::from_u16(d.status).unwrap_or(StatusCode::FORBIDDEN);
-        return (status, Json(d.body())).into_response();
-    }
-    req.extensions_mut().insert(FromWeb(side == Side::Web));
+    let forwarded = checks::is_forwarded(h.keys().map(|k| k.as_str()));
+    let local = match checks::decide(&listener, req.method().as_str(), req.uri().path(), header, forwarded, ok) {
+        Ok(local) => local,
+        Err(d) => {
+            app.denied.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            tracing::warn!(event = "auth.denied", reason = d.code, path = %req.uri().path());
+            let status = StatusCode::from_u16(d.status).unwrap_or(StatusCode::FORBIDDEN);
+            return (status, Json(d.body())).into_response();
+        }
+    };
+    req.extensions_mut().insert(FromWeb(!local));
     let mut res = next.run(req).await;
     let hs = res.headers_mut();
     hs.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
@@ -130,7 +118,7 @@ async fn agent_guard(State(app): State<Shared>, req: Request, next: Next) -> Res
 }
 
 async fn index(headers: HeaderMap) -> Response {
-    http::page_index(&headers, None)
+    http::page_index(&headers)
 }
 
 async fn static_file(req: Request) -> Response {
@@ -161,22 +149,6 @@ async fn panel(headers: HeaderMap) -> Response {
 
 async fn panel_asset(UrlPath(path): UrlPath<String>, headers: HeaderMap) -> Response {
     http::panel_file(&path, &headers)
-}
-
-/// `GET /open/<code>`: the page with a new sign-in, once (AC-09).
-async fn open(State(app): State<Shared>, UrlPath(code): UrlPath<String>, headers: HeaderMap) -> Response {
-    if app.codes.redeem(&code) != Redeem::Ok {
-        return http::code_spent_page();
-    }
-    let a = app.clone();
-    match http::blocking(move || a.signins.create("terminum open")).await {
-        Ok(Ok(secret)) => {
-            tracing::info!(event = "signin.created", signins = app.signins.count());
-            http::page_index(&headers, Some(&secret))
-        }
-        Ok(Err(e)) => err(StatusCode::INTERNAL_SERVER_ERROR, "not_saved", format!("The sign-in could not be saved: {e}")),
-        Err(r) => r,
-    }
 }
 
 #[derive(Deserialize)]
@@ -213,12 +185,18 @@ async fn custom_css(State(app): State<Shared>) -> Response {
     res
 }
 
-/// `GET /auth/check`: 204 when signed in; else 401 with how to sign in here.
-async fn check(State(app): State<Shared>, Extension(FromWeb(web)): Extension<FromWeb>, req: Request) -> Response {
-    let side = if web { Side::Web } else { Side::Loopback };
-    if signed_in(&app, side, &req) {
+/// `GET /auth/check`: 204 when signed in; else 401 with what the page shows: the password
+/// form, or how to set a password when there is none.
+async fn check(State(app): State<Shared>, req: Request) -> Response {
+    if signed_in(&app, &req) {
         return StatusCode::NO_CONTENT.into_response();
     }
-    let login = if web { "password" } else { "code" };
-    (StatusCode::UNAUTHORIZED, Json(json!({"error": "bad_session", "login": login, "message": "Signed out: run terminum open"}))).into_response()
+    let web = crate::webaccess::status(&app);
+    let body = if web["set"] == true {
+        json!({"error": "bad_session", "login": "password", "message": "Signed out: sign in again"})
+    } else {
+        let message = web["error"].as_str().unwrap_or(crate::webaccess::NO_PASSWORD).to_string();
+        json!({"error": "bad_session", "login": "none", "message": message})
+    };
+    (StatusCode::UNAUTHORIZED, Json(body)).into_response()
 }

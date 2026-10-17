@@ -19,7 +19,7 @@ const HOME = fs.mkdtempSync("/tmp/tmh-");
 const APP = fs.mkdtempSync("/tmp/tma-");
 export const base = `http://127.0.0.1:${PORT}`;
 
-/** terminumd's CLI socket: sign-in codes and health (`fetch` cannot use a Unix socket). */
+/** terminumd's CLI socket: the password and health (`fetch` cannot use a Unix socket). */
 export const SOCKET = path.join(APP, "terminumd.sock");
 export const onSocket = (method, p, body) => new Promise((resolve, reject) => {
   const req = http.request({ socketPath: SOCKET, method, path: p, headers: { "Content-Type": "application/json" } }, (res) => {
@@ -95,16 +95,17 @@ export async function restartServer(gapMs, during = () => {}) {
   await bringBack();
 }
 
-/** Signs `page`'s browser context in as `terminum open` does: a one-time code from the CLI
- *  socket, redeemed at /open/<code>, whose page carries the new sign-in in
- *  <meta name="tm-session">; it goes into the origin's storage under "tm.session", where the
- *  page's signin.js puts it. Taken from the answer here, so the check does not depend on the
- *  page's scripts. Returns the secret. */
+/** Signs `page`'s browser context in as the password form does: a password set through the
+ *  CLI socket (as `terminum password`), then POST /auth/login, whose answer is the sign-in; it
+ *  goes into the origin's storage under "tm.session", where the page's signin.js puts it. Taken
+ *  from the answer here, so the check does not depend on the page's scripts. Returns the secret. */
+export const PASSWORD = "correct horse battery";
 export async function signIn(page) {
-  const { code } = JSON.parse((await onSocket("POST", "/code")).text);
-  const html = await (await fetch(`${base}/open/${code}`)).text();
-  const secret = html.match(/<meta name="tm-session" content="([0-9a-f]{64})">/)?.[1];
-  if (!secret) throw new Error("no sign-in in /open/<code>");
+  const set = await onSocket("POST", "/password", { password: PASSWORD });
+  if (set.status !== 200) throw new Error(`no password: ${set.text}`);
+  const r = await fetch(`${base}/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: PASSWORD }) });
+  const secret = (await r.json().catch(() => ({}))).secret;
+  if (!/^[0-9a-f]{64}$/.test(secret ?? "")) throw new Error(`no sign-in from /auth/login (${r.status})`);
   await page.goto(`${base}/custom.css`);              // any document of the origin will do
   await page.evaluate((s) => localStorage.setItem("tm.session", s), secret);
   return secret;

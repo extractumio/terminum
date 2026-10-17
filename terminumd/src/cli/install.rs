@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::ctx::Ctx;
-use super::{launch, sockhttp};
+use super::launch;
 
 pub const TMUX_HINT: &str = "tmux is needed for terminals: brew install tmux";
 const STARTUP_FILES: [&str; 7] = [".zshenv", ".zprofile", ".zshrc", ".bash_profile", ".bashrc", ".profile", ".config/fish/config.fish"];
@@ -146,17 +146,20 @@ pub fn tmux_found(ctx: &Ctx) -> bool {
     launch::service_path(ctx).split(':').filter(|d| !d.is_empty()).any(|d| Path::new(d).join("tmux").is_file())
 }
 
-/// The first-install greeting with a one-time sign-in link, opened in the browser.
+/// The first-install greeting: the page opened in the browser, or how to set the password
+/// first; and how other devices reach it.
 fn open_line(ctx: &Ctx, build: &str) {
-    let url = match sockhttp::call(&ctx.sock(), "POST", "/code", None, Duration::from_secs(5)) {
-        Ok((200, Some(a))) => a["url"].as_str().map(str::to_string),
-        _ => None,
-    };
-    let Some(url) = url else { return ctx.done(&format!("Installed {build}. Run: terminum open")) };
-    ctx.done(&format!("Installed {build}. Open {url} (valid 60 s) — or run: terminum open"));
-    if cfg!(target_os = "macos") && ctx.var("TM_NO_OPEN") != Some("1") {
-        let _ = std::process::Command::new(&ctx.opener).arg(&url).output();
+    let h = launch::health(ctx).unwrap_or_default();
+    let url = super::commands::page_url(&h["port"]);
+    if h["password"]["set"].as_bool() == Some(true) {
+        ctx.done(&format!("Installed {build}. Open {url} and sign in with your password (terminum open)"));
+        if cfg!(target_os = "macos") && ctx.var("TM_NO_OPEN") != Some("1") {
+            let _ = std::process::Command::new(&ctx.opener).arg(&url).output();
+        }
+    } else {
+        ctx.done(&format!("Installed {build}. Set the password every browser signs in with: terminum password; then open {url} (terminum open)"));
     }
+    ctx.say(super::commands::serve_hint(&h["port"]));
 }
 
 /// The `--version` a package's terminumd answers within 10 s.

@@ -24,7 +24,7 @@ const MAX_MESSAGE: usize = 2 << 20;
 const SEND_WAIT: Duration = Duration::from_secs(10);
 const PING: Duration = Duration::from_secs(15);
 
-/// Whether this socket came through the web listener (the guard marks it).
+/// Whether this socket is not the Mac's own browser's: it came through a proxy (the guard marks it).
 #[derive(Clone, Copy)]
 pub struct FromWeb(pub bool);
 

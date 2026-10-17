@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A fake terminumd for the page's checks of terminum's own UI (e2e_signin, e2e_tmux,
 // e2e_screen, e2e_move): web/static served at 127.0.0.1 (a secure context, as the real one),
-// /open/<code> with its sign-in meta, /api/hello's proof, /auth/check, /custom.css, and a
+// /auth/login and /auth/logout, /api/hello's proof, /auth/check, /custom.css, and a
 // WebSocket that answers `sub` with a theme, an empty history and a screen.
 
 import crypto from "node:crypto";
@@ -36,10 +36,10 @@ export function proofOf(secret, n) {
 }
 
 /** Opens the page. secret: what the fake server knows (its proof; "unknown_signin": none, it
- *  answers 404 unknown_signin); meta: the sign-in the page
- *  at /open/<code> carries; stored: one already in the origin's storage; auth: /auth/check's
- *  answer (204, or {login}); hook(msg, say): every message the page sends. */
-export async function openPage(browser, { device = WIDE, secret = null, meta = null, stored = null, auth = 204, layout = LAYOUT,
+ *  answers 404 unknown_signin); stored: a sign-in already in the origin's storage; auth:
+ *  /auth/check's answer (204, or {login}); login(body): /auth/login's answer as [status, json];
+ *  hook(msg, say): every message the page sends. */
+export async function openPage(browser, { device = WIDE, secret = null, stored = null, auth = 204, login = null, layout = LAYOUT,
   screen = SCREEN, cols = 80, hook = null, url = "/", css = "", settings = null } = {}) {
   const context = await browser.newContext(device);
   const page = await context.newPage();
@@ -54,6 +54,10 @@ export async function openPage(browser, { device = WIDE, secret = null, meta = n
       return typeof a === "number" ? route.fulfill({ status: a, body: "" })
         : route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ error: "bad_session", ...a }) });
     }
+    if (p === "/auth/login" || p === "/auth/logout") {
+      const [status, body] = p === "/auth/login" && login ? login(JSON.parse(req.postData() || "{}")) : [204, null];
+      return route.fulfill({ status, contentType: "application/json", body: body ? JSON.stringify(body) : "" });
+    }
     if (p === "/api/hello") {
       const n = u.searchParams.get("n");
       if (secret === "unknown_signin") return route.fulfill({ status: 404, contentType: "application/json", body: JSON.stringify({ error: "unknown_signin" }) });
@@ -61,18 +65,17 @@ export async function openPage(browser, { device = WIDE, secret = null, meta = n
     }
     if (p === "/custom.css") return route.fulfill({ contentType: "text/css", body: typeof css === "function" ? css() : css });
     if (p.startsWith("/fb/")) return route.fulfill({ status: 404, body: "" });
-    const f = path.join(STATIC, p === "/" || p.startsWith("/open/") ? "index.html" : path.normalize(p));
+    const f = path.join(STATIC, p === "/" ? "index.html" : path.normalize(p));
     if (!f.startsWith(STATIC) || !fs.existsSync(f)) return route.fulfill({ status: 404, body: "" });
     let body = fs.readFileSync(f);
-    if (f.endsWith("index.html")) {
-      body = body.toString().replace("__BUILD__", "test");
-      if (p.startsWith("/open/") && meta) body = body.replace("</head>", `<meta name="tm-session" content="${meta}">\n</head>`);
-    }
+    if (f.endsWith("index.html")) body = body.toString().replace("__BUILD__", "test");
     return route.fulfill({ contentType: TYPES[f.split(".").pop()] ?? "application/octet-stream", body });
   });
   let say = () => {};
   await page.routeWebSocket(`${ORIGIN.replace("http", "ws")}/ws`, (ws) => {
     sockets.push({ protocols: ws.protocols(), close: () => ws.close() });
+    // a server that knows a secret refuses a socket without it, as terminumd does (401)
+    if (typeof secret === "string" && secret !== "unknown_signin" && ws.protocols()[1] !== secret) return void ws.close();
     say = (m) => ws.send(JSON.stringify(m));
     ws.onMessage((m) => {
       const msg = JSON.parse(String(m));

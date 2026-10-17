@@ -61,10 +61,8 @@ pub struct App {
     pub sizes: crate::page::sizing::Sizes,
     /// settings, themes, hot keys, custom.css (AC-12, AC-18, AC-19)
     pub looks: crate::looks::Looks,
-    /// one-time codes and local sign-ins (AC-09)
-    pub codes: crate::auth::signin::Codes,
+    /// sign-ins and the password (AC-09)
     pub signins: crate::auth::signin::Signins,
-    /// web access (AC-10)
     pub web: crate::webaccess::Web,
     /// remote hosts and their files agents (AC-81–AC-87)
     pub hosts: crate::hosts::Hosts,

@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.9.4 |
+| Version | 0.10.0 |
 | Date | 2026-10-17 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,8 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.10.0 | 2026-10-17 | Owner: one listener, one password. The loopback listener on 47900 with its one-time codes (`terminum open`) and the second, cookie-signed listener of web access (`terminum web on/off`, 48080) were two ways in with two sign-ins; now terminumd listens only on `127.0.0.1:48080` (held by launchd as 47900 was) and every browser, the Mac's and, through `tailscale serve` (HTTPS), other devices', signs in with the password set by `terminum password`; until one is set the page says how. The sign-in is the header token of 0.9 with its hello proof (not a cookie: a cookie on 127.0.0.1 reaches every local port). Mac-only actions are judged by forwarding headers, never the Host (tailscale serve passes the browser's Host through); Tailscale Funnel is refused; `terminum signout` and a new password restart the brakes; the old sign-in files are removed at start and the old web.json keys dropped; an install waits until the old terminumd has let go of the port before launchd binds it; a closed page's socket ends at once. Pragmatic review applied: the port handover, forwarding headers instead of the Host, every old sign-in dropped, Funnel refused, the brakes reset by the CLI, `terminum open` kept as an opener, a scheme per kind of name; rejected: a 12-character minimum (the brakes and PBKDF2 hold for 8, and the owner's password stays valid) and asking for the password during install (`curl … \| sh` has no terminal to ask on; the install says the command). Pragmatic review of the code applied: the brakes' count of all kept apart for this Mac's own requests and forwarded ones (guesses from the tailnet held the Mac's browser too), a Files panel socket of a revoked sign-in ends at its next ping, and (found here) a login the old password passed during `terminum password` makes no sign-in; documented: a program on this Mac can name any X-Forwarded-For; left as they were (not this change): `?t=` on any GET, `/custom.css` without a sign-in, the 10 s port wait of a stop when another program holds the port. AC-08, AC-09, AC-10. |
+| 0.9.5 | 2026-10-17 | Owner: after the hint's `tailscale serve --bg --https=443` (AC-10), the Mac's tailnet name opened terminum where iterm-enhancer had been, the same as terminum's own Tailscale Service name. The hint now says it takes the Mac's name and names the Service command as the way to keep that name for another program; README "Over Tailscale" starts from that choice. |
 | 0.9.4 | 2026-10-17 | Owner, on an iPad over `tailscale serve`: the web listener's page offered Add host and Attach tmux sessions but terminumd refused them, so the form waited on "Looking for running sessions…" and the refusal stayed in the page's banner; the form's fields were 16 px beside the form's text at the terminal's size. Now host, attach and restore actions work from the web listener's page too (its password already opens a shell as the user, so they add no power); fields follow the terminal's size on touch screens too, the viewport's `maximum-scale=1` keeping iOS from zooming in on focus (pinching still zooms on iOS; Chrome on Android, not a stated client, also stops pinch zoom). Pragmatic review applied: no pending form for the listing, which answers with a list and never an error (AC-10, AC-89). |
 | 0.9.3 | 2026-10-17 | Owner, serving terminum through `tailscale serve` beside iterm-enhancer: the web listener's default port was 8765, iterm-enhancer's, and on macOS a wildcard bind succeeds beside a program on `127.0.0.1` of the same port, so `terminum web on` opened 0.0.0.0:8765 without a word; with `host` 127.0.0.1 it printed this Mac's network addresses, which do not answer; its hint `tailscale serve --bg <port>` takes port 443 from whatever served it. Now the default port is 48080; a port another program holds on 127.0.0.1 is in use for a wildcard listener too; a listener on loopback is said to be for a proxy on this Mac, with its address; a new password waits for the old listener to close before the new one binds (pragmatic review: the CLI named 127.0.0.1 for every host, `::` had the same hole, the wildcard's hint suggested a proxy closes plain HTTP, and the restart race; all applied; the race did not reproduce here, so its check covers the behavior only); the hint is the full `tailscale serve --bg --https=443 http://127.0.0.1:<port>` and says it replaces what port 443 serves. A web.json that names its port keeps it (terminumd writes the port into each file it saves). AC-10. |
 | 0.9.2 | 2026-10-17 | Owner: scrolling Codex (it asks for the mouse) on a host lagged seconds behind the trackpad. Measured through a stand-in ssh 25 ms each way: 120 wheel events in 1.2 s were drawn 5.8 s after the last, as each mouse message waited for its own round trip, and the page's next messages (keys too) waited behind it. Now the page makes a step of each text line scrolled, at most one an event (as xterm.js), and sends a frame's steps as one message with `count`; terminumd queues mouse reports with the keys, in order, one `send-keys -H` a round trip for what came meanwhile, never awaited in the page's message loop: drawn 0.11 s after the last (AC-06). Pragmatic review applied: the key of a mouse report read with its pane, the right words when a mouse report finds no tmux; kept: a batch of keys and mouse reports is a round trip a run (rare and short), one step at most an event (xterm.js; a native terminal sends one a line, uncapped). The page's own drawing was measured apart: 30 full 50-row frames a second in Screen mode's Wrap, no long task, 60 frames a second in Chromium and WebKit. |
@@ -108,8 +110,8 @@ Open questions:
 | AC-06 | [SHOULD / P1] | In Screen mode a click, a tap, a drag and the wheel reach a program that asked for mouse events as the mouse events a terminal would report. |
 | AC-07 | [MUST / P0] | The user creates a window, a session or a split next to the shown pane in its folder, renames a window or pane, reorders windows, moves a window to another session and closes a pane after a confirmation, and the list shows it within 2 s. |
 | AC-08 | [MUST / P0] | The user installs with one line, terminumd runs as a launchd agent that starts at login and after a crash, the command prints the page's address and opens it, and `terminum status` tells what runs. |
-| AC-09 | [MUST / P0] | A web page or local process cannot list sessions, read screens, type or touch files through terminumd without the sign-in: a one-time code opens a local page, a password opens a network page; writes need the exact Host, Origin and Content-Type. |
-| AC-10 | [SHOULD / P1] | With web access switched on, a browser on another device signs in with a password and gets the same page; wrong passwords are braked; switching it off signs every browser out. |
+| AC-09 | [MUST / P0] | A web page or local process cannot list sessions, read screens, type or touch files through terminumd without the sign-in, which only the password set by `terminum password` gets; wrong passwords are braked; writes need the exact Host, Origin and Content-Type. |
+| AC-10 | [SHOULD / P1] | A browser on another device reaches the same page through `tailscale serve` over HTTPS and signs in with the same password; what only the Mac may do is refused to forwarded requests; Tailscale Funnel is refused. |
 | AC-11 | [SHOULD / P1] | On the Mac the user opens terminum as an app: a WebKit window per ⌘N showing the page, with ⌘W closing the window (never a pane), ⌘+/⌘− for text size, full screen, the Dock icon, and windows remembered across launches. [DROPPED — the owner wants no app: a Mac browser and an iPhone browser are the clients, 2026-10-15] |
 | AC-12 | [SHOULD / P1] | The user sees each session in a theme (colors, ANSI palette, font) chosen by rules per host and session from theme files, with light and dark variants following the system, changed live when a file changes; the defaults are iterm-enhancer's looks for local and remote sessions. |
 | AC-13 | [MUST / P0] | The pane's size follows the client that shows it: a wide window gets a wide pane and a phone a narrow one, by a policy the user controls; "Fit to this screen" resizes the pane to the view, and a tmux client attached by hand keeps working. |
@@ -340,91 +342,95 @@ Scenario: AC-08 happy path — one line
   And the installer is the package's own terminumd for this Mac's architecture ("sysctl -n hw.optional.arm64", right under Rosetta too) run as "terminumd install"; nothing needs Python, a compiler, npm or make
   And it writes "~/Library/LaunchAgents/io.terminum.terminumd.plist" (RunAtLoad, KeepAlive, log to ~/.terminum/logs/terminumd.log, ProgramArguments [".../builds/current/terminumd", "serve"], Sockets "Listeners" on 127.0.0.1:<port>) and loads it, so terminumd runs now and at every login
   And "~/.terminum/bin/terminum" links the newest installed build's terminumd, which acts as the command when run by that name
-  And it prints "Installed <build>. Open http://127.0.0.1:47900/open/<code> (valid 60 s) — or run: terminum open" and opens that link in the default browser
+  And with a password set it prints "Installed <build>. Open http://127.0.0.1:48080/ and sign in with your password (terminum open)" and opens the page in the default browser; without one "Installed <build>. Set the password every browser signs in with: terminum password; then open http://127.0.0.1:48080/ (terminum open)"; then how other devices reach it (AC-10)
 Scenario: AC-08 happy path — launchd holds the port
   Given the agent is loaded
-  Then launchd listens on 127.0.0.1:47900 and hands the socket to terminumd ("launch_activate_socket"); while terminumd is killed, crashes, is restarted or upgraded, connections wait in launchd's queue and another program's bind of 127.0.0.1:47900 fails with "address in use", SO_REUSEPORT or not
+  Then launchd listens on 127.0.0.1:48080 and hands the socket to terminumd ("launch_activate_socket"); while terminumd is killed, crashes, is restarted or upgraded, connections wait in launchd's queue and another program's bind of 127.0.0.1:48080 fails with "address in use", SO_REUSEPORT or not
+  And before it loads the agent again (an install whose plist changed, `terminum restart`) the command waits until nothing answers on 127.0.0.1:<port> (at most 10 s): an old terminumd that bound the port itself (0.5.0's web listener on 48080) has let go of it
 Scenario: AC-08 happy path — tmux missing
   Given tmux is not on PATH
   Then the install goes through and prints "tmux is needed for terminals: brew install tmux", and the page says the same until tmux appears (checked every 10 s)
 Scenario: AC-08 happy path — status
   When the user runs "terminum status"
-  Then it prints the running build, terminumd's pid and uptime, the port, "web access: off" (or its addresses), the tmux servers and sessions attached, the hosts and their state, and the pages connected
+  Then it prints the running build, terminumd's pid and uptime, the page's address, whether a password is set, the tmux servers and sessions attached, the hosts and their state, and the pages connected
   And when settings.json names another port than the one launchd holds, it says "port: settings.json says <a>, launchd holds <b>: run terminum restart"
 Scenario: AC-08 edge — another program held the port when launchd loaded the agent
-  Given another program listened on 127.0.0.1:47900 when the agent was bootstrapped (launchd then hands an unbound socket and never tries again)
-  Then terminumd logs and prints "port 47900 was held by another program when launchd loaded terminum: free it, then run `terminum restart`" once and waits (exiting would only have launchd start it again on the same unbound socket), and "terminum status" says so
+  Given another program listened on 127.0.0.1:48080 when the agent was bootstrapped (launchd then hands an unbound socket and never tries again)
+  Then terminumd logs and prints "port 48080 was held by another program when launchd loaded terminum: free it, then run `terminum restart`" once and waits (exiting would only have launchd start it again on the same unbound socket), and "terminum status" says so
   When the user frees the port and runs "terminum restart"
   Then the agent is booted out and bootstrapped again, launchd holds the port, and terminumd answers within 10 s
 Scenario: AC-08 edge — the port is in use (terminumd not run by launchd, TM_NO_LAUNCHD=1)
-  Given another program listens on 127.0.0.1:47900
-  Then terminumd exits with "port 47900 is in use (set `port` in ~/.terminum/settings.json)" in its log after 9 s, and "terminum status" says so
+  Given another program listens on 127.0.0.1:48080
+  Then terminumd exits with "port 48080 is in use (set `port` in ~/.terminum/settings.json)" in its log after 9 s, and "terminum status" says so
 Scenario: AC-08 failure — bad download or wrong user
   When the checksum or signature does not match, or the line runs as root
   Then nothing is installed and the line exits non-zero with the reason
 Scenario: AC-08 failure — launchd could not bind the port at a bootstrap (install, restart, import)
-  Given the agent was just bootstrapped and terminumd logged "port 47900 was held by another program when launchd loaded terminum: …"
+  Given the agent was just bootstrapped and terminumd logged "port 48080 was held by another program when launchd loaded terminum: …"
   Then the command exits non-zero with that message at once (the user frees the port, then runs "terminum restart"); launchd binds through a closing connection's TIME_WAIT (measured), so only another program's listener leads here
 ```
 
-### AC-09 — Only the page can use terminumd [MUST / P0]
+### AC-09 — Only the page can use terminumd, with the password [MUST / P0]
 
 ```gherkin
-Scenario: AC-09 happy path — a local page signs in with a code
-  When the user runs "terminum open"
-  Then terminumd makes a one-time code (128 random bits, valid 60 s, spent on first use) and the browser opens "http://127.0.0.1:47900/open/<code>"
-  Then terminumd answers the page with a 256-bit sign-in (kept as its SHA-256 in state/local-sessions.json, 0600, 30 days), which the page keeps in its own origin's storage (127.0.0.1:47900: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol; images carry it as "?t=" on the same origin only; the page's address never holds it
+Scenario: AC-09 happy path — every browser signs in with the password
+  Given the user ran "terminum password" and typed a password of at least 8 characters twice
+  Then web.json (0600) holds it as a salted PBKDF2-SHA256 hash (200,000 iterations), every sign-in made before is revoked and every open page closes
+  When a browser opens the page (the Mac's at "http://127.0.0.1:48080/", another device's through "tailscale serve") and sends the password in its form
+  Then terminumd answers {"secret"}: a 256-bit sign-in (kept as its SHA-256 and proof key in state/signins.json, 0600, at most 20, 30 days), which the page keeps in its own origin's storage (not a cookie: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol; images carry it as "?t=" on the same origin only; the page's address never holds it
+Scenario: AC-09 happy path — no password yet
+  Given no password is set (a new install)
+  Then the page's form says "No password is set yet. On the Mac, run: terminum password" and cannot be sent, and asks again every 5 s; "POST /auth/login" answers 503 no_password; "terminum status" says "password: not set — no browser signs in: terminum password"; "terminum open" says to set it first
 Scenario Outline: AC-09 error — requests without a sign-in or from elsewhere are refused
   When a client sends "<request>"
   Then the response is "<status>" with body {"error": "<code>"} and no screen, session or file is read or changed
   Examples:
-    | request                                                         | status | code             |
-    | GET /ws (no sign-in)                                            | 401    | bad_session      |
-    | GET /fb/api/ls?path=/Users/alex, Host: evil.example:47900       | 403    | bad_host         |
-    | GET /ws with a sign-in, Origin: http://evil.example             | 403    | bad_origin       |
-    | POST /fb/api/fs/mkdir with a sign-in, Content-Type: text/plain  | 415    | bad_content_type |
-    | POST /fb/api/os/reveal on the web listener                      | 403    | not_here         |
-    | GET /open/<spent or expired code>                               | 410    | code_spent       |
-Scenario: AC-09 edge — a spent code, an expired or revoked sign-in
-  When the user opens a code link a second time
-  Then the page says "This link was used already. Run terminum open for a new one." and retries nothing
-  When the page's sign-in has expired (30 days) or was revoked ("terminum signout", a new build with a new secret)
-  Then the page says "Signed out: run terminum open" once, stops retrying, and keeps unsaved edits in its editor until the user signs in again
+    | request                                                                | status | code             |
+    | GET /ws (no sign-in)                                                   | 401    | bad_session      |
+    | GET /fb/api/ls?path=/Users/alex, Host: evil.example:48080              | 403    | bad_host         |
+    | GET /ws with a sign-in, Origin: http://evil.example                    | 403    | bad_origin       |
+    | POST /fb/api/fs/mkdir with a sign-in, Content-Type: text/plain         | 415    | bad_content_type |
+    | POST /fb/api/os/reveal with X-Forwarded-Host (through a proxy)         | 403    | not_here         |
+    | any request with Tailscale-Funnel-Request (the public internet)        | 403    | funnel           |
+Scenario: AC-09 failure — wrong passwords
+  When a wrong password is sent
+  Then it answers 401 "Wrong password."; passwords are checked one at a time, a wrong one holds the next for 1 s, after 5 from one address that address waits 15 s doubling to 5 min, after 20 from all addresses every address waits (429, "Too many wrong passwords. Try again in <n> s."), all counted apart for this Mac's own requests and for forwarded ones, so guesses from the tailnet never hold the Mac's browser; behind "tailscale serve" the address is X-Forwarded-For's last entry, believed only from loopback (so a program on this Mac can name any address: for it only the "all" count holds)
+  And "terminum password" and "terminum signout" start the brakes over, so guesses from elsewhere never keep the owner out for long
+Scenario: AC-09 edge — signed out
+  When the user chooses Sign out in the menu
+  Then that browser's sign-in is revoked ("POST /auth/logout" with its X-TM-Session), forgotten by the page, and the form shows
+  When the page's sign-in has expired (30 days) or was revoked ("terminum signout", a new password)
+  Then the page drops it from its storage and shows the form with "Signed out: sign in again."; the page behind stays as it is, unsaved edits in its editor included, until the user signs in again
+Scenario: AC-09 edge — the sign-ins of 0.5.0
+  Given an install of 0.5.0 or before (sign-ins from one-time codes on 127.0.0.1:47900, cookie sign-ins of the second listener)
+  When the new build starts
+  Then local-sessions.json and web-sessions.json are removed: their secrets stay in the storage of an origin any program may serve now, so none is carried over; web.json's "enabled", "host", "port" and "history" are dropped and its password kept
 Scenario: AC-09 security — the page proves the server before it sends its secret
   Given another program may hold the port (terminumd down during a load)
   When the page loads or reconnects
   Then it asks "/api/hello?n=<nonce>&id=<the first 16 hex of SHA-256(secret)>" and sends its secret only when the answer is HMAC-SHA256(proof key, "tm-hello-v1:" + nonce), the proof key being HMAC-SHA256(secret, "tm-proof-key") (terminumd keeps it, never the secret); another program cannot answer, so it never sees the secret on a reconnect; an unknown id answers 404 unknown_signin (signed out)
 Scenario: AC-09 security — private files and the socket
-  Then "~/.terminum" is 0700 and everything terminumd and the installer create in it is 0600 (files) or 0700 (folders); the CLI talks to terminumd through the Unix socket "~/.terminum/state/terminumd.sock" (health, codes, web switches), never with a sign-in over TCP; "/internal/*" over TCP answers 404
+  Then "~/.terminum" is 0700 and everything terminumd and the installer create in it is 0600 (files) or 0700 (folders); the CLI talks to terminumd through the Unix socket "~/.terminum/state/terminumd.sock" (health, the password, sign-out), never with a sign-in over TCP; "/internal/*" and the socket's routes over TCP answer 404
 Scenario: AC-09 security — the page runs no content
   Then the page's CSP is "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'", terminal output reaches only the panel's Markdown rules and Mermaid strict, and a link never navigates the page
 ```
 
-### AC-10 — Web access [SHOULD / P1]
+### AC-10 — Other devices through tailscale serve [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-10 happy path — switch on and sign in
-  Given the user ran "terminum web password" and typed a password of at least 8 characters twice, then "terminum web on"
-  Then web.json (0600) holds a salted PBKDF2-SHA256 hash, terminumd listens on 0.0.0.0:48080 within 2 s and prints its addresses and how to serve them over HTTPS
-  When a browser on the network opens "http://<mac>:48080/" and signs in
-  Then it gets an HttpOnly, SameSite=Strict cookie for 7 days (30 and Secure behind HTTPS), kept across terminumd restarts as its SHA-256 in web-sessions.json (0600, at most 100), and the same page as on the Mac
-  And before sign-in a request carries at most 4 KB, its head arrives within 10 s, at most 64 connections are open
-Scenario: AC-10 failure — wrong passwords, other sites
-  When a wrong password is sent
-  Then passwords are checked one at a time, a wrong one holds the next for 1 s, after 5 from one address that address waits 15 s doubling to 5 min, after 20 from all addresses every address waits; behind "tailscale serve" the address is X-Forwarded-For's last entry, believed only from loopback
-  And a request whose Host is not this Mac's name or address (or *.ts.net) is refused; a sign-in, sign-out or WebSocket whose Origin is not the page's own is refused
-Scenario: AC-10 edge — off, port in use, broken settings
-  When the user runs "terminum web off"
-  Then the listener closes within 2 s with every connection and every browser returns to the sign-in; panes sized for those browsers are left as they are
-  But when the port is in use, "terminum web on" says so and how to choose another; a web.json that cannot be read keeps web access off and says why
-  And a port another program holds on 127.0.0.1 only (or ::1, for "::") is in use for a listener on every interface too (macOS would bind beside it, and this Mac's own browsers would reach the other program); a program that binds the port on 127.0.0.1 after web access is on still takes the loopback traffic: it runs as the user, inside the threat boundary
-  And a new password while web access is on restarts the listener once the old one has closed: the old cookies are refused, the new password signs in
-Scenario: AC-10 edge — only this Mac, behind tailscale serve
-  Given web.json's "host" is "127.0.0.1"
-  When the user runs "terminum web on"
-  Then it says "<host>:<port> only, for a proxy on this Mac", not this Mac's network addresses (a browser signs in through the proxy's name: a sign-in at a loopback name is refused, as its cookie would reach every local port)
-  And the hint is "tailscale serve --bg --https=443 http://<host>:<port>" and says it replaces what port 443 serves (see "tailscale serve status")
-  But a listener on every interface is said to be plain HTTP on every network of this Mac, with "host": "127.0.0.1" as the way to HTTPS only before the same command (to 127.0.0.1)
+Scenario: AC-10 happy path — a phone on the tailnet
+  Given "tailscale serve --bg --service=svc:terminum --https=443 http://127.0.0.1:48080" (or "--https=443" on the Mac's own name; README "Over Tailscale")
+  When a phone on the tailnet opens "https://terminum.<tailnet>.ts.net/" and signs in with the password
+  Then it gets the same page as the Mac, over HTTPS (Tailscale's certificate); terminumd itself listens only on 127.0.0.1:48080 and speaks plain HTTP there, which never leaves the Mac
+  And "terminum password" and the install say how to serve it: "Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes the Mac's name; a name of its own: README "Over Tailscale")"
+Scenario: AC-10 failure — other names, other schemes
+  Then a request whose Host is not "127.0.0.1:<port>" exactly, a "*.ts.net" name or one of web.json's "allow_hosts" is refused (403 bad_host: DNS rebinding); the Origin of a write, a sign-in or the WebSocket must be the page's own: "http://127.0.0.1:<port>" for the loopback name, "https://<name>" for a ts.net name, either for an allowed name
+Scenario: AC-10 edge — what only the Mac's own browser may do
+  Given a request carries a forwarding header (Forwarded, X-Forwarded-*, Tailscale-*: tailscale serve always adds X-Forwarded-Host and passes the browser's Host through as it came)
+  Then it is not the Mac's own browser's whatever its Host: Finder and default apps (/fb/api/os/*), typing a path into a terminal (/fb/api/terminal/*) answer 403 not_here, and updatechoice is ignored; everything else is allowed (the password already opens a shell as the user, so this is a guard against accidents, not a boundary)
+Scenario: AC-10 edge — Tailscale Funnel
+  Given "tailscale funnel" is pointed at the port
+  Then every request it forwards (Tailscale-Funnel-Request) answers 403 funnel: terminum is not served on the public internet
 ```
 
 ### AC-12 — Themes and fonts [SHOULD / P1]
@@ -685,15 +691,16 @@ flowchart LR
     AG["terminumd --agent (files)"]
   end
   PH["Phone or tablet browser"]
-  BR -- "http://127.0.0.1:47900 (code → sign-in)" --> TD
-  PH -- "http://mac:48080 (password → sign-in)" --> TD
+  TS["tailscale serve (HTTPS)"]
+  BR -- "http://127.0.0.1:48080 (password → sign-in)" --> TD
+  PH -- "https://terminum.<tailnet>.ts.net" --> TS -- "http://127.0.0.1:48080 (password → sign-in)" --> TD
   TD -- "tmux -C attach -f ignore-size" --> TM
   TD --> FS
   TD -- "ssh" --> SSH --> RTM
   TD -- "ssh -L socket" --> AG
 ```
 
-terminumd is the only process between a client and tmux. Local and network clients get the same page; the sign-in differs (AC-09, AC-10). Remote hosts are two ssh processes: the control client for terminals (AC 81) and the agent for files (AC 82).
+terminumd is the only process between a client and tmux. It listens on 127.0.0.1 only; other devices come through `tailscale serve`, which adds HTTPS. Every client gets the same page and signs in with the same password (AC-09, AC-10). Remote hosts are two ssh processes: the control client for terminals (AC 81) and the agent for files (AC 82).
 
 ### A key and its echo (AC-03, AC-02, AC-20)
 
@@ -746,13 +753,13 @@ sequenceDiagram
   U->>I: curl … | sh
   I->>I: verify signature and checksum, unpack, run the package's terminumd install
   I->>I: copy builds/B, current → B, bin/terminum → B's terminumd
-  I->>L: bootstrap io.terminum.terminumd (KeepAlive, Sockets 127.0.0.1:47900)
-  L->>L: bind and listen on 127.0.0.1:47900 (held from now on)
+  I->>L: bootstrap io.terminum.terminumd (KeepAlive, Sockets 127.0.0.1:48080)
+  L->>L: bind and listen on 127.0.0.1:48080 (held from now on)
   L->>D: start "terminumd serve"
   D->>L: launch_activate_socket("Listeners") → the listening fd
   D->>T: attach default server (or wait for one)
   I->>D: health over terminumd.sock → build B
-  I-->>U: "Installed B. Open http://127.0.0.1:47900/open/<code>"
+  I-->>U: "Installed B. Set the password …: terminum password" (or, with one set, opens http://127.0.0.1:48080/)
   Note over D,L: crash → launchd restarts within 1 s; upgrade → current → C, kickstart -k; the port stays launchd's
 ```
 
@@ -786,8 +793,8 @@ Today is iterm-enhancer 0.42 (`../iterm-enhancer`); the page and panel are inher
 | AC-06 | no mouse in the web app | everything | — |
 | AC-07 | New tab, new window, rename, reorder, merge through iTerm2. | tmux commands; split and close new; merge becomes move. | `iterm-enhancer/bridge/fbbridge/web/newsession.py:50`, `merge.py:1`, `rename.py:41` |
 | AC-08 | AutoLaunch script, `iterm-enhancer` CLI (Python), versioned builds. | launchd agent holding the port (socket activation), `terminum` CLI built into terminumd (no Python), a tmux check. | `iterm-enhancer/scripts/install.py:1` |
-| AC-09 | Token in the tool URL, proof, Host/Origin checks. | Code → cookie for local pages; same checks. | `iterm-enhancer/fbd/src/auth.rs:1` |
-| AC-10 | The bridge's listener (Python). | The same in terminumd (Rust). | `iterm-enhancer/bridge/fbbridge/web/httpd.py:1`, `auth.py:1` |
+| AC-09 | Token in the tool URL, proof, Host/Origin checks. | One password for every browser → a header sign-in with the proof; same checks. | `iterm-enhancer/fbd/src/auth.rs:1` |
+| AC-10 | The bridge's listener (Python). | No second listener: `tailscale serve` to terminumd's one (Rust). | `iterm-enhancer/bridge/fbbridge/web/httpd.py:1`, `auth.py:1` |
 | AC-11 | iTerm2's Toolbelt and a "Files Viewer" browser profile. | dropped: a browser tab | `iterm-enhancer/bridge/fbbridge/windows.py:1` |
 | AC-12 | Theme from the iTerm2 profile. | Theme files, rules, watcher. | `iterm-enhancer/bridge/fbbridge/resolve.py:140`, `web/static/style.css:4` |
 | AC-13 | "Resize iTerm to this screen" sets the iTerm2 grid. | Policies, `resize-window`, `ignore-size`. | `iterm-enhancer/bridge/fbbridge/web/hub.py:96` |
@@ -816,18 +823,19 @@ Today is iterm-enhancer 0.42 (`../iterm-enhancer`); the page and panel are inher
 
 ### Interfaces
 
-Local sign-in: `GET /open/<code>` → the page with the sign-in in its body (`<meta name="tm-session">`, read once and moved into the origin's storage); the web listener's `POST /login` answers the same way. Every request needs `X-TM-Session: <secret>` (images `?t=`), the WebSocket the secret as its subprotocol. Errors are `{"error": "<code>", "message": "<text>"}`.
+Sign-in: `POST /auth/login {"password"}` → `{"secret"}` (401 `wrong`, 429 `locked` with `retry`, 503 `no_password`); the page keeps the secret in its origin's storage. Every request needs `X-TM-Session: <secret>` (images `?t=`), the WebSocket the secret as its subprotocol. Errors are `{"error": "<code>", "message": "<text>"}`.
 
-What each listener allows:
+What each request may do (forwarded: it carries Forwarded, X-Forwarded-* or Tailscale-*, as through `tailscale serve`):
 
-| Request | Loopback (the Mac's browser) | Web listener (network) |
+| Request | The Mac's own browser (127.0.0.1, not forwarded) | Forwarded (another device) |
 |---|---|---|
 | page, `/ws` (screens, typing, sessions, bookmarks, search, traces), `/fb/` files (ls, file, raw, fs/*, workspace, prefs), uploads | yes | yes |
 | `/fb/api/os/*` (Finder, default app), `/fb/api/terminal/*` (insert a path, cd) | yes | 403 `not_here` |
 | `addhost`, `hostaction`, `addtmux`, `detachtmux`, `tmuxsessions`, `restore` (page messages) | yes | yes |
 | `updatechoice` (page message) | yes | ignored |
-| `web on/off`, `signout` of others | CLI over the socket only | CLI over the socket only |
-| `/api/hello` | yes | yes |
+| `password`, `signout` of every browser | CLI over the socket only | CLI over the socket only |
+| `/api/hello`, `/auth/check`, `/auth/login`, `/auth/logout` | yes | yes |
+| through Tailscale Funnel (`Tailscale-Funnel-Request`) | 403 `funnel` | 403 `funnel` |
 
 | Method and path | Purpose | Case |
 |---|---|---|
@@ -836,8 +844,8 @@ What each listener allows:
 | `GET /fb/`, `/fb/api/*`, `/fb/renderers.js` | the Files panel and its API as the page fetches them (`panefiles.js:57`, `views.js:124`, `widgetui.js:13`): `/fb/api/state`, `ls`, `file` (GET, PUT), `raw`, `fs/*`, `workspace`, `prefs`, `os/*`, `terminal/*`; `X-TM-Host` for a remote host | `terminum-files.md` |
 | `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof": HMAC-SHA256(proof key, "tm-hello-v1:" + n)}`; 404 `unknown_signin` for an unknown id | AC-09 |
 | `GET /custom.css`, `/api/settings` | the user's stylesheet and the page settings | AC-19 |
-| `GET /health`, `POST /code`, `POST /web/{on,off,password}` on `terminumd.sock` | the CLI | AC-08, AC-09, AC-10 |
-| `GET /login`, `POST /login`, `POST /logout` (web listener) | sign-in | AC-10 |
+| `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | AC-08, AC-09 |
+| `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 
 WebSocket messages, page → terminumd (`t` names iterm-enhancer's where they exist):
 
@@ -906,7 +914,7 @@ Theme `~/.terminum/themes/local.json` (the defaults, shipped in `terminumd/asset
 Settings `~/.terminum/settings.json` (every key optional):
 
 ```json
-{"port": 47900, "tmux": {"socket": "terminum", "history": 12000},
+{"port": 48080, "tmux": {"socket": "terminum", "history": 12000},
  "size": "latest", "restore": true,
  "themes": {"default": "local", "hosts": {"*": "remote", "devbox": "work"}, "sessions": {"notes": "paper"}},
  "page": {"textSize": 13, "lines": "wrap", "screenMode": "auto"},
@@ -928,7 +936,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 
 | Key (settings.json) or env | Default | Example | Effect |
 |---|---|---|---|
-| `port` / `TM_PORT` | `47900` | `47901` | loopback port |
+| `port` / `TM_PORT` | `48080` | `48081` | the page's port on 127.0.0.1 |
 | `tmux.socket` / `TM_TMUX_SOCKET` | `terminum` | `tm-test` | the local server's `-L` name (OQ-01); its config `~/.terminum/tmux.conf` |
 | `attach` | `{}` | `{"default": ["work"]}` | sessions of the user's own tmux servers on this Mac by `-L` socket ("default": plain `tmux`); a host's are `hosts.<name>.attach` (terminum-remote.md); at most 32 in all (AC-89) |
 | `tmux.history` | `12000` | `20000` | `history-limit` written into `~/.terminum/tmux.conf` (TM_HISTORY plus a margin) |
@@ -940,14 +948,14 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 | `TM_WRITABLE_ROOTS` | `$HOME:/tmp` | `$HOME:/tmp:/opt/work` | Roots |
 | `TM_APP_DIR` | `~/.terminum/state` | `/tmp/tm-test` | state folder; tests use a private one |
 | `TM_LOG` | `info` | `debug` | log level |
-| `web.json` | off, `0.0.0.0:48080`, `history 10000` | — | web access (AC-10) |
+| `web.json` | no password | `{"allow_hosts": ["proxy.example"]}` | the password's hash (`terminum password`) and names another proxy forwards besides `*.ts.net` (AC-09, AC-10) |
 | `TM_HOME` | `~/.terminum` | `/tmp/tme/r` | install root; a moved root is passed to terminumd in the plist |
 | `TM_NO_LAUNCHD` | unset | `1` | run terminumd as a plain process with a pid file (tests, `scripts/e2e_install.sh`) |
 | `TM_LAUNCH_AGENTS` | `~/Library/LaunchAgents` | `/tmp/tme/la` | where the plist goes (tests) |
 | `TM_LAUNCHD_LABEL` | `io.terminum.terminumd` | `io.terminum.test-4242` | only `io.terminum.test-*` is accepted: the opt-in launchd test's own agent |
 | `TM_PORT_WAIT_S` | `9` | `1` | seconds terminumd waits before exiting when it has no port |
 | `TM_RELEASE_URL` | the GitHub releases page | `file:///tmp/rel` | where `upgrade` and `install.sh` download |
-| `TM_NO_OPEN`, `TM_WEB_PASSWORD`, `NO_COLOR` | unset | `1`, `…`, `1` | no browser after install; the web password without a prompt; no colors |
+| `TM_NO_OPEN`, `TM_WEB_PASSWORD`, `NO_COLOR` | unset | `1`, `…`, `1` | no browser after install; the password for `terminum password` without a prompt; no colors |
 
 ### Install, launchd and the command
 
@@ -994,8 +1002,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 
 ### Security
 
-- Loopback listener: a sign-in made by a one-time code that only the CLI can get (over `terminumd.sock`, 0600 in a 0700 folder), kept by the page in its origin's storage and sent as a header (not a cookie: cookies on 127.0.0.1 ignore the port and would reach every local server the user opens); the page proves the server first (`/api/hello`); exact `Host` `127.0.0.1:<port>`; writes need `Content-Type: application/json` and an absent or exact `Origin`; the WebSocket needs the exact `Origin`; no CORS headers. launchd holds the port from the moment the agent is loaded (socket activation), also while terminumd is down, restarting or upgraded, so no other program can serve a page in the page's origin. Residual: before the agent is first loaded (or after `terminum uninstall`, or when the port was already taken at bootstrap, which `terminum status` reports) another program can bind `127.0.0.1:<port>`; a page loaded from it is that program's page, whose own script shares the origin and can read the stored sign-in (the proof protects only a page that is already loaded and reconnects). The web listener (48080 by default) is bound by terminumd itself and has the same window while terminumd is down, against its cookie's origin. A script injected into the page could read the storage, which the CSP is there to prevent.
-- Web listener: as iterm-enhancer's (password, PBKDF2, brakes, Host allowlist, Origin, body limits), the same storage sign-in; the table above says what it refuses.
+- The listener: `127.0.0.1:<port>` only; other devices come through `tailscale serve`, which adds HTTPS (the plain HTTP on loopback never leaves the Mac). Every browser signs in with the password (PBKDF2-SHA256, brakes per address and for all, one check at a time); the sign-in is kept by the page in its origin's storage and sent as a header (not a cookie: cookies on 127.0.0.1 ignore the port and would reach every local server the user opens); the page proves the server first (`/api/hello`); the Host is `127.0.0.1:<port>` exactly, a `*.ts.net` name or one of `allow_hosts`; writes need `Content-Type: application/json` and the exact `Origin` of the name's scheme (only the Mac's own, unforwarded requests may leave it out); the WebSocket needs the exact `Origin`; no CORS headers; Tailscale Funnel is refused. Forwarded requests (any forwarding header: `tailscale serve` passes the browser's Host through as it came) may not use Finder or type a path into a terminal; a signed-in user has a shell anyway, so this guards against accidents, not a boundary. launchd holds the port from the moment the agent is loaded (socket activation), also while terminumd is down, restarting or upgraded, so no other program can serve a page in the page's origin. Residual: before the agent is first loaded (or after `terminum uninstall`, or when the port was already taken at bootstrap, which `terminum status` reports; and on Linux or with `TM_NO_LAUNCHD`, where terminumd binds the port itself) another program can bind `127.0.0.1:<port>` and serve its own page, which can ask for the password (the proof protects only a page that is already loaded and reconnects); `tailscale serve` then forwards to it as well. Lost with the one-time codes: a sign-in proved that its user sat at the Mac; now any local program can try passwords on loopback, against the brakes. A script injected into the page could read the storage, which the CSP is there to prevent.
 - tmux commands: every user string is one quoted argument with `#` doubled where tmux expands formats (AS-11, probed: a folder named `#(cmd)` would run `cmd`); control characters are refused before a command is formed; keys go as names; `-H` only from terminumd's tables; `send-keys -l` is never given a newline the user did not type.
 - The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; Mermaid strict; links open new tabs with `noopener`.
 - Files: writes under Roots on resolved paths; Trash only; regular files only; as `terminum-files.md`.
@@ -1004,8 +1011,8 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 Denied request:
 
 ```bash
-curl -s -X POST -H "Cookie: tm=…" -H "Origin: http://evil.example" -H "Content-Type: application/json" \
-  -d '{"paths":["/Users/alex/work"]}' http://127.0.0.1:47900/api/fs/trash
+curl -s -X POST -H "X-TM-Session: …" -H "Origin: http://evil.example" -H "Content-Type: application/json" \
+  -d '{"paths":["/Users/alex/work"]}' http://127.0.0.1:48080/fb/api/fs/trash
 # 403 {"error":"bad_origin","message":"Origin http://evil.example is not allowed"}
 ```
 
@@ -1058,9 +1065,9 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] AC-05 — `web/test/e2e_live.mjs` (vim switches the page to Screen mode within ~30 ms and back) and `web/test/e2e_all.mjs` (screen cases) → pass; `scripts/e2e_sizing.py` (mc in a 48×30 Screen mode: the window 48×30, the menu bar whole, the key bar on row 30 as mc lays it out for 48 columns (six keys), F9 and ↓ open a menu, F10 quits and the frame leaves the alternate screen; in a split window the pane is zoomed to 48×30 and unzoomed after) → 16/16 pass. Update 0.9.1 (a pane wider than the view that the page does not size): `web/test/e2e_screen.mjs` in Chromium and WebKit at both sizes (a wider pane waiting for this view's size is Fit; in a session of the user's own tmux Codex-like text rows in a 210-column pane re-flow at the chosen size, a 120-column frame is Fit at the wide size and Grid on the phone, under 7 px, a 600-column frame is Grid at the chosen size, sideways, a frame with a third of its rows wide stays one and with a sixth re-flows; another screen's size re-flows text; each fails when its part of the fix is undone: the old "Fit" rule, the hysteresis, the own-tmux condition, the frame told on each frame).
 - [x] AC-06 — `scripts/e2e_core.py` (a program printing its reports gets SGR click, release and wheel reports at 1-based cells) and `web/test/e2e_all.mjs` (mouse messages) → pass. Update 0.9.2 (a trackpad on a far host): `scripts/e2e_core.py` (a count of 3 is three wheel reports, in order with a key typed between); `web/test/e2e_screen.mjs` (24 small wheel events of 120 px are a step a text line, one message with the count, in Chromium and WebKit; a swipe's steps); `typing::tests` (a batch keeps its order and joins each kind); each fails when its part is undone (no accumulation, a message an event, the count ignored); a scratch benchmark through a stand-in ssh 25 ms each way: 120 wheel events in 1.2 s drawn 5.77 s after the last before, 0.11 s after.
 - [x] AC-07 — `scripts/e2e_core.py` (new window in the shown pane's folder named `it's #(id) $HOME`, nothing run; split; refused and new sessions; rename keeping `#`; move; close; one a second) and `cargo test tmux::args` (round trip of `a#{pane_id}`, `#(id)`, `#S`, `$HOME`, `~x`, `a;b`, `it's`) → pass.
-- [x] AC-08 — `scripts/e2e_install.sh` (temporary HOME, direct mode instead of launchd; each package installed by its own terminumd run as `install`, as install.sh does: install, the package holds no script, `bin/terminum` is the build's terminumd, health over the socket, tmux missing, port in use, status, open; with AC-16 42 checks) → PASS. `cargo test cli::` (77 cases ported from the Python suites and added: install, upgrade, rollback, import, the plist checked with `plutil` incl. `Sockets`, launchctl verbs against a stub: bootstrap, `kickstart -k` only for a loaded agent even when its plist would change, bootout + bootstrap for a failed kickstart and for `restart`, a port unbindable at bootstrap loaded again until bound with one progress line, failing after the deadline, failing at once with a listener, the guard for the live label, install.sh's signature, checksum and replay checks with the arch-picked terminumd) → pass. Real launchd, opt-in (`TM_LAUNCHD_TEST=1 cargo test --test launchd`, agent `io.terminum.test-<pid>` on a free port): the port refused to a squatter with and without SO_REUSEPORT while terminumd runs, is SIGKILLed and is kickstarted; a connection made while it was dead is answered after the restart; `terminum restart` right after it (its TIME_WAIT on the port, which blocks a user program's bind for ~30 s) ends with launchd holding the port (observed: launchd bound at once, no retry needed); `/health` reports launchd's port; a port taken at bootstrap gives "port <p> was held by another program when launchd loaded terminum: free it, then run `terminum restart`" in `restart` and `status`, and `terminum restart` takes it back once free → PASS (33 s; nothing left in `launchctl list`). `make package` → `dist/package/terminum` holds `BUILD`, `AGENT_ID`, `release-signers`, licenses, README and terminumd for macOS arm64/x86_64 and Linux x86_64/arm64, no `.py`. Not done: the one-line install from a published release (none exists).
-- [x] AC-09 — `cargo test auth::` (the table, codes, proof) and `scripts/e2e_access.py` (the table of refusals, a spent code 410, the proof, 0700/0600, signout) → 26/26; `scripts/security_check.sh` → PASS.
-- [x] AC-10 — `scripts/e2e_access.py` (password rules, PBKDF2 file, Host refusal, brakes, cookie, not_here, off closes the listener; bound to 127.0.0.1 in the test) → pass Update 0.9.3: `webaccess::tests` (the printed addresses by host; a port another program holds on 127.0.0.1 or ::1 is taken for `0.0.0.0` and `::` on macOS, terminumd's own wildcard listener is not), `cli::tests::cmd_tests` (`web_on_*`: the hint for every interface and for loopback; the web line by host), `auth::web` (default 48080); `scripts/e2e_access.py` 28/28 (a loopback listener has no network address; a new password while on: old cookie 401, new password 204); the probe and the loopback hint each fail their test when undone. A scratch probe (pragmatic review) on macOS: the trial bind fails beside a listener on 127.0.0.1 whatever its SO_REUSEADDR/SO_REUSEPORT, and passes beside terminumd's own wildcard socket, an open connection and TIME_WAIT. Not checked: Linux.
+- [x] AC-08 — `scripts/e2e_install.sh` (temporary HOME, direct mode instead of launchd; each package installed by its own terminumd run as `install`, as install.sh does: install, the package holds no script, `bin/terminum` is the build's terminumd, health over the socket, tmux missing, port in use, status, open; with AC-16 42 checks) → PASS. `cargo test cli::` (77 cases ported from the Python suites and added: install, upgrade, rollback, import, the plist checked with `plutil` incl. `Sockets`, launchctl verbs against a stub: bootstrap, `kickstart -k` only for a loaded agent even when its plist would change, bootout + bootstrap for a failed kickstart and for `restart`, a port unbindable at bootstrap loaded again until bound with one progress line, failing after the deadline, failing at once with a listener, the guard for the live label, install.sh's signature, checksum and replay checks with the arch-picked terminumd) → pass. Real launchd, opt-in (`TM_LAUNCHD_TEST=1 cargo test --test launchd`, agent `io.terminum.test-<pid>` on a free port): the port refused to a squatter with and without SO_REUSEPORT while terminumd runs, is SIGKILLed and is kickstarted; a connection made while it was dead is answered after the restart; `terminum restart` right after it (its TIME_WAIT on the port, which blocks a user program's bind for ~30 s) ends with launchd holding the port (observed: launchd bound at once, no retry needed); `/health` reports launchd's port; a port taken at bootstrap gives "port <p> was held by another program when launchd loaded terminum: free it, then run `terminum restart`" in `restart` and `status`, and `terminum restart` takes it back once free → PASS (33 s; nothing left in `launchctl list`). `make package` → `dist/package/terminum` holds `BUILD`, `AGENT_ID`, `release-signers`, licenses, README and terminumd for macOS arm64/x86_64 and Linux x86_64/arm64, no `.py`. Not done: the one-line install from a published release (none exists). Update 0.10.0: `scripts/e2e_install.sh` with the tree's terminumd (`TERMINUMD_BIN`) → PASS (install says to set the password and how other devices reach it, status says none is set, `open` refuses until `terminum password`, then gives `http://127.0.0.1:<port>/`); `cli::tests` (default port 48080 in the plist, install greeting).
+- [x] AC-09 — `cargo test auth::` (the table, codes, proof) and `scripts/e2e_access.py` (the table of refusals, a spent code 410, the proof, 0700/0600, signout) → 26/26; `scripts/security_check.sh` → PASS. Update 0.10.0: `cargo test` 377 pass (`auth::checks`: the table with forwarding headers by name in any case, a loopback Host through a proxy still forwarded, Funnel, the scheme of each kind of name; `auth::signin`: one browser's sign-out, the files of 0.5.0 dropped; `auth::web`: 0.5.0's keys dropped; `auth::websignin`: brakes, one check at a time, this Mac's own guesses counted apart; `cli::`: `password`, `open`, `signout`, status lines); `scripts/e2e_access.py` 32/32 against a private terminumd started over 0.5.0's files (local-sessions.json and web-sessions.json gone, web.json's listener keys dropped; no password: 401 `login: none`, 503 `no_password`; short password refused; PBKDF2 file 0600; wrong password held 1 s; sign-in in the body, no cookie; the refusals table with `not_here` through X-Forwarded-Host and `funnel`; the same sign-in through a ts.net name; proof; Sign out ends one browser's; `terminum signout` ends every one and closes its page at once, a Files panel's socket at its next ping; a new password signs everyone out; 5 wrong from one tailnet address lock it, the right one too, another address not; `terminum signout` restarts the brakes); `scripts/security_check.sh` → PASS against a private terminumd (its hello check now names a sign-in's id, which /api/hello needs since 0.9; it asked without one and got 400); `web/test/e2e_signin.mjs` 10/10 in Chromium and WebKit (form, wrong password, sign-in kept and carried after the proof, Sign out, signed out elsewhere, no password set, a server that cannot prove, an unknown sign-in); `web/test/e2e_live.mjs` 61/61 (signs in through the form; found and fixed: the form's field kept the keys, so typing after a sign-in reached no pane); `cd ui && node test/e2e_panel.mjs` 128/128; `scripts/e2e_remote.py` 22/22. Not covered by a test: a login whose check was passed by the old password while `terminum password` runs (the new check is swapped in before the sign-ins are revoked, and such a login drops its sign-in), Safari on iOS dropping storage after 7 days.
+- [x] AC-10 — `scripts/e2e_access.py` (password rules, PBKDF2 file, Host refusal, brakes, cookie, not_here, off closes the listener; bound to 127.0.0.1 in the test) → pass Update 0.9.3: `webaccess::tests` (the printed addresses by host; a port another program holds on 127.0.0.1 or ::1 is taken for `0.0.0.0` and `::` on macOS, terminumd's own wildcard listener is not), `cli::tests::cmd_tests` (`web_on_*`: the hint for every interface and for loopback; the web line by host), `auth::web` (default 48080); `scripts/e2e_access.py` 28/28 (a loopback listener has no network address; a new password while on: old cookie 401, new password 204); the probe and the loopback hint each fail their test when undone. A scratch probe (pragmatic review) on macOS: the trial bind fails beside a listener on 127.0.0.1 whatever its SO_REUSEADDR/SO_REUSEPORT, and passes beside terminumd's own wildcard socket, an open connection and TIME_WAIT. Not checked: Linux. Update 0.9.5: `cli::tests::cmd_tests` (`web_on_*`: the 443 hint says it takes the Mac's name, a last line gives the `svc:terminum` command with the listener's address, for every interface and for loopback); `make test` 390 pass. Live: `tailscale serve` on the owner's Mac, the Mac's name :443 back to iterm-enhancer, `svc:terminum` → 48080: the two names answer with the pages titled "iTerm2 Web" and "terminum". Update 0.10.0: there is no second listener; `scripts/e2e_access.py` (a ts.net Host with tailscale serve's headers: signed in, Finder and terminal refused) and `cargo test auth::checks` (ts.net is HTTPS only, allowed names either scheme) as listed under AC-09.
 - [x] AC-12 — `cargo test theme::` and `web/test/e2e_live.mjs` (a changed theme file reaches the page without reload) → pass. The light variant is unit-tested only.
 - [x] AC-13 — `scripts/e2e_core.py` (the opener sizes, a reader never resizes, the typist sizes, the other page is told) and `web/test/e2e_live.mjs` (a phone that types sizes the pane narrow) → pass; `scripts/e2e_sizing.py` (`largest`: a smaller typist does not size, the largest does, the other page is told, the largest left sizes after it goes; `manual`: opening and typing resize nothing, Fit sizes, Restore gives the size back) → pass. Found and fixed: a resize held back by the once-a-second limit toggled a Screen-mode zoom off again.
 - [x] AC-14 — `scripts/e2e_core.py` (kill-server: the pane says closed, `main` started again) and `web/test/e2e_live.mjs` (terminumd restarted: the page reconnects and shows the pane) → pass. A hung client's restart is unit-tested (`tmux::control`).

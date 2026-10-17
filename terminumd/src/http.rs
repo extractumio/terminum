@@ -84,27 +84,20 @@ fn host_of(headers: &HeaderMap) -> String {
     headers.get(header::HOST).and_then(|h| h.to_str().ok()).unwrap_or("").to_string()
 }
 
-/// The page's index with its build, and optionally the sign-in meta of `/open/<code>`.
-pub fn page_index(headers: &HeaderMap, signin: Option<&str>) -> Response {
+/// The page's index with its build.
+pub fn page_index(headers: &HeaderMap) -> Response {
     let Some(f) = PageFiles::get("index.html") else {
         return err(StatusCode::NOT_FOUND, "not_found", "the page is not built into this terminumd");
     };
-    let mut html = String::from_utf8_lossy(&f.data).replace("__BUILD__", crate::config::build_id());
-    if let Some(secret) = signin {
-        html = html.replacen("<head>", &format!("<head>\n<meta name=\"tm-session\" content=\"{secret}\">"), 1);
-    }
-    let mut res = file_response("index.html", html.into_bytes(), &host_of(headers), false);
-    if signin.is_some() {
-        res.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    }
-    res
+    let html = String::from_utf8_lossy(&f.data).replace("__BUILD__", crate::config::build_id());
+    file_response("index.html", html.into_bytes(), &host_of(headers), false)
 }
 
 /// A file of the page (`/app.js`, `/style.css`…), or None.
 pub fn page_file(path: &str, headers: &HeaderMap) -> Option<Response> {
     let path = path.trim_start_matches('/');
     if path.is_empty() || path == "index.html" {
-        return Some(page_index(headers, None));
+        return Some(page_index(headers));
     }
     PageFiles::get(path).map(|f| file_response(path, f.data.into_owned(), &host_of(headers), false))
 }
@@ -122,16 +115,6 @@ pub fn panel_file(path: &str, headers: &HeaderMap) -> Response {
     }
 }
 
-/// A page answering a spent or expired code (AC-09): it says so and retries nothing.
-pub fn code_spent_page() -> Response {
-    let html = "<!doctype html><meta charset=\"utf-8\"><title>terminum</title><body style=\"font:15px system-ui;margin:3em\">\
-                <h1>This link was used already.</h1><p>Run <code>terminum open</code> for a new one.</p>";
-    let mut res = (StatusCode::GONE, html).into_response();
-    res.headers_mut().insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html; charset=utf-8"));
-    res.headers_mut().insert("content-security-policy", HeaderValue::from_static("default-src 'none'; style-src 'unsafe-inline'"));
-    res
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,13 +122,11 @@ mod tests {
     #[test]
     fn the_page_carries_its_build_and_a_strict_csp() {
         let mut h = HeaderMap::new();
-        h.insert(header::HOST, HeaderValue::from_static("127.0.0.1:47900"));
-        let res = page_index(&h, None);
+        h.insert(header::HOST, HeaderValue::from_static("127.0.0.1:48080"));
+        let res = page_index(&h);
         assert_eq!(res.status(), StatusCode::OK);
         let csp = res.headers()["content-security-policy"].to_str().unwrap().to_string();
-        assert!(csp.contains("script-src 'self'") && csp.contains("frame-ancestors 'self'") && csp.contains("ws://127.0.0.1:47900"));
-        let signed = page_index(&h, Some("ab12"));
-        assert_eq!(signed.headers()[header::CACHE_CONTROL], "no-store", "a page with a sign-in is never cached");
+        assert!(csp.contains("script-src 'self'") && csp.contains("frame-ancestors 'self'") && csp.contains("ws://127.0.0.1:48080"));
     }
 
     #[test]

@@ -8,7 +8,7 @@ iTerm2.
 
 ## What it is
 
-- **terminumd**, one Rust server on `127.0.0.1:47900`: the tmux control client of a private
+- **terminumd**, one Rust server on `127.0.0.1:48080`: the tmux control client of a private
   tmux server (`tmux -L terminum`, started by terminumd with `~/.terminum/tmux.conf`) and of each
   remote host over ssh; it serves the page and the Files panel and never emulates a terminal:
   screens are tmux's own grid (`capture-pane`), only the rows that changed are sent.
@@ -36,8 +36,8 @@ curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/inst
 Needs macOS 14+ and tmux 3.2+ (`brew install tmux`); nothing else. The installer checks the
 release's signature, installs into `~/.terminum/` (`builds/<build>`, `current`, the command
 `~/.terminum/bin/terminum`, which is terminumd itself), loads the launchd agent
-`io.terminum.terminumd` and opens the page. launchd holds `127.0.0.1:47900` from then on, so no
-other program can take the page's port while terminumd restarts or is upgraded.
+`io.terminum.terminumd` and says how to set the password. launchd holds `127.0.0.1:48080` from
+then on, so no other program can take the page's port while terminumd restarts or is upgraded.
 
 From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed);
 `make test` runs the unit tests.
@@ -45,16 +45,18 @@ From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools 
 ## Use
 
 ```bash
-terminum open                 # a one-time link that signs this browser in (valid 60 s)
-terminum status               # build, pid, port, tmux servers and sessions, hosts, web access, pages
-terminum signout              # every page signs in again
+terminum password             # the password every browser signs in with (8+ characters)
+terminum open                 # the page in this Mac's browser: http://127.0.0.1:48080/
+terminum status               # build, pid, port, password set, tmux servers and sessions, hosts, pages
+terminum signout              # every browser signs in again
 terminum upgrade              # the latest signed release (--to vX.Y.Z); rollback; uninstall
 terminum restart              # load the launchd agent again (a new port in settings.json; a port taken back)
 terminum logs                 # terminumd's log (-n N, -f)
 ```
 
-The page asks terminumd to prove it knows the page's sign-in before sending it, and keeps the
-sign-in in its own origin's storage, never in its address or a cookie (see
+Every browser, on the Mac or another device, signs in with the password; until one is set the
+page says how. The page asks terminumd to prove it knows the page's sign-in before sending it,
+and keeps the sign-in in its own origin's storage, never in its address or a cookie (see
 [SECURITY.md](SECURITY.md)). `tmux -L terminum attach` from any terminal shows the same sessions.
 
 - **Quick shell**: the button in the header (or "Quick shell below" / "on the left" in the menu)
@@ -80,13 +82,8 @@ host's group does. Each attached session on a host is one more ssh connection.
 
 ## A phone or another computer
 
-```bash
-terminum web password         # at least 8 characters
-terminum web on               # prints the addresses (http://<mac>:48080/)
-terminum web off              # closes the listener and signs every browser out
-```
-
-Over a network you do not trust, use HTTPS through `tailscale serve`.
+terminumd listens only on `127.0.0.1:48080`. Other devices reach it through `tailscale serve`,
+which gives it an HTTPS address on your tailnet; they sign in with the same password.
 
 ### Over Tailscale
 
@@ -95,30 +92,22 @@ each port. Pick where terminum goes:
 
 | Setup | terminum at | Steps |
 | --- | --- | --- |
-| Nothing else on the Mac's name | `https://<mac>.<tailnet>.ts.net/` | 1–4 below |
-| Another service keeps the Mac's name (such as iterm-enhancer) | `https://terminum.<tailnet>.ts.net/` | 1–2 below, then the Tailscale Service |
+| Nothing else on the Mac's name | `https://<mac>.<tailnet>.ts.net/` | 1–3 below |
+| Another service keeps the Mac's name (such as iterm-enhancer) | `https://terminum.<tailnet>.ts.net/` | 1 below, then the Tailscale Service |
 
-1. Let terminum listen only on this Mac, on a free port. Put this in
-   `~/.terminum/state/web.json` (keep the other keys when the file exists), then
-   `terminum web off` if web access is on:
-
-   ```json
-   { "port": 48080, "host": "127.0.0.1" }
-   ```
-
-2. Set the password and switch web access on:
+1. Set the password, if you have not yet:
 
    ```bash
-   terminum web on      # asks for a password the first time
+   terminum password
    ```
 
-3. Serve it over HTTPS. This replaces what port 443 served: move another service first (below).
+2. Serve it over HTTPS. This replaces what port 443 served: move another service first (below).
 
    ```bash
    tailscale serve --bg --https=443 http://127.0.0.1:48080
    ```
 
-4. Open `https://<mac>.<tailnet>.ts.net/` on a device in your tailnet and sign in with the
+3. Open `https://<mac>.<tailnet>.ts.net/` on a device in your tailnet and sign in with the
    password.
 
 Without a tagged machine for a Service, another service on the Mac's name can move to a port
@@ -137,8 +126,10 @@ Notes:
 - `http://<mac>.<tailnet>.ts.net` does not open: `tailscale serve` cannot redirect port 80 to
   HTTPS. Type the `https://` address.
 - terminum answers to any `*.ts.net` name. Another name a proxy forwards goes in `allow_hosts`
-  in `web.json`.
-- To also reach terminum over plain HTTP on your local network, set `"host": "0.0.0.0"`.
+  in `~/.terminum/state/web.json`.
+- A device that comes through a proxy cannot use Finder or type a path into a terminal from the
+  Files panel; the rest works as on the Mac.
+- `tailscale funnel` (the public internet) is refused: terminum answers it with 403.
 - To stop serving it: `tailscale serve --https=443 off`.
 - `tailscale serve --bg` and `--service` are kept by tailscaled and come back after a restart
   of the Mac. The program behind each address must be running too: terminumd starts at login;
@@ -166,10 +157,9 @@ service, and it can be served only by a tagged machine (`tag:personal` below):
 
    `autoApprovers` approves only a host that advertises after the service is defined. Approve
    the Mac on the service's page when it advertised earlier, or without `autoApprovers`.
-4. Open `https://terminum.<tailnet>.ts.net/`. It is an address of its own, with its own
-   sign-in.
+4. Open `https://terminum.<tailnet>.ts.net/` and sign in with the password.
 
-5. Give the Mac's name back to the other service if step 3 of the first list took it (it then
+5. Give the Mac's name back to the other service if step 2 of the first list took it (it then
    opened terminum under both names), and check:
 
    ```bash

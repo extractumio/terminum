@@ -617,7 +617,7 @@ All `/fb/api/*` need the sign-in header (`terminum.md` AC 09); a remote host's r
 Example:
 
 ```bash
-curl -s -H "X-TM-Session: …" "http://127.0.0.1:47900/fb/api/ls?path=/tmp/fb-big&offset=0&limit=3"
+curl -s -H "X-TM-Session: …" "http://127.0.0.1:48080/fb/api/ls?path=/tmp/fb-big&offset=0&limit=3"
 # {"path":"/tmp/fb-big","status":"ready","total":500000,"offset":0,"writable":true,"gen":1,
 #  "entries":[{"n":"f000000.txt","k":"f","s":0},{"n":"f000001.txt","k":"f","s":0},{"n":"f000002.txt","k":"f","s":0}]}
 ```
@@ -674,7 +674,7 @@ Writes only under Roots after `realpath` (a symlink cannot escape; a symlink its
 Denied request:
 
 ```bash
-curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{"path":"/etc/newdir"}' http://127.0.0.1:47900/fb/api/fs/mkdir
+curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{"path":"/etc/newdir"}' http://127.0.0.1:48080/fb/api/fs/mkdir
 # 403 {"error":"outside_roots","message":"/etc is outside writable folders"}
 ```
 
