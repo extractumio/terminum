@@ -106,13 +106,13 @@ function row(item, current, onPick, movable, child = false, marked = new Set()) 
   return li;
 }
 
-/** A host group's state after its name (AC-81): "" when attached; terminumd's `why` says
- *  "reconnecting (2 s)" or ssh's last line. */
+/** A host group's state, on a line under its name (AC-81): "" when attached; terminumd's `why`
+ *  says "reconnecting (2 s)" or ssh's last line, which can be long. */
 export function hostState(g) {
-  if (g.state === "reconnecting") return ` · ${g.why || "reconnecting"}`;
-  if (g.state === "failed") return `: ${g.why || "failed"}`;
-  if (g.state === "off") return " · off";
-  if (g.state === "absent") return ` · ${g.why || "not running"}`;
+  if (g.state === "reconnecting") return g.why || "reconnecting";
+  if (g.state === "failed") return g.why || "failed";
+  if (g.state === "off") return "off";
+  if (g.state === "absent") return g.why || "not running";
   return "";
 }
 
@@ -138,7 +138,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));
     t.addEventListener("click", () => onToggle(key));
-    t.append(icon("chevron-down", 14), el("span", "label", g.label + (own ? hostState(g) : "")));
+    t.append(icon("chevron-down", 14), el("span", "label", g.label));
     if (g.session) t.append(el("span", "tsess", g.session));      // a tmux group: its session's name; the rows name the host
     else if (g.host && g.host !== g.label) t.append(el("span", "host", g.host));
     if (g.where) t.append(el("span", "where", g.where));
@@ -185,6 +185,8 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       h.append(m);
     }
     sec.append(h);
+    const state = own ? hostState(g) : "";
+    if (state) sec.append(el("p", "gstate", state));   // under the name, wrapped: ssh's words can be long
     if (!closed) {
       const ul = el("ul");
       if (g.wid) ul.dataset.wid = g.wid;

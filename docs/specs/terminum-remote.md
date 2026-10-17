@@ -94,7 +94,7 @@ Scenario: AC-81 happy path — add a host
 
 Scenario: AC-81 happy path — the link drops and comes back
   When the network drops
-  Then within 20 s (ServerAliveInterval × 2) the control client ends, the group reads "devbox · reconnecting (2 s)", a shown pane keeps its last screen with "Connection to devbox lost" over it, typing is refused with that message; terminumd reconnects after 1, 2, 4 … 30 s
+  Then within 20 s (ServerAliveInterval × 2) the control client ends, the group "devbox" says "reconnecting (2 s)" on a line of its own under its name (a long state wraps there, never cut), a shown pane keeps its last screen with "Connection to devbox lost" over it, typing is refused with that message; terminumd reconnects after 1, 2, 4 … 30 s
   When ssh succeeds again
   Then the group is back within 5 s, the shown pane's screen is captured anew (its history too), and the notice goes; the tmux session on the host never noticed
 
@@ -103,7 +103,7 @@ Scenario: AC-81 edge — the pane's folder and programs
 
 Scenario: AC-81 failure — ssh fails
   When ssh exits before "%begin" (unknown host key, a password needed, tmux missing on the host)
-  Then the group reads "devbox: <ssh's last line>" (BatchMode: "Permission denied (publickey)", "tmux: command not found"), nothing is retried faster than the back-off, and the log has ssh's full output; "Retry now" in the group's menu retries at once; while the host is not attached (connecting, reconnecting, failed, off) its group has no "+ New window": there is no tmux to make it in
+  Then the group "devbox" shows ssh's last line under its name, wrapped in full and in the error color (BatchMode: "Permission denied (publickey)", "tmux: command not found"), nothing is retried faster than the back-off, and the log has ssh's full output; "Retry now" in the group's menu retries at once; while the host is not attached (connecting, reconnecting, failed, off) its group has no "+ New window": there is no tmux to make it in
 ```
 
 ### AC-82 — Files on a host [SHOULD / P1]

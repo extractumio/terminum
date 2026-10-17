@@ -106,20 +106,24 @@ export async function webTmux(browser, name) {
     f.say({ t: "layout", groups: [...LAYOUT, host("reconnecting", { why: "reconnecting (2 s)" })] });
     await pause(page);
     const seen = await page.evaluate(() => { const g = document.querySelector('#sessions .grp[data-wid="devbox/terminum"]'), c = (el) => getComputedStyle(el).color;
-      return { label: g.querySelector("h2 .label").textContent, color: c(g.querySelector("h2 .label")), row: c(g.querySelector(".item .host")),
+      return { label: g.querySelector("h2 .label").textContent, state: g.querySelector(".gstate").textContent,
+        color: c(g.querySelector("h2 .label")), row: c(g.querySelector(".item .host")),
         rowText: g.querySelector(".item .host").textContent }; });
     const ATTACH = "ssh -t -- devbox.example 'tmux attach -t =terminum'";
-    f.say({ t: "layout", groups: [...LAYOUT, host("failed", { why: "Permission denied (publickey)", session: "terminum", attach: ATTACH })] });
+    const WHY = "kex_exchange_identification: read: Connection reset by peer; Connection reset by 10.0.0.5 port 22";
+    f.say({ t: "layout", groups: [...LAYOUT, host("failed", { why: WHY, session: "terminum", attach: ATTACH })] });
     await pause(page);
-    const failed = await page.textContent('#sessions .grp[data-wid="devbox/terminum"] h2 .label');
+    const failed = await page.evaluate(() => { const g = document.querySelector('#sessions .grp[data-wid="devbox/terminum"]'), s = g.querySelector(".gstate");
+      return { label: g.querySelector("h2 .label").textContent, state: s.textContent, lines: Math.round(s.getBoundingClientRect().height / parseFloat(getComputedStyle(s).lineHeight)),
+        inside: s.getBoundingClientRect().right <= g.getBoundingClientRect().right }; });
     check("AC-81 a host group that is not attached offers no new window", await page.isHidden('#sessions .grp[data-wid="devbox/terminum"] h2 .new'));
     const tsess = await page.evaluate(() => { const h = document.querySelector('#sessions .grp[data-wid="devbox/terminum"] h2');
       return { sess: h.querySelector(".tsess")?.textContent, copy: h.querySelector(".attach")?.title }; });
     check("AC-01 a group names its tmux session and has a copy button for the attach command",
       tsess.sess === "terminum" && tsess.copy === `Copy: ${ATTACH}`, JSON.stringify(tsess));
-    check("AC-81 host group: its name in cornflower blue with its state, rows naming the host in violet",
-      seen.label === "devbox · reconnecting (2 s)" && seen.color === "rgb(100, 149, 237)" && seen.row === "rgb(169, 139, 255)" && seen.rowText === "devbox"
-        && failed === "devbox: Permission denied (publickey)", JSON.stringify({ seen, failed }));
+    check("AC-81 host group: its name in cornflower blue, its state on a line under it (a long one wrapped in full), rows naming the host in violet",
+      seen.label === "devbox" && seen.state === "reconnecting (2 s)" && seen.color === "rgb(100, 149, 237)" && seen.row === "rgb(169, 139, 255)" && seen.rowText === "devbox"
+        && failed.label === "devbox" && failed.state === WHY && failed.lines >= 2 && failed.inside, JSON.stringify({ seen, failed }));
     await page.click('#sessions .grp[data-wid="devbox/terminum"] .hostbtn');
     const offered = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     await page.click('#hostmenu button[data-action="retry"]');
@@ -129,7 +133,7 @@ export async function webTmux(browser, name) {
     await page.click('#hostmenu button[data-action="remove"]');
     const ask = await page.textContent("#confirmtext");
     await page.click("#confirmok");
-    await pause(page, 100);
+    for (let i = 0; i < 40 && last("hostaction")?.action !== "remove"; i++) await pause(page, 50);   // a loaded machine: up to 2 s
     check("AC-81 host group: its menu retries now, turns it off, removes it (asked first)",
       offered.join() === "Retry now,Off,Remove" && retry?.name === "devbox" && retry.action === "retry" && /^Remove devbox\?/.test(ask)
         && last("hostaction").action === "remove", JSON.stringify({ offered, retry, remove: last("hostaction") }));
@@ -161,13 +165,13 @@ export async function webTmux(browser, name) {
       state: "absent", why: "not running on your tmux: attached when it starts" });
     f.say({ t: "layout", groups: [...LAYOUT, own] });
     await pause(page);
-    const absent = await page.textContent('#sessions .grp[data-wid="local:default/later"] h2 .label');
+    const absent = await page.textContent('#sessions .grp[data-wid="local:default/later"] .gstate');
     await page.click('#sessions .grp[data-wid="local:default/later"] .hostbtn');
     const detach = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     await page.click('#hostmenu button[data-action="detach"]');
     await pause(page, 100);
     check("AC-89 a session of the user's tmux that does not run is a group saying so; its menu detaches it",
-      absent === "later · not running on your tmux: attached when it starts" && detach.join() === "Detach from terminum"
+      absent === "not running on your tmux: attached when it starts" && detach.join() === "Detach from terminum"
         && JSON.stringify(last("detachtmux")) === JSON.stringify({ t: "detachtmux", server: "local:default", session: "later" }), JSON.stringify({ absent, detach }));
 
     // a host's other sessions (AC-89): offered once a host just added is attached; later by its icon and menu

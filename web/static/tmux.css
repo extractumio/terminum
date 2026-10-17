@@ -2,10 +2,12 @@
 /* What terminum adds to the page: host groups (AC-81), the list foot's forms (AC-07), Screen mode
    (AC-05), the confirmation dialog, the host menu. */
 
-/* a host's group: its name in cornflower blue, its state after it; rows name the host in violet (.host) */
+/* a host's group: its name in cornflower blue, its state on a wrapped line under it, aligned with
+   the name; rows name the host in violet (.host) */
 .grp.hostgrp h2 .label { color: var(--host-label); }
 .grp.reconnecting h2 .label, .grp.off h2 .label, .grp.absent h2 .label { opacity: .75; }
-.grp.failed h2 .label { color: color-mix(in srgb, var(--danger) 70%, var(--host-label)); white-space: normal; }
+.grp .gstate { margin: -2px 8px 4px 28px; font-size: 11.5px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+.grp.failed .gstate { color: color-mix(in srgb, var(--danger) 70%, var(--host-label)); }
 #hostmenu { position: fixed; z-index: 31; width: 180px; display: flex; flex-direction: column; padding: 4px; border-radius: 10px;
   background: var(--chrome-2); border: 1px solid var(--line); box-shadow: 0 12px 32px color-mix(in srgb, #000 40%, transparent); }
 #hostmenu[hidden] { display: none; }
