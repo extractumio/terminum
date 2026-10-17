@@ -375,6 +375,11 @@ export async function webWidgets(browser, name = "") {
   await broken.page.keyboard.up(mod);
   await broken.page.waitForFunction(() => document.getElementById("file").getAttribute("src"), null, { timeout: 5000 }).catch(() => {});
   const openedLong = await broken.page.evaluate(() => new URLSearchParams(new URL(document.getElementById("file").src || "http://x/").search).get("view"));
+  // opening the file redraws the rows and their links are underlined again a moment later: wait for the broken path's
+  await broken.page.waitForFunction(() => {
+    const rows = [...document.querySelectorAll("#screen .ln")], at = (n) => rows.indexOf(n.parentElement?.closest(".ln"));
+    return [...(CSS.highlights?.get("lnk") ?? [])].some((r) => at(r.startContainer) === 1 && at(r.endContainer) === 2);
+  }, null, { timeout: 5000 }).catch(() => {});
   const glue = await broken.page.evaluate(() => {
     const rows = [...document.querySelectorAll("#screen .ln")];
     const btn = rows.map((el) => el.shadowRoot?.querySelector(".wgi button")).find(Boolean);
