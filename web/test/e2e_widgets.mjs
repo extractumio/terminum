@@ -405,6 +405,37 @@ export async function webWidgets(browser, name = "") {
     row.length === 75 && cutRows.glue && /consoles\/env/.test(cutRows.text.replace(/\s{2,}/g, "")), JSON.stringify(cutRows));
   await cutOut.page.close();
 
+  // a table Claude Code drew 120 columns wide (its code colored), read on a phone: an HTML table
+  const pad = (t, n) => t + " ".repeat(n - [...t].length);
+  const rule = (l, j, r) => `  ${l}${"─".repeat(11)}${j}${"─".repeat(106)}${r}`;
+  const cellRow = (a, b, color) => ({ r: [["  │ ", null, null, 0], [pad(a, 10), color ? 8 : null, null, 0], ["│ ", null, null, 0], [pad(b, 105), null, null, 0], ["│", null, null, 0]], e: true });
+  const drawn = [line("⏺ The commits:"), line(""), line(rule("┌", "┬", "┐")), cellRow("Commit", "What"), line(rule("├", "┼", "┤")),
+    cellRow("eecb6df", "Web access: port 48080 by default, and an honest setup behind tailscale serve; a README section", true),
+    cellRow("", "about Tailscale | and its services"), line(rule("├", "┼", "┤")), cellRow("7962f12", "Host and attach actions", true),
+    line(rule("└", "┴", "┘")), line(""), line("Done.")];
+  const tb = await open(browser, { history: drawn, screen: [], device: { viewport: { width: 390, height: 844 }, hasTouch: true } });
+  await tb.page.waitForFunction(() => document.querySelector("#hist .ln.wg-host")?.shadowRoot.querySelector(".body.table td"), null, { timeout: 8000 }).catch(() => {});
+  const table = await tb.page.evaluate(() => {
+    const host = document.querySelector("#hist .ln.wg-host"), b = host?.shadowRoot.querySelector(".body.table"), t = document.getElementById("term");
+    return { head: [...(b?.querySelectorAll("th") ?? [])].map((c) => c.textContent), cells: [...(b?.querySelectorAll("tbody tr") ?? [])].map((r) => [...r.cells].map((c) => c.textContent)),
+      hidden: document.querySelectorAll("#hist .ln.wg-hid").length, name: host?.shadowRoot.querySelector(".name").textContent,
+      // Wrap's overflow-wrap: anywhere would cut "eecb6df" letter by letter
+      whole: (() => { const r = document.createRange(); r.selectNodeContents(b.querySelector("td")); return new Set([...r.getClientRects()].map((x) => Math.round(x.top))).size; })(),
+      fits: (b?.getBoundingClientRect().right ?? 1e9) <= t.getBoundingClientRect().right + 1 && t.scrollWidth <= t.clientWidth + 1 };
+  });
+  check(`${at} a table Claude Code drew (its code colored) is an HTML table on a phone: its head, a wrapped cell one cell, its other rows hidden, a word never cut, within the view`,
+    table.name === "Table" && table.head.join("|") === "Commit|What" && table.cells.length === 2 && table.cells[0][0] === "eecb6df"
+    && table.cells[0][1] === "Web access: port 48080 by default, and an honest setup behind tailscale serve; a README section about Tailscale | and its services"
+    && table.hidden === 7 && table.whole === 1 && table.fits, JSON.stringify(table));
+  await tb.page.evaluate(() => { window.copied = []; document.addEventListener("copy", () => window.copied.push(String(getSelection()) || document.activeElement?.value)); });
+  await act(tb.page, "table", '[data-act="copy"]');
+  const tcopied = await tb.page.evaluate(() => window.copied);
+  check(`${at} … Copy copies it as a Markdown table`, tcopied.some((c) => c?.startsWith("| Commit | What |\n| --- | --- |\n| eecb6df | Web access:") && c.includes("Tailscale \\| and")), JSON.stringify(tcopied));
+  await act(tb.page, "table", '[data-act="raw"]');
+  await tb.page.waitForFunction(() => document.querySelector("#hist .ln.wg-host.wg-raw"), null, { timeout: 5000 }).catch(() => {});
+  check(`${at} … Raw shows the drawn lines`, await tb.page.evaluate(() => document.querySelectorAll("#hist .ln.wg-hid").length === 0 && !!document.querySelector("#hist .ln.wg-raw")));
+  await tb.page.close();
+
   // fbd not running: the widget says so, and the rows show as text
   const off = await open(browser, { renderers: false });
   await off.page.waitForFunction(() => [...document.querySelectorAll("#term .ln.wg-host")].some((h) => h.shadowRoot.querySelector(".err:not([hidden])")), null, { timeout: 10000 }).catch(() => {});

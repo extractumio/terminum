@@ -183,3 +183,68 @@ test("a document a tool printed in slices (sed -n) is one widget from the output
   const plain = ["⏺ Bash(cat notes.md)", "  ⎿  Read 3 lines", "", "     # Notes", "", "     - one `a`", "     - two `b`", "", "⏺ Done."];
   assert.deepEqual(found(plain.join("\n")).map((x) => x.kind), ["markdown"]);
 });
+
+// A table Claude Code drew: rules between its rows, a cell wrapped over two lines, its code colored.
+const CLAUDE_TABLE = [
+  "⏺ The commits:", "",
+  "  ┌─────────┬───────────────────────────┐",
+  "  │ Commit  │           What            │",
+  "  ├─────────┼───────────────────────────┤",
+  "  │ eecb6df │ Web access: port 48080 by │",
+  "  │         │ default | a README section│",
+  "  ├─────────┼───────────────────────────┤",
+  "  │ 7962f12 │ Host actions              │",
+  "  └─────────┴───────────────────────────┘", "", "  Done."];
+
+test("a drawn table: its head, a row per part between rules, a wrapped cell one cell; colored, it is one still", () => {
+  const colored = rows(CLAUDE_TABLE.join("\n")).map((r) => ({ ...r, styled: /eecb|7962/.test(r.text) }));
+  const r = regions(colored);
+  assert.deepEqual(r.map(({ kind, from, to }) => ({ kind, from, to })), [{ kind: "table", from: 2, to: 9 }]);
+  assert.deepEqual(r[0].table.head, ["Commit", "What"]);
+  assert.deepEqual(r[0].table.rows, [["eecb6df", "Web access: port 48080 by default | a README section"], ["7962f12", "Host actions"]]);
+  assert.equal(r[0].text, "| Commit | What |\n| --- | --- |\n| eecb6df | Web access: port 48080 by default \\| a README section |\n| 7962f12 | Host actions |",
+    "Copy gives Markdown, a | in a cell escaped");
+});
+
+test("drawn tables of other programs: mysql's +---+ (a column of numbers to the right), rich's heavy head, rows without rules", () => {
+  const mysql = "mysql> select id, name from t;\n+----+-------+\n| id | name  |\n+----+-------+\n|  1 | a     |\n| 22 | b     |\n+----+-------+\n2 rows in set";
+  const m = regions(rows(mysql));
+  assert.deepEqual(m.map(({ kind, from, to }) => ({ kind, from, to })), [{ kind: "table", from: 1, to: 6 }]);
+  assert.deepEqual([m[0].table.head, m[0].table.rows, m[0].table.align], [["id", "name"], [["1", "a"], ["22", "b"]], ["right", ""]]);
+  const rich = "┏━━━━━━┳━━━━━━━━━━┓\n┃ Name ┃ Note     ┃\n┡━━━━━━╇━━━━━━━━━━┩\n│ api  │ a long   │\n│      │ note     │\n│ web  │ short    │\n└──────┴──────────┘";
+  const t = regions(rows(rich))[0]?.table;
+  assert.deepEqual(t && [t.head, t.rows], [["Name", "Note"], [["api", "a long note"], ["web", "short"]]], "a line with an empty first cell goes on the row above");
+  const bare = "╭───┬───╮\n│ a │ b │\n│ c │ d │\n╰───┴───╯";
+  assert.deepEqual(regions(rows(bare))[0]?.table.head, null, "no rule after the first part: no head");
+});
+
+test("an ASCII table's row with an empty first value is a row of its own; numbers with units or none ('-') align right", () => {
+  const t = regions(rows("+------+------+\n| name | size |\n+------+------+\n| Ann  | 1 KB |\n|      | 512 B|\n| Bob  | -    |\n+------+------+"))[0]?.table;
+  assert.deepEqual(t && [t.rows, t.align], [[["Ann", "1 KB"], ["", "512 B"], ["Bob", "-"]], ["", "right"]]);
+});
+
+test("drawn tables in a coding agent's tool output, and with double rules (tabulate's fancy_grid, a double frame)", () => {
+  const tool = ["⏺ Bash(python3 report.py)", "  ⎿  ┌──────┬─────┐", "     │ name │ n   │", "     ├──────┼─────┤", "     │ api  │ 3   │", "     └──────┴─────┘", "⏺ Done."];
+  const r = regions(rows(tool.join("\n")));
+  assert.deepEqual(r.map(({ kind, from, to }) => ({ kind, from, to })), [{ kind: "table", from: 1, to: 5 }]);
+  assert.deepEqual([r[0].table.head, r[0].table.rows], [["name", "n"], [["api", "3"]]]);
+  const fancy = "╒══════╤═════╕\n│ name │ n   │\n╞══════╪═════╡\n│ api  │ 3   │\n├──────┼─────┤\n│ web  │ 4   │\n╘══════╧═════╛";
+  assert.deepEqual(regions(rows(fancy))[0]?.table.rows, [["api", "3"], ["web", "4"]]);
+  const double = "╔══════╦═════╗\n║ name ║ n   ║\n╠══════╬═════╣\n║ api  ║ 3   ║\n╚══════╩═════╝";
+  assert.deepEqual(regions(rows(double))[0]?.table.head, ["name", "n"]);
+});
+
+test("not a drawn table: an agent's box of one column, a line off the grid, a table not finished yet", () => {
+  const box = "╭──────────────────╮\n│ ✻ Welcome!       │\n│   cwd: /tmp      │\n╰──────────────────╯";
+  const broken = "┌───┬───┐\n│ a │ b │\n│ c   d │\n└───┴───┘";
+  const columns = "┌───┬───┐\n│ a │ b │ c │\n└───┴───┘";
+  for (const text of [box, broken, columns]) assert.deepEqual(found(text), [], text);
+  const open = "┌───┬───┐\n│ a │ b │\n├───┼───┤\n" + "│ c │ d │\n".repeat(30).trimEnd();
+  assert.deepEqual(found(open), []);
+  assert.equal(scan(rows("x\n".repeat(30) + open)).settled, 30, "it waits for its last rule");
+});
+
+test("a Markdown document ends before a drawn table, which is a widget of its own", () => {
+  const text = "## Plan\n\n- read **a**\n- write `b`\n" + CLAUDE_TABLE.slice(2, 10).join("\n");
+  assert.deepEqual(found(text).map((r) => r.kind), ["markdown", "table"]);
+});

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What in a terminal's output becomes a widget (AC-56): a file printed by a command (cat, bat…),
-// fenced code, a Markdown document, a Mermaid diagram, and image files named in it. Pure: rows
+// fenced code, a Markdown document, a Mermaid diagram, a drawn table, and image files named in it. Pure: rows
 // are {text, eol, styled}, as term.js knows them; widgets.js draws what this finds. A wrong
 // widget hides real output and a missed one costs nothing, so the rules ask for clear signs.
+import { drawnTable, tableMarkdown, tableTop } from "./drawntable.js";
 import { tokens } from "./links.js";
 
 const MAX_LINES = 2000;      // a longer region stays plain text (rendering it would cost more than it gives)
@@ -24,8 +25,8 @@ const CODEISH = new RegExp([
 // a prompt mark after a short lead (Starship's "at 12:21 ❯ ", "[main] ❯ ")
 const PROMPT = /^(?:\S+@[\w.-]+[:\s].*?[$#%>](?:\s|$)|[$%❯➜λ»›](?:\s|$)|\(\S+\)\s.*?[$%#❯](?:\s|$)|[^❯➜›]{1,40}[❯➜›](?:\s|$))/;
 // the end of the output: a prompt, a line a program colored (a prompt's other lines usually are),
-// or a coding agent's next message or tool result (⏺ or ●, ⎿)
-const ends = (l) => l.styled || PROMPT.test(l.text) || /^\s*[⏺●⎿]/.test(l.text);
+// a coding agent's next message or tool result (⏺ or ●, ⎿), or a drawn table (a widget of its own)
+const ends = (l) => l.styled || PROMPT.test(l.text) || /^\s*[⏺●⎿]/.test(l.text) || tableTop(l.text);
 // a coding agent's tool output begins after this mark on its first line ("  ⎿  # Title")
 const TOOL_OUT = /^\s*⎿/;
 // prompts compared without their numbers: a clock, a counter or an exit code changes
@@ -53,10 +54,12 @@ export function logicalLines(rows) {
 }
 
 /** The regions of `rows` that become widgets, in order and never overlapping:
- *  {kind: "code"|"markdown"|"mermaid", from, to (row indexes, inclusive), lang, text, guessed}.
+ *  {kind: "code"|"markdown"|"mermaid"|"table", from, to (row indexes, inclusive), lang, text
+ *  (a table's as Markdown), guessed, table (drawntable.js: its cells)}.
  *  `end` (exclusive) is the first row that is not output yet (the cursor's, which may hold the
  *  next prompt); a fence still open there is left for later. Output a program colored itself
- *  (bat, glow, delta, a coding agent's own rendering) is never one: it is rendered already. */
+ *  (bat, glow, delta, a coding agent's own rendering) is never one: it is rendered already; but
+ *  a table it drew is, its rules breaking apart when the view is narrower than the pane. */
 export const regions = (rows, end) => scan(rows, end).found;
 
 /** regions(), and `settled`: the first row whose regions may still change as rows are added
@@ -68,9 +71,9 @@ export function scan(rows, end = rows.length) {
   const found = [];
   let open = lines.length;                                        // the first line still undecided
   let noRun = -1;
-  const add = (kind, a, b, lang, text, guessed = false) => {
-    if (b - a + 1 > MAX_LINES || !text.trim() || lines.slice(a, b + 1).some((l) => l.styled)) return;
-    found.push({ kind, from: lines[a].from, to: lines[b].to, lang, text, guessed, line: a, lastLine: b });
+  const add = (kind, a, b, lang, text, guessed = false, table = undefined) => {
+    if (b - a + 1 > MAX_LINES || !text.trim() || (!table && lines.slice(a, b + 1).some((l) => l.styled))) return;
+    found.push({ kind, from: lines[a].from, to: lines[b].to, lang, text, guessed, table, line: a, lastLine: b });
   };
   for (let i = 0; i < lines.length; i++) {
     const printed = printedFile(lines, i, next);
@@ -78,6 +81,13 @@ export function scan(rows, end = rows.length) {
     if (printed) {
       if (printed.to >= printed.from) add(printed.kind, printed.from, printed.to, printed.lang, body(lines, printed.from, printed.to));
       i = printed.to;
+      continue;
+    }
+    const table = drawnTable(lines, i, MAX_LINES);
+    if (table === null) { open = Math.min(open, i); break; }      // its last rule is not printed yet
+    if (table) {
+      add("table", i, table.to, "", tableMarkdown(table), false, table);
+      i = table.to;
       continue;
     }
     // a run that is no document has none inside it either (its fences are still looked at); a
@@ -218,7 +228,7 @@ function markdownRun(lines, i) {
   if (!strong || kinds.size < 2 || signs < 3 || codeish > filled * 0.3) return { ok: false, to: last, open };
   let to = last;                                                  // the paragraph after the last sign
   const prose = (k) => k < lines.length && lines[k].text.trim() && !ends(lines[k]);
-  if (!prose(to + 1) && prose(to + 2)) to++;                      // after a blank line
+  if (to + 1 < lines.length && !lines[to + 1].text.trim() && prose(to + 2)) to++;   // after a blank line
   while (prose(to + 1)) to++;
   return { ok: true, to, open };
 }

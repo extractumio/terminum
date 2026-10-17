@@ -52,7 +52,7 @@ export function hostOf(el, onClick) {
 /** The event came from inside a widget (its taps are not the terminal's). */
 export const inWidget = (e) => e.composedPath?.().some((n) => n instanceof Element && n.hasAttribute("data-wg"));
 
-const NAMES = { code: "Code", markdown: "Markdown", mermaid: "Diagram" };
+const NAMES = { code: "Code", markdown: "Markdown", mermaid: "Diagram", table: "Table" };
 
 function button(act, label, title, iconName) {
   const b = document.createElement("button");
@@ -108,6 +108,8 @@ export function regionWidget(region, ctx) {
       pre.append(code);
       body.append(pre);
       renderers().then((r) => r.highlight(code, region.text, region.lang)).catch(fail);
+    } else if (region.kind === "table") {
+      body.append(tableElement(region.table));
     } else if (region.kind === "markdown") {
       renderers().then(async (r) => {
         ctx.change(() => { body.innerHTML = r.markdownHtml(region.text); });   // the panel's rules: raw HTML is off
@@ -123,6 +125,24 @@ export function regionWidget(region, ctx) {
     }
   };
   return wg;
+}
+
+/** A drawn table's cells (drawntable.js) as a table, put in as text. */
+function tableElement({ head, rows, align }) {
+  const table = document.createElement("table");
+  const line = (cells, tag) => {
+    const tr = document.createElement("tr");
+    cells.forEach((text, c) => {
+      const cell = document.createElement(tag);
+      cell.textContent = text;
+      if (align[c]) cell.className = "num";
+      tr.append(cell);
+    });
+    return tr;
+  };
+  if (head) table.createTHead().append(line(head, "th"));
+  table.createTBody().append(...rows.map((r) => line(r, "td")));
+  return table;
 }
 
 /** A Mermaid diagram as an image (SVG data URL), opened full screen on a click. */
