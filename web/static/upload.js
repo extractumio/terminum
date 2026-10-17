@@ -6,6 +6,22 @@
 // paths are pasted together.
 import { shellWord } from "./input.js";
 
+// what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
+const TAKEN = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+
+/** The image as terminumd takes it: as it is, else drawn into a PNG (TIFF from Preview, HEIC). */
+export async function asTaken(blob) {
+  if (TAKEN.includes(blob.type)) return blob;
+  const bitmap = await createImageBitmap(blob).catch(() => null);
+  if (!bitmap) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  canvas.getContext("2d").drawImage(bitmap, 0, 0);
+  bitmap.close();
+  return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+}
+
 export function uploads({ sid, paste, toast, hideToast }) {
   /** Saves one file: {path} or {error}. */
   async function save(blob, what, url, from) {
@@ -37,7 +53,11 @@ export function uploads({ sid, paste, toast, hideToast }) {
 
   const fileUrl = (f) => `/upload?name=${encodeURIComponent(f.name)}&sid=`;
   return {
-    pasteImage: (blob) => send([[blob, "/paste?sid="]], "image"),
+    async pasteImage(blob) {
+      const image = await asTaken(blob);
+      if (!image) return toast(`This browser cannot read a ${blob.type.replace("image/", "").toUpperCase()} image: nothing was pasted.`, 6000);
+      return send([[image, "/paste?sid="]], "image");
+    },
     uploadFile: (file) => send([[file, fileUrl(file)]], "file"),
     /** Files dropped anywhere on the page (a drop the page did not take would open the file in
      *  the browser and leave the page, with any unsaved edits in View). */

@@ -225,7 +225,7 @@ pub struct PasteName {
     name: String,
 }
 
-/// On an agent: `POST /api/paste?name=` saves the body in ~/.cache/terminum/paste (AC-85).
+/// On an agent: `POST /api/paste?name=` saves the body in ~/.terminum/tmp (AC-85).
 pub async fn agent_paste(axum::extract::Query(q): axum::extract::Query<PasteName>, body: axum::body::Bytes) -> Response {
     let dir = crate::config::home().join(crate::page::upload::REMOTE_DIR);
     if body.len() > crate::page::upload::MAX_BYTES {

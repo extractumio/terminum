@@ -293,7 +293,7 @@ export class Input {
     if (window.isSecureContext && navigator.clipboard?.read) {
       try {
         for (const item of await navigator.clipboard.read()) {
-          const type = item.types.find((t) => t.startsWith("image/"));
+          const type = item.types.find((t) => t === "image/png") ?? item.types.find((t) => t.startsWith("image/"));
           if (type) return this.options.pasteImage(await item.getType(type));
         }
       } catch { /* denied or no image: try text */ }

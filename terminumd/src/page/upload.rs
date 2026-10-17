@@ -2,8 +2,8 @@
 //! Pasted images and uploaded files (AC-36, AC-85): `POST /paste?sid=` (an image) and
 //! `POST /upload?name=&sid=` (any file) are saved where the pane's shell runs, named by UTC
 //! time and 8 random hex digits, 0600 in a 0700 folder; the page pastes the path it gets.
-//! On this Mac in $TMPDIR/terminum-paste; on a host through its files agent, in
-//! ~/.cache/terminum/paste. Pastes older than 7 days go at the next one.
+//! In ~/.terminum/tmp on this Mac, and on a host through its files agent in the host's
+//! ~/.terminum/tmp. Pastes older than 7 days go at the next one.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -25,7 +25,7 @@ const AT_ONCE: usize = 2;
 static RUNNING: AtomicUsize = AtomicUsize::new(0);
 
 /// The folder on a host, under its $HOME.
-pub const REMOTE_DIR: &str = ".cache/terminum/paste";
+pub const REMOTE_DIR: &str = ".terminum/tmp";
 
 #[derive(Deserialize)]
 pub struct PasteQuery {
@@ -143,9 +143,9 @@ pub fn save_in(folder: &Path, name: &str, data: &[u8]) -> Result<PathBuf, String
     Ok(path)
 }
 
-/// This Mac's paste folder: TM_PASTE_DIR, else $TMPDIR/terminum-paste.
+/// This Mac's paste folder: TM_PASTE_DIR, else ~/.terminum/tmp.
 pub fn local_dir() -> PathBuf {
-    std::env::var_os("TM_PASTE_DIR").map(PathBuf::from).unwrap_or_else(|| std::env::temp_dir().join("terminum-paste"))
+    std::env::var_os("TM_PASTE_DIR").map(PathBuf::from).unwrap_or_else(|| crate::config::tm_home().join("tmp"))
 }
 
 struct Slot;

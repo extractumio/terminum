@@ -222,8 +222,8 @@ Scenario: AC-35 failure — the folder is unknown
 ```gherkin
 Scenario: AC-36 happy path — paste an image
   Given the shown pane runs on this Mac, or on a host whose files helper is enabled
-  When the user pastes an image (PNG, JPEG, GIF, WebP) into the terminal, or presses the hot key Paste over HTTPS with an image on the clipboard
-  Then the page uploads it (at most 20 MB, 2 at once, 300 s to arrive), terminumd saves it where the pane's shell runs ("$TMPDIR/terminum-paste/" on the Mac, "~/.cache/terminum/paste/" on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste
+  When the user pastes an image (a screenshot: PNG, JPEG, GIF, WebP; another type the browser can draw, such as TIFF from Preview or HEIC in Safari, is turned into a PNG first) into the terminal, or presses the hot key Paste over HTTPS with an image on the clipboard
+  Then the image is never typed as text; the page uploads it (at most 20 MB, 2 at once, 300 s to arrive), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste
 
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
@@ -444,7 +444,7 @@ Trace record (`logs/trace-*.jsonl`): `{"at": 1792003600123, "k": 17, "kind": "ch
 | `web.history` (web.json) | `10000` | `20000` | lines a page may load |
 | `page.widgets` (settings.json) | `true` | `false` | widgets off (text only) |
 | `page.folds` | `true` | `false` | folds off |
-| `TM_PASTE_DIR` | `$TMPDIR/terminum-paste` | `/tmp/tm-paste` | where pasted files go on the Mac |
+| `TM_PASTE_DIR` | `~/.terminum/tmp` | `/tmp/tm-paste` | where pasted files go on the Mac |
 
 ### Performance
 
@@ -513,7 +513,7 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] AC-33 — `cargo test page::bookmarks` and `web/test/e2e_marks.mjs` → pass.
 - [x] AC-34 — `cargo test page::search` and `e2e_marks.mjs` search → pass. The `found` message keeps iterm-enhancer's shape `{ref, sid, q, hits, total}`, as `find.js` reads it.
 - [x] AC-35 — `web/test/e2e_term.mjs` links cases → pass.
-- [x] AC-36 — `web/test/e2e_clip.mjs` (Chromium) and `scripts/e2e_remote.py` (paste on a host) → pass; `page::upload` unit tests.
+- [x] AC-36 — `web/test/e2e_livepaste.mjs` (in `e2e_live.mjs`, a real private terminumd and tmux, Chromium and WebKit): a screenshot pasted into the terminal lands in `~/.terminum/tmp` (0600) and the shell gets its path as one word, never the image as text; a TIFF is pasted as a PNG (WebKit; Chromium draws no TIFF and says so); `scripts/e2e_remote.py` (on a host, in its `~/.terminum/tmp`) → pass; `page::upload` unit tests. Not checked: a paste into a real Claude Code pane (its turning a pasted image path into an attachment is Claude Code's).
 - [x] AC-37 — `web/test/e2e_touch.mjs`, `e2e_clip.mjs` (Chromium only: they need its touch tools) → pass.
 - [x] AC-38 — `web/test/e2e_trace.mjs`, `e2e_ctxtrace.mjs` and `scripts/e2e_core.py` (a traced key's stages, the file without typed text) → pass.
 - [x] AC-39 — `cargo test tmux::agentstate` and `web/test/e2e_app.mjs` reminders → pass.
