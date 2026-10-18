@@ -68,10 +68,12 @@ export async function webCtxTrace(browser, name = "chromium") {
     badLines(text).slice(0, 5).join(" ⏎ "));
   const keys = events(text, "key"), echo = events(text, "echo");
   const ins = sent.filter((m) => m.t === "in");
+  // keys echoed in one frame are one echo of keys: n, numbered by its first key
+  const firsts = echo.reduce((a, e) => [...a, (a.at(-1) ?? 0) + (a.length ? echo[a.length - 1].keys ?? 1 : 1)], []);
   check(`${at} keys as sent with their number, each echo timed from the send to the screen and the paint, with the bridge's stages`,
     keys.map((k) => k.d).join("") === "ab\r" && keys.every((k) => ["keydown", "input"].includes(k.p) && k.in >= 0) && ins.map((m) => m.k).join() === "1,2,3" &&
-      echo.length === 3 && echo.every((e) => e.rt >= 0 && e.paint >= 0 && e.total >= e.rt && e.br?.bt === 9 && e.br.via === "text" && e.net === Math.round((e.rt - 9) * 10) / 10) &&
-      echo.map((e) => e.k).join() === "1,2,3", JSON.stringify({ keys, echo }));
+      echo.reduce((n, e) => n + (e.keys ?? 1), 0) === 3 && echo.every((e) => e.rt >= 0 && e.paint >= 0 && e.total >= e.rt && e.br?.bt === 9 && e.br.via === "text" && e.net === Math.round((e.rt - 9) * 10) / 10) &&
+      echo.map((e) => e.k).join() === firsts.join(), JSON.stringify({ keys, echo }));
   const kd = events(text, "kd");
   check(`${at} keys in another field are named, never what they write`,
     kd.some((k) => k.on === "#filter" && k.k === "·") && kd.some((k) => k.on === "#filter" && k.k === "Escape") &&

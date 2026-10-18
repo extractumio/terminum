@@ -34,6 +34,8 @@ export async function webScreen(browser, name) {
     check("AC-13 size: after opening a pane the page sends the grid that fits its terminal at the chosen text size",
       sent.indexOf(first) > subAt && first.typing === false && first.screen === false && Math.abs(first.cols - want.cols) <= 1
         && Math.abs(first.rows - want.rows) <= 1, JSON.stringify({ first, want }));
+    // until the view's sizes settle (a slow browser lays the page out late), then type
+    for (let n = -1; n !== sizes().length;) { n = sizes().length; await pause(page, 600); }
     const n0 = sizes().length;
     await page.evaluate(() => document.getElementById("kbd").focus());
     await page.keyboard.type("ab");
@@ -42,8 +44,7 @@ export async function webScreen(browser, name) {
     check("AC-13 size: the first key after a pause sends the size as typing, once a second at most",
       typing.length === 1 && typing[0].typing === true, JSON.stringify(typing));
     await page.click("#menubtn");
-    await page.click("#bigger");
-    await page.click("#bigger");
+    await page.evaluate(() => { document.getElementById("bigger").click(); document.getElementById("bigger").click(); });   // two changes at once
     await page.keyboard.press("Escape");
     await pause(page, 150);
     const early = sizes().length;
@@ -201,12 +202,14 @@ export async function webScreen(browser, name) {
     check("AC-13 sized: a refused resize is said with tmux's reason; this page's own size clears it",
       refused === "Sized for another screen (180×50): size too small" && await page.isHidden("#sized"), JSON.stringify(refused));
 
-    // too small for Screen mode: the last size stays
-    const n3 = sizes().length;
-    await page.setViewportSize({ width: 300, height: device.viewport.height });
+    // too small for Screen mode: the last size stays (big text first, its size settled; then a
+    // narrow view in one step, so no size between the two is a valid one)
     await page.click("#menubtn");
     for (let i = 0; i < 16; i++) await page.click("#bigger");
     await page.keyboard.press("Escape");
+    await pause(page, 600);
+    const n3 = sizes().length;
+    await page.setViewportSize({ width: 300, height: device.viewport.height });
     await pause(page, 600);
     const small = await page.evaluate(() => document.getElementById("scrlabel").textContent);
     check("AC-05 Screen mode: a view under 20×5 says \"Too small for Screen mode\" and keeps the last size",

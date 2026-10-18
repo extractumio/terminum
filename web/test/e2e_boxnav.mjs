@@ -192,7 +192,7 @@ export async function webBoxNav(browser, name = "chromium") {
     const rows = [line("⏺ Done."), line(""), line("─".repeat(rec.cols)), ...box, line("─".repeat(rec.cols)), line("  ~/app main")];
     say({ t: "screen", sid: "S1", full: true, n: rows.length, cols: rec.cols, rows: 30, ch: rows.map((r, i) => [i, r]) });
     await page.waitForTimeout(30);
-    const got = await page.evaluate(async () => {
+    const read = () => page.evaluate(async () => {
       const { layout } = await import("/boxnav.js");
       const rows = [...document.querySelectorAll("#screen .blk.inbox .ln:not(.rule)")];
       const lay = layout(rows.map((r) => ({ len: r.textContent.replace(/\ufe0e/g, "").trimEnd().length, glue: r.classList.contains("glue") })));
@@ -202,6 +202,9 @@ export async function webBoxNav(browser, name = "chromium") {
       for (let t = w.nextNode(); t && !cur.contains(t); t = w.nextNode()) col += t.data.replace(/\ufe0e/g, "").length;
       return { joined: rows.slice(0, -1).every((r) => r.classList.contains("join")), at: lay[rows.indexOf(el)].start + Math.max(0, col - 2) };
     });
+    // the page draws at its own pace (at most 30 a second): read until it drew this frame, a second at most
+    let got = await read();
+    for (const t0 = Date.now(); (!got.joined || got.at !== k + 1) && Date.now() - t0 < 1000; got = await read()) await page.waitForTimeout(20);
     if (!got.joined || got.at !== k + 1) wrong.push({ k, ...got });
   }
   check(`${at} Claude Code's recorded rows: all ${rec.frames.length} frames one line on the page, the cursor where it is in the text`,

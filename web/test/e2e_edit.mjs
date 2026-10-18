@@ -103,20 +103,28 @@ export async function webEdit(browser) {
 
   // a held delete: characters first, then words (Ctrl+W), at most one each WORD_GAP
   const held = sent.length;
-  await page.evaluate(async () => {
+  // how many repeats came before words were due: a busy browser's timers repeat slower than every 30 ms
+  const early = await page.evaluate(async () => {
     const k = document.getElementById("kbd");
     k.focus();
     const key = (type, repeat = false) => k.dispatchEvent(new KeyboardEvent(type, { key: "Backspace", code: "Backspace", repeat, bubbles: true, cancelable: true }));
+    const t0 = performance.now();
+    let n = 1;
     key("keydown");
-    for (const t0 = performance.now(); performance.now() - t0 < 2200;) { await new Promise((r) => setTimeout(r, 30)); key("keydown", true); }
+    while (performance.now() - t0 < 2200) {
+      await new Promise((r) => setTimeout(r, 30));
+      if (performance.now() - t0 < 1500) n++;
+      key("keydown", true);
+    }
     key("keyup");
+    return n;
   });
   await page.waitForTimeout(100);
   const deletes = sent.slice(held).filter((m) => m.t === "in").map((m) => m.data);
   const firstWord = deletes.indexOf("\x17"), words = deletes.filter((d) => d === "\x17").length;
   check(`${at} a held delete deletes characters, then after 1.5 s whole words, a few a second`,
-    deletes[0] === "\x7f" && firstWord >= 30 && deletes.slice(0, firstWord).every((d) => d === "\x7f")
-      && words >= 3 && words <= 9 && deletes.every((d) => d === "\x7f" || d === "\x17"), JSON.stringify({ n: deletes.length, firstWord, words }));
+    deletes[0] === "\x7f" && Math.abs(firstWord - early) <= 1 && deletes.slice(0, firstWord).every((d) => d === "\x7f")
+      && words >= 3 && words <= 9 && deletes.every((d) => d === "\x7f" || d === "\x17"), JSON.stringify({ n: deletes.length, early, firstWord, words }));
   await page.close();
 
   // at a shell's prompt words go too; after an Enter not, until the session list says the shell is back (nano: ^W searches)
