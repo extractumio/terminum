@@ -250,6 +250,15 @@ export async function webApp(browser) {
     parkedFoot.foot.join() === "false,false" && parkedFoot.cur, JSON.stringify(parkedFoot));
   send(screenOf("hi", ["  ~/p Opus 5.5 ctx:61%", "  ⏵⏵ bypass permissions on"]));
   await shownText("ctx:61%");
+  // typed into while it works: lines it shows only then (a shell, its tokens) wait behind ⓘ too
+  send(screenOf("Ис", ["  ~/p Opus 5.5 ctx:62%", "  ⏵⏵ bypass permissions on · 1 shell", "  756643 tokens"]));
+  await shownText("756643");
+  await page.waitForTimeout(100);
+  const working = await shown("#screen .blk.foot .ln");
+  check("AC-52 web app: on a phone the footer Claude Code shows while it works and is typed into waits behind the button too",
+    working.join() === "false,false,false", JSON.stringify(working));
+  send(screenOf("hi", ["  ~/p Opus 5.5 ctx:61%", "  ⏵⏵ bypass permissions on"]));
+  await shownText("ctx:61%");
   await page.click("#footfab");
   check("AC-52 web app: the button shows the footer", (await shown("#screen .blk.foot .ln")).join() === "true,true" && await $eval(() => document.getElementById("footfab").getAttribute("aria-pressed") === "true"));
   await page.click("#footfab");

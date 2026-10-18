@@ -43,7 +43,7 @@ if (embedded) document.body.classList.add("embed");
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
 const st = {
   groups: [], sid: embedded ?? store.get("sid", null),
-  mode: store.get("mode", {}), size: store.get("size", null), resized: false,
+  mode: store.get("mode", {}), size: null, base: null, step: store.get("sizeStep", 0), resized: false,
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true),
 };
@@ -75,7 +75,7 @@ const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"
 const screen = screenMode({ view, send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, sid: () => st.sid,
   refit: () => view.keepBottom(syncControls), defaults: () => settings.page() });
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
-  if (store.get("size", null) === null && page.textSize) setSize(narrow.matches ? Math.min(page.textSize, 13) : page.textSize, false);
+  if (page.textSize) setBase(page.textSize);
   screen.sync(); view.keepBottom(syncControls);
 } });
 
@@ -297,7 +297,7 @@ function toggleGroup(key) {
 function showCurrent(found) {
   $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
   $("curstate").replaceChildren(...[found && stateIcon(found.item.state)].filter(Boolean));
-  view.setAgent(!!found?.item.agent);
+  view.setAgent(found?.item.agent ?? null);
   if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); }
   else {
     const { group: g, item: it } = found;
@@ -378,7 +378,7 @@ function applyTheme(theme) {
   if (theme.sel) r.setProperty("--sel", theme.sel);
   if (theme.selfg) r.setProperty("--selfg", theme.selfg);
   document.querySelector('meta[name="theme-color"]').content = theme.bg;
-  if (st.size === null && !settings.page().textSize && theme.size) setSize(narrow.matches ? Math.min(theme.size, 13) : theme.size, false);
+  if (!settings.page().textSize && theme.size) setBase(theme.size);
   if (theme.font && document.fonts && theme.font !== shownFont) {
     shownFont = theme.font;
     const face = new FontFace("TermFont", `local("${theme.font.replace(/["\\]/g, "")}")`);
@@ -387,11 +387,12 @@ function applyTheme(theme) {
   view.setTheme(theme);
 }
 
+function setBase(px) { st.base = narrow.matches ? Math.min(px, 14) : px; setSize(st.base + st.step, false); }   // the theme's or settings.json's size, a phone's 14 at most; − and + step from it
 function setSize(px, save = true) {
   st.size = Math.max(SIZE_MIN, Math.min(SIZE_MAX, Math.round(px)));
   document.documentElement.style.setProperty("--size", `${st.size}px`);
   $("sizeval").textContent = st.size;
-  if (save) store.set("size", st.size);
+  if (save) store.set("sizeStep", st.step = st.size - (st.base ?? st.size));   // a step kept per browser: a new theme size still shows
   screen.changed();                                // the grid this view holds changed (AC-13)
 }
 
@@ -495,6 +496,5 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.clo
 $("bar").addEventListener("mousedown", (e) => { if (e.target.closest("#tools button")) e.preventDefault(); });
 
 $("hotkeys").hidden = !store.get("keys", false);
-if (st.size) setSize(st.size, false);
 syncControls();
 conn.connect();

@@ -24,7 +24,9 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
   let on = false, last = null, typedAt = -Infinity, settle = 0, elsewhere = null, small = false;
 
   const mode = () => modes[sid()] ?? defaults().screenMode ?? "auto";
-  const want = () => !!sid() && (mode() === "always" || (mode() === "auto" && !!view.alt));
+  // auto: a full-screen program, but not Codex's own full screen: its input box and footer are the page's (Claude Code draws
+  // none, so a full-screen program in its pane is one)
+  const want = () => !!sid() && (mode() === "always" || (mode() === "auto" && !!view.alt && view.agent !== "codex"));
   /** The grid that fits the terminal at the chosen text size (not Fit's scaled one). */
   const grid = () => view.gridFit(view.chosenSize());
 

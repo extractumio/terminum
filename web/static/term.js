@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The terminal view: scrollback + screen lines, kept in sync with incremental server messages.
-import { inputBox, parkedCaret, statusKey } from "./agentbox.js";
+import { codexBox, codexStatus, inputBox, parkedCaret, statusKey } from "./agentbox.js";
+import { listOpen } from "./boxnav.js";
 import { cursorCol, typedEnd, withCursor } from "./cursor.js";
 import { lineRec, palette } from "./render.js";
 import { framed } from "./frame.js";
@@ -37,7 +38,9 @@ const endsParagraph = (r) => r.el.classList.contains("eol") && !r.el.classList.c
 // nothing drawn: no text, no background, no inverse cell
 const blankRow = (r) => !r.txt.trim() && !r.data.r.some(([, , bg, flags]) => bg != null || flags & 32);
 // a row as agentbox.js knows it (the bridge's data: a row the page drew the cursor on keeps it in .orig)
-const boxRow = (r) => ({ rule: r.el.classList.contains("rule"), blank: !r.txt.trim(), txt: r.txt, end: typedEnd(r.orig ?? r.data) });
+// a row's background: the one all its text shares, else null (Codex's input stands on one)
+const rowBg = (data) => { const bgs = new Set((data?.r ?? []).filter((x) => (Array.isArray(x[0]) ? x[0].join("") : x[0]).length).map((x) => x[2] ?? null)); return bgs.size === 1 ? [...bgs][0] : null; };
+const boxRow = (r) => ({ rule: r.el.classList.contains("rule"), blank: !r.txt.trim(), txt: r.txt, end: typedEnd(r.orig ?? r.data), bg: rowBg(r.orig ?? r.data) });
 
 export class TermView {
   /** keep: the most history lines on the page while it follows the output (older ones load
@@ -246,16 +249,22 @@ export class TermView {
   // behind the button, so a "/" or "@" list or a new notice there stays in sight.
   findBox(rows) {
     const cursor = rows.findIndex((r) => r.el.querySelector(".cur"));
-    let at = inputBox(rows.map(boxRow), cursor, (k) => this.histRow(k));
+    const brs = rows.map(boxRow);
+    let at = inputBox(brs, cursor, (k) => this.histRow(k)) ?? codexBox(brs, cursor);
     const was = this.box, rule = (i) => (i < 0 ? this.hist.at(i) : rows[i])?.el.classList.contains("rule");
     if (!at && cursor < 0 && was && was.end < rows.length && rule(was.top) && rule(was.bottom)) at = was;
     this.box = at;
+    rows.forEach((r, i) => r.el.classList.toggle("boxedge", !!at?.codex && (i === at.top || i === at.bottom)));   // drawn as the rules it has not
     this.relinkBox(at ? rows.slice(Math.max(0, at.top + 1), at.bottom) : []);
     if (!at) return null;
     if (cursor > at.top && cursor < at.bottom) this.caret = { top: at.top, bottom: at.bottom, row: cursor, col: cursorCol(rows[cursor].data), txt: rows[cursor].txt };
     const below = rows.slice(at.bottom + 1, at.end + 1);
-    if (cursor >= 0 && typedEnd(rows[cursor].data) <= 2) this.idle = new Set(below.map((r) => statusKey(r.txt)));   // only the prompt (a faint suggestion is not typed)
-    for (const r of below) r.el.classList.toggle("status", !!this.idle?.has(statusKey(r.txt)));
+    // learnt while only the prompt is there (a faint suggestion is not typed): every status line seen so, idle or working, the latest 40
+    if (cursor >= 0 && typedEnd(rows[cursor].data) <= 2) this.idle = new Set([...(this.idle ?? []), ...below.map((r) => statusKey(r.txt))].slice(-40));
+    // the footer waits behind ⓘ but for a "/" or "@" list the input opened (those rows are never learnt)
+    const typed = cursor > at.top && cursor < at.bottom ? [...rows[cursor].txt].slice(2, Math.max(2, cursorCol(rows[cursor].data))).join("") : "";
+    const list = listOpen(typed, cursor === at.top + 1);
+    for (const r of below) r.el.classList.toggle("status", !list || !!this.idle?.has(statusKey(r.txt)) || (!!at.codex && codexStatus(r.txt)));
     return at;
   }
   /** The history's k-th row from its end as inputBox's (the top of an input taller than the screen). */
@@ -289,11 +298,12 @@ export class TermView {
       if (i >= 0) { this.link(base + i - 1); this.link(base + i); }
     }
   }
-  /** The shown pane runs a coding agent (or no longer): its input box is drawn as a panel. */
+  /** The shown pane runs a coding agent ("claude", "codex"; null: none): its input box is drawn as a panel. */
   setAgent(on) {
     if (this.agent === on) return;
     this.agent = on;
     this.box = this.idle = this.caret = null;
+    this.onAlt?.();                              // a coding agent's own full screen stays in Lines mode (screenmode.js)
     this.keepBottom(() => { this.relinkBox([]); this.groupScreen(); });
   }
 

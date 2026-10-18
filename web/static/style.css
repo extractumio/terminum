@@ -66,15 +66,12 @@ svg.lu circle { fill: none; stroke: currentColor; }
 @media (hover: hover) { .item:hover { background: var(--surface-2); } .item:hover .pbar { opacity: .85; } }
 .item.on { background: color-mix(in srgb, var(--accent) 16%, var(--chrome)); }
 /* a session's bar, as tall as its two lines: full for the shown session, half for the others;
-   it breathes while the session's agent works */
+   while its agent works it pulses, its color glowing and fading: a state, not motion (nothing
+   moves), so it stays with Reduce Motion too */
 .pbar { width: 4px; align-self: stretch; min-height: 30px; margin: 1px 3px; border-radius: 2px; background: var(--dot, var(--faint)); opacity: .5; }
 .pbar.on { opacity: 1; }
-.pbar.busy { animation: breathe 1.6s ease-in-out infinite; }
-.pbar.on.busy { animation-name: breathe-on; }
-@keyframes breathe { 50% { opacity: .15; } }
-@keyframes breathe-on { 50% { opacity: .45; } }
-/* a working agent: a ring of the dot's color grows from it and fades, as a radar ping */
-@media (prefers-reduced-motion: reduce) { .pbar.busy { animation: none; } }
+.pbar.busy { opacity: 1; animation: pulse-bar 1.4s ease-in-out infinite; }
+@keyframes pulse-bar { 0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--dot, transparent); } 50% { opacity: .25; box-shadow: none; } }
 .item .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .item .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .item .idx { flex: 0 0 auto; width: 14px; text-align: right; color: var(--muted); font: 11px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
@@ -249,6 +246,10 @@ svg.lu circle { fill: none; stroke: currentColor; }
 #term .ln.rule.full { display: block; width: auto; height: 1.25em; overflow: hidden; white-space: pre; -webkit-text-fill-color: transparent;
   background: linear-gradient(var(--rule-color), var(--rule-color)) center / 100% var(--rule-width) no-repeat; }
 #term .ln.spare { display: none; }      /* empty rows below the screen's last text and cursor (term.js) */
+/* Codex's input box has no rules: the blank rows above and below its prompt are drawn as lines */
+#term .ln.boxedge { display: block; width: auto; height: 1.25em; background: linear-gradient(var(--edge-c), var(--edge-c)) center / 100% 1px no-repeat;
+  --edge-c: color-mix(in srgb, var(--t-fg) 28%, transparent); }
+#term.wrap .ln.boxedge::before, #term.wrap .ln.boxedge::after { content: none; }   /* a block: no line end of its own */
 #term.grid { white-space: pre; }
 #term.grid .ln { display: block; min-height: 1.25em; width: max-content; }
 #term .c1, #term .c2 { display: inline-block; text-align: center; white-space: pre; }
@@ -313,7 +314,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
   body:has(#term.wrap.hasbox) #fabs #footfab { display: grid; }
   #term.wrap .blk.inbox { margin: 8px 0 4px; padding: 5px 10px 6px; border-radius: 12px; min-height: calc(2.5em + 13px);   /* two rows at least */
     border: 1px solid color-mix(in srgb, var(--t-fg) 24%, transparent); background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg)); }
-  #term.wrap .inbox .ln.rule { display: none; }                /* its rules go, the top one's title too */
+  #term.wrap .inbox :is(.ln.rule, .ln.boxedge) { display: none; }   /* its rules go (the top one's title too), Codex's lines too */
   #term.wrap .blk.foot { margin: 0 2px 4px; }
   #term.wrap:not(.showfoot) .foot .ln.status { display: none; }
   #term.wrap.showfoot .foot .ln.status { font-size: 11.5px; opacity: .85; }

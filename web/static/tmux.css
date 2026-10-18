@@ -84,6 +84,7 @@ dialog, .footform, #findbox, #asks, .footform :is(input, select), #findq, #markn
 /* the shown pane's quick shell (AC-88): below the terminal or on its left, its share dragged at its edge */
 #termrow { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 #termrow.left { flex-direction: row-reverse; }
+#termrow.right { flex-direction: row; }
 body.wide #termrow { grid-row: 6; }
 #termrow > #term { flex: 1 1 0; min-width: 0; min-height: 0; }
 #quick { flex: 0 0 var(--quick, 33%); display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--t-bg); }
@@ -95,7 +96,7 @@ body.wide #termrow { grid-row: 6; }
 #quick .qbar .icon:hover { color: var(--t-fg); background: var(--chrome-2); }
 #quickframe { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--t-bg); }
 #quickgrip { flex: 0 0 6px; cursor: row-resize; background: var(--chrome); touch-action: none; }   /* a splitter of the chrome's color */
-#termrow.left #quickgrip { cursor: col-resize; }
+#termrow:is(.left, .right) #quickgrip { cursor: col-resize; }
 #quickgrip:hover, #quickgrip:focus-visible, #termrow.dragging #quickgrip { background: var(--accent); outline: none; }
 #termrow.dragging iframe { pointer-events: none; }
 #quickbtn[aria-pressed="true"] { color: var(--accent); }

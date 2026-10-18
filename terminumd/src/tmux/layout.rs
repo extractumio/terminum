@@ -107,7 +107,7 @@ fn quick_rows(server: &Server, mut items: Vec<Value>, panes: &[&PaneFields]) -> 
             has.insert(i);
             of_window.insert(p.window_id.as_str(), i);
             items[i]["quick"] = json!(server.key(&p.pane_id));
-            items[i]["quickSide"] = json!(if p.quick_side == "left" { "left" } else { "bottom" });
+            items[i]["quickSide"] = json!(match p.quick_side.as_str() { "left" => "left", "right" => "right", _ => "bottom" });
         }
     }
     for (row, p) in items.iter_mut().zip(panes) {

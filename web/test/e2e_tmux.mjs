@@ -34,7 +34,7 @@ export async function webTmux(browser, name) {
       link: document.getElementById("customcss").getAttribute("href"),
       after: [...document.querySelectorAll('link[rel="stylesheet"]')].at(-1)?.id }));
     check("AC-19 settings: page defaults apply to a browser with no choice of its own (text size, Grid), its message is a toast",
-      got.size === (phone ? "13" : "15") && got.grid === "true" && got.toast === settings.messages[0], JSON.stringify(got));
+      got.size === (phone ? "14" : "15") && got.grid === "true" && got.toast === settings.messages[0], JSON.stringify(got));
     check("AC-18 settings: the hot keys panel shows hotkeys.json's rows", JSON.stringify(got.keys) ===
       JSON.stringify([["F5", "^R", "git status", "Paste"], ["⇧↩", "↑", "⌥x", "Fn"]]), JSON.stringify(got.keys));
     const typed = async (label) => { const n = sent.length; await page.click(`#hotkeys button.key:text-is("${label}")`); await pause(page, 100); return sent.slice(n).filter((m) => m.t === "in").map((m) => m.data).join(""); };

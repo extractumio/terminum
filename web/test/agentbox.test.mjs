@@ -55,6 +55,8 @@ test("the input's first row is the prompt, a menu between rules is not an input"
 test("a status line is known again when only its numbers changed", () => {
   assert.equal(statusKey("  ~/p ctx:55% lim:-/56% · 1 shell"), statusKey("~/p ctx:61% lim:-/57% · 2 shell"));
   assert.notEqual(statusKey("⏵⏵ bypass permissions on"), statusKey("⏵⏵ accept edits on"));
+  assert.equal(statusKey("  ⏵⏵ bypass permissions on (shift+tab to cycle)"), statusKey("⏵⏵ bypass permissions on · 1 shell"), "idle and working: the same line");
+  assert.notEqual(statusKey("  /help   Get help with using Claude Code"), statusKey("⏵⏵ bypass permissions on"));
 });
 
 test("Claude Code's cursor left below its footer: the caret last seen in the box, else the input's end", async () => {
@@ -86,4 +88,24 @@ test("Claude Code's cursor left below its footer: the caret last seen in the box
   assert.equal(parkedCaret(rows("....... "), 7, null), null, "no box");
   assert.equal(parkedCaret(first(rows("-...-.. "), 1, "❯ 1. Yes"), 7, null), null, "below a menu");
   assert.equal(parkedCaret(rows("-.-" + ".".repeat(13) + " "), 16, null), null, "far below the box: output");
+});
+
+test("Codex's box: its prompt row on a background of its own between two blank rows, its footer below", async () => {
+  const { codexBox, codexStatus } = await import("../static/agentbox.js");
+  // measured (codex in tmux, its alternate screen): output, a blank row, "› Ask Codex…" on rgb(30,30,30), a blank row, two status lines
+  const r = (txt, bg = null) => ({ rule: false, blank: !txt.trim(), txt, bg });
+  const screen = () => [r("• Done."), r(""), r(""), r("› Ask Codex to do anything", "#1e1e1e"), r(""),
+    r("  GPT-6.1 high · ~/p · main · Ready · Context 61% left"), r("  ← for agents · ? for shortcuts")];
+  assert.deepEqual(codexBox(screen(), 3), { top: 2, bottom: 4, end: 6, codex: true });
+  const long = screen();
+  long.splice(4, 0, r("  and a second line", "#1e1e1e"));
+  assert.deepEqual(codexBox(long, 4), { top: 2, bottom: 5, end: 7, codex: true }, "a long input: its rows of the same background");
+  assert.equal(codexBox(screen(), 5), null, "the cursor in the footer");
+  const plain = screen(); plain[3].bg = null;
+  assert.equal(codexBox(plain, 3), null, "no background of its own");
+  const other = screen(); other[3].txt = "$ ls";
+  assert.equal(codexBox(other, 3), null, "not its prompt");
+  const tight = screen(); tight[2] = r("text above");
+  assert.equal(codexBox(tight, 3), null, "no blank row above it");
+  assert.ok(codexStatus(screen()[5].txt) && codexStatus(screen()[6].txt) && !codexStatus("  /model  choose the model"));
 });

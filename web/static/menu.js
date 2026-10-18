@@ -22,7 +22,7 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
   };
   function syncItems() {
     const found = current();
-    for (const id of ["splitright", "splitbelow", "quickbelow", "quickleft", "closepane"]) $(id).disabled = !found;
+    for (const id of ["splitright", "splitbelow", "quickbelow", "quickright", "quickleft", "closepane"]) $(id).disabled = !found;
     $("movewin").hidden = !targets().length;
   }
 
@@ -30,6 +30,7 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
   $("splitright").onclick = () => paneSend({ t: "split", how: "right" });
   $("splitbelow").onclick = () => paneSend({ t: "split", how: "below" });
   $("quickbelow").onclick = () => { close(); quick("bottom"); };     // AC-88
+  $("quickright").onclick = () => { close(); quick("right"); };
   $("quickleft").onclick = () => { close(); quick("left"); };
   $("closepane").onclick = async () => {
     const found = current();

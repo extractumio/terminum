@@ -158,6 +158,8 @@
     <div id="markpane" class="box scrolls" role="region" aria-label="Bookmarks of this session" hidden></div>
     <!-- Search of the session's history (AC-58): the magnifier, its field, its matches' marks. -->
     <button id="findfab" type="button" hidden title="Find in this session" aria-label="Find in this session" aria-expanded="false" aria-controls="findbox"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
+    <!-- The view split: the pane's quick shell below (AC-88), under the magnifier; ⌘D on the right, ⌘⇧D below. -->
+    <button id="splitfab" type="button" hidden title="Split: a terminal below (⌘⇧D; on the right: ⌘D)" aria-label="Split the view: a terminal below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 8V5c0-1 1-2 2-2h10c1 0 2 1 2 2v3"/><path d="M19 16v3c0 1-1 2-2 2H7c-1 0-2-1-2-2v-3"/><path d="M4 12h16"/></svg></button>
     <form id="findbox" class="box" role="search" hidden>
       <input id="findq" class="field" type="search" placeholder="Find in this session" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" maxlength="200" aria-label="Find in this session">
       <button type="submit" class="primary">Find</button>
@@ -233,7 +235,8 @@
     <button id="resize" class="row" type="button"><span><span class="label">Fit to this screen</span><small>Resizes the pane in tmux until you restore it</small></span></button>
     <button id="splitright" class="row" type="button"><span>Split right</span></button>
     <button id="splitbelow" class="row" type="button"><span>Split below</span></button>
-    <button id="quickbelow" class="row" type="button"><span>Quick shell below<small>A shell of its own in this pane's folder</small></span></button>
+    <button id="quickbelow" class="row" type="button"><span>Quick shell below<small>A shell of its own in this pane's folder · ⌘⇧D</small></span></button>
+    <button id="quickright" class="row wide-only" type="button"><span>Quick shell on the right<small>⌘D</small></span></button>
     <button id="quickleft" class="row wide-only" type="button"><span>Quick shell on the left</span></button>
     <button id="movewin" class="row" type="button" aria-expanded="false" aria-controls="movelist" hidden><span>Move window to session…</span></button>
     <div id="movelist" hidden></div>

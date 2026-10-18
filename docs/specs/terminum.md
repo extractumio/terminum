@@ -140,7 +140,7 @@ Scenario: AC-01 happy path — sessions, windows and panes
   And each group has a copy button (its title the command) that copies how another terminal attaches to that session: "tmux -L terminum attach -t =main" (a host's group: its session's name "terminum" beside the host's, and "ssh -t <recipe> -- <destination> 'tmux attach -t =terminum'")
   And a window the user named (automatic-rename off) shows that name; one tmux names after its program shows the pane's title, else its program; status marks of coding agents (✳ ✻ ✶ ◐ ⏺) are stripped
 Scenario: AC-01 happy path — what runs in a pane
-  Given rows running Claude Code, Codex and a shell
+  Given rows running Claude Code (its process named by its version, "2.1.302", whatever the window's title), Codex (also as npm's "node", by its screen) and a shell
   Then each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon; a build without the marks' files shows the terminal icon for them
 Scenario: AC-01 happy path — a folder's color
   Given rows in ~/work/api, ~/work/web, ~/notes and two in ~/tools, and a row in ~/work/api/db
@@ -259,6 +259,9 @@ Scenario: AC-05 happy path — mc on a phone
   And mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
   When the user presses F10 (the hot keys' Fn row), Esc, arrows, Enter, ⌃O
   Then they reach mc as tmux's key names (AC-03) and mc acts on them
+Scenario: AC-05 edge — a coding agent's own full screen
+  Given the shown pane runs Codex, which draws on the alternate screen
+  Then the page stays in Lines mode (Screen mode "auto" is for other programs; "always" still gives the grid): its input box and footer are the page's (AC 40)
 Scenario: AC-05 happy path — the program ends
   When mc exits
   Then #{alternate_on} is 0, the pane is resized back to its previous size (or left as the policy says, AC-13), the page returns to the Lines mode it had, and the screen shows the shell with its history
@@ -447,7 +450,8 @@ Scenario: AC-10 edge — Tailscale Funnel
 Scenario: AC-12 happy path — defaults
   Given a fresh install
   Then "~/.terminum/themes/local.json" and "remote.json" exist (section 9: local = iterm-enhancer's Default profile, remote = its tmux profile) and settings.json says {"themes": {"default": "local", "hosts": {"*": "remote"}}}
-  And a local pane is shown in "local" and a remote host's pane in "remote": the page's chrome mixes the theme's background and foreground as iterm-enhancer's web app does, the terminal uses its ANSI palette, bold color and cursor colors, the font is "JetBrainsMonoNFM-Regular" at 14 (a font WebKit does not have falls back to Menlo)
+  And a local pane is shown in "local" and a remote host's pane in "remote": the page's chrome mixes the theme's background and foreground as iterm-enhancer's web app does, the terminal uses its ANSI palette, bold color and cursor colors, the font is "JetBrainsMonoNFM-Regular" at 15 (a font WebKit does not have falls back to Menlo)
+  And the text size is the theme's (settings.json's page.textSize over it; on a phone 14 at most); the menu's − and + step from it, a step remembered per browser, so a theme's new size still shows
 Scenario: AC-12 happy path — rules and live changes
   When the user writes {"hosts": {"devbox": "work"}, "sessions": {"notes": "paper"}} into settings.json and a "work.json" theme
   Then within 1 s (the folder is watched) panes of devbox wear "work", session "notes" wears "paper", others as before; every page redraws without reload
@@ -624,6 +628,8 @@ Scenario: AC-88 happy path — open, use, close
   Then terminumd runs "new-window -d -a -t @2 -c '/Users/alex/work/api'" and marks the new window with "@tm-quick %3", and the page shows its shell under the terminal (or on its left) in a third of the view, its keys going there while it has the focus; its row in the list sits under %3's, as "quick shell"
   When the user drags the edge between the two
   Then both terminals resize when the drag ends (6 rows or 20 columns at least, 80 % at most), and this browser remembers the share for that side
+  When the user presses ⌘D, or ⌘⇧D or the split button under the magnifier at the terminal's top right (as iTerm2's splits)
+  Then the pane's quick shell opens on the right (⌘D) or below, or the one it has moves there; the browser's own ⌘D (bookmark) does not come
   When the user presses ⇄ on its bar
   Then it moves to the other side
   When the user presses its ×
@@ -635,7 +641,7 @@ Scenario: AC-88 happy path — it stays with its pane
   Then the page shows %3 with its quick shell focused
 Scenario: AC-88 edge — a phone, a lost pane, a reboot
   Given a phone or a narrow window
-  Then there is no quick shell button; the menu's "Quick shell" shows the quick shell's pane as the shown pane (the list leads back to %3)
+  Then there is no quick shell beside the terminal: the button under the magnifier (and the menu's "Quick shell") shows the quick shell's pane as the shown pane, and on it that button leads back to %3 (so does the list)
   When %3 closes while its quick shell lives
   Then the quick shell is listed as an ordinary window (nothing is lost)
   When the layout is restored after a reboot (AC-15)

@@ -12,6 +12,7 @@ const FOOTER = 12;       // the most rows below the box: status lines, or a list
 // plain space and its number
 const PROMPT = /^[❯>!](\s|$)/, ITEM = /^[❯>] +\d+\./;
 const NEXT = /^( {2}|$)/;   // the input's next rows: under the prompt's two columns, or blank
+const CODEX = /^›(\s|$)/;    // Codex's prompt
 
 /** {top, bottom, end}: the box's rules are rows top and bottom, its footer bottom+1..end
  *  (end < bottom+1: none); null when the cursor is not in such a box near the screen's end.
@@ -73,5 +74,28 @@ export function parkedCaret(rows, cursor, seen, above, status = () => false) {
   return { row: bottom - 1, col: Math.max(2, rows[bottom - 1].end ?? 0) };
 }
 
-/** A status line as it stays while it only counts (context, limits, shells): digits left out. */
-export const statusKey = (txt) => txt.trim().replace(/\d+/g, "#");
+/** Codex's input (measured: codex 0.16x in tmux, its alternate screen): no rules, its prompt row
+ *  "› " on a background of its own (the rows above and below it, of that background too, come
+ *  blank: tmux drops a row's trailing blanks), its footer below. {top, bottom, end, codex} as
+ *  inputBox's, top and bottom those blank rows; null when the cursor is not in it. rows: as
+ *  inputBox's, with bg (the background all of a row's text shares, null for none or the default). */
+export function codexBox(rows, cursor) {
+  const bg = rows[cursor]?.bg;
+  if (bg == null) return null;
+  let first = cursor, last = cursor;
+  while (first > 0 && rows[first - 1].bg === bg) first--;              // a long input: its rows, of the same background
+  while (last + 1 < rows.length && rows[last + 1].bg === bg) last++;
+  const top = first - 1, bottom = last + 1;
+  if (!CODEX.test(rows[first].txt) || top < 0 || bottom >= rows.length || !rows[top].blank || !rows[bottom].blank) return null;
+  let end = rows.length - 1;
+  while (end > bottom && rows[end].blank) end--;
+  return end - bottom > FOOTER ? null : { top, bottom, end, codex: true };
+}
+/** A line of Codex's footer that only says how things stand ("model · folder · branch · Ready"):
+ *  its words change while it works, so it is known by its form. */
+export const codexStatus = (txt) => / · /.test(txt);
+
+/** A status line as it stays while it only counts (context, limits, shells) or says how things
+ *  stand after its stem ("bypass permissions on (shift+tab to cycle)" idle, "… · 1 shell" while
+ *  working): digits left out, and all after its first " · " or " (". */
+export const statusKey = (txt) => txt.trim().replace(/\d+/g, "#").split(/ · | \(/)[0];

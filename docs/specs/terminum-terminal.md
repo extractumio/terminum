@@ -333,7 +333,7 @@ Scenario: AC-40 happy path — the cursor follows taps and arrows
   And a menu the agent draws between rules (a question, a permission) is not the input box: ↑ and ↓ go to it as they are
 
 Scenario: AC-40 happy path — the panel, status lines, the view
-  Then on a phone the input box is a panel at least two rows high, without its rules; the status lines below it (folder, model, context, limits, permission mode) are behind the ⓘ button, remembered per browser; a "/" or "@" list or a new notice below stays in sight; typing keeps the panel in sight; empty rows below the last text and the cursor are not shown; whole-line key hints ("(ctrl+b to run in background)") are left out on a phone, and a notice pushed right by spaces loses them
+  Then on a phone the input box is a panel at least two rows high, without its rules; the status lines below it (folder, model, context, limits, permission mode) are behind the ⓘ button, remembered per browser; a "/" or "@" list the input opened stays in sight (every other footer line waits, also those it shows only while it works); typing keeps the panel in sight; empty rows below the last text and the cursor are not shown; whole-line key hints ("(ctrl+b to run in background)") are left out on a phone, and a notice pushed right by spaces loses them
   And the view keeps the cursor's row two rows above the bottom edge while typing and for 3 s after
   And in Wrap the box's rows re-join as Claude Code wrapped them (cols - 2 characters a row, AS-33): a row goes on when the next row's first word would not have fit; a line the user ended stays its own; a space typed at a full row's end keeps the cursor on the same line; when the cursor stands past a row's text on the space it wrapped at, its cell is that space
 
@@ -344,6 +344,10 @@ Scenario: AC-40 happy path — slides, held delete, iOS paste
   Then the cursor follows the finger onto the character under it, over the box's lines, as a text field's caret follows a held finger; lifting the finger leaves it there
   When the user holds delete on the on-screen keyboard
   Then it repeats as in a text field (the field keeps one invisible character), each delete one backspace, words after about 2 s where C-w is a word; deletes more than 150 ms apart are taps
+
+Scenario: AC-40 happy path — Codex's input
+  Given the shown pane runs Codex (its prompt "›" on a background of its own, a blank row above and below it, its footer below: model · folder · branch · state · context)
+  Then its input is a box as Claude Code's: on a computer between two thin lines; on a phone a panel, its footer behind ⓘ also while Codex works (its state word changes); taps, ↑ ↓ and slides move its cursor as in Claude Code's
 
 Scenario: AC-40 edge — the cursor below the footer
   Given Claude Code left the terminal's cursor on a blank row below its footer after a redraw of its own, or on one of its status lines (the pane resized: the hot keys opened)

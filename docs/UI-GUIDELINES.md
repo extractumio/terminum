@@ -198,6 +198,7 @@ Without `shape()` (Safari before 18.4) everything is straight with its radius an
 | Release | The outline swings back once (`--ease-wobble`); a ripple spreads from the pressed point inside the outline (Enter/Space: from the middle). Blobs pulse in their own outline. |
 | A box opens | Fades in and rises 6px (a popover falls 4px), from .98 (a dialog from .96) with its backdrop; it closes at once. |
 | The shown session changes | Its row's fill settles from the accent, its bar grows in (`.fresh`, once). |
+| A session works | Its bar pulses (its color glows and fades, 1.4 s). A state, not motion: nothing moves, so it stays with Reduce Motion. |
 | Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop. |
 
 `prefers-reduced-motion: reduce` sets every duration to 0 and turns off scale, translate, ripple and

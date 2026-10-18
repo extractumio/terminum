@@ -247,9 +247,12 @@ export class Marks {
     const fab = $("marksfab"), find = $("findfab"), term = this.term, n = this.sid() ? this.mine().length : 0;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
     const right = term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32, top = `${term.offsetTop + 8}px`;
-    find.hidden = !shown;
+    find.hidden = $("splitfab").hidden = !shown;
     if (!shown) this.search.toggle(false);
-    else { find.style.top = top; find.style.left = `${right - (n > 0 ? 40 : 0)}px`; this.search.place(); }
+    else {
+      find.style.top = top; find.style.left = `${right - (n > 0 ? 40 : 0)}px`; this.search.place();
+      Object.assign($("splitfab").style, { top: `${find.offsetTop + find.offsetHeight + 8}px`, left: find.style.left });   // the split under the magnifier
+    }
     fab.hidden = !(shown && n > 0);
     if (fab.hidden) return this.togglePane(false);
     $("marksfabn").textContent = String(n);
