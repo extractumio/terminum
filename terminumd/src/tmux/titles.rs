@@ -115,10 +115,21 @@ pub fn program_name(s: &str) -> bool {
     SHELLS.contains(&low.as_str()) || AGENTS.contains(&low.as_str()) || OTHER_PROGRAMS.contains(&low.as_str())
 }
 
-/// "claude" or "codex" when the pane's program is one.
+/// "claude" or "codex" when the pane's program is one. Claude Code's own process is named by
+/// its version ("2.1.302": its installer runs `~/.local/share/claude/versions/2.1.302`), so a
+/// program named only so is Claude Code, its title marked or not.
 pub fn agent_of(command: &str) -> Option<&'static str> {
     let name = command.trim().to_lowercase();
+    if is_version(&name) {
+        return Some("claude");
+    }
     AGENTS.iter().copied().find(|a| name == *a)
+}
+
+/// "1.2.3": three numbers and two dots, nothing else.
+fn is_version(s: &str) -> bool {
+    let parts: Vec<&str> = s.split('.').collect();
+    parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
 
 /// `path` with the home folder `home` written `~`; without a home known, any

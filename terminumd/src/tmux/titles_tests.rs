@@ -106,6 +106,12 @@ fn agents() {
     assert_eq!(item(&pane("work", false, "Plan", "vim", "/x"), 1, 1, HOME).agent, None);
     assert_eq!(agent_of(" Claude "), Some("claude"));
     assert_eq!(agent_of("claudette"), None);
+    // Claude Code's process is named by its version: no mark in the title needed
+    assert_eq!(agent_of("2.1.302"), Some("claude"));
+    assert_eq!(item(&pane("Tune Slicer", false, "Tune Slicer", "2.1.302", "/x"), 1, 1, HOME).agent, Some("claude"), "a window the user named");
+    for other in ["2.1", "1.2.3.4", "v2.1.302", "2.1.x", "node"] {
+        assert_eq!(agent_of(other), None, "{other}");
+    }
 }
 
 #[test]
