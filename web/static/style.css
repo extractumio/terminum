@@ -72,6 +72,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
 .pbar.on { opacity: 1; }
 .pbar.busy { opacity: 1; animation: pulse-bar 1.4s ease-in-out infinite; }
 @keyframes pulse-bar { 0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--dot, transparent); } 50% { opacity: .25; box-shadow: none; } }
+#curbar .pbar.busy { animation: none; }   /* the header says it with its hourglass: only the list pulses */
 .item .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .item .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .item .idx { flex: 0 0 auto; width: 14px; text-align: right; color: var(--muted); font: 11px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
