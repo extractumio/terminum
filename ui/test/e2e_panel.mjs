@@ -62,6 +62,16 @@ try {
   await page.keyboard.type("db/migrations"); await page.keyboard.press("Enter");
   await within("AC-57 nested folder created", (ms) => page.waitForSelector(row("db"), { timeout: ms }));
   check("AC-57 db/migrations on disk", fs.existsSync(`${SB}/db/migrations`));
+  // a slow frame (a busy page): Escape, then New Folder at once; the left edit's blur does not cancel the new one
+  await page.evaluate(() => { const raf = window.requestAnimationFrame; window.slowRaf = raf; window.requestAnimationFrame = (f) => setTimeout(() => raf(f), 300); });
+  await page.click("#new-file"); await focusInput();
+  await page.keyboard.press("Escape");
+  await page.click("#new-folder");
+  await page.waitForTimeout(600);
+  const stillOn = await page.evaluate(() => !!document.querySelector(".inline-edit.on") && document.activeElement === document.querySelector(".inline-edit input"));
+  await page.evaluate(() => { window.requestAnimationFrame = window.slowRaf; });
+  check("AC-57 a new name's field opened right after another was left stays open (a slow frame)", stillOn);
+  await page.keyboard.press("Escape");
 
   // AC-56 edit + save
   await page.click('.tab .tname:text("hello.py")');

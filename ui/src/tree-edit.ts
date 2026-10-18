@@ -32,9 +32,11 @@ export class InlineEdit {
     });
     this.input.addEventListener("input", () => { if (this.edit) { this.edit.error = undefined; this.showError(); } });
     this.input.addEventListener("blur", () => {
-      // like an IDE: leaving the field commits a typed name, an empty field cancels
+      // like an IDE: leaving the field commits a typed name, an empty field cancels; only the
+      // edit that was left: a new one started meanwhile (its focus waits a frame) is not touched
+      const left = this.edit;
       setTimeout(() => {
-        if (!this.edit || this.edit.busy || document.activeElement === this.input) return;
+        if (!this.edit || this.edit !== left || this.edit.busy || document.activeElement === this.input) return;
         if (this.input.value.trim() && this.input.value !== basename(this.edit.path ?? "")) void this.commit();
         else this.cancel();
       }, 120);
