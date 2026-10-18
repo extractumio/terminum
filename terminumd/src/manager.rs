@@ -104,6 +104,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
                 if !gs.iter().any(|g| g["attached"].is_null()) {
                     gs.insert(0, layout::host_group(&server, files.as_deref()));
                 }
+                crate::restore_srv::host(app, &server, &read.sessions).await;   // its tmux started anew: its layout again (AC-15)
                 let (absent, others) = crate::attach::ensure_host(&server, &read.sessions);
                 for g in gs.iter_mut().filter(|g| g["state"].is_null()) {
                     g["state"] = json!("attached");
@@ -137,7 +138,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
 pub async fn refresh(app: &Shared) {
     let _one = app.refreshing.lock().await;
     ensure_local(app).await;
-    let ensured = futures_util::future::join_all(app.tmux.attached_all().iter().map(crate::attach::ensure)).await;
+    let ensured = futures_util::future::join_all(app.tmux.attached_all().iter().map(|s| crate::attach::ensure(app, s))).await;
     let users_sure = ensured.iter().all(|(_, sure)| *sure);
     let absent: Vec<Value> = ensured.into_iter().flat_map(|(gs, _)| gs).collect();
     let home = crate::config::home().display().to_string();

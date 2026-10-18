@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The layout survives a reboot (AC-15). terminumd writes `state/layout.json` within 5 s of
-//! a change: sessions, windows (name, `#{window_layout}`), panes (folder, the program's kind:
-//! shell, an ssh recipe, other) and the boot it was seen in. When terminumd starts in a new
-//! boot with no local server, it recreates the sessions with shells in their folders,
-//! applies each window's layout and writes a report the first page shows. Never stored:
-//! output, history, environment, command lines other than a checked ssh recipe.
+//! The layout survives a reboot and a killed tmux (AC-15). terminumd writes `state/layout.json`
+//! within 5 s of a change: sessions, windows (name, `#{window_layout}`), panes (folder, the
+//! program's kind: shell, an ssh recipe, other), the boot it was seen in, and the other servers
+//! it shows (restore_srv.rs: hosts, the user's own tmux). When terminum's tmux has no session
+//! (after a reboot, or its server was killed), terminumd recreates the sessions with shells in
+//! their folders, applies each window's layout and writes a report the first page shows. Never
+//! stored: output, history, environment, command lines other than a checked ssh recipe.
 
 use std::time::Duration;
 
@@ -12,12 +13,10 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use crate::app::Shared;
-use crate::tmux::server::{plain, Link};
+use crate::tmux::server::Link;
 
 const EVERY: Duration = Duration::from_secs(5);
-/// with a quick shell's mark (AC-88): those are not restored
-const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{@tm-quick}\t#{window_name}\t#{window_layout}";
-const PANES: &str = "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}";
+use crate::restore_srv::{make, sessions_of, Exec, Made, PANES, WINDOWS};
 
 #[derive(Default)]
 pub struct Restore {
@@ -25,6 +24,20 @@ pub struct Restore {
     last: Mutex<String>,
     /// the report of the last restore, until a page has shown it
     pub report: Mutex<Option<Value>>,
+    /// the servers (and a host's tmux start) made again while terminumd runs: once each
+    tried: Mutex<std::collections::HashSet<String>>,
+}
+
+impl Restore {
+    /// Whether `what` is tried for the first time (then it is not again).
+    pub fn first_try(&self, what: &str) -> bool {
+        self.tried.lock().insert(what.to_string())
+    }
+
+    /// Whether `what` was tried already.
+    pub fn was_tried(&self, what: &str) -> bool {
+        self.tried.lock().contains(what)
+    }
 }
 
 /// This boot's id: macOS's boot time, Linux's boot id (TM_BOOT_ID plays another boot in tests).
@@ -94,33 +107,15 @@ fn kind(command: &str, tty: &str, procs: &[(String, Vec<String>)]) -> Value {
 }
 
 /// The local server's layout as layout.json holds it.
-async fn checkpoint(app: &Shared) -> Option<Value> {
+async fn checkpoint(app: &Shared, prev: &Value) -> Option<Value> {
     let mut answers = app.tmux.local.bulk()?.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'")]).await.into_iter();
     let (wins, panes) = (answers.next()?.ok()?, answers.next()?.ok()?);
-    let fields: Vec<Vec<&str>> = panes.iter().map(|l| l.splitn(6, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 6).collect();
-    let ssh_ttys: Vec<&str> = fields.iter().filter(|g| g[3] == "ssh").map(|g| g[4]).collect();
+    let ssh_ttys: Vec<&str> = panes.iter().map(|l| l.splitn(6, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 6 && g[3] == "ssh").map(|g| g[4]).collect();
     let procs = ssh_commands(&ssh_ttys).await;
-    let mut sessions: Vec<Value> = Vec::new();
-    for w in &wins {
-        let f: Vec<&str> = w.splitn(5, '\t').collect();
-        if f.len() < 5 || !f[2].is_empty() {
-            continue;
-        }
-        let f = [f[0], f[1], f[3], f[4]];
-        let mut ps = Vec::new();
-        for p in fields.iter().filter(|g| g[1] == f[1]) {
-            let mut k = kind(p[3], p[4], &procs);
-            k["dir"] = json!(p[5]);
-            ps.push(k);
-        }
-        let win = json!({"name": f[2], "layout": f[3], "panes": ps});
-        match sessions.iter_mut().find(|s| s["name"] == f[0]) {
-            Some(s) => s["windows"].as_array_mut().expect("array").push(win),
-            None => sessions.push(json!({"name": f[0], "windows": [win]})),
-        }
-    }
+    let sessions = sessions_of(&wins, &panes, |_| true, |c, tty| kind(c, tty, &procs));
     let hosts: Vec<String> = app.tmux.hosts().iter().map(|h| h.name.clone()).collect();
-    Some(json!({"version": 1, "boot": boot_id(), "sessions": sessions, "hosts": hosts}))
+    let servers = crate::restore_srv::checkpoint(app, &prev["servers"]).await;
+    Some(json!({"version": 2, "boot": boot_id(), "sessions": sessions, "hosts": hosts, "servers": servers}))
 }
 
 /// Writes the checkpoint within 5 s of a change, while restore is on.
@@ -130,8 +125,14 @@ pub async fn follow(app: Shared) {
         if !enabled(&app) || app.tmux_problem.lock().is_some() {
             continue;
         }
-        let Some(mut v) = checkpoint(&app).await else { continue };
-        let text = v.to_string();
+        let prev = std::fs::read_to_string(path(&app)).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).unwrap_or(Value::Null);
+        let Some(mut v) = checkpoint(&app, &prev).await else { continue };
+        // a change of the layout writes, not the time a server was read
+        let mut same = v.clone();
+        for s in same["servers"].as_object_mut().into_iter().flat_map(|m| m.values_mut()) {
+            s.as_object_mut().map(|o| o.remove("at"));
+        }
+        let text = same.to_string();
         if *app.restore.last.lock() == text {
             continue;
         }
@@ -143,17 +144,14 @@ pub async fn follow(app: Shared) {
     }
 }
 
-/// At start with no local server: restores the last checkpoint when it is of another boot
-/// (a reboot, not a restart of terminumd or a kill-server). True when sessions were made.
+/// terminum's tmux has no session (a reboot, its server killed, its last session closed while
+/// terminumd ran): the last checkpoint is made again. True when sessions were made.
 pub async fn at_start(app: &Shared) -> bool {
-    if !enabled(app) || app.restore.report.lock().is_some() {
+    if !enabled(app) {
         return false;
     }
     let Ok(text) = std::fs::read_to_string(path(app)) else { return false };
     let Ok(saved) = serde_json::from_str::<Value>(&text) else { return false };
-    if saved["boot"].as_str().unwrap_or("") == boot_id() {
-        return false;
-    }
     run(app, &saved).await
 }
 
@@ -165,85 +163,46 @@ pub async fn again(app: &Shared) -> Result<(), String> {
     Ok(())
 }
 
-async fn tmux(app: &Shared, args: &[&str]) -> Result<String, String> {
-    let Link::Local { tmux, socket, conf } = &app.tmux.local.link else { return Err("no local server".into()) };
-    let mut c = plain(tmux);
-    c.args(["-L", socket, "-f"]).arg(conf).args(args);
-    let out = c.output().await.map_err(|e| e.to_string())?;
-    if out.status.success() { Ok(String::from_utf8_lossy(&out.stdout).trim().to_string()) } else { Err(String::from_utf8_lossy(&out.stderr).trim().to_string()) }
-}
-
-fn usable(dir: &str) -> bool {
+pub fn usable(dir: &str) -> bool {
     std::path::Path::new(dir).is_dir() && crate::tmux::args::check_text(dir).is_ok()
 }
 
-/// Recreates the sessions of `saved`; writes and keeps the report.
+/// Recreates the sessions of `saved` on terminum's tmux; writes and keeps the report.
 async fn run(app: &Shared, saved: &Value) -> bool {
+    let Link::Local { tmux, socket, conf } = &app.tmux.local.link else { return false };
+    let exec = Exec::Local { tmux, socket, conf: Some(conf) };
     let home = crate::config::home().display().to_string();
-    let (mut made, mut windows, mut programs, mut errors, mut notes) = (0, 0, Vec::new(), Vec::new(), Vec::new());
-    let existing = tmux(app, &["list-sessions", "-F", "#{session_name}"]).await.unwrap_or_default();
-    for s in saved["sessions"].as_array().into_iter().flatten() {
-        let name = s["name"].as_str().unwrap_or("");
-        if name.is_empty() || existing.lines().any(|l| l == name) {
-            continue;
-        }
-        let mut first = true;
-        for w in s["windows"].as_array().into_iter().flatten() {
-            let panes = w["panes"].as_array().cloned().unwrap_or_default();
-            let dir_of = |p: &Value| {
-                let d = p["dir"].as_str().unwrap_or("");
-                if usable(d) { d.to_string() } else { home.clone() }
-            };
-            for p in &panes {
-                if !usable(p["dir"].as_str().unwrap_or("")) {
-                    notes.push(format!("{} is gone: opened in ~", p["dir"].as_str().unwrap_or("?")));
-                }
-                match p["kind"].as_str() {
-                    Some("ssh") => programs.push(format!("ssh {}", p["recipe"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect::<Vec<_>>().join(" ")).unwrap_or_default())),
-                    Some("other") => programs.push(p["program"].as_str().unwrap_or("a program").to_string()),
-                    _ => {}
-                }
-            }
-            let d0 = panes.first().map_or(home.clone(), dir_of);
-            let wname = w["name"].as_str().unwrap_or("");
-            let target = format!("={name}:");
-            let made_win = if first {
-                tmux(app, &["new-session", "-d", "-s", name, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id}"]).await
-            } else {
-                tmux(app, &["new-window", "-d", "-t", &target, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id}"]).await
-            };
-            let wid = match made_win {
-                Ok(id) => id,
-                Err(e) => {
-                    errors.push(format!("{name}: {e}"));
-                    if first { break } else { continue }
-                }
-            };
-            if first {
-                made += 1;
-            }
-            first = false;
-            windows += 1;
-            for p in panes.iter().skip(1) {
-                if let Err(e) = tmux(app, &["split-window", "-d", "-t", &wid, "-c", &dir_of(p)]).await {
-                    errors.push(format!("{name}: {e}"));
-                }
-            }
-            if let Some(layout) = w["layout"].as_str().filter(|l| !l.is_empty()) {
-                let _ = tmux(app, &["select-layout", "-t", &wid, layout]).await;
-            }
-        }
+    let existing: Vec<String> = exec.run(&["list-sessions", "-F", "#{session_name}"]).await.unwrap_or_default().lines().map(String::from).collect();
+    let mut m = Made::default();
+    make(&exec, saved["sessions"].as_array().map(Vec::as_slice).unwrap_or_default(), &existing, None, usable, &home, &mut m).await;
+    let made = m.sessions;
+    let mut text = format!("Restored {made} session{}, {} window{}.", if made == 1 { "" } else { "s" }, m.windows, if m.windows == 1 { "" } else { "s" });
+    if !m.programs.is_empty() {
+        let n = m.programs.len();
+        text.push_str(&format!(" {n} pane{} ran {}: start {} again", if n == 1 { "" } else { "s" }, m.programs.join(", "), if n == 1 { "it" } else { "them" }));
     }
-    let mut text = format!("Restored {made} session{}, {windows} window{}.", if made == 1 { "" } else { "s" }, if windows == 1 { "" } else { "s" });
-    if !programs.is_empty() {
-        text.push_str(&format!(" {} pane{} ran {}: start {} again", programs.len(), if programs.len() == 1 { "" } else { "s" }, programs.join(", "), if programs.len() == 1 { "it" } else { "them" }));
-    }
-    let report = json!({"at": crate::auth::store::unix_now(), "sessions": made, "windows": windows, "programs": programs, "errors": errors, "notes": notes, "text": text});
-    let _ = crate::config::write_private(&app.cfg.dir.join("restore-report.json"), report.to_string().as_bytes());
-    tracing::info!(event = "restore", sessions = made, windows, errors = errors.len());
-    *app.restore.report.lock() = Some(report.clone());
-    app.pages.tell(&json!({"t": "restore", "report": report}).to_string());
+    *app.restore.report.lock() = None;
+    add_report(app, &text, m);
     made > 0
+}
+
+/// Adds a restore's words to the report the pages show (and that a page connecting gets).
+pub fn add_report(app: &Shared, text: &str, m: Made) {
+    let mut r = app.restore.report.lock();
+    let mut report = r.clone().unwrap_or_else(|| json!({"sessions": 0, "windows": 0, "programs": [], "errors": [], "notes": [], "text": ""}));
+    report["at"] = json!(crate::auth::store::unix_now());
+    report["sessions"] = json!(report["sessions"].as_u64().unwrap_or(0) + m.sessions as u64);
+    report["windows"] = json!(report["windows"].as_u64().unwrap_or(0) + m.windows as u64);
+    for (k, v) in [("programs", m.programs), ("errors", m.errors), ("notes", m.notes)] {
+        if let Some(a) = report[k].as_array_mut() { a.extend(v.into_iter().map(Value::from)); }
+    }
+    let was = report["text"].as_str().unwrap_or("").to_string();
+    report["text"] = json!(if was.is_empty() { text.to_string() } else { format!("{was} {text}") });
+    let _ = crate::config::write_private(&app.cfg.dir.join("restore-report.json"), report.to_string().as_bytes());
+    tracing::info!(event = "restore", text);
+    *r = Some(report.clone());
+    drop(r);
+    app.pages.tell(&json!({"t": "restore", "report": report}).to_string());
 }
 
 /// The report for a page that connects (the first one shows it).

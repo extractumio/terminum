@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""The layout survives a reboot (terminum.md AC-15), end to end against a private terminumd
-and tmux server: a checkpoint is written, a "reboot" (another TM_BOOT_ID, the tmux server
-gone) brings the sessions, windows, splits and folders back with a report; a restart in the
-same boot recreates nothing; layout.json holds no output or environment.
+"""The layout survives a reboot and a killed tmux (terminum.md AC-15), end to end against a
+private terminumd and tmux server: a checkpoint is written, a "reboot" (another TM_BOOT_ID,
+the tmux server gone) brings the sessions, windows, splits and folders back with a report; a
+restart of terminumd recreates nothing; the server killed while terminumd runs comes back; a
+session of "the user's own" tmux (another private server, attached by name) comes back when
+its whole server is killed; layout.json holds no output or environment.
 
     python3 scripts/e2e_restore.py      (needs terminumd built: cd terminumd && cargo build)
 """
@@ -18,8 +20,9 @@ from functools import partial
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, results, summary, tmux_on  # noqa: E402
 
-PORT, SOCKET = 47966, "tm-test-restore"
+PORT, SOCKET, OWN = 47966, "tm-test-restore", "tm-test-rown"
 tmux = partial(tmux_on, SOCKET)
+own = partial(tmux_on, OWN)
 
 
 def main():
@@ -28,6 +31,12 @@ def main():
     for d in ("api", "docs", "notes"):
         os.makedirs(os.path.join(work, d))
     try:
+        os.makedirs(t.home, exist_ok=True)
+        with open(os.path.join(t.home, "settings.json"), "w") as f:
+            json.dump({"attach": {OWN: ["work"]}}, f)
+        subprocess.run(["tmux", "-L", OWN, "kill-server"], stderr=subprocess.DEVNULL)
+        own("-f", "/dev/null", "new-session", "-d", "-s", "work", "-n", "logs", "-c", f"{work}/notes")
+        own("new-window", "-t", "work:", "-n", "build", "-c", f"{work}/docs")
         t.start()
         time.sleep(1)
         tmux("rename-window", "-t", "main:", "api")
@@ -68,10 +77,43 @@ def main():
         t.start()
         time.sleep(1.5)
         check("AC-15 a restart in the same boot recreates nothing", sorted(tmux("ls", "-F", "#S").split()) == ["main", "notes"])
+
+        # terminum's tmux killed while terminumd runs (the same boot): it comes back
+        tmux("kill-server")
+        back = []
+        for _ in range(40):
+            time.sleep(0.5)
+            try:
+                back = sorted(tmux("ls", "-F", "#S").split())
+            except Exception:
+                back = []
+            if back == ["main", "notes"]:
+                break
+        check("AC-15 terminum's tmux killed while terminumd runs comes back, its windows and folders too",
+              back == ["main", "notes"] and tmux("list-windows", "-t", "main", "-F", "#{window_name} #{window_panes}").splitlines() == ["api 2", "docs 1"], back)
+
+        # the user's own tmux, attached by name: kept in the checkpoint, made again when its whole server is gone
+        saved = json.load(open(layout))
+        kept = saved.get("servers", {}).get(f"local:{OWN}", {})
+        check("AC-15 the checkpoint keeps an attached session of the user's own tmux, its windows and folders",
+              [s["name"] for s in kept.get("sessions", [])] == ["work"] and [w["name"] for w in kept["sessions"][0]["windows"]] == ["logs", "build"], kept)
+        own("kill-server")
+        made = []
+        for _ in range(60):
+            time.sleep(0.5)
+            try:
+                made = own("list-windows", "-t", "work", "-F", "#{window_name} #{pane_current_path}").splitlines()
+            except Exception:
+                made = []
+            if len(made) == 2:
+                break
+        check("AC-15 the user's own tmux killed: its attached session is made again with its windows and folders",
+              made == [f"logs {work}/notes", f"build {work}/docs"], made)
     finally:
         if not all(results):
             print(t.log())
         t.cleanup()
+        subprocess.run(["tmux", "-L", OWN, "kill-server"], stderr=subprocess.DEVNULL)
         subprocess.run(["rm", "-rf", work])
     summary()
 

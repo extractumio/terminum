@@ -13,6 +13,7 @@ import json
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import time
 import urllib.request
@@ -99,6 +100,30 @@ def main():
         ws.send({"t": "in", "data": "echo again-$((2+3))\r"})
         check("AC-81 typing works again after the reconnect",
               ws.until(lambda m: m["t"] == "screen" and "again-5" in json.dumps(m["ch"]), 10) is not None)
+
+        # AC-15: the host's tmux started anew (a reboot, its server killed): its session's windows come back
+        os.makedirs(os.path.join(remote_home, "build"), exist_ok=True)
+        os.system(f"tmux -L {REMOTE_SOCKET} new-window -d -t terminum: -n build -c {os.path.join(remote_home, 'build')}")
+        layout_json, kept = os.path.join(t.app, "layout.json"), {}
+        for _ in range(40):
+            time.sleep(0.5)
+            try:
+                kept = json.load(open(layout_json)).get("servers", {}).get("devbox:default", {})
+            except (OSError, ValueError):
+                kept = {}
+            if any(w["name"] == "build" for s in kept.get("sessions", []) for w in s["windows"]):
+                break
+        check("AC-15 a host's session is kept in the checkpoint, its windows and folders", any(w["name"] == "build" for s in kept.get("sessions", []) for w in s["windows"]), kept)
+        time.sleep(1.2)                                   # its session made after the checkpoint: a second later at least
+        os.system(f"tmux -L {REMOTE_SOCKET} kill-server")
+        made = ""
+        for _ in range(60):
+            time.sleep(0.5)
+            made = subprocess.run(["tmux", "-L", REMOTE_SOCKET, "list-windows", "-t", "terminum", "-F", "#{window_name} #{pane_current_path}"], capture_output=True, text=True).stdout
+            if "build" in made:
+                break
+        check("AC-15 the host's tmux killed: once it is attached again its windows are back in their folders",
+              any(line.startswith("build ") and line.endswith("/remote-home/build") for line in made.splitlines()), made)
 
         st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refused", "recipe": "alex@refused.example"})
         failed = wait_layout(ws, lambda gs: (g := host_group(gs, "refused")) is not None and g.get("state") == "failed", 10)

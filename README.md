@@ -24,8 +24,9 @@ iTerm2.
   sizes it (`settings.json` `"size"`: `latest`, `largest` or `manual`); "Fit to this screen"
   and "Restore size" in the menu.
 - **Sessions outlive everything**: terminals live in tmux; terminumd runs as a launchd agent
-  and comes back after a crash; after a reboot the sessions, windows, splits and folders are
-  restored (`"restore": true`).
+  and comes back after a crash; after a reboot, or when a tmux server was killed, the sessions,
+  windows, splits and folders are restored: terminum's own, each host's and the sessions of your
+  own tmux you attached (`"restore": true`).
 
 ## Install
 
@@ -75,8 +76,10 @@ terminum tmux                             # what is attached and whether it runs
 terminum tmux detach work                 # terminum forgets it; it goes on running
 ```
 
-terminum shows the session as one of its own, but never starts that tmux server, never makes
-or closes a session there, and resizes its windows only once you type in the page. When you
+terminum shows the session as one of its own, never closes a session there, and resizes its
+windows only once you type in the page. If that whole tmux server is gone (a reboot, the server
+killed), terminum makes the attached sessions again with their windows and folders; a session
+you close while the server runs stays closed. When you
 add a host whose tmux runs other sessions, terminum offers them; later the import icon on the
 host's group does. Each attached session on a host is one more ssh connection.
 

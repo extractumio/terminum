@@ -32,6 +32,7 @@ mod panel_api;
 mod panel_ws;
 mod remote;
 mod restore;
+mod restore_srv;
 mod routes;
 mod screen;
 mod settings;

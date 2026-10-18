@@ -4,9 +4,11 @@
 //! holding a control client for each named session that runs. On a host: `hosts.<name>.attach`,
 //! sessions of the tmux its `terminum` session is on, each over one more ssh connection,
 //! started one at a time with back-off. The list shows only those, and a named session that
-//! does not run as a group that says so, attached once it appears. terminumd never starts that
-//! server, never makes or kills a session there; detaching only forgets the name. A place is
-//! named by its server's id: `local:<socket>` or `<host>:default`.
+//! does not run as a group that says so, attached once it appears. terminumd never kills a
+//! session there, and makes one only when the whole server is gone (a reboot, the server
+//! killed): then the attached sessions are made again from their checkpoint (AC-15,
+//! restore_srv.rs); detaching only forgets the name. A place is named by its server's id:
+//! `local:<socket>` or `<host>:default`.
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -108,13 +110,18 @@ pub fn sync(app: &Shared) {
 
 /// Brings `server`'s control clients in line with the named sessions that run; the groups of
 /// those that do not, and whether that is sure (no error: their panes may count as gone).
-pub async fn ensure(server: &Arc<Server>) -> (Vec<Value>, bool) {
+pub async fn ensure(app: &Shared, server: &Arc<Server>) -> (Vec<Value>, bool) {
     let only = server.only.lock().clone().unwrap_or_default();
-    let running = if server.connected() {
+    let mut running = if server.connected() {
         server.run("list-sessions -F '#{session_name}'").await.map(Some)
     } else {
         server.local_sessions().await
     };
+    if matches!(running, Ok(None)) && !only.is_empty() {
+        // the whole server is gone: its attached sessions are made again (once), then read
+        crate::restore_srv::users_local(app, server).await;
+        running = server.local_sessions().await;
+    }
     let sure = running.is_ok();
     let (running, why) = match running {
         Ok(Some(list)) => (list, None),

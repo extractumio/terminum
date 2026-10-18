@@ -520,11 +520,20 @@ Scenario: AC-14 failure — a hung control client
 Scenario: AC-15 happy path — checkpoint and restore
   Given settings.json has {"restore": true} (the default) and sessions "main" (3 windows, one split, folders known) and "notes", host "devbox" attached
   Then terminumd writes "state/layout.json" within 5 s of a change: sessions, windows (name, index, #{window_layout}), panes (folder, the program's kind: shell, ssh <recipe>, other), hosts
-  When the Mac reboots and terminumd starts (a new boot id) with no local tmux server
+  When the Mac reboots and terminumd starts with no local tmux server (or that server has no session)
   Then before any page connects it recreates "main" and "notes" with shells at the saved folders (a missing folder opens in ~ with a note), applies each window's layout string ("select-layout"), attaches "devbox" again (its session survived on the host) and writes a report
   And the first page shows "Restored 2 sessions, 4 windows. 1 pane ran ssh devbox: start it again" with the pane's row linked
+Scenario: AC-15 happy path — tmux killed, a host's tmux started anew, the user's own tmux
+  Given the checkpoint also keeps, by server, host devbox's "terminum" session and the sessions of the user's own tmux attached by name (AC 89), here and on hosts (windows, layouts, folders)
+  When terminum's tmux server is killed while terminumd runs (the same boot)
+  Then terminumd makes its sessions again as after a reboot, with the report
+  When devbox's tmux starts anew (a reboot of the host, its server killed) and devbox is attached again
+  Then its "terminum" session gets its windows back in their folders on the host (its fresh first window goes), and the user's sessions attached there that no longer run are made again
+  When the server of the user's own tmux on this Mac does not run (a reboot, it was killed)
+  Then the sessions attached from it are made again with their windows and folders (once per checkpoint); a session the user closed while that server runs stays closed
+  And a host or a server that cannot be read keeps what the checkpoint held for it
 Scenario: AC-15 edge — nothing to restore, or the user said no
-  Given the server runs already (terminumd restarted without a reboot), or {"restore": false}
+  Given the server runs already (terminumd restarted), or {"restore": false}
   Then nothing is recreated; the checkpoint goes on (or stops with "restore": false)
 Scenario: AC-15 edge — what is never stored
   Then layout.json holds no output, history, environment, command lines other than an ssh recipe (destination and allowlisted options), or passwords
