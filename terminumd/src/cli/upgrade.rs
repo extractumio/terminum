@@ -105,20 +105,39 @@ fn check_release(sums: &str, tag: Option<&str>, here: &str) -> Result<(), String
     Ok(())
 }
 
-/// Every entry under `dir` must be a regular file or a folder; modes masked to 0755.
+/// Every entry under `dir` must be a folder or a regular file of one link (a hard link could be
+/// a file outside the package); only then does each mode become 0755 (a folder or a program) or
+/// 0644, whatever the package or the user's umask said (no setuid, setgid or sticky).
 fn plain(dir: &Path, root: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
+    refuse_odd(dir, root)?;
+    set_modes(dir)
+}
+
+fn refuse_odd(dir: &Path, root: &Path) -> Result<(), String> {
+    use std::os::unix::fs::MetadataExt;
     for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
         let meta = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
         let name = path.strip_prefix(root).unwrap_or(&path).display().to_string();
-        if !(meta.is_file() || meta.is_dir()) {
+        if !(meta.is_file() && meta.nlink() == 1 || meta.is_dir()) {
             return Err(format!("refusing {name}: not a plain file or folder inside the package"));
         }
-        let mode = meta.permissions().mode() & 0o755;
+        if meta.is_dir() {
+            refuse_odd(&path, root)?;
+        }
+    }
+    Ok(())
+}
+
+fn set_modes(dir: &Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        let meta = std::fs::symlink_metadata(&path).map_err(|e| e.to_string())?;
+        let mode = if meta.is_dir() || meta.permissions().mode() & 0o100 != 0 { 0o755 } else { 0o644 };
         std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode)).map_err(|e| e.to_string())?;
         if meta.is_dir() {
-            plain(&path, root)?;
+            set_modes(&path)?;
         }
     }
     Ok(())

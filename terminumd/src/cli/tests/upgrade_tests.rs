@@ -209,6 +209,28 @@ fn setuid_bits_are_stripped() {
 }
 
 #[test]
+fn modes_do_not_follow_the_umask_or_the_package() {
+    let home = Home::new();
+    let tar = home.path("p.tar.gz");
+    tar_gz(&[Member::File("terminum/tool", "x".into(), 0o700), Member::File("terminum/notes", "x".into(), 0o600)], &tar);
+    upgrade::extract(&tar, &home.path("x")).unwrap();
+    assert_eq!(mode(&home.path("x/terminum/tool")), 0o755);
+    assert_eq!(mode(&home.path("x/terminum/notes")), 0o644);
+    assert_eq!(mode(&home.path("x/terminum")), 0o755);
+}
+
+#[test]
+fn a_hard_link_inside_the_package_is_refused_before_any_mode_changes() {
+    let home = Home::new();
+    let tar = home.path("p.tar.gz");
+    let members = [Member::File("terminum/a", "x".into(), 0o600), Member::Hardlink("terminum/b", "terminum/a".into())];
+    tar_gz(&members, &tar);
+    let err = upgrade::extract(&tar, &home.path("x")).unwrap_err();
+    assert!(err.contains("not a plain file or folder"), "{err}");
+    assert_eq!(mode(&home.path("x/terminum/a")) & 0o077, 0, "as tar left it: nothing was widened");
+}
+
+#[test]
 fn an_older_release_is_not_installed_as_the_latest() {
     let t = T::new();
     std::fs::write(t.ctx.pkg.as_ref().unwrap().join("BUILD"), "v9.1.0\n").unwrap();
