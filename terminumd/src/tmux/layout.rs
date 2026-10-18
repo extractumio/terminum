@@ -64,10 +64,11 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, them
                 let it = titles::item(p, k + 1, n, home);
                 let key = server.key(&p.pane_id);
                 let state = agents.get(&p.pane_id).copied().flatten();
+                let agent = it.agent.or_else(|| agents.contains_key(&p.pane_id).then_some("codex"));
                 items.push(json!({
                     "id": key, "title": it.title, "sub": it.sub, "index": p.window_index.to_string(),
                     "pane": it.pane, "host": (!server.is_local()).then(|| server.name.clone()),
-                    "profile": profile, "agent": it.agent, "shell": it.shell && !p.alternate_on,
+                    "profile": profile, "agent": agent, "shell": it.shell && !p.alternate_on,
                     "state": state.map(|s| s.as_str()), "window": p.window_id, "alt": p.alternate_on,
                 }));
                 panes_of.push(*p);
@@ -177,22 +178,33 @@ pub fn attach_command(server: &Server, session: &str) -> String {
     }
 }
 
-/// Agent states of the panes that run a coding agent, read only when due.
+/// Whether pane `p` runs a coding agent by its program, title or window's name.
+fn named_agent(p: &PaneFields) -> bool {
+    titles::agent_of(&p.command).is_some() || agentstate::claude_marked(&p.pane_title)
+        || titles::AGENTS.contains(&p.window_name.as_str())
+}
+
+/// Whether pane `p` may run Codex installed with npm (its program is `node`): its screen says.
+fn maybe_codex(p: &PaneFields) -> bool {
+    p.command.trim() == "node"
+}
+
+/// Agent states of the panes that run a coding agent, read only when due; a `node` pane is one
+/// while its last read screen is Codex's (its state is `None` otherwise, as for any program).
 async fn agent_states(server: &Server, states: &Mutex<States>, panes: &[PaneFields]) -> HashMap<String, Option<agentstate::State>> {
     let now = Instant::now();
     let mut out = HashMap::new();
     let mut due = Vec::new();
     for p in panes {
-        let is_agent = titles::agent_of(&p.command).is_some() || agentstate::claude_marked(&p.pane_title)
-            || titles::AGENTS.contains(&p.window_name.as_str());
-        if !is_agent {
+        let named = named_agent(p);
+        if !named && !maybe_codex(p) {
             continue;
         }
         let key = server.key(&p.pane_id);
         let g = states.lock();
         if g.due(&key, &p.pane_title, now) {
             due.push(p);
-        } else {
+        } else if named || g.codex(&key) {
             out.insert(p.pane_id.clone(), g.last(&key));
         }
     }
@@ -203,12 +215,18 @@ async fn agent_states(server: &Server, states: &Mutex<States>, panes: &[PaneFiel
     let Some(client) = server.bulk() else { return out };
     let answers = client.run_all(lines).await;
     for (p, a) in due.iter().zip(answers) {
+        let key = server.key(&p.pane_id);
+        let rows = a.ok();
+        let mut g = states.lock();
+        let codex = !named_agent(p) && rows.as_deref().map_or(g.codex(&key), agentstate::codex_screen);
         // a pane that cannot be read shows no state this time (AC-39 failure)
-        let state = a.ok().map(|rows| agentstate::state_of(&p.pane_title, &rows));
+        let state = rows.map(|rows| agentstate::state_of(&p.pane_title, &rows));
         if let Some(s) = state {
-            states.lock().store(&server.key(&p.pane_id), &p.pane_title, now, s);
+            g.store(&key, &p.pane_title, now, s, codex);
         }
-        out.insert(p.pane_id.clone(), state);
+        if named_agent(p) || codex {
+            out.insert(p.pane_id.clone(), state);
+        }
     }
     out
 }

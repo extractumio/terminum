@@ -7,7 +7,7 @@
 //! Ported from iterm-enhancer's `layout.py` (`bare`, `STATUS`, `AUTO_NAME`, `PROGRAM_NAMES`,
 //! `agent_of`, `tilde`) for tmux panes.
 
-use super::agentstate::claude_marked;
+use super::agentstate::{claude_marked, CODEX_ASKS};
 
 /// Coding agents the list marks with their own icon.
 pub const AGENTS: [&str; 2] = ["claude", "codex"];
@@ -98,9 +98,12 @@ fn status_mark(c: char) -> bool {
              | '\u{23fa}' | '\u{231b}' | '\u{b7}' | '*' | '\u{fe0e}' | '\u{fe0f}') || c.is_whitespace()
 }
 
-/// A title without the status marks in front of it; as it is when nothing else is left.
+/// A title without the status marks in front of it (Codex's "[ ! ] Action Required | " and the
+/// "| " after its spinner too, so the row does not blink); as it is when nothing else is left.
 pub fn bare(title: &str) -> String {
-    match title.trim_start_matches(status_mark) {
+    let rest = title.trim_start_matches(status_mark);
+    let rest = CODEX_ASKS.iter().find_map(|m| rest.strip_prefix(m)).unwrap_or(rest);
+    match rest.trim_start_matches(|c| c == '|' || status_mark(c)) {
         "" => title.to_string(),
         rest => rest.to_string(),
     }

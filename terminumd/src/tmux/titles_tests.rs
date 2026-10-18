@@ -114,6 +114,11 @@ fn marks_and_folders() {
     assert_eq!(bare("\u{23fa} x"), "x");
     assert_eq!(bare("\u{2733}"), "\u{2733}", "nothing else left");
     assert_eq!(bare("plain * star"), "plain * star");
+    assert_eq!(bare("[ ! ] Action Required | Check headers | p"), "Check headers | p", "Codex asking");
+    assert_eq!(bare("[ . ] Action Required | Check headers | p"), "Check headers | p", "its blink");
+    assert_eq!(bare("[ ! ] Action Required"), "[ ! ] Action Required", "nothing else left");
+    assert_eq!(bare("\u{280b} | p"), "p", "Codex's spinner before the thread is named");
+    assert_eq!(bare("a | b"), "a | b");
     assert_eq!(tilde("/Users/alex/p", HOME), "~/p");
     assert_eq!(tilde("/Users/alex", "/Users/alex/"), "~");
     assert_eq!(tilde("/Users/alexander/p", HOME), "/Users/alexander/p");
