@@ -31,7 +31,7 @@ fn the_shipped_themes_are_written_once_and_valid() {
         let (t, w) = validate(text, file).unwrap();
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(t["font"], "JetBrainsMonoNFM-Regular");
-        assert_eq!(t["size"], 14);
+        assert_eq!(t["size"], 15);
         assert_eq!(t["ansi"].as_array().unwrap().len(), 16);
     }
 }
