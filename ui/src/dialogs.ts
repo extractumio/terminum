@@ -11,7 +11,7 @@ export function ask(title: string, message: string, choices: Choice[]): Promise<
     const back = document.createElement("div");
     back.className = "modal-back";
     back.innerHTML =
-      `<div class="modal" role="dialog" aria-label="${esc(title)}"><div class="mtitle">${esc(title)}</div>` +
+      `<div class="modal box" role="dialog" aria-label="${esc(title)}"><div class="mtitle">${esc(title)}</div>` +
       (message ? `<div class="mtext">${esc(message)}</div>` : "") +
       `<div class="mbtns">${choices.map((c) =>
         `<button data-id="${esc(c.id)}" class="btn${c.primary ? " primary" : ""}${c.danger ? " danger" : ""}">${esc(c.label)}</button>`).join("")}</div></div>`;
@@ -42,7 +42,7 @@ export function menu(x: number, y: number, entries: MenuEntry[]): Promise<string
   return new Promise((resolve) => {
     document.querySelector(".ctx")?.remove();
     const el = document.createElement("div");
-    el.className = "ctx";
+    el.className = "ctx box";
     el.setAttribute("role", "menu");
     el.innerHTML = entries.map((e) => e === "-" ? '<div class="sep"></div>' :
       `<div class="mi${e.disabled ? " off" : ""}${e.danger ? " danger" : ""}" data-id="${esc(e.id)}" role="menuitem">` +

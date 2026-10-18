@@ -21,7 +21,7 @@ export function waitingCards(box, onOpen) {
 
   function card(id) {
     const c = document.createElement("div");
-    c.className = "ask";
+    c.className = "ask box";
     const go = document.createElement("button");
     go.type = "button";
     go.className = "go";

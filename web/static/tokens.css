@@ -1,0 +1,96 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The design code (docs/UI-GUIDELINES.md §2): every step, surface, size, shape and timing of the
+   Page, by name. A rule uses these names, never a new value; a new value is added here first, with
+   its role. The Panel imports this file too (ui/src/style.css) and maps its own colors onto it. */
+:root {
+  /* ---- grid: 4px; 2px only inside a control (icon to edge, a ring's offset) ---- */
+  --sp-0: 2px;    /* inside a control */
+  --sp-1: 4px;    /* icon ↔ label in small controls, a field ↔ its hint */
+  --sp-2: 8px;    /* sibling controls, field ↔ field, a row's padding */
+  --sp-3: 12px;   /* a panel's side padding (wide), a form's padding */
+  --sp-4: 16px;   /* phone gutter, dialog padding, the last field → the buttons */
+  --sp-5: 20px;   /* dialog text → its buttons; the last field → the buttons on a touch screen */
+  --sp-6: 24px;   /* section breaks */
+  --gutter: var(--sp-3);
+
+  /* ---- surfaces: elevation by background, never by a line; only --t-fg mixed into --t-bg ---- */
+  --surface-0: var(--t-bg);                                         /* the terminal, Files, View */
+  --surface-1: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg));    /* chrome: list, header, menus' base */
+  --surface-2: color-mix(in srgb, var(--t-fg) 9%, var(--t-bg));    /* raised on chrome: fields, secondary buttons */
+  --surface-3: color-mix(in srgb, var(--t-fg) 12%, var(--t-bg));   /* floating: popovers, forms; hover on chrome */
+  --surface-4: color-mix(in srgb, var(--t-fg) 18%, var(--t-bg));   /* hover and pressed on a floating surface */
+  --chrome: var(--surface-1);
+  --chrome-2: var(--surface-3);
+  --line: color-mix(in srgb, var(--t-fg) 16%, var(--t-bg));        /* the few lines left: tree guides, rendered content */
+  --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));       /* secondary text, idle icons, placeholders */
+  --faint: color-mix(in srgb, var(--t-fg) 40%, var(--t-bg));       /* a quiet dot, a disabled glyph */
+  --shadow-a: 40%;                                                  /* 18% on a light theme (below) */
+  /* 3px inside the box: its straight edge hides under the wave (shapes.css) */
+  --shadow-near: 0 4px 12px -3px color-mix(in srgb, #000 calc(var(--shadow-a) * .8), transparent);
+  --shadow-far: 0 14px 32px -3px color-mix(in srgb, #000 var(--shadow-a), transparent);
+
+  /* ---- fixed hues by meaning (§2.2); text in a hue is mixed with --t-fg so it reads on a light theme ---- */
+  --local: #4f9dff; --remote: #a98bff; --host-label: cornflowerblue;
+  --danger: #ff6b5e; --danger-fill: #b3372e; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020;
+  --danger-text: color-mix(in srgb, var(--danger) 80%, var(--t-fg));
+  --ring: var(--accent);   /* the focus ring: app.js sets the theme's text color when the accent hides (contrast.js) */
+  /* a folder's bar (dircolors.js gives the hue): pastel on a dark theme, deeper on a light one (3:1) */
+  --dir-l: .80; --dir-c: .085;
+
+  /* ---- radii, before the wave ---- */
+  --r-xs: 4px;    /* kbd, badges */
+  --r-sm: 6px;    /* controls ≤ 28px */
+  --r-md: 8px;    /* controls 30–40px, fields, rows */
+  --r-lg: 12px;   /* popovers, forms, touch controls ≥ 44px */
+  --r-xl: 14px;   /* dialogs, the View window */
+  --r-pill: 999px;
+  /* round things are never round: four blobs, one per neighbor */
+  --blob-a: 56% 44% 52% 48% / 47% 55% 45% 53%;
+  --blob-b: 46% 54% 43% 57% / 55% 45% 56% 44%;
+  --blob-c: 52% 48% 58% 42% / 44% 53% 47% 56%;
+  --blob-d: 44% 56% 49% 51% / 52% 43% 57% 48%;
+
+  /* ---- the wave: how far a horizontal edge bows (shapes.css), by the box's size ---- */
+  --wave-s: 1px;     /* fields, controls ≤ 28px */
+  --wave-m: 1.5px;   /* buttons, rows */
+  --wave-l: 2px;     /* forms, popovers, the find box; a header's lower edge (three troughs) */
+  --wave-xl: 2.5px;  /* dialogs, the View window */
+
+  /* ---- type: --ui at fixed sizes for chrome; --term-font at --size for what is typed (§4.6) ---- */
+  --fs-display: 22px;   /* 600: the phone sheet's title */
+  --fs-title: 15px;     /* 600: header title, dialog title */
+  --fs-body: 14px;      /* 500: footer buttons, menu rows */
+  --fs-row: 13.5px;     /* 500: a list row's title */
+  --fs-small: 13px;     /* 400: toast, filter, cards */
+  --fs-label: 12.5px;   /* 500/600: group headers, segments, hints, errors */
+  --fs-meta: 12px;      /* 400: secondary lines, counts */
+  --fs-micro: 11px;     /* 400–600: kbd, badges, captions; nothing smaller */
+  --fw-body: 400; --fw-ctl: 500; --fw-head: 600;
+  --lh-tight: 1.2; --lh-ui: 1.35; --lh-prose: 1.45;
+
+  /* ---- heights (wide; the touch sizes are in controls.css) ---- */
+  --h-bar: 56px;     /* list head, header, Files head */
+  --h-touch: 44px;   /* a finger */
+
+  /* ---- motion (motion.css) ---- */
+  --dur-press: 60ms;    /* a press must feel instant */
+  --dur-hover: 120ms;   /* hover in, color, ring */
+  --dur-out: 160ms;     /* hover out */
+  --dur-enter: 200ms;   /* a popover, form, dialog or toast appears */
+  --dur-settle: 320ms;  /* a click's ripple and the outline's wobble, after the action: it never delays */
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-press: cubic-bezier(.3, 0, .5, 1);
+  --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
+  --ease-wobble: cubic-bezier(.34, 1.36, .64, 1);
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --ease-spring: linear(0, .32 8%, .7 18%, .95 30%, 1.04 42%, 1.02 55%, .997 70%, 1);   /* ~4% over, settled by 70% */
+    --ease-wobble: linear(0, .55 10%, 1.18 26%, .9 46%, 1.05 64%, .98 82%, 1);           /* a pen's swing, once */
+  }
+}
+/* a light theme (app.js sets .light): shadows lift rather than stain, folder hues darken */
+:root.light { --shadow-a: 18%; --dir-l: .62; --dir-c: .11; }
+@media (max-width: 860px), (pointer: coarse) {
+  :root { --gutter: var(--sp-4); }
+}

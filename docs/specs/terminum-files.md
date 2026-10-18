@@ -469,6 +469,15 @@ Scenario: AC-70 happy path — a second browser tab
   When the user ⌘-clicks a file (or ⌘↩, "Open in Window") on the Mac
   Then the browser opens a new tab of the page at "/view" showing View alone with that file, signed in by the page's own sign-in (its storage is per origin, so no secret is in the address); further files from the first tab join it as tabs (a BroadcastChannel); on a phone the item is not offered
 
+Scenario: AC-70 edge — View belongs to its session
+  Given View shows "pool.rs" opened from session "api"
+  When the user shows session "docs" in the session list
+  Then View is closed (the terminal of "docs" is shown, or "docs"'s own View if it had one open) and the View button is enabled only when "docs" has files open
+  When the user shows "api" again
+  Then its View is back as it was: its tabs, unsaved edits and scroll, open or closed as the user left it
+  When session "api" closes
+  Then its View goes with it, unless it holds unsaved edits (then it waits until they are saved or the page closes); a host that is only reconnecting keeps its sessions' Views
+
 Scenario: AC-70 edge — the viewer and hosts
   Then pending viewer files keep their host: a local and a remote file with the same path never share a tab or unsaved edits
 
@@ -710,4 +719,5 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 
 - [x] AC-51 … AC-71 — `ui/test/e2e_panel.mjs` (tree, viewer, Markdown, workspaces across reload and restart, edit and conflicts, create, rename, Trash, terminal insert and cd into a tmux pane, watcher, keyboard, filter, images, hidden files, multi-select, links, expand all, icons) → pass; `scripts/bench_ls.sh` on a 500,000-entry folder (10 runs, a new terminumd each): first page p95 333 ms (budget 2.5 s), a random cached page p95 9 ms, RSS 33 MB → pass.
 - [x] AC-70 (2026-10-16) — a new file opens in the page's View: `web/test/e2e_live.mjs` "a new file opens in View, where a click opens files, not under the tree" in Chromium and WebKit; it fails with the panel's own editor (checked by reverting the fix).
+- [x] AC-70 (2026-10-18) — View belongs to its session: `web/test/e2e_app.mjs` "View belongs to its session: another session hides it, coming back shows it as it was" and "a View whose last file closed does not come back with its session" in Chromium and WebKit → pass.
 - [ ] AC-72, AC-73 — backlog, not implemented.

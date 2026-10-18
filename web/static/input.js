@@ -25,7 +25,7 @@ const FN_ROWS = [
 ];
 
 const HOLD = 400, REPEAT = 33;   // ms: as a keyboard's repeat
-const SLIDE_AFTER = 250, SLIDE_BEFORE = 600;   // ms a finger rests on the input before sliding moves the cursor (iOS's menu comes at ~500)
+const SLIDE_AFTER = 250;   // ms a finger rests on the input before sliding moves the cursor (held still, iOS's menu comes at ~500)
 const DELETES = { deleteContentBackward: "\x7f", deleteWordBackward: "\x7f", deleteContentForward: "\x1b[3~" };   // a word as one backspace where ^W is not a word (nano: search)
 // On a touch screen the keyboard field keeps one invisible character: iOS repeats a held delete
 // only while there is something to delete, and the field is emptied after every key.
@@ -102,12 +102,14 @@ export class Input {
     k.addEventListener("compositionend", (e) => { this.type(k.value.replaceAll(KEEP, ""), "compose", e); k.value = ""; refill(); });
     // The field lies over the cursor's row or a coding agent's input box (for iOS's long-press
     // Paste): a short tap on it still moves the cursor like a tap on the terminal, and a finger
-    // that rests a moment and then slides moves the cursor along the line, a character a step,
-    // as in a text field (iOS's own menu still comes for a finger held still).
+    // that rests a moment, however long, and then slides moves the cursor as in a text field: in
+    // an agent's input box onto the character under the finger, over its lines too; at a shell's
+    // prompt along the line, a character a step (iOS's own menu still comes for a finger held
+    // still). The finger's times are the events' own (when it touched), not when a busy page got to them.
     let down = null;
     k.addEventListener("touchstart", (e) => {
       const t = e.touches[0];
-      down = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: Date.now(), slide: false, moved: 0 } : null;
+      down = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: e.timeStamp, slide: false, moved: 0 } : null;
     }, { passive: true });
     k.addEventListener("touchmove", (e) => {
       const t = e.touches[0];
@@ -120,14 +122,21 @@ export class Input {
         return;
       }
       if (!down.slide) {
-        const rest = Date.now() - down.at;
+        const rest = e.timeStamp - down.at;
         if (rest < SLIDE_AFTER) { if (Math.hypot(dx, dy) > 10) down.scroll = t.clientY; return; }
-        if (Math.abs(dx) < 4 || Math.abs(dx) < Math.abs(dy)) return;
-        if (rest > SLIDE_BEFORE) { down = null; return; }              // held still that long: iOS's menu's
+        down.box = !!this.options.inBox?.();                          // the finger draws the cursor over the box's lines
+        if (Math.hypot(dx, dy) < 4 || (!down.box && Math.abs(dx) < Math.abs(dy))) return;
         down.slide = true;
       }
       e.preventDefault();                                             // the slide is ours, not iOS's loupe
-      const cells = Math.trunc(dx / (this.options.cellWidth?.() || 8));
+      const w = this.options.cellWidth?.() || 8;
+      if (down.box) {                                                 // to the character under the finger, once it reaches another
+        if (down.to && Math.abs(t.clientX - down.to.x) < w / 2 && Math.abs(t.clientY - down.to.y) < w) return;
+        down.to = { x: t.clientX, y: t.clientY };
+        this.options.tapMove?.(t.clientX, t.clientY);
+        return;
+      }
+      const cells = Math.trunc(dx / w);
       const step = (dir) => this.type(this.options.appCursor() ? `\x1bO${dir}` : `\x1b[${dir}`, "slide");
       for (; down.moved < cells; down.moved++) step("C");
       for (; down.moved > cells; down.moved--) step("D");
@@ -135,7 +144,7 @@ export class Input {
     k.addEventListener("touchend", (e) => {
       if (down?.slide || down?.scroll !== undefined) { e.preventDefault(); down = null; return; }   // its tap would move the cursor
       const t = e.changedTouches[0];
-      if (down && t && Date.now() - down.at < 350 && Math.hypot(t.clientX - down.x, t.clientY - down.y) < 10
+      if (down && t && e.timeStamp - down.at < 350 && Math.hypot(t.clientX - down.x, t.clientY - down.y) < 10
           && !this.options.tapLink?.(t.clientX, t.clientY))       // an address or a path on the row still opens
         this.options.tapMove?.(t.clientX, t.clientY);
       down = null;

@@ -1,34 +1,40 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* The output widgets (AC-56), inside the shadow root of a terminal row (widgetui.js). They
-   take the terminal's colors and font from the page (--t-bg, --t-fg, --tk-*). */
+   take the terminal's colors and font from the page (--t-bg, --t-fg, --tk-*) and the design code
+   (tokens.css: its custom properties reach the shadow root): set apart by a surface and space, not
+   frames; a hairline only between a table's rows; a card's edges bow a little as the page's do. */
 
 :host(.wg-host:not(.wg-raw)) slot { display: none; }      /* rendered: the row's own text is hidden */
 
-.wg { display: block; margin: 6px 0; border: 1px solid color-mix(in srgb, var(--t-fg) 18%, transparent);
-  border-radius: 8px; overflow: hidden; white-space: normal; overflow-wrap: break-word; background: color-mix(in srgb, var(--t-fg) 3%, var(--t-bg));
-  -webkit-user-select: text; user-select: text; }   /* break-word: Wrap's "anywhere" would cut a table's words letter by letter */
+.wg { --hair: color-mix(in srgb, var(--t-fg) 7%, transparent);   /* the one line left: between a table's rows */
+  display: block; margin: var(--sp-2) 0; border-radius: var(--r-lg); overflow: hidden; white-space: normal; overflow-wrap: break-word;
+  background: var(--surface-1); -webkit-user-select: text; user-select: text; }   /* break-word: Wrap's "anywhere" would cut a table's words letter by letter */
+@supports (clip-path: shape(from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
+  .wg { --a: calc(var(--wave-l) * 4 / 3); clip-path: shape(from 0 var(--r-lg), curve to var(--r-lg) 0 with 0 0,
+    curve to calc(100% - var(--r-lg)) 0 with 42% var(--a) / 42% var(--a), curve to 100% var(--r-lg) with 100% 0,
+    line to 100% calc(100% - var(--r-lg)), curve to calc(100% - var(--r-lg)) 100% with 100% 100%,
+    curve to var(--r-lg) 100% with 57% calc(100% - var(--a)) / 57% calc(100% - var(--a)), curve to 0 calc(100% - var(--r-lg)) with 0 100%, close); }
+}
 :host(.wg-raw) .wg { margin-bottom: 2px; }
 :host(.wg-raw) .body { display: none; }
 
-.bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 3px 6px;
-  font: 11.5px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
-  background: color-mix(in srgb, var(--t-fg) 7%, var(--t-bg)); -webkit-user-select: none; user-select: none; }
+.bar { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; padding: var(--sp-1) var(--sp-1) 0 var(--sp-3);
+  font: 11.5px/1.4 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; -webkit-user-select: none; user-select: none; }
 .name { color: color-mix(in srgb, var(--t-fg) 65%, var(--t-bg)); margin-right: auto; text-transform: lowercase; }
-button { font: inherit; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 5px;
-  padding: 2px 7px; min-height: 24px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-button:hover { background: color-mix(in srgb, var(--t-fg) 10%, transparent); }
-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.seg { display: inline-flex; border: 1px solid color-mix(in srgb, var(--t-fg) 20%, transparent); border-radius: 6px; overflow: hidden; }
-.seg button { border-radius: 0; border: 0; }
-:host(.wg-raw) .seg [data-act="raw"], :host(:not(.wg-raw)) .seg [data-act="on"] {
-  background: color-mix(in srgb, var(--t-fg) 16%, transparent); font-weight: 600; }
+button { font: inherit; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); background: transparent; border: 0; border-radius: var(--r-sm);
+  padding: 2px 8px; min-height: 24px; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;
+  transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
+@media (hover: hover) { button:hover { background: var(--surface-3); color: var(--t-fg); } }
+button:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 1px; }
+.seg { display: inline-flex; padding: var(--sp-0); gap: var(--sp-0); background: var(--surface-2); border-radius: var(--r-md); }
+:host(.wg-raw) .seg [data-act="raw"], :host(:not(.wg-raw)) .seg [data-act="on"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }
 .err { flex-basis: 100%; color: var(--danger, #ff6b5e); white-space: pre-wrap; }
 svg.lu { width: var(--s, 14px); height: var(--s, 14px); fill: none; stroke: currentColor; stroke-width: 2;
   stroke-linecap: round; stroke-linejoin: round; flex: 0 0 auto; }
 
-.body { padding: 8px 12px; overflow-x: auto; }
-.body.code { padding: 0; }
-pre { margin: 0; padding: 8px 12px; white-space: pre; overflow-x: auto; font-family: inherit; font-size: inherit; tab-size: 4; }
+.body { padding: var(--sp-2) var(--sp-3) var(--sp-3); overflow-x: auto; }
+.body.code { padding: 0 0 var(--sp-1); }
+pre { margin: 0; padding: var(--sp-2) var(--sp-3); white-space: pre; overflow-x: auto; font-family: inherit; font-size: inherit; tab-size: 4; }
 .body.mermaid { display: flex; justify-content: center; }
 img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(--wg-dh, 50vh); object-fit: contain;
   cursor: zoom-in; background: transparent; }
@@ -37,25 +43,28 @@ img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(-
 .body.markdown, .body.table { font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
-.markdown h1, .markdown h2 { border-bottom: 1px solid color-mix(in srgb, var(--t-fg) 15%, transparent); padding-bottom: .2em; }
 .markdown h1 { font-size: 1.5em; } .markdown h2 { font-size: 1.3em; } .markdown h3 { font-size: 1.1em; }
-.markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 1em 0 .5em; line-height: 1.25; }
+.markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 1.3em 0 .5em; line-height: 1.25; font-weight: 600; }   /* set apart by space, not a rule */
 .markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown table, .markdown pre { margin: 0 0 .8em; }
 .markdown ul, .markdown ol { padding-left: 1.6em; }
 .markdown code { font-family: TermFont, ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em;
-  background: color-mix(in srgb, var(--t-fg) 9%, transparent); padding: .1em .3em; border-radius: 4px; }
-.markdown pre { background: color-mix(in srgb, var(--t-fg) 6%, transparent); border-radius: 6px; }
+  background: var(--surface-3); padding: .1em .35em; border-radius: var(--r-xs); }
+.markdown pre { background: var(--surface-0); border-radius: var(--r-md); }
 .markdown pre code { background: none; padding: 0; font-size: 12.5px; }
-.markdown blockquote { border-left: 3px solid color-mix(in srgb, var(--t-fg) 25%, transparent); padding-left: .9em;
-  color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); }
+.markdown blockquote { margin-left: 0; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--surface-2);
+  color: color-mix(in srgb, var(--t-fg) 80%, var(--t-bg)); }   /* a tint, not a bar */
+/* tables: no frame and no columns' lines; a muted head, rows apart by space and a hairline */
 .markdown table, .table table { border-collapse: collapse; display: block; overflow-x: auto; }
-.markdown th, .markdown td, .table th, .table td { border: 1px solid color-mix(in srgb, var(--t-fg) 18%, transparent); padding: 3px 8px; }
-/* a drawn table: its head shaded, a column of numbers to the right */
-.table th { text-align: left; background: color-mix(in srgb, var(--t-fg) 6%, transparent); }
-.table td { vertical-align: top; }
+.markdown th, .markdown td, .table th, .table td { padding: 6px 12px; border: 0; border-bottom: 1px solid var(--hair); text-align: left; vertical-align: top; }
+.markdown th, .table th { padding-top: 2px; font-size: .86em; font-weight: 600; letter-spacing: .01em; color: color-mix(in srgb, var(--t-fg) 62%, var(--t-bg));
+  border-bottom-color: color-mix(in srgb, var(--t-fg) 13%, transparent); }
+.markdown tr:last-child td, .table tr:last-child td { border-bottom: 0; }
+.markdown :is(th, td):first-child, .table :is(th, td):first-child { padding-left: 0; }
+.markdown :is(th, td):last-child, .table :is(th, td):last-child { padding-right: 0; }
+/* a column of numbers to the right */
 .table .num { text-align: right; font-variant-numeric: tabular-nums; }
 .markdown a { color: var(--accent); }
-.markdown hr { border: 0; border-top: 1px solid color-mix(in srgb, var(--t-fg) 18%, transparent); }
+.markdown hr { border: 0; border-top: 1px solid var(--hair); margin: 1.4em 0; }
 .markdown .remote-img { color: color-mix(in srgb, var(--t-fg) 60%, var(--t-bg)); }
 .markdown img.diagram { display: block; margin: 0 auto .8em; }
 
@@ -76,15 +85,14 @@ img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(-
 
 /* image buttons after a row's text, and the images opened below it */
 .wgi { white-space: nowrap; margin-left: .6ch; -webkit-user-select: none; user-select: none; }
-.wgi button { padding: 0 4px; min-height: 0; height: 1.25em; vertical-align: -0.2em;
-  border-color: color-mix(in srgb, var(--t-fg) 25%, transparent); color: var(--accent); }
+.wgi button { padding: 0 4px; min-height: 0; height: 1.25em; vertical-align: -0.2em; background: var(--surface-2); color: var(--accent); }
 /* as wide as the terminal (a Grid row is only as wide as its text), so an image is centered in the view */
 .figs { display: block; box-sizing: border-box; width: var(--wg-tw, 100%); white-space: normal; text-align: center; }
 .figs:empty { display: none; }
-figure { margin: 4px 0 8px; display: inline-flex; flex-direction: column; align-items: center; gap: 2px;
+figure { margin: var(--sp-1) 0 var(--sp-2); display: inline-flex; flex-direction: column; align-items: center; gap: var(--sp-1);
   max-width: var(--wg-iw, 50%); vertical-align: top; }
 figure img { max-width: var(--wg-iw, 50vw); max-height: var(--wg-ih, 50vh); object-fit: contain;
-  cursor: zoom-in; border-radius: 4px; background: repeating-conic-gradient(#8884 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+  cursor: zoom-in; border-radius: var(--r-md); background: var(--surface-2); }   /* a transparent image on a quiet surface, no checkerboard */
 figcaption { display: flex; align-items: center; justify-content: center; gap: 4px; font: 11.5px/1.3 -apple-system, BlinkMacSystemFont, sans-serif;
   color: color-mix(in srgb, var(--t-fg) 60%, var(--t-bg)); overflow-wrap: anywhere; }
 figcaption button { padding: 0 3px; min-height: 0; }
@@ -94,7 +102,6 @@ figcaption .err { flex-basis: auto; }
 :host(.wg-fold) slot { display: none; }
 .fold { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; vertical-align: 0.05em;
   font: 11.5px/1.3 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; -webkit-user-select: none; user-select: none; }
-.fold button { min-height: 0; height: 1.5em; padding: 0 7px; border-color: color-mix(in srgb, var(--t-fg) 22%, transparent);
-  color: color-mix(in srgb, var(--t-fg) 70%, var(--t-bg)); }
+.fold button { min-height: 0; height: 1.5em; padding: 0 8px; background: var(--surface-2); color: color-mix(in srgb, var(--t-fg) 70%, var(--t-bg)); }
 :host(:not(.wg-fold)) .fold { margin-right: .6ch; }
 ::highlight(find) { background-color: #fff; color: #111; }

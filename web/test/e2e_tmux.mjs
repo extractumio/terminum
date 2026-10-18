@@ -59,12 +59,16 @@ export async function webTmux(browser, name) {
 
     // New session: an inline name; terminumd's refusal shows in the form; done, the form goes
     await drawer();
-    const foot = await page.evaluate(() => [...document.querySelectorAll(".nav-foot > button")].map((b) => {
-      const s = getComputedStyle(b);
-      return [b.id, [s.height, s.width, s.backgroundColor, s.borderRadius, s.paddingLeft, s.fontWeight, s.justifyContent].join(" ")];
-    }));
-    check("the session list's footer buttons look alike (a shared class, not one rule per id)",
-      foot.length === 4 && new Set(foot.map(([, look]) => look)).size === 1, JSON.stringify(foot));
+    // a phone's footer is a row of blobs: alike but for the blob's outline, each its own and no circle
+    const foot = await page.evaluate((phone) => [...document.querySelectorAll(".nav-foot > button")].map((b) => {
+      const s = getComputedStyle(b), i = getComputedStyle(b.querySelector("svg"));
+      return [b.id, [s.height, s.width, s.backgroundColor, s.paddingLeft, s.fontWeight, s.justifyContent, i.width, i.backgroundColor].join(" "),
+        phone ? i.borderRadius : s.borderRadius];
+    }), phone);
+    const radii = foot.map(([, , r]) => r);
+    check("the session list's footer buttons look alike (a shared class, not one rule per id); on a phone their blobs differ and none is round",
+      foot.length === 4 && new Set(foot.map(([, look]) => look)).size === 1
+      && (phone ? new Set(radii).size === 4 && !radii.some((r) => /^50%( 50%)*$/.test(r)) : new Set(radii).size === 1), JSON.stringify(foot));
     await page.click("#newsessbtn");
     await page.fill("#newsessname", "bad:name");
     await page.keyboard.press("Enter");

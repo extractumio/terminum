@@ -38,8 +38,8 @@ export async function webTouch(browser) {
       key: [cs(key).borderTopWidth, cs(key, "::after").backgroundColor, cs(key, "::after").clipPath.startsWith("shape(evenodd")],
       down: [down.borderTopLeftRadius, down.borderTopRightRadius, down.clipPath] };
   });
-  check(`${at} buttons are a little uneven: the tabs' and the bookmark dialog's bowed (neighbors differently), a hot key's border a ring of its shape, Scroll to the bottom a blob`,
-    uneven.tabs.every(Boolean) && uneven.differ && uneven.save && uneven.key[0] === "0px" && !/^rgba\(0, 0, 0, 0\)$|transparent/.test(uneven.key[1]) && uneven.key[2]
+  check(`${at} buttons are a little uneven: the tabs' and the bookmark dialog's bowed (neighbors differently), a hot key a fill of that shape with no ring (the design code: no outlines), Scroll to the bottom a blob`,
+    uneven.tabs.every(Boolean) && uneven.differ && uneven.save && uneven.key[0] === "0px" && /^rgba\(0, 0, 0, 0\)$|transparent/.test(uneven.key[1]) && uneven.key[2]
     && uneven.down[0] !== uneven.down[1] && !uneven.down.includes("50%") && uneven.down[2] === "none", JSON.stringify(uneven));
   await page.evaluate(() => document.getElementById("kbd").focus());
   const kept = await page.evaluate(() => document.getElementById("kbd").value);
@@ -74,15 +74,37 @@ export async function webTouch(browser) {
     const w = probe.getBoundingClientRect().width / 10; probe.remove();
     return { x: k.left + 60, y: k.top + k.height / 2, w };
   });
-  const touch = (type, x) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x, y: geo.y }] });
-  const from = sent.length;
-  await touch("touchStart", geo.x);
-  await page.waitForTimeout(350);
-  for (let k = 1; k <= 7; k++) await touch("touchMove", geo.x + (geo.w * 3.5 * k) / 7);
-  await touch("touchMove", geo.x + geo.w * 2.5);
-  await touch("touchEnd");
-  await page.waitForTimeout(100);
-  const moves = sent.slice(from).filter((m) => m.t === "in").map((m) => m.data);
+  // each touch carries its own time (the page judges a finger by it): the gesture, not this browser's pace
+  let clock = Date.now() / 1000;
+  const after = (ms) => (clock += ms / 1000);
+  const touch = (type, x, ms = 16) => cdp.send("Input.dispatchTouchEvent", { type, timestamp: after(ms), touchPoints: type === "touchEnd" ? [] : [{ x, y: geo.y }] });
+  // in an agent's input box the cursor follows the finger onto the character under it (held as
+  // long as the finger likes first); the moves are ← and → only, and add up to there
+  const net = (ms) => ms.join("").match(/\x1b\[[A-D]/g)?.reduce((n, k) => n + ({ C: 1, D: -1 }[k[2]] ?? 100), 0) ?? 0;
+  const curX = await page.evaluate(() => document.querySelector("#screen .cur").getBoundingClientRect().left);
+  const slide = async (rest, path) => {
+    const n = sent.length;
+    await touch("touchStart", geo.x);
+    after(rest);                                                  // the finger rests
+    for (const dx of path) await touch("touchMove", geo.x + dx);
+    await touch("touchEnd");
+    await page.waitForTimeout(100);
+    return sent.slice(n).filter((m) => m.t === "in").map((m) => m.data);
+  };
+  const boxMoves = await slide(1200, [0.5, 1, 1.5, 2, 2.5, 3].map((c) => c * geo.w));
+  const want = Math.floor((geo.x + 3 * geo.w - curX) / geo.w);
+  check(`${at} in an agent's input box a finger held (however long) and slid takes the cursor onto the character under it`,
+    boxMoves.length > 0 && Math.abs(net(boxMoves) - want) <= 1, JSON.stringify({ boxMoves, net: net(boxMoves), want }));
+
+  // at a shell's prompt it moves along the line a character a step, both ways
+  say({ t: "layout", groups: [{ kind: "window", label: "Window 1", where: "", host: null, wid: "W1", new: "New tab", pool: "",
+    items: [{ id: "S1", title: "One", sub: ["zsh", "~/p"], index: "", host: null, profile: "Default", agent: null, shell: true, state: "" }] }] });
+  const prompt = [line("$ echo hello"), { r: [["$ git commit -m 'x'", null, null, 0], [" ", null, null, 256]], e: true }];
+  say({ t: "screen", sid: "S1", full: true, n: prompt.length, cols: 60, rows: prompt.length, ch: prompt.map((r, i) => [i, r]) });
+  await page.waitForFunction(() => !document.querySelector("#screen .blk.inbox") && document.getElementById("screen").textContent.includes("git commit"), null, { timeout: 3000 }).catch(() => {});
+  await page.waitForTimeout(150);
+  Object.assign(geo, await page.evaluate(() => { const k = document.getElementById("kbd").getBoundingClientRect(); return { x: k.left + 60, y: k.top + k.height / 2 }; }));
+  const moves = await slide(350, [...[1, 2, 3, 4, 5, 6, 7].map((k) => (geo.w * 3.5 * k) / 7), geo.w * 2.5]);
   check(`${at} a finger that rests and then slides moves the cursor a character a step, both ways, and taps nothing`,
     JSON.stringify(moves) === JSON.stringify(["\x1b[C", "\x1b[C", "\x1b[C", "\x1b[D"]), JSON.stringify(moves));
 
@@ -97,7 +119,7 @@ export async function webTouch(browser) {
   // a swipe up or down that starts on the input box scrolls the terminal
   await page.evaluate(() => { const t = document.getElementById("term"); t.scrollTop = t.scrollHeight; });
   const top0 = await page.evaluate(() => document.getElementById("term").scrollTop);
-  const vertical = (type, y) => cdp.send("Input.dispatchTouchEvent", { type, touchPoints: type === "touchEnd" ? [] : [{ x: geo.x, y }] });
+  const vertical = (type, y) => cdp.send("Input.dispatchTouchEvent", { type, timestamp: after(16), touchPoints: type === "touchEnd" ? [] : [{ x: geo.x, y }] });
   await vertical("touchStart", geo.y);
   for (let k = 1; k <= 6; k++) await vertical("touchMove", geo.y + k * 20);
   await vertical("touchEnd");

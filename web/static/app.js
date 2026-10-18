@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { signedUrl } from "./signin.js";              // first: it signs every request the page makes
 import { connection } from "./conn.js";
+import { ringColor } from "./contrast.js";
+import { oneKeyboard } from "./onekbd.js";
+import "./press.js";                                // a pressed button's ripple (motion.css)
 import { Input } from "./input.js";
-import { findItem, metaLine, profileBar, renderNav, stateIcon } from "./nav.js";
+import { agentMark, findItem, folderBar, metaLine, renderNav, stateIcon } from "./nav.js";
 import { textForm } from "./render.js";
 import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
@@ -47,7 +50,7 @@ const st = {
 
 // ---------- connection (conn.js) ----------
 const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => onMessage(m), status,
-  busy: () => ["files", "file"].some((f) => { try { return $(f).contentWindow?.fbBusy?.(); } catch { return false; } }),
+  busy: () => [$("files"), ...$("filewin").querySelectorAll("iframe")].some((f) => { try { return f.contentWindow?.fbBusy?.(); } catch { return false; } }),
   onOpen: (ws) => {
     trace.connected(send, ws);
     if (st.sid) select(st.sid, true);
@@ -79,7 +82,7 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { send({ t: "in", data, ...trace.keyFields(data, path, e) }); screen.typed(); if (data.includes("\r")) st.ran = true; },
   options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
-    tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
+    tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
     wordDeletes: () => { const it = st.sid && findItem(st.groups, st.sid)?.item; return !!(it?.agent ? view.box : it?.shell && !st.ran); } } });
@@ -222,7 +225,7 @@ function onMessage(m) {
   trace.received(m);
   bookmarks.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); tools.layoutCame(m.groups); break;
+    case "layout": st.groups = m.groups; st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": applyTheme(m.theme); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -295,7 +298,7 @@ function showCurrent(found) {
   $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
   $("curstate").replaceChildren(...[found && stateIcon(found.item.state)].filter(Boolean));
   view.setAgent(!!found?.item.agent);
-  if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); }
+  if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); }
   else {
     const { group: g, item: it } = found;
     const where = (g.session ? `${g.label} ${g.session}` : g.label) + (it.index ? `, window ${it.index}` : "");
@@ -304,7 +307,8 @@ function showCurrent(found) {
     const at = dir >= 0 ? dir + 1 : Math.min(sub.length, it.host ? 2 : 1);
     const line = metaLine([...sub.slice(0, at), it.profile || "", where, ...sub.slice(at)].filter(Boolean), !!it.host);
     $("cursub").replaceChildren(...line.childNodes);
-    $("curbar").replaceChildren(profileBar(it.profile, true, it.state === "working"));
+    $("curbar").replaceChildren(folderBar(it, true, it.state === "working"));
+    $("curagent").replaceChildren(agentMark(it, 16));
   }
   document.title = found ? `${found.item.title} – terminum` : "terminum";
   if (!tools.renaming()) $("rename").hidden = !found;
@@ -319,7 +323,7 @@ function select(id, force = false) {
   trace.opening(id);
   send({ t: "sub", id });                          // first: the server answers "files" for the subscribed pane
   screen.opened();                                 // its Screen mode and this view's size
-  views.sessionChanged();
+  views.sessionChanged(id);
   drawNav(); syncControls();
 }
 
@@ -369,6 +373,8 @@ function applyTheme(theme) {
   const r = document.documentElement.style;
   r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
   r.setProperty("--accent", theme.cursor || theme.fg);
+  r.setProperty("--ring", ringColor(theme.bg, theme.cursor || theme.fg, theme.fg));   // a focus ring that shows
+  document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues
   if (theme.sel) r.setProperty("--sel", theme.sel);
   if (theme.selfg) r.setProperty("--selfg", theme.selfg);
   document.querySelector('meta[name="theme-color"]').content = theme.bg;
@@ -480,7 +486,8 @@ function showKeys(on) {
   view.keepBottom(syncControls);
 }
 $("keysbtn").onclick = () => showKeys($("hotkeys").hidden);
-$("keysfab").onclick = () => showKeys($("hotkeys").hidden);
+const keyboards = oneKeyboard({ kbd: $("kbd"), panel: $("hotkeys"), show: showKeys });   // the on-screen keyboard or the hot keys
+$("keysfab").onclick = () => keyboards.toggle();
 $("keysfab").onmousedown = (e) => e.preventDefault();      // the iOS keyboard stays up
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.close(); closeDrawer(); } });
 

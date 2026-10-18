@@ -102,6 +102,7 @@ Scenario: AC-31 happy path — a table drawn with rules
   And the rules may be light, heavy, double or rounded (rich, tabulate) or ASCII ("+----+", mysql, prettytable); a table without rules between its rows has a row per line, in a box table a line whose first cell is empty going on the row above (an ASCII table's never: mysql does not wrap); a column of numbers (units and "-" allowed) is aligned right; cells are put in as text
   And Copy copies it as a Markdown table ("|" in a cell as "\|"); Raw shows the drawn lines
   And it is a widget although the program colored it; one rule of a single column (an agent's box, a banner), a line that does not fit the grid, or a table whose bottom rule is not printed yet is no table; a Markdown document ends before a drawn table
+  And a table whose top rule is not there (scrolled away, or cut off where it was copied: "│ What │ Without │ With │" then "├───┼───┼───┤") starts at that head row, when the middle rule under it has as many columns
   And known limits: a table with rules between its rows and no head shows its first row as the head; a first cell wrapped without rules between rows (rich) becomes a row of its own; an unchanged table in a diff's context is a widget too; its colors are dropped in the widget (Raw keeps them)
 
 Scenario: AC-31 happy path — an image named in the output
@@ -331,14 +332,16 @@ Scenario: AC-40 happy path — the panel, status lines, the view
   And in Wrap the box's rows re-join as Claude Code wrapped them (cols - 2 characters a row, AS-33): a row goes on when the next row's first word would not have fit; a line the user ended stays its own; a space typed at a full row's end keeps the cursor on the same line; when the cursor stands past a row's text on the space it wrapped at, its cell is that space
 
 Scenario: AC-40 happy path — slides, held delete, iOS paste
-  When the user rests a finger 250 ms on the cursor's row and slides sideways within 600 ms
-  Then the cursor moves a character a step (← and →); a finger held still gets iOS's Paste (the keyboard field lies invisibly over the row or the box); a quick swipe scrolls
+  When the user rests a finger at least 250 ms (however long) on the cursor's row and slides sideways
+  Then the cursor moves a character a step (← and →); a finger held still and lifted gets iOS's Paste (the keyboard field lies invisibly over the row or the box); a quick swipe scrolls
+  When the user does so in a coding agent's input box, also up or down
+  Then the cursor follows the finger onto the character under it, over the box's lines, as a text field's caret follows a held finger; lifting the finger leaves it there
   When the user holds delete on the on-screen keyboard
   Then it repeats as in a text field (the field keeps one invisible character), each delete one backspace, words after about 2 s where C-w is a word; deletes more than 150 ms apart are taps
 
 Scenario: AC-40 edge — the cursor below the footer
-  Given Claude Code left the terminal's cursor on a blank row below its footer after a redraw of its own
-  Then the page draws the cursor on the caret last seen in the box (its row's text unchanged), else at the end of the input's last row, and keeps taps, ↑ and ↓ going from there; the next key brings the agent's own cursor back; a new theme or a frame of changed rows leaves one cursor
+  Given Claude Code left the terminal's cursor on a blank row below its footer after a redraw of its own, or on one of its status lines (the pane resized: the hot keys opened)
+  Then the status lines stay behind ⓘ, and the page draws the cursor on the caret last seen in the box (its row's text unchanged), else at the end of the input's last row, and keeps taps, ↑ and ↓ going from there; the next key brings the agent's own cursor back; a new theme or a frame of changed rows leaves one cursor
 
 Scenario: AC-40 failure — not an agent's box
   Given a shell, less or htop
@@ -518,7 +521,7 @@ iterm-enhancer's `web-bookmarks.json` (version 1, `sid` + `key`) is read: `key` 
 
 Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminumd, Chromium and WebKit, 509 checks) and `node --test web/test/*.test.mjs` (76) pass; terminumd's side by `cargo test` (288) and `scripts/e2e_core.py`.
 
-- [x] AC-31 — `web/test/e2e_widgets.mjs` (inherited) → pass. Update 0.2.2 (drawn tables): `web/test/outparse.test.mjs` tables cases and `e2e_widgets.mjs` "a drawn table" → pass.
+- [x] AC-31 — `web/test/e2e_widgets.mjs` (inherited) → pass. Update 0.2.2 (drawn tables): `web/test/outparse.test.mjs` tables cases and `e2e_widgets.mjs` "a drawn table" → pass. Update 2026-10-18 (a table without its top rule): `outparse.test.mjs` "a drawn table without its top rule starts at its head row" → pass.
 - [x] AC-32 — `cargo test page::folds` (fold.py's cases ported) and `e2e_widgets.mjs` folds → pass.
 - [x] AC-33 — `cargo test page::bookmarks` and `web/test/e2e_marks.mjs` → pass.
 - [x] AC-34 — `cargo test page::search` and `e2e_marks.mjs` search → pass. The `found` message keeps iterm-enhancer's shape `{ref, sid, q, hits, total}`, as `find.js` reads it.

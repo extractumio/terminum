@@ -234,6 +234,28 @@ test("drawn tables in a coding agent's tool output, and with double rules (tabul
   assert.deepEqual(regions(rows(double))[0]?.table.head, ["name", "n"]);
 });
 
+// Claude Code's table whose top rule is not there (copied without it, or scrolled away): it starts at its head row.
+const HEADLESS = [
+  "  Turn the classifier off?", "",
+  "  │                 What                 │ Without │ With │",
+  "  ├──────────────────────────────────────┼─────────┼──────┤",
+  "  │ Typing while speaking (30 takes)     │ 2       │ 23   │",
+  "  ├──────────────────────────────────────┼─────────┼──────┤",
+  "  │ Music under speech, 10 dB below (6)  │ 0       │ 6    │",
+  "  └──────────────────────────────────────┴─────────┴──────┘", "", "  Done."];
+
+test("a drawn table without its top rule starts at its head row, when a middle rule follows it", () => {
+  const r = regions(rows(HEADLESS.join("\n")));
+  assert.deepEqual(r.filter((x) => x.kind === "table").map(({ from, to }) => ({ from, to })), [{ from: 2, to: 7 }]);
+  const t = r.find((x) => x.kind === "table").table;
+  assert.deepEqual([t.head, t.rows, t.align], [["What", "Without", "With"],
+    [["Typing while speaking (30 takes)", "2", "23"], ["Music under speech, 10 dB below (6)", "0", "6"]], ["", "right", "right"]]);
+  // a lone row of bars with no middle rule under it is text
+  assert.equal(regions(rows("  │ a │ b │\n  │ c │ d │\n  └───┴───┘")).filter((x) => x.kind === "table").length, 0);
+  // the rule under it must have as many columns
+  assert.equal(regions(rows("  │ a │ b │ c │\n  ├───┼───┤\n  │ d │ e │\n  └───┴───┘")).filter((x) => x.kind === "table").length, 0);
+});
+
 test("not a drawn table: an agent's box of one column, a line off the grid, a table not finished yet", () => {
   const box = "╭──────────────────╮\n│ ✻ Welcome!       │\n│   cwd: /tmp      │\n╰──────────────────╯";
   const broken = "┌───┬───┐\n│ a │ b │\n│ c   d │\n└───┴───┘";

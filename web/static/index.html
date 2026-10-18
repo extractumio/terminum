@@ -9,12 +9,14 @@
 <base href="/">
 <title>terminum</title>
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="marks.css">
 <link rel="stylesheet" href="find.css">
 <link rel="stylesheet" href="shapes.css">
 <link rel="stylesheet" href="tmux.css">
 <link rel="stylesheet" href="controls.css">
+<link rel="stylesheet" href="motion.css">
 <!-- The user's own stylesheet (~/.terminum/custom.css, AC-19): after the page's, so it wins. -->
 <link id="customcss" rel="stylesheet" href="/custom.css">
 </head>
@@ -25,45 +27,45 @@
       <button id="drawerclose" class="icon" type="button" aria-label="Close the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <div class="nav-head">
-      <label class="search"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+      <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
         <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
       <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
     </div>
     <div id="sessions"></div>
-    <div id="hostmenu" role="menu" hidden></div>
-    <form id="newsess" class="footform" hidden>
-      <input id="newsessname" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+    <div id="hostmenu" class="box" role="menu" hidden></div>
+    <form id="newsess" class="footform box" hidden>
+      <input id="newsessname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Name of the new session" placeholder="Session name" enterkeyhint="go">
       <p id="newsesserr" role="alert"></p>
       <div class="row"><button class="primary" type="submit">Create</button><button id="newsesscancel" type="button">Cancel</button></div>
     </form>
-    <form id="addhost" class="footform" hidden>
-      <label class="lead"><span>ssh</span><input id="addhostssh" maxlength="300" autocomplete="off" autocapitalize="off"
+    <form id="addhost" class="footform box" hidden>
+      <label class="lead field"><span>ssh</span><input id="addhostssh" maxlength="300" autocomplete="off" autocapitalize="off"
         autocorrect="off" spellcheck="false" aria-label="ssh" placeholder="devbox or alex@devbox.example -p 2222" enterkeyhint="go"></label>
       <p class="hint">As after <code>ssh</code> in a terminal: a Host of ~/.ssh/config, or user@host with -p -l -i -J. Your keys sign in; ssh must not ask for a password.</p>
-      <input id="addhostname" maxlength="32" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+      <input id="addhostname" class="field" maxlength="32" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Name in the list" placeholder="Name in the list (optional)">
       <label class="tick"><input id="addhostfiles" type="checkbox"> Browse its files <span>(copies a small helper to the host)</span></label>
       <p id="addhosterr" role="alert"></p>
       <div class="row"><button class="primary" type="submit">Add host</button><button id="addhostcancel" type="button">Cancel</button></div>
     </form>
-    <form id="addtmux" class="footform" hidden>
-      <label class="lead"><span>On</span><select id="addtmuxon" aria-label="Where your tmux runs"></select></label>
+    <form id="addtmux" class="footform box" hidden>
+      <label class="lead field"><span>On</span><select id="addtmuxon" aria-label="Where your tmux runs"></select></label>
       <div id="addtmuxticks" role="group" aria-label="Sessions running there"></div>
-      <input id="addtmuxname" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+      <input id="addtmuxname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Another session, by name" placeholder="Another session, by name" enterkeyhint="go">
       <p class="hint">Sessions of your own tmux there. They stay yours: terminum never closes them, and shows one as soon as it runs.</p>
       <p id="addtmuxerr" role="alert"></p>
       <div class="row"><button class="primary" type="submit">Attach</button><button id="addtmuxcancel" type="button">Cancel</button></div>
     </form>
-    <div id="marklist" hidden></div>
+    <div id="marklist" class="box scrolls" hidden></div>
     <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
       aria-valuemin="200" aria-valuemax="640"></div>
     <div class="nav-foot">
       <button id="newsessbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
-        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New session</span>
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New<span class="more"> session</span></span>
       </button>
       <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marklist" title="Every bookmark, also of sessions that closed">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span>Bookmarks</span><span id="markcount" class="count"></span>
@@ -72,27 +74,27 @@
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg><span>Add host</span>
       </button>
       <button id="addtmuxbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addtmux" title="Show sessions of your own tmux, on this Mac or a host, by their names">
-        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg><span>Attach tmux sessions</span>
+        <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg><span>Attach<span class="more"> tmux sessions</span></span>
       </button>
     </div>
   </aside>
   <div id="scrim"></div>
 
   <section id="main">
-    <header id="bar">
+    <header id="bar" class="wavebar">
       <button id="navbtn" class="icon" type="button" aria-label="Show sessions" aria-controls="nav" aria-expanded="false">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg>
       </button>
       <div id="current" title="Show all sessions">
         <span id="curbar"></span>
         <span class="lines">
-          <span class="tline"><span id="curstate"></span><span class="t">Choose a session</span>
+          <span class="tline"><span id="curstate"></span><span id="curagent"></span><span class="t">Choose a session</span>
             <button id="rename" type="button" title="Name this session" aria-label="Name this session" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button></span>
           <span id="cursub" class="s"></span>
         </span>
       </div>
       <form id="renamebox" hidden>
-        <input id="renamename" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+        <input id="renamename" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
           aria-label="Session name" placeholder="Name (empty: automatic)">
         <button class="icon" type="submit" title="Name it" aria-label="Name it"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M20 6 9 17l-5-5"/></svg></button>
         <button class="icon" type="button" id="renamecancel" title="Keep the name" aria-label="Keep the name"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
@@ -135,29 +137,29 @@
     </section>
     </div>
     <!-- At 1400px and wider Files is docked on the right and File floats over the terminal. -->
-    <div id="sidehead" class="winhead"><span>Files</span>
+    <div id="sidehead" class="winhead wavebar"><span>Files</span>
       <button id="sideclose" class="icon" type="button" aria-label="Close the Files panel"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <iframe id="files" class="view" title="Files" hidden></iframe>
     <div id="filewin" class="view" hidden>
-      <div class="winhead"><span>View</span>
+      <div class="winhead wavebar"><span>View</span>
         <button id="fileclose" class="icon" type="button" aria-label="Close the file window"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <iframe id="file" title="View"></iframe>
       <button id="backterm" type="button" title="Back to the terminal"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m15 18-6-6 6-6"/></svg><span>Terminal</span></button>
     </div>
     <p id="viewnote" class="view" hidden></p>
-    <p id="toast" role="status" hidden></p>
+    <p id="toast" class="box" role="status" hidden></p>
     <!-- Bookmarks (AC-57): Copy and [+] beside a selection, marks on the terminal's edge, the one shown. -->
     <button id="markcopy" type="button" hidden title="Copy the selected text" aria-label="Copy the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
     <button id="markadd" type="button" hidden title="Bookmark the selected text" aria-label="Bookmark the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
     <div id="markrail" aria-label="Bookmarks of this session" hidden></div>
     <button id="marksfab" type="button" hidden title="Bookmarks of this session" aria-label="Bookmarks of this session" aria-expanded="false" aria-controls="markpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="marksfabn"></span></button>
-    <div id="markpane" role="region" aria-label="Bookmarks of this session" hidden></div>
+    <div id="markpane" class="box scrolls" role="region" aria-label="Bookmarks of this session" hidden></div>
     <!-- Search of the session's history (AC-58): the magnifier, its field, its matches' marks. -->
     <button id="findfab" type="button" hidden title="Find in this session" aria-label="Find in this session" aria-expanded="false" aria-controls="findbox"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
-    <form id="findbox" role="search" hidden>
-      <input id="findq" type="search" placeholder="Find in this session" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" maxlength="200" aria-label="Find in this session">
+    <form id="findbox" class="box" role="search" hidden>
+      <input id="findq" class="field" type="search" placeholder="Find in this session" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" maxlength="200" aria-label="Find in this session">
       <button type="submit" class="primary">Find</button>
       <span id="findn" aria-live="polite"></span>
       <button type="button" id="findprev" class="icon" title="The match before" aria-label="The match before"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button>
@@ -165,7 +167,7 @@
       <button type="button" id="findclose" class="icon" title="Close the search" aria-label="Close the search"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </form>
     <div id="findrail" aria-label="Matches in this session" hidden></div>
-    <div id="markbar" role="region" aria-label="Bookmark" hidden>
+    <div id="markbar" class="box" role="region" aria-label="Bookmark" hidden>
       <div class="mbhead"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="mbnote"></span>
         <button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button>
         <button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button>
@@ -198,12 +200,12 @@
     </section>
   </section>
 
-  <div id="updmenu" role="menu" hidden>
+  <div id="updmenu" class="box" role="menu" hidden>
     <button id="updcopy" type="button">Copy upgrade command</button>
     <button id="updskip" type="button">Skip</button>
     <button id="updoff" type="button">Don't check for updates</button>
   </div>
-  <div id="menu" role="menu" hidden>
+  <div id="menu" class="box" role="menu" hidden>
     <div class="row narrow-only lines-mode">
       <span>Lines</span>
       <div class="seg" role="group" aria-label="Lines">
@@ -247,15 +249,15 @@
   <h1>terminum</h1>
   <p>Sign in to see the terminal sessions on this Mac.</p>
   <label for="password">Password</label>
-  <input id="password" type="password" autocomplete="current-password" required>
+  <input id="password" class="field" type="password" autocomplete="current-password" required>
   <p id="loginerr" role="alert"></p>
   <button type="submit">Sign in</button>
 </form>
 
-<dialog id="pastebox">
+<dialog id="pastebox" class="box">
   <form method="dialog">
     <label for="pastetext">Paste here, then send it to the terminal</label>
-    <textarea id="pastetext" rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <textarea id="pastetext" class="field" rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
     <div class="actions">
       <button value="cancel" type="submit">Cancel</button>
       <button value="send" type="submit" class="primary">Send</button>
@@ -263,12 +265,12 @@
   </form>
 </dialog>
 
-<dialog id="markbox" aria-labelledby="marktitle">
+<dialog id="markbox" class="box" aria-labelledby="marktitle">
   <form method="dialog">
     <h2 id="marktitle">Bookmark</h2>
     <div id="marktext"></div>
     <label for="marknote">Note</label>
-    <textarea id="marknote" rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
+    <textarea id="marknote" class="field" rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
     <p id="markerr" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -277,7 +279,7 @@
   </form>
 </dialog>
 
-<dialog id="confirmbox">
+<dialog id="confirmbox" class="box">
   <form method="dialog">
     <p id="confirmtext"></p>
     <div class="actions">

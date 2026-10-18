@@ -265,7 +265,7 @@ export class TermView {
   park(rows) {
     const data = (r) => r.orig ?? r.data;
     const cursor = rows.findIndex((r) => cursorCol(data(r)) >= 0);
-    const at = this.agent && !rows[cursor]?.txt.trim() ? parkedCaret(rows.map(boxRow), cursor, this.caret, (k) => this.histRow(k)) : null;
+    const at = this.agent ? parkedCaret(rows.map(boxRow), cursor, this.caret, (k) => this.histRow(k), (txt) => !!this.idle?.has(statusKey(txt))) : null;
     const want = new Map(at ? [[cursor, null], [at.row, at.col]] : []);
     const base = this.hist.length;
     rows.forEach((r, i) => {

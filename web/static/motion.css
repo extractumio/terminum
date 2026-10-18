@@ -1,0 +1,86 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Motion (docs/UI-GUIDELINES.md §2.8): a hover says "this one", a press answers at once, a click
+   settles once. Only the chrome moves: never the terminal (#term), the key bar (.key) or what is
+   typed; only scale, translate, opacity, colors and a button's own outline (--k: how much of its
+   bow, shapes.css). Hover changes color only (the outline stays still while the pointer sweeps a
+   toolbar); a press flattens the outline, its release swings it back once and a ripple spreads
+   from where it was pressed (press.js). Timings are tokens.css's; one off-switch at the end. */
+@property --k { syntax: "<number>"; inherits: true; initial-value: 1; }
+@property --edge { syntax: "<color>"; inherits: true; initial-value: transparent; }
+
+/* ---- buttons: color on hover; a press flattens and shrinks; the release swings back ---- */
+:where(button:not(#term *, .key)) {
+  transition: background-color var(--dur-out) var(--ease-out), color var(--dur-out) var(--ease-out),
+    --edge var(--dur-out) var(--ease-out), --k var(--dur-settle) var(--ease-wobble), scale var(--dur-settle) var(--ease-wobble); }
+@media (hover: hover) and (pointer: fine) {
+  :where(button:not(#term *, .key)):hover {
+    transition-duration: var(--dur-hover), var(--dur-hover), var(--dur-hover), var(--dur-settle), var(--dur-settle); }
+}
+:where(button:not(#term *, .key, :disabled)):active { --k: .15; scale: .96;
+  transition-duration: var(--dur-press); transition-timing-function: var(--ease-press); }
+:where(.footbtn, .item, dialog .actions button, .footform button, #menu .row, #asks .go):active { scale: .985; }
+
+/* the ripple: inside a clipped button's outline, under its label (the clip makes it a stacking context) */
+@supports (clip-path: shape(evenodd from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
+  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row))::before {
+    content: ""; position: absolute; z-index: -1; pointer-events: none; left: var(--px, 50%); top: var(--py, 50%);
+    width: calc(200% + 60px); aspect-ratio: 1; border-radius: 50%; translate: -50% -50%; scale: 0; opacity: 0;
+    background: radial-gradient(closest-side, color-mix(in srgb, currentColor 24%, transparent) 70%, transparent); }
+  /* the clip draws the outline but does not bound the layout: a growing ripple would make its list scroll */
+  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row)) { overflow: clip; }
+  :where(button)[data-press="a"]::before { animation: ripple-a var(--dur-settle) var(--ease-out); }
+  :where(button)[data-press="b"]::before { animation: ripple-b var(--dur-settle) var(--ease-out); }
+}
+/* two names for one ripple: switching restarts it on every press, without a reflow */
+@keyframes ripple-a { from { scale: .08; opacity: 1; } 55% { opacity: .8; } to { scale: 1; opacity: 0; } }
+@keyframes ripple-b { from { scale: .08; opacity: 1; } 55% { opacity: .8; } to { scale: 1; opacity: 0; } }
+
+/* ---- blobs: lift on hover, squash on a press, a pulse in their own outline ---- */
+#fabs button { position: relative; }
+:is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom) {
+  transition: translate var(--dur-hover) var(--ease-out), scale var(--dur-settle) var(--ease-spring), background-color var(--dur-hover); }
+@media (hover: hover) and (pointer: fine) {
+  :is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom):hover { translate: 0 -1px; scale: 1.06; }
+}
+:is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom):active { scale: .9; transition-duration: var(--dur-hover), var(--dur-press); }
+:is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom)::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 40%, transparent); }
+:is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom)[data-press="a"]::before { animation: pulse-a var(--dur-settle) var(--ease-out); }
+:is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom)[data-press="b"]::before { animation: pulse-b var(--dur-settle) var(--ease-out); }
+@keyframes pulse-a { from { opacity: 1; scale: .8; } to { opacity: 0; scale: 1.4; } }
+@keyframes pulse-b { from { opacity: 1; scale: .8; } to { opacity: 0; scale: 1.4; } }
+/* the footer's blobs on a touch screen: the blob is the icon's own fill */
+@media (max-width: 860px), (pointer: coarse) {
+  .nav-foot .footbtn::before { content: none; }
+  .nav-foot .footbtn { overflow: visible; }   /* its count stands out of the blob */
+  .nav-foot .footbtn > svg { transition: scale var(--dur-settle) var(--ease-spring), background-color var(--dur-hover); }
+  .nav-foot .footbtn:active { scale: none; }
+  .nav-foot .footbtn:active > svg { scale: .88; transition-duration: var(--dur-press); }
+}
+
+/* ---- the selected row settles once, when the selection changes (nav.js marks it .fresh) ---- */
+.item.on.fresh { animation: settle var(--dur-settle) var(--ease-out); }
+.item.on.fresh .pbar { animation: fill var(--dur-settle) var(--ease-spring); }
+@keyframes settle { from { background-color: color-mix(in srgb, var(--accent) 32%, var(--chrome)); } }
+@keyframes fill { from { scale: 1 .3; opacity: .5; } }
+
+/* ---- boxes and dialogs come in: a fade, a short rise toward their place (they leave at once) ---- */
+:where(.box) { transition: opacity var(--dur-enter) var(--ease-out), translate var(--dur-enter) var(--ease-out), scale var(--dur-enter) var(--ease-out); }
+:where(dialog)::backdrop { transition: opacity var(--dur-enter) var(--ease-out); }
+@starting-style {
+  :where(.box) { opacity: 0; translate: 0 6px; scale: .98; }
+  :where(#menu, #hostmenu, #updmenu, #markpane, #findbox) { translate: 0 -4px; }
+  :where(dialog[open]) { translate: none; scale: .96; }
+  :where(dialog[open])::backdrop { opacity: 0; }
+}
+#app.nav-open #scrim { transition: opacity var(--dur-enter) var(--ease-out); }
+@starting-style { #app.nav-open #scrim { opacity: 0; } }
+
+/* ---- the off-switch: no movement, colors change at once ---- */
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-press: 0ms; --dur-hover: 0ms; --dur-out: 0ms; --dur-enter: 0ms; --dur-settle: 0ms; }
+  :where(button), :is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom), .nav-foot .footbtn > svg { scale: none !important; translate: none !important; --k: 1 !important; }
+  :where(button)::before, :is(#markadd, #markcopy, #marksfab, #findfab, #fabs button, #bottom)::before { animation: none !important; }
+  .item.on.fresh, .item.on.fresh .pbar { animation: none; }
+}

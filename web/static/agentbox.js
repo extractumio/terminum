@@ -53,18 +53,21 @@ function tallTop(rows, bottom, above) {
   return { top: -(k + 1), txt: row.txt };
 }
 
-/** Where the agent's caret is while the cursor stands below its box and footer: Claude Code puts
- *  the terminal's cursor on its caret after a key, but a redraw of its own (a status line's
- *  refresh, a notice) leaves it on the row after its footer (measured in iTerm2). {row, col}: the
+/** Where the agent's caret is while the cursor stands below its box: Claude Code puts the
+ *  terminal's cursor on its caret after a key, but a redraw of its own (a status line's refresh,
+ *  a notice) leaves it on the row after its footer (measured in iTerm2), and one after the pane
+ *  was resized (the page's hot keys opened) on one of its status lines, where no caret can be
+ *  (status(txt): a status line learnt while idle; a shell's prompt after the agent quit never is
+ *  one). {row, col}: the
  *  caret last seen in this box ({top, bottom, row, col, txt}: the same rules, its row's text
  *  unchanged), else the end of the input's last row (rows' `end`: the column after its typed
  *  text); null when the cursor is elsewhere. above: as inputBox's. */
-export function parkedCaret(rows, cursor, seen, above) {
-  if (cursor == null || cursor < 0 || cursor >= rows.length || !rows[cursor].blank) return null;
+export function parkedCaret(rows, cursor, seen, above, status = () => false) {
+  if (cursor == null || cursor < 0 || cursor >= rows.length || !(rows[cursor].blank || status(rows[cursor].txt))) return null;
   const bottom = rows.findLastIndex((r, i) => i < cursor && r.rule);
   if (bottom <= 0) return null;
   const at = inputBox(rows, bottom - 1, above);
-  if (!at || at.bottom !== bottom || cursor <= at.end) return null;
+  if (!at || at.bottom !== bottom || (rows[cursor].blank && cursor <= at.end)) return null;   // a blank row after the footer, or a status line in it
   if (seen && seen.top === at.top && seen.bottom === bottom && seen.row > at.top && seen.row < bottom && rows[seen.row].txt === seen.txt)
     return { row: seen.row, col: Math.max(2, seen.col) };
   return { row: bottom - 1, col: Math.max(2, rows[bottom - 1].end ?? 0) };

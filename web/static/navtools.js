@@ -159,6 +159,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
     for (const b of document.querySelectorAll("#sessions .hostbtn")) b.setAttribute("aria-expanded", "false");
   }
   document.addEventListener("click", (e) => { if (!$("hostmenu").hidden && !e.target.closest("#hostmenu")) hideHostMenu(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("hostmenu").hidden) hideHostMenu(); });   // Esc closes a popover
 
   // ---------- a tmux server not answering (AC-03, AC-14) ----------
   // Screens, keys and histories wait for it: say so, with the time it has not answered.

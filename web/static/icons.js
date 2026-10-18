@@ -22,6 +22,7 @@ const ICONS = {
   "circle-help": [[12, 12, 10], "M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3", "M12 17h.01"],
   "triangle-alert": ["m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3", "M12 9v4", "M12 17h.01"],
   plus: ["M5 12h14", "M12 5v14"],
+  terminal: ["M12 19h8", "m4 17 6-6-6-6"],
   ellipsis: [[12, 12, 1], [19, 12, 1], [5, 12, 1]],
   "grip-vertical": [[9, 12, 1], [9, 5, 1], [9, 19, 1], [15, 12, 1], [15, 5, 1], [15, 19, 1]],
   pencil: ["M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z", "m15 5 4 4"],
@@ -55,17 +56,4 @@ export function icon(name, size = 16) {
     svg.append(el);
   }
   return svg;
-}
-
-// A profile's dot: one color per iTerm2 profile name, the same in every browser. Hues that
-// statuses use (amber, orange, red, green) are left out so a dot never reads as a state.
-const DOTS = ["#7aa2f7", "#bb9af7", "#2dd4bf", "#f472b6", "#7dcfff", "#a3a8ff"];
-const KNOWN = { Default: "#7aa2f7", tmux: "#bb9af7" };
-
-export function profileColor(name) {
-  if (!name) return "#8b919c";
-  if (KNOWN[name]) return KNOWN[name];
-  let h = 0;
-  for (const ch of name) h = (h * 31 + ch.codePointAt(0)) >>> 0;
-  return DOTS[h % DOTS.length];
 }

@@ -2,7 +2,8 @@
 // Tables a program drew with rules (AC-31): Claude Code's and rich's ┌─┬─┐, tabulate's grids,
 // mysql's +---+. Pure: outparse.js finds them, widgetui.js shows their cells as an HTML table,
 // whose cells wrap at any width where the drawn rules break apart. A line that does not fit
-// the grid makes it no table: it stays text.
+// the grid makes it no table: it stays text. A box table whose top rule is not there (scrolled
+// away, or cut off where it was copied) starts at its head row when a middle rule follows it.
 
 // rules: a left end, runs of a horizontal line between junctions, a right end
 const RULE = {
@@ -22,10 +23,20 @@ const JUNCTION = /[┬┳╦┯┰╤╥┼╋╬┿╀╁╂╃╄╅╆╇╈�
 // the columns a rule draws
 const width = (t) => (t[0] === "+" ? t.split("+").length - 2 : (t.match(JUNCTION) ?? []).length + 1);
 
-/** Whether a line is the top rule of a drawn table of two columns or more. */
-export const tableTop = (text) => {
+// a box row: a bar at each end, n columns between
+const boxRow = (t) => /^[│┃║].*[│┃║]$/.test(t);
+const columns = (t) => t.split(BOX.bar).length - 2;
+/** Whether line `text` is a head row with no top rule: a box row the middle rule `next` follows. */
+const headRow = (text, next) => {
+  const t = text.replace(LEAD, "").trimEnd(), r = next?.trim() ?? "";
+  return boxRow(t) && BOX.mid.test(r) && columns(t) === width(r) && width(r) >= 2;
+};
+
+/** Whether a line starts a drawn table of two columns or more: its top rule, or a head row
+ *  (without a top rule) when `next`, the line after it, is a middle rule. */
+export const tableTop = (text, next) => {
   const t = text.replace(LEAD, "").trimEnd();
-  return (BOX.top.test(t) || ASCII.test(t)) && width(t) >= 2;
+  return ((BOX.top.test(t) || ASCII.test(t)) && width(t) >= 2) || headRow(text, next);
 };
 
 /** The table whose top rule is line i of `lines` ([{text}]): {to (its bottom rule's line), head
@@ -35,16 +46,17 @@ export const tableTop = (text) => {
  *  rows a line whose first cell is empty goes on the row above (box tables only: mysql and its
  *  kind never wrap a cell, and an empty first value is a row of its own). */
 export function drawnTable(lines, i, max) {
-  if (!tableTop(lines[i].text)) return undefined;
-  const top = lines[i].text.replace(LEAD, "").trimEnd();
+  const headless = headRow(lines[i].text, lines[i + 1]?.text);
+  if (!headless && !tableTop(lines[i].text)) return undefined;
+  const top = headless ? lines[i + 1].text.trim() : lines[i].text.replace(LEAD, "").trimEnd();
   const ascii = top[0] === "+", n = width(top);
-  const row = (t) => (ascii ? /^\|.*\|$/.test(t) : /^[│┃║].*[│┃║]$/.test(t));
+  const row = (t) => (ascii ? /^\|.*\|$/.test(t) : boxRow(t));
   // an ASCII table's rules look alike: the one no row follows is its last
   const isRule = (t, kind, next) => width(t) === n
     && (ascii ? ASCII.test(t) && (kind === "end") !== row(next ?? "") : BOX[kind].test(t));
   const parts = [[]];
-  for (let j = i + 1; j < lines.length && j - i < max; j++) {
-    const t = lines[j].text.trim(), next = lines[j + 1]?.text.trim();
+  for (let j = headless ? i : i + 1; j < lines.length && j - i < max; j++) {
+    const t = (j === i ? lines[j].text.replace(LEAD, "") : lines[j].text).trim(), next = lines[j + 1]?.text.trim();
     if (isRule(t, "end", next) && parts.at(-1).length) return grid(parts, j, ascii);
     if (isRule(t, "mid", next)) { if (!parts.at(-1).length) return undefined; parts.push([]); continue; }
     const cells = ascii ? t.split("|") : t.split(BOX.bar);

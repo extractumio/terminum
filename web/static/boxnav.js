@@ -117,11 +117,11 @@ export class BoxMoves {
     return out;
   }
 
-  /** Where a move starts: the cursor, or the target of a move not shown yet (the cursor still
-   *  between where that one started and its target, a moment at most). */
+  /** Where a move starts: the cursor, or the target of moves not shown yet (the cursor still
+   *  within where they started and went, a moment at most: a finger's slide sends many). */
   base(s) {
     const l = this.last;
-    if (l && (s.at === l.to || performance.now() - l.t > ARRIVE || s.at < Math.min(l.from, l.to) || s.at > Math.max(l.from, l.to))) this.last = null;
+    if (l && (s.at === l.to || performance.now() - l.t > ARRIVE || s.at < l.lo || s.at > l.hi)) this.last = null;
     return this.last ? this.last.to : s.at;
   }
 
@@ -129,7 +129,10 @@ export class BoxMoves {
   forget() { this.last = this.goal = null; }
 
   move(from, to, appCursor) {
-    if (to !== from) this.last = { from, to, t: performance.now() };
+    if (to !== from) {
+      const on = this.last && from === this.last.to ? this.last : null;   // on from a move not shown yet
+      this.last = { lo: Math.min(on?.lo ?? from, from, to), hi: Math.max(on?.hi ?? from, from, to), to, t: performance.now() };
+    }
     return stepKeys(to - from, appCursor);
   }
 
@@ -155,9 +158,11 @@ export class BoxMoves {
   }
 
   /** The character drawn under viewport point (x, y) in the box (after the line's text right of
-   *  it), or null: the cursor goes onto the character clicked, as a terminal's block cursor. */
+   *  it), or null: the cursor goes onto the character clicked, as a terminal's block cursor. A
+   *  finger a little off its line (the box's padding) still means the nearest, a line away at most. */
   at(s, x, y) {
-    const l = lines(this.positions(s)).find((ln) => y >= ln[0].top && y < ln[0].top + ln[0].h);
+    const off = (ln) => (y < ln[0].top ? ln[0].top - y : y >= ln[0].top + ln[0].h ? y - ln[0].top - ln[0].h + 1 : 0);
+    const l = lines(this.positions(s)).filter((ln) => off(ln) < ln[0].h).sort((a, b) => off(a) - off(b))[0];
     if (!l) return null;
     let p = l[0];
     for (const q of l) if (q.x <= x + 0.5) p = q;           // sorted by x; the cursor past a typed space too

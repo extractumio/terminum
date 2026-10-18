@@ -10,6 +10,8 @@ import { drawn, group, item, LAYOUT, openPage, pause, SIZES } from "./fake.mjs";
 const HOST = group("devbox", [item("tmux:devbox:default:%1", "build", { host: "devbox" })],
   { host: "devbox", session: "terminum", state: "attached", others: 2, server: "devbox:default", attach: "ssh -t -- devbox 'tmux attach -t =terminum'" });
 const ASKING = group("asks", [item("tmux:local:terminum:%7", "claude", { agent: "claude", shell: false, state: "waiting" })]);
+const AGENTS = group("agents", [item("tmux:local:terminum:%8", "Claude Code", { agent: "claude", shell: false }),
+  item("tmux:local:terminum:%9", "Codex", { agent: "codex", shell: false, index: "2" })]);
 
 /** Every visible button under `sel` smaller than `least` px tall: "id-or-class:height". */
 const small = (page, sel, least) => page.evaluate(([sel, least]) => [...document.querySelectorAll(sel)]
@@ -21,7 +23,7 @@ export async function webLook(browser, name) {
   for (const [size, device] of SIZES) {
     runningIn(`${name} ${size}`);
     const phone = size.startsWith("390");
-    const f = await openPage(browser, { device, layout: [...LAYOUT, HOST] });
+    const f = await openPage(browser, { device, layout: [...LAYOUT, HOST, AGENTS] });
     const { page } = f;
     await drawn(page);
 
@@ -30,6 +32,16 @@ export async function webLook(browser, name) {
       const primary = d.querySelector(".actions .primary"), other = d.querySelector(".actions button:not(.primary)");
       return [d.id, fill(primary), other && fill(other)];
     }));
+    // what runs in a pane: a coding agent's mark (an image of web/static/agents), else the terminal icon; the header says it too
+    await page.waitForFunction(() => [...document.querySelectorAll("#sessions .agmark img")].every((i) => i.complete), null, { timeout: 5000 }).catch(() => {});
+    const marks = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll("#sessions .item")].map((b) => {
+      const m = b.querySelector(".head .agmark"), img = m?.querySelector("img");
+      return [b.dataset.id.split(":").pop(), img ? `${img.getAttribute("src")}:${img.naturalWidth > 0}` : m?.querySelector("svg.lu") ? "terminal" : "-"];
+    })));
+    const header = await page.evaluate(() => document.querySelector("#curagent svg.lu, #curagent img")?.tagName);
+    check("look: a row shows Claude Code's or Codex's mark, else the terminal icon; the header shows the shown pane's",
+      marks["%8"] === "agents/claude.svg:true" && marks["%9"] === "agents/codex.svg:true" && marks["%1"] === "terminal" && !!header, JSON.stringify({ marks, header }));
+
     check("look: every dialog's primary button is filled apart from its Cancel", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
       JSON.stringify(dialogs));
 

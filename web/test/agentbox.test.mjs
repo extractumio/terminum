@@ -78,6 +78,10 @@ test("Claude Code's cursor left below its footer: the caret last seen in the box
   assert.deepEqual(parkedCaret(over, 7, { top: -2, bottom: 4, row: 1, col: 5, txt: "  text" }, (k) => above.at(-k)), { row: 1, col: 5 }, "and where it was seen");
   assert.equal(parkedCaret(screen(), 6, null), null, "the cursor in the box");
   assert.equal(parkedCaret(screen(), 9, null), null, "on a footer row");
+  // after the pane was resized (the page's hot keys opened) Claude Code left it on a status line of its footer
+  const learnt = (txt) => txt === screen()[9].txt;
+  assert.deepEqual(parkedCaret(screen(), 9, seen, undefined, learnt), { row: 5, col: 9 }, "on a status line learnt while idle: the caret");
+  assert.equal(parkedCaret(screen(), 10, seen, undefined, learnt), null, "on a footer row that is no learnt status line (a shell's prompt after it quit)");
   assert.equal(parkedCaret(screen(), -1, null), null, "no cursor");
   assert.equal(parkedCaret(rows("....... "), 7, null), null, "no box");
   assert.equal(parkedCaret(first(rows("-...-.. "), 1, "❯ 1. Yes"), 7, null), null, "below a menu");

@@ -26,7 +26,7 @@ const CODEISH = new RegExp([
 const PROMPT = /^(?:\S+@[\w.-]+[:\s].*?[$#%>](?:\s|$)|[$%❯➜λ»›](?:\s|$)|\(\S+\)\s.*?[$%#❯](?:\s|$)|[^❯➜›]{1,40}[❯➜›](?:\s|$))/;
 // the end of the output: a prompt, a line a program colored (a prompt's other lines usually are),
 // a coding agent's next message or tool result (⏺ or ●, ⎿), or a drawn table (a widget of its own)
-const ends = (l) => l.styled || PROMPT.test(l.text) || /^\s*[⏺●⎿]/.test(l.text) || tableTop(l.text);
+const ends = (l, next) => l.styled || PROMPT.test(l.text) || /^\s*[⏺●⎿]/.test(l.text) || tableTop(l.text, next?.text);
 // a coding agent's tool output begins after this mark on its first line ("  ⎿  # Title")
 const TOOL_OUT = /^\s*⎿/;
 // prompts compared without their numbers: a clock, a counter or an exit code changes
@@ -114,7 +114,7 @@ export function scan(rows, end = rows.length) {
     }
     if (DIAGRAM.test(lines[i].text) && !lines[i - 1]?.text.trim()) {
       let j = i;
-      while (j + 1 < lines.length && lines[j + 1].text.trim() && !ends(lines[j + 1])) j++;
+      while (j + 1 < lines.length && lines[j + 1].text.trim() && !ends(lines[j + 1], lines[j + 2])) j++;
       if (j > i) { add("mermaid", i, j, "mermaid", body(lines, i, j), true); i = j; }
     }
   }
@@ -212,7 +212,7 @@ function markdownRun(lines, i) {
   let last = i, signs = 0, codeish = 0, filled = 0, j = i, open = false;
   for (; j < lines.length && j - last <= GAP && j - i < MAX_LINES; j++) {
     const t = lines[j].text;
-    if (ends(lines[j])) break;
+    if (ends(lines[j], lines[j + 1])) break;
     const s = sign(lines, j);
     if (s === "fence") {
       const f = fenced(lines, j);
@@ -227,7 +227,7 @@ function markdownRun(lines, i) {
   const strong = kinds.has("heading") || kinds.has("table") || kinds.has("fence");
   if (!strong || kinds.size < 2 || signs < 3 || codeish > filled * 0.3) return { ok: false, to: last, open };
   let to = last;                                                  // the paragraph after the last sign
-  const prose = (k) => k < lines.length && lines[k].text.trim() && !ends(lines[k]);
+  const prose = (k) => k < lines.length && lines[k].text.trim() && !ends(lines[k], lines[k + 1]);
   if (to + 1 < lines.length && !lines[to + 1].text.trim() && prose(to + 2)) to++;   // after a blank line
   while (prose(to + 1)) to++;
   return { ok: true, to, open };

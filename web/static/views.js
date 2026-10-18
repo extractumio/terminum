@@ -4,7 +4,8 @@
 // file opened from Files gets a tab. Below WIDE they are three views in the same place, and View
 // has a button back to the terminal; at WIDE and up Files is docked on the right and View is a
 // window over the terminal, each closed with its own [x]. Closing View's last file goes back to
-// the terminal.
+// the terminal. Each session has its own View: the shown session's frame is #file, the others'
+// wait hidden beside it with their tabs and unsaved edits (moving an iframe would reload it).
 
 const $ = (id) => document.getElementById(id);
 const NAMES = ["term", "files", "file"];
@@ -22,8 +23,9 @@ export class Views {
     this.filesError = null;        // why the pane has no Files
     this.filesShown = false;
     this.fileHost = null;          // the host the File frame's files are on
+    this.sid = null;               // the shown session, whose View is #file
     this.theme = null;             // the shown pane's, for both frames (fbd's is the focused pane's)
-    for (const f of ["files", "file"]) $(f).addEventListener("load", () => this.tellTheme($(f)));
+    for (const f of ["files", "file"]) { const el = $(f); el.addEventListener("load", () => { if (el.id === f) this.tellTheme(el); }); }
     for (const b of document.querySelectorAll("button[data-view]")) b.addEventListener("click", () => this.show(b.dataset.view, true));
     $("sideclose").addEventListener("click", () => this.setDocked(false));
     $("fileclose").addEventListener("click", () => this.show("term"));
@@ -74,18 +76,58 @@ export class Views {
     $("viewnote").hidden = !shown.files || !this.filesError;
     $("viewnote").textContent = this.filesError ?? "";
     $("filewin").hidden = !shown.file;
+    for (const f of $("filewin").querySelectorAll("iframe")) f.hidden = f.id !== "file";
     document.body.dataset.shown = wide ? "term" : this.current;
     if (shown.files && !this.filesShown) this.send({ t: "files" });   // the pane may have changed folder since
     this.filesShown = shown.files;
     if (shown.term) this.onShow();
   }
 
-  /** Another session is shown: its Files are another folder. */
-  sessionChanged() {
+  /** Another session is shown: its Files are another folder, and its View its own files: the
+   *  View shown so far waits for its session, open or closed as it was. */
+  sessionChanged(sid) {
+    if (sid !== this.sid) this.switchView(sid);
     this.filesSrc = "";
     this.filesError = null;
     $("files").removeAttribute("src");
     if (this.filesShown) this.send({ t: "files" });
+  }
+
+  switchView(sid) {
+    const old = $("file"), button = document.querySelector('button[data-view="file"]');
+    const open = WIDE.matches ? this.floating : this.current === "file";
+    // a View with files waits for its session; an empty one (never used, or its last file closed) goes
+    if (old.getAttribute("src") && !button.disabled) Object.assign(old.dataset, { sid: this.sid ?? "", host: this.fileHost ?? "", open: String(open) });
+    else old.remove();
+    old.removeAttribute("id");
+    let next = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.dataset.sid === (sid ?? ""));
+    if (!next) {
+      next = Object.assign(document.createElement("iframe"), { title: "View" });
+      $("backterm").before(next);
+      next.addEventListener("load", () => { if (next.id === "file") this.tellTheme(next); });
+    }
+    next.id = "file";
+    this.sid = sid;
+    this.fileHost = next.dataset.host || null;
+    const reopen = next.dataset.open === "true";
+    delete next.dataset.sid; delete next.dataset.open; delete next.dataset.host;
+    button.disabled = !next.getAttribute("src");
+    if (WIDE.matches) this.floating = reopen;
+    else if (this.current === "file" || reopen) this.current = reopen ? "file" : "term";
+    this.layout();
+  }
+
+  /** A new layout: a waiting View whose session closed goes, unless it holds unsaved edits or
+   *  its server is only down for now (a host reconnecting lists no sessions). */
+  forget(groups) {
+    const live = new Set(groups.flatMap((g) => g.items.map((it) => it.id)));
+    const down = new Set(groups.filter((g) => g.server && g.state && g.state !== "attached").map((g) => g.server));
+    for (const f of $("filewin").querySelectorAll("iframe[data-sid]")) {
+      const sid = f.dataset.sid, server = sid.split(":").slice(1, 3).join(":");
+      let dirty = true;
+      try { dirty = !!f.contentWindow?.fbBusy?.(); } catch { /* not loaded yet: keep it */ }
+      if (!live.has(sid) && !down.has(server) && !dirty) f.remove();
+    }
   }
 
   setTheme(theme) {
@@ -145,6 +187,8 @@ export class Views {
    *  closed. Nothing else is listened to. */
   onMessage(e) {
     if (e.origin !== location.origin || typeof e.data?.path !== "string") return;
+    const parked = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.contentWindow === e.source);
+    if (parked && e.data.type === "fb-empty") return void parked.remove();   // a waiting View closed its last file
     if (e.source === $("file").contentWindow && e.data.type === "fb-empty") {
       document.querySelector('button[data-view="file"]').disabled = true;
       if (!this.floating && this.current !== "file") return;

@@ -427,6 +427,15 @@ export async function webWidgets(browser, name = "") {
     table.name === "Table" && table.head.join("|") === "Commit|What" && table.cells.length === 2 && table.cells[0][0] === "eecb6df"
     && table.cells[0][1] === "Web access: port 48080 by default, and an honest setup behind tailscale serve; a README section about Tailscale | and its services"
     && table.hidden === 7 && table.whole === 1 && table.fits, JSON.stringify(table));
+  // the design code inside: no frame around the card or the table, no column lines; a hairline between rows only
+  const look = await tb.page.evaluate(() => {
+    const r = document.querySelector("#hist .ln.wg-host").shadowRoot, cs = (e) => getComputedStyle(e);
+    const card = cs(r.querySelector(".wg")), td = cs(r.querySelector("tbody td")), last = cs(r.querySelector("tbody tr:last-child td"));
+    return { card: card.borderTopWidth, side: [td.borderLeftWidth, td.borderRightWidth, td.borderTopWidth], row: td.borderBottomWidth, last: last.borderBottomWidth,
+      fill: card.backgroundColor !== cs(document.getElementById("term")).backgroundColor };
+  });
+  check(`${at} a table widget has no frame and no column lines: the card stands on its own surface, rows apart by a hairline`,
+    look.card === "0px" && look.side.every((w) => w === "0px") && look.row === "1px" && look.last === "0px" && look.fill, JSON.stringify(look));
   await tb.page.evaluate(() => { window.copied = []; document.addEventListener("copy", () => window.copied.push(String(getSelection()) || document.activeElement?.value)); });
   await act(tb.page, "table", '[data-act="copy"]');
   const tcopied = await tb.page.evaluate(() => window.copied);

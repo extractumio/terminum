@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Session navigator: tmux sessions (a host's session: the host) as groups, their windows and
 // panes as rows.
-// A row: the profile's bar (full for the session shown, pulsing while its agent works), an orange
+// A row: its folder's bar (full for the session shown, pulsing while its agent works), an orange
 // strip when it has bookmarks (AC-57), the window
 // number and title, then host · program · folder · titles, and a coding agent's state in a
 // column of its own.
-import { icon, profileColor } from "./icons.js";
+import { folderHues, folderKey } from "./dircolors.js";
+import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 
 // A coding agent's state: working, waiting for the user, failed; done shows nothing.
@@ -26,12 +27,31 @@ export function stateIcon(state, size = 16) {
   return wrap;
 }
 
-/** The profile's bar beside a session's two lines: at full strength for the session the page
- *  shows, half otherwise, pulsing while a coding agent in it works. (A dot read as "unread".) */
-export function profileBar(profile, shown = false, busy = false) {
+let hues = new Map();                  // each folder's hue, for the list as last drawn (AC-01)
+// a coding agent's own mark (their owners' trademarks, outside terminum's licenses: NOTICE)
+const MARKS = { claude: ["agents/claude.svg", "Claude Code"], codex: ["agents/codex.svg", "Codex"] };
+
+/** What runs in a pane, as an icon: a coding agent's mark, else the terminal's (also when a mark
+ *  file was left out of the build). */
+export function agentMark(item, size = 14) {
+  const [src, name] = MARKS[item.agent] ?? [];
+  const wrap = el("span", "agmark");
+  wrap.title = name ?? "Terminal";
+  if (!src) { wrap.append(icon("terminal", size)); return wrap; }
+  const img = Object.assign(document.createElement("img"), { src, alt: "", width: size, height: size, draggable: false });
+  img.addEventListener("error", () => img.replaceWith(icon("terminal", size)));
+  wrap.append(img);
+  return wrap;
+}
+let lastShown;                         // the session shown when the list was last drawn
+
+/** The bar beside a session's two lines in its folder's color: at full strength for the session
+ *  the page shows, half otherwise, pulsing while a coding agent in it works. (A dot read as "unread".) */
+export function folderBar(item, shown = false, busy = false) {
   const d = el("span", "pbar" + (shown ? " on" : "") + (busy ? " busy" : ""));
-  d.style.setProperty("--dot", profileColor(profile));
-  d.title = (profile ? `Profile ${profile}` : "Profile unknown") + (busy ? ", working" : "");
+  const key = folderKey(item), hue = key && hues.get(key);
+  if (hue != null) d.style.setProperty("--dot", `oklch(var(--dir-l) var(--dir-c) ${hue.toFixed(1)})`);
+  d.title = (key ? `Folder ${key.split("\n")[1]}` : "No folder") + (busy ? ", working" : "");
   return d;
 }
 
@@ -86,7 +106,7 @@ function row(item, current, onPick, movable, child = false, marked = new Set()) 
   const head = el("span", "head");
   const idx = el("span", "idx", child ? "" : item.index || "");
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
-  head.append(idx, el("span", "t", item.title));
+  head.append(idx, agentMark(item), el("span", "t", item.title));
   txt.append(head);
   const parts = [...(item.host ? [item.host] : []), ...item.sub];
   if (parts.length) txt.append(metaLine(parts, !!item.host));
@@ -94,7 +114,7 @@ function row(item, current, onPick, movable, child = false, marked = new Set()) 
   const mark = stateIcon(item.state);
   if (mark) st.append(mark);
   // the bar's column holds the orange strip beside it: the row's grid keeps its three columns
-  const bar = profileBar(item.profile, item.id === current, item.state === "working");
+  const bar = folderBar(item, item.id === current, item.state === "working");
   if (marked.has(item.id)) {
     const both = el("span", "bars"), m = el("span", "bmbar");
     m.title = "Has bookmarks";
@@ -122,6 +142,9 @@ export function hostState(g) {
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, onNew, marked = new Set(), onHost = null, onCopy = null, onImport = null) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
+  // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
+  hues = folderHues(groups.flatMap((g) => g.items.map(folderKey)));
+  const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
   for (const g of groups) {
     const items = g.items.filter((it) => matches(it, q));
@@ -130,7 +153,8 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     shown += items.length;
     const key = groupKey(g);
     const closed = !q && collapsed.has(key);
-    const sec = el("section", `grp ${g.kind}` + (g.host ? " hostgrp" : "") + (g.state && g.state !== "attached" ? ` ${g.state}` : ""));
+    const gs = g.state === "absent" && g.host && down.has(g.host) ? down.get(g.host) : g.state;
+    const sec = el("section", `grp ${g.kind}` + (g.host ? " hostgrp" : "") + (gs && gs !== "attached" ? ` ${gs}` : ""));
     if (g.wid) sec.dataset.wid = g.wid;
     const h = el("h2");
     if (g.wid && !q) h.append(grip("group", "this session"));
@@ -214,6 +238,8 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   if (!shown) {
     frag.append(el("p", "empty", q ? "No session matches. Clear the filter to see all." : "No tmux sessions."));
   }
+  if (lastShown !== undefined && current !== lastShown) frag.querySelector(".item.on")?.classList.add("fresh");   // it settles once (motion.css)
+  lastShown = current;
   list.replaceChildren(frag);
 }
 

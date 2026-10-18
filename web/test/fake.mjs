@@ -41,7 +41,8 @@ export function proofOf(secret, n) {
  *  hook(msg, say): every message the page sends. */
 export async function openPage(browser, { device = WIDE, secret = null, stored = null, auth = 204, login = null, layout = LAYOUT,
   screen = SCREEN, cols = 80, hook = null, url = "/", css = "", settings = null } = {}) {
-  const context = await browser.newContext(device);
+  // reduced motion: boxes measured at once are at their place and size (e2e_motion.mjs checks the motion)
+  const context = await browser.newContext({ reducedMotion: "reduce", ...device });
   const page = await context.newPage();
   const errors = [], sent = [], requests = [], sockets = [];
   page.on("pageerror", (e) => errors.push(String(e)));

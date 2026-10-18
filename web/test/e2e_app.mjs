@@ -192,6 +192,7 @@ export async function webApp(browser) {
   check("AC-52 web app: below 1400 px closing View's last file, or its Terminal button, shows the terminal",
     narrowOpen === "file" && afterEmpty === "term" && await $eval(() => document.body.dataset.shown) === "term", JSON.stringify({ narrowOpen, afterEmpty }));
 
+
   // files dropped on the page: uploaded, their paths pasted; the page stays
   const before = sent.length;
   await $eval(() => {
@@ -214,10 +215,13 @@ export async function webApp(browser) {
     { r: [run("❯ " + input), run(" ", 256)], e: true }, { r: [run("─".repeat(80))], e: true }, ...below.map((t) => ({ r: [run(t)], e: true }))];
   const STATUS = ["  ~/p Opus 5.5 ctx:55%", "  ⏵⏵ bypass permissions on"];
   const send = (rows) => tell({ t: "screen", sid: "S1", full: true, n: rows.length, cols: 80, rows: rows.length, ch: rows.map((l, i) => [i, l]) });
+  // the page draws at its own pace: each frame is waited for until it is on the page
+  const shownText = (t) => page.waitForFunction((t) => document.getElementById("screen").textContent.includes(t), t, { timeout: 3000 }).catch(() => {});
   send(screenOf("", STATUS));                                    // idle: its status lines are learnt
-  await page.waitForTimeout(100);
+  await shownText("ctx:55%");
   send(screenOf("hi", ["  ~/p Opus 5.5 ctx:61%", "  ⏵⏵ bypass permissions on"]));
-  await page.waitForTimeout(150);
+  await shownText("ctx:61%");
+  await page.waitForTimeout(100);
   const shown = (sel) => $eval((q) => [...document.querySelectorAll(q)].map((e) => getComputedStyle(e).display !== "none"), sel);
   const box = await $eval(() => ({ has: document.getElementById("term").classList.contains("hasbox"),
     inbox: [...document.querySelectorAll("#screen .blk.inbox .ln")].map((l) => l.textContent.trim().slice(0, 12)),
@@ -234,11 +238,24 @@ export async function webApp(browser) {
   const tall = await $eval(() => { const b = document.querySelector(".blk.inbox"), lh = parseFloat(getComputedStyle(document.getElementById("term")).fontSize) * 1.25;
     return { h: b.clientHeight, min: 2 * lh }; });
   check("AC-52 web app: on a phone the input panel is at least two rows high", tall.h >= tall.min, JSON.stringify(tall));
+  // the pane resized (the hot keys opened): Claude Code's redraw leaves the cursor on a status line; it stays behind ⓘ
+  const parked = screenOf("hi", ["  ~/p Opus 5.5 ctx:62%", "  ⏵⏵ bypass permissions on"]).map((row) => ({ ...row, r: row.r.filter((c) => c[3] !== 256) }));
+  const st0 = parked.findIndex((row) => row.r[0]?.[0].includes("ctx:62%"));
+  parked[st0] = { r: [run("  ~/p "), run("O", 256), run("pus 5.5 ctx:62%")], e: true };
+  send(parked);
+  await shownText("ctx:62%");                                    // this frame drawn (only its numbers differ: a known status line)
+  await page.waitForTimeout(100);
+  const parkedFoot = { foot: await shown("#screen .blk.foot .ln"), cur: await $eval(() => !!document.querySelector("#screen .blk.inbox .cur")) };
+  check("AC-52 web app: on a phone a cursor Claude Code left on its status line (after a resize) is drawn in the box, the status lines stay behind the button",
+    parkedFoot.foot.join() === "false,false" && parkedFoot.cur, JSON.stringify(parkedFoot));
+  send(screenOf("hi", ["  ~/p Opus 5.5 ctx:61%", "  ⏵⏵ bypass permissions on"]));
+  await shownText("ctx:61%");
   await page.click("#footfab");
   check("AC-52 web app: the button shows the footer", (await shown("#screen .blk.foot .ln")).join() === "true,true" && await $eval(() => document.getElementById("footfab").getAttribute("aria-pressed") === "true"));
   await page.click("#footfab");
   send(screenOf("/", ["  /help   Get help with using Claude Code", "  /model  Set the AI model", ...STATUS]));
-  await page.waitForTimeout(150);
+  await shownText("/model");
+  await page.waitForTimeout(100);
   const menu = await shown("#screen .blk.foot .ln");
   check("AC-52 web app: a \"/\" list below the input stays in sight; only the learnt status lines wait behind the button",
     menu.join() === "true,true,false,false", JSON.stringify(menu));
@@ -336,6 +353,7 @@ export async function webApp(browser) {
   const flow = async (focused, ev) => {
     const before = sent.length;
     await $eval(([f, e]) => { document.hasFocus = () => f; dispatchEvent(new Event(e)); }, [focused, ev]);
+    await $eval(() => new Promise((r) => setTimeout(r, 0)));   // after the page's own deferred look (its blur waits a turn)
     await page.waitForTimeout(50);
     return sent.slice(before).filter((m) => m.t === "pause" || m.t === "resume").map((m) => m.t).join();
   };
@@ -345,5 +363,46 @@ export async function webApp(browser) {
     away === "pause" && inFrame === "resume" && still === "" && again === "pause" && returned === "resume", JSON.stringify({ away, inFrame, still, again, returned }));
 
   check("AC-52 web app: no page errors", !errors.length, errors.join(" | "));
+  // View belongs to its session: another session's shows instead, the first one's waits as it was
+  tell({ t: "layout", groups: layout("done") });
+  await page.setViewportSize({ width: 1400, height: 800 });
+  await page.waitForFunction(() => document.body.classList.contains("wide"));
+  await page.click("#sessions .item[data-id='S1']");
+  await openView();
+  await page.waitForFunction((n) => document.getElementById("file").contentWindow?.location.search === `?${n}`, views);
+  const mine = await $eval(() => document.getElementById("file").getAttribute("src"));
+  await page.click("#sessions .item[data-id='S2']");
+  const other = await $eval(() => ({ win: document.getElementById("filewin").hidden, off: document.querySelector('button[data-view="file"]').disabled,
+    parked: document.querySelector("#filewin iframe[data-sid='S1']")?.getAttribute("src") ?? null }));
+  await page.click("#sessions .item[data-id='S1']");
+  const returnedView = await $eval(() => ({ win: document.getElementById("filewin").hidden, src: document.getElementById("file").getAttribute("src"),
+    frames: document.querySelectorAll("#filewin iframe").length }));
+  check("AC-70 web app: View belongs to its session: another session hides it, coming back shows it as it was",
+    other.win && other.off && other.parked === mine && !returnedView.win && returnedView.src === mine && returnedView.frames === 1, JSON.stringify({ mine, other, returnedView }));
+  await emptied();                                 // its last file closed: nothing waits for it
+  await page.click("#sessions .item[data-id='S2']");
+  await page.click("#sessions .item[data-id='S1']");
+  const emptyBack = await $eval(() => ({ off: document.querySelector('button[data-view="file"]').disabled, win: document.getElementById("filewin").hidden,
+    frames: document.querySelectorAll("#filewin iframe").length }));
+  check("AC-70 web app: a View whose last file closed does not come back with its session", emptyBack.off && emptyBack.win && emptyBack.frames === 1,
+    JSON.stringify(emptyBack));
+
+  // a closed session's View goes with it, unless it holds unsaved edits
+  await openView();
+  await page.waitForFunction((n) => document.getElementById("file").contentWindow?.location.search === `?${n}`, views);
+  await page.click("#sessions .item[data-id='S2']");
+  const [win] = layout("done");
+  const withoutS1 = [{ ...win, items: win.items.filter((it) => it.id !== "S1") }];
+  const parkedNow = (dirty) => $eval((d) => { const f = document.querySelector("#filewin iframe[data-sid='S1']"); if (f && d !== null) f.contentWindow.fbBusy = () => d; return !!f; }, dirty);
+  await parkedNow(true);
+  tell({ t: "layout", groups: withoutS1 });
+  await page.waitForTimeout(150);
+  const keptDirty = await parkedNow(null);
+  await parkedNow(false);
+  tell({ t: "layout", groups: withoutS1 });
+  await page.waitForTimeout(150);
+  const goneClean = !(await parkedNow(null));
+  check("AC-70 web app: a closed session's waiting View goes with it, but not while it holds unsaved edits", keptDirty && goneClean,
+    JSON.stringify({ keptDirty, goneClean }));
   await page.close();
 }
