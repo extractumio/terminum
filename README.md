@@ -201,4 +201,6 @@ A wrong value keeps its default and is said once in the page.
 The behavior, limits and evidence are in `docs/specs/` (`terminum.md` and its siblings);
 contributor rules in [CLAUDE.md](CLAUDE.md); the release procedure in
 [docs/RELEASING.md](docs/RELEASING.md). Licensing: AGPL-3.0 or commercial (`LICENSE`,
-`LICENSE-COMMERCIAL.md`); contributions come under the agreement in `CONTRIBUTING.md`.
+`LICENSE-COMMERCIAL.md`); contributions come under the agreement in `CONTRIBUTING.md`. The
+coding agents' marks in `web/static/agents/` are their owners' trademarks, outside both
+licenses (`NOTICE`).

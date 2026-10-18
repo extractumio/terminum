@@ -7,7 +7,7 @@ in it needs an interpreter: the Mac's terminumd is the installer, the server and
     BUILD, AGENT_ID                   which build this is; which terminumd sources
     agents/<platform>/terminumd       terminumd (the page embedded) for macOS arm64/x86_64 and
                                       Linux x86_64/arm64, the Linux pair for remote hosts' files
-    release-signers, LICENSE files    the release key upgrades check; the licenses
+    release-signers, LICENSE files    the release key upgrades check; the licenses, NOTICE (marks)
 
 The Mac's own terminumd is the one of its architecture (chosen at install). `--stage`
 leaves the folder for `make install`; without it a tarball and SHA256SUMS are written too,
@@ -33,7 +33,7 @@ REPO = agents.REPO
 OUT = REPO / "dist/package"
 NAME = "terminum"
 TARBALL = "terminum-macos.tar.gz"
-COPY = ["release-signers", "LICENSE", "LICENSE-COMMERCIAL.md", "README.md"]
+COPY = ["release-signers", "LICENSE", "LICENSE-COMMERCIAL.md", "NOTICE", "README.md"]
 # every source that goes into a build (its id); build output never counts
 SOURCES = ["terminumd/src", "terminumd/assets", "terminumd/Cargo.toml", "terminumd/Cargo.lock",
            "ui/src", "ui/public", "ui/build.mjs", "ui/package.json", "ui/package-lock.json", "web/static",
