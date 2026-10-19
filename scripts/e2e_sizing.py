@@ -67,6 +67,26 @@ def largest(t, pid, pane):
     a.close()
 
 
+def hidden(t, pid, pane):
+    policy(t, "latest")
+    mac = open_pane(t, pid, 160, 45)
+    check("AC-13 latest: the first page sizes the pane", settle(pane, "160x45") == "160x45", window_of(pane))
+    phone = open_pane(t, pid, 103, 21)
+    phone.send({"t": "in", "data": " "})
+    check("AC-13 latest: the page that types sizes it", settle(pane, "103x21") == "103x21", window_of(pane))
+    phone.send({"t": "pause"})
+    check("AC-13 latest: a page hidden (a locked phone) gives its window to the page still looking, without a key",
+          settle(pane, "160x45") == "160x45", window_of(pane))
+    phone.send({"t": "size", "cols": 100, "rows": 5, "typing": False})
+    time.sleep(1.5)
+    mac.send({"t": "size", "cols": 160, "rows": 30, "typing": False})
+    check("AC-13 latest: a hidden page's new size takes nothing; the looking page's split view sizes it",
+          settle(pane, "160x30") == "160x30", window_of(pane))
+    phone.close()
+    mac.close()
+    time.sleep(0.5)
+
+
 def manual(t, pid, pane):
     policy(t, "manual")
     time.sleep(1.2)
@@ -180,6 +200,7 @@ def main():
         pane = pid.rsplit(":", 1)[-1]
         ws.close()
         largest(t, pid, pane)
+        hidden(t, pid, pane)
         manual(t, pid, pane)
         drag(t, pid, pane)
         mc(t, pid, pane, work)

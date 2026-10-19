@@ -158,7 +158,8 @@ async fn claim(app: &Shared, page: &Arc<Page>, force: bool) {
     if users_pane(&server, &pane) && !(force || mine) {
         return;
     }
-    let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id));
+    // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
+    let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && !v.state.lock().paused));
     let take = screen
         || match p.as_str() {
             "manual" => false,
@@ -177,9 +178,24 @@ fn later(app: &Shared, page: &Arc<Page>, force: bool) {
     tokio::spawn(async move { claim(&app, &page, force).await });
 }
 
-/// The page whose grid is the largest among those showing `window`.
+/// The page whose grid is the largest among those showing `window` and looked at.
 fn largest(app: &Shared, server: &Server, window: &str) -> Option<u64> {
-    viewers(app, server, window).into_iter().filter_map(|p| p.state.lock().view.map(|v| (v.0 as u32 * v.1 as u32, p.id))).max().map(|(_, id)| id)
+    viewers(app, server, window).into_iter().filter_map(|p| {
+        let st = p.state.lock();
+        st.view.filter(|_| !st.paused).map(|v| (v.0 as u32 * v.1 as u32, p.id))
+    }).max().map(|(_, id)| id)
+}
+
+/// `page` was hidden: a window it sized goes to the pages still looking at it (AC-13), so a
+/// locked phone never keeps a computer's view at the phone's size.
+pub fn handover(app: &Shared, page: &Arc<Page>) {
+    let Some((server, _, f)) = shown_window(page) else { return };
+    if app.sizes.0.lock().get(&(server.id(), f.window.clone())).and_then(|w| w.by) != Some(page.id) {
+        return;
+    }
+    for v in viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && !v.state.lock().paused) {
+        later(app, &v, false);
+    }
 }
 
 /// A page opened a pane: it sizes the window when nobody else does (AC-13).

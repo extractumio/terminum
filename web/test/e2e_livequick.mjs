@@ -44,6 +44,10 @@ export async function liveQuick(page, { tmux, work }) {
   const dragged = await share();
   check("AC-88 it opens at a third and grows when its edge is dragged; the share is remembered",
     Math.abs(first - 33) <= 3 && dragged > first + 10 && await page.evaluate(() => localStorage.getItem("quickShare.bottom") !== null), JSON.stringify({ first, dragged }));
+  await page.waitForTimeout(2500);                 // past a resize's second and the view's settling
+  const sized = await page.evaluate(() => ({ banner: !document.getElementById("sized").hidden, text: document.getElementById("sized").textContent }));
+  check("AC-88 the pane's page still sizes its pane: no \"Sized for another screen\" after the split opened, was typed in and dragged",
+    !sized.banner, JSON.stringify({ ...sized, panes: panes() }));
   await page.click("#quickflip");
   await within("AC-88 ⇄ moves it to the left", () => page.waitForFunction(() => document.getElementById("termrow").classList.contains("left"), null, { timeout: 5000 }));
   const quickRow = await page.$('#sessions .kids .item:has-text("quick shell")');

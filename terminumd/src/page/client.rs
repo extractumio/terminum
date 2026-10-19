@@ -83,7 +83,10 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         }
         "sent" | "sentget" => super::sent::handle(app, page, t, &msg).await,
         "trace" => super::timing::handle(app, page, &msg),
-        "pause" => pause(page, true),
+        "pause" => {
+            pause(page, true);
+            super::sizing::handover(app, page);
+        }
         "resume" => resume(app, page),
         _ => tracing::debug!(event = "page.unknown", t),
     }
