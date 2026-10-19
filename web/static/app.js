@@ -76,7 +76,7 @@ const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"
   bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : Infinity });
 // Screen mode and sizing (AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
 const screen = screenMode({ view, send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, sid: () => st.sid,
-  refit: () => view.keepBottom(syncControls), defaults: () => settings.page() });
+  refit: () => view.keepBottom(syncControls), defaults: () => settings.page(), notify: (text) => toast(text, 9000) });
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
   if (page.textSize) setBase(page.textSize);
   screen.sync(); view.keepBottom(syncControls);

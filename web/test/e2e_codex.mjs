@@ -47,6 +47,13 @@ export async function webCodex(browser, name) {
     if (phone) check("Codex: on a phone its footer waits behind ⓘ, also while it is typed into and works",
       idle.foot.join() === "false,false" && busy.foot.join() === "false,false" && idle.fab && busy.fab, JSON.stringify({ idle, busy }));
     else check("Codex: on a computer its footer stays in sight", idle.foot.join() === "true,true" && busy.foot.join() === "true,true", JSON.stringify({ idle, busy }));
+    if (!phone) {
+      await page.mouse.move(400, 300);
+      await page.mouse.wheel(0, -400);
+      await pause(page, 200);
+      const note = await page.evaluate(() => !document.getElementById("toast").hidden && document.getElementById("toast").textContent);
+      check("Codex: scrolling up on its alternate screen (no scrollback) says why and how", typeof note === "string" && note.includes("--no-alt-screen"), String(note));
+    }
     check("Codex: no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();
   }

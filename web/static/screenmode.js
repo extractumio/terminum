@@ -17,8 +17,9 @@ const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
 const MIN = { cols: 20, rows: 5 };
 
 /** view: the TermView; current(): the shown pane's {group, item} or null; sid(): its id;
- *  refit(): the Lines mode may have changed (Fit/Grid); defaults(): {screenMode} of settings. */
-export function screenMode({ view, send, store, current, sid, refit, defaults }) {
+ *  refit(): the Lines mode may have changed (Fit/Grid); defaults(): {screenMode} of settings;
+ *  notify(text): a toast. */
+export function screenMode({ view, send, store, current, sid, refit, defaults, notify }) {
   const term = $("term");
   let modes = store.get("screenModes", {});
   let on = false, last = null, typedAt = -Infinity, settle = 0, elsewhere = null, small = false;
@@ -82,6 +83,15 @@ export function screenMode({ view, send, store, current, sid, refit, defaults })
   // the view's size: the window, the session list, docked Files, the keyboard, the hot keys
   const changed = () => { clearTimeout(settle); settle = setTimeout(() => sendSize(false), SETTLE); };
   new ResizeObserver(changed).observe(term);
+
+  // Codex on tmux's alternate screen (started without --no-alt-screen) has no scrollback to load:
+  // scrolling up there says why and how, once a pane (AC-39)
+  const toldAlt = new Set();
+  term.addEventListener("wheel", (e) => {
+    if (on || e.deltaY >= 0 || term.scrollTop > 0 || !view.alt || view.agent !== "codex" || toldAlt.has(sid())) return;
+    toldAlt.add(sid());
+    notify('This Codex runs on the alternate screen, where tmux keeps no scrollback. Start it with "codex --no-alt-screen", or set alternate_screen = "never" under [tui] in ~/.codex/config.toml.');
+  }, { passive: true });
 
   function showSized() {
     $("sized").hidden = !elsewhere;
