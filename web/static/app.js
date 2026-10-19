@@ -93,7 +93,7 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
   options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
-    tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
+    tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), holdMenu: (x, y) => editMenu(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
     wordDeletes: () => { const it = st.sid && findItem(st.groups, st.sid)?.item; return !!(it?.agent ? view.box : it?.shell && !st.ran); } } });
@@ -145,8 +145,8 @@ function tapMove(x, y) {
   if (seq) view.typed();
 }
 
-// On a touch screen the invisible keyboard field lies over the cursor's row, so a long press
-// there gets iOS's own Paste (text, or an image); elsewhere it is out of the way.
+// On a touch screen the invisible keyboard field lies over the cursor's row, so a finger held
+// there gets the page's Paste, Undo and Redo (Input); elsewhere it is out of the way.
 function placeKbd() {
   // a coding agent's input box whole (where it draws its own cursor may not be tmux's), else the
   // cursor's row; a full-screen program with the mouse on gets the taps
@@ -203,7 +203,9 @@ function showBuild(m) {
 }
 
 function pickFile() { $("upload").value = ""; $("upload").click(); }
-$("upload").addEventListener("change", () => { const f = $("upload").files[0]; if (f) files.uploadFile(f); });
+$("upload").addEventListener("change", () => { if ($("upload").files.length) files.uploadFiles([...$("upload").files]); });
+$("attachfab").addEventListener("click", pickFile);
+$("attachfab").addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
 files.bindDrop($("term"));
 
 
@@ -297,8 +299,8 @@ function onMessage(m) {
 function cloneRow(item) { send({ t: "clone", id: item.id }); }
 const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow });
 
-// a finger resting on the keyboard button offers Undo and Redo, as iOS's own undo does (AC-03)
-undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo });
+// a finger resting on the keyboard button or held on the input offers Paste, Undo and Redo (AC-03)
+const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo, paste: () => input.pasteFromClipboard() });
 const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   if (kind === "group") store.set("groupOrder", ids);
   else if (kind === "project") send({ t: "project", action: "order", ids });

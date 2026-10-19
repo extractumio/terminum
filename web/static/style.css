@@ -7,6 +7,7 @@
   --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   --term-font: TermFont, Menlo, "SF Mono", ui-monospace, monospace;   /* the theme's font (app.js) */
   --nav-w: 300px; --side-w: 380px;
+  --term-tile: #3a3a3c; --term-tile-ink: #ffffff;   /* a terminal's icon in the list: white on dark gray, on every theme */
   color-scheme: dark light;
 }
 @font-face { font-family: TermFont; src: local("Menlo-Regular"); }
@@ -56,15 +57,17 @@ svg.lu circle { fill: none; stroke: currentColor; }
 .grp h2 .tsess { flex: 0 10 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; font-weight: 500;
   color: var(--host-label); background: color-mix(in srgb, var(--host-label) 15%, transparent); border-radius: 999px; padding: 1px 8px; }
 .grp h2 .where { color: var(--muted); font-weight: 400; }
-.grp h2 .count { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.grp h2 .count { flex: none; margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the header's buttons in a column two wide at least: every group's count ends at one place */
+.grp h2 .acts { flex: none; min-width: calc(2 * 26px + 6px); display: flex; justify-content: flex-end; gap: 6px; }
 .grp h2 .count.on { color: var(--accent); font-weight: 600; }
 
 /* row: dot | title and meta | state */
 .grp li { position: relative; }
 .item { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) 18px; column-gap: 8px; align-items: start;
   padding: 8px 10px 8px 8px; border-radius: 8px; text-align: left; }
-@media (hover: hover) { .item:hover { background: var(--surface-2); } .item:hover .pbar { opacity: .85; } }
-.item.on { background: color-mix(in srgb, var(--accent) 16%, var(--chrome)); }
+@media (hover: hover) { .item:hover { background: color-mix(in srgb, var(--t-fg) 7%, transparent); } .item:hover .pbar { opacity: .85; } }
+.item.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }   /* see-through: a project's tint stays under it */
 /* a session's bar, as tall as its two lines: full for the shown session, half for the others;
    while its agent works it pulses, its color glowing and fading: a state, not motion (nothing
    moves), so it stays with Reduce Motion too */
@@ -72,7 +75,6 @@ svg.lu circle { fill: none; stroke: currentColor; }
 .pbar.on { opacity: 1; }
 .pbar.busy { opacity: 1; animation: pulse-bar 1.4s ease-in-out infinite; }
 @keyframes pulse-bar { 0%, 100% { opacity: 1; box-shadow: 0 0 6px var(--dot, transparent); } 50% { opacity: .25; box-shadow: none; } }
-#curbar .pbar.busy { animation: none; }   /* the header says it with its hourglass: only the list pulses */
 .item .txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .item .head { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .item .idx { flex: 0 0 auto; width: 14px; text-align: right; color: var(--muted); font: 11px ui-monospace, Menlo, monospace; font-variant-numeric: tabular-nums; }
@@ -86,6 +88,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
 /* what runs in the pane: a coding agent's mark, else the terminal's icon (nav.js agentMark) */
 .agmark { flex: 0 0 auto; width: 14px; height: 14px; display: inline-grid; place-items: center; align-self: center; color: var(--muted); }
 .agmark img { display: block; width: 100%; height: 100%; }
+.agmark.term { border-radius: 3px; background: var(--term-tile); color: var(--term-tile-ink); }   /* a terminal's icon, as on the Dock */
 #curagent { flex: 0 0 16px; height: 16px; display: grid; place-items: center; }
 #curagent:empty { display: none; }
 .host { color: var(--remote); font-weight: 500; }
@@ -102,7 +105,6 @@ svg.lu circle { fill: none; stroke: currentColor; }
 
 /* agent states (Lucide): amber hourglass, orange question (pulsing), red alert, green check */
 .state { display: inline-grid; place-items: center; flex: 0 0 auto; }
-.state.working { color: color-mix(in srgb, #e0af68 60%, var(--t-fg)); }
 .state.waiting { color: #1a1b26; background: var(--waiting); border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, var(--waiting) 35%, transparent), 0 0 10px var(--waiting);
   animation: ask 1s steps(2, jump-none) infinite; }
 .state.failed { color: var(--danger); }
@@ -299,7 +301,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
   body:has(#term.hasbox) #fabs #footfab { display: grid; }
   /* the panel's padding takes columns the pane has: its rows wrap inside it */
   #term .blk.inbox { margin: 8px 0 4px; padding: 5px 10px 6px; border-radius: 12px; min-height: calc(2.5em + 13px);   /* two rows at least */
-    border: 1px solid color-mix(in srgb, var(--t-fg) 24%, transparent); background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg));
+    background: color-mix(in srgb, var(--t-fg) 8%, var(--t-bg));   /* a tint, no frame */
     white-space: pre-wrap; overflow-wrap: anywhere; }
   #term .blk.inbox .ln { width: auto; }
   #term .inbox :is(.ln.rule, .ln.boxedge) { display: none; }   /* its rules go (the top one's title too), Codex's lines too */

@@ -25,16 +25,33 @@ export function undoKey(item, redo) {
   return { why: `${name} has no redo` };
 }
 
-/** On a touch screen: a finger resting on the keyboard `button` offers Undo and Redo (`menu`'s
- *  show), and iOS's own undo on the input `field` (three fingers, a shake) does the same. */
-export function undoTouch({ button, field, menu, undo }) {
-  longPress(button, () => button, () => {
-    const r = button.getBoundingClientRect();
-    menu.show([["Undo", () => undo(false)], ["Redo", () => undo(true)]], r.right - 210, r.top - 110);
-  });
+/** Whether the clipboard holds something: false only when the browser lets the page read it
+ *  unasked (a permission given) and it is empty; Safari never does, so there it may. */
+async function mayPaste() {
+  try {
+    if ((await navigator.permissions.query({ name: "clipboard-read" })).state !== "granted") return true;
+    for (const item of await navigator.clipboard.read()) {
+      if (item.types.some((t) => t.startsWith("image/"))) return true;
+      if (item.types.includes("text/plain") && (await (await item.getType("text/plain")).text())) return true;
+    }
+    return false;
+  } catch { return true; }
+}
+
+/** On a touch screen: a finger resting on the keyboard `button`, or held still on the input
+ *  (Input's holdMenu, the returned function), offers Paste, Undo and Redo (`menu`'s show); iOS's
+ *  own undo on the input `field` (three fingers, a shake) undoes too. */
+export function undoTouch({ button, field, menu, undo, paste }) {
+  const editMenu = async (x, y) => {
+    const items = [["Undo", () => undo(false)], ["Redo", () => undo(true)]];
+    if (await mayPaste()) items.unshift(["Paste", paste]);
+    menu.show(items, x - 105, y - 60 - items.length * 44, true);
+  };
+  longPress(button, () => button, () => { const r = button.getBoundingClientRect(); editMenu(r.right - 105, r.top); });
   field.addEventListener("beforeinput", (e) => {
     if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
     e.preventDefault();
     undo(e.inputType === "historyRedo");
   });
+  return editMenu;
 }

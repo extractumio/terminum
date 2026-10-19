@@ -69,7 +69,8 @@ Selected list row: `color-mix(in srgb, var(--accent) 16%, var(--chrome))`. Press
 | Warning / waiting | `--warn-fill: #9a6a12`; `--waiting: #ffb020` (a dot or edge, never text) | `#stall`, `#sized`, Screen label warn, waiting cards. |
 | Text on the bookmark color | `#1b1200` | `#markbox .primary`. |
 | Picture viewer, find highlight | fixed white on black | `#zoom`, find marks: they sit over any theme. |
-| Agent words | `.ag-claude`, `.ag-codex`, `.state.working` | Mix with `--t-fg` (not raw pastel) so they read on light themes. |
+| A terminal's icon | `--term-tile: #3a3a3c`, `--term-tile-ink: #ffffff` (style.css) | `.agmark.term`: a shell's row and header, white on a dark gray tile with small round corners, on every theme. |
+| Agent words | `.ag-claude`, `.ag-codex` | Mix with `--t-fg` (not raw pastel) so they read on light themes. |
 | A row's folder | `oklch(var(--dir-l) var(--dir-c) <hue>)`, the hue from `dircolors.js` (AC-01): L .80 C .085, on a light theme L .62 C .11 | The bar left of a row and of the header's title. Unrelated folders spread evenly over the hue circle; a nested folder near its parent's hue, nearer the deeper; one folder one hue. |
 
 Rules: a new fixed hue needs a meaning not yet in this table; define it once as a token in
@@ -201,7 +202,7 @@ Without `shape()` (Safari before 18.4) everything is straight with its radius an
 | Release | The outline swings back once (`--ease-wobble`); a ripple spreads from the pressed point inside the outline (Enter/Space: from the middle). Blobs pulse in their own outline. |
 | A box opens | Fades in and rises 6px (a popover falls 4px), from .98 (a dialog from .96) with its backdrop; it closes at once. |
 | The shown session changes | Its row's fill settles from the accent, its bar grows in (`.fresh`, once). |
-| A session works | Its bar in the list pulses (its color glows and fades, 1.4 s; the header's hourglass says it there). A state, not motion: nothing moves, so it stays with Reduce Motion. |
+| A session works | Its bar pulses, in the list and the header (its color glows and fades, 1.4 s); no hourglass. A state, not motion: nothing moves, so it stays with Reduce Motion. |
 | Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop. |
 
 `prefers-reduced-motion: reduce` sets every duration to 0 and turns off scale, translate, ripple and

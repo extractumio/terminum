@@ -6,6 +6,12 @@
 /** Places `pane` beside `fab` (nothing while it is hidden). */
 export function placeBeside(fab, pane) {
   if (pane.hidden) return;
+  const area = fab.offsetParent;
+  if (area && fab.offsetTop > area.clientHeight / 2) {      // a button at the bottom (a phone's row): the pane above it
+    pane.style.top = `${Math.max(8, fab.offsetTop - 8 - pane.offsetHeight)}px`;
+    pane.style.left = `${Math.max(8, Math.min(fab.offsetLeft, area.clientWidth - pane.offsetWidth - 8))}px`;
+    return;
+  }
   const left = fab.offsetLeft - 8 - pane.offsetWidth, fits = left >= 8;
   pane.style.top = `${fits ? fab.offsetTop : fab.offsetTop + fab.offsetHeight + 8}px`;
   pane.style.left = `${fits ? left : Math.max(8, fab.offsetLeft + fab.offsetWidth - pane.offsetWidth)}px`;

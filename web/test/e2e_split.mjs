@@ -65,8 +65,8 @@ export async function webSplit(browser, name) {
   // a working session's bar pulses, also with Reduce Motion (the checks run with it): a fade, nothing moves
   const pulse = await page.evaluate(() => ({ list: [...document.querySelectorAll("#sessions .pbar.busy")].map((b) => getComputedStyle(b).animationName),
     header: [...document.querySelectorAll("#curbar .pbar.busy")].map((b) => getComputedStyle(b).animationName) }));
-  check("a working session's bar pulses in the list (with Reduce Motion too), not in the header",
-    pulse.list.length >= 1 && pulse.list.every((a) => a === "pulse-bar") && pulse.header.every((a) => a === "none"), JSON.stringify(pulse));
+  check("a working session's bar pulses in the list and the header (with Reduce Motion too): no hourglass says it",
+    pulse.list.length >= 1 && [...pulse.list, ...pulse.header].every((a) => a === "pulse-bar"), JSON.stringify(pulse));
 
   check("split: no page errors", !f.errors.length, f.errors.join(" | "));
   await f.close();

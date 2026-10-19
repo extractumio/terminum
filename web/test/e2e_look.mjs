@@ -46,7 +46,7 @@ export async function webLook(browser, name) {
       JSON.stringify(dialogs));
 
     if (phone) { await page.click("#navbtn"); await pause(page, 300); }
-    const head = await page.evaluate(() => [...document.querySelectorAll('#sessions .grp[data-wid="devbox/terminum"] h2 > button:not(.toggle)')].map((b) => {
+    const head = await page.evaluate(() => [...document.querySelectorAll('#sessions .grp[data-wid="devbox/terminum"] h2 button:not(.toggle)')].map((b) => {
       const s = getComputedStyle(b);
       return [b.className, `${s.width} ${s.height} ${s.borderRadius} ${s.color}`];
     }));
@@ -86,7 +86,7 @@ export async function webLook(browser, name) {
         const r = (id) => document.getElementById(id)?.getBoundingClientRect();
         const ask = document.querySelector("#asks .ask:not([hidden])")?.getBoundingClientRect(), banner = r("restored");
         const meets = (a, b) => !!(a && b && b.width && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom);
-        return { ask: !!ask, banner: meets(ask, banner), fabs: ["findfab", "splitfab", "sentfab", "marksfab", "remindfab"].filter((id) => meets(ask, r(id))) };
+        return { ask: !!ask, banner: meets(ask, banner), fabs: ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"].filter((id) => meets(ask, r(id))) };
       });
       check("look: a waiting card covers neither the banners nor a floating button", boxes.ask && !boxes.banner && !boxes.fabs.length, JSON.stringify(boxes));
     }

@@ -22,12 +22,12 @@
 
 /* the ripple: inside a clipped button's outline, under its label (the clip makes it a stacking context) */
 @supports (clip-path: shape(evenodd from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
-  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row, #schemes *))::before {
+  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row, #schemes *))::before {
     content: ""; position: absolute; z-index: -1; pointer-events: none; left: var(--px, 50%); top: var(--py, 50%);
     width: calc(200% + 60px); aspect-ratio: 1; border-radius: 50%; translate: -50% -50%; scale: 0; opacity: 0;
     background: radial-gradient(closest-side, color-mix(in srgb, currentColor 24%, transparent) 70%, transparent); }
   /* the clip draws the outline but does not bound the layout: a growing ripple would make its list scroll */
-  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row, #schemes *)) { overflow: clip; }
+  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row, #schemes *)) { overflow: clip; }
   :where(button)[data-press="a"]::before { animation: ripple-a var(--dur-settle) var(--ease-out); }
   :where(button)[data-press="b"]::before { animation: ripple-b var(--dur-settle) var(--ease-out); }
 }
@@ -37,17 +37,17 @@
 
 /* ---- blobs: lift on hover, squash on a press, a pulse in their own outline ---- */
 #fabs button { position: relative; }
-:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom) {
+:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom) {
   transition: translate var(--dur-hover) var(--ease-out), scale var(--dur-settle) var(--ease-spring), background-color var(--dur-hover); }
 @media (hover: hover) and (pointer: fine) {
-  :is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom):hover { translate: 0 -1px; scale: 1.06; }
+  :is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom):hover { translate: 0 -1px; scale: 1.06; }
 }
-:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom):active { scale: .9; transition-duration: var(--dur-hover), var(--dur-press); }
-:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom)::before {
+:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom):active { scale: .9; transition-duration: var(--dur-hover), var(--dur-press); }
+:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom)::before {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
   box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 40%, transparent); }
-:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom)[data-press="a"]::before { animation: pulse-a var(--dur-settle) var(--ease-out); }
-:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom)[data-press="b"]::before { animation: pulse-b var(--dur-settle) var(--ease-out); }
+:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom)[data-press="a"]::before { animation: pulse-a var(--dur-settle) var(--ease-out); }
+:is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom)[data-press="b"]::before { animation: pulse-b var(--dur-settle) var(--ease-out); }
 @keyframes pulse-a { from { opacity: 1; scale: .8; } to { opacity: 0; scale: 1.4; } }
 @keyframes pulse-b { from { opacity: 1; scale: .8; } to { opacity: 0; scale: 1.4; } }
 /* the footer's blobs on a touch screen: the blob is the icon's own fill */
@@ -80,7 +80,7 @@
 /* ---- the off-switch: no movement, colors change at once ---- */
 @media (prefers-reduced-motion: reduce) {
   :root { --dur-press: 0ms; --dur-hover: 0ms; --dur-out: 0ms; --dur-enter: 0ms; --dur-settle: 0ms; }
-  :where(button), :is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom), .nav-foot .footbtn > svg { scale: none !important; translate: none !important; --k: 1 !important; }
-  :where(button)::before, :is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom)::before { animation: none !important; }
+  :where(button), :is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom), .nav-foot .footbtn > svg { scale: none !important; translate: none !important; --k: 1 !important; }
+  :where(button)::before, :is(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #attachfab, #remindfab, #fabs button, #bottom)::before { animation: none !important; }
   .item.on.fresh, .item.on.fresh .pbar:not(.busy) { animation: none; }   /* a working bar's pulse is a state: it stays */
 }

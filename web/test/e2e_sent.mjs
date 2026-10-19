@@ -42,9 +42,9 @@ export async function webSent(browser, name) {
     check("sent: Enter at a shell prompt tells the command after the prompt, before the key", told?.text === "git status" && told.agent === ""
       && after.indexOf("sent") < after.indexOf("in"), JSON.stringify(sent.slice(n)));
 
-    const at = await page.evaluate((phone) => { const r = (id) => document.getElementById(id).getBoundingClientRect(), s = r("sentfab"), p = r(phone ? "splitfab" : "findfab");
-      return { below: s.top >= p.bottom, aligned: Math.abs(s.left - p.left) < 1, shown: !document.getElementById("sentfab").hidden }; }, size !== "1400×900");
-    check("sent: its button stands under the split (on a phone; under find on a computer)", at.shown && at.below && at.aligned, JSON.stringify(at));
+    const at = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(), s = r("sentfab"), p = r("findfab");
+      return { below: s.top >= p.bottom, aligned: Math.abs(s.left - p.left) < 1, shown: !document.getElementById("sentfab").hidden }; });
+    check("sent: its button stands under find (a phone's split is in the row at the bottom left)", at.shown && at.below && at.aligned, JSON.stringify(at));
     await page.click("#sentfab");
     await page.waitForFunction(() => document.querySelector("#spbody strong")?.textContent === "tests", null, { timeout: 5000 }).catch(() => {});
     const shown = await page.evaluate(() => ({ pos: document.getElementById("sppos").textContent, where: document.getElementById("spwhere").textContent,
@@ -63,10 +63,13 @@ export async function webSent(browser, name) {
     const up = await page.evaluate(() => { const b = document.getElementById("remindfab"); return { shown: !b.hidden, due: b.classList.contains("due"), n: document.getElementById("remindfabn").textContent }; });
     check("reminders: one up shows the button blinking, with its count (reminders only)", up.shown && up.due && up.n === "1", JSON.stringify(up));
     const look = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect(), cs = (id) => getComputedStyle(g(id));
-      return { marks: !g("marksfab").hidden, under: r("remindfab").top > r("marksfab").bottom && Math.abs(r("remindfab").left - r("marksfab").left) < 1,
-        size: r("remindfab").width === r("marksfab").width, shadow: cs("remindfab").boxShadow === cs("marksfab").boxShadow }; });
-    check("reminders: the bell stands under the bookmarks' button, the colored ones alike: same size, same shadow, no glow",
-      look.marks && look.under && look.size && look.shadow, JSON.stringify(look));
+      const row = matchMedia("(hover: none), (max-width: 860px)").matches;   // a phone's: beside it in the row at the bottom left
+      return { marks: !g("marksfab").hidden, under: row ? r("remindfab").left > r("marksfab").right && Math.abs(r("remindfab").top - r("marksfab").top) < 1
+        : r("remindfab").top > r("marksfab").bottom && Math.abs(r("remindfab").left - r("marksfab").left) < 1,
+        size: r("remindfab").width === r("marksfab").width, shadow: cs("remindfab").boxShadow === cs("marksfab").boxShadow,
+        fill: cs("remindfab").backgroundColor === cs("findfab").backgroundColor, pink: cs("remindfab").color !== cs("findfab").color }; });
+    check("reminders: the bell stands under the bookmarks' button (a phone's: right of it), as large, the same shadow, no glow; the plain buttons' fill, the bell itself pink",
+      look.marks && look.under && look.size && look.shadow && look.fill && look.pink, JSON.stringify(look));
     await page.click("#remindfab");
     await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
     const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),

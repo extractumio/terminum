@@ -8,6 +8,13 @@
   background: var(--mark); color: #1b1200; box-shadow: var(--shadow-near); }
 #markcopy { background: #9ba1a9; color: #16181b; animation-delay: -3.5s; }
 #marksfab { animation-delay: 0s; }   /* in phase with the column's other buttons */
+/* where the keyboard's buttons float: these and the split in a row at the bottom left, at their height (marks.js) */
+@media (hover: none), (max-width: 860px) {
+  :is(#attachfab, #marksfab, #remindfab, #splitfab) { bottom: calc(12px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }
+  /* a selection's Copy joins the row on the right: both rows do not fit a phone */
+  body:has(#copyfab:not([hidden]), #markcopy:not([hidden])) :is(#attachfab, #marksfab, #remindfab, #splitfab) { visibility: hidden; }
+}
+@media (hover: hover) and (min-width: 861px) { #attachfab { display: none !important; } }   /* a computer: Upload on the hot keys, or a drop */
 body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab), body:has(#findbox:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* a selection's Copy and + stand there */
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
@@ -23,7 +30,7 @@ body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab), body:has(#findbox:
 }
 @media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #marksfab, #remindfab { animation: none; } }
 /* only the tab's own page shows the floating buttons: a split's embedded page shows its shell alone */
-body.embed :is(#findfab, #splitfab, #sentfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
+body.embed :is(#findfab, #splitfab, #attachfab, #sentfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
 /* one Copy beside a selection: the floating one of a touch screen waits while this one shows */
 body:has(#markcopy:not([hidden])) #fabs #copyfab { display: none !important; }
 #markrail { position: absolute; z-index: 4; width: 16px; pointer-events: none; }
@@ -68,8 +75,8 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#marklist, #markpane) ul { list-style: none; margin: 0; padding: 0; }
 :is(#marklist, #markpane) li { position: relative; display: flex; align-items: flex-start; padding-left: 8px; border-radius: 6px; margin: 2px 0; }
 /* a bookmark's mark: the list's wavy orange line, never a straight edge on a rounded box */
-:is(#marklist, #markpane) li::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: 6px; background: var(--mark);
-  -webkit-mask: var(--wave-line) repeat-y center / 6px 12px; mask: var(--wave-line) repeat-y center / 6px 12px; }
+:is(#marklist, #markpane) li::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: 4px; background: var(--mark);
+  -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
 :is(#marklist, #markpane) .mkitem { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; text-align: left; border-radius: 6px; }
 @media (hover: hover) { :is(#marklist, #markpane) .mkitem:hover { background: var(--surface-4); } }
 :is(#marklist, #markpane) .note, :is(#marklist, #markpane) .snip, :is(#marklist, #markpane) .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -81,13 +88,15 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#marklist, #markpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
 
 /* the session list: an orange strip beside the profile's bar of a session with bookmarks */
-.bars { display: flex; gap: 2px; align-self: stretch; }
-.bars .pbar { margin: 1px 0; }
+.bars { position: relative; display: flex; align-self: stretch; }   /* its bar where every row has it (.pbar's margins) */
+.bars .wave { position: absolute; top: 1px; bottom: 1px; left: 9px; }
+.bars .wave + .wave { left: 13px; }
 /* its project's bookmarks (orange) and reminders (pink, reminders.css) as wavy lines beside the
    folder's straight bar, so the three never read as one */
-:root { --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E"); }   /* a wavy line, 6px wide, repeated down: a mask */
-.wave { width: 6px; min-height: 30px; margin: 1px 0; background: var(--mark);
-  -webkit-mask: var(--wave-line) repeat-y center / 6px 12px; mask: var(--wave-line) repeat-y center / 6px 12px; }
+:root { --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='4' height='16'%3E%3Cpath d='M2 0Q3.6 4 2 8T2 16' fill='none' stroke='%23000' stroke-width='1.2' stroke-linecap='round'/%3E%3C/svg%3E");
+  --wave-size: 4px 16px; }   /* a gentle wavy line, 4px wide, repeated down: a mask */
+.wave { width: 4px; min-height: 30px; background: var(--mark);
+  -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
 
 /* the list below the sessions: Bookmarks | Reminders, Open all; the full-screen view of them (markdoc.js) */
 .mkhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 4px; }

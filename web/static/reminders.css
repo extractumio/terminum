@@ -1,10 +1,11 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* Reminders (AC-91): the pale fuchsia button under the bookmarks' (blinking while one is up
-   and unseen), its pane of reminders as Markdown, the strip in the session list, the dialog's
+/* Reminders (AC-91): the button with a pale fuchsia bell beside the bookmarks' (blinking while
+   one is up and unseen), its pane of reminders as Markdown, the strip in the session list, the dialog's
    primary when the kind is Reminder. Fuchsia on every profile: it says "reminder". */
 :root { --remind: #e8a3dc; --remind-ink: #2a0f25; --remind-text: color-mix(in srgb, var(--remind) 55%, var(--t-fg)); }   /* text: readable on a light theme too */
-/* the bell: the bookmarks' button in fuchsia (marks.css); up and unseen, it blinks, no glow */
-#remindfab { background: var(--remind); color: var(--remind-ink); animation-delay: 0s; }
+/* the bell: the plain buttons' fill (find.css), the bell itself fuchsia; up and unseen, it blinks, no glow */
+#remindfab { background: var(--surface-3); color: var(--remind); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation-delay: 0s; }
+:root.light #remindfab { color: oklch(.56 .15 340); }   /* the pale one is too faint on a light fill: the same hue, deeper */
 #remindfab.due { animation: blob 7s ease-in-out infinite, remind 1s steps(2, jump-none) infinite; }
 #remindfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
 #remindfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
@@ -29,8 +30,8 @@ body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
 .rmitem .markdown { font: var(--md-size, 14px)/var(--lh-prose) -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow-wrap: anywhere; }
 .rmitem .markdown blockquote { position: relative; margin: 0; padding-left: 12px; color: var(--muted); }
 /* a quote in a reminder: the session list's wavy pink line (marks.css), not a straight rule */
-.rmitem .markdown blockquote::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 6px; background: var(--remind);
-  -webkit-mask: var(--wave-line) repeat-y center / 6px 12px; mask: var(--wave-line) repeat-y center / 6px 12px; }
+.rmitem .markdown blockquote::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--remind);
+  -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
 .rmacts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .rmacts button { height: 28px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label); background: var(--surface-3); }
 .rmacts .primary { background: var(--remind); color: var(--remind-ink); font-weight: var(--fw-head); }

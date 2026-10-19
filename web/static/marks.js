@@ -14,8 +14,10 @@ import { railBox, railSlots } from "./marktext.js";
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
 const ARMED = 3000;            // ms a Delete pressed once waits for the second press
-// the floating buttons at the terminal's top right, top down: the plain ones, then the colored ones together
-const PLAIN = ["findfab", "splitfab", "sentfab"], COLORED = ["marksfab", "remindfab"];
+// the floating buttons at the terminal's top right, top down: the plain ones, then the colored ones together;
+// where the keyboard's buttons float (a phone, a narrow window), LOW stand in a row at the bottom left
+const PLAIN = ["findfab", "splitfab", "sentfab", "attachfab"], COLORED = ["marksfab", "remindfab"], LOW = ["attachfab", "marksfab", "remindfab", "splitfab"];
+const FLOATING = "(hover: none), (max-width: 860px)";   // style.css's #fabs
 
 export const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -309,7 +311,9 @@ export class Marks {
 
   /** The floating buttons stand in one column at the terminal's top right, left of the marks:
    *  find, the split and the sent history; then, set apart, the colored ones: this session's
-   *  bookmarks (with their number, while it has one) and the reminders (while one is open). */
+   *  bookmarks (with their number, while it has one) and the reminders (while one is open). Where
+   *  the keyboard's buttons float, Attach (only there), the bookmarks, the reminders and the split
+   *  stand in a row at the bottom left instead, under the input, at the height of those (marks.css). */
   placeFab() {
     const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
@@ -322,12 +326,14 @@ export class Marks {
     if ($("marksfab").hidden) this.togglePane(false);
     if (!shown) return;
     const left = `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
+    const low = matchMedia(FLOATING).matches ? LOW : [], shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
     let y = term.offsetTop + 8;
     for (const group of [PLAIN, COLORED]) {
-      const shownOnes = group.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
-      for (const b of shownOnes) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 8; }
+      for (const b of shownOf(group.filter((id) => !low.includes(id)))) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 8; }
       y += 8;                                      // the colored ones set apart
     }
+    let x = term.offsetLeft + term.clientLeft + 12;
+    for (const b of shownOf(low)) { Object.assign(b.style, { top: "", left: `${x}px` }); x += b.offsetWidth + 10; }
     this.search.place();
     if (!$("markpane").hidden) this.placePane();
     this.onPlaced?.();

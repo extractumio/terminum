@@ -31,9 +31,10 @@ dialog .actions .primary { background: var(--accent); color: var(--t-bg); --focu
   .grp h2 { height: 40px; }   /* the row holds its 40px buttons */
   .grp h2 .toggle { height: 40px; }
   .grp h2 :is(.attach, .import, .new, .hostbtn) { width: 40px; height: 40px; border-radius: 10px; }
+  .grp h2 .acts { min-width: calc(2 * 40px + 6px); }
   .footform button, #findbox button, dialog .actions button, :is(#hostmenu, #updmenu) button { height: 44px; border-radius: 12px; }
   #findbox .icon { width: 44px; }
-  :is(#findfab, #splitfab, #sentfab, #marksfab, #remindfab) { width: 44px; height: 44px; }
+  :is(#findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { width: 44px; height: 44px; }
   #rename { width: 40px; height: 40px; }
   .stepper button { width: 44px; height: 44px; }
   #markbar button { height: 40px; }

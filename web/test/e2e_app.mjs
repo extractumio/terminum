@@ -347,9 +347,9 @@ export async function webApp(browser) {
     kidIdx: [...document.querySelectorAll("#sessions .kids .idx")].map((i) => i.textContent).join(""),
     indent: document.querySelector("#sessions .kids .item").getBoundingClientRect().left - document.querySelector('#sessions .item[data-id="P1"]').getBoundingClientRect().left }));
   const shownMarks = await $eval(() => ({ states: [...document.querySelectorAll("#sessions .item")].map((b) => b.querySelector(".state")?.classList[1] ?? "-").join(),
-    where: document.querySelector('#sessions .item[data-id="P1"] .idx').title }));
-  check("AC-39 web app: a done agent shows no mark, the others theirs; AC-01: a window's number names its host on hover",
-    shownMarks.states === "working,working,working,working,-" && shownMarks.where === "This machine", JSON.stringify(shownMarks));
+    busy: document.querySelectorAll("#sessions .item .pbar.busy").length, where: document.querySelector('#sessions .item[data-id="P1"] .idx').title }));
+  check("AC-39 web app: a working agent's bar pulses, with no hourglass; a done one neither; AC-01: a window's number names its host on hover",
+    shownMarks.states === "-,-,-,-,-" && shownMarks.busy === 4 && shownMarks.where === "This machine", JSON.stringify(shownMarks));
   await page.fill("#filter", "pragmatic");
   const flat = await $eval(() => [...document.querySelectorAll("#sessions .item")].map((b) => b.dataset.id + (b.classList.contains("child") ? "*" : "")));
   await page.fill("#filter", "");

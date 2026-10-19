@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* Search of the session's history (AC-58): the magnifier (in the colors of a phone's floating
    buttons, and their shape), its field, its matches' white marks, the match shown. */
-:is(#findfab, #splitfab, #sentfab) { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
+:is(#findfab, #splitfab, #sentfab, #attachfab) { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
   border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite;   /* one shape and phase for the whole column */
   background: var(--surface-3); color: var(--t-fg);
   -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: var(--shadow-near); }
@@ -29,9 +29,9 @@ body:has(#markcopy:not([hidden])) :is(#findfab, #splitfab, #sentfab) { visibilit
 @media (hover: none) { #findrail .fm { left: -6px; width: 26px; height: 18px; margin-top: -4px; } }
 ::highlight(find) { background-color: #fff; color: #111; }
 #term .find-at { outline: 2px solid #fff; outline-offset: 1px; border-radius: 2px; }
-body:not([data-shown="term"]) :is(#findfab, #splitfab, #sentfab, #sentpane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
-body.wide :is(#findfab, #splitfab, #sentfab, #sentpane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
-@media (prefers-reduced-motion: reduce) { :is(#findfab, #splitfab, #sentfab) { animation: none; } }
+body:not([data-shown="term"]) :is(#findfab, #splitfab, #sentfab, #attachfab, #sentpane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
+body.wide :is(#findfab, #splitfab, #sentfab, #attachfab, #sentpane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
+@media (prefers-reduced-motion: reduce) { :is(#findfab, #splitfab, #sentfab, #attachfab) { animation: none; } }
 /* the sent history's pane, left of its button: where, which of how many, ↑ ↓, Copy, ×; the text as Markdown */
 #sentpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 60%; overflow: auto; padding: var(--sp-2);
   border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }

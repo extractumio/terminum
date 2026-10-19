@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-52 checks for e2e_panel.mjs: typing on a touch screen (the page against a fake bridge, a
 // phone's size): a held delete has something to delete (iOS repeats it only then), the keyboard
-// field lies over a coding agent's whole input box (a long press there gets iOS's Paste), and a
-// finger that rests and then slides moves the cursor. Alone: node web/test/e2e_touch.mjs.
+// field lies over a coding agent's whole input box, a finger that rests and then slides moves the
+// cursor, and one held still 2.5 s there opens Paste, Undo and Redo. Alone: node web/test/e2e_touch.mjs.
 
 import { fileURLToPath } from "node:url";
 import { check, cleanup, playwright, results } from "./check.mjs";
@@ -24,7 +24,7 @@ export async function webTouch(browser) {
     const k = document.getElementById("kbd").getBoundingClientRect(), b = document.querySelector("#screen .blk.inbox").getBoundingClientRect();
     return { k: [Math.round(k.top), Math.round(k.bottom)], box: [Math.round(b.top), Math.round(b.bottom)] };
   });
-  check(`${at} the keyboard field lies over the coding agent's whole input box (a long press there is iOS's Paste)`,
+  check(`${at} the keyboard field lies over the coding agent's whole input box (a finger held there gets Paste, Undo and Redo)`,
     cover.k[0] === cover.box[0] && cover.k[1] === cover.box[1], JSON.stringify(cover));
 
   const shape = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById("kbdbtn")); return [cs.borderTopLeftRadius, cs.borderTopRightRadius]; });
@@ -107,6 +107,25 @@ export async function webTouch(browser) {
   const moves = await slide(350, [...[1, 2, 3, 4, 5, 6, 7].map((k) => (geo.w * 3.5 * k) / 7), geo.w * 2.5]);
   check(`${at} a finger that rests and then slides moves the cursor a character a step, both ways, and taps nothing`,
     JSON.stringify(moves) === JSON.stringify(["\x1b[C", "\x1b[C", "\x1b[C", "\x1b[D"]), JSON.stringify(moves));
+
+  // a finger held still on the input: at 2.5 s the page's menu, Paste, Undo and Redo (iOS shows none
+  // for the invisible field); lifted before then, none; Undo sends the shell's Ctrl+_
+  const hold = async (ms) => {
+    await touch("touchStart", geo.x);
+    await page.waitForTimeout(ms);
+    await touch("touchEnd", geo.x, ms);
+    await page.waitForTimeout(150);
+    return page.evaluate(() => { const m = document.getElementById("rowmenu"); return m.open ? [...m.querySelectorAll("button[data-action]:not([data-action=x])")].map((b) => b.textContent) : null; });
+  };
+  const early = await hold(1200);
+  const menuFrom = sent.length, held = await hold(2700);
+  await page.waitForTimeout(300);
+  await page.click("#rowmenu button[data-action=undo]");
+  await page.waitForTimeout(150);
+  const undone = sent.slice(menuFrom).filter((m) => m.t === "in").map((m) => m.data);
+  check(`${at} a finger held still on the input for 2.5 s opens the menu of Paste, Undo and Redo (none when lifted sooner, no tap on the lift); its Undo sends Ctrl+_`,
+    early === null && JSON.stringify(held) === JSON.stringify(["Paste", "Undo", "Redo"]) && JSON.stringify(undone) === JSON.stringify(["\x1f"])
+    && await page.evaluate(() => !document.getElementById("rowmenu").open), JSON.stringify({ early, held, undone }));
 
   // a quick swipe is not a slide
   const swipeFrom = sent.length;

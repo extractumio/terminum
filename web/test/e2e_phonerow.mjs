@@ -1,0 +1,130 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// AC-18, AC-57, AC-91 on a phone: Attach, the bookmarks, the reminders and the split stand in a
+// row at the bottom left, under the input, at the height of the keyboard's buttons (find and the
+// sent history stay at the top right); their panes open above them; Attach uploads several files
+// and types their paths at the cursor; a computer has no Attach. The input's menu leaves Paste out
+// when the clipboard is known empty (AC-03). The agent's input box has no
+// frame on a phone; Files and View take the terminal's place whole. Alone: node web/test/e2e_all.mjs webPhoneRow.
+
+import { check, runningIn } from "./check.mjs";
+import { drawn, group, item, line, openPage, PHONE, WIDE } from "./fake.mjs";
+
+const SID = "tmux:local:terminum:%1", DIR = "/Users/alex/api";
+const RULE = "─".repeat(60);
+const MARKS = [{ id: "R1", sid: SID, key: SID, n: 1, text: "x", note: "check it", title: "api", host: null, dir: DIR, at: 1792000000, remind: true },
+  { id: "M1", sid: SID, key: SID, n: 2, text: "y", note: "here", title: "api", host: null, dir: DIR, at: 1792000000 }];
+const IDS = ["attachfab", "marksfab", "remindfab", "splitfab", "findfab", "sentfab", "fabs", "kbdbtn"];
+
+async function opened(browser, device) {
+  const f = await openPage(browser, { device, layout: [group("main", [item(SID, "api", { agent: "claude", shell: false, sub: ["2.1", "~/api"], dir: DIR })])] });
+  await drawn(f.page);
+  const rows = [line("⏺ Done."), line(""), line(RULE), { r: [["> fix the ", null, null, 0], [" ", null, null, 256]], e: true }, line(RULE), line("  ? for shortcuts")];
+  f.say({ t: "screen", sid: SID, full: true, n: rows.length, cols: 60, rows: rows.length, ch: rows.map((r, i) => [i, r]) });
+  f.say({ t: "marks", items: MARKS });
+  await f.page.waitForTimeout(400);
+  return f;
+}
+const boxes = (page) => page.evaluate((ids) => Object.fromEntries(ids.map((id) => {
+  const el = document.getElementById(id), r = el.getBoundingClientRect();
+  return [id, { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), mid: Math.round(r.top + r.height / 2), seen: r.width > 0 && getComputedStyle(el).visibility === "visible" }];
+})), IDS);
+
+export async function webPhoneRow(browser, name) {
+  runningIn(`${name} 390×844`);
+  const f = await opened(browser, PHONE);
+  const { page } = f;
+  const b = await boxes(page);
+  const row = ["attachfab", "marksfab", "remindfab", "splitfab"];
+  check("AC-18 a phone: Attach, the bookmarks, the reminders and the split stand in that order in a row at the bottom left, at the keyboard buttons' height, clear of them",
+    row.every((id) => b[id].seen && Math.abs(b[id].mid - b.fabs.mid) <= 1) && row.every((id, i) => !i || b[id].x > b[row[i - 1]].x + b[row[i - 1]].w)
+    && b.attachfab.x <= 16 && b.splitfab.x + b.splitfab.w < b.fabs.x, JSON.stringify(b));
+  check("AC-58 a phone: find and the sent history stay at the top right",
+    b.findfab.seen && b.sentfab.seen && b.findfab.y < 200 && b.sentfab.y > b.findfab.y && b.findfab.x > 300, JSON.stringify([b.findfab, b.sentfab]));
+  const frame = await page.evaluate(() => getComputedStyle(document.querySelector("#screen .blk.inbox")).borderTopWidth);
+  check("AC-18 a phone: the agent's input box is a tint, no frame", frame === "0px", frame);
+
+  // the panes open above their buttons
+  for (const [fab, pane] of [["marksfab", "markpane"], ["remindfab", "remindpane"]]) {
+    await page.tap(`#${fab}`);
+    await page.waitForTimeout(250);
+    const at = await page.evaluate(([fab, pane]) => {
+      const a = document.getElementById(fab).getBoundingClientRect(), p = document.getElementById(pane).getBoundingClientRect();
+      return { open: !document.getElementById(pane).hidden, above: p.bottom <= a.top, inside: p.left >= 0 && p.right <= innerWidth && p.top >= 0 };
+    }, [fab, pane]);
+    check(`AC-57 a phone: ${fab}'s pane opens above it, on the screen`, at.open && at.above && at.inside, JSON.stringify(at));
+    await page.tap(`#${fab}`);
+    await page.waitForTimeout(150);
+  }
+
+  // Attach: two files uploaded, both paths typed at the cursor, no Enter
+  const posted = [];
+  await page.route("**/upload?*", (route) => {
+    const name = new URL(route.request().url()).searchParams.get("name");
+    posted.push(name);
+    return route.fulfill({ contentType: "application/json", body: JSON.stringify({ path: `/Users/alex/api/${name}` }) });
+  });
+  const before = f.sent.length;
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.tap("#attachfab")]);
+  await chooser.setFiles([{ name: "a.png", mimeType: "image/png", buffer: Buffer.from("png") }, { name: "notes b.txt", mimeType: "text/plain", buffer: Buffer.from("hi") }]);
+  await page.waitForFunction(() => document.getElementById("toast").hidden, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(200);
+  const typed = f.sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
+  check("AC-18 a phone: Attach takes several files, uploads each and types their paths at the cursor, without Enter",
+    chooser.isMultiple() && JSON.stringify(posted) === JSON.stringify(["a.png", "notes b.txt"])
+    && typed.includes("/Users/alex/api/a.png '/Users/alex/api/notes b.txt'") && !typed.includes("\r"), JSON.stringify({ posted, typed }));
+
+  // the input's menu (a finger held still 2.5 s; a CDP touch screen) where the page may read the clipboard
+  // unasked (a permission given): an empty one has no Paste; a full one's Paste pastes it
+  if (name === "chromium") {
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    const cdp = await page.context().newCDPSession(page);
+    const k = await page.evaluate(() => { const r = document.getElementById("kbd").getBoundingClientRect(); return { x: r.left + 60, y: r.top + r.height / 2 }; });
+    const hold = async () => {
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [k] });
+      await page.waitForTimeout(2700);
+      await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await page.waitForTimeout(300);
+      return page.evaluate(() => { const m = document.getElementById("rowmenu"); return m.open ? [...m.querySelectorAll("button[data-action]:not([data-action=x])")].map((b) => b.textContent) : null; });
+    };
+    await page.evaluate(() => navigator.clipboard.writeText(""));
+    const empty = await hold();
+    await page.keyboard.press("Escape");
+    await page.evaluate(() => navigator.clipboard.writeText("hi there"));
+    const from = f.sent.length, full = await hold();
+    await page.click("#rowmenu button[data-action=paste]");
+    await page.waitForTimeout(200);
+    const pasted = f.sent.slice(from).filter((m) => m.t === "in").map((m) => m.data).join("");
+    check("AC-03 a phone: the input's menu has no Paste with the clipboard known empty; with it full, Paste pastes it",
+      JSON.stringify(empty) === JSON.stringify(["Undo", "Redo"]) && JSON.stringify(full) === JSON.stringify(["Paste", "Undo", "Redo"]) && pasted.includes("hi there"),
+      JSON.stringify({ empty, full, pasted }));
+  }
+
+  // Files and View take the terminal's place whole, from under the tabs to the bottom (the
+  // terminal's row kept half the height)
+  const fill = async (view) => {
+    await page.evaluate((v) => { const b = document.querySelector(`button[data-view="${v}"]`); b.disabled = false; b.click(); }, view);
+    await page.waitForTimeout(250);
+    return page.evaluate((id) => {
+      const r = document.getElementById(id).getBoundingClientRect(), bar = document.getElementById("bar").getBoundingClientRect();
+      return { top: Math.round(r.top - bar.bottom), bottom: Math.round(innerHeight - r.bottom), row: document.getElementById("termrow").getBoundingClientRect().height };
+    }, view === "files" ? "files" : "filewin");
+  };
+  const filesAt = await fill("files"), viewAt = await fill("file");
+  check("AC-18 a phone: Files and View fill the space under the tabs, none of it left to the terminal",
+    [filesAt, viewAt].every((a) => Math.abs(a.top) <= 1 && a.bottom <= 1 && a.row === 0), JSON.stringify({ filesAt, viewAt }));
+  await page.evaluate(() => document.querySelector('button[data-view="term"]').click());
+  await page.waitForTimeout(250);
+
+  // a selection's Copy joins the right row: the left one steps aside
+  await page.evaluate(() => { document.getElementById("copyfab").hidden = false; });
+  const aside = await boxes(page);
+  check("AC-18 a phone: while a selection's Copy shows, the left row is out of sight (both rows do not fit)", row.every((id) => !aside[id].seen), JSON.stringify(aside));
+  await f.close();
+
+  runningIn(`${name} 1400×900`);
+  const w = await opened(browser, WIDE);
+  const wb = await boxes(w.page);
+  check("AC-18 a computer: no Attach (Upload on the hot keys, a drop); the bookmarks and reminders in the column at the top right",
+    !wb.attachfab.seen && wb.marksfab.seen && wb.marksfab.x === wb.findfab.x && wb.remindfab.y > wb.marksfab.y && wb.marksfab.y < 300, JSON.stringify(wb));
+  await w.close();
+}

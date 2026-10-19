@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Files to the shown pane (AC-52): a pasted image, a file from "Upload" on the hot keys, files
-// dropped on the page. Each is saved where the pane's shell runs (this Mac or its host), keeping
+// Files to the shown pane (AC-52): a pasted image, files from "Upload" on the hot keys or Attach
+// (a phone's row under the input), files dropped on the page. Each is saved where the pane's shell runs (this Mac or its host), keeping
 // a file's name, and its path is pasted as text without Enter: programs such as Claude Code take
 // a file by its path. Dropped files go one at a time (the bridge takes two at once) and their
-// paths are pasted together.
+// paths are pasted together; so do picked ones.
 import { shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
@@ -58,7 +58,7 @@ export function uploads({ sid, paste, toast, hideToast }) {
       if (!image) return toast(`This browser cannot read a ${blob.type.replace("image/", "").toUpperCase()} image: nothing was pasted.`, 6000);
       return send([[image, "/paste?sid="]], "image");
     },
-    uploadFile: (file) => send([[file, fileUrl(file)]], "file"),
+    uploadFiles: (list) => send(list.map((f) => [f, fileUrl(f)]), "file"),
     /** Files dropped anywhere on the page (a drop the page did not take would open the file in
      *  the browser and leave the page, with any unsaved edits in View). */
     bindDrop(target) {

@@ -84,6 +84,8 @@ body.wide #termrow { grid-row: 6; }
 #termrow > #term { flex: 1 1 0; min-width: 0; min-height: 0; }
 #quick { flex: 0 0 var(--quick, 33%); display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--t-bg); }
 #quick[hidden], #quickgrip[hidden], body:not([data-shown="term"]) #quick, body:not([data-shown="term"]) #quickgrip { display: none; }
+/* Files or View in the terminal's place (a phone): the row goes with the terminal, or it keeps its share of the height */
+body:not([data-shown="term"]) #termrow { display: none; }
 #quick .qbar { display: flex; align-items: center; gap: 4px; height: 28px; padding: 0 4px 0 10px; font-size: 12px; color: var(--muted);
   background: var(--chrome); }
 #quick .qtitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -6,6 +6,7 @@
 // page is shaded and takes no press while it is open; a press outside it closes it and does
 // nothing else; Esc closes it.
 import { askName, closeSession } from "./navtools.js";
+import { icon } from "./icons.js";
 import { projectColor } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
@@ -117,10 +118,10 @@ export function rowMenus({ list, send, item, projects, clone }) {
     };
     const others = projects().filter((p) => p !== mine).map((p) => {
       const b = button(p.name, "join", () => pick(p.id));
-      const dot = document.createElement("span");
-      dot.className = "pdot";
-      dot.style.setProperty("--proj", projectColor(p));
-      b.prepend(dot);
+      const mark = icon("group", 15);
+      mark.classList.add("picon");
+      mark.style.setProperty("--proj", projectColor(p));
+      b.prepend(mark);
       return b;
     });
     const again = () => { const li = list.querySelector(`.item[data-id="${CSS.escape(it.id)}"]`)?.closest("li"); if (li) rowMenu(li, x, y); else hide(); };
@@ -171,11 +172,12 @@ export function rowMenus({ list, send, item, projects, clone }) {
     if (!inside && performance.now() - openedAt > 350) hide();
   });
   box.addEventListener("cancel", (e) => { e.preventDefault(); hide(); });   // Esc: the focus goes back too
-  /** A menu of `items` ([label, run]) at x, y (the keyboard button's Undo and Redo). */
-  function show(items, x, y) {
+  /** A menu of `items` ([label, run]) at x, y (the input's Paste, Undo and Redo); byFinger: a
+   *  finger still down opened it. */
+  function show(items, x, y, byFinger = false) {
     fill("Edit", ...items.map(([label, run]) => button(label, label.toLowerCase(), () => { hide(); run(); })));
     box.dataset.for = "";
-    open(x, y);
+    open(x, y, byFinger);
   }
   return { headMenu, hide, show, rename };
 }

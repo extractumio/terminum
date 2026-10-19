@@ -9,9 +9,8 @@ import { folderHues, folderKey } from "./dircolors.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 
-// A coding agent's state: working, waiting for the user, failed; done shows nothing.
+// A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing.
 const STATES = {
-  working: { label: "Working", icon: "hourglass" },
   waiting: { label: "Waiting for your answer", icon: "circle-help" },
   failed: { label: "Failed", icon: "triangle-alert" },
 };
@@ -40,9 +39,10 @@ export function agentMark(item, size = 14) {
   const [src, name] = MARKS[item.agent] ?? [];
   const wrap = el("span", "agmark");
   wrap.title = name ?? "Terminal";
-  if (!src) { wrap.append(icon("terminal", size)); return wrap; }
+  const terminal = () => { wrap.classList.add("term"); return icon("terminal", Math.round(size * 0.72)); };   // white on a dark gray tile (style.css)
+  if (!src) { wrap.append(terminal()); return wrap; }
   const img = Object.assign(document.createElement("img"), { src, alt: "", width: size, height: size, draggable: false });
-  img.addEventListener("error", () => img.replaceWith(icon("terminal", size)));
+  img.addEventListener("error", () => img.replaceWith(terminal()));
   wrap.append(img);
   return wrap;
 }
@@ -108,6 +108,9 @@ function el(tag, cls, text) {
   return e;
 }
 
+/** A group's count: its sessions (its rows, not their panes or quick shells under them), said in words. */
+const sessionCount = (n) => el("span", "count", n ? `${n} session${n === 1 ? "" : "s"}` : "");   // a group without rows says its state instead
+
 /** A small icon button of the list (a header's, a row's Clone): its class, icon, label for a screen reader, tooltip. */
 function iconButton(cls, name, label, title, onClick) {
   const b = el("button", cls);
@@ -144,12 +147,14 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   txt.append(head);
   if (item.host || item.sub?.length) txt.append(rowLine(item));
   const st = el("span", "st");
+  const clone = opts.onClone && !child;
+  let unread = null;
   if (item.unread) {                               // its agent finished a turn nobody has looked at (AC-93)
-    const u = el("span", "unread");
-    u.title = "Unread: its agent finished";
-    u.setAttribute("role", "img");
-    u.setAttribute("aria-label", u.title);
-    st.append(u);
+    unread = el("span", "unread");
+    unread.title = "Unread: its agent finished";
+    unread.setAttribute("role", "img");
+    unread.setAttribute("aria-label", unread.title);
+    if (!clone) st.append(unread);                 // where Clone would be (projects.css), else with its state
   }
   const mark = stateIcon(item.state);
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
@@ -178,7 +183,8 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   b.addEventListener("click", () => onPick(item.id));
   li.append(b);
   // a new window beside it, in its folder (AC-07)
-  if (opts.onClone && !child) li.append(iconButton("clone", "copy-plus", `Clone ${item.title}`, "Clone: a new window in its folder", () => opts.onClone(item)));
+  if (clone) li.append(iconButton("clone", "copy-plus", `Clone ${item.title}`, "Clone: a new window in its folder", () => opts.onClone(item)));
+  if (clone && unread) li.append(unread);
   return li;
 }
 
@@ -234,21 +240,21 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));
     t.addEventListener("click", () => onToggle(key));
-    const count = el("span", "count", String(tops.length));
-    count.title = `${tops.length} session${tops.length === 1 ? "" : "s"}`;
+    const count = sessionCount(tops.length);
     if (closed && tops.some((it) => it.id === current || kids(it).some((k) => k.id === current))) count.classList.add("on");
     const name = el("span", "label", p.name);
     if (onProjectRename) {                         // its name, double-clicked, is renamed (also ⋯ Rename…)
       name.title = "Double-click to rename";
       name.addEventListener("dblclick", (e) => { e.stopPropagation(); onProjectRename(p); });
     }
-    t.append(icon("chevron-down", 14), el("span", "pdot"), name, count);
-    h.append(t);
-    if (onProjectNew) h.append(iconButton("new", "plus", `New session in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
+    t.append(icon("chevron-down", 14), name, count);
+    const acts = el("span", "acts");               // a fixed column: the counts line up whatever buttons follow
+    h.append(t, acts);
+    if (onProjectNew) acts.append(iconButton("new", "plus", `New session in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {
       const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: rename, ungroup`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");
-      h.append(m);
+      acts.append(m);
     }
     sec.append(h);
     if (!closed) {
@@ -289,12 +295,13 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     if (g.session) t.append(el("span", "tsess", g.session));      // a tmux group: its session's name; the rows name the host
     else if (g.host && g.host !== g.label) t.append(el("span", "host", g.host));
     if (g.where) t.append(el("span", "where", g.where));
-    const n = left.length;                       // a project's panes are counted there
-    const count = el("span", "count", n ? String(n) : "");   // a group without rows says its state instead
-    count.title = `${n} pane${n === 1 ? "" : "s"}`;
+    // its sessions: the rows it lists (a project's are counted there), not the panes and quick shells under them
+    const n = left.filter((it) => !(it.pane > 1) && !(it.quickOf && left.some((x) => x.id === it.quickOf))).length;
+    const count = sessionCount(n);
     if (closed && items.some((it) => it.id === current)) count.classList.add("on");   // the shown session is inside
     t.append(count);
-    h.append(t);
+    const acts = el("span", "acts");
+    h.append(t, acts);
     if (g.attach && onCopy) {                    // attach from another terminal (tmux -L … / ssh -t …)
       const c = el("button", "attach");
       c.type = "button";
@@ -302,7 +309,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       c.setAttribute("aria-label", `Copy the command that attaches to ${g.session ?? g.label}`);
       c.append(icon("copy", 13));
       c.addEventListener("click", (e) => { e.stopPropagation(); onCopy(g.attach); });
-      h.append(c);
+      acts.append(c);
     }
     if (g.host && !g.attached && g.others > 0 && onImport) {
       const n = el("button", "import");
@@ -311,7 +318,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       n.setAttribute("aria-label", n.title);
       n.append(icon("import", 14));
       n.addEventListener("click", (e) => { e.stopPropagation(); onImport(g); });
-      h.append(n);
+      acts.append(n);
     }
     if (own && onHost) {
       const m = el("button", "hostbtn");
@@ -321,7 +328,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       m.setAttribute("aria-haspopup", "true");
       m.append(icon("ellipsis", 14));
       m.addEventListener("click", (e) => { e.stopPropagation(); onHost(g, m); });
-      h.append(m);
+      acts.append(m);
     }
     sec.append(h);
     const state = own ? hostState(g) : "";

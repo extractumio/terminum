@@ -28,21 +28,25 @@ export async function webProjects(browser, name) {
     return { news: document.querySelectorAll("#sessions h2 .new").length, clones: document.querySelectorAll("#sessions li > .clone").length,
       first: s.firstElementChild?.textContent, prog: s.querySelector(".progs")?.textContent,
       right: Math.round(s.getBoundingClientRect().right - s.querySelector(".progs").getBoundingClientRect().right),
-      unread: !!document.querySelector('#sessions .item[data-id$="%4"] .unread'), plain: !!document.querySelector('#sessions .item[data-id$="%2"] .unread') };
+      unread: !!document.querySelector('#sessions li:has(> .item[data-id$="%4"]) .unread'), plain: !!document.querySelector('#sessions li:has(> .item[data-id$="%2"]) .unread') };
   });
   check("AC-07 every row has Clone, no group header has [+]", look.news === 0 && look.clones === 4, JSON.stringify(look));
   check("AC-01 a row's second line: its folder first, its program at the right edge", look.first === "~/work/docs" && look.prog === "zsh" && look.right <= 1, JSON.stringify(look));
   check("AC-93 a row whose agent finished unseen has the unread mark, others none", look.unread && !look.plain, JSON.stringify(look));
-  const mark = () => page.evaluate(() => {
-    const u = document.querySelector('#sessions .item[data-id$="%4"] .unread'), c = u.closest("li").querySelector(":scope > .clone");
-    const mid = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
-    const label = u.closest("section").querySelector("h2 .label");
-    return { w: u.offsetWidth, off: Math.abs(mid(u) - mid(c)), bg: getComputedStyle(u).backgroundColor, name: getComputedStyle(label).color,
+  // where the unread mark is: x its middle from Clone's (left of it < 0), y from the session name's middle
+  const mark = (pg = page) => pg.evaluate(() => {
+    const li = document.querySelector('#sessions li:has(> .item[data-id$="%4"])'), u = li.querySelector(".unread"), c = li.querySelector(":scope > .clone"), t = li.querySelector(".t");
+    const mid = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+    return { w: u.offsetWidth, x: Math.round(mid(u)[0] - mid(c)[0]), y: Math.round(mid(u)[1] - mid(t)[1]), clear: Math.round(c.getBoundingClientRect().left - u.getBoundingClientRect().right),
+      bg: getComputedStyle(u).backgroundColor, name: getComputedStyle(t).color, seen: getComputedStyle(u).visibility === "visible",
       round: getComputedStyle(u).borderTopLeftRadius !== getComputedStyle(u).borderTopRightRadius };
   });
   const m1 = await mark();
-  check("AC-93 the unread mark: 8 px, not round, its middle on Clone's, in its group's name's color",
-    m1.w === 8 && m1.round && m1.off <= 1 && m1.bg === m1.name, JSON.stringify(m1));
+  await page.hover('#sessions .item[data-id$="%4"]');
+  const covered = await mark();
+  await page.mouse.move(700, 700);
+  check("AC-93 the unread mark: 6 px, not round, in the session name's color, level with its name's middle, on Clone's middle; Clone, shown, covers it",
+    m1.w === 6 && m1.round && m1.bg === m1.name && Math.abs(m1.y) <= 1 && Math.abs(m1.x) <= 1 && m1.seen && !covered.seen, JSON.stringify({ m1, covered }));
   await page.hover('#sessions .item[data-id$="%2"]');
   await page.click('#sessions li:has(> .item[data-id$="%2"]) > .clone');
   check("AC-07 Clone asks for a window beside it", last(sent, "clone")?.id === ID(2), JSON.stringify(last(sent, "clone")));
@@ -87,15 +91,17 @@ export async function webProjects(browser, name) {
     const bars = [...p.querySelectorAll(".pbar")].map((b) => b.style.getPropertyValue("--dot"));
     return { first: p.dataset.pid, name: p.querySelector("h2 .label").textContent, rows: ids(p), main: ids(secs.find((s) => s.dataset.wid === "local/main")),
       notes: !!secs.find((s) => s.dataset.wid === "local/notes"), same: new Set(bars).size === 1,
+      mark: [p.querySelector("h2 .toggle").querySelectorAll("svg").length === 1, !p.querySelector("h2 .pdot, h2 .picon")],
       apart: bars[0] !== secs[1].querySelector(".pbar").style.getPropertyValue("--dot") };
   });
   check("AC-92 projects come first, their sessions out of their tmux groups; a group left empty goes",
     grouped.first === "p1" && grouped.name === "Group 1" && grouped.rows.join() === "%1,%3" && grouped.main.join() === "%4" && !grouped.notes, JSON.stringify(grouped));
   check("AC-92 a project's rows share its color, another project's differs", grouped.same && grouped.apart, JSON.stringify(grouped));
+  check("AC-92 a project's name has nothing before it but the chevron", grouped.mark.every(Boolean), JSON.stringify(grouped.mark));
   f.say({ t: "projects", items: [{ ...P1, members: [ID(1), ID(3), ID(4)] }, P2] });
   await pause(page, 200);
   const m2 = await mark();
-  check("AC-93 in a project the unread mark takes the project's name's color", m2.bg === m2.name && m2.off <= 1, JSON.stringify(m2));
+  check("AC-93 in a project too the unread mark takes the session name's color, on Clone's middle", m2.bg === m2.name && Math.abs(m2.x) <= 1 && Math.abs(m2.y) <= 1, JSON.stringify(m2));
   f.say({ t: "projects", items: [P1, P2] });
   await pause(page, 200);
   await page.click('#sessions section[data-pid="p1"] h2 .new');
@@ -155,12 +161,9 @@ export async function webProjects(browser, name) {
   await pause(p.page, 650);
   const held = await menuItems(p.page);
   check("AC-07 a finger resting on a row opens its menu", held[0] === "Clone" && held.length === 7, held.join());
-  const pm = await p.page.evaluate(() => {
-    const u = document.querySelector('#sessions .item[data-id$="%4"] .unread'), c = u.closest("li").querySelector(":scope > .clone");
-    const mid = (el) => { const r = el.getBoundingClientRect(); return r.top + r.height / 2; };
-    return mid(u) - mid(c);
-  });
-  check("AC-93 on a phone too the unread mark's middle is Clone's", Math.abs(pm) <= 1, pm);
+  const pm = await mark(p.page);
+  check("AC-93 on a phone (Clone always there) the unread mark stands just left of Clone, level with the session name's middle",
+    pm.seen && pm.clear >= 0 && pm.clear <= 4 && Math.abs(pm.y) <= 1, JSON.stringify(pm));
   check("AC-07 on a phone Clone is always there", await p.page.evaluate(() => getComputedStyle(document.querySelector("#sessions li > .clone")).opacity !== "0"));
   check("no page errors", !p.errors.length, p.errors.join(" | "));
   await p.close();

@@ -11,7 +11,7 @@ import { inWidget } from "./widgetui.js";
 // keys, the arrows with their modifiers, and moving around. Fn swaps the last two rows for the
 // F keys (mc, htop), so the panel never grows. The keyboard has its own floating button.
 const HOTKEYS = [
-  [["Copy", "copy", "Copy the selected text"], ["Paste", "paste"], ["Upload", "upload", "Upload a file and paste its path"],
+  [["Copy", "copy", "Copy the selected text"], ["Paste", "paste"], ["Upload", "upload", "Upload files and paste their paths"],
     ["⇧↩", "\x1b[13;2u", "Shift+Enter: a new line in apps that tell it from Enter"], ["Tab", "\t"], ["Enter", "\r", "Enter (Return)", "strong"]],
   [["Esc", "\x1b"], ["^C", "\x03", "Interrupt"], ["^D", "\x04", "End of input"], ["^Z", "\x1a", "Suspend"],
     ["^R", "\x12", "Search history"], ["Fn", "fn", "F1–F12 in place of the last two rows"]],
@@ -25,7 +25,8 @@ const FN_ROWS = [
 ];
 
 const HOLD = 400, REPEAT = 33;   // ms: as a keyboard's repeat
-const SLIDE_AFTER = 250;   // ms a finger rests on the input before sliding moves the cursor (held still, iOS's menu comes at ~500)
+const MENU_AFTER = 2500;   // ms a finger held still on the input before its menu (Paste, Undo, Redo; AC-03)
+const SLIDE_AFTER = 250;   // ms a finger rests on the input before sliding moves the cursor (held still, the page's menu at MENU_AFTER)
 const DELETES = { deleteContentBackward: "\x7f", deleteWordBackward: "\x7f", deleteContentForward: "\x1b[3~" };   // a word as one backspace where ^W is not a word (nano: search)
 // On a touch screen the keyboard field keeps one invisible character: iOS repeats a held delete
 // only while there is something to delete, and the field is emptied after every key.
@@ -100,21 +101,26 @@ export class Input {
     k.addEventListener("blur", stopChar);
     k.addEventListener("compositionstart", (e) => { stopChar(); composing(e); });
     k.addEventListener("compositionend", (e) => { this.type(k.value.replaceAll(KEEP, ""), "compose", e); k.value = ""; refill(); });
-    // The field lies over the cursor's row or a coding agent's input box (for iOS's long-press
-    // Paste): a short tap on it still moves the cursor like a tap on the terminal, and a finger
-    // that rests a moment, however long, and then slides moves the cursor as in a text field: in
-    // an agent's input box onto the character under the finger, over its lines too; at a shell's
-    // prompt along the line, a character a step (iOS's own menu still comes for a finger held
-    // still). The finger's times are the events' own (when it touched), not when a busy page got to them.
-    let down = null;
+    // The field lies over the cursor's row or a coding agent's input box: a short tap on it
+    // still moves the cursor like a tap on the terminal, and a finger that rests a moment,
+    // however long, and then slides moves the cursor as in a text field: in an agent's input box
+    // onto the character under the finger, over its lines too; at a shell's prompt along the
+    // line, a character a step. Held still for MENU_AFTER, it opens the page's menu of Paste, Undo
+    // and Redo (iOS shows its own for no invisible field). The finger's times are the events' own
+    // (when it touched), not when a busy page got to them.
+    let down = null, menu = 0;
     k.addEventListener("touchstart", (e) => {
       const t = e.touches[0];
+      clearTimeout(menu);
       down = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: e.timeStamp, slide: false, moved: 0 } : null;
+      if (down) menu = setTimeout((d) => { if (down === d) { d.menu = true; this.options.holdMenu?.(d.x, d.y); } }, MENU_AFTER, down);
     }, { passive: true });
+    k.addEventListener("touchcancel", () => { clearTimeout(menu); down = null; });
     k.addEventListener("touchmove", (e) => {
       const t = e.touches[0];
       if (!down || !t) return;
       const dx = t.clientX - down.x, dy = t.clientY - down.y;
+      if (Math.hypot(dx, dy) > 10) clearTimeout(menu);
       if (down.scroll !== undefined) {                                 // a swipe over the field scrolls the terminal
         e.preventDefault();
         this.term.scrollTop += down.scroll - t.clientY;
@@ -127,6 +133,7 @@ export class Input {
         down.box = !!this.options.inBox?.();                          // the finger draws the cursor over the box's lines
         if (Math.hypot(dx, dy) < 4 || (!down.box && Math.abs(dx) < Math.abs(dy))) return;
         down.slide = true;
+        clearTimeout(menu);
       }
       e.preventDefault();                                             // the slide is ours, not iOS's loupe
       const w = this.options.cellWidth?.() || 8;
@@ -142,7 +149,8 @@ export class Input {
       for (; down.moved > cells; down.moved--) step("D");
     }, { passive: false });
     k.addEventListener("touchend", (e) => {
-      if (down?.slide || down?.scroll !== undefined) { e.preventDefault(); down = null; return; }   // its tap would move the cursor
+      clearTimeout(menu);
+      if (down?.slide || down?.scroll !== undefined || down?.menu) { e.preventDefault(); down = null; return; }   // its tap would move the cursor
       const t = e.changedTouches[0];
       if (down && t && e.timeStamp - down.at < 350 && Math.hypot(t.clientX - down.x, t.clientY - down.y) < 10
           && !this.options.tapLink?.(t.clientX, t.clientY))       // an address or a path on the row still opens
@@ -316,7 +324,10 @@ export class Input {
       } catch { /* denied or no image: try text */ }
     }
     if (window.isSecureContext && navigator.clipboard?.readText) {
-      try { return this.paste(await navigator.clipboard.readText()); } catch { /* denied: use the field */ }
+      let text;
+      try { text = await navigator.clipboard.readText(); } catch { /* denied: use the field */ }
+      if (text === "") return this.options.status("The clipboard is empty.");
+      if (text !== undefined) return this.paste(text);
     }
     this.pasteDialog.showModal();
     this.pasteDialog.querySelector("textarea").focus();
