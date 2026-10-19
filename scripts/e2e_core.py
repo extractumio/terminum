@@ -187,7 +187,8 @@ def main():
 
         def note(m):
             seen["closed"] |= m["t"] == "error" and "closed" in m.get("msg", "")
-            seen["main"] |= m["t"] == "layout" and any(g["label"] == "main" and not any(i["id"] == created["id"] for i in g["items"]) for g in m["groups"])
+            # a layout after the kill is the new server's: main, its windows restored (AC-15); pane ids start anew, so one may be the old one's
+            seen["main"] |= m["t"] == "layout" and any(g["label"] == "main" and g["items"] for g in m["groups"])
             return all(seen.values())
         ws.until(note, 8)
         check("AC-14 a shown pane says it has closed", seen["closed"])
