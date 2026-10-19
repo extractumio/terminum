@@ -2,7 +2,9 @@
 // The session list's menus: a row's on a right click or a long press (Clone, Add to Project,
 // Remove from Project, Close Session, Move to the Top, to the Bottom, Up, Down; AC-07, AC-92), and a
 // project's ⋯ (Rename, Ungroup). A move reorders the row among its group's: a project's
-// sessions in the project, a tmux session's windows in tmux.
+// sessions in the project, a tmux session's windows in tmux. Each is modal (a <dialog>): the
+// page is shaded and takes no press while it is open; a press outside it closes it and does
+// nothing else; Esc closes it.
 import { askName, closeSession } from "./navtools.js";
 import { projectColor } from "./nav.js";
 
@@ -35,8 +37,8 @@ export function saveOrder(send, ul, ids) {
 export function rowMenus({ list, send, item, projects, clone }) {
   const box = $("rowmenu");
   const hide = () => {
-    if (box.hidden) return;
-    box.hidden = true;
+    if (!box.open) return;
+    box.close();
     if (back?.isConnected && box.contains(document.activeElement)) back.focus({ preventScroll: true });
   };
   let openedAt = -Infinity, back = null;           // when a finger opened it; what had the focus
@@ -62,9 +64,8 @@ export function rowMenus({ list, send, item, projects, clone }) {
     box.replaceChildren(head, ...items);
   }
   function open(x, y, byFinger = false) {
-    if (box.hidden) back = document.activeElement;
+    if (!box.open) { back = document.activeElement; box.showModal(); }
     openedAt = byFinger ? performance.now() : -Infinity;
-    box.hidden = false;
     const w = box.offsetWidth, h = box.offsetHeight;
     box.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
     box.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
@@ -105,6 +106,15 @@ export function rowMenus({ list, send, item, projects, clone }) {
 
   function projectMenu(it, mine, x, y) {
     const pick = (project) => { hide(); send({ t: "project", action: "add", id: it.id, ...(project ? { project } : {}) }); };
+    // a new project is named at once (its suggestion: the lowest "Group N" free)
+    const named = async () => {
+      hide();
+      const taken = new Set(projects().map((p) => p.name));
+      let n = 1;
+      while (taken.has(`Group ${n}`)) n++;
+      const name = await askName("Name the new project", `Group ${n}`, "Create");
+      if (name) send({ t: "project", action: "add", id: it.id, name });
+    };
     const others = projects().filter((p) => p !== mine).map((p) => {
       const b = button(p.name, "join", () => pick(p.id));
       const dot = document.createElement("span");
@@ -115,19 +125,20 @@ export function rowMenus({ list, send, item, projects, clone }) {
     });
     const again = () => { const li = list.querySelector(`.item[data-id="${CSS.escape(it.id)}"]`)?.closest("li"); if (li) rowMenu(li, x, y); else hide(); };
     fill("Add to Project", button("‹ Back", "back", again),
-      document.createElement("hr"), ...others, button("New project", "newproject", () => pick(null)));
+      document.createElement("hr"), ...others, button("New project…", "newproject", named));
     open(x, y);
+  }
+
+  async function rename(p) {
+    const name = await askName(`Rename ${p.name}`, p.name);
+    if (name && name !== p.name) send({ t: "project", action: "rename", project: p.id, name });
   }
 
   /** A project's ⋯: Rename, Ungroup. */
   function headMenu(p, b) {
-    if (!box.hidden && box.dataset.for === p.id) return hide();
+    if (box.open && box.dataset.for === p.id) return hide();
     fill(p.name,
-      button("Rename…", "rename", async () => {
-        hide();
-        const name = await askName(`Rename ${p.name}`, p.name);
-        if (name) send({ t: "project", action: "rename", project: p.id, name });
-      }),
+      button("Rename…", "rename", () => { hide(); rename(p); }),
       button("Ungroup", "ungroup", () => { hide(); send({ t: "project", action: "delete", project: p.id }); }));
     box.dataset.for = p.id;
     const r = b.getBoundingClientRect();
@@ -152,13 +163,19 @@ export function rowMenus({ list, send, item, projects, clone }) {
   longPress(list, (e) => !e.target.closest(".grip, .clone") && e.target.closest(".item:not(.child)")?.closest("li"),
     (li, x, y) => rowMenu(li, x - 24, y + 28, true));
   // a press elsewhere closes it (pointerdown: iOS sends no click for a tap on a plain area)
-  document.addEventListener("pointerdown", (e) => { if (!box.hidden && !e.target.closest("#rowmenu") && performance.now() - openedAt > 350) hide(); });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !box.hidden) hide(); });
+  // a press on the shade (the dialog itself, outside its box) closes it, and reaches nothing
+  // under it; the lift of the finger that opened it does not
+  box.addEventListener("click", (e) => {
+    if (e.target !== box) return;
+    const r = box.getBoundingClientRect(), inside = e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    if (!inside && performance.now() - openedAt > 350) hide();
+  });
+  box.addEventListener("cancel", (e) => { e.preventDefault(); hide(); });   // Esc: the focus goes back too
   /** A menu of `items` ([label, run]) at x, y (the keyboard button's Undo and Redo). */
   function show(items, x, y) {
     fill("Edit", ...items.map(([label, run]) => button(label, label.toLowerCase(), () => { hide(); run(); })));
     box.dataset.for = "";
     open(x, y);
   }
-  return { headMenu, hide, show };
+  return { headMenu, hide, show, rename };
 }

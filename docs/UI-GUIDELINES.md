@@ -16,6 +16,7 @@ is next changed. CLAUDE.md and the specs win over this file.
 | Theme-driven colors | Surfaces, text, lines and accent derive from the session's theme (`--t-bg`, `--t-fg`, `--accent`). Fixed hues only for meaning that must not change with the theme (§2.2), and they must read on a light theme too. |
 | One look per kind | Two controls of the same kind share one class and one rule. Style by class; ids are for behavior and tests. |
 | Surfaces, not lines | Elements are set apart by space or by a step of background (§2.1); a 1px line only for a tree guide or rendered content. |
+| No edge stripes | Never a colored line along a box's side (a `border-left`, an inset `box-shadow`) on a rounded box: it bends at the corners. A group is tinted; a mark beside a row or a quote is the list's wavy line (`--wave-line`). |
 | Drawn by hand | Every box's horizontal edges bow a little and no round thing is a circle (§2.7). |
 | Calm motion | Feedback ≤ 120 ms, a box comes in ≤ 200 ms, a click's ripple fades ≤ 320 ms after the action (it never delays it); nothing moves in the terminal; one `prefers-reduced-motion: reduce` off-switch (§2.8). |
 
@@ -292,7 +293,7 @@ screenshots you looked at. A copy-only change needs §4 and one screenshot.
 - [ ] Screenshot of the changed area **next to its siblings**: same height, padding, radius, fill,
       edge, font, icon size and alignment.
 - [ ] Chromium **and** WebKit, at 1400×900 and 390×844 (touch), from `web/test/fake.mjs`.
-- [ ] No new 1px border: space or a surface step instead (§2.1); a new box, field or header uses
+- [ ] No new 1px border: space or a surface step instead (§2.1); no colored stripe along a rounded box's side (§1); a new box, field or header uses
       its shape class (§2.7); new motion uses the tokens, stays out of the terminal and has the
       reduced-motion switch (§2.8).
 - [ ] A dark and a light theme (in `openPage`'s `hook`, answer `sub` with `say({ t: "theme", sid: m.id, theme: { ...THEME, bg: "#ffffff", fg: "#1f2328", dark: false } })`): text and fixed hues readable

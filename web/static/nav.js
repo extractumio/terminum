@@ -59,7 +59,7 @@ export function folderBar(item, shown = false, busy = false, project = null) {
   return d;
 }
 
-// Projects' colors (AC-92): ten hues far apart, strong, so two projects never read as one
+// Projects' colors (AC-92): ten hues far apart, in pastel (projects.css), so two projects never read as one
 const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
 export const projectColor = (p) => `oklch(var(--proj-l) var(--proj-c) ${PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length]})`;
 
@@ -198,7 +198,7 @@ export function hostState(g) {
 // Projects (AC-92) come first, each its sessions with their panes and quick shells, which
 // their tmux groups then leave out; every row has its Clone button (onClone(item)).
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null } = {}) {
+  { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null, onProjectRename = null } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
@@ -237,7 +237,12 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     const count = el("span", "count", String(tops.length));
     count.title = `${tops.length} session${tops.length === 1 ? "" : "s"}`;
     if (closed && tops.some((it) => it.id === current || kids(it).some((k) => k.id === current))) count.classList.add("on");
-    t.append(icon("chevron-down", 14), el("span", "pdot"), el("span", "label", p.name), count);
+    const name = el("span", "label", p.name);
+    if (onProjectRename) {                         // its name, double-clicked, is renamed (also ⋯ Rename…)
+      name.title = "Double-click to rename";
+      name.addEventListener("dblclick", (e) => { e.stopPropagation(); onProjectRename(p); });
+    }
+    t.append(icon("chevron-down", 14), el("span", "pdot"), name, count);
     h.append(t);
     if (onProjectNew) h.append(iconButton("new", "plus", `New session in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {

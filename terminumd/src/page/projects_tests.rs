@@ -14,43 +14,46 @@ fn store() -> Projects {
 #[test]
 fn a_new_project_is_named_and_colored_apart_from_the_others() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/Users/alex/api".into()).unwrap();
-    let p2 = ps.add(B, None, None, None, "/Users/alex/web".into()).unwrap();
+    let p1 = ps.add(A, None, None, None, "/Users/alex/api".into(), None).unwrap();
+    let p2 = ps.add(B, None, None, None, "/Users/alex/web".into(), None).unwrap();
     let names: Vec<_> = ps.list().iter().map(|p| (p.name.clone(), p.color, p.dir.clone())).collect();
     assert_eq!(names, [("Group 1".to_string(), 0, "/Users/alex/api".to_string()), ("Group 2".into(), 1, "/Users/alex/web".into())]);
     ps.delete(&p1).unwrap();
-    let p3 = ps.add(A, None, None, None, "/tmp".into()).unwrap();
+    let p3 = ps.add(A, None, None, None, "/tmp".into(), None).unwrap();
     let p = ps.list().iter().find(|p| p.id == p3).unwrap();
     assert_eq!((p.name.as_str(), p.color), ("Group 1", 0), "the lowest free name and color again");
+    let p4 = ps.add(C, None, None, None, "/c".into(), Some("  API  ")).unwrap();
+    assert_eq!(ps.list().iter().find(|p| p.id == p4).unwrap().name, "API", "named as it is made");
+    assert!(ps.add(B, None, None, None, "/c".into(), Some("a\u{7}")).is_err());
     assert_ne!(p2, p3);
 }
 
 #[test]
 fn a_pane_is_in_one_project_and_an_empty_one_goes() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into()).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into()).unwrap();
-    let p2 = ps.add(B, None, None, None, "/b".into()).unwrap();
+    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    let p2 = ps.add(B, None, None, None, "/b".into(), None).unwrap();
     assert_eq!(ps.of(B).unwrap().id, p2, "moved, not copied");
     assert_eq!(ps.of(A).unwrap().members, [A]);
     ps.remove(A).unwrap();
     assert!(ps.list().iter().all(|p| p.id != p1), "its last session left: the project goes");
-    assert!(ps.add(A, Some("nope"), None, None, "/".into()).is_err());
+    assert!(ps.add(A, Some("nope"), None, None, "/".into(), None).is_err());
 }
 
 #[test]
 fn order_members_rename_and_after() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into()).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into()).unwrap();
-    ps.add(C, Some(&p1), Some(A), None, "/a".into()).unwrap();
+    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    ps.add(C, Some(&p1), Some(A), None, "/a".into(), None).unwrap();
     assert_eq!(ps.of(A).unwrap().members, [A, C, B], "a clone goes right after its session");
     ps.members(&p1, &[B.into(), A.into()]).unwrap();
     assert_eq!(ps.of(A).unwrap().members, [B, A, C]);
     ps.rename(&p1, "  API  ").unwrap();
     assert_eq!(ps.of(A).unwrap().name, "API");
     assert!(ps.rename(&p1, " ").is_err() && ps.rename(&p1, "a\u{7}").is_err());
-    let p2 = ps.add("tmux:local:terminum:%9", None, None, None, "/z".into()).unwrap();
+    let p2 = ps.add("tmux:local:terminum:%9", None, None, None, "/z".into(), None).unwrap();
     ps.order(&[p2.clone(), p1.clone()]).unwrap();
     assert_eq!(ps.list().iter().map(|p| p.id.clone()).collect::<Vec<_>>(), [p2, p1]);
 }
@@ -58,8 +61,8 @@ fn order_members_rename_and_after() {
 #[test]
 fn closed_panes_leave_when_their_server_is_read() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into()).unwrap();
-    ps.add(C, Some(&p1), None, None, "/a".into()).unwrap();
+    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    ps.add(C, Some(&p1), None, None, "/a".into(), None).unwrap();
     let live: HashSet<&str> = [B].into_iter().collect();
     assert!(ps.seen("tmux:local:terminum:", Some("m1"), &live), "the first read adopts the server");
     assert_eq!(ps.of(A).unwrap().members, [A, C], "added just now: spared (a read on its way may not have it)");
@@ -77,8 +80,8 @@ fn closed_panes_leave_when_their_server_is_read() {
 #[test]
 fn a_server_started_anew_keeps_projects_only_through_its_restore() {
     let mut ps = store();
-    let p1 = ps.add(A, None, None, None, "/a".into()).unwrap();
-    ps.add(B, Some(&p1), None, None, "/a".into()).unwrap();
+    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
     ps.fresh.clear();
     let both: HashSet<&str> = [A, B].into_iter().collect();
     ps.seen("tmux:local:terminum:", Some("m1"), &both);

@@ -14,7 +14,7 @@ const LAYOUT = [group("main", [item(ID(1), "api", { sub: ["claude", "~/work/api"
   group("notes", [item(ID(3), "notes", { sub: ["fish", "~/notes"] })], { wid: "local/notes", new: "New window" })];
 const P1 = { id: "p1", name: "Group 1", color: 0, host: null, dir: "/Users/alex/work/api", members: [ID(1), ID(3)] };
 const P2 = { id: "p2", name: "Group 2", color: 1, host: null, dir: "/Users/alex/work/docs", members: [ID(2)] };
-const menuItems = (page) => page.evaluate(() => [...document.querySelectorAll("#rowmenu:not([hidden]) button:not([data-action=x])")].map((b) => `${b.textContent}${b.disabled ? "-" : ""}`));
+const menuItems = (page) => page.evaluate(() => [...document.querySelectorAll("#rowmenu[open] button:not([data-action=x])")].map((b) => `${b.textContent}${b.disabled ? "-" : ""}`));
 const last = (sent, t) => sent.filter((m) => m.t === t).pop();
 
 export async function webProjects(browser, name) {
@@ -54,13 +54,30 @@ export async function webProjects(browser, name) {
   check("AC-07 the menu names its session and has × to close it", await page.evaluate(() => document.querySelector("#rowmenu .mhead span")?.textContent === "docs"));
   await page.click('#rowmenu button[data-action="x"]');
   check("AC-07 × closes the menu", await page.isHidden("#rowmenu"));
+  // modal: the page shaded, a press outside closes it and reaches nothing under it
+  await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
+  const shade = await page.evaluate(() => getComputedStyle(document.getElementById("rowmenu"), "::backdrop").backgroundColor);
+  const subs = sent.filter((m) => m.t === "sub").length;
+  const r = await page.evaluate(() => { const b = document.querySelector('#sessions .item[data-id$="%1"]').getBoundingClientRect(); return [b.left + 40, b.top + 10]; });
+  await page.mouse.click(r[0], r[1]);
+  await pause(page, 150);
+  check("AC-07 the menu is modal: the page shaded; a press outside closes it and opens nothing",
+    !/rgba\(0, 0, 0, 0\)|transparent/.test(shade) && await page.isHidden("#rowmenu") && sent.filter((m) => m.t === "sub").length === subs, JSON.stringify({ shade, subs }));
   await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
   await page.click('#rowmenu button[data-action="down"]');
   check("AC-07 Move Down reorders the session's windows", JSON.stringify(last(sent, "reorder")?.ids) === JSON.stringify([ID(1), ID(4), ID(2)]), JSON.stringify(last(sent, "reorder")));
   await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
   await page.click('#rowmenu button[data-action="project"]');
   await page.click('#rowmenu button[data-action="newproject"]');
-  check("AC-92 Add to Project… New project asks terminumd", JSON.stringify(last(sent, "project")) === JSON.stringify({ t: "project", action: "add", id: ID(2) }), JSON.stringify(last(sent, "project")));
+  await page.waitForSelector("#namebox[open]", { timeout: 3000 });
+  const asked = await page.evaluate(() => ({ value: document.getElementById("namefield").value, yes: document.getElementById("nameok").textContent,
+    border: getComputedStyle(document.getElementById("namebox")).borderTopWidth, pad: getComputedStyle(document.getElementById("namefield")).paddingLeft }));
+  await page.fill("#namefield", "Rasp");
+  await page.press("#namefield", "Enter");
+  await pause(page, 100);
+  check("AC-92 New project… asks its name at once (Group 1 suggested), Enter creates it",
+    asked.value === "Group 1" && asked.yes === "Create" && JSON.stringify(last(sent, "project")) === JSON.stringify({ t: "project", action: "add", id: ID(2), name: "Rasp" }), JSON.stringify({ asked, m: last(sent, "project") }));
+  check("AC-92 the name dialog looks as the page's dialogs (no frame, a padded field)", asked.border === "0px" && asked.pad === "12px", JSON.stringify(asked));
 
   f.say({ t: "projects", items: [P1, P2] });
   await pause(page, 200);
@@ -87,9 +104,16 @@ export async function webProjects(browser, name) {
   await page.click('#sessions section[data-pid="p1"] h2 .hostbtn');
   await page.click('#rowmenu button[data-action="rename"]');
   await page.fill("#namefield", "API");
-  await page.click("#nameok");
+  await page.press("#namefield", "Enter");          // Enter renames (the form's first button is Cancel)
   await pause(page, 100);                          // the dialog's close comes after the click
   check("AC-92 ⋯ Rename… names the project", JSON.stringify(last(sent, "project")) === JSON.stringify({ t: "project", action: "rename", project: "p1", name: "API" }), JSON.stringify(last(sent, "project")));
+  await page.dblclick('#sessions section[data-pid="p2"] h2 .label');
+  await page.waitForSelector("#namebox[open]", { timeout: 3000 });
+  await page.fill("#namefield", "Docs");
+  await page.click("#nameok");
+  await pause(page, 100);
+  const byDouble = last(sent, "project");
+  check("AC-92 a double click on a project's name renames it too", byDouble?.action === "rename" && byDouble.project === "p2" && byDouble.name === "Docs", JSON.stringify(byDouble));
   await page.click('#sessions .item[data-id$="%3"]', { button: "right" });
   const inProject = await menuItems(page);
   await page.click('#rowmenu button[data-action="up"]');

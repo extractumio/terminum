@@ -25,11 +25,14 @@ export async function closeSession(item, send) {
   if (await askConfirm(`Close the session ${item.title}? The program running in it (${prog}) ends.`, "Close Session")) send({ t: "kill", id: item.id });
 }
 
-/** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc. */
-export function askName(text, value) {
+/** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc; `yes`
+ *  names its button. Enter in the field is the button (the form's first, Cancel, would be). */
+export function askName(text, value, yes = "Rename") {
   const box = $("namebox");
   $("nametext").textContent = text;
+  $("nameok").textContent = yes;
   $("namefield").value = value;
+  $("namefield").onkeydown = (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); box.close("ok"); } };
   box.returnValue = "";
   box.showModal();
   $("namefield").select();

@@ -143,7 +143,7 @@ async fn clone_window(app: &Shared, page: &Page, id: &str, project: Option<&str>
     if let Some((pid, d)) = joins {
         let (key, after, a) = (server.key(&new), id.to_string(), app.clone());
         let host = (!server.is_local()).then(|| server.name.clone());
-        let r = tokio::task::spawn_blocking(move || a.projects.lock().add(&key, Some(&pid), Some(&after), host, d)).await;
+        let r = tokio::task::spawn_blocking(move || a.projects.lock().add(&key, Some(&pid), Some(&after), host, d, None)).await;
         if let Ok(Err(e)) = r {
             error(page, e, None);
         }

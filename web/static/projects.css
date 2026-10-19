@@ -2,11 +2,11 @@
 /* The session list's projects (AC-92): a group of its own, tinted and named in its color, its
    rows' bars in it; a row's Clone button (AC-07), its unread mark (AC-93), its program on the
    right of its second line; the row menu (rowmenu.js). */
-:root { --proj-l: .72; --proj-c: .16; }
-:root.light { --proj-l: .56; --proj-c: .17; }
+:root { --proj-l: .80; --proj-c: .075; }     /* pastel: light, muted, the hues far apart (nav.js) */
+:root.light { --proj-l: .60; --proj-c: .085; }
 .projects { display: contents; }
-.grp.project { border-radius: 10px; background: color-mix(in srgb, var(--proj) 8%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--proj) 70%, transparent); }
-.grp.project { --name: color-mix(in srgb, var(--proj) 60%, var(--t-fg)); }   /* its name's color: the label, its rows' unread mark */
+.grp.project { border-radius: 10px; background: color-mix(in srgb, var(--proj) 6%, transparent); }   /* a tint, no edge line (UI-GUIDELINES §4) */
+.grp.project { --name: color-mix(in srgb, var(--proj) 75%, var(--t-fg)); }   /* its name's color: the label, its rows' unread mark */
 .grp.project h2 .label { color: var(--name); }
 .grp.project .pdot { flex: none; width: 8px; height: 8px; border-radius: 45% 55% 50% 50% / 55% 45% 55% 45%; background: var(--proj); }
 .grp.project .pbar { opacity: .75; }
@@ -36,9 +36,11 @@
 /* the search's own field is open: its magnifier stays out of sight (the field has ×) */
 #findfab[aria-expanded="true"] { visibility: hidden; }
 
-#rowmenu { position: fixed; z-index: 31; width: 210px; display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--r-lg);
-  --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
-#rowmenu[hidden] { display: none; }
+/* a modal dialog placed where it was asked for (not centered), the page shaded behind it */
+#rowmenu { position: fixed; inset: auto; margin: 0; width: 210px; max-height: none; padding: var(--sp-1); border: 0; border-radius: var(--r-lg);
+  color: var(--t-fg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
+#rowmenu[open] { display: flex; flex-direction: column; }
+#rowmenu, #rowmenu button { font: var(--fs-body)/1.35 var(--ui); }   /* a menu, not a dialog's terminal font; the shade: every dialog's */
 #rowmenu .mhead { display: flex; align-items: center; gap: 6px; padding: 0 0 2px 10px; color: var(--muted); font-size: var(--fs-label); }
 #rowmenu .mhead span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #rowmenu .mhead button { flex: none; width: 30px; height: 30px; padding: 0; justify-content: center; font-size: 18px; color: var(--muted); }
@@ -51,3 +53,11 @@
 #rowmenu button:focus-visible { background: var(--surface-4); }
 @media (hover: none) { #rowmenu button { height: 44px; border-radius: 12px; } }
 #sessions .item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+/* the name dialog (a project's name): as the confirmation's, its label over its field */
+#namebox { --fill: var(--chrome); color: var(--t-fg); border: 0; border-radius: var(--r-xl); box-shadow: var(--shadow-far);
+  width: min(420px, calc(100vw - 32px)); padding: 16px; }
+#namebox form { display: flex; flex-direction: column; gap: var(--sp-2); }
+#namebox label { line-height: var(--lh-prose); }
+#namebox input { font: 16px/1.3 var(--ui); color: inherit; background: var(--surface-3); border: 0; border-radius: var(--r-md); padding: 10px 12px; }
+#namebox .actions { margin-top: var(--sp-2); }

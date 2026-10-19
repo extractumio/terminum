@@ -78,10 +78,11 @@ impl Projects {
         self.list.iter_mut().find(|p| p.id == id).ok_or_else(|| "That project is gone.".to_string())
     }
 
-    /// Puts pane `key` into project `to` (a new one when none: "Group N", made from the pane's
-    /// host and folder), after `after` when that is a member, else last; out of any other.
-    /// The project's id.
-    pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String) -> Result<String, String> {
+    /// Puts pane `key` into project `to` (a new one when none: named `name`, else "Group N",
+    /// made from the pane's host and folder), after `after` when that is a member, else last;
+    /// out of any other. The project's id.
+    pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String, name: Option<&str>) -> Result<String, String> {
+        let named = name.map(name_ok).transpose()?;
         let id = match to {
             Some(id) => self.find(id)?.id.clone(),
             None => {
@@ -92,7 +93,7 @@ impl Projects {
                 let n = (1..).find(|n| !taken(*n)).unwrap_or(1);
                 let color = (0..COLORS).find(|c| !self.list.iter().any(|p| p.color == *c)).unwrap_or(self.list.len() % COLORS);
                 let id = crate::auth::crypto::random_hex::<6>();
-                self.list.push(Project { id: id.clone(), name: format!("Group {n}"), color, host, dir, members: Vec::new() });
+                self.list.push(Project { id: id.clone(), name: named.unwrap_or_else(|| format!("Group {n}")), color, host, dir, members: Vec::new() });
                 id
             }
         };
@@ -239,7 +240,8 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let s = |k: &str| msg[k].as_str().map(str::to_string);
     let ids = |k: &str| msg[k].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
     let action = s("action").unwrap_or_default();
-    let (key, project, name) = (s("id").unwrap_or_default(), s("project"), s("name").unwrap_or_default());
+    let (key, project, given) = (s("id").unwrap_or_default(), s("project"), s("name").filter(|n| !n.trim().is_empty()));
+    let name = given.clone().unwrap_or_default();
     let (order, keys) = (ids("ids"), ids("keys"));
     // the pane's host and folder, for a new project's [+]
     let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default() } else { Default::default() };
@@ -247,7 +249,7 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let done = tokio::task::spawn_blocking(move || {
         let mut ps = a.projects.lock();
         match action.as_str() {
-            "add" if crate::tmux::parse_key(&key).is_some() => ps.add(&key, project.as_deref(), None, host, dir.unwrap_or_default()).map(|_| ()),
+            "add" if crate::tmux::parse_key(&key).is_some() => ps.add(&key, project.as_deref(), None, host, dir.unwrap_or_default(), given.as_deref()).map(|_| ()),
             "remove" => ps.remove(&key),
             "rename" => ps.rename(project.as_deref().unwrap_or(""), &name),
             "delete" => ps.delete(project.as_deref().unwrap_or("")),

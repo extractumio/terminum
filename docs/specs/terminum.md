@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.14.0 |
+| Version | 0.14.1 |
 | Date | 2026-10-19 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.1 | 2026-10-19 | Owner: the row's menu is modal (the page shaded; a press outside closes it and does nothing else) (AC-07); New project… asks the project's name at once, Enter takes a name (it pressed Cancel: renaming did nothing), a double click on a project's name renames it; the name dialog looks as the page's others; projects' colors in pastel (lighter, muted, the hues as far apart); no colored line along a rounded box's side, a project group tinted only, a bookmark's mark the list's wavy line (AC-92, AC-33). |
 | 0.14.0 | 2026-10-19 | Owner: every row has Clone (a new window right after it, in its folder; the groups' [+] goes) and a menu on a right click or a long press, its head the session's name and ×: Clone, Add to Project, Remove from Project, Close Session, Move to the Top, Up, Down, to the Bottom (AC-07); projects, named groups of sessions with a color of their own, [+] and drag, the same on every page (AC-92); a row whose agent finished a turn nobody saw is unread until shown (AC-93); a row's second line puts its folder first and its program at the right edge (AC-01); ⌘Z and ⌘⇧Z send the program's undo and redo where it has one, a finger resting on the keyboard button offers both (AC-03); the search's magnifier is out of sight while its field is open; ⌘V after a copy from the history pastes into the terminal's input with no click first (AC-03); text that starts with "-" pasted on a host, a window named so or a path typed by Files is no longer a tmux flag ("invalid flag -", AC-03). |
 | 0.13.0 | 2026-10-19 | Owner: the color scheme is one for every browser, kept in settings.json (page.colorScheme) and shown at once on every page (AC-12); a pane's grid stays within 45×14 (an iPhone in portrait at 13 px) and 240×70 (a large desktop window) whatever the view (AC-13); the last pane closed by the user ends its tmux with nothing made again, a host's, terminum's own or the user's own (tmux's own %exit while one pane was shown: a closed window came back as "Restored host ai4: 0 sessions, 1 window"), a reboot or a crash restored as before (AC-15); a tmux reached twice (two hosts that are one machine, a host that is this Mac, grouped sessions, a linked window) lists each pane once and refuses to attach a session listed already (AC-89); ⌘[ and ⌘] back and forward through the last 20 sessions shown, ⌘F the history's search, ⌘B Files (AC-07). |
 | 0.12.2 | 2026-10-19 | AC-15: a host is restored only when its tmux server started after the checkpoint (#{start_time}), not when its terminum session was made again because the user closed its last window (the closed window came back); the restore report goes with × on every page and by itself after 30 s, and a page connecting 10 minutes later gets none (it stayed on every page). AC-31: a pipe table is a widget of its own where an agent colored the text around it (Codex's inline code), its rows re-joined where they were wrapped. The page shows its version and build date under the session list. |
@@ -326,7 +327,7 @@ Scenario: AC-07 happy path — Clone and the row's menu
   When the user presses Clone on window "api" (or picks Clone in its menu)
   Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane; a session of a project gives the project's window (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
   When the user right-clicks a row, or rests a finger on it for half a second
-  Then a menu opens there (below the finger; from the keyboard's menu key or ⇧F10 at the row, ↑ ↓ through it): Clone, Add to Project…, Remove from <project> (in one), Move to the Top, Move Up, Move Down, Move to the Bottom (those its place allows), Close Session (asked first: "Close the session api? The program running in it (claude) ends."); its head names the session and has × to close it
+  Then a modal menu opens there (the page shaded behind it; a press outside closes it and reaches nothing under it; Esc too; below the finger; from the keyboard's menu key or ⇧F10 at the row, ↑ ↓ through it): Clone, Add to Project…, Remove from <project> (in one), Move to the Top, Move Up, Move Down, Move to the Bottom (those its place allows), Close Session (asked first: "Close the session api? The program running in it (claude) ends."); its head names the session and has × to close it
   And a move reorders the row among its group's rows: a tmux session's windows in tmux ("swap-window"), a project's sessions in the project
 Scenario: AC-07 happy path — rename and reorder
   When the user presses the pencil beside the title, types "deploy" and presses Enter
@@ -690,8 +691,8 @@ Scenario: AC-88 edge — a host
 
 ```gherkin
 Scenario: AC-92 happy path — a project
-  When the user picks Add to Project… → New project in the menu of "api" (in ~/work/api)
-  Then terminumd makes project "Group 1" (the lowest "Group N" free), its color the first of ten hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
+  When the user picks Add to Project… → New project… in the menu of "api" (in ~/work/api)
+  Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
   And the list shows the projects first, each a group tinted and named in its color with its sessions, their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
   When the user adds "docs" to Group 1, or a second project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
@@ -700,7 +701,7 @@ Scenario: AC-92 happy path — new sessions, order, names
   Then a window opens right after its last session, in the project's folder (the session's own when that folder is gone), and joins the project; Clone of a project's session joins it right after that session
   When the user drags a project by its grip, or a session in it, or picks a move in a session's menu
   Then the projects (every page's order) or its sessions are in that order
-  When the user picks Rename… in the project's ⋯ menu and types "API", or Ungroup
+  When the user picks Rename… in the project's ⋯ menu (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
   Then it is named "API" (1–40 characters), or it goes and its sessions are back in their tmux groups
 Scenario: AC-92 edge — sessions that close
   When a project's pane closes
