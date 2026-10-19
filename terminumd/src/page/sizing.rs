@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The pane's size follows the page that shows it (AC-13, AC-05, AC-06). Policy `latest`:
-//! the page that typed last (or opened it first) sizes the window; `largest`: the largest
-//! page showing it; `manual`: only "Fit to this screen". A window of one pane is resized
-//! with `window-size manual` + `resize-window`; a split window only in Screen mode, zoomed.
-//! A window no page shows goes back to tmux's own policy. At most one resize a second a page.
+//! The pane's size follows the active page that shows it (AC-13, AC-06): a page sizes the
+//! window on opening the pane, on becoming active (in sight and focused: `resume`) and on
+//! typing; a change of its view resizes only a window it sizes or nobody does; a hidden page
+//! sizes nothing and hands its windows over. The user's own tmux only on typing (AC-89). A
+//! window of one pane is resized with `window-size manual` + `resize-window`; a window of
+//! several panes never. A window no page shows goes back to tmux's own policy. At most one
+//! resize a second a page.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -19,7 +21,7 @@ use crate::screen::frame::Fields;
 use crate::tmux::{mouse, Server};
 
 const EVERY: Duration = Duration::from_secs(1);
-/// The smallest grid terminumd sizes a pane to (AC-05: smaller is refused by the page).
+/// The smallest grid terminumd sizes a pane to (smaller is refused by the page).
 const MIN: (u16, u16) = (20, 5);
 
 /// Who sized which window: (server id, @window) -> its record.
@@ -30,18 +32,19 @@ pub struct Sizes(Mutex<HashMap<(String, String), Win>>);
 struct Win {
     /// the page whose grid the window has
     by: Option<u64>,
-    /// the window's size before "Fit to this screen", restored by "Restore size"
-    fitted: Option<(usize, usize)>,
-    /// zoomed by terminumd for Screen mode
-    zoomed: bool,
     /// window-size manual was set by terminumd
     manual: bool,
-    /// the grid terminumd last gave it
-    grid: Option<(usize, usize)>,
 }
 
-fn policy(app: &Shared) -> String {
-    app.looks.settings.read().size.as_str().to_string()
+/// Why a page claims its pane's window.
+#[derive(Clone, Copy, PartialEq)]
+enum Why {
+    /// its view changed size: only a window it sizes or nobody does
+    View,
+    /// it opened the pane or became the active page
+    Active,
+    /// it typed (the user's own tmux too, AC-89)
+    Typed,
 }
 
 /// The shown pane's window and its last fields.
@@ -67,8 +70,7 @@ fn viewers(app: &Shared, server: &Server, window: &str) -> Vec<Arc<Page>> {
 
 /// Resizes the shown pane's window to `page`'s grid, as `page`; tells the pages showing it.
 /// At most one resize a second a page: a later one waits for the next second, and while one
-/// waits the others leave it to that one, which reads the window, the page's grid and Screen
-/// mode anew; a dragged window's passing sizes never reach tmux (each narrowing reflows the
+/// waits the others leave it to that one, which reads the window and the page's grid anew; a dragged window's passing sizes never reach tmux (each narrowing reflows the
 /// pane and leaves a redrawing program's old lines in history).
 async fn resize(app: &Shared, page: &Arc<Page>) {
     let wait = {
@@ -84,26 +86,16 @@ async fn resize(app: &Shared, page: &Arc<Page>) {
     if let Some(w) = wait {
         tokio::time::sleep(w).await;
     }
-    let (view, screen) = {
-        let st = page.state.lock();
-        (st.view, st.screen)
-    };
+    let view = page.state.lock().view;
     let (Some((server, pane, f)), Some(grid)) = (shown_window(page), view) else { return };
     let (cols, rows) = (grid.0.max(MIN.0) as usize, grid.1.max(MIN.1) as usize);
     let key = (server.id(), f.window.clone());
-    let split = f.panes > 1;
-    if split && !screen {
-        return; // a split window keeps its layout; the page reads its pane in Wrap or Fit
+    if f.panes > 1 {
+        return; // a window of several panes keeps its layout; the page draws its pane scaled (AC-04)
     }
     let mut cmds = Vec::new();
     let mut win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
-    // terminumd's own record too: `resize-pane -Z` toggles, and two calls may run at once
-    if split && screen && !f.zoomed && !win.zoomed {
-        cmds.push(format!("resize-pane -Z -t {pane}"));
-        win.zoomed = true;
-    }
-    let done = win.by == Some(page.id) && win.grid == Some((cols, rows));
-    if (f.width, f.height) != (cols, rows) || (split && !done) {
+    if (f.width, f.height) != (cols, rows) {
         cmds.push(format!("set-option -w -t {} window-size manual", f.window));
         cmds.push(format!("resize-window -t {} -x {cols} -y {rows}", f.window));
         if users_pane(&server, &pane) {
@@ -113,7 +105,6 @@ async fn resize(app: &Shared, page: &Arc<Page>) {
         win.manual = true;
     }
     win.by = Some(page.id);
-    win.grid = Some((cols, rows));
     app.sizes.0.lock().insert(key, win);
     if cmds.is_empty() {
         return;
@@ -140,50 +131,40 @@ fn shown_key(page: &Page) -> String {
     page.state.lock().shown.as_ref().map(|s| s.key.clone()).unwrap_or_default()
 }
 
-/// The pane's window should have `page`'s grid now (it opened it first, typed, or sizes it).
-async fn claim(app: &Shared, page: &Arc<Page>, force: bool) {
+/// The pane's window gets `page`'s grid when `why` allows (AC-13): a hidden page claims
+/// nothing; the user's own tmux only on typing (AC-89); a change of the view only a window this
+/// page sizes or nobody (looking) does.
+async fn claim(app: &Shared, page: &Arc<Page>, why: Why) {
     let Some((server, pane, f)) = shown_window(page) else { return };
-    let (has_view, screen) = {
+    let (has_view, paused) = {
         let st = page.state.lock();
-        (st.view.is_some(), st.screen)
+        (st.view.is_some(), st.paused)
     };
-    if !has_view {
+    if !has_view || paused {
         return;
     }
     let key = (server.id(), f.window.clone());
     let by = app.sizes.0.lock().get(&key).and_then(|w| w.by);
-    let p = policy(app);
     let mine = by == Some(page.id);
-    // a window of the user's own tmux: only once this page typed there (or fits it), AC-89
-    if users_pane(&server, &pane) && !(force || mine) {
+    if users_pane(&server, &pane) && !(why == Why::Typed || mine) {
         return;
     }
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
     let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && !v.state.lock().paused));
-    let take = screen
-        || match p.as_str() {
-            "manual" => false,
-            "largest" => free || mine || largest(app, &server, &f.window) == Some(page.id),
-            _ => force || free || mine,
-        };
-    if take {
+    let view = page.state.lock().view.map(|(c, r)| (c.max(MIN.0) as usize, r.max(MIN.1) as usize));
+    if mine && view == Some((f.width, f.height)) {
+        return;                                         // it has this page's grid already: the once-a-second slot stays free
+    }
+    if why != Why::View || free || mine {
         resize(app, page).await;
     }
 }
 
 /// A claim on its own task: a resize that waits for its second never holds up the page's
 /// next messages (its keys).
-fn later(app: &Shared, page: &Arc<Page>, force: bool) {
+fn later(app: &Shared, page: &Arc<Page>, why: Why) {
     let (app, page) = (app.clone(), page.clone());
-    tokio::spawn(async move { claim(&app, &page, force).await });
-}
-
-/// The page whose grid is the largest among those showing `window` and looked at.
-fn largest(app: &Shared, server: &Server, window: &str) -> Option<u64> {
-    viewers(app, server, window).into_iter().filter_map(|p| {
-        let st = p.state.lock();
-        st.view.filter(|_| !st.paused).map(|v| (v.0 as u32 * v.1 as u32, p.id))
-    }).max().map(|(_, id)| id)
+    tokio::spawn(async move { claim(&app, &page, why).await });
 }
 
 /// `page` was hidden: a window it sized goes to the pages still looking at it (AC-13), so a
@@ -194,38 +175,27 @@ pub fn handover(app: &Shared, page: &Arc<Page>) {
         return;
     }
     for v in viewers(app, &server, &f.window).into_iter().filter(|v| v.id != page.id && !v.state.lock().paused) {
-        later(app, &v, false);
+        later(app, &v, Why::Active);
     }
 }
 
-/// A page opened a pane: it sizes the window when nobody else does (AC-13).
-pub async fn opened(_app: &Shared, page: &Arc<Page>) {
-    page.state.lock().screen = false;
+/// `page` became the active page (in sight and focused) or opened a pane (its first frame): it
+/// sizes its pane's window (AC-13; the user's own tmux only once typed in, AC-89).
+pub fn activated(app: &Shared, page: &Arc<Page>) {
+    later(app, page, Why::Active);
 }
 
-/// The shown pane's first frame (its fields stored): this page sizes the window when nobody does.
-pub fn first_frame(app: &Shared, page: &Arc<Page>, server: &Server, window: &str) {
-    // a session of the user's own tmux is sized only when the page types or fits (AC-89):
-    // merely looking never changes what their terminal shows
-    if shown_window(page).is_none_or(|(_, pane, _)| users_pane(server, &pane)) {
-        return;
-    }
-    if !app.sizes.0.lock().contains_key(&(server.id(), window.to_string())) {
-        later(app, page, false);
-    }
-}
-
-/// The page typed: under `latest` its grid wins (AC-13).
+/// The page typed: its grid wins (AC-13).
 pub async fn typed(app: &Shared, page: &Arc<Page>) {
     let Some((server, _, f)) = shown_window(page) else { return };
     let by = app.sizes.0.lock().get(&(server.id(), f.window.clone())).and_then(|w| w.by);
-    if by != Some(page.id) && policy(app) == "latest" {
-        later(app, page, true);
+    if by != Some(page.id) {
+        later(app, page, Why::Typed);
     }
 }
 
 /// The page stopped showing `old` (another pane, or it closed): a window nobody shows goes
-/// back to tmux's policy; a fitted one gets its size back; a zoom made for Screen mode ends.
+/// back to tmux's policy.
 pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     let Some(f) = old.ctl.fields.lock().clone() else { return };
     let key = (old.server.id(), f.window.clone());
@@ -243,12 +213,6 @@ pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
         w
     };
     let mut cmds = Vec::new();
-    if win.zoomed && !others {
-        cmds.push(format!("resize-pane -Z -t {}", old.pane));
-    }
-    if let Some((c, r)) = win.fitted.filter(|_| !others) {
-        cmds.push(format!("resize-window -t {} -x {c} -y {r}", f.window));
-    }
     if win.manual && !others {
         cmds.push(format!("set-option -w -u -t {} window-size", f.window));
         cmds.push(format!("set-option -w -u -t {} {SIZED}", f.window));
@@ -258,52 +222,18 @@ pub async fn left(app: &Shared, page: &Arc<Page>, old: &Shown) {
     }
 }
 
-/// `size`, `fit`, `unfit`, `screenmode` and `mouse` from the page.
+/// `size` and `mouse` from the page.
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
-    let grid = || (msg["cols"].as_u64().unwrap_or(0).min(1000) as u16, msg["rows"].as_u64().unwrap_or(0).min(1000) as u16);
     match t {
         "size" => {
-            let (c, r) = grid();
+            let (c, r) = (msg["cols"].as_u64().unwrap_or(0).min(1000) as u16, msg["rows"].as_u64().unwrap_or(0).min(1000) as u16);
             if c == 0 || r == 0 {
                 return;
             }
-            let screen = msg["screen"].as_bool().unwrap_or(false);
-            let was_screen = {
-                let mut st = page.state.lock();
-                st.view = Some((c, r));
-                std::mem::replace(&mut st.screen, screen)
-            };
-            if was_screen && !screen {
-                unzoom(app, page).await;
-            }
-            later(app, page, msg["typing"].as_bool().unwrap_or(false));
-        }
-        "fit" => {
-            let (c, r) = grid();
-            let Some((server, _, f)) = shown_window(page) else { return };
-            app.sizes.0.lock().entry((server.id(), f.window.clone())).or_default().fitted.get_or_insert((f.width, f.height));
             page.state.lock().view = Some((c, r));
-            resize(app, page).await;
-            page.send_json(&json!({"t": "fit", "on": true}));
+            later(app, page, if msg["typing"].as_bool().unwrap_or(false) { Why::Typed } else { Why::View });
         }
-        "unfit" => {
-            if let Some((server, pane, f)) = shown_window(page) {
-                let fitted = app.sizes.0.lock().get_mut(&(server.id(), f.window.clone())).and_then(|w| w.fitted.take());
-                if let Some((c, r)) = fitted {
-                    let _ = server.run_all_on(&pane, vec![format!("resize-window -t {} -x {c} -y {r}", f.window)]).await;
-                }
-            }
-            page.send_json(&json!({"t": "fit", "on": false}));
-        }
-        "screenmode" => {
-            let mode = msg["mode"].as_str().filter(|m| matches!(*m, "auto" | "always" | "never")).unwrap_or("auto").to_string();
-            let mut st = page.state.lock();
-            if let Some(key) = st.shown.as_ref().map(|s| s.key.clone()) {
-                st.screenmode.insert(key, mode);
-            }
-        }
-        "mouse" => mouse_event(app, page, msg),
-        _ => {}
+        _ => mouse_event(app, page, msg),
     }
 }
 
@@ -362,17 +292,8 @@ pub async fn reclaim(app: &Shared, server: &Server) {
     }
 }
 
-/// Screen mode ended: a zoom terminumd made for it ends too.
-async fn unzoom(app: &Shared, page: &Arc<Page>) {
-    let Some((server, pane, f)) = shown_window(page) else { return };
-    let zoomed = app.sizes.0.lock().get_mut(&(server.id(), f.window.clone())).is_some_and(|w| std::mem::take(&mut w.zoomed));
-    if zoomed && f.zoomed {
-        let _ = server.run_all_on(&pane, vec![format!("resize-pane -Z -t {pane}")]).await;
-    }
-}
-
-/// A click, drag or wheel in Screen mode, as the mouse report a terminal would send (AC-06).
-/// A mouse report for the shown pane: queued with the keys (typing.rs), never awaited here.
+/// A click, drag or wheel for a full-screen program, as the mouse report a terminal would send
+/// (AC-06): queued with the keys (typing.rs), never awaited here.
 fn mouse_event(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let Some((server, pane, key, f)) = (|| {
         let st = page.state.lock();

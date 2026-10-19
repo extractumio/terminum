@@ -1,0 +1,37 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// Two of the menu's settings (AC-19): rendered Markdown's text size (this browser's step on
+// settings.json's page.markdownSize: widgets, sent history, reminders, and Files and View in
+// their frames) and the terminal's history lines (settings.json's tmux.history, which tmux
+// keeps for the panes made from then on).
+const $ = (id) => document.getElementById(id);
+const MD_MIN = 10, MD_MAX = 32;
+
+export function menuPrefs({ store, send, toast }) {
+  let base = 14, step = store.get("mdStep", 0), px = base;
+  const setIn = (doc) => { try { doc?.documentElement.style.setProperty("--md-size", `${px}px`); } catch { /* another origin */ } };
+  function show() {
+    px = Math.max(MD_MIN, Math.min(MD_MAX, base + step));
+    setIn(document);
+    for (const f of document.querySelectorAll("iframe")) setIn(f.contentDocument);
+    $("mdval").textContent = String(px);
+  }
+  // a frame loaded later (Files, View) gets it too
+  document.addEventListener("load", (e) => { if (e.target.tagName === "IFRAME") setIn(e.target.contentDocument); }, true);
+  const by = (d) => { step = Math.max(MD_MIN, Math.min(MD_MAX, base + step + d)) - base; store.set("mdStep", step); show(); };
+  $("mdsmaller").onclick = () => by(-1);
+  $("mdbigger").onclick = () => by(1);
+  $("histlines").addEventListener("change", () => {
+    const n = Number($("histlines").value);
+    if (!Number.isInteger(n) || n < 1000 || n > 1_000_000) return toast("History lines must be 1000–1000000", 4000);
+    send({ t: "history", lines: n });
+    toast(`Terminals opened from now on keep ${n.toLocaleString()} lines`, 4000);
+  });
+  return {
+    /** settings.json's page part (settings.js). */
+    page(p) {
+      base = Number.isInteger(p.markdownSize) ? p.markdownSize : 14;
+      if (Number.isInteger(p.history) && document.activeElement !== $("histlines")) $("histlines").value = String(p.history);
+      show();
+    },
+  };
+}

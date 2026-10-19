@@ -9,13 +9,16 @@ import { agentMark, findItem, folderBar, metaLine, renderNav, stateIcon } from "
 import { textForm } from "./render.js";
 import { sessionDrawer } from "./drawer.js";
 import { sentHistory } from "./sent.js";
+import { colorSchemes } from "./schemes.js";
+import { menuPrefs } from "./prefs.js";
+import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
 import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
 import { askConfirm, navTools } from "./navtools.js";
 import { embedded, quickShell } from "./quick.js";
 import { paneMenu } from "./menu.js";
-import { screenMode } from "./screenmode.js";
+import { paneSizing } from "./sizing.js";
 import { pageSettings } from "./settings.js";
 import { bindReorder, ordered } from "./reorder.js";
 import { linkMarks } from "./linkmarks.js";
@@ -23,7 +26,6 @@ import { paneFiles } from "./panefiles.js";
 import { bindLinks } from "./termlinks.js";
 import { copyButton } from "./touchcopy.js";
 import { TermView } from "./term.js";
-import { fitPx, frameMode } from "./frame.js";
 import { Views } from "./views.js";
 import { uploads } from "./upload.js";
 import { waitingCards } from "./waiting.js";
@@ -34,7 +36,6 @@ import * as trace from "./trace.js";
 const $ = (id) => document.getElementById(id);
 const narrow = matchMedia("(max-width: 860px)");
 const touch = matchMedia("(hover: none)");
-const LINES = ["wrap", "grid", "fit"];   // the Lines modes (view modes below)
 
 // a quick shell's page (embed mode, AC-88) reads this browser's choices and keeps none of its own
 const store = {
@@ -46,7 +47,7 @@ if (embedded) document.body.classList.add("embed");
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
 const st = {
   groups: [], sid: embedded ?? store.get("sid", null),
-  mode: store.get("mode", {}), size: null, base: null, step: store.get("sizeStep", 0), resized: false,
+  size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true),
 };
@@ -74,16 +75,16 @@ const files = uploads({ sid: () => st.sid, paste: (text) => input.paste(text), t
 // A phone keeps fewer lines on the page: each one costs on every touch (AC-52).
 const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"), note: $("note"),
   bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : Infinity });
-// Screen mode and sizing (AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
-const screen = screenMode({ view, send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, sid: () => st.sid,
-  refit: () => view.keepBottom(syncControls), defaults: () => settings.page(), notify: (text) => toast(text, 9000) });
+// Sizing and full-screen programs (AC-04, AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
+const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000) });
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
   if (page.textSize) setBase(page.textSize);
-  screen.sync(); view.keepBottom(syncControls);
+  prefs.page(page);
+  view.keepBottom(syncControls);
 } });
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
-  send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); screen.typed(); if (data.includes("\r")) st.ran = true; },
+  send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
   options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
     tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
@@ -104,7 +105,7 @@ const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile
 // Where a tap moves the cursor (a shell or a coding agent), on the cursor's row it does so, also
 // over a path typed there; elsewhere a tap there opens a link.
 function tapLink(x, y) {
-  if (screen.mouseOn()) return false;              // a tap is the program's click (AC-06)
+  if (sizing.mouseOn()) return false;              // a tap is the program's click (AC-06)
   const it = st.sid && findItem(st.groups, st.sid)?.item;
   const cur = (it?.agent || it?.shell) && cursorCell($("screen")), at = cur && cellAt($("screen"), x, y);
   return !(at && (cur.row === at.row || (it.agent && boxMoves.has(x, y)))) && openAt(x, y);
@@ -117,7 +118,7 @@ function tapLink(x, y) {
 const boxMoves = new BoxMoves(view, $("screen"));
 function tapMove(x, y) {
   const found = st.sid && findItem(st.groups, st.sid);
-  if ((!found?.item.agent && !found?.item.shell) || screen.mouseOn()) return;
+  if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn()) return;
   const inBox = found.item.agent ? boxMoves.to(x, y, st.appCursor) : null;
   if (inBox !== null) { if (inBox) { send({ t: "in", data: inBox, ...trace.keyFields(inBox, "tap") }); view.typed(); } return; }
   const from = cursorCell($("screen")), to = cellAt($("screen"), x, y);
@@ -132,26 +133,34 @@ function tapMove(x, y) {
 // there gets iOS's own Paste (text, or an image); elsewhere it is out of the way.
 function placeKbd() {
   // a coding agent's input box whole (where it draws its own cursor may not be tmux's), else the
-  // cursor's row; in Screen mode with the mouse on, taps go to the program
-  const k = $("kbd"), cur = touch.matches && !screen.mouseOn() ? $("screen").querySelector(".blk.inbox") ?? $("screen").querySelector(".cur") : null;
+  // cursor's row; a full-screen program with the mouse on gets the taps
+  const k = $("kbd");
+  if (!touch.matches) { if (k.style.cssText) k.style.cssText = ""; return; }   // a computer's keys need no place
+  const cur = !sizing.mouseOn() ? $("screen").querySelector(".blk.inbox") ?? $("screen").querySelector(".cur") : null;
   const t = $("term").getBoundingClientRect(), r = cur?.getBoundingClientRect();
   if (!r || r.bottom < t.top || r.top > t.bottom) { k.style.cssText = ""; return; }
   k.style.cssText = `left:${t.left}px;top:${Math.max(r.top, t.top)}px;width:${t.width}px;height:${Math.min(r.bottom, t.bottom) - Math.max(r.top, t.top)}px`;
 }
 view.onDrawn = () => { placeKbd(); marks(); trace.drawn(); };
+new ResizeObserver(() => placeKbd()).observe($("term"));   // a banner above it moved the terminal: the field follows, never over the banner
 
 // Code, Markdown and diagrams in the output as widgets, images named in it behind a button
 // (AC-56), read through the Files proxy on the pane's host.
 const widgets = new Widgets({ view, term: $("term"), boxes: [$("hist"), $("screen")], files: shownFiles,
   copy: (text) => input.copySelection(text), send, notify: (text) => toast(text, 3000), onZoomClosed: () => focusTerminal() });
-// none in Screen mode (a full-screen program's grid), nor when settings.json turned them off
-const widgetsOn = () => !screen.on() && settings.page().widgets !== false;
+// none over a full-screen program, nor when settings.json turned them off
+const widgetsOn = () => !sizing.fullscreen() && settings.page().widgets !== false;
 view.onRows = (full, keep) => { if (widgetsOn()) (keep ? widgets.keepPlace(() => widgets.update(full)) : widgets.update(full)); };
 view.onReset = () => { widgets.reset(); shownFiles.forget(); };
 // Bookmarks of a selection, with a note, kept on the Mac (AC-57)
-const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive: (id) => findItem(st.groups, id)?.item.title ?? null,
-  pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); }, copy: (text) => input.copySelection(text, true) });
-trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => shownMode(), copy: (text) => input.copySelection(text) });
+const alive = (id) => findItem(st.groups, id)?.item.title ?? null;
+const doc = markDoc({ alive });
+// every pane of the layout, one list a layout (bookmarks ask for it on every frame)
+let paneList = [null, []];
+const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.groups, st.groups.flatMap((g) => g.items)])[1]);
+const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes,
+  openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); }, copy: (text) => input.copySelection(text, true) });
+trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (view.tooWide() ? "scaled" : "tmux"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
 $("term").addEventListener("scroll", () => { if (!kbdFrame) kbdFrame = requestAnimationFrame(() => { kbdFrame = 0; placeKbd(); }); }, { passive: true });
 
@@ -168,6 +177,13 @@ let toastTimer = 0;
 function toast(text, ms = 1800) {
   $("toast").textContent = text; $("toast").hidden = false;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").hidden = true; }, ms);
+}
+
+// the build under the session list, small and quiet: a release's version, else "dev" and its id
+function showBuild(m) {
+  const id = String(m.id ?? ""), version = /^v\d/.test(id) ? id : `dev ${id.slice(0, 7)}`;
+  $("buildinfo").textContent = ["terminum", version, m.date].filter(Boolean).join(" · ");
+  $("buildinfo").title = `Build ${id}${m.date ? `, ${m.date}` : ""}`;
 }
 
 function pickFile() { $("upload").value = ""; $("upload").click(); }
@@ -228,8 +244,8 @@ function onMessage(m) {
   trace.received(m);
   bookmarks.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); tools.layoutCame(m.groups); views.forget(m.groups); break;
-    case "theme": applyTheme(m.theme); break;
+    case "layout": st.groups = m.groups; st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); tools.layoutCame(m.groups); views.forget(m.groups); break;
+    case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
       widgets.folds.add(m.folds); view.onHist(m); break;
@@ -237,11 +253,10 @@ function onMessage(m) {
     case "lines":
       if (m.error) { widgets.folds.failed(m.first); toast(m.error, 5000); break; }
       view.refill(m.first, m.lines); widgets.keepPlace(() => widgets.folds.filled(m.first, m.lines.length)); break;
-    case "screen": view.onScreen(m); screen.sync(); break;
-    case "sized": screen.onSized(m); break;
+    case "screen": view.onScreen(m); sizing.sync(); break;
+    case "sized": sizing.onSized(m); break;
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
-    case "fit": st.resized = m.on; syncControls(); break;
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
     case "hostadded": tools.hostAdded(m.name); break;
@@ -251,7 +266,7 @@ function onMessage(m) {
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
     case "stall": tools.showStall(m); break;
-    case "build": conn.checkBuild(m.id); break;
+    case "build": conn.checkBuild(m.id); showBuild(m); break;
     case "trace": trace.onMessage(m); break;
     case "sentone": case "sentnew": sent.onMessage(m); break;
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
@@ -329,7 +344,7 @@ function select(id, force = false) {
   view.reset();
   trace.opening(id);
   send({ t: "sub", id });                          // first: the server answers "files" for the subscribed pane
-  screen.opened();                                 // its Screen mode and this view's size
+  sizing.opened();                                 // this view's size
   views.sessionChanged(id);
   sent.shown();
   drawNav(); syncControls();
@@ -339,7 +354,10 @@ const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focu
 
 // ---------- theme ----------
 
-let shownTheme = "", shownFont = "";
+let shownTheme = "", shownFont = "", themeSent = null;
+const prefs = menuPrefs({ store, send, toast });       // Markdown size, history lines (AC-19)
+// a color scheme picked in the menu goes over the session's theme at once (AC-12)
+const schemes = colorSchemes({ box: $("schemes"), store, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); } });
 function applyTheme(theme) {
   // sent with every subscribe and resume; the same one changes nothing (and rebuilds no line)
   const key = JSON.stringify(theme);
@@ -370,55 +388,23 @@ function setSize(px, save = true) {
   document.documentElement.style.setProperty("--size", `${st.size}px`);
   $("sizeval").textContent = st.size;
   if (save) store.set("sizeStep", st.step = st.size - (st.base ?? st.size));   // a step kept per browser: a new theme size still shows
-  screen.changed();                                // the grid this view holds changed (AC-13)
+  sizing.changed();                                // the grid this view holds changed (AC-13)
 }
 
-// ---------- view modes ----------
-// Wrap: lines re-flow to the screen. Grid: tmux's exact layout at the chosen text size.
-// Fit: tmux's exact layout scaled down so a whole line fits the screen width; the pane is not
-// touched. (Fitting the pane to the screen is a separate menu action, as it changes its size.)
-// Screen mode (screenmode.js) shows a full-screen program as its grid, as Fit while the pane
-// waits for this view's size. A pane this page does not size (another screen's size, a session
-// of the user's own tmux only looked at), and Wrap with Screen mode "never", show a program
-// wider than the view as frame.js says: a frame as Fit (Grid below SIZE_MIN), text re-flowed.
-// The buttons keep the mode chosen.
-
-// The mode is remembered per pane, and the one chosen last is the default for every other.
-const MODES_KEPT = 100;
-// Until the user picks one: settings.json's page.lines, else Wrap, on every screen.
-function mode() { return st.mode[st.sid] ?? store.get("modeDefault", LINES.includes(settings.page().lines) ? settings.page().lines : "wrap"); }
-function shownMode() {
-  const own = !!findItem(st.groups, st.sid)?.group.attached;   // the user's tmux: sized only once typed in (AC-89)
-  if (screen.on() || screen.elsewhere()) {
-    if (screen.elsewhere() || (own && view.tooWide())) return frameMode(view, SIZE_MIN) ?? "wrap";
-    return view.tooWide() ? "fit" : "grid";
-  }
-  return (mode() === "wrap" && frameMode(view, SIZE_MIN)) || mode();
-}
-function setMode(m, chosen = true) {
-  delete st.mode[st.sid];                          // re-added last: the oldest choices go first
-  st.mode[st.sid] = m;
-  const ids = Object.keys(st.mode);
-  for (const id of ids.slice(0, Math.max(0, ids.length - MODES_KEPT))) delete st.mode[id];
-  store.set("mode", st.mode);
-  if (chosen) store.set("modeDefault", m);
-  view.keepBottom(syncControls);
-}
-
+// ---------- the pane as tmux has it (AC-04) ----------
+// The pane's rows as they are at the chosen text size; the active page sizes the pane to its
+// view (AC-13). A pane wider than the view (another page sized it, the user's own tmux not
+// typed in yet, a window of several panes) is scaled to the view's width, down to SIZE_MIN px;
+// smaller than that, it stays at the chosen size and scrolls sideways.
 function applyFit() {
-  const term = $("term"), m = shownMode();
-  term.classList.toggle("wrap", m === "wrap");
-  term.classList.toggle("grid", m !== "wrap");
-  term.style.fontSize = m === "fit" && view.cols ? `${fitPx(view)}px` : "";
+  const px = view.cols && view.tooWide() ? view.fitPx() : 0;
+  $("term").style.fontSize = px >= SIZE_MIN ? `${px}px` : "";
 }
-view.onCols = view.onFrame = () => view.keepBottom(applyFit);   // the width changed, or a frame began or ended
-view.onAlt = () => { screen.sync(); view.keepBottom(applyFit); };
+view.onCols = () => view.keepBottom(applyFit);   // the pane's width changed
+view.onAlt = () => { sizing.sync(); view.keepBottom(applyFit); };
 document.fonts?.addEventListener("loadingdone", () => { view.ratio = 0; view.keepBottom(applyFit); });
 
 function syncControls() {
-  const m = mode();
-  for (const b of document.querySelectorAll("[data-mode]")) b.setAttribute("aria-pressed", String(b.dataset.mode === m));
-  $("resize").querySelector(".label").textContent = st.resized ? "Restore size" : "Fit to this screen";
   $("appcur").checked = st.appCursor;
   $("bracket").checked = st.bracketed;
   const keysOn = !$("hotkeys").hidden;
@@ -428,18 +414,10 @@ function syncControls() {
   applyFit();
 }
 
-for (const b of document.querySelectorAll("[data-mode]")) b.onclick = () => setMode(b.dataset.mode);
 $("smaller").onclick = () => view.keepBottom(() => { setSize(st.size - 1); applyFit(); });
 $("bigger").onclick = () => view.keepBottom(() => { setSize(st.size + 1); applyFit(); });
 $("appcur").onchange = (e) => { st.appCursor = e.target.checked; };
 $("bracket").onchange = (e) => { st.bracketed = e.target.checked; store.set("bracketed", st.bracketed); };
-$("resize").onclick = () => {
-  menu.close();
-  if (st.resized) return send({ t: "unfit" });
-  if (mode() === "wrap") setMode("grid", false);   // a resized session is shown as its exact grid
-  $("term").style.fontSize = "";
-  send({ t: "fit", ...view.gridFit(view.chosenSize()) });
-};
 
 // ---------- the on-screen keyboard ----------
 // iOS Safari lays the keyboard over the page instead of shrinking it. Size the app to the

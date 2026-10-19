@@ -71,6 +71,10 @@ pub struct Item {
     /// when a reminder was resolved (Unix seconds): it comes up no more
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<i64>,
+    /// the folder its pane was in when it was made: with `host`, its project (AC-91); none for
+    /// one made before 0.8.0 (its project is its pane's)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
 }
 
 impl Item {
@@ -93,6 +97,7 @@ pub struct NewMark {
     pub title: String,
     pub host: Option<String>,
     pub remind: bool,
+    pub dir: Option<String>,
 }
 
 pub use super::bookmarks_find::{find, located, near, needs_whole, unlocated};
@@ -109,7 +114,7 @@ pub fn note_of(msg: &Value) -> Result<String, MarkError> {
     if note.chars().count() > MAX_NOTE {
         return err(format!("The note is longer than {MAX_NOTE} characters."));
     }
-    Ok(super::folds::py_strip(note).to_string())
+    Ok(super::pystr::py_strip(note).to_string())
 }
 
 /// A new bookmark's (text cut to MAX_TEXT, note, line) from {text, note, n}, checked in the
@@ -117,7 +122,7 @@ pub fn note_of(msg: &Value) -> Result<String, MarkError> {
 pub fn mark_of(msg: &Value) -> Result<(String, String, i64), MarkError> {
     let note = note_of(msg)?;
     let text = match msg.get("text") {
-        Some(Value::String(t)) if !super::folds::py_strip(t).is_empty() => t.chars().take(MAX_TEXT).collect(),
+        Some(Value::String(t)) if !super::pystr::py_strip(t).is_empty() => t.chars().take(MAX_TEXT).collect(),
         _ => return err("Select some text first."),
     };
     match msg.get("n").and_then(py_int) {
@@ -131,7 +136,7 @@ fn py_int(v: &Value) -> Option<i64> {
     match v {
         Value::Number(n) => n.as_i64().or_else(|| n.as_f64().filter(|f| f.is_finite()).map(|f| f.trunc() as i64)),
         Value::Bool(b) => Some(*b as i64),
-        Value::String(s) => super::folds::py_strip(s).parse().ok(),
+        Value::String(s) => super::pystr::py_strip(s).parse().ok(),
         _ => None,
     }
 }
@@ -176,6 +181,7 @@ fn clean_stored(it: &Value) -> Result<Item, String> {
         remind: it["remind"] == true,
         due: it["due"] == true,
         resolved: opt("resolved").map(|v| int("resolved", v)).transpose()?,
+        dir: truthy(it.get("dir")),
     })
 }
 
@@ -273,6 +279,7 @@ impl Store {
             remind: new.remind,
             due: false,
             resolved: None,
+            dir: new.dir,
         };
         self.items.push(item.clone());
         if let Err(e) = self.save() {
@@ -310,9 +317,15 @@ impl Store {
         self.change(id, |i| { i.due = false; if resolve { i.resolved = Some(now); } })
     }
 
-    /// The open reminders of panes `keys`, whose agents ended a turn, now up; those it changed.
-    pub fn due(&mut self, keys: &[String]) -> Result<Vec<Item>, MarkError> {
-        let up = |i: &Item| i.remind && !i.due && i.resolved.is_none() && i.key.as_ref().is_some_and(|k| keys.contains(k));
+    /// The open reminders of the projects whose agents ended a turn, now up; those it changed.
+    /// `ended`: (pane key, host, folder) of each pane that ended one; a reminder of its project
+    /// (the same host and folder) comes up, or of that pane when it has no folder (before 0.8.0).
+    pub fn due(&mut self, ended: &[(String, Option<String>, String)]) -> Result<Vec<Item>, MarkError> {
+        let mine = |i: &Item| ended.iter().any(|(k, h, d)| match &i.dir {
+            Some(dir) => dir == d && i.host == *h,
+            None => i.key.as_ref() == Some(k),
+        });
+        let up = |i: &Item| i.remind && !i.due && i.resolved.is_none() && mine(i);
         let ids: Vec<String> = self.items.iter().filter(|i| up(i)).map(|i| i.id.clone()).collect();
         if ids.is_empty() {
             return Ok(vec![]);

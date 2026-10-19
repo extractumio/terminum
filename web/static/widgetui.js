@@ -17,6 +17,12 @@ export function renderers() {
   }));
 }
 
+/** `md` drawn as Markdown into `el` by the panel's rules (raw HTML off), as text when the
+ *  renderers do not load. */
+export async function markdownInto(el, md) {
+  try { el.innerHTML = (await renderers()).markdownHtml(md); } catch { el.textContent = md; }
+}
+
 // The widgets' style sheet, shared by every shadow root (widgets.css), loaded with the page:
 // widgets are attached only once it is in, as one drawn unstyled first changes its height
 // after the page placed the view.
@@ -128,10 +134,11 @@ export function regionWidget(region, ctx) {
 }
 
 /** A drawn table's cells (drawntable.js) as a table, put in as text. */
-function tableElement({ head, rows, align }) {
+function tableElement({ head, rows, align, marks }) {
   const table = document.createElement("table");
-  const line = (cells, tag) => {
+  const line = (cells, tag, mark = "") => {
     const tr = document.createElement("tr");
+    if (mark) tr.className = mark === "+" ? "add" : "del";   // a diff's row (difftable.js)
     cells.forEach((text, c) => {
       const cell = document.createElement(tag);
       cell.textContent = text;
@@ -141,7 +148,7 @@ function tableElement({ head, rows, align }) {
     return tr;
   };
   if (head) table.createTHead().append(line(head, "th"));
-  table.createTBody().append(...rows.map((r) => line(r, "td")));
+  table.createTBody().append(...rows.map((r, i) => line(r, "td", marks?.[i])));
   return table;
 }
 

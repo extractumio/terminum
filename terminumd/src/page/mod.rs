@@ -7,6 +7,7 @@ pub mod bookmarks_find;
 pub mod client;
 pub mod find;
 pub mod folds;
+pub mod pystr;
 pub mod hist;
 pub mod marks;
 pub mod quick;

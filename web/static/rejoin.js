@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Wrap mode's rules (AC-52): which of a program's hard line ends are its own wrap of one line
-// (term.js re-joins those rows), and which wraps broke a word (joined without a space).
+// Which of a program's hard line ends are its own wrap of one line (term.js marks those rows
+// re-joined: copied as one line, read as one by widgets and the agent box), and which wraps broke
+// a word (joined without a space).
 
 const BOXED = /^[│┃║╎┆|]|[│┃║╎┆|]$/; // rows of a drawn box: never re-joined
 

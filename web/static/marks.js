@@ -7,6 +7,7 @@ import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { markPicker } from "./markpick.js";
 import { placeBeside } from "./fabpane.js";
+import { inProject, orphaned, paneKeys, projectKey } from "./projects.js";
 import { Find } from "./find.js";
 import { railBox, railSlots } from "./marktext.js";
 
@@ -28,8 +29,11 @@ export const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month:
 /** A reminder not resolved (AC-91). */
 export const openReminder = (i) => !!i.remind && !i.resolved;
 
+/** The selected text as a Markdown quote, its lines kept. */
+export const quote = (text) => text.split("\n").map((l) => `> ${l}`).join("\n");
+
 // Delete asks again: a second press within 3 s deletes.
-function armed(button, label, act) {
+export function armed(button, label, act) {
   let timer = 0;
   button.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -48,8 +52,9 @@ export class Marks {
    *  alive(sid): an open pane's title now (renamed or not), null when it closed; pick(sid): show it (and close the drawer); toast(text);
    *  onChange(): the bookmarks changed (the list's strips, reminders); copy(text): to the clipboard.
    *  onPlaced (set after): the floating buttons were placed (their panes follow). */
-  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy }) {
-    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange });
+  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, openAll }) {
+    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, openAll });
+    this.listKind = "bookmark";  // what the list below the sessions shows: bookmarks or reminders
     this.items = new Map();
     this.replies = new Map();    // ref -> resolve, for the dialog
     this.shown = null;           // the bookmark in the bar
@@ -104,14 +109,32 @@ export class Marks {
     }
   }
 
-  /** sid -> "remind" (an open reminder) or "mark": the list's strips. */
+  /** pane id -> {mark, remind}: the list's marks of a session whose project has bookmarks or open reminders. */
   sids() {
-    const m = new Map();
-    for (const i of this.items.values()) if (openReminder(i)) m.set(i.sid, "remind"); else if (!m.has(i.sid)) m.set(i.sid, "mark");
+    const kinds = new Map(), m = new Map();
+    for (const b of this.items.values()) {
+      const k = projectKey(b), v = kinds.get(k) ?? { mark: false, remind: false };
+      v.mark ||= !b.remind; v.remind ||= openReminder(b);
+      kinds.set(k, v);
+    }
+    for (const it of this.panes()) {
+      const [a, b] = paneKeys(it).map((k) => kinds.get(k));
+      const mark = !!(a?.mark || b?.mark), remind = !!(a?.remind || b?.remind);
+      if (mark || remind) m.set(it.id, { mark, remind });
+    }
     return m;
   }
+  /** The bookmarks and reminders of the shown pane's project (asked on every frame: kept until
+   *  the bookmarks, the layout or the pane shown change). */
+  here() {
+    const panes = this.panes(), sid = this.sid(), h = this.hereOf;
+    if (h?.panes === panes && h.sid === sid && h.rev === this.rev) return h.list;
+    const it = panes.find((p) => p.id === sid), list = [...this.items.values()].filter((b) => inProject(b, it));
+    this.hereOf = { panes, sid, rev: this.rev, list };
+    return list;
+  }
   busy() { return $("markbox").open; }
-  changed() { this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); }
+  changed() { this.rev = (this.rev ?? 0) + 1; this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); }
   mine() { return [...this.items.values()].filter((i) => i.sid === this.sid()).sort((a, b) => a.n - b.n); }
 
   // ---------- the dialog ----------
@@ -224,13 +247,33 @@ export class Marks {
     if (open) this.drawList();
   }
 
+  /** Every bookmark or every reminder (the list's segment), newest first, an orphaned one (no
+   *  session of its project left) said so; Delete here is final; "Open all" shows them in full. */
   drawList() {
     const count = this.items.size;
     $("markcount").textContent = count ? String(count) : "";
     if ($("marklist").hidden) return;
-    const all = [...this.items.values()].sort((a, b) => b.at - a.at);
-    if (!all.length) return $("marklist").replaceChildren(el("p", "empty", "No bookmarks yet. Select text in a terminal and press + beside it."));
-    $("marklist").replaceChildren(this.listOf(all, true));
+    const reminders = this.listKind === "reminder";
+    const all = [...this.items.values()].filter((b) => !!b.remind === reminders).sort((a, b) => b.at - a.at);
+    const seg = el("div", "seg mkkind");
+    for (const [k, label] of [["bookmark", "Bookmarks"], ["reminder", "Reminders"]]) {
+      const b = el("button", "", label);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(this.listKind === k));
+      b.onclick = () => { this.listKind = k; this.drawList(); };
+      seg.append(b);
+    }
+    const head = el("div", "mkhead");
+    head.append(seg);
+    if (all.length) {
+      const open = el("button", "mkall", "Open all");
+      open.type = "button";
+      open.title = "All of them as one document, full screen";
+      open.onclick = () => this.openAll(all, reminders ? "Reminders" : "Bookmarks");
+      head.append(open);
+    }
+    const empty = reminders ? "No reminders. Pick Reminder in a bookmark's dialog." : "No bookmarks yet. Select text in a terminal and press + beside it.";
+    $("marklist").replaceChildren(head, all.length ? this.listOf(all, true) : el("p", "empty", empty));
   }
 
   /** A list of bookmarks: note, the start of the text, and (all: its session's title, host, when
@@ -245,7 +288,9 @@ export class Marks {
       // an open session by its name now (it may have been renamed since), a closed one by its last
       const now = this.alive(item.sid);
       const meta = el("span", "meta", (all ? [now ?? item.title, item.host, when(item.at)] : [when(item.at)]).filter(Boolean).join(" · "));
-      if (all && now === null) meta.append(el("span", "closed", "closed"));
+      // orphaned: no session of its project is left (only here, until deleted); closed: its own session is gone
+      if (all && orphaned(item, this.panes())) meta.append(el("span", "closed", "orphaned"));
+      else if (all && now === null) meta.append(el("span", "closed", "closed"));
       b.append(meta);
       b.onclick = () => { this.togglePane(false); this.jump(item); };
       const del = el("button", "mkdel");
@@ -266,20 +311,20 @@ export class Marks {
    *  find, the split and the sent history; then, set apart, the colored ones: this session's
    *  bookmarks (with their number, while it has one) and the reminders (while one is open). */
   placeFab() {
-    const term = this.term, n = this.sid() ? this.mine().length : 0;
+    const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
     for (const id of PLAIN) $(id).hidden = !shown;
     $("marksfab").hidden = !(shown && n > 0);
-    $("remindfab").hidden = !shown || ![...this.items.values()].some(openReminder);
+    $("remindfab").hidden = !shown || !here.some(openReminder);
     $("marksfabn").textContent = String(n);
-    $("marksfab").setAttribute("aria-label", `Bookmarks of this session: ${n}`);
+    $("marksfab").setAttribute("aria-label", `Bookmarks of this project: ${n}`);
     if (!shown) this.search.toggle(false);
     if ($("marksfab").hidden) this.togglePane(false);
     if (!shown) return;
     const left = `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
     let y = term.offsetTop + 8;
     for (const group of [PLAIN, COLORED]) {
-      const shownOnes = group.map($).filter((b) => !b.hidden);
+      const shownOnes = group.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
       for (const b of shownOnes) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 8; }
       y += 8;                                      // the colored ones set apart
     }
@@ -297,8 +342,9 @@ export class Marks {
   }
   drawPane() {
     if ($("markpane").hidden) return;
-    const mine = this.mine();
-    $("markpane").replaceChildren(el("h2", "", "Bookmarks of this session"),
-      this.listOf(mine, false));
+    // this session's top to bottom (by line), then the project's other sessions', newest first
+    const own = (b) => b.sid === this.sid(), here = this.here().filter((b) => !b.remind);
+    const mine = [...here.filter(own).sort((a, b) => a.n - b.n), ...here.filter((b) => !own(b)).sort((a, b) => b.at - a.at)];
+    $("markpane").replaceChildren(el("h2", "", "Bookmarks of this project"), this.listOf(mine, mine.some((b) => b.sid !== this.sid())));
   }
 }

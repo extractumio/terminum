@@ -20,6 +20,8 @@ endif
 # one id per set of sources, compiled into terminumd (option_env!("TM_BUILD")) and the UI
 BUILD := $(shell python3 scripts/package.py id)
 export TM_BUILD := $(BUILD)
+# the day it was built, shown under the session list
+export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 

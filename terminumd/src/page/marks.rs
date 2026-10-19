@@ -87,8 +87,9 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
         text,
         note,
         title: item["title"].as_str().unwrap_or("").to_string(),
-        host: item["host"].as_str().map(str::to_string),
+        host: project_of(&item).0,
         remind: msg["remind"] == true,
+        dir: project_of(&item).1,
     };
     app.bookmarks.lock().add(new)
 }
@@ -101,6 +102,12 @@ pub fn find_item(layout: &Value, key: &str) -> Option<Value> {
 /// Every row of the layout's groups.
 pub fn layout_items(groups: &[Value]) -> impl Iterator<Item = &Value> {
     groups.iter().flat_map(|g| g["items"].as_array().into_iter().flatten())
+}
+
+/// A layout row's project (AC-91): its host (none on this Mac) and folder (none when unknown).
+pub fn project_of(item: &Value) -> (Option<String>, Option<String>) {
+    let s = |k: &str| item[k].as_str().filter(|v| !v.is_empty()).map(str::to_string);
+    (s("host"), s("dir"))
 }
 
 /// Every page learns of a new or changed bookmark.

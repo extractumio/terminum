@@ -22,23 +22,8 @@ pub const MAX_BYTES: usize = 64 * 1024;
 pub const DEFAULT_PORT: u16 = 48080;
 const FILE: &str = "settings.json";
 
-/// The sizing policy (AC-13).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Size {
-    Latest,
-    Largest,
-    Manual,
-}
-
-impl Size {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Size::Latest => "latest",
-            Size::Largest => "largest",
-            Size::Manual => "manual",
-        }
-    }
-}
+/// What settings.json of an earlier version may hold that no longer does anything (AC-04).
+const NO_LONGER: &str = "size, page.lines and page.screenMode are no longer used: the active page sizes the pane";
 
 /// Theme rules (AC-12): by session name, by host name (`*`: any remote host), else `default`.
 #[derive(Clone, Debug, PartialEq)]
@@ -52,8 +37,8 @@ pub struct ThemeRules {
 #[derive(Clone, Debug, PartialEq)]
 pub struct PageSettings {
     pub text_size: u32,
-    pub lines: String,
-    pub screen_mode: String,
+    /// rendered Markdown's text size, px (widgets, Files, View)
+    pub markdown_size: u32,
     pub widgets: bool,
     pub folds: bool,
 }
@@ -63,7 +48,6 @@ pub struct Settings {
     pub port: u16,
     pub tmux_socket: String,
     pub tmux_history: u32,
-    pub size: Size,
     pub restore: bool,
     pub themes: ThemeRules,
     pub page: PageSettings,
@@ -81,14 +65,13 @@ impl Default for Settings {
             port: DEFAULT_PORT,
             tmux_socket: "terminum".into(),
             tmux_history: 12000,
-            size: Size::Latest,
             restore: true,
             themes: ThemeRules {
                 default: "local".into(),
                 hosts: BTreeMap::from([("*".to_string(), "remote".to_string())]),
                 sessions: BTreeMap::new(),
             },
-            page: PageSettings { text_size: 13, lines: "wrap".into(), screen_mode: "auto".into(), widgets: true, folds: true },
+            page: PageSettings { text_size: 13, markdown_size: 14, widgets: true, folds: true },
             hosts: Map::new(),
             attach: BTreeMap::new(),
             messages: Vec::new(),
@@ -100,7 +83,7 @@ impl Settings {
     /// The `settings` message's body: the page defaults and what was wrong with the file.
     pub fn page_json(&self) -> Value {
         let p = &self.page;
-        json!({"textSize": p.text_size, "lines": p.lines, "screenMode": p.screen_mode,
+        json!({"textSize": p.text_size, "markdownSize": p.markdown_size, "history": self.tmux_history,
                "widgets": p.widgets, "folds": p.folds, "messages": self.messages})
     }
 }
@@ -147,10 +130,6 @@ fn members<'a>(v: &'a Value, name: &str, m: &mut Msgs) -> Vec<(&'a str, &'a Valu
             Vec::new()
         }
     }
-}
-
-fn word(v: &Value, allowed: &[&str]) -> Option<String> {
-    v.as_str().filter(|s| allowed.contains(s)).map(str::to_string)
 }
 
 fn boolean(v: &Value, name: &str, slot: &mut bool, m: &mut Msgs) {
@@ -216,12 +195,7 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
                 }
             }
         }
-        "size" => match v.as_str() {
-            Some("latest") => s.size = Size::Latest,
-            Some("largest") => s.size = Size::Largest,
-            Some("manual") => s.size = Size::Manual,
-            _ => m.bad("size must be latest, largest or manual"),
-        },
+        "size" => m.bad(NO_LONGER),
         "restore" => boolean(v, "restore", &mut s.restore, m),
         "themes" => {
             for (k, v) in members(v, "themes", m) {
@@ -244,13 +218,10 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
                         Some(n) => p.text_size = n as u32,
                         None => m.bad("page.textSize must be 8–40"),
                     },
-                    "lines" => match word(v, &["wrap", "grid", "fit"]) {
-                        Some(w) => p.lines = w,
-                        None => m.bad("page.lines must be wrap, grid or fit"),
-                    },
-                    "screenMode" => match word(v, &["auto", "always", "never"]) {
-                        Some(w) => p.screen_mode = w,
-                        None => m.bad("page.screenMode must be auto, always or never"),
+                    "lines" | "screenMode" => m.bad(NO_LONGER),
+                    "markdownSize" => match v.as_f64().filter(|n| n.fract() == 0.0 && (10.0..=32.0).contains(n)) {
+                        Some(n) => p.markdown_size = n as u32,
+                        None => m.bad("page.markdownSize must be 10–32"),
                     },
                     "widgets" => boolean(v, "page.widgets", &mut p.widgets, m),
                     "folds" => boolean(v, "page.folds", &mut p.folds, m),

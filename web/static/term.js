@@ -4,7 +4,6 @@ import { codexBox, codexStatus, inputBox, parkedCaret, statusKey } from "./agent
 import { listOpen } from "./boxnav.js";
 import { cursorCol, typedEnd, withCursor } from "./cursor.js";
 import { lineRec, palette } from "./render.js";
-import { framed } from "./frame.js";
 import { glued, inputWraps, wrapsInto } from "./rejoin.js";
 
 const LOAD_OLDER_AT = 300;   // px from the top that triggers loading older lines
@@ -12,7 +11,7 @@ const MAX_BLOCK = 400;       // most lines in a paragraph's block: a longer one 
 
 // Programs such as Claude Code wrap prose themselves at iTerm's width, with hard line ends.
 // Re-flowing that on a narrow screen leaves ragged half-lines. A hard end is treated as a
-// wrap (and re-joined in Wrap mode) when the next line's first word would not have fit:
+// wrap (re-joined when copied, AC-37) when the next line's first word would not have fit:
 // that is exactly the rule the program used to break the line.
 function wrappedHere(a, b, cols, boxed) {
   if (!a || !b || !a.data.e || !cols) return false;
@@ -76,7 +75,6 @@ export class TermView {
     this.top = 0;            // the screen's first line
     this.alt = false;        // the pane shows its alternate screen (a full-screen program)
     this.mouse = false;      // its program asked for the mouse
-    this.frame = false;      // and draws a frame wider than the view (frame.js), as last told
     this.queued = []; this.pending = null;
     this.box = this.idle = this.caret = null;    // another pane's (or a cleared screen's) input box and status lines
     this.histEl.replaceChildren(); this.screenEl.replaceChildren();
@@ -178,9 +176,8 @@ export class TermView {
     this.groupScreen();
   }
 
-  // Each paragraph (lines up to a hard line end not re-joined) is a block of its own. In Wrap
-  // the lines are inline, and iOS Safari 26.4+ shows no selection (no highlight, handles or
-  // Copy) in a long run of them; older iOS read the whole run for its Copy menu and froze. The
+  // Each paragraph (lines up to a hard line end not re-joined) is a block of its own: iOS
+  // Safari's selection and Copy menu stay within it and widgets find their regions. The
   // paragraph the history's newest lines are in stays loose: it flows on into the screen, and
   // its last line's end can still change with the screen's first line.
   wrapInBlocks(rows) {
@@ -303,7 +300,7 @@ export class TermView {
     if (this.agent === on) return;
     this.agent = on;
     this.box = this.idle = this.caret = null;
-    this.onAlt?.();                              // a coding agent's own full screen stays in Lines mode (screenmode.js)
+    this.onAlt?.();                              // a coding agent's own full screen is no full-screen program (sizing.js)
     this.keepBottom(() => { this.relinkBox([]); this.groupScreen(); });
   }
 
@@ -432,8 +429,6 @@ export class TermView {
       }
       this.onRows?.(false);
     });
-    const frame = framed(this);                      // judged on the rows now shown
-    if (frame !== this.frame) { this.frame = frame; this.onFrame?.(); }
     if (performance.now() < (this.followUntil ?? 0)) this.showCursor();
     this.onDrawn?.();
   }
@@ -466,10 +461,12 @@ export class TermView {
     return this.ratio;
   }
 
-  /** The text size chosen (the page's --size): Grid's, and Fit's at most. */
+  /** The text size chosen (the page's --size); a pane wider than the view is drawn smaller (app.js). */
   chosenSize() { return parseFloat(getComputedStyle(this.term).getPropertyValue("--size")); }
-  /** True when tmux's rows are wider than the visible area at the chosen size (in Grid). */
+  /** True when tmux's rows are wider than the visible area at the chosen size. */
   tooWide() { return this.cols * this.charRatio() * this.chosenSize() > this.inner().w; }
+  /** The text size that fits the pane's columns in the view's width, at most a little over the chosen size (AC-04). */
+  fitPx() { return Math.min(Math.floor(((this.inner().w - 1) / this.cols / this.charRatio()) * 10) / 10, this.chosenSize() + 4); }
 
   /** Columns and rows that fit the visible area at font size px (the current one by default). */
   gridFit(px = null) {

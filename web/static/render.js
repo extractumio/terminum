@@ -70,9 +70,9 @@ function span([text, fg, bg, flags], theme, pal) {
   return s;
 }
 
-// Wraps the leading or trailing whitespace of el in <span class=cls>, never touching the cursor.
-// In Wrap mode CSS hides the trailing part (padding to iTerm's width that would stick out of a
-// phone screen) and, on a re-joined line, the leading indentation.
+// Wraps the leading or trailing whitespace of el in <span class=cls>, never touching the cursor:
+// copying drops the trailing padding and a re-joined line's leading indentation (seltext.js), and
+// a phone's agent panel the spaces that push a notice to the right (style.css).
 function markEdge(el, fromEnd, cls) {
   const nodes = [];
   const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);

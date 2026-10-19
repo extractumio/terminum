@@ -124,6 +124,22 @@ def main():
                 break
         check("AC-15 the host's tmux killed: once it is attached again its windows are back in their folders",
               any(line.startswith("build ") and line.endswith("/remote-home/build") for line in made.splitlines()), made)
+        # its session closed while its tmux runs (the user closed the last window; another session keeps the
+        # server up, as the user's own do): made anew, empty, nothing restored
+        os.system(f"tmux -L {REMOTE_SOCKET} new-session -d -s keep")
+        time.sleep(1.5)
+        os.system(f"tmux -L {REMOTE_SOCKET} kill-session -t terminum")
+        again = ""
+        for _ in range(30):
+            time.sleep(0.5)
+            again = subprocess.run(["tmux", "-L", REMOTE_SOCKET, "list-windows", "-t", "terminum", "-F", "#{window_name}"], capture_output=True, text=True).stdout
+            if again.strip():
+                break
+        time.sleep(3)
+        again = subprocess.run(["tmux", "-L", REMOTE_SOCKET, "list-windows", "-t", "terminum", "-F", "#{window_name}"], capture_output=True, text=True).stdout
+        check("AC-15 the host's session closed while its tmux runs is made anew without the closed windows (no restore)",
+              again.strip() and "build" not in again, again)
+        os.system(f"tmux -L {REMOTE_SOCKET} kill-session -t keep")
 
         st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refused", "recipe": "alex@refused.example"})
         failed = wait_layout(ws, lambda gs: (g := host_group(gs, "refused")) is not None and g.get("state") == "failed", 10)

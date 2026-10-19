@@ -270,3 +270,12 @@ test("a Markdown document ends before a drawn table, which is a widget of its ow
   const text = "## Plan\n\n- read **a**\n- write `b`\n" + CLAUDE_TABLE.slice(2, 10).join("\n");
   assert.deepEqual(found(text).map((r) => r.kind), ["markdown", "table"]);
 });
+
+test("pipe tables: their own widget where an agent colored text around them, rows tmux wrapped joined", () => {
+  const L = (text, o = {}) => ({ text, eol: true, styled: false, ...o });
+  const rows = [L("- a run of `code`, colored:", { styled: true }), L(""), L("| Итог | Версии"), L("        |"), L("|------|-----"), L("---|"),
+    L("| Подтверждено | minimatch |"), L(""), L("| Вердикт | Строк |"), L("|---|---:|"), L("| Подтверждено | 212 |"), L(""), L("- next", { styled: true })];
+  const found = scan(rows).found.filter((r) => r.kind === "table");
+  assert.deepEqual(found.map((r) => [r.from, r.to, r.table.head.join("/")]), [[2, 6, "Итог/Версии"], [8, 10, "Вердикт/Строк"]]);
+  assert.deepEqual(found[1].table.align, [false, true], "a right-aligned column");
+});

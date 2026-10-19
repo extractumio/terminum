@@ -85,3 +85,13 @@ test("the cursor's column on a row, and the row with the cursor moved (as the br
   assert.deepEqual(withCursor(wide, 3).r, [[["❯", " "], null, null, 0], [["日", ""], null, null, 256], [["x"], null, null, 0]], "a wide character's two cells together");
   assert.equal(cursorCol(withCursor(wide, 4)), 4);
 });
+
+test("Option+↑/↓ and ⌘↑/↓ are Page Up and Page Down", () => {
+  const k = (key, mods = {}) => encodeKey({ key, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods }, false);
+  assert.equal(k("ArrowUp", { altKey: true }), "\x1b[5~");
+  assert.equal(k("ArrowDown", { altKey: true }), "\x1b[6~");
+  assert.equal(k("ArrowUp", { metaKey: true }), "\x1b[5~");
+  assert.equal(k("ArrowDown", { metaKey: true }), "\x1b[6~");
+  assert.equal(k("ArrowUp", { altKey: true, shiftKey: true }), "\x1b[1;4A", "Shift too: the arrow with its modifiers");
+  assert.equal(k("ArrowUp"), "\x1b[A");
+});

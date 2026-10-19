@@ -297,14 +297,14 @@ export async function webApp(browser) {
   check("AC-52 web app: a new terminal shows its prompt, not the empty rows below it, also when the prompt comes later",
     fresh.shown === 4 && fresh.inView, JSON.stringify(fresh));
 
-  // a full-screen program (mc) in a pane wider than the view: its rows stay rows while Wrap is chosen
-  const mc = Array.from({ length: 6 }, (_, i) => ({ r: [run("│" + `file-${i}.json`.padEnd(98) + "│" + "4.0K".padStart(98) + "│", 0)], e: false }));
-  const draw = (alt, cols = 200) => tell({ t: "screen", sid: "S1", full: true, n: mc.length, cols, rows: mc.length, alt, ch: mc.map((l, i) => [i, l]) });
+  // a full-screen program (mc) in a pane wider than the view: its rows stay rows, scaled to the width
+  const mc = Array.from({ length: 6 }, (_, i) => ({ r: [run("│" + `file-${i}.json`.padEnd(58) + "│" + "4.0K".padStart(58) + "│", 0)], e: false }));
+  const draw = (alt, cols = 120) => tell({ t: "screen", sid: "S1", full: true, n: mc.length, cols, rows: mc.length, alt, ch: mc.map((l, i) => [i, l]) });
   const layoutNow = () => $eval(() => {
     const t = document.getElementById("term"), right = t.getBoundingClientRect().right, rows = [...document.querySelectorAll("#screen .ln")];
     const lh = parseFloat(getComputedStyle(t).lineHeight);
-    return { wrap: t.classList.contains("wrap"), oneRow: rows.every((l) => l.getBoundingClientRect().height < lh * 1.5),
-      inside: rows.every((l) => l.getBoundingClientRect().right <= right + 1), pressed: document.querySelector("[data-mode=wrap]").getAttribute("aria-pressed") };
+    return { full: t.classList.contains("fullscreen"), oneRow: rows.every((l) => l.getBoundingClientRect().height < lh * 1.5),
+      inside: rows.every((l) => l.getBoundingClientRect().right <= right + 1) };
   });
   draw(true);
   await page.waitForTimeout(150);
@@ -312,14 +312,13 @@ export async function webApp(browser) {
   draw(false);
   await page.waitForTimeout(150);
   const flowing = await layoutNow();
-  check("AC-52 web app: in Wrap a full-screen program wider than the view keeps its rows, scaled to the width; Wrap is back when it ends",
-    !full.wrap && full.oneRow && full.inside && full.pressed === "true" && flowing.wrap && !flowing.oneRow, JSON.stringify({ full, flowing }));
+  check("AC-04 web app: a full-screen program wider than the view keeps its rows, scaled to the width; so does a wide pane after it",
+    full.full && full.oneRow && full.inside && !flowing.full && flowing.oneRow && flowing.inside, JSON.stringify({ full, flowing }));
   draw(true, 80);                                               // a pane that fits the view: its exact grid (AC-05)
   await page.waitForTimeout(150);
-  const narrow = { ...await layoutNow(), ...await $eval(() => ({ screen: document.body.classList.contains("screenmode"),
-    grid: document.getElementById("term").classList.contains("grid"), label: document.getElementById("scrlabel").textContent })) };
-  check("AC-05 web app: a full-screen program in a pane that fits the view shows in Screen mode, as its grid",
-    !narrow.wrap && narrow.screen && narrow.grid && narrow.label === "Screen · claude", JSON.stringify(narrow));
+  const narrow = { ...await layoutNow(), px: await $eval(() => document.getElementById("term").style.fontSize) };
+  check("AC-05 web app: a full-screen program in a pane that fits the view shows as its grid at the chosen size",
+    narrow.full && narrow.oneRow && narrow.px === "", JSON.stringify(narrow));
   // its arrows are application cursor keys (mc takes no key after an ESC [ B); a shell's as before
   const arrows = async () => {
     const from = sent.length;

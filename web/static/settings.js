@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The user's customization from terminumd (AC-18, AC-19): settings.json's page defaults (text
-// size, Lines mode, Screen mode, widgets) for a browser with no choice of its own, its messages
+// size, widgets, folds) for a browser with no choice of its own, its messages
 // (a wrong setting) as toasts, each once, the hot keys layout, and ~/.terminum/custom.css,
 // loaded after the page's own stylesheets and loaded again when terminumd says it changed.
 import { hotRows } from "./hotkeys.js";

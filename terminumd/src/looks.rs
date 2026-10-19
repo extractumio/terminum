@@ -145,7 +145,12 @@ pub async fn follow(app: Shared) {
         let mut retheme = false;
         if changed.contains(&"settings") {
             let (s, msgs) = crate::settings::load(&app.looks.home.join("settings.json"));
+            let history = (s.tmux_history != app.looks.settings.read().tmux_history).then_some(s.tmux_history);
             *app.looks.settings.write() = s;
+            if let Some(n) = history {
+                // panes made from now on keep this many lines (tmux applies it to new panes only)
+                let _ = app.tmux.local.run(format!("set-option -g history-limit {n}")).await;
+            }
             app.looks.note(msgs);
             crate::attach::sync(&app);
             retheme = true;
@@ -178,5 +183,17 @@ pub async fn follow(app: Shared) {
             }
             app.dirty.notify_one(); // the list's dots follow the theme names
         }
+    }
+}
+
+/// `history {lines}` from the page's menu: kept in settings.json as tmux.history, which `follow`
+/// applies to the panes made from then on (AC-19).
+pub fn set_history(app: &Shared, page: &Page, msg: &Value) {
+    let Some(n) = msg["lines"].as_u64().filter(|n| (1000..=1_000_000).contains(n)) else {
+        return crate::page::client::error(page, "History lines must be 1000–1000000", None);
+    };
+    let path = app.looks.home.join("settings.json");
+    if let Err(e) = crate::settings::save_object(&path, "tmux", |t| { t.insert("history".into(), json!(n)); }) {
+        crate::page::client::error(page, e, None);
     }
 }

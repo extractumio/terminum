@@ -23,6 +23,7 @@ import hashlib
 import os
 import shutil
 import subprocess
+import time
 import sys
 import tarfile
 from pathlib import Path
@@ -61,7 +62,7 @@ def build_id(repo=REPO):
 def build_macos(build, platforms):
     """terminumd for Mac architectures, compiled with this build id (the installer checks it)."""
     env = agents.tool_env()
-    env.update(TM_BUILD=build, TM_AGENT_ID=agents.agent_id())
+    env.update(TM_BUILD=build, TM_AGENT_ID=agents.agent_id(), TM_BUILD_DATE=time.strftime("%Y-%m-%d"))
     out = {}
     for platform in platforms:
         target = agents.TARGETS[platform]

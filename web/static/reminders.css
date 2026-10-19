@@ -4,14 +4,15 @@
    primary when the kind is Reminder. Fuchsia on every profile: it says "reminder". */
 :root { --remind: #e8a3dc; --remind-ink: #2a0f25; --remind-text: color-mix(in srgb, var(--remind) 55%, var(--t-fg)); }   /* text: readable on a light theme too */
 /* the bell: the bookmarks' button in fuchsia (marks.css); up and unseen, it blinks, no glow */
-#remindfab { background: var(--remind); color: var(--remind-ink); border-radius: var(--blob-b); animation-delay: -4.6s; }
-#remindfab.due { animation: blob 7s ease-in-out infinite, remind 1s steps(2, jump-none) infinite; animation-delay: -4.6s, 0s; }
+#remindfab { background: var(--remind); color: var(--remind-ink); animation-delay: 0s; }
+#remindfab.due { animation: blob 7s ease-in-out infinite, remind 1s steps(2, jump-none) infinite; }
 #remindfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
 #remindfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--remind-text); border: 1px solid var(--remind); }
 #remindfabn:empty { display: none; }
 @keyframes remind { 50% { opacity: .3; } }
-@media (prefers-reduced-motion: reduce) { #remindfab.due { animation: none; outline: 2px solid var(--remind-text); outline-offset: 2px; } }   /* up: a still ring */
+/* up with Reduce Motion: no blink, no ring: its count filled */
+@media (prefers-reduced-motion: reduce) { #remindfab.due { animation: none; } #remindfab.due #remindfabn { background: var(--remind-ink); color: var(--remind); border-color: var(--remind-ink); } }
 body:not([data-shown="term"]) :is(#remindfab, #remindpane) { display: none !important; }
 body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
 
@@ -26,7 +27,7 @@ body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
 .rmhead { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; font-size: var(--fs-meta); color: var(--muted); }
 .rmwhere { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rmitem.due .rmwhen { color: var(--remind-text); font-weight: var(--fw-head); }
-.rmitem .markdown { font: var(--fs-small)/var(--lh-prose) -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow-wrap: anywhere; }
+.rmitem .markdown { font: var(--md-size, 14px)/var(--lh-prose) -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow-wrap: anywhere; }
 .rmitem .markdown blockquote { margin: 0; padding-left: 8px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); }
 .rmacts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
 .rmacts button { height: 28px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label); background: var(--surface-3); }
@@ -34,7 +35,7 @@ body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
 @media (hover: none) { .rmacts button { height: var(--h-touch); padding: 0 14px; } }
 
 /* the session list: a fuchsia strip beside the profile's bar of a session with open reminders */
-.bmbar.remind { background: var(--remind); }
+.wave.remind { background: var(--remind); }
 /* the dialog: Bookmark | Reminder */
 #markkind { align-self: flex-start; }
 #markkind button[aria-pressed="true"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }

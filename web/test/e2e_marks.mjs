@@ -167,8 +167,8 @@ export async function webMarks(browser, name = "") {
     rail.length >= 4 && rail.some((m) => m.title === "look again") && rail.at(-1).title === "look again" && rail[0].top < rail.at(-1).top, JSON.stringify(rail));
   const rowsAt = await page.evaluate(() => ["S1", "S2"].map((id) => {
     const it = document.querySelector(`#sessions .item[data-id="${id}"]`), r = (sel) => it.querySelector(sel)?.getBoundingClientRect();
-    return { strip: !!it.querySelector(".bmbar"), text: Math.round(r(".txt").left), top: Math.round(r(".txt").top - it.getBoundingClientRect().top),
-      state: Math.round(r(".st").left), stripIn: r(".bmbar") ? Math.round(r(".bmbar").right) <= Math.round(r(".txt").left) : null };
+    return { strip: !!it.querySelector(".wave.mark"), text: Math.round(r(".txt").left), top: Math.round(r(".txt").top - it.getBoundingClientRect().top),
+      state: Math.round(r(".st").left), stripIn: r(".wave.mark") ? Math.round(r(".wave.mark").right) <= Math.round(r(".txt").left) : null };
   }));
   check(`${at} the session list shows an orange strip beside a session with bookmarks, its row laid out as the others`,
     rowsAt[0].strip && !rowsAt[1].strip && rowsAt[0].stripIn && rowsAt[0].text === rowsAt[1].text && rowsAt[0].top === rowsAt[1].top && rowsAt[0].state === rowsAt[1].state, JSON.stringify(rowsAt));
@@ -178,7 +178,7 @@ export async function webMarks(browser, name = "") {
   await page.waitForFunction(() => document.querySelector('#sessions .item[data-id="S1"] .t')?.textContent === "Renamed one");
   await page.click("#marksbtn");
   const renamed = await page.evaluate(() => ({
-    rail: document.querySelectorAll("#markrail .mk").length, strip: !!document.querySelector('#sessions .item[data-id="S1"] .bmbar'),
+    rail: document.querySelectorAll("#markrail .mk").length, strip: !!document.querySelector('#sessions .item[data-id="S1"] .wave.mark'),
     fab: document.getElementById("marksfabn").textContent,
     titles: [...document.querySelectorAll("#marklist .mkitem")].filter((b) => !b.querySelector(".closed")).map((b) => b.querySelector(".meta").textContent.split(" · ")[0]) }));
   await page.click("#marksbtn");
@@ -229,7 +229,8 @@ export async function webMarks(browser, name = "") {
 
   // search (AC-58): the magnifier, atop the buttons' column (the bookmarks' set apart below), opens a field; Find goes to the first match
   const at58 = at.replace("AC-57", "AC-58");
-  const fabs = await page.evaluate(() => ["findfab", "splitfab", "sentfab", "marksfab"].map((id) => document.getElementById(id)).map((b) => !b.hidden && { left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), h: Math.round(b.getBoundingClientRect().height) }));
+  const fabs = await page.evaluate(() => ["findfab", "splitfab", "sentfab", "marksfab"].map((id) => document.getElementById(id)).filter((b) => b.offsetHeight)
+    .map((b) => !b.hidden && { left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), h: Math.round(b.getBoundingClientRect().height) }));
   await page.click("#findfab");
   const focused = await page.evaluate(() => document.activeElement?.id);
   await page.fill("#findq", "alpha");
@@ -241,8 +242,9 @@ export async function webMarks(browser, name = "") {
     return { n: document.getElementById("findn").textContent, row: r.startContainer.parentElement.closest(".ln")?.textContent, inView: b.top >= t.top && b.bottom <= t.bottom,
       marks: document.querySelectorAll("#findrail .fm").length, on: document.querySelectorAll("#findrail .fm.on").length };
   });
+  const [mk, s1, s0] = [fabs.at(-1), fabs.at(-2), fabs.at(-3)];
   const column = fabs.every((b) => b && b.left === fabs[0].left) && fabs.every((b, i) => !i || b.top > fabs[i - 1].top)
-    && fabs[3].top - (fabs[2].top + fabs[2].h) > fabs[2].top - (fabs[1].top + fabs[1].h);      // the colored ones set apart
+    && mk.top - (s1.top + s1.h) > s1.top - (s0.top + s0.h);                                     // the colored ones set apart
   check(`${at58} search: the buttons stand in one column, the magnifier first and the bookmarks' set apart below; it opens a focused field, Find says how many and shows the first, older lines loaded`,
     column && focused === "findq" && first.n === "1 / 3" && first.row === "find alpha here" && first.inView && first.marks === 2 && first.on === 1,
     JSON.stringify({ fabs, focused, first }));
@@ -322,8 +324,8 @@ export async function webMarks(browser, name = "") {
     (await page.textContent("#mbwhy")).startsWith(GONE) && (await page.textContent("#mbtext")) === "never printed anywhere" && (await page.textContent("#mbnote")) === "gone");
   const closed = await page.evaluate(() => [...document.querySelectorAll("#marklist .mkitem")].find((b) => b.textContent.includes("closed one"))?.querySelector(".closed")?.textContent);
   await page.click('#marklist .mkitem:has-text("closed one")');
-  check(`${at} a closed session's bookmark is listed as closed and shows its text`,
-    closed === "closed" && /no longer open/.test(await page.textContent("#mbwhy")) && (await page.textContent("#mbtext")) === "from a session that closed");
+  check(`${at} a bookmark of a project with no session left is listed as orphaned and shows its text`,
+    closed === "orphaned" && /no longer open/.test(await page.textContent("#mbwhy")) && (await page.textContent("#mbtext")) === "from a session that closed");
 
   // Delete asks again; a save the Mac refuses keeps the dialog with why
   await page.click("#mbdel");

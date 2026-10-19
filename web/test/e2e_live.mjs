@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The page against a real private terminumd and a real private tmux server (never the
 // user's): sign-in with the password, the list following tmux, a pane's screen, typing,
-// sizing for the view, Screen mode for a full-screen program, Files docked beside the
+// sizing for the view, a full-screen program as its grid, Files docked beside the
 // terminal, custom.css, settings and themes changed live, and a terminumd restart.
 // Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size.
 //
@@ -102,14 +102,14 @@ async function wide(browser, name) {
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");
-  await within("AC-05 a full-screen program switches the page to Screen mode", () => page.waitForFunction(() => document.body.innerText.includes("Screen ·") || document.getElementById("term").classList.contains("screenmode"), null, { timeout: 5000 }));
+  await within("AC-05 a full-screen program hides the history (its grid alone)", () => page.waitForFunction(() => document.getElementById("term").classList.contains("fullscreen"), null, { timeout: 5000 }));
   await page.keyboard.type(":q");
   await page.keyboard.press("Enter");
-  await within("AC-05 Screen mode ends with the program", () => page.waitForFunction(() => !document.getElementById("term").classList.contains("screenmode"), null, { timeout: 5000 }));
+  await within("AC-05 the history is back when the program ends", () => page.waitForFunction(() => !document.getElementById("term").classList.contains("fullscreen"), null, { timeout: 5000 }));
   fs.writeFileSync(path.join(HOME, "custom.css"), "#nav { --nav-w: 333px }\n");
   await within("AC-19 custom.css applies without a reload", () => page.waitForFunction(() => getComputedStyle(document.getElementById("nav")).getPropertyValue("--nav-w").trim() === "333px", null, { timeout: 5000 }));
-  fs.writeFileSync(path.join(HOME, "settings.json"), JSON.stringify({ size: "biggest" }));
-  await within("AC-19 a wrong setting is said once as a toast", () => page.waitForFunction(() => document.getElementById("toast").innerText.includes("size must be latest, largest or manual"), null, { timeout: 5000 }));
+  fs.writeFileSync(path.join(HOME, "settings.json"), JSON.stringify({ page: { textSize: 300 } }));
+  await within("AC-19 a wrong setting is said once as a toast", () => page.waitForFunction(() => document.getElementById("toast").innerText.includes("page.textSize must be 8–40"), null, { timeout: 5000 }));
   fs.writeFileSync(path.join(HOME, "settings.json"), "{}");
   const theme = JSON.parse(fs.readFileSync(path.join(HOME, "themes/local.json"), "utf8"));
   fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));

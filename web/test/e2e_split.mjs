@@ -30,17 +30,16 @@ export async function webSplit(browser, name) {
   await page.focus("#kbd");
   const right = await asked("Meta+d"), below = await asked("Meta+Shift+d");
   const n = sent.length;
-  await page.click("#splitfab");
+  await page.click("#quickbtn");                   // a computer's split button: the header's
   await pause(page, 100);
   const button = sent.slice(n).filter((m) => m.t === "quick").map((m) => m.side);
   const prevented = await page.evaluate(() => window.prevented);
   const typed = sent.filter((m) => m.t === "in" && /d/i.test(m.data)).length;
-  check("split: ⌘D asks for the quick shell on the right, ⌘⇧D and the button under the magnifier below; the browser's ⌘D is prevented, the terminal gets no d",
+  check("split: ⌘D asks for the quick shell on the right, ⌘⇧D and the header's button below; the browser's ⌘D is prevented, the terminal gets no d",
     right.join() === "right" && below.join() === "bottom" && button.join() === "bottom" && prevented.length === 2 && prevented.every(Boolean) && !typed,
     JSON.stringify({ right, below, button, prevented, typed }));
-  const under = await page.evaluate(() => { const s = document.getElementById("splitfab").getBoundingClientRect(), m = document.getElementById("findfab").getBoundingClientRect();
-    return { below: s.top >= m.bottom, aligned: Math.abs(s.left - m.left) < 1, round: !getComputedStyle(document.getElementById("splitfab")).borderRadius.startsWith("50%") }; });
-  check("split: its button stands under the magnifier, a blob as it", under.below && under.aligned && under.round, JSON.stringify(under));
+  const dup = await page.evaluate(() => ({ fab: getComputedStyle(document.getElementById("splitfab")).display, header: getComputedStyle(document.getElementById("quickbtn")).display }));
+  check("split: on a computer only the header's button splits; the floating one is not there", dup.fab === "none" && dup.header !== "none", JSON.stringify(dup));
 
   // (before a quick shell shows: the fake's say() goes to the page connected last, its frame's)
   // the text size: the theme's, not the size an older page kept; + a step on it, which a new theme size keeps
@@ -52,7 +51,7 @@ export async function webSplit(browser, name) {
   size = 17;
   f.say({ t: "theme", sid: shown, theme: { ...THEME, size } });
   await pause(page, 200);
-  const themed = await page.evaluate(() => getComputedStyle(document.getElementById("term")).fontSize);
+  const themed = await page.evaluate(() => getComputedStyle(document.getElementById("term")).getPropertyValue("--size").trim());   // the chosen size (a wider pane is drawn smaller)
   check("text size: the theme's (15), not an older page's own; + is a step on it, kept when the theme's size changes",
     first === "15" && stepped[0] === "16" && stepped[1] === "1" && themed === "18px", JSON.stringify({ first, stepped, themed }));
   // a quick shell on the right: right of the terminal, its edge between them

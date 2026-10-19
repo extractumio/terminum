@@ -7,7 +7,7 @@
   border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite;
   background: var(--mark); color: #1b1200; box-shadow: var(--shadow-near); }
 #markcopy { background: #9ba1a9; color: #16181b; animation-delay: -3.5s; }
-#marksfab { animation-delay: -1.7s; }
+#marksfab { animation-delay: 0s; }   /* in phase with the column's other buttons */
 body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab), body:has(#findbox:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* a selection's Copy and + stand there */
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
@@ -80,7 +80,24 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 /* the session list: an orange strip beside the profile's bar of a session with bookmarks */
 .bars { display: flex; gap: 2px; align-self: stretch; }
 .bars .pbar { margin: 1px 0; }
-.bmbar { width: 4px; min-height: 30px; margin: 1px 0; border-radius: 2px; background: var(--mark); }
+/* its project's bookmarks (orange) and reminders (pink, reminders.css) as wavy lines beside the
+   folder's straight bar, so the three never read as one */
+.wave { width: 6px; min-height: 30px; margin: 1px 0; background: var(--mark);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y center / 6px 12px; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y center / 6px 12px; }
+
+/* the list below the sessions: Bookmarks | Reminders, Open all; the full-screen view of them (markdoc.js) */
+.mkhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 4px; }
+.mkall { height: 26px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label); color: var(--muted); }
+@media (hover: hover) { .mkall:hover { color: var(--t-fg); background: var(--surface-3); } }
+.mkkind button[aria-pressed="true"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }
+#markdoc { width: min(860px, calc(100vw - 24px)); height: calc(100dvh - 48px); max-height: none; padding: 0; border: 0; border-radius: var(--r-xl);
+  --fill: var(--chrome); color: var(--t-fg); display: none; flex-direction: column; }
+#markdoc[open] { display: flex; }
+#markdoc .mdhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; }
+#markdoc h2 { margin: 0; font-size: var(--fs-title); }
+#markdoc .icon { width: 36px; height: 36px; border-radius: var(--r-md); font-size: 20px; }
+#markdocbody { flex: 1; overflow: auto; padding: 4px 22px 40px; font: var(--md-size, 14px)/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+#markdocbody blockquote { margin: 0 0 6px; padding-left: 10px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); white-space: pre-wrap; }
 
 /* the bookmark brought into view: its text as it is, a wavy line on its left (markjump.js) */
 #term { position: relative; }

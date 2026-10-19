@@ -22,12 +22,12 @@
 
 /* the ripple: inside a clipped button's outline, under its label (the clip makes it a stacking context) */
 @supports (clip-path: shape(evenodd from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
-  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row))::before {
+  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row, #schemes *))::before {
     content: ""; position: absolute; z-index: -1; pointer-events: none; left: var(--px, 50%); top: var(--py, 50%);
     width: calc(200% + 60px); aspect-ratio: 1; border-radius: 50%; translate: -50% -50%; scale: 0; opacity: 0;
     background: radial-gradient(closest-side, color-mix(in srgb, currentColor 24%, transparent) 70%, transparent); }
   /* the clip draws the outline but does not bound the layout: a growing ripple would make its list scroll */
-  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row)) { overflow: clip; }
+  :where(button:not(#term *, .key, #markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row, #schemes *)) { overflow: clip; }
   :where(button)[data-press="a"]::before { animation: ripple-a var(--dur-settle) var(--ease-out); }
   :where(button)[data-press="b"]::before { animation: ripple-b var(--dur-settle) var(--ease-out); }
 }

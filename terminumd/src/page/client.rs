@@ -38,10 +38,6 @@ pub struct State {
     pub paused: bool,
     /// when this page last made a window, session or split (one a second, AC-07)
     pub last_new: Option<Instant>,
-    /// Screen mode asked for this pane
-    pub screen: bool,
-    /// per pane: auto | always | never (AC-05)
-    pub screenmode: std::collections::HashMap<String, String>,
     /// typed, not yet handed to tmux
     pub queue: super::typing::Queue,
     /// when this page last resized a window (at most once a second, AC-13)
@@ -72,7 +68,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "find" => super::find::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => files(app, page).await,
-        "size" | "fit" | "unfit" | "screenmode" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
+        "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
         "new" | "newsession" | "split" | "rename" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
         "addhost" | "hostaction" | "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
@@ -82,6 +78,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
             }
         }
         "sent" | "sentget" => super::sent::handle(app, page, t, &msg).await,
+        "history" => crate::looks::set_history(app, page, &msg),
+        "restoreseen" => crate::restore::seen(app),
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             pause(page, true);
@@ -106,7 +104,6 @@ pub async fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
     let ctl = Arc::new(Ctl::default());
     let task = tokio::spawn(super::stream::run(app.clone(), page.clone(), server.clone(), pane.clone(), key.to_string(), ctl.clone()));
     page.state.lock().shown = Some(Shown { key: key.to_string(), server, pane, ctl, task });
-    super::sizing::opened(app, page).await;
 }
 
 fn pause(page: &Page, on: bool) {
@@ -127,6 +124,7 @@ fn resume(app: &Shared, page: &Arc<Page>) {
     }
     drop(st);
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
+    super::sizing::activated(app, page);           // the active page sizes its pane (AC-13)
 }
 
 /// The shown pane's folder, home and host, for the Files view and printed paths (AC-51).

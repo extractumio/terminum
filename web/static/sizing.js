@@ -1,84 +1,47 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Sizing (AC-13), Screen mode (AC-05) and the mouse in it (AC-06). The page tells terminumd the
-// grid that fits its terminal at the chosen text size: after opening a pane, after the view or
-// the text size changed (300 ms after the last change), and with the first key typed after a
-// pause (at most once a second), which under the "latest" policy makes this page size the pane.
-// Screen mode draws a full-screen program (tmux's alternate screen, or a pane set to "always")
-// as its exact grid: no history, no Lines buttons, "Screen · <program>" in the header, the pane
-// sized to this view. A pane another screen sized is drawn as Wrap draws a wider one (app.js)
-// until this page types.
-// While a program asked for the mouse, clicks, drags, the wheel and taps go to it.
+// The pane's size (AC-13), full-screen programs (AC-05) and the mouse for them (AC-06). The
+// page tells terminumd the grid that fits its terminal at the chosen text size: after opening
+// a pane, after the view or the text size changed (300 ms after the last change), and with the
+// first key typed after a pause (at most once a second); terminumd decides whether it sizes the
+// window (the active page does). A pane another page sized is drawn as it is (app.js scales a
+// wider one) with "Sized for another screen" until this page sizes it again.
+// A full-screen program (tmux's alternate screen, not a coding agent's) hides the history and
+// the widgets, and gets the mouse when it asked for it.
 
 const $ = (id) => document.getElementById(id);
-const MODES = ["auto", "always", "never"];
-const KEPT = 100;               // panes whose Screen mode is remembered
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
 const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
 const MIN = { cols: 20, rows: 5 };
 
-/** view: the TermView; current(): the shown pane's {group, item} or null; sid(): its id;
- *  refit(): the Lines mode may have changed (Fit/Grid); defaults(): {screenMode} of settings;
+/** view: the TermView; sid(): the shown pane's id; refit(): the drawn size may have changed;
  *  notify(text): a toast. */
-export function screenMode({ view, send, store, current, sid, refit, defaults, notify }) {
+export function paneSizing({ view, send, sid, refit, notify }) {
   const term = $("term");
-  let modes = store.get("screenModes", {});
-  let on = false, last = null, typedAt = -Infinity, settle = 0, elsewhere = null, small = false;
+  let last = null, typedAt = -Infinity, settle = 0, elsewhere = null, full = false;
 
-  const mode = () => modes[sid()] ?? defaults().screenMode ?? "auto";
-  // auto: a full-screen program, but not Codex's own full screen: its input box and footer are the page's (Claude Code draws
-  // none, so a full-screen program in its pane is one)
-  const want = () => !!sid() && (mode() === "always" || (mode() === "auto" && !!view.alt && view.agent !== "codex"));
-  /** The grid that fits the terminal at the chosen text size (not Fit's scaled one). */
+  // a full-screen program: on the alternate screen, but not Codex's own (its input box, footer
+  // and history are the page's); Claude Code draws none, so one in its pane is a program's
+  const fullscreen = () => !!view.alt && view.agent !== "codex";
+  /** The grid that fits the terminal at the chosen text size (not the scaled one). */
   const grid = () => view.gridFit(view.chosenSize());
 
   function sendSize(typing) {
     if (!sid() || term.hidden || !term.clientWidth) return;
     const g = grid();
-    if (!(g.cols > 0 && g.rows > 0)) return;
-    small = on && (g.cols < MIN.cols || g.rows < MIN.rows);
-    label();
-    if (small) return;                            // the pane keeps the last size
-    if (!typing && last && last.cols === g.cols && last.rows === g.rows && last.screen === on) return;
-    last = { ...g, screen: on };
-    send({ t: "size", cols: g.cols, rows: g.rows, typing, screen: on });
+    if (!(g.cols >= MIN.cols && g.rows >= MIN.rows)) return;   // too small a view: the pane keeps its size
+    if (!typing && last && last.cols === g.cols && last.rows === g.rows) return;
+    last = { ...g };
+    send({ t: "size", cols: g.cols, rows: g.rows, typing });
   }
 
-  function label() {
-    const el = $("scrlabel"), prog = current()?.item.sub?.[0] ?? "";
-    el.hidden = !on;
-    el.textContent = small ? "Too small for Screen mode" : prog ? `Screen · ${prog}` : "Screen";
-    el.classList.toggle("warn", small);
-  }
-
-  /** Screen mode follows the frame (alt) and the pane's choice. */
+  /** The program on the screen changed (alt): a full-screen one hides history and widgets. */
   function sync() {
-    const now = want();
-    if (now !== on) {
-      on = now;
-      document.body.classList.toggle("screenmode", on);
-      term.classList.toggle("screenmode", on);
-      refit();
-      sendSize(false);
-    }
-    label();
-    syncButtons();
+    const now = fullscreen();
+    if (now === full) return;
+    full = now;
+    term.classList.toggle("fullscreen", full);
+    refit();
   }
-
-  function syncButtons() {
-    for (const b of document.querySelectorAll("[data-screen]")) b.setAttribute("aria-pressed", String(b.dataset.screen === mode()));
-  }
-
-  function setMode(m) {
-    if (!MODES.includes(m) || !sid()) return;
-    delete modes[sid()];                          // re-added last: the oldest choices go first
-    modes[sid()] = m;
-    const ids = Object.keys(modes);
-    for (const id of ids.slice(0, Math.max(0, ids.length - KEPT))) delete modes[id];
-    store.set("screenModes", modes);
-    send({ t: "screenmode", mode: m });
-    sync();
-  }
-  for (const b of document.querySelectorAll("[data-screen]")) b.addEventListener("click", () => setMode(b.dataset.screen));
 
   // the view's size: the window, the session list, docked Files, the keyboard, the hot keys
   const changed = () => { clearTimeout(settle); settle = setTimeout(() => sendSize(false), SETTLE); };
@@ -88,7 +51,7 @@ export function screenMode({ view, send, store, current, sid, refit, defaults, n
   // scrolling up there says why and how, once a pane (AC-39)
   const toldAlt = new Set();
   term.addEventListener("wheel", (e) => {
-    if (on || e.deltaY >= 0 || term.scrollTop > 0 || !view.alt || view.agent !== "codex" || toldAlt.has(sid())) return;
+    if (e.deltaY >= 0 || term.scrollTop > 0 || !view.alt || view.agent !== "codex" || view.mouse || toldAlt.has(sid())) return;
     toldAlt.add(sid());
     notify('This Codex runs on the alternate screen, where tmux keeps no scrollback. Start it with "codex --no-alt-screen", or set alternate_screen = "never" under [tui] in ~/.codex/config.toml.');
   }, { passive: true });
@@ -99,7 +62,10 @@ export function screenMode({ view, send, store, current, sid, refit, defaults, n
   }
 
   // ---------- the mouse (AC-06) ----------
-  const mouseOn = () => on && !!view.mouse;
+  // a full-screen program that asked for the mouse gets it all; a coding agent on the alternate
+  // screen the wheel only (its transcript scrolls), presses and drags select text; Shift selects
+  const mouseOn = (e) => !!view.mouse && fullscreen() && !e?.shiftKey;
+  const wheelOn = () => !!view.mouse && !!view.alt;
   /** {x, y} (0-based cells of the screen) at a viewport point, or null off the screen. */
   function cellAt(cx, cy) {
     const rows = view.screen.filter(Boolean);
@@ -137,7 +103,7 @@ export function screenMode({ view, send, store, current, sid, refit, defaults, n
   const BUTTON = { 0: 0, 1: 1, 2: 2 };
   let held = null;                                // a mouse button down: {button, x, y}
   term.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "mouse" || !mouseOn() || !(e.button in BUTTON)) return;
+    if (e.pointerType !== "mouse" || !mouseOn(e) || !(e.button in BUTTON)) return;
     e.preventDefault();                           // no text selection: the drag is the program's
     const at = cellAt(e.clientX, e.clientY);
     held = { button: BUTTON[e.button], ...at };
@@ -155,9 +121,9 @@ export function screenMode({ view, send, store, current, sid, refit, defaults, n
     const b = held.button; held = null;
     if (mouseOn()) report("release", cellAt(e.clientX, e.clientY), b, e);
   });
-  term.addEventListener("contextmenu", (e) => { if (mouseOn()) e.preventDefault(); });
+  term.addEventListener("contextmenu", (e) => { if (mouseOn(e)) e.preventDefault(); });
   term.addEventListener("wheel", (e) => {
-    if (!mouseOn() || !e.deltaY) return;
+    if (!wheelOn() || !e.deltaY) return;
     e.preventDefault();
     const line = parseFloat(getComputedStyle(term).lineHeight) || 16;
     lines += e.deltaMode === 1 ? e.deltaY : e.deltaMode === 2 ? e.deltaY * (view.screen.length || 24) : e.deltaY / line;
@@ -170,17 +136,17 @@ export function screenMode({ view, send, store, current, sid, refit, defaults, n
   // selects text as in the terminal and sends nothing.
   let touch = null;
   term.addEventListener("touchstart", (e) => {
-    if (!mouseOn()) { touch = null; return; }
+    if (!wheelOn()) { touch = null; return; }
     const t = e.touches[0];
     if (e.touches.length === 1) touch = { x: t.clientX, y: t.clientY, at: Date.now(), fingers: 1, moved: false, rest: t.clientY };
     else if (touch) touch.fingers = Math.max(touch.fingers, e.touches.length);
   }, { passive: true });
   term.addEventListener("touchmove", (e) => {
-    if (!touch || !mouseOn() || touch.fingers > 1) return;
+    if (!touch || !wheelOn() || touch.fingers > 1) return;
     const t = e.touches[0];
     if (!touch.moved && Math.hypot(t.clientX - touch.x, t.clientY - touch.y) < 10) return;
     touch.moved = true;
-    e.preventDefault();                           // the swipe is the program's: Screen mode has no history
+    e.preventDefault();                           // the swipe is the program's: the alternate screen has no history
     const line = parseFloat(getComputedStyle(term).lineHeight) || 16;
     const at = cellAt(touch.x, touch.y);
     while (Math.abs(t.clientY - touch.rest) >= line) {
@@ -190,35 +156,34 @@ export function screenMode({ view, send, store, current, sid, refit, defaults, n
     }
   }, { passive: false });
   term.addEventListener("touchend", (e) => {
-    if (!touch || e.touches.length || !mouseOn()) return;
+    if (!touch || e.touches.length || !wheelOn()) return;
     const t = touch; touch = null;
-    if (t.moved || Date.now() - t.at > 350) return;   // a swipe, or a long press (a selection)
+    if (t.moved || Date.now() - t.at > 350 || !mouseOn()) return;   // a swipe, a long press (a selection), an agent's tap
     const at = cellAt(t.x, t.y), button = t.fingers > 1 ? 2 : 0;
     report("press", at, button, e);
     report("release", at, button, e);
   });
 
   return {
-    on: () => on, mouseOn, mode, setMode, sync,
-    /** Another screen sized the pane: drawn as a wider pane until this page types. */
+    fullscreen, mouseOn, sync,
+    /** Another screen sized the pane: drawn as it is until this page sizes it. */
     elsewhere: () => !!elsewhere,
-    /** A pane was opened: its Screen mode and this view's size go to terminumd. */
+    /** A pane was opened: this view's size goes to terminumd. */
     opened() {
       last = null; elsewhere = null; showSized();
       sync();
-      send({ t: "screenmode", mode: mode() });
       sendSize(false);
     },
     /** The view or the text size changed. */
     changed,
-    /** A key was typed: this client acted (the policy "latest"); a size for another screen ends. */
+    /** A key was typed: this page sizes the pane (AC-13); a size for another screen ends. */
     typed() {
       if (elsewhere) { elsewhere = null; showSized(); refit(); }
       if (performance.now() - typedAt < TYPED_EVERY) return;
       typedAt = performance.now();
       sendSize(true);
     },
-    /** terminumd sized the pane: another screen's size (or a refused resize) is said and drawn as a wider pane. */
+    /** terminumd sized the pane: another screen's size (or a refused resize) is said and drawn as it is. */
     onSized(m) {
       elsewhere = m.mine && !m.error ? null : { cols: m.cols, rows: m.rows, error: m.error };
       showSized();

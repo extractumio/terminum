@@ -125,11 +125,17 @@ function row(item, current, onPick, movable, child = false, marked = new Map()) 
   }
   // the bar's column holds the orange strip beside it: the row's grid keeps its three columns
   const bar = folderBar(item, item.id === current, item.state === "working");
-  if (marked.has(item.id)) {
-    const remind = marked.get(item.id) === "remind";
-    const both = el("span", "bars"), m = el("span", remind ? "bmbar remind" : "bmbar");
-    m.title = remind ? "Has reminders" : "Has bookmarks";
-    both.append(bar, m);
+  // its project's bookmarks and reminders: a wavy orange and a wavy pink line beside the folder's bar
+  const has = marked.get(item.id);
+  if (has) {
+    const both = el("span", "bars");
+    both.append(bar);
+    for (const [on, cls, title] of [[has.mark, "wave mark", "Its project has bookmarks"], [has.remind, "wave remind", "Its project has reminders"]]) {
+      if (!on) continue;
+      const w = el("span", cls);
+      w.title = title;
+      both.append(w);
+    }
     b.append(both, txt, st);
   } else b.append(bar, txt, st);
   b.addEventListener("click", () => onPick(item.id));

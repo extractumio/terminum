@@ -6,7 +6,7 @@
 // buttons (widgets.js) read the same text, so they find the same paths.
 
 /** A row continues on the next one when the program wrapped it (no hard end) or the page
- *  re-joined it (Wrap mode); a re-joined hard end stood for a space. */
+ *  re-joined it (term.js); a re-joined hard end stood for a space. */
 export const continues = (el) => !el.classList.contains("eol") || el.classList.contains("join");
 
 /** {text, pieces: [{node, at}]}: the rows' text and where each of its text nodes starts in it;

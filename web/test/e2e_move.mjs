@@ -17,16 +17,12 @@ export async function webMove(browser, name) {
     const f = await openPage(browser, { device, layout });
     const { page, sent } = f;
     await drawn(page);
-    const shown = () => sent.filter((m) => m.t === "sub").at(-1)?.id;
     const menu = async (id) => { await page.click("#menubtn"); await page.click(id); await pause(page, 100); };
     const last = (t) => sent.filter((m) => m.t === t).at(-1);
 
-    await menu("#splitright");
-    const right = last("split");
-    await menu("#splitbelow");
-    const below = last("split");
-    check("AC-07 menu: Split right and Split below ask terminumd to split the shown pane",
-      right?.how === "right" && right.id === shown() && below?.how === "below" && below.id === shown(), JSON.stringify({ right, below }));
+    const labels = await page.evaluate(() => ["quickbelow", "quickright", "quickleft"].map((id) => document.getElementById(id).querySelector("span").firstChild.textContent));
+    check("AC-88 menu: the splits are the quick shell's (Split below, right, left); no tmux split of the pane",
+      labels.join() === "Split below,Split right,Split left" && !await page.$("#splitright"), labels.join());
 
     await menu("#closepane");
     const asked = await page.evaluate(() => ({ open: document.getElementById("confirmbox").open,

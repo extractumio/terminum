@@ -156,7 +156,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .tok-link, .tok-url { color: var(--link); text-decoration: underline; }
 
 /* ── rendered Markdown: prose typography ──────────────────── */
-.md-body { font: 15px/1.65 var(--prose); color: var(--fg); max-width: 76ch; margin: 0 auto; padding: 18px 22px 60px;
+.md-body { font: var(--md-size, 15px)/1.65 var(--prose);   /* the page's Markdown size (prefs.js) */ color: var(--fg); max-width: 76ch; margin: 0 auto; padding: 18px 22px 60px;
   font-feature-settings: "kern", "liga"; text-rendering: optimizeLegibility; hyphens: auto; overflow-wrap: break-word; }
 .md-body > :first-child { margin-top: 0; }
 .md-body h1, .md-body h2, .md-body h3, .md-body h4 { line-height: 1.25; margin: 1.6em 0 .55em; font-weight: 650; letter-spacing: -.01em; }

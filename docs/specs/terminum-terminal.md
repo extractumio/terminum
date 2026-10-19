@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.0 |
+| Version | 0.3.1 |
 | Date | 2026-10-19 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.1 | 2026-10-19 | Owner: bookmarks and reminders belong to a project (the host and folder of the session they were made in): every session of it shows them, orphaned ones only in the list below the sessions (Bookmarks \| Reminders, Open all, Delete for good) (AC-33, AC-91); the list marks them as wavy orange and pink lines; a Markdown table in an agent's diff is drawn as a table (AC-31); a tool's output in the history folds to its first line and two more, Codex's too (AC-32). |
 | 0.3.0 | 2026-10-19 | Owner: AC-39 coding agents' own hooks (`terminum hooks install`: Claude Code's plugin, Codex's hooks.json; `terminum hook` posts each lifecycle event to terminumd's socket) say a pane's state, its tool, what it waits for and its subagents over the screen's reading, under leases; AC-90 sent history per project (a host and a folder) under the split; AC-91 reminders, a kind of bookmark that comes up when its session's agent ends a turn. Pragmatic review applied: only a start or a prompt makes a pane's hook record (a late event of an ended session made a false "working" and a false reminder), late approvals and notifications of a stopped turn change nothing, a hooked pane's turn ends by its Stop (a turn quicker than one layout was missed), a prompt is kept only from a known agent's UserPromptSubmit, redaction over any whitespace and of `key: value`, `Bearer`, private key blocks and the tool summary, a command after a space keeps its space (it was kept against the user's wish), Claude Code's plugin added anew (no "already" taken as success), timeouts within Codex's 3 s; a hooked wait gives way to a screen showing the agent at work (an approval answered fires no event). Rejected: a line-count cache for sent.jsonl (at most 4 MB, read at a person's pace). Open: Codex loading terminum's hooks.json is checked against Codex 0.163's event names and keys, not by a live Codex run. |
 | 0.2.3 | 2026-10-18 | AC-39: Codex as measured on 0.162: started through npm (program `node`) it is known by its screen; its "Action Required" title and its question tool wait; its usage, credit, retry and load errors fail; the list title drops its blinking mark. Pragmatic review: no verdict kept per pane (a Codex followed by a dev server within one refresh would raise false reminders) and none from the title; rejected: skipping the screen read while the title says waiting (one pane, while it asks), backing off `node` panes (one batched capture each per 6 s, as agents), "an error above the last 'Worked for' is history" (unverified that an agent never prints "Worked for" after its error: a hidden failure is worse than a stale one), finding Codex by the process tree (needs a command on every host; the screen works over ssh as it is). |
 | 0.2.2 | 2026-10-17 | AC-31: a table a program drew with rules (Claude Code's ┌─┬─┐, mysql's +---+) is a table widget, whose cells wrap where its drawn rules broke apart in a view narrower than the pane. Pragmatic review: an ASCII table's empty first value stays a row; rejected: a colored table starting in Raw (its colors carry meaning), as the request is HTML tables wherever they are read and Raw is one press away. |
@@ -109,6 +110,10 @@ Scenario: AC-31 happy path — a table drawn with rules
   And a table whose top rule is not there (scrolled away, or cut off where it was copied: "│ What │ Without │ With │" then "├───┼───┼───┤") starts at that head row, when the middle rule under it has as many columns
   And known limits: a table with rules between its rows and no head shows its first row as the head; a first cell wrapped without rules between rows (rich) becomes a row of its own; an unchanged table in a diff's context is a widget too; its colors are dropped in the widget (Raw keeps them)
 
+Scenario: AC-31 happy path — a Markdown table in an agent's diff
+  Given Claude Code shows its edit of a Markdown file as numbered diff rows ("  7 - | Version | 0.11.1 |", "  7 + | Version | 0.12.0 |")
+  When two of the rows in a row or more are table rows
+  Then they are drawn as a table widget: the header from the row above a "|---|" when the diff shows it, a removed row struck, an added row tinted; Raw shows the diff as it is
 Scenario: AC-31 happy path — an image named in the output
   When a row names an image file (png, jpg, jpeg, gif, webp, svg, bmp, ico, avif) that exists in the pane's folder on the pane's host (its folder listed by name, nothing read; looked for again after 10 s)
   Then a small image button stands after the row's text (rows within a screen of the view only; not in a drawn box, an agent's input box or its footer)
@@ -148,6 +153,9 @@ Scenario Outline: AC-32 happy path — what folds
     | one line 5 or more times with only blank or 1–3 character lines between (its first kept) | ⋯ 64 more copies of this line      |
     | 20 or more nearly equal lines (numbers, paths, long words aside), first 3 and last 2 kept; never a line saying something failed | ⋯ 4,386 similar lines |
 
+Scenario: AC-32 happy path — a tool's output down to a summary
+  Given Claude Code's ("⏺ Bash(…)", "  ⎿  …") or Codex's ("• Ran …", "  └ …") tool output has scrolled into the history
+  Then its command keeps two lines at most, its output its first line and two more, and the rest is one line "⋯ N more lines of output"; neither agent can shorten what it shows itself (Claude Code's /focus collapses its own view; a PostToolUse hook changes only what the model reads)
 Scenario: AC-32 happy path — show and copy
   When the user presses a fold's line
   Then the page asks terminumd for those lines ("unfold": only a fold terminumd told of, still in the history, at most 20,000) and shows them; the line says "Hide …"
@@ -179,6 +187,12 @@ Scenario: AC-33 happy path — marks, the way back, the lists
   When the user opens "Bookmarks" at the list's foot
   Then every bookmark is listed newest first with its session's current title ("closed" for a gone one); picking one shows that session and the bookmark, or the text and note of a closed one
 
+Scenario: AC-33 happy path — by project
+  Given a bookmark made in a session whose folder is /Users/alex/work/api on this Mac
+  Then every live session of that host and folder lists it under its bookmarks' button (its own session's top to bottom, then the others', newest first) and the session list marks those sessions with a wavy orange line; a session of another folder lists none
+  When the last session of that folder closes
+  Then the bookmark is orphaned: it is only in the list below the sessions (Bookmarks | Reminders), said "orphaned", until deleted there (for good); a bookmark is deleted from a session's list or bar too
+  And "Open all" in that list shows its bookmarks or reminders as one document, full screen; a bookmark made before 0.8.0 has no folder: its project is its pane
 Scenario: AC-33 edge — the lines are gone, a rename, a server restart
   Then a bookmark whose text is no longer in the history says "These lines are no longer in this session's history." with its text and note; it stays until deleted
   And a renamed window keeps its bookmarks (the key is the pane's); after a tmux server restart a reused pane id with another creation time is another pane (OQ-31)
@@ -364,7 +378,7 @@ Scenario: AC-90 failure — not written
 ```gherkin
 Scenario: AC-91 happy path — a reminder
   When the user picks Reminder in the bookmark dialog (Bookmark | Reminder; its title and Save turn pale fuchsia) and saves
-  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); its session's row has a pale fuchsia strip instead of the orange one; a pale fuchsia bell under the bookmarks' button counts the open reminders of every session
+  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); the sessions of its project have a wavy pink line in the list; a pale fuchsia bell under the bookmarks' button counts the open reminders of the shown session's project
   And the floating buttons stand in one column at the terminal's top right: find, the split and the sent history, then, set apart, the colored ones (bookmarks, reminders) of one size and look without glow; each pane opens beside its button (under it on a phone); a split's embedded page shows none of them
 
 Scenario: AC-91 happy path — up when the turn ends
@@ -373,6 +387,8 @@ Scenario: AC-91 happy path — up when the turn ends
   When the user presses it
   Then its pane lists every open reminder, those up first ("up now"), each its session, its note as Markdown and its text quoted, with Open (its session at its text, AC-33), Close (put down: up again at its pane's next turn's end) and Resolve (it comes up no more and stays in Bookmarks); a reminder seen there blinks again only once put down and up anew
 
+Scenario: AC-91 happy path — by project
+  Then a reminder belongs to its folder's project as a bookmark does (AC-33): it comes up when an agent of any session of the project ends a turn, the bell shows the shown session's project's reminders, the session list marks the project's sessions with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions; Delete (twice) in the bell's pane removes one
 Scenario: AC-91 edge — restarts, kinds
   Then a reminder up stays up across terminumd's restart; a first layout after a restart ends no turn; a bookmark made a reminder in its dialog (Edit) is open, and a reminder made a bookmark comes up no more
 

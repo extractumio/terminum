@@ -354,6 +354,19 @@ export async function webWidgets(browser, name = "") {
     md2.h2 === "Signed releases" && md2.li === 2 && md2.pres === 1, JSON.stringify(md2));
   await ind.page.close();
 
+  // a Markdown table in Claude Code's diff of an edit: drawn as a table, removed rows struck
+  const diff = ["⏺ Update(docs/spec.md)", "  ⎿  Updated docs/spec.md (+1 -1)", "      5   | Field | Value |", "      6   |---|---|",
+    "      7 - | Version | 0.11.1 |", "      7 + | Version | 0.12.0 |", "      8   | Date | 2026-10-19 |", "", "⏺ Done."].map((t) => line(t));
+  const dt = await open(browser, { history: diff, screen: [] });
+  await dt.page.waitForFunction(() => document.querySelector("#hist .ln.wg-host")?.shadowRoot.querySelector("table"), null, { timeout: 8000 }).catch(() => {});
+  const tbl = await dt.page.evaluate(() => {
+    const t = document.querySelector("#hist .ln.wg-host")?.shadowRoot.querySelector("table");
+    return { head: [...(t?.querySelectorAll("th") ?? [])].map((c) => c.textContent), rows: [...(t?.querySelectorAll("tbody tr") ?? [])].map((r) => `${r.className}:${r.cells[1]?.textContent}`) };
+  });
+  check(`${at} a Markdown table in an agent's diff is drawn as a table: its header, a removed row struck, an added one marked`,
+    tbl.head.join() === "Field,Value" && tbl.rows.join() === "del:0.11.1,add:0.12.0,:2026-10-19", JSON.stringify(tbl));
+  await dt.page.close();
+
   // a path longer than the row, broken by the program at its edge: one path again
   const dir = "/tmp/" + "deep-folder-name-".repeat(5) + "x", long = `${dir}/drill-results.png`;
   const cut = 78, broken = await open(browser, { screen: ["Here it is:", `  ${long.slice(0, cut)}`, `  ${long.slice(cut)}`, "done"],
@@ -387,14 +400,13 @@ export async function webWidgets(browser, name = "") {
     const sel = getSelection(), r = document.createRange();
     r.setStart(rows[1], 0); r.setEnd(rows[2], rows[2].childNodes.length);
     sel.removeAllRanges(); sel.addRange(r);
-    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk,
-      shown: getComputedStyle(rows[1], "::after").content === "none" && rows[2].querySelector(".lead") && getComputedStyle(rows[2].querySelector(".lead")).display === "none" };
+    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk };
   });
   await broken.page.evaluate(() => { window.copied = []; document.addEventListener("copy", (e) => window.copied.push(e.clipboardData?.getData("text/plain"))); });
   await broken.page.keyboard.press(process.platform === "darwin" ? "Meta+C" : "Control+C");
   const copiedLong = await broken.page.evaluate(() => window.copied.at(-1));
-  check(`${at} a path the program broke at the row's edge is one path again: shown without a space, its image button, one underline, a click on its second half, copied without a space`,
-    glue.glue && glue.shown && glue.path === long && glue.lnk.some(([a, b]) => a === 1 && b === 2) && openedLong === long && copiedLong?.trim() === long,
+  check(`${at} a path the program broke at the row's edge is one path again: its image button, one underline, a click on its second half, copied without a space`,
+    glue.glue && glue.path === long && glue.lnk.some(([a, b]) => a === 1 && b === 2) && openedLong === long && copiedLong?.trim() === long,
     JSON.stringify({ glue, openedLong, copiedLong }));
   await broken.page.close();
   // a tool's output Claude Code cut by characters at cols - 5 (measured): one path again, though shorter than the row

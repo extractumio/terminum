@@ -54,6 +54,9 @@ async fn ensure_local(app: &Shared) {
             } else {
                 tracing::info!(event = "tmux.started", socket = %server.socket);
             }
+            // settings.json's history lines over tmux.conf's (written once): panes made from now on
+            let history = app.looks.settings.read().tmux_history;
+            let _ = server.run(format!("set-option -g history-limit {history}")).await;
             match server.local_sessions().await {
                 Ok(Some(s)) => s,
                 _ => return,
@@ -190,10 +193,17 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
     items(new).filter(|it| !busy(it)).filter_map(|it| it["id"].as_str()).filter(|id| was.contains(id)).map(str::to_string).collect()
 }
 
-/// The reminders of panes whose agent ended a turn come up, on every page (AC-91).
+/// The reminders of the projects whose agent ended a turn (in panes `ended`) come up, on every page (AC-91).
 pub async fn remind(app: &Shared, ended: Vec<String>) {
+    let projects: Vec<(String, Option<String>, String)> = {
+        let layout = app.layout.read();
+        ended.into_iter().map(|k| {
+            let (host, dir) = crate::page::marks::find_item(&layout, &k).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default();
+            (k, host, dir.unwrap_or_default())
+        }).collect()
+    };
     let a = app.clone();
-    match tokio::task::spawn_blocking(move || a.bookmarks.lock().due(&ended).map_err(|e| e.to_string())).await.map_err(|e| e.to_string()).and_then(|r| r) {
+    match tokio::task::spawn_blocking(move || a.bookmarks.lock().due(&projects).map_err(|e| e.to_string())).await.map_err(|e| e.to_string()).and_then(|r| r) {
         Ok(items) => {
             for item in items {
                 crate::page::marks::tell_mark(app, &item);

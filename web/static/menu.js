@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The header's menu (AC-07, AC-15, AC-17): its pane actions, Split right and below, Move window
+// The header's menu (AC-07, AC-15, AC-17): its pane actions, the splits (the quick shell), Move window
 // to session…, Close pane (asked first), Restore again after a restore report, the report's
 // banner over the terminal, and the chip of a newer release with its own menu.
 import { askConfirm } from "./navtools.js";
@@ -8,6 +8,8 @@ const $ = (id) => document.getElementById(id);
 
 /** current(): the shown pane's {group, item} or null; groups(): the layout's; pick(id) opens a
  *  pane; signOut() for Sign out (this browser's sign-in ends); copy(text) to the clipboard. */
+const RESTORED_FOR = 30000;     // ms the restore report stays when nobody closes it
+
 export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) {
   function open() { syncItems(); $("menu").hidden = false; $("menubtn").setAttribute("aria-expanded", "true"); }
   function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); hideMoves(); }
@@ -22,14 +24,13 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
   };
   function syncItems() {
     const found = current();
-    for (const id of ["splitright", "splitbelow", "quickbelow", "quickright", "quickleft", "closepane"]) $(id).disabled = !found;
+    for (const id of ["quickbelow", "quickright", "quickleft", "closepane"]) $(id).disabled = !found;
     $("movewin").hidden = !targets().length;
   }
 
   const paneSend = (m) => { const found = current(); close(); if (found) send({ ...m, id: found.item.id }); };
-  $("splitright").onclick = () => paneSend({ t: "split", how: "right" });
-  $("splitbelow").onclick = () => paneSend({ t: "split", how: "below" });
-  $("quickbelow").onclick = () => { close(); quick("bottom"); };     // AC-88
+  // the view's splits are the pane's quick shell (AC-88): a tmux window of its own beside it
+  $("quickbelow").onclick = () => { close(); quick("bottom"); };
   $("quickright").onclick = () => { close(); quick("right"); };
   $("quickleft").onclick = () => { close(); quick("left"); };
   $("closepane").onclick = async () => {
@@ -59,9 +60,13 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
 
   // ---------- the restore report (AC-15) ----------
   // "Restored 2 sessions, 4 windows. 1 pane ran ssh devbox: start it again", its panes linked.
+  let restoreTimer = 0;
   function showRestore(report) {
+    const box = $("restored");
+    clearTimeout(restoreTimer);
+    if (!report) { box.hidden = true; return; }        // another page closed it
     $("restoreagain").hidden = false;
-    const box = $("restored"), text = document.createElement("span");
+    const text = document.createElement("span");
     if (typeof report === "string" || typeof report?.text === "string") text.textContent = report.text ?? report;
     else {
       const n = (k, one) => `${report?.[k] ?? 0} ${one}${report?.[k] === 1 ? "" : "s"}`;
@@ -82,9 +87,10 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
     }
     const x = document.createElement("button");
     x.type = "button"; x.className = "x"; x.textContent = "×"; x.setAttribute("aria-label", "Close the report");
-    x.onclick = () => { box.hidden = true; };
+    x.onclick = () => { box.hidden = true; send({ t: "restoreseen" }); };   // closed on every page
     box.replaceChildren(text, x);
     box.hidden = false;
+    restoreTimer = setTimeout(() => { box.hidden = true; }, RESTORED_FOR);
   }
 
   // ---------- a newer release (AC-17) ----------

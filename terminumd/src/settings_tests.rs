@@ -11,10 +11,10 @@ fn tmp(name: &str) -> std::path::PathBuf {
 fn missing_or_empty_gives_every_default_and_no_message() {
     let (s, m) = parse("");
     assert_eq!((s.clone(), m.is_empty()), (Settings::default(), true));
-    assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.size, s.restore), (48080, "terminum", 12000, Size::Latest, true));
+    assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (48080, "terminum", 12000, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
-    assert_eq!(s.page_json(), json!({"textSize": 13, "lines": "wrap", "screenMode": "auto", "widgets": true, "folds": true, "messages": []}));
+    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "widgets": true, "folds": true, "messages": []}));
     let (s, m) = load(Path::new("/nonexistent/terminum/settings.json"));
     assert_eq!((s, m), (Settings::default(), vec![]));
 }
@@ -22,30 +22,29 @@ fn missing_or_empty_gives_every_default_and_no_message() {
 #[test]
 fn the_spec_example_is_read_whole() {
     let text = r#"{"port": 47901, "tmux": {"socket": "tm-test", "history": 20000},
- "size": "largest", "restore": false,
+ "restore": false,
  "themes": {"default": "local", "hosts": {"*": "remote", "devbox": "work"}, "sessions": {"notes": "paper"}},
- "page": {"textSize": 15, "lines": "grid", "screenMode": "never", "widgets": false, "folds": false},
+ "page": {"textSize": 15, "markdownSize": 16, "widgets": false, "folds": false},
  "hosts": {"devbox": {"ssh": ["-p", "2222", "alex@devbox.example"], "files": "enabled"}}}"#;
     let (s, m) = parse(text);
     assert!(m.is_empty(), "{m:?}");
-    assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.size, s.restore), (47901, "tm-test", 20000, Size::Largest, false));
+    assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (47901, "tm-test", 20000, false));
     assert_eq!(s.themes.hosts.get("devbox").map(String::as_str), Some("work"));
     assert_eq!(s.themes.sessions.get("notes").map(String::as_str), Some("paper"));
-    assert_eq!(s.page, PageSettings { text_size: 15, lines: "grid".into(), screen_mode: "never".into(), widgets: false, folds: false });
+    assert_eq!(s.page, PageSettings { text_size: 15, markdown_size: 16, widgets: false, folds: false });
     assert_eq!(s.hosts["devbox"]["files"], "enabled");
 }
 
 #[test]
 fn the_ac19_table_messages_word_for_word() {
     let cases = [
-        (r#"{"size": "biggest"}"#, "settings.json: size must be latest, largest or manual"),
+        (r#"{"size": "manual"}"#, "settings.json: size, page.lines and page.screenMode are no longer used: the active page sizes the pane"),
         (r#"{"page": {"textSize": 300}}"#, "settings.json: page.textSize must be 8–40"),
         ("{not json", "settings.json: line 1: expected a value"),
     ];
     for (text, msg) in cases {
         let (s, m) = parse(text);
         assert_eq!(m, vec![msg.to_string()], "{text}");
-        assert_eq!(s.size, Size::Latest);
         assert_eq!(s.page.text_size, 13, "the default is kept");
         assert_eq!(s.page_json()["messages"], json!([msg]));
     }
@@ -53,10 +52,11 @@ fn the_ac19_table_messages_word_for_word() {
 
 #[test]
 fn a_wrong_value_keeps_only_that_default() {
-    let (s, m) = parse(r#"{"page": {"textSize": 15, "lines": "spiral", "widgets": "yes"}, "port": 0, "restore": 1}"#);
+    let (s, m) = parse(r#"{"page": {"textSize": 15, "lines": "grid", "screenMode": "auto", "widgets": "yes"}, "port": 0, "restore": 1}"#);
     assert_eq!(s.page.text_size, 15);
-    assert_eq!((s.page.lines.as_str(), s.page.widgets, s.port, s.restore), ("wrap", true, 48080, true));
-    for want in ["page.lines must be wrap, grid or fit", "page.widgets must be true or false", "port must be 1–65535", "restore must be true or false"] {
+    assert_eq!((s.page.widgets, s.port, s.restore), (true, 48080, true));
+    assert_eq!(m.iter().filter(|x| x.contains("no longer used")).count(), 1, "said once for both: {m:?}");
+    for want in ["page.widgets must be true or false", "port must be 1–65535", "restore must be true or false"] {
         assert!(m.contains(&format!("settings.json: {want}")), "{want}: {m:?}");
     }
     let (_, m) = parse(r#"{"page": {"textSize": 12.5}, "tmux": {"socket": "../x", "history": 5}, "themes": {"hosts": {"a": "../evil"}, "default": 3}}"#);
@@ -107,8 +107,8 @@ fn a_file_over_64_kb_is_refused_with_a_message() {
     let p = tmp("big");
     fs::write(&p, &big).unwrap();
     assert_eq!(load(&p).1, vec!["settings.json: larger than 64 KB, not read".to_string()]);
-    fs::write(&p, r#"{"size": "manual"}"#).unwrap();
-    assert_eq!(load(&p).0.size, Size::Manual);
+    fs::write(&p, r#"{"restore": false}"#).unwrap();
+    assert!(!load(&p).0.restore);
 }
 
 #[test]
@@ -123,7 +123,7 @@ fn save_hosts_rewrites_only_the_hosts_value() {
     assert!(err.starts_with("settings.json: line 2:") && err.ends_with("fix it first"), "{err}");
     assert_eq!(fs::read_to_string(&p).unwrap(), text, "a broken file is left alone");
 
-    let text = "{\n  \"size\":   \"largest\",\n  \"hosts\": {\"old\": {\"ssh\": [\"old.example\"]}},\n  \"page\": {\"textSize\": 15}\n}\n";
+    let text = "{\n  \"restore\":   false,\n  \"hosts\": {\"old\": {\"ssh\": [\"old.example\"]}},\n  \"page\": {\"textSize\": 15}\n}\n";
     fs::write(&p, text).unwrap();
     save_hosts(&p, |h| {
         h.remove("old");
@@ -131,11 +131,11 @@ fn save_hosts_rewrites_only_the_hosts_value() {
     })
     .unwrap();
     let out = fs::read_to_string(&p).unwrap();
-    assert!(out.starts_with("{\n  \"size\":   \"largest\",\n  \"hosts\": {\n"), "{out}");
+    assert!(out.starts_with("{\n  \"restore\":   false,\n  \"hosts\": {\n"), "{out}");
     assert!(out.ends_with("},\n  \"page\": {\"textSize\": 15}\n}\n"), "{out}");
     let (s, m) = parse(&out);
     assert!(m.is_empty(), "{m:?}");
-    assert_eq!((s.size, s.page.text_size), (Size::Largest, 15));
+    assert_eq!(s.page.text_size, 15);
     assert_eq!(s.hosts.keys().collect::<Vec<_>>(), vec!["devbox"]);
 }
 
@@ -150,16 +150,16 @@ fn save_hosts_adds_the_key_or_the_file() {
     assert!(m.is_empty());
     assert_eq!(s.hosts["devbox"]["ssh"], json!(["devbox.example"]));
 
-    fs::write(&p, "{\"size\": \"manual\"}  \n").unwrap();
+    fs::write(&p, "{\"restore\": false}  \n").unwrap();
     save_hosts(&p, |h| {
         h.insert("b".into(), json!({}));
     })
     .unwrap();
     let out = fs::read_to_string(&p).unwrap();
-    assert!(out.starts_with("{\"size\": \"manual\",\n  \"hosts\": {"), "{out}");
+    assert!(out.starts_with("{\"restore\": false,\n  \"hosts\": {"), "{out}");
     let (s, m) = parse(&out);
     assert!(m.is_empty());
-    assert_eq!((s.size, s.hosts.len()), (Size::Manual, 1));
+    assert_eq!(s.hosts.len(), 1);
     fs::write(&p, "{}").unwrap();
     save_hosts(&p, |h| {
         h.insert("c".into(), json!({}));

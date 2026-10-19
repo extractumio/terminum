@@ -70,7 +70,7 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, h
                 let hook = views.get(&p.pane_id);
                 let agent = it.agent.or(hook.as_ref().map(|h| h.agent)).or_else(|| agents.contains_key(&p.pane_id).then_some("codex"));
                 let mut row = json!({
-                    "id": key, "title": it.title, "sub": it.sub, "index": p.window_index.to_string(),
+                    "id": key, "title": it.title, "sub": it.sub, "index": p.window_index.to_string(), "dir": p.path,
                     "pane": it.pane, "host": (!server.is_local()).then(|| server.name.clone()),
                     "profile": profile, "agent": agent, "shell": it.shell && !p.alternate_on,
                     "state": state.map(|s| s.as_str()), "window": p.window_id, "alt": p.alternate_on,

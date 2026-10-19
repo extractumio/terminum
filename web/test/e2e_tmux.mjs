@@ -12,7 +12,7 @@ export async function webTmux(browser, name) {
     runningIn(`${name} ${size}`);
     const phone = size.startsWith("390");
     let layout = LAYOUT;
-    const settings = { page: { textSize: 15, lines: "grid", screenMode: "auto" }, messages: ["settings.json: size must be latest, largest or manual"],
+    const settings = { page: { textSize: 15 }, messages: ["settings.json: size, page.lines and page.screenMode are no longer used: the active page sizes the pane"],
       hotkeys: { rows: [["F5", "C-r", "text:git status", "Paste"], ["S-Enter", "Up", "M-x", "Fn"]] }, css: "1" };
     let css = "body { --custom-probe: one; }";
     const f = await openPage(browser, { device, settings, css: () => css, hook: (m, say) => {
@@ -28,13 +28,13 @@ export async function webTmux(browser, name) {
     await page.click(phone ? "#keysfab" : "#keysbtn");
     await pause(page);
     const got = await page.evaluate(() => ({ size: document.getElementById("sizeval").textContent,
-      grid: document.querySelector('#tools [data-mode="grid"]').getAttribute("aria-pressed"), toast: document.getElementById("toast").textContent,
+      toast: document.getElementById("toast").textContent,
       keys: [...document.querySelectorAll("#hotkeys .keyrow")].map((r) => [...r.children].map((b) => b.textContent)),
       probe: getComputedStyle(document.body).getPropertyValue("--custom-probe").trim(),
       link: document.getElementById("customcss").getAttribute("href"),
       after: [...document.querySelectorAll('link[rel="stylesheet"]')].at(-1)?.id }));
-    check("AC-19 settings: page defaults apply to a browser with no choice of its own (text size, Grid), its message is a toast",
-      got.size === (phone ? "14" : "15") && got.grid === "true" && got.toast === settings.messages[0], JSON.stringify(got));
+    check("AC-19 settings: page defaults apply to a browser with no choice of its own (text size), its message is a toast",
+      got.size === (phone ? "14" : "15") && got.toast === settings.messages[0], JSON.stringify(got));
     check("AC-18 settings: the hot keys panel shows hotkeys.json's rows", JSON.stringify(got.keys) ===
       JSON.stringify([["F5", "^R", "git status", "Paste"], ["⇧↩", "↑", "⌥x", "Fn"]]), JSON.stringify(got.keys));
     const typed = async (label) => { const n = sent.length; await page.click(`#hotkeys button.key:text-is("${label}")`); await pause(page, 100); return sent.slice(n).filter((m) => m.t === "in").map((m) => m.data).join(""); };

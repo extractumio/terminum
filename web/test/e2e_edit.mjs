@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-52 checks for e2e_panel.mjs: editing in a coding agent's input box from a computer (the page
-// against a fake bridge): its rows re-join as Claude Code wrapped them (measured in iTerm2: rows of
-// cols - 2 characters), a click moves the cursor there, a held delete goes by words after a while.
+// against a fake bridge): its rows as tmux has them (AC-04; Claude Code's rows hold cols - 2
+// characters), a click moves the cursor there, a held delete goes by words after a while.
 // Alone: node web/test/e2e_edit.mjs.
 
 import { fileURLToPath } from "node:url";
@@ -45,8 +45,8 @@ export async function webEdit(browser) {
   // a space typed at a full row's end: Claude Code puts the cursor alone on the next row
   await show([line(FULL), cur("", 2)]);
   const space = await geo();
-  check(`${at} a space typed at a full row's end keeps the cursor on that line, after the text (no jump to a new line)`,
-    space.cur.top === space.ends[0].top && space.cur.left > space.ends[0].right, JSON.stringify(space));
+  check(`${at} a space typed at a full row's end: the cursor stands where Claude Code put it, on the next row (tmux's grid)`,
+    space.cur.top > space.ends[0].top, JSON.stringify(space));
 
   // a line the user ended (Shift+Enter) after a long row that was not full stays two lines
   await show([line("❯ " + "w".repeat(70)), cur("  abcde", 7)]);
@@ -55,7 +55,7 @@ export async function webEdit(browser) {
     ended.ends[1] && ended.ends[1].top > ended.ends[0].top, JSON.stringify(ended));
   await show([line(FULL.slice(0, 71)), cur("  abcdefg", 9)]);
   const wrapped = await geo();
-  check(`${at} a word Claude Code moved to the next row goes on the same line`, wrapped.ends[1]?.top === wrapped.ends[0].top, JSON.stringify(wrapped));
+  check(`${at} a word Claude Code moved to the next row stays on that row, as tmux has it`, wrapped.ends[1]?.top > wrapped.ends[0].top, JSON.stringify(wrapped));
 
   // a click on the input moves the cursor there with arrow keys; ⌘-click does not
   await show([line("❯ first line of the text"), cur("  second line", 13)]);

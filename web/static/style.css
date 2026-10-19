@@ -228,22 +228,9 @@ svg.lu circle { fill: none; stroke: currentColor; }
   font-variant-ligatures: none; overscroll-behavior: contain; -webkit-text-size-adjust: none;
   -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; }
 #hist, #screen { display: contents; }
-/* Wrap: lines flow inline; only a hard line end breaks. Padding a program added up to iTerm's
-   width is hidden (it would stick out of a narrow screen), prose the program wrapped at iTerm's
-   width is re-joined, and separator lines are cut to one row. A hard line end breaks the line
-   (the zero-width space keeps a blank line one row high); each paragraph is a block of its own
-   (term.js), as iOS Safari selects nothing in a long run of inline lines. */
-#term.wrap { white-space: pre-wrap; overflow-wrap: anywhere; overflow-x: hidden; }
-#term.wrap .ln { display: inline; }
-#term.wrap .ln.eol::before { content: "\200B"; }
-#term.wrap .ln.eol::after { content: "\A"; }
-#term.wrap .ln.eol.join::after { content: " "; }
-#term.wrap .ln.eol.join.glue::after { content: none; }   /* a word the program broke at the row's edge */
-#term.wrap .ln.eol.join.curend::after { content: none; }   /* the cursor's cell is the space (term.js cursorLast) */
-#term.wrap .ln.cont .lead { display: none; }
-#term.wrap .tail { display: none; }
-#term.wrap .ln.rule { display: block; white-space: pre; overflow: hidden; height: 1.25em; }
-#term.wrap .ln.rule::after { content: none; }
+/* The pane's rows as tmux has them (AC-04): one row a line, at its own width */
+#term { white-space: pre; }
+#term .ln { display: block; min-height: 1.25em; width: max-content; }
 /* a long separator: its characters hidden (copied as they are), a line across the view instead */
 #term .ln.rule.full { display: block; width: auto; height: 1.25em; overflow: hidden; white-space: pre; -webkit-text-fill-color: transparent;
   background: linear-gradient(var(--rule-color), var(--rule-color)) center / 100% var(--rule-width) no-repeat; }
@@ -251,9 +238,6 @@ svg.lu circle { fill: none; stroke: currentColor; }
 /* Codex's input box has no rules: the blank rows above and below its prompt are drawn as lines */
 #term .ln.boxedge { display: block; width: auto; height: 1.25em; background: linear-gradient(var(--edge-c), var(--edge-c)) center / 100% 1px no-repeat;
   --edge-c: color-mix(in srgb, var(--t-fg) 28%, transparent); }
-#term.wrap .ln.boxedge::before, #term.wrap .ln.boxedge::after { content: none; }   /* a block: no line end of its own */
-#term.grid { white-space: pre; }
-#term.grid .ln { display: block; min-height: 1.25em; width: max-content; }
 #term .c1, #term .c2 { display: inline-block; text-align: center; white-space: pre; }
 #term .c1 { width: 1ch; }
 #term .c2 { width: 2ch; }
@@ -264,7 +248,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
 /* Output widgets (AC-56, widgets.css inside): a region's first row holds its widget and starts
    on a line of its own; its other rows are hidden while it is rendered */
 #term .ln.wg-host { display: block; width: auto; min-height: 0; }
-#term .ln.wg-host::before, #term .ln.wg-host::after, #term.wrap .ln.eol.wg-host::before, #term.wrap .ln.eol.wg-host::after { content: none; }
+#term .ln.wg-host::before, #term .ln.wg-host::after { content: none; }
 #term .ln.wg-hid { display: none; }
 
 /* The full-screen viewer of an image or a diagram (zoom.js) */
@@ -311,19 +295,21 @@ svg.lu circle { fill: none; stroke: currentColor; }
 }
 /* A coding agent's input box as a panel, its status lines behind the ⓘ button (agentbox.js) */
 #fabs #footfab { display: none; }
-#term.wrap .ln.rule.labelled { white-space: pre-wrap; height: auto; }   /* a long title wraps rather than being cut */
 @media (hover: none), (max-width: 860px) {
-  body:has(#term.wrap.hasbox) #fabs #footfab { display: grid; }
-  #term.wrap .blk.inbox { margin: 8px 0 4px; padding: 5px 10px 6px; border-radius: 12px; min-height: calc(2.5em + 13px);   /* two rows at least */
-    border: 1px solid color-mix(in srgb, var(--t-fg) 24%, transparent); background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg)); }
-  #term.wrap .inbox :is(.ln.rule, .ln.boxedge) { display: none; }   /* its rules go (the top one's title too), Codex's lines too */
-  #term.wrap .blk.foot { margin: 0 2px 4px; }
-  #term.wrap:not(.showfoot) .foot .ln.status { display: none; }
-  #term.wrap.showfoot .foot .ln.status { font-size: 11.5px; opacity: .85; }
+  body:has(#term.hasbox) #fabs #footfab { display: grid; }
+  /* the panel's padding takes columns the pane has: its rows wrap inside it */
+  #term .blk.inbox { margin: 8px 0 4px; padding: 5px 10px 6px; border-radius: 12px; min-height: calc(2.5em + 13px);   /* two rows at least */
+    border: 1px solid color-mix(in srgb, var(--t-fg) 24%, transparent); background: color-mix(in srgb, var(--t-fg) 6%, var(--t-bg));
+    white-space: pre-wrap; overflow-wrap: anywhere; }
+  #term .blk.inbox .ln { width: auto; }
+  #term .inbox :is(.ln.rule, .ln.boxedge) { display: none; }   /* its rules go (the top one's title too), Codex's lines too */
+  #term .blk.foot { margin: 0 2px 4px; }
+  #term:not(.showfoot) .foot .ln.status { display: none; }
+  #term.showfoot .foot .ln.status { font-size: 11.5px; opacity: .85; }
   /* what a phone does without in an agent's pane: whole-line key hints, and the spaces that push
      a notice to the right edge */
-  #term.wrap.hasbox .ln.keyhint { display: none; }
-  #term.wrap .ln.ralign .lead { display: none; }
+  #term.hasbox .ln.keyhint { display: none; }
+  #term .ln.ralign .lead { display: none; }
 }
 /* A mouse and a hardware keyboard need no keyboard button. */
 @media (hover: hover) { #fabs #kbdbtn, #fabs #copyfab { display: none; } }
@@ -459,3 +445,6 @@ body.wide #filewin { position: absolute; grid-row: 6; z-index: 7; top: 12px; rig
   width: min(820px, calc(100% - 32px)); border-radius: var(--r-xl); overflow: hidden;
   background: var(--chrome); box-shadow: var(--shadow-far); }
 body.wide #filewin .winhead { display: flex; }
+/* the build under the session list's buttons, small and quiet (app.js showBuild) */
+#buildinfo { margin: 4px 10px 0; font: var(--fs-micro)/1.3 var(--ui); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#buildinfo:empty { display: none; }

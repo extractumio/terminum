@@ -135,7 +135,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             && !page.send(msg) {
                 return;
             }
-        let (first, window) = (ctl.fields.lock().is_none(), f.window.clone());
+        let first = ctl.fields.lock().is_none();
         // the pane's folder changed (a cd, by Enter, a hot key or a script): Files follows it
         let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path).map(|_| f.path.clone());
         *ctl.fields.lock() = Some(f);
@@ -143,7 +143,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             page.send_json(&super::client::files_message(&server, &key, &cwd).await);
         }
         if first {
-            super::sizing::first_frame(&app, &page, &server, &window);
+            super::sizing::activated(&app, &page);
         }
         super::hist::scan_folds(&page, &ctl, &key);
         let last = Instant::now();

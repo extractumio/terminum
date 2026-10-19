@@ -5,8 +5,8 @@
 //! layout; panes: folder, kind) are written into layout.json's `servers` under the server's id
 //! while it is read; a server that cannot be read keeps what was written before. They are made
 //! again only where the whole tmux is gone: a server of the user's own that does not run, a
-//! host whose `terminum` session is younger than its checkpoint (the host's tmux started anew).
-//! A session the user closed while its server runs stays closed.
+//! host whose tmux server started after its checkpoint (a reboot, a killed server). A session
+//! or window the user closed while its server runs stays closed.
 
 use std::path::Path;
 
@@ -156,9 +156,9 @@ pub async fn checkpoint(app: &Shared, prev: &Value) -> Value {
         let mut answers = bulk.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'")]).await.into_iter();
         let (Some(Ok(wins)), Some(Ok(panes))) = (answers.next(), answers.next()) else { continue };
         // a host's tmux started anew is kept as it was until its layout was made again (host())
-        if !s.is_local() && let Some(created) = created(&s).await {
+        if !s.is_local() && let Some(started) = started(&s).await {
             let at = servers.get(&s.id()).and_then(|v| v["at"].as_i64()).unwrap_or(i64::MAX);
-            if created > at && !app.restore.was_tried(&format!("{}@{created}", s.id())) {
+            if started > at && !app.restore.was_tried(&format!("{}@{started}", s.id())) {
                 continue;
             }
         }
@@ -172,9 +172,11 @@ pub async fn checkpoint(app: &Shared, prev: &Value) -> Value {
 }
 
 /// When a host's `terminum` session was made (Unix seconds).
-async fn created(server: &Server) -> Option<i64> {
-    let lines = server.run("list-sessions -F '#{session_name} #{session_created}'").await.ok()?;
-    lines.iter().find_map(|l| l.strip_prefix(&format!("{HOST_SESSION} "))?.trim().parse().ok())
+/// When the server started (Unix seconds): a session closed and made again by terminumd while it
+/// runs (the user closed its last window) is no new server.
+async fn started(server: &Server) -> Option<i64> {
+    let lines = server.run("list-sessions -F '#{start_time}'").await.ok()?;
+    lines.first()?.trim().parse().ok()
 }
 
 fn saved(app: &Shared, id: &str) -> Option<Value> {
@@ -215,17 +217,17 @@ pub async fn users_local(app: &Shared, server: &Server) {
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
-/// A host attached again: when its `terminum` session is younger than its checkpoint (its tmux
-/// started anew: a reboot, a killed server), the session's windows and the user's attached
-/// sessions there are made again. `seen`: the sessions running there.
+/// A host attached again: when its tmux server started after its checkpoint (a reboot, a killed
+/// server), the `terminum` session's windows and the user's attached sessions there are made
+/// again. `seen`: the sessions running there.
 pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     if server.is_local() || !app.looks.settings.read().restore {
         return;
     }
     let Some(saved) = saved(app, &server.id()) else { return };
     let at = saved["at"].as_i64().unwrap_or(i64::MAX);
-    let created = created(server).await.unwrap_or(0);
-    if created <= at || !app.restore.first_try(&format!("{}@{created}", server.id())) {
+    let started = started(server).await.unwrap_or(0);
+    if started <= at || !app.restore.first_try(&format!("{}@{started}", server.id())) {
         return;
     }
     let existing: Vec<String> = seen.iter().map(|(n, _)| n.clone()).collect();

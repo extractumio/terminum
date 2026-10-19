@@ -11,6 +11,12 @@ const BUILD: &str = match option_env!("TM_BUILD") {
     None => "dev",
 };
 
+/// The day this binary was built (YYYY-MM-DD), set by `make` and the release; "" otherwise.
+pub const BUILD_DATE: &str = match option_env!("TM_BUILD_DATE") {
+    Some(d) => d,
+    None => "",
+};
+
 /// The build terminumd answers as: the compiled one unless a test plays another (TM_BUILD_ID).
 pub fn build_id() -> &'static str {
     static ID: std::sync::OnceLock<String> = std::sync::OnceLock::new();

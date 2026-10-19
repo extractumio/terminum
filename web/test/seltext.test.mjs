@@ -6,22 +6,20 @@ import { joinLines } from "../static/seltext.js";
 const L = (text, more = {}) => ({ text, eol: true, join: false, cont: false, ...more });
 
 test("hard line ends become newlines; their padding is dropped", () => {
-  assert.equal(joinLines([L("$ ls   "), L(""), L("a.txt  b.txt   ")], true), "$ ls\n\na.txt  b.txt");
+  assert.equal(joinLines([L("$ ls   "), L(""), L("a.txt  b.txt   ")]), "$ ls\n\na.txt  b.txt");
 });
 
 test("a line iTerm wrapped continues without a break", () => {
-  assert.equal(joinLines([L("abcdef", { eol: false }), L("ghi")], true), "abcdefghi");
-  assert.equal(joinLines([L("abcdef", { eol: false }), L("ghi")], false), "abcdefghi");
+  assert.equal(joinLines([L("abcdef", { eol: false }), L("ghi")]), "abcdefghi");
 });
 
-test("prose re-joined in Wrap keeps one space and loses the indentation; Grid keeps the rows", () => {
+test("prose a program wrapped (re-joined) keeps one space and loses the indentation", () => {
   const parts = [L("  The loader patches", { join: true }), L("    require() first", { cont: true })];
-  assert.equal(joinLines(parts, true), "  The loader patches require() first");
-  assert.equal(joinLines(parts, false), "  The loader patches\n    require() first");
+  assert.equal(joinLines(parts), "  The loader patches require() first");
 });
 
 test("partial lines at either end and text-style marks", () => {
-  assert.equal(joinLines([L("ader"), L("\u2733\ufe0e Done")], true), "ader\n\u2733 Done");
-  assert.equal(joinLines([L("only part")], true), "only part");
-  assert.equal(joinLines([L("\u2764\ufe0f sent")], true), "\u2764\ufe0f sent");   // the program's own emoji mark stays
+  assert.equal(joinLines([L("ader"), L("\u2733\ufe0e Done")]), "ader\n\u2733 Done");
+  assert.equal(joinLines([L("only part")]), "only part");
+  assert.equal(joinLines([L("\u2764\ufe0f sent")]), "\u2764\ufe0f sent");   // the program's own emoji mark stays
 });

@@ -113,8 +113,8 @@ export async function webBoxNav(browser, name = "chromium") {
   cc.delay = 20;
   check(`${at} quick presses before the echo each move a line, from where the last one goes`, cc.at === upAt, JSON.stringify({ at: cc.at, upAt }));
 
-  // on the input's first row ↑ is the agent's own key (history); on the page's first line but
-  // iTerm's second row it goes to the start; a held ↑ stops there instead of running into history
+  // on the input's first row ↑ is the agent's own key (history); on its second row one row up; a
+  // held ↑ stops on the first row instead of running into history
   await set(TEXT, 40);
   await press("ArrowUp");
   check(`${at} ↑ on the input's first row is the agent's own key (its history)`, cc.history === 1 && cc.at === 40, JSON.stringify(cc));
@@ -125,7 +125,7 @@ export async function webBoxNav(browser, name = "chromium") {
     await page.waitForTimeout(40);
   }
   await page.waitForTimeout(250);
-  check(`${at} ↑ on the page's first line but iTerm's second row goes to the start; held, it stops there`, cc.at === 0 && cc.history === 0, JSON.stringify(cc));
+  check(`${at} ↑ on the input's second row goes one row up; held, it stops on the first row`, cc.at === 16 && cc.history === 0, JSON.stringify(cc));
 
   // paragraphs: ↑ from the second goes to the blank line between them, then into the first
   const PARAS = "first paragraph\n\nsecond paragraph here";

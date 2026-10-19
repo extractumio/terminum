@@ -71,8 +71,13 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   `terminum hooks remove` takes terminum's hooks out.
 - **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
   (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer.
-- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell blinks when that
-  session's agent ends a turn. Close puts it down until the next turn ends, Resolve ends it.
+- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell blinks when an agent
+  of that project (the folder it was made in) ends a turn. Close puts it down until the next turn
+  ends, Resolve ends it. Bookmarks and reminders show in every session of their folder; once all
+  of them closed, they wait in the list below the sessions (Bookmarks | Reminders, Open all).
+- **The view** is the pane as tmux has it, sized to the browser window you use (in front, or
+  the phone in your hand); a wider one is scaled to fit. The menu has 20 color schemes, the
+  Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
 - **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
   host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
 

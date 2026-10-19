@@ -8,7 +8,7 @@
 
 .wg { --hair: color-mix(in srgb, var(--t-fg) 7%, transparent);   /* the one line left: between a table's rows */
   display: block; margin: var(--sp-2) 0; border-radius: var(--r-lg); overflow: hidden; white-space: normal; overflow-wrap: break-word;
-  background: var(--surface-1); -webkit-user-select: text; user-select: text; }   /* break-word: Wrap's "anywhere" would cut a table's words letter by letter */
+  background: var(--surface-1); -webkit-user-select: text; user-select: text; }   /* break-word: a cell's long word wraps whole, not letter by letter */
 @supports (clip-path: shape(from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
   .wg { --a: calc(var(--wave-l) * 4 / 3); clip-path: shape(from 0 var(--r-lg), curve to var(--r-lg) 0 with 0 0,
     curve to calc(100% - var(--r-lg)) 0 with 42% var(--a) / 42% var(--a), curve to 100% var(--r-lg) with 100% 0,
@@ -40,7 +40,7 @@ img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(-
   cursor: zoom-in; background: transparent; }
 
 /* Markdown: prose in the system font, code in the terminal's */
-.body.markdown, .body.table { font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+.body.markdown, .body.table { font: var(--md-size, 14px)/1.55 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }   /* the menu's Markdown size */
 .markdown > :first-child { margin-top: 0; }
 .markdown > :last-child { margin-bottom: 0; }
 .markdown h1 { font-size: 1.5em; } .markdown h2 { font-size: 1.3em; } .markdown h3 { font-size: 1.1em; }
@@ -86,7 +86,7 @@ img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(-
 /* image buttons after a row's text, and the images opened below it */
 .wgi { white-space: nowrap; margin-left: .6ch; -webkit-user-select: none; user-select: none; }
 .wgi button { padding: 0 4px; min-height: 0; height: 1.25em; vertical-align: -0.2em; background: var(--surface-2); color: var(--accent); }
-/* as wide as the terminal (a Grid row is only as wide as its text), so an image is centered in the view */
+/* as wide as the terminal (a row is only as wide as its text), so an image is centered in the view */
 .figs { display: block; box-sizing: border-box; width: var(--wg-tw, 100%); white-space: normal; text-align: center; }
 .figs:empty { display: none; }
 figure { margin: var(--sp-1) 0 var(--sp-2); display: inline-flex; flex-direction: column; align-items: center; gap: var(--sp-1);
@@ -105,3 +105,6 @@ figcaption .err { flex-basis: auto; }
 .fold button { min-height: 0; height: 1.5em; padding: 0 8px; background: var(--surface-2); color: color-mix(in srgb, var(--t-fg) 70%, var(--t-bg)); }
 :host(:not(.wg-fold)) .fold { margin-right: .6ch; }
 ::highlight(find) { background-color: #fff; color: #111; }
+/* a table in an agent's diff (difftable.js): removed rows struck, added ones tinted */
+tr.del td { text-decoration: line-through; opacity: .6; background: color-mix(in srgb, #f85149 12%, transparent); }
+tr.add td { background: color-mix(in srgb, #3fb950 14%, transparent); }

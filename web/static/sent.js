@@ -9,7 +9,7 @@ import { typedEnd } from "./cursor.js";
 import { fabPane } from "./fabpane.js";
 import { when } from "./marks.js";
 import { agentName } from "./nav.js";
-import { renderers } from "./widgetui.js";
+import { markdownInto } from "./widgetui.js";
 
 const $ = (id) => document.getElementById(id);
 // where a shell's prompt ends: "$ ", "% ", "# ", "❯ ", "› ", "> ", "» " after a space or the line's start
@@ -62,7 +62,7 @@ export function sentHistory({ view, send, item, copy, toast }) {
     body.className = "markdown";
     const fence = "`".repeat(Math.max(3, ...[...it.text.matchAll(/`+/g)].map((x) => x[0].length + 1)));   // longer than any run in it
     const md = it.agent ? it.text : `${fence}sh\n${it.text}\n${fence}`;
-    try { body.innerHTML = (await renderers()).markdownHtml(md); } catch { body.textContent = it.text; }   // the panel's rules: raw HTML is off
+    await markdownInto(body, md);
     pane.place();
   }
 

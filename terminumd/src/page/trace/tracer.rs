@@ -135,7 +135,7 @@ impl Tracer {
     pub fn handled(&self, kind: &str, began: Instant) {
         let took = since(began);
         if self.live() && took > SLOW_MSG && kind != "trace" {
-            let t = if ["sub", "in", "more", "fit", "files", "new", "size", "paste"].contains(&kind) { kind } else { "other" };
+            let t = if ["sub", "in", "more", "files", "new", "size", "paste"].contains(&kind) { kind } else { "other" };
             self.record(json!({"ev": "msg", "t": t, "ms": took}));
         }
     }

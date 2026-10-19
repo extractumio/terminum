@@ -84,7 +84,7 @@ export function sizes(view) {
   const vv = window.visualViewport, term = view.term, cs = getComputedStyle(term), px = parseFloat(cs.fontSize);
   return { win: [innerWidth, innerHeight], vv: vv ? [round(vv.width), round(vv.height), round(vv.offsetTop)] : null, dpr: devicePixelRatio,
     term: [term.clientWidth, term.clientHeight], font: px, lh: parseFloat(cs.lineHeight) || null, cell: Math.round(view.charRatio() * px * 100) / 100,
-    fits: view.gridFit(), iterm: [view.cols, view.screen.length], wrap: term.classList.contains("wrap"), alt: !!view.alt,
+    fits: view.gridFit(), iterm: [view.cols, view.screen.length], full: term.classList.contains("fullscreen"), alt: !!view.alt,
     scroll: [Math.round(term.scrollTop), term.scrollHeight, view.atBottom()] };
 }
 

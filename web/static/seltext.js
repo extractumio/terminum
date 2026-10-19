@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The text of a selection in the terminal, as iTerm2 would copy it. Line ends are drawn by CSS
 // (generated content is never copied), so the lines are joined here: a hard end is a newline, a
-// line iTerm wrapped continues, and in Wrap prose re-joined on the screen keeps its space.
+// line tmux wrapped continues, and prose a program wrapped (term.js re-joins it) keeps its space.
 
 /** Joins the selected parts of lines: {text, eol, join, glue, cont}, in order. Padding after a hard
- *  end is dropped; in Wrap a re-joined line also drops its indentation. */
-export function joinLines(parts, wrap) {
+ *  end is dropped; a re-joined line goes on after a space, its indentation dropped. */
+export function joinLines(parts) {
   let out = "";
   parts.forEach((p, i) => {
     let t = p.text.replace(/\ufe0e/g, "");          // the text-style mark render.js adds
     if (p.eol) t = t.replace(/\s+$/, "");
-    if (wrap && p.cont && i > 0) t = t.replace(/^\s+/, "");
+    if (p.cont && i > 0) t = t.replace(/^\s+/, "");
     out += t;
-    if (i < parts.length - 1 && p.eol) out += wrap && p.join ? (p.glue ? "" : " ") : "\n";   // glue: a word broken at the edge
+    if (i < parts.length - 1 && p.eol) out += p.join ? (p.glue ? "" : " ") : "\n";   // glue: a word broken at the edge
   });
   return out;
 }
@@ -33,5 +33,5 @@ export function selectedText(term) {
     const c = ln.classList;
     parts.push({ text: r.toString(), eol: c.contains("eol"), join: c.contains("join"), glue: c.contains("glue"), cont: c.contains("cont") });
   }
-  return parts.length ? joinLines(parts, term.classList.contains("wrap")) : null;
+  return parts.length ? joinLines(parts) : null;
 }

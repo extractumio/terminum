@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.11.1 |
+| Version | 0.12.2 |
 | Date | 2026-10-19 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,9 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.12.2 | 2026-10-19 | AC-15: a host is restored only when its tmux server started after the checkpoint (#{start_time}), not when its terminum session was made again because the user closed its last window (the closed window came back); the restore report goes with × on every page and by itself after 30 s, and a page connecting 10 minutes later gets none (it stayed on every page). AC-31: a pipe table is a widget of its own where an agent colored the text around it (Codex's inline code), its rows re-joined where they were wrapped. The page shows its version and build date under the session list. |
+| 0.12.1 | 2026-10-19 | Owner: 20 color schemes in the menu over the session's theme (AC-12); Markdown size and history lines in the menu (AC-19); Option/⌘ + ↑/↓ page (AC-03); the split's button is the header's on a computer, the floating one on a phone; no floating button on a split's page (AC-88). |
+| 0.12.0 | 2026-10-19 | Owner: one view, the pane as tmux has it, sized to the active browser window: Wrap, Grid, Fit, Screen mode (Auto/Always/Never), "Fit to this screen" and the size policies `largest` and `manual` are gone (AC-04, AC-05, AC-13); a page sizes on opening, on becoming the active page and on typing; a plain view change resizes only a window it sizes; a window of several panes is never resized; a wider pane is scaled to the view (7 px at least); the mouse reaches full-screen programs (Codex: the wheel only; Shift selects). The menu's tmux "Split right/below" is gone: the splits are the quick shell's (AC-07, AC-88). Pragmatic review applied: claims on open/active/typing only (a phone's toolbar would take the window), split windows never resized, the 7 px floor kept, the mouse predicate keeps selection in agents, full-screen programs still hide history, old settings reported, old messages tolerated for a release. |
 | 0.11.1 | 2026-10-19 | AC-13: a hidden page (a locked phone) no longer keeps the window it sized: the pages still looking at it take it at once ("Sized for another screen" stayed on the Mac after a split while a phone that typed last lay locked). |
 | 0.11.0 | 2026-10-19 | `terminum hooks [status\|install\|remove] [claude\|codex]` and `POST /hook` on the socket for coding agents' hooks; sent history kept in `~/.terminum/sessions` (terminum-terminal.md AC-39, AC-90, AC-91). |
 | 0.10.0 | 2026-10-17 | Owner: one listener, one password. The loopback listener on 47900 with its one-time codes (`terminum open`) and the second, cookie-signed listener of web access (`terminum web on/off`, 48080) were two ways in with two sign-ins; now terminumd listens only on `127.0.0.1:48080` (held by launchd as 47900 was) and every browser, the Mac's and, through `tailscale serve` (HTTPS), other devices', signs in with the password set by `terminum password`; until one is set the page says how. The sign-in is the header token of 0.9 with its hello proof (not a cookie: a cookie on 127.0.0.1 reaches every local port). Mac-only actions are judged by forwarding headers, never the Host (tailscale serve passes the browser's Host through); Tailscale Funnel is refused; `terminum signout` and a new password restart the brakes; the old sign-in files are removed at start and the old web.json keys dropped; an install waits until the old terminumd has let go of the port before launchd binds it; a closed page's socket ends at once. Pragmatic review applied: the port handover, forwarding headers instead of the Host, every old sign-in dropped, Funnel refused, the brakes reset by the CLI, `terminum open` kept as an opener, a scheme per kind of name; rejected: a 12-character minimum (the brakes and PBKDF2 hold for 8, and the owner's password stays valid) and asking for the password during install (`curl … \| sh` has no terminal to ask on; the install says the command). Pragmatic review of the code applied: the brakes' count of all kept apart for this Mac's own requests and forwarded ones (guesses from the tailnet held the Mac's browser too), a Files panel socket of a revoked sign-in ends at its next ping, and (found here) a login the old password passed during `terminum password` makes no sign-in; documented: a program on this Mac can name any X-Forwarded-For; left as they were (not this change): `?t=` on any GET, `/custom.css` without a sign-in, the 10 s port wait of a stop when another program holds the port. AC-08, AC-09, AC-10. |
@@ -43,7 +46,7 @@ Change log:
 
 **Scenario, before and after.**
 - Before: Alex opens the web app on a phone. Claude Code runs in an iTerm2 pane 151 columns wide on the Mac. Prose re-flows well; `mc` in another pane is scaled to a stamp. A key takes 80 ms to echo through iTerm2's API. After a reboot, Alex rebuilds windows from the recovery dialog.
-- After: Alex opens the same page. The pane Alex reads on the phone is 48 columns wide, laid out by Claude Code itself for that width; the Mac's window of the same pane is wide again when Alex types there. `mc` fills the phone's screen as a 48×30 grid in Screen mode, arrows and F-keys work, a tap is a click. A key echoes in 25 ms. After a reboot, the sessions are back with their folders before Alex opens the page.
+- After: Alex opens the same page. The pane Alex reads on the phone is 48 columns wide, laid out by Claude Code itself for that width; the Mac's window of the same pane is wide again when Alex brings it to the front. `mc` fills the phone's screen as a 48×30 grid in Screen mode, arrows and F-keys work, a tap is a click. A key echoes in 25 ms. After a reboot, the sessions are back with their folders before Alex opens the page.
 
 ## 2. Scope and non-goals
 
@@ -95,7 +98,7 @@ Open questions:
 |---|---|---|---|---|
 | OQ-01 | Which tmux server holds local terminals: the user's default server (sessions shared with any `tmux attach`) or a private `-L terminum` server? | Owner | resolved | A private server: socket `terminum`, started by terminumd with its own config `~/.terminum/tmux.conf` (history-limit 12000, window-size latest (terminumd sets `manual` per window while a page sizes it, AC-13), extended-keys on, focus-events on, escape-time 0; the user may edit it), so the user's sessions and `~/.tmux.conf` are never touched and every pane has terminumd's options; `tmux -L terminum attach` from any terminal still works. Owner, 2026-10-15. Since 0.8.0 the user may also attach sessions of their own server by name (AC-89); terminumd still never starts it or makes sessions there. |
 | OQ-02 | How many control clients: one per server, or one per session? | Claude | resolved | One per session for notices and typing (safe whatever AS-06 says), plus one bulk client per server for history pages, search, `list-panes` and layout reads, so a bulk read never queues ahead of an echo. 2026-10-15 |
-| OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The client that typed last, as tmux's `window-size latest`; a client that only reads keeps Wrap or Fit (AC-13). Owner, 2026-10-15. |
+| OQ-03 | When two clients of different widths show one pane (a phone and the Mac's browser), whose width wins? | Owner | resolved | The client that typed last, as tmux's `window-size latest` (2026-10-15); since 2026-10-19 the active page (in sight and focused): it sizes on opening, on becoming active and on typing (AC-13). Owner. |
 | OQ-04 | Does the App replace the browser for daily use on the Mac, or is a browser tab pinned to the Dock enough? | Owner | resolved | No App: the clients to build and test for are a browser on the Mac (wide screen, 1400 px and more) and Safari on an iPhone (mobile). AC-11 dropped. Owner, 2026-10-15. |
 | OQ-06 | Should the page ship JetBrains Mono Nerd Font as woff2 (OFL, about 100 KB a weight) so the phone shows the Mac's font, or keep `local()` with Menlo as the fallback? | Owner | open | Proposed: ship it, loaded only when `local()` is missing. |
 | OQ-05 | Absolute line numbers after `history-limit` is reached (AS-04) or a resize re-wrapped the history (AS-09): keep counting by matching rows, or reset the page's history as a cleared scrollback does today? | Claude | resolved | Stage 1: reset when the previous frame's rows cannot be matched; bookmarks and search marks are found again by their text, as today. Counting across a match is stage 2. 2026-10-15 |
@@ -107,9 +110,9 @@ Open questions:
 | AC-01 | [MUST / P0] | The user sees every tmux session, window and pane of the local server (and of attached hosts) in the session list within 2 s of a change, grouped by session, with the titles, program, folder and host iterm-enhancer shows, and can filter them. |
 | AC-02 | [MUST / P0] | The user opens a pane and sees tmux's screen in the session's theme within 1 s with the last 1000 lines of history, loads older lines up to 10,000, and sees output as it arrives, at most 30 frames a second, each frame only the rows that changed. |
 | AC-03 | [MUST / P0] | The user types, pastes and presses hot keys and the bytes reach the pane as a terminal would send them: a key echoes within 100 ms on the Mac's network, held keys repeat, special keys go by tmux's names so a full-screen program gets its own encoding. |
-| AC-04 | [SHOULD / P1] | The user reads a pane in Wrap (lines re-flow to the view), Grid (tmux's exact layout) or Fit (the grid scaled to the width), remembered per pane. |
-| AC-05 | [SHOULD / P1] | When a pane runs a full-screen program (vim, mc, htop, a plain tmux inside) the view switches to Screen mode: the pane is resized to the view's grid, the grid is drawn as it is, arrows and F-keys reach the program, and the mode ends with the program. |
-| AC-06 | [SHOULD / P1] | In Screen mode a click, a tap, a drag and the wheel reach a program that asked for mouse events as the mouse events a terminal would report. |
+| AC-04 | [SHOULD / P1] | The page draws the pane as tmux has it, sized to the active browser window; a pane wider than the view is scaled to its width (7 px at least). |
+| AC-05 | [SHOULD / P1] | A full-screen program (vim, mc, htop, a plain tmux inside) is drawn as its grid without history or widgets, and keys reach it as tmux key names. |
+| AC-06 | [SHOULD / P1] | A click, a tap, a drag and the wheel reach a full-screen program that asked for mouse events as the mouse events a terminal would report; a coding agent gets the wheel only. |
 | AC-07 | [MUST / P0] | The user creates a window, a session or a split next to the shown pane in its folder, renames a window or pane, reorders windows, moves a window to another session and closes a pane after a confirmation, and the list shows it within 2 s. |
 | AC-08 | [MUST / P0] | The user installs with one line, terminumd runs as a launchd agent that starts at login and after a crash, the command prints the page's address and opens it, and `terminum status` tells what runs. |
 | AC-09 | [MUST / P0] | A web page or local process cannot list sessions, read screens, type or touch files through terminumd without the sign-in, which only the password set by `terminum password` gets; wrong passwords are braked; writes need the exact Host, Origin and Content-Type. |
@@ -178,7 +181,7 @@ Scenario: AC-02 happy path — open a pane
   When the user opens it
   Then within 1 s the page shows the theme, the last 1000 history lines and the screen (50 rows) with the cursor, in the session's theme
   And scrolling up loads older lines 1000 at a time, up to 10,000 (TM_HISTORY)
-  And every line is tmux's: rows tmux wrapped join in Wrap, a hard line end stays one (AS-03)
+  And every line is tmux's: rows tmux wrapped join when copied, a hard line end stays one (AS-03)
 Scenario: AC-02 happy path — output streams
   When the pane prints 5,000 lines in 2 s
   Then terminumd captures the screen on its %output notices at most every 33 ms and sends only the rows that changed ("full": false, "ch": [[row, line]…]); lines that scrolled off the screen are appended to the history ("hist", "append") with their absolute numbers
@@ -219,6 +222,9 @@ Scenario Outline: AC-03 happy path — special keys by name
     | ⌃→            | C-Right|
     | Home          | Home   |
     | Delete (fwd)  | DC     |
+Scenario: AC-03 edge — paging with the arrows
+  When the user presses Option+↑ or ⌘↑ (Option+↓, ⌘↓)
+  Then the pane gets Page Up (Page Down), as tmux's PPage (NPage); with Shift too the arrow goes with its modifiers
 Scenario: AC-03 edge — Shift+Enter and Ctrl+Enter
   When the user presses ⇧↩ or ⌃↩ (a key or the hot key)
   Then terminumd sends "send-keys S-Enter" or "C-Enter": a program that asked for extended keys (Claude Code) gets ESC[13;2u or ESC[13;5u and makes a new line, a shell gets Enter (AS-10)
@@ -231,70 +237,42 @@ Scenario: AC-03 failure — the pane is gone or the server stalls
   Then the keys are dropped, not queued forever; the page shows "tmux did not take the keys: <error>" over the terminal; a line "tmux on this Mac is not responding (N s)" counts while a server stalls and goes when it answers
 ```
 
-### AC-04 — Wrap, Grid and Fit [SHOULD / P1]
+### AC-04 — The pane as tmux has it [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-04 happy path — the three modes
-  Given a pane 150 columns wide shown on a phone 48 columns wide
-  When the user picks Wrap
-  Then lines re-flow to the view as iterm-enhancer's web app does: prose wrapped at the pane's width re-joins, a word broken at the edge joins without a space, list items and agent marks start lines, separator lines span the view
-  When the user picks Grid
-  Then the page shows 150 columns as they are, scrolling sideways
-  When the user picks Fit
-  Then the grid is scaled to the view's width (text at least 4 px)
-  And the choice is remembered per pane (the last 100) and the last choice is the default for new panes; Wrap before any choice
-Scenario: AC-04 edge — Wrap and a pane resized to the view
-  Given the pane was resized to this view's width (AC-13)
-  Then Wrap and Grid show the same rows: nothing re-flows, and the mode buttons still say Wrap
-Scenario: AC-04 error — the mode cannot apply
-  Given the pane shows its alternate screen (AC-05)
-  Then Wrap shows it as Screen mode and the Wrap button's title names the exception
+Scenario: AC-04 happy path — one view, the tmux window's grid
+  Given the Mac's browser shows %3
+  Then the page draws the pane's rows exactly as tmux has them, at the chosen text size, its history above (AC-02); the pane is sized to this view's grid (AC-13), so its rows fill the view; there is no view mode to pick
+Scenario: AC-04 edge — a pane wider than the view
+  Given the pane is wider than the view at the chosen text size: a session of the user's own tmux only looked at (AC-89), a window of several panes (never resized, AC-13), another page's size, a refused resize
+  Then the rows are scaled down to the view's width, and when that would make the text smaller than 7 px (the smallest size − and + allow) they are drawn at the chosen size with the rest by scrolling sideways; "Sized for another screen (W×H)" says so when another page sized it
+Scenario: AC-04 edge — settings of earlier versions
+  Given settings.json still has "size", "page.lines" or "page.screenMode"
+  Then they are not used, and the page says once "settings.json: size, page.lines and page.screenMode are no longer used: the active page sizes the pane"
 ```
 
-### AC-05 — Screen mode for full-screen programs [SHOULD / P1]
+### AC-05 — Full-screen programs [SHOULD / P1]
 
 ```gherkin
 Scenario: AC-05 happy path — mc on a phone
-  Given pane %5 (zsh) is shown on a phone whose view holds 48×30 cells at the chosen text size
+  Given pane %5 (zsh) is shown on a phone whose view holds 48×30 cells at the chosen text size, and the pane is sized to it (AC-13)
   When the user runs "mc"
-  Then tmux reports #{alternate_on} 1 with the next frame, the page switches to Screen mode within one frame: it asks terminumd to size the pane to 48×30 ("resize-window -t @2 -x 48 -y 30" for a window of one pane; in a split window the pane is zoomed, "resize-pane -Z", so it gets the whole window, and unzoomed when Screen mode ends; AC-13), draws the grid exactly (no re-flow, no scaling, no history, no widgets), hides the Lines buttons and shows "Screen · mc" in the header
-  And mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
+  Then tmux reports #{alternate_on} 1 with the next frame; the page hides the history and the widgets while it runs and draws its 48×30 grid, blank rows included; mc draws itself for 48×30: both panels fit, the menu bar and function key bar are whole
   When the user presses F10 (the hot keys' Fn row), Esc, arrows, Enter, ⌃O
   Then they reach mc as tmux's key names (AC-03) and mc acts on them
 Scenario: AC-05 edge — a coding agent's own full screen
   Given the shown pane runs Codex, which draws on the alternate screen
-  Then the page stays in Lines mode (Screen mode "auto" is for other programs; "always" still gives the grid): its input box and footer are the page's (AC 40)
+  Then its history and widgets stay (as on the normal screen), and its input box and footer are the page's (AC 40)
 Scenario: AC-05 happy path — the program ends
   When mc exits
-  Then #{alternate_on} is 0, the pane is resized back to its previous size (or left as the policy says, AC-13), the page returns to the Lines mode it had, and the screen shows the shell with its history
-Scenario: AC-05 edge — programs that do not use the alternate screen
-  Given a pane runs less, man, nano or Claude Code (no alternate screen)
-  Then the view stays in Wrap, Grid or Fit, as today; the user can force Screen mode for that pane from the menu ("Screen mode: auto / always / never", remembered per pane)
-Scenario: AC-05 edge — the view changes size
-  Given Screen mode is on
-  When the phone rotates or the keyboard opens
-  Then the pane is resized to the new grid within 300 ms (debounced) and the program redraws; a grid under 20×5 is refused: the view keeps the last size and says "Too small for Screen mode"
-Scenario: AC-05 edge — two clients show the pane
-  Given the Mac's browser shows %5 at 180×50 and the iPhone opens it
-  Then the policy of AC-13 decides the size; the client whose size lost draws the pane as a wider one (below) and says "Sized for another screen (180×50)" until it types
-Scenario: AC-05 edge — a pane wider than the view that this page does not size
-  Given Screen mode is on and the pane is wider than the view at the chosen text size, sized by something else: a session of the user's own tmux only looked at (AC-89), another screen's size, a refused resize
-  When the program draws a frame (at least half of the rows with text on them reach past the columns that fit: mc, htop, an agent with its side panel open; a frame stays one while a third of them still do, so a few long lines do not flip the view)
-  Then it is shown as Fit, or as Grid at the chosen size when Fit would make the text smaller than 7 px (the smallest size the − and + buttons allow; its left part in sight, the rest by scrolling sideways)
-  When its rows end at their text (Codex, a coding agent's full-screen mode, vim, a plain tmux)
-  Then they re-flow as Wrap at the chosen size: Codex in a pane wider than the view is read at the chosen 13 px, not scaled down to about 11 px
-  And Wrap with Screen mode "never" shows a full-screen program wider than the view the same way
-  And a pane this page sizes is drawn as Fit only until its resize lands (no re-flow in between)
-Scenario: AC-05 failure — the resize is refused
-  When "resize-window" answers %error ("size too small", a window the user set manual with a lock)
-  Then the page stays in Screen mode at the pane's own size, drawn as a wider pane (above), and the header says why
+  Then #{alternate_on} is 0 and the screen shows the shell with its history again
 ```
 
-### AC-06 — Mouse and touch in Screen mode [SHOULD / P1]
+### AC-06 — Mouse and touch for full-screen programs [SHOULD / P1]
 
 ```gherkin
 Scenario: AC-06 happy path — click, drag, wheel
-  Given mc runs and asked for mouse events (#{mouse_any_flag} 1)
+  Given mc runs on the alternate screen and asked for mouse events (#{mouse_any_flag} 1)
   When the user clicks cell (10, 5), drags from (10, 5) to (30, 5), or scrolls the wheel
   Then terminumd sends the SGR mouse reports a terminal would ("send-keys -H" of ESC [ < 0;11;6 M, motion and release, buttons 64/65 for the wheel), with the pane's cell coordinates (1-based)
   And mc selects the file, drags the selection, scrolls the panel
@@ -308,7 +286,11 @@ Scenario: AC-06 happy path — touch
   Then a tap is a click at that cell, a swipe is wheel events, a two-finger tap is a right click; a long press selects text as in the terminal (no event sent)
 Scenario: AC-06 edge — the program did not ask for the mouse
   Given a program with #{mouse_any_flag} 0 (vim without "set mouse=a")
-  Then clicks move no cursor and send nothing; a tap opens the keyboard as in the terminal; the wheel scrolls nothing (Screen mode has no history)
+  Then clicks move no cursor and send nothing; a tap opens the keyboard as in the terminal; the wheel scrolls the page
+Scenario: AC-06 edge — coding agents and selection
+  Given Codex on the alternate screen asked for the mouse
+  Then the wheel and a swipe go to it (it scrolls its own transcript), but presses and drags select text as on any page; on any program Shift held while pressing selects text instead of sending the press
+  And on the normal screen nothing is sent: the wheel scrolls the history
 Scenario: AC-06 failure — the report cannot be sent
   When "send-keys -H" answers %error
   Then the event is dropped and the status line says "Mouse event not sent: <error>" once a second at most
@@ -321,8 +303,8 @@ Scenario: AC-07 happy path — new window, new session, split
   Given the page shows pane %3 of window "api" in session "main", folder /Users/alex/work/api
   When the user presses the group's [+] ("New window")
   Then terminumd runs "new-window -a -t main:api -c '/Users/alex/work/api'" and the page shows the new pane within 2 s, placed right after "api"
-  When the user picks "Split right" (or "Split below") from the pane's menu
-  Then terminumd runs "split-window -h -t %3 -c '/Users/alex/work/api'" and the page shows the new pane; the list shows it under the window's first pane
+  When the user picks "Split below", "Split right" or "Split left" from the pane's menu
+  Then the pane's quick shell opens there (AC-88); the page offers no tmux split, and a window of several panes made elsewhere (the user's own tmux, an agent, the `split` message) shows its panes under the window's first one
   When the user presses "New session" at the list's foot and types "scratch"
   Then terminumd runs "new-session -d -s scratch -c ~" and the page shows its pane; a name tmux refuses (empty, with ":" or ".") is refused inline with tmux's message
 Scenario: AC-07 happy path — rename and reorder
@@ -459,6 +441,9 @@ Scenario: AC-12 happy path — rules and live changes
   Then within 1 s (the folder is watched) panes of devbox wear "work", session "notes" wears "paper", others as before; every page redraws without reload
   When the system switches to light mode
   Then themes with a "light" variant switch (the page is told "dark": false); others stay
+Scenario: AC-12 happy path — a color scheme from the menu
+  When the user presses one of the menu's 20 color swatches (Dracula, Solarized Dark and Light, Nord, Gruvbox Dark and Light, One Dark, Monokai, Tokyo Night, Catppuccin Mocha and Latte, GitHub Dark and Light, Tomorrow Night, Night Owl, Ayu Dark, Everforest Dark, Rosé Pine, Kanagawa, Cobalt2)
+  Then the terminal, the page's chrome and the widgets take its background, text, cursor, selection and 16 ANSI colors at once over the session's theme (its font and size stay); the choice is kept in this browser; "Theme" goes back to the session's theme
 Scenario: AC-12 error — a theme that does not parse
   Given "work.json" has a syntax error or a color that is not "#rrggbb"
   Then the page keeps the last good theme, shows "Theme work.json: line 7: expected a color" once as a toast, and terminumd logs it; a rule naming a missing theme uses the default and says so
@@ -469,33 +454,26 @@ Scenario: AC-12 edge — the Files panel and the View window
 ### AC-13 — Sizing [MUST / P0]
 
 ```gherkin
-Scenario: AC-13 happy path — a pane follows its client
-  Given settings.json has {"size": "latest"} (the default)
+Scenario: AC-13 happy path — the active page sizes the pane
   When the Mac's browser opens %3 in a window that holds 180×50 cells
   Then terminumd runs "resize-window -t @2 -x 180 -y 50" (window-size manual) and the program lays itself out for 180 columns
-  When the iPhone opens %3 and types
-  Then the window is resized to the phone's 48×30; the Mac's view shows the 48-column grid in Wrap (nothing to re-flow) until it types, then the window is 180×50 again; a client that only reads never resizes; a pane is resized at most once a second per client, and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size: each narrowing re-wraps the pane, and a program that redraws, such as Claude Code, leaves its old top lines in the history)
-Scenario: AC-13 edge — the client that typed last is put away
-  Given the iPhone typed last in %3 (the window is 103×21) and the Mac's browser shows %3 too
+  When the iPhone opens %3 (its page in sight) or types there
+  Then the window is resized to the phone's 48×30; the Mac's view draws the 48-column grid as it is until the Mac's page is the active one again
+  When the Mac's browser window comes to the front (focus) or its page types
+  Then the window is 180×50 again; a page sizes on opening the pane, on becoming the active page (in sight and, on a computer, focused), and on typing; a change of its view's size (a split, a dragged edge, the keyboard, the phone's toolbar) resizes only a window this page already sizes or nobody does, so a phone's toolbar never takes the window from the Mac being typed on; a pane is resized at most once a second per client, and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size: each narrowing re-wraps the pane, and a program that redraws, such as Claude Code, leaves its old top lines in the history, as it does on each switch between pages of different sizes)
+Scenario: AC-13 edge — the page that sized it is put away
+  Given the iPhone sized %3 (the window is 103×21) and the Mac's browser shows %3 too
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
-  Then the window goes to the Mac's view at once, without a key (a split, a dragged edge and every later change of the Mac's view size it), and a hidden page's new size takes nothing; the iPhone takes it back when it types again; under "largest" a hidden page does not count
-Scenario Outline: AC-13 happy path — policies
-  Given settings.json has {"size": "<policy>"}
-  Then "<effect>"
-  Examples:
-    | policy  | effect                                                                                  |
-    | latest  | the client that typed last sizes the pane (default)                                     |
-    | largest | the largest client showing the pane sizes it; others read it in Wrap or Fit             |
-    | manual  | nothing resizes by itself; the menu's "Fit to this screen" does, until "Restore size"   |
-Scenario: AC-13 happy path — Fit to this screen and restore
-  When the user picks "Fit to this screen" from the menu
-  Then the pane is resized to this view's grid now, the menu item becomes "Restore size", and leaving the pane or the page restores the size it had
+  Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing
+Scenario: AC-13 edge — a window of several panes
+  Given %3's window holds two panes (split by the user's own tmux, an agent, or restored, AC-15)
+  Then no page resizes it: each pane is drawn at its own size, scaled to the view when wider (AC-04)
 Scenario: AC-13 edge — another tmux client is attached
   Given the user ran "tmux -L terminum attach -t main" in Terminal.app, or iTerm2's "tmux -CC -L terminum attach"
   Then terminumd's control client is attached with "-f ignore-size" (AS-02) and "window-size manual" on the windows it sizes: both clients see the size terminumd set; a window no page shows keeps tmux's own policy (latest) for that client
 Scenario: AC-13 failure — the resize is refused
   When "resize-window" answers %error
-  Then the view draws the pane as a wider one (AC-05) with "Sized for another screen (<cols>×<rows>)" and the log has the error; nothing is retried faster than once a second
+  Then the view draws the pane as a wider one (AC-04) with "Sized for another screen (<cols>×<rows>)" and the log has the error; nothing is retried faster than once a second
 ```
 
 ### AC-14 — Lifecycle [MUST / P0]
@@ -528,13 +506,15 @@ Scenario: AC-15 happy path — checkpoint and restore
   Then terminumd writes "state/layout.json" within 5 s of a change: sessions, windows (name, index, #{window_layout}), panes (folder, the program's kind: shell, ssh <recipe>, other), hosts
   When the Mac reboots and terminumd starts with no local tmux server (or that server has no session)
   Then before any page connects it recreates "main" and "notes" with shells at the saved folders (a missing folder opens in ~ with a note), applies each window's layout string ("select-layout"), attaches "devbox" again (its session survived on the host) and writes a report
-  And the first page shows "Restored 2 sessions, 4 windows. 1 pane ran ssh devbox: start it again" with the pane's row linked
+  And the first page shows "Restored 2 sessions, 4 windows. 1 pane ran ssh devbox: start it again" with the pane's row linked; × closes it on every page; it goes by itself after 30 s and a page that connects more than 10 minutes later does not get it
 Scenario: AC-15 happy path — tmux killed, a host's tmux started anew, the user's own tmux
   Given the checkpoint also keeps, by server, host devbox's "terminum" session and the sessions of the user's own tmux attached by name (AC 89), here and on hosts (windows, layouts, folders)
   When terminum's tmux server is killed while terminumd runs (the same boot)
   Then terminumd makes its sessions again as after a reboot, with the report
-  When devbox's tmux starts anew (a reboot of the host, its server killed) and devbox is attached again
+  When devbox's tmux starts anew (a reboot of the host, its server killed: #{start_time} after the checkpoint) and devbox is attached again
   Then its "terminum" session gets its windows back in their folders on the host (its fresh first window goes), and the user's sessions attached there that no longer run are made again
+  When the user closes the last window of devbox's "terminum" session while devbox's tmux runs (another session keeps it)
+  Then terminumd makes the session anew with one shell and restores nothing: what the user closed stays closed
   When the server of the user's own tmux on this Mac does not run (a reboot, it was killed)
   Then the sessions attached from it are made again with their windows and folders (once per checkpoint); a session the user closed while that server runs stays closed
   And a host or a server that cannot be read keeps what the checkpoint held for it
@@ -612,9 +592,14 @@ Scenario Outline: AC-19 error — a setting that is wrong
   Then the page keeps the default for that key and shows a toast "<message>" once; terminumd logs it
   Examples:
     | value                         | message                                                   |
-    | {"size": "biggest"}           | settings.json: size must be latest, largest or manual     |
+    | {"size": "manual"}            | settings.json: size, page.lines and page.screenMode are no longer used: the active page sizes the pane |
     | {"page": {"textSize": 300}}   | settings.json: page.textSize must be 8–40                 |
     | {not json                     | settings.json: line 1: expected a value                   |
+Scenario: AC-19 happy path — the menu's Markdown size and history lines
+  When the user steps "Markdown size" (10–32 px; settings.json page.markdownSize is the default, 14)
+  Then rendered Markdown (widgets, sent history, reminders, Files and View) takes it at once; the step is kept in this browser
+  When the user sets "History lines" (1000–1000000)
+  Then terminumd writes tmux.history in settings.json and sets tmux's history-limit on terminum's tmux server: terminals opened from then on keep that many lines; a change of tmux.history in the file does the same
 Scenario: AC-19 edge — nothing is refused silently
   Then every key of settings.json is listed in section 9; an unknown key is reported once ("settings.json: unknown key foo") and ignored
 ```
@@ -637,6 +622,8 @@ Scenario: AC-20 failure — a budget is missed
 ### AC-88 — Quick shell [SHOULD / P1]
 
 ```gherkin
+Scenario: AC-88 edge — the split's buttons
+  Then a computer splits with the header's button (and ⌘D, ⌘⇧D, the menu's Split below, right, left), a phone with the button under the magnifier; a split's page shows none of the terminal's floating buttons
 Scenario: AC-88 happy path — open, use, close
   Given the page on a computer shows pane %3 (claude) in /Users/alex/work/api
   When the user presses the quick shell button in the header (or "Quick shell below" / "Quick shell on the left" in the menu)
@@ -752,24 +739,17 @@ sequenceDiagram
 
 `%output` is the wake-up; the content comes from `capture-pane`, so terminumd never interprets escape sequences other than SGR in the capture. Captures are coalesced to one per 33 ms per shown pane; a pane nobody shows is never captured.
 
-### Lines modes and Screen mode (AC-04, AC-05, AC-13)
+### Who sizes a pane (AC-04, AC-13)
 
 ```mermaid
 stateDiagram-v2
-  [*] --> Wrap
-  Wrap --> Grid: user picks Grid
-  Grid --> Fit: user picks Fit
-  Fit --> Wrap: user picks Wrap
-  Wrap --> Screen: alternate_on=1 (auto) or "always"
-  Grid --> Screen: alternate_on=1
-  Fit --> Screen: alternate_on=1
-  Screen --> Wrap: alternate_on=0, mode was Wrap
-  Screen --> Grid: alternate_on=0, mode was Grid
-  Screen --> Fit: alternate_on=0, mode was Fit
-  note right of Screen: resize-window to the view's grid; keys by name; mouse reports (AC-06)
+  [*] --> Sized: a page opens the pane (nobody sizes it, or it is the active page)
+  Sized --> Sized: the sizing page's view changes; it types
+  Sized --> Other: another page becomes active (focus, in sight) or types there
+  Other --> Sized: this page becomes active again or types
+  Sized --> Other: this page is hidden: a page still looking takes it at once
+  note right of Other: drawn as it is; scaled to the width when wider (7 px at least)
 ```
-
-Screen mode is entered from any Lines mode when tmux reports the alternate screen and left back into the mode the user had. The pane is resized to the view on entry and restored on exit as the size policy says.
 
 ### Install, run and restart (AC-08, AC-14, AC-16)
 
@@ -885,7 +865,7 @@ WebSocket messages, page → terminumd (`t` names iterm-enhancer's where they ex
 | `sub` | `id` | show pane `id` (`tmux:local:default:%3`) |
 | `in` | `data`, `k?` | type `data` (text with escape sequences; terminumd splits text and named keys) |
 | `paste` | `data` | paste through a tmux buffer (bracketed unless `bracket: false`) |
-| `mouse` | `x, y, button, action, mods`, `count` (wheel steps, 1–100) | a mouse report in Screen mode |
+| `mouse` | `x, y, button, action, mods`, `count` (wheel steps, 1–100) | a mouse report to a full-screen program (AC-06) |
 | `more` | `before, to?` | older history lines |
 | `size` | `cols, rows, typing` | the view's grid; typing says the client acted (policy `latest`) |
 | `fit`, `unfit` | `cols, rows` | Fit to this screen, Restore size |
@@ -923,7 +903,7 @@ A screen frame (unchanged from iterm-enhancer's `screen.py`): `{"t":"screen","si
 | History | absolute line `a` of the screen's top = rows tmux dropped + `history_size`; while it grows, the rows that scrolled off are appended; at the limit tmux drops its oldest tenth before adding a row, so the rows that scrolled off are the fewest consistent with the new count (the screen's shift decides between counts a tenth apart); a shrink no trim explains (a clear) or a new width (a re-wrap, AS-09) resets the page's history (OQ-05); a redraw in place is no scroll; `more` asks the bulk client `capture-pane -p -e -J -S -<n> -E -<m>` |
 | Typing | `send-keys -t %N -l '<text>'` for text runs, `send-keys -t %N <names…>` for named keys (`S-Enter`, `C-Enter` with `extended-keys on`, `extended-keys-format csi-u`, AS-10), `send-keys -H` only for mouse reports built from terminumd's own tables (SGR when `#{mouse_sgr_flag}`, else X10) and for Shift/Ctrl+Enter on a server with `extended-keys off` (AC-03 edge), never for bytes from the page; a queue per client, one command in flight, later keys coalesced |
 | Paste | the page sends a paste as `in` data (bracketed by the page when on); text over 1 KB or holding a newline goes through a buffer: on the Mac `load-buffer -b tm-<n> <0600 file in TM_APP_DIR>` then `paste-buffer -p -d -b tm-<n> -t %N` (`-p` when the page bracketed it, the markers stripped); on a host through the agent's file when its files are enabled, else `set-buffer` in 64 KB parts |
-| Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R` (a window of one pane), `resize-pane -Z` for Screen mode in a split window; at most once a second per client, the newest held-back size only; the policy of AC-13; restore on `unfit`, pane switch, page close |
+| Sizing | `set-option -w -t @W window-size manual` then `resize-window -t @W -x C -y R` (a window of one pane), a window of several panes is never resized; at most once a second per client, the newest held-back size only; the policy of AC-13; restore on `unfit`, pane switch, page close |
 | Sessions | `list-panes -a -F '#{session_name}␉#{window_index}␉#{window_id}␉#{window_name}␉#{automatic-rename}␉#{pane_id}␉#{pane_index}␉#{pane_title}␉#{pane_current_command}␉#{pane_current_path}␉#{alternate_on}␉#{pane_active}'` every 2 s while a page looks and at once (coalesced 100 ms) on `%window-*`, `%layout-change`, `%session*` notices; the agent's state from the last 25 rows of its screen, read only when its title changed or 6 s passed |
 | Key | `tmux:<host>:<socket>:%N`; `local` for this Mac; the socket name (`default`) |
 
@@ -972,7 +952,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 | `attach` | `{}` | `{"default": ["work"]}` | sessions of the user's own tmux servers on this Mac by `-L` socket ("default": plain `tmux`); a host's are `hosts.<name>.attach` (terminum-remote.md); at most 32 in all (AC-89) |
 | `tmux.history` | `12000` | `20000` | `history-limit` written into `~/.terminum/tmux.conf` (TM_HISTORY plus a margin) |
 | `TM_HISTORY` | `10000` | `20000` | lines a page may load |
-| `size` | `latest` | `largest` | sizing policy (AC-13) |
+| `size`, `page.lines`, `page.screenMode` | — | — | no longer used (AC-04): reported once |
 | `restore` | `true` | `false` | reboot restore (AC-15) |
 | `themes.*` | local, hosts `*` remote | — | theme rules (AC-12) |
 | `page.*` | `textSize 13, lines wrap, screenMode auto` | — | page defaults (AC-19) |
@@ -1022,7 +1002,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 | tmux history | `history-limit` 12,000 in terminumd's tmux.conf (AS-04) | tmux drops the oldest; numbering per OQ-05 |
 | Paste | 1 MB | refused: "Paste is larger than 1 MB" |
 | A set-buffer command | 64 KB | split into parts |
-| Screen mode grid | at least 20×5 | "Too small for Screen mode"; the last size kept |
+| A page's grid | at least 20×5 | the last size kept |
 | Resizes per client | 1 a second | later ones wait for the next second |
 | New sessions, windows, splits per client | 1 a second | "Wait a second" in the status line |
 | Pages per terminumd | 100 WebSockets (iterm-enhancer's 100 windows, AC 41) | the 101st is refused with 503 "Too many pages" |
@@ -1081,7 +1061,7 @@ Order across the four specs: this stage 1, then `terminum-files.md` stage 1 (the
 | Stage | Cases | What a user can do once it ships | Effort |
 |---|---|---|---|
 | Stage 1 (fast lane) | AC-01, AC-02, AC-03, AC-07, AC-08, AC-09, AC-13, AC-14 | Install, open the page in a browser, see the tmux sessions, open a pane sized for the screen it is read on (policy `latest`; `largest` and `manual` follow in stage 2), type, create and close panes; terminumd survives crashes; nothing reachable without a sign-in. Exit: the stage 1 spike's encoder matches iterm-enhancer's frames on 20 fixtures; `scripts/bench_echo.py` p50 under the iTerm2 path's | — |
-| Stage 2 | AC-04, AC-05, AC-12, AC-20 | Wrap, Grid, Fit and Screen mode; panes sized for the screen they are read on; themes; budgets met | — |
+| Stage 2 | AC-04, AC-05, AC-12, AC-20 | The pane as tmux has it, full-screen programs; panes sized for the screen they are read on; themes; budgets met | — |
 | Stage 3 | AC-10, AC-18, AC-19 | Phones over the network; hot keys; customization | — |
 | Stage 4 | AC-06, AC-15, AC-16, AC-17 | Mouse in full-screen programs; reboot restore; upgrades, rollback, update notice | — |
 

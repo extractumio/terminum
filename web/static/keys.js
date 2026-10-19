@@ -31,6 +31,8 @@ function baseChar(e) {
 
 // Returns the bytes for e, or null to let the browser handle it (text input, Cmd shortcuts).
 export function encodeKey(e, appCursor) {
+  // Option+↑/↓ and ⌘↑/↓ are Page Up and Page Down, as the Mac's own terminals page with them
+  if ((e.altKey || e.metaKey) && !e.shiftKey && !e.ctrlKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) return `${ESC}[${e.key === "ArrowUp" ? 5 : 6}~`;
   if (e.metaKey) return null;
   const m = modParam(e);
   const k = e.key;

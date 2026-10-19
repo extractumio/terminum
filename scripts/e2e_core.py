@@ -167,18 +167,27 @@ def main():
         check("AC-06 clicks and the wheel arrive as SGR mouse reports (1-based cells), a count as that many, in order with a key",
               "MOUSE <0;10;5M<0;10;5m<65;3;4M<65;3;4M<65;3;4Mk<64;3;4M" in line, line.strip()[-80:])
 
-        # AC-13: a second page that types takes the size
+        # AC-13: a second page that opens the pane sizes it; the first takes it back once active again
         other = t.page()
         other.until(lambda m: m["t"] == "layout", 5)
         other.send({"t": "sub", "id": first["id"]})
         other.send({"t": "size", "cols": 48, "rows": 30, "typing": False})
-        time.sleep(1.2)
-        check("AC-13 a page that only reads never resizes", "80x24" in tmux("display", "-p", "-t", first["id"].rsplit(":", 1)[-1], "#{window_width}x#{window_height}"))
-        other.send({"t": "in", "data": " "})
         mine = other.until(lambda m: m["t"] == "sized" and m["mine"], 5)
-        check("AC-13 the page that typed last sizes the pane", mine and (mine["cols"], mine["rows"]) == (48, 30), mine)
+        check("AC-13 the page that opens the pane sizes it", mine and (mine["cols"], mine["rows"]) == (48, 30), mine)
         theirs = ws.until(lambda m: m["t"] == "sized" and not m["mine"], 5)
         check("AC-13 the other page is told it was sized for another screen", theirs is not None)
+        other.send({"t": "size", "cols": 50, "rows": 30, "typing": False})
+        own = other.until(lambda m: m["t"] == "sized" and m["mine"], 5)
+        check("AC-13 the page that sizes it follows its own view's change", own and own["cols"] == 50, own)
+        ws.send({"t": "resume"})
+        back = ws.until(lambda m: m["t"] == "sized" and m["mine"], 5)
+        other.send({"t": "size", "cols": 52, "rows": 30, "typing": False})
+        time.sleep(1.5)
+        check("AC-13 a page that becomes active again sizes it back; the other's view change then takes nothing",
+              back and "80x24" in tmux("display", "-p", "-t", first["id"].rsplit(":", 1)[-1], "#{window_width}x#{window_height}"), back)
+        other.send({"t": "in", "data": " "})
+        typed = other.until(lambda m: m["t"] == "sized" and m["mine"], 5)
+        check("AC-13 the page that types sizes it", typed and (typed["cols"], typed["rows"]) == (52, 30), typed)
         other.close()
 
         # AC-14: the tmux server goes away

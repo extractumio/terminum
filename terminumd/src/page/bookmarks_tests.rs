@@ -204,7 +204,7 @@ fn the_cap_and_a_failed_write_keep_nothing_half_saved() {
     let d = Dir::new();
     let mut s = Store::load(d.file());
     for k in 0..MAX_ITEMS {
-        s.items.push(Item { id: k.to_string(), key: None, created: None, n: 0, text: String::new(), note: String::new(), title: String::new(), host: None, at: 0, remind: false, due: false, resolved: None });
+        s.items.push(Item { id: k.to_string(), key: None, created: None, n: 0, text: String::new(), note: String::new(), title: String::new(), host: None, at: 0, remind: false, due: false, resolved: None, dir: None });
     }
     assert!(s.add(mark("k", 1, "x", "")).unwrap_err().0.contains("at most"));
     let mut s = Store::load(d.file());
@@ -255,15 +255,15 @@ fn a_reminder_comes_up_at_each_turns_end_until_resolved() {
     let r = s.add(NewMark { remind: true, ..mark(k, 4, "the retry loop", "check it") }).unwrap();
     let b = s.add(mark(k, 5, "a bookmark", "")).unwrap();
     s.add(NewMark { remind: true, ..mark("tmux:local:terminum:%2", 1, "other", "") }).unwrap();
-    let up = s.due(&[k.to_string()]).unwrap();
+    let up = s.due(&ended(k)).unwrap();
     assert_eq!(up.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), [r.id.as_str()], "its pane's reminders, not a bookmark or another pane's");
-    assert!(s.due(&[k.to_string()]).unwrap().is_empty(), "up already");
+    assert!(s.due(&ended(k)).unwrap().is_empty(), "up already");
     assert!(Store::load(d.file()).get(&r.id).unwrap().due, "kept across a restart");
     assert!(!s.settle(&r.id, false).unwrap().due, "closed");
-    assert_eq!(s.due(&[k.to_string()]).unwrap().len(), 1, "up again at the next turn's end");
+    assert_eq!(s.due(&ended(k)).unwrap().len(), 1, "up again at the next turn's end");
     let done = s.settle(&r.id, true).unwrap();
     assert!(done.resolved.is_some() && !done.due);
-    assert!(s.due(&[k.to_string()]).unwrap().is_empty(), "resolved: never again");
+    assert!(s.due(&ended(k)).unwrap().is_empty(), "resolved: never again");
     let made = s.set_note(&b.id, "now".into(), Some(true)).unwrap();
     assert!(made.remind && made.note == "now", "a bookmark made a reminder, its note changed, saved once");
     assert!(s.set_note(&r.id, String::new(), Some(true)).unwrap().resolved.is_some(), "the same kind: as it was");
@@ -271,4 +271,22 @@ fn a_reminder_comes_up_at_each_turns_end_until_resolved() {
     assert!(s.set_note(&r.id, String::new(), Some(true)).unwrap().resolved.is_none(), "made a reminder again: open");
     let wire = b.wire();
     assert!(wire.get("remind").is_none() && wire.get("due").is_none(), "a bookmark's file entry is as before");
+}
+
+/// Pane `k` ended a turn in a folder no reminder of these tests has.
+fn ended(k: &str) -> Vec<(String, Option<String>, String)> {
+    vec![(k.to_string(), None, "/elsewhere".into())]
+}
+
+#[test]
+fn a_reminder_of_a_project_comes_up_when_any_of_its_sessions_ends_a_turn() {
+    let d = Dir::new();
+    let mut s = Store::load(d.file());
+    let r = s.add(NewMark { remind: true, dir: Some("/Users/alex/api".into()), ..mark("tmux:local:terminum:%1", 4, "retry", "") }).unwrap();
+    let other = s.add(NewMark { remind: true, dir: Some("/Users/alex/web".into()), ..mark("tmux:local:terminum:%1", 5, "css", "") }).unwrap();
+    let up = s.due(&[("tmux:local:terminum:%7".into(), None, "/Users/alex/api".into())]).unwrap();
+    assert_eq!(up.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), [r.id.as_str()], "another session of the project, not another folder");
+    assert!(s.due(&[("tmux:devbox:default:%1".into(), Some("devbox".into()), "/Users/alex/web".into())]).unwrap().is_empty(), "the same folder on another host is another project");
+    assert!(!s.get(&other.id).unwrap().due);
+    assert_eq!(Store::load(d.file()).get(&r.id).unwrap().dir.as_deref(), Some("/Users/alex/api"), "kept");
 }

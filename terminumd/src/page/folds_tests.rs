@@ -60,7 +60,7 @@ fn a_tools_output_with_blank_lines_its_long_command_and_blank_runs_fold() {
     ]));
     let found = spans(&folds(&r, true));
     let out = found.iter().find(|f| f.2.contains("of output")).expect("an output fold");
-    assert_eq!(r[out.0 - 9].0, "  ⎿  #!/usr/bin/env bash", "its line and the output's first 8 lines stay");
+    assert_eq!(r[out.0 - 3].0, "  ⎿  #!/usr/bin/env bash", "its line and the output's first 2 lines stay: a summary");
     assert_eq!(out.1, 3 + 1 + script.len() - 1, "to the output's last line, over its blank lines");
     let at = |t: &str| r.iter().position(|(x, _)| x == t).unwrap();
     let cmd = (at("      break; fi; sleep 10; done; if [ $ok = 0 ]; then echo TIMEOUT; exit 3; fi; echo unlocked;"),
@@ -89,7 +89,7 @@ fn an_output_scrolling_in_at_a_blank_line_folds_whole() {
     let first = h.scan(SCAN_EVERY);
     h.take(cut as i64, lines[cut..].to_vec(), false);
     let later: Vec<(i64, i64)> = h.scan(2.0 * SCAN_EVERY).iter().map(|f| (f.n, f.to)).collect();
-    assert_eq!((first, later), (vec![], vec![(10, script.len() as i64)]));
+    assert_eq!((first, later), (vec![], vec![(4, script.len() as i64)]));
 }
 
 #[test]
@@ -111,7 +111,7 @@ fn a_written_file_and_a_long_command_and_output() {
     assert_eq!(spans(&folds(&cmd, true)), one(2, 11, "⋯ 10 more lines of the command"));
     let cc: Vec<String> = (0..30).map(|k| format!("     cc file{k}.c -o file{k}.o")).collect();
     let out = rows(&cat(&[&s(&["⏺ Bash(make)", "  ⎿  cc a.c"]), &cc, &s(&["", "⏺ Built."])]));
-    assert_eq!(spans(&folds(&out, true)), one(10, 31, "⋯ 22 more lines of output"));
+    assert_eq!(spans(&folds(&out, true)), one(4, 31, "⋯ 28 more lines of output"));
 }
 
 #[test]
@@ -275,4 +275,14 @@ fn only_a_told_fold_or_a_part_of_it_may_be_unfolded() {
     assert!(!h.told(1, 5), "not a fold it was told of");
     assert!(h.told(3, 14) && h.told(6, 14), "the fold, or its part whose top was dropped");
     assert!(!h.told(0, 14), "more than the fold");
+}
+
+#[test]
+fn codexs_tool_output_folds_to_a_summary_too() {
+    let mut lines = vec!["• Ran cargo test".to_string(), "  └ running 403 tests".to_string()];
+    lines.extend((0..30).map(|k| format!("    test t{k} ... ok")));
+    lines.extend(["".to_string(), "• All 403 pass.".to_string()]);
+    let r = rows(&lines);
+    let found = spans(&folds(&r, true));
+    assert_eq!(found, one(4, 31, "⋯ 28 more lines of output"), "the command, its first output line and 2 more stay");
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Checks of sizing (AC-13), Screen mode (AC-05) and the mouse in it (AC-06) against a fake
-// terminumd (fake.mjs), at a wide and a phone size: the size messages and when they go, the
-// switch on the alternate screen and the menu's choice per pane, too small a view, a pane
-// sized for another screen, and the mouse reports of clicks, drags, the wheel and taps.
+// Checks of sizing (AC-13), the pane as tmux has it (AC-04), full-screen programs (AC-05) and the
+// mouse for them (AC-06) against a fake terminumd (fake.mjs), at a wide and a phone size: the
+// size messages and when they go, the alternate screen, too small a view, a wider pane scaled, a
+// pane sized for another screen, and the mouse reports of clicks, drags, the wheel and taps.
 
 import { check, runningIn } from "./check.mjs";
 import { drawn, LAYOUT, line, openPage, pause, SIZES } from "./fake.mjs";
@@ -32,7 +32,7 @@ export async function webScreen(browser, name) {
 
     const subAt = sent.findIndex((m) => m.t === "sub"), first = sizes()[0], want = await fits();
     check("AC-13 size: after opening a pane the page sends the grid that fits its terminal at the chosen text size",
-      sent.indexOf(first) > subAt && first.typing === false && first.screen === false && Math.abs(first.cols - want.cols) <= 1
+      sent.indexOf(first) > subAt && first.typing === false && !("screen" in first) && Math.abs(first.cols - want.cols) <= 1
         && Math.abs(first.rows - want.rows) <= 1, JSON.stringify({ first, want }));
     // until the view's sizes settle (a slow browser lays the page out late), then type
     for (let n = -1; n !== sizes().length;) { n = sizes().length; await pause(page, 600); }
@@ -53,41 +53,19 @@ export async function webScreen(browser, name) {
     check("AC-13 size: a bigger text size sends the smaller grid, 300 ms after the last change",
       early === n0 + 1 && sizes().length === n0 + 2 && bigger.cols < first.cols && bigger.typing === false, JSON.stringify({ early, bigger }));
 
-    // Screen mode on the alternate screen, and back
+    // a full-screen program on the alternate screen: its grid alone, and back
     frame({ alt: true });
     await pause(page, 200);
-    frame({ alt: true, cols: sizes().at(-1).cols });   // terminumd sized the pane to this view
-    await pause(page, 200);
-    const on = await page.evaluate(() => ({ body: document.body.classList.contains("screenmode"), label: document.getElementById("scrlabel").textContent,
-      labelShown: !document.getElementById("scrlabel").hidden, hist: getComputedStyle(document.getElementById("hist")).display,
-      lines: [...document.querySelectorAll(".lines-mode")].every((e) => getComputedStyle(e).display === "none"),
-      grid: document.getElementById("term").classList.contains("grid") }));
-    const onSize = sizes().at(-1);
+    const on = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"),
+      hist: getComputedStyle(document.getElementById("hist")).display, modes: document.querySelectorAll("[data-mode], [data-screen], #resize, #scrlabel").length }));
     frame({ alt: false });
     await pause(page, 200);
-    const off = await page.evaluate(() => ({ body: document.body.classList.contains("screenmode"), wrap: document.getElementById("term").classList.contains("wrap"),
-      label: document.getElementById("scrlabel").hidden }));
-    check("AC-05 Screen mode: the alternate screen switches it on (grid, no history, no Lines buttons, \"Screen · claude\"), sized with screen: true",
-      on.body && on.labelShown && on.label === "Screen · claude" && on.hist === "none" && on.lines && on.grid && onSize.screen === true, JSON.stringify({ on, onSize }));
-    check("AC-05 Screen mode: off the alternate screen the Lines mode it had is back, sized with screen: false",
-      !off.body && off.wrap && off.label && sizes().at(-1).screen === false, JSON.stringify(off));
+    const off = await page.evaluate(() => ({ full: document.getElementById("term").classList.contains("fullscreen"), hist: getComputedStyle(document.getElementById("hist")).display }));
+    check("AC-05 a full-screen program hides the history; no view modes, Screen mode or Fit to this screen are offered",
+      on.full && on.hist === "none" && on.modes === 0, JSON.stringify(on));
+    check("AC-05 off the alternate screen the history is back", !off.full && off.hist !== "none", JSON.stringify(off));
 
-    // the menu's choice, remembered per pane
-    await page.click("#menubtn");
-    await page.click('#menu [data-screen="always"]');
-    await page.keyboard.press("Escape");
-    await pause(page);
-    const always = { msg: sent.filter((m) => m.t === "screenmode").at(-1), on: await page.evaluate(() => document.body.classList.contains("screenmode")) };
-    await page.evaluate(() => document.querySelector('#sessions .item[data-id="tmux:local:terminum:%2"]').click());
-    await pause(page, 300);
-    const other = await page.evaluate(() => document.body.classList.contains("screenmode"));
-    await page.evaluate((id) => document.querySelector(`#sessions .item[data-id="${id}"]`).click(), SID);
-    await pause(page, 300);
-    const back = { on: await page.evaluate(() => document.body.classList.contains("screenmode")), msg: sent.filter((m) => m.t === "screenmode").at(-1) };
-    check("AC-05 Screen mode: \"Always\" in the menu turns it on for that pane only, and is remembered for it",
-      always.msg?.mode === "always" && always.on && !other && back.on && back.msg.mode === "always", JSON.stringify({ always, other, back }));
-
-    // the mouse in Screen mode
+    // the mouse for a full-screen program
     frame({ alt: true, mouse: true });
     await pause(page, 200);
     const at = (x, y) => page.evaluate(([x, y]) => {
@@ -116,6 +94,12 @@ export async function webScreen(browser, name) {
       check("AC-06 mouse: a click, a drag, a right click and the wheel go to the program with 0-based cells",
         got.filter((e) => !e.startsWith("move")).join() === ["press:0@10,1", "release:0@10,1", "press:0@10,1", "release:0@14,1", "press:2@10,1",
           "release:2@10,1", "wheelup:0@10,1", "wheeldown:0@10,1"].join() && got.includes("move:0@14,1") && shift?.mods?.shift === false, JSON.stringify(got));
+      const n4 = mice().length;
+      await page.keyboard.down("Shift");
+      await page.mouse.click(a.x, a.y);
+      await page.keyboard.up("Shift");
+      await pause(page);
+      check("AC-06 mouse: Shift held selects text instead (no press sent)", mice().length === n4, JSON.stringify(mice().slice(n4)));
       // a trackpad: 24 small events, 120 px in all, are a step a text line, sent as one message
       const n2 = mice().length;
       const lines = await page.evaluate(([x, y]) => {
@@ -159,41 +143,31 @@ export async function webScreen(browser, name) {
     await pause(page);
     check("AC-06 mouse: a program that did not ask for the mouse gets no events", mice().length === n2);
 
-    // a pane wider than the view: waiting for this view's size, Fit; one this page does not size
-    // (a session of the user's own tmux only looked at, AC-89): text re-flows at the chosen size,
-    // a frame is Fit, or Grid past 7 px, and stays one while a third of its rows still reach past
-    const wide = (cols, txt) => frame({ alt: true, mouse: false, cols, ch: ROWS.map((_, i) => [i, line(txt(i, cols))]) });
+    // a pane wider than the view (one this page does not size, AC-89): scaled to the view's
+    // width down to 7 px, past that at the chosen size, scrolling sideways
+    const wide = (cols) => frame({ alt: false, mouse: false, cols, ch: ROWS.map((_, i) => [i, line(`${i}`.padEnd(cols, "x"))]) });
     const shown = () => page.evaluate(() => {
       const t = document.getElementById("term"), cs = getComputedStyle(t);
-      return { wrap: t.classList.contains("wrap"), px: parseFloat(cs.fontSize), size: parseFloat(cs.getPropertyValue("--size")), sideways: t.scrollWidth > t.clientWidth + 1 };
+      return { px: parseFloat(cs.fontSize), size: parseFloat(cs.getPropertyValue("--size")), sideways: t.scrollWidth > t.clientWidth + 1 };
     });
-    const look = async (cols, txt) => { wide(cols, txt); await pause(page, 200); return shown(); };
-    const text = (i) => `• Ran cat plugin/src/vpatch-frozen.ts ${i}`, box = (i, cols) => `│${String(i).padEnd(cols - 2, "─")}│`;
-    const waiting = await look(200, text);
+    const look = async (cols) => { wide(cols); await pause(page, 200); return shown(); };
     f.say({ t: "layout", groups: [{ ...LAYOUT[0], attached: "default" }, ...LAYOUT.slice(1)] });
     await pause(page);
-    const reflowed = await look(210, text), framed = await look(120, box);
-    const third = await look(120, (i, cols) => (i < 2 ? box(i, cols) : text(i))), less = await look(120, (i, cols) => (i < 1 ? box(i, cols) : text(i)));
-    const huge = await look(600, box);
-    check("AC-05 Screen mode: a wider pane waiting for this view's size is Fit; one it does not size shows text re-flowed at the chosen size, a frame as Fit (Grid under 7 px)",
-      !waiting.wrap && reflowed.wrap && reflowed.px === reflowed.size && !framed.wrap
-        && (phone ? framed.px === framed.size && framed.sideways : framed.px < framed.size && framed.px >= 7)
-        && !huge.wrap && huge.px === huge.size && huge.sideways, JSON.stringify({ waiting, reflowed, framed, huge }));
-    check("AC-05 Screen mode: a frame stays one while a third of its rows reach past the view, and re-flows under that",
-      !third.wrap && less.wrap, JSON.stringify({ third, less }));
+    const scaled = await look(phone ? 60 : 160), huge = await look(600);
+    check("AC-04 a pane wider than the view is scaled to its width (7 px at least); wider still, the chosen size with sideways scrolling",
+      scaled.px < scaled.size && scaled.px >= 7 && !scaled.sideways && huge.px === huge.size && huge.sideways, JSON.stringify({ scaled, huge }));
     f.say({ t: "layout", groups: LAYOUT });
     frame({ alt: true, mouse: false });
 
-    // sized for another screen: said, and drawn as a wider pane, until this page types
+    // sized for another screen: said, and drawn as it is, until this page types
     f.say({ t: "sized", sid: SID, cols: 180, rows: 50, mine: false });
     await pause(page);
-    const sized = await page.evaluate(() => ({ text: document.getElementById("sized").textContent, shown: !document.getElementById("sized").hidden,
-      wrap: document.getElementById("term").classList.contains("wrap") }));
+    const sized = await page.evaluate(() => ({ text: document.getElementById("sized").textContent, shown: !document.getElementById("sized").hidden }));
     await page.evaluate(() => document.getElementById("kbd").focus());
     await page.keyboard.type("x");
     await pause(page);
-    check("AC-13 sized: another screen's size is said, its text re-flowed, until this page types",
-      sized.shown && sized.text === "Sized for another screen (180×50)" && sized.wrap && await page.isHidden("#sized"), JSON.stringify(sized));
+    check("AC-13 sized: another screen's size is said until this page types",
+      sized.shown && sized.text === "Sized for another screen (180×50)" && await page.isHidden("#sized"), JSON.stringify(sized));
     f.say({ t: "sized", sid: SID, cols: 180, rows: 50, mine: true, error: "size too small" });
     await pause(page);
     const refused = await page.evaluate(() => !document.getElementById("sized").hidden && document.getElementById("sized").textContent);
@@ -202,7 +176,7 @@ export async function webScreen(browser, name) {
     check("AC-13 sized: a refused resize is said with tmux's reason; this page's own size clears it",
       refused === "Sized for another screen (180×50): size too small" && await page.isHidden("#sized"), JSON.stringify(refused));
 
-    // too small for Screen mode: the last size stays (big text first, its size settled; then a
+    // too small a view: the last size stays (big text first, its size settled; then a
     // narrow view in one step, so no size between the two is a valid one)
     await page.click("#menubtn");
     for (let i = 0; i < 16; i++) await page.click("#bigger");
@@ -211,10 +185,8 @@ export async function webScreen(browser, name) {
     const n3 = sizes().length;
     await page.setViewportSize({ width: 300, height: device.viewport.height });
     await pause(page, 600);
-    const small = await page.evaluate(() => document.getElementById("scrlabel").textContent);
-    check("AC-05 Screen mode: a view under 20×5 says \"Too small for Screen mode\" and keeps the last size",
-      small === "Too small for Screen mode" && sizes().length === n3, JSON.stringify({ small, more: sizes().slice(n3) }));
-    check("AC-05 Screen mode: no page errors", !f.errors.length, f.errors.join(" | "));
+    check("AC-13 size: a view under 20×5 keeps the pane's last size", sizes().length === n3, JSON.stringify({ more: sizes().slice(n3) }));
+    check("AC-05 no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();
   }
   runningIn(name);

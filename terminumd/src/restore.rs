@@ -205,10 +205,22 @@ pub fn add_report(app: &Shared, text: &str, m: Made) {
     app.pages.tell(&json!({"t": "restore", "report": report}).to_string());
 }
 
-/// The report for a page that connects (the first one shows it).
+/// A report this old is no news to a page that connects.
+const REPORT_FOR: u64 = 600;
+
+/// The report for a page that connects: a recent one that no page closed yet.
 pub fn hello(app: &Shared, page: &crate::page::Page) {
-    if let Some(r) = app.restore.report.lock().clone() {
+    let fresh = |r: &Value| r["at"].as_u64().is_some_and(|at| crate::auth::store::unix_now().saturating_sub(at) < REPORT_FOR);
+    if let Some(r) = app.restore.report.lock().clone().filter(fresh) {
         page.send_json(&json!({"t": "restore", "report": r}));
+    }
+}
+
+/// A page closed the report: it is gone from every page and no page that connects gets it.
+pub fn seen(app: &Shared) {
+    if app.restore.report.lock().take().is_some() {
+        let _ = std::fs::remove_file(app.cfg.dir.join("restore-report.json"));
+        app.pages.tell(&json!({"t": "restore", "report": null}).to_string());
     }
 }
 

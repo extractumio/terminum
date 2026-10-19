@@ -10,10 +10,12 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+use super::pystr::{chars, is_digit, is_py_space, is_word, py_rstrip, py_strip, text_of};
+
 const CMD_KEEP: usize = 1; // a long command: its line and this many more stay,
 const CMD_MIN: usize = 2; // at least this many more fold
-const OUT_KEEP: usize = 8; // a long tool output: likewise
-const OUT_MIN: usize = 8;
+const OUT_KEEP: usize = 2; // a long tool output: its first line and this many more stay (a summary, AC-32),
+const OUT_MIN: usize = 3; // at least this many more fold
 const DIFF_MIN: usize = 6; // an edit's diff folds from this many lines
 const SAME_MIN: usize = 20; // nearly equal lines: from 20, the first 3 and last 2 stay
 const SAME_HEAD: usize = 3;
@@ -45,51 +47,6 @@ pub struct Fold {
     pub label: String,
 }
 
-// ---------- Python's str rules ----------
-
-/// Python's `str.isspace()`: Unicode whitespace and the separators U+001C..U+001F.
-pub fn is_py_space(c: char) -> bool {
-    c.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&c)
-}
-
-/// Python's `str.strip()`.
-pub fn py_strip(s: &str) -> &str {
-    s.trim_matches(is_py_space)
-}
-
-/// Python's `str.rstrip()`.
-pub fn py_rstrip(s: &str) -> &str {
-    s.trim_end_matches(is_py_space)
-}
-
-/// Python's `\w` on `str`: a letter, a digit or "_".
-pub fn is_word(c: char) -> bool {
-    c.is_alphanumeric() || c == '_'
-}
-
-/// Python's `\d` (decimal digits): ASCII and the common other scripts' digits.
-fn is_digit(c: char) -> bool {
-    c.is_ascii_digit()
-        || matches!(c as u32, 0x0660..=0x0669 | 0x06F0..=0x06F9 | 0x0966..=0x096F | 0x09E6..=0x09EF | 0x0E50..=0x0E59 | 0xFF10..=0xFF19)
-}
-
-fn chars(s: &str) -> usize {
-    s.chars().count()
-}
-
-/// A line as the page gets it ({"r": runs, "e": hard}): its text.
-pub fn text_of(line: &Value) -> String {
-    let mut out = String::new();
-    for run in line["r"].as_array().into_iter().flatten() {
-        match &run[0] {
-            Value::String(t) => out.push_str(t),
-            Value::Array(cells) => cells.iter().filter_map(Value::as_str).for_each(|c| out.push_str(c)),
-            _ => {}
-        }
-    }
-    out
-}
-
 // ---------- the patterns ----------
 
 /// `^⏺ [\w.-]+\(`: Claude Code's tool call, "⏺ Bash(…".
@@ -99,9 +56,14 @@ fn is_tool(t: &str) -> bool {
     name > 0 && rest[name..].starts_with('(')
 }
 
-/// `^ {2}⎿ `: its result's first line.
+/// `^ {2}⎿ ` (Claude Code) or `^ {2}└ ` (Codex): a tool's result's first line.
 fn is_result(t: &str) -> bool {
-    t.starts_with("  ⎿ ")
+    t.starts_with("  ⎿ ") || t.starts_with("  └ ")
+}
+
+/// How far a result's next lines stand in: Claude Code's 5 columns, Codex's 4.
+fn result_indent(t: &str) -> usize {
+    if t.starts_with("  └ ") { 4 } else { 5 }
 }
 
 /// `^ {2}⎿ +(Updated|Added|Removed|Created|Wrote|Deleted)\b`: the word, when an edit's.
@@ -310,7 +272,7 @@ fn line_folds(lines: &[&str], newest: bool) -> Vec<RowFold> {
             }
         } else if is_result(t) {
             // a tool's result: a diff, or output
-            let (j, ends) = cont(&text, i, 5);
+            let (j, ends) = cont(&text, i, result_indent(t));
             let k = j - (i + 1);
             if !ends {
                 continue;

@@ -4,6 +4,7 @@
 // are {text, eol, styled}, as term.js knows them; widgets.js draws what this finds. A wrong
 // widget hides real output and a missed one costs nothing, so the rules ask for clear signs.
 import { drawnTable, tableMarkdown, tableTop } from "./drawntable.js";
+import { diffTable } from "./difftable.js";
 import { tokens } from "./links.js";
 
 const MAX_LINES = 2000;      // a longer region stays plain text (rendering it would cost more than it gives)
@@ -53,6 +54,46 @@ export function logicalLines(rows) {
   return out;
 }
 
+/** Lines with table rows a program wrapped at its width put back together (AC-31): a line that
+ *  starts with "|" but does not end with one goes on in the next lines (their indentation
+ *  dropped) until one ends with "|", four lines at most; a separator's dashes join without a space. */
+export function joinTableRows(lines) {
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const t = lines[i].text.trim();
+    let j = i, text = lines[i].text.trimEnd();
+    if (t.startsWith("|") && !t.endsWith("|")) {
+      while (j + 1 < lines.length && j - i < 4 && !text.endsWith("|")) {
+        const next = lines[j + 1].text.trim();
+        if (!next || next.startsWith("| ")) break;
+        text += text.endsWith("-") && next.startsWith("-") ? next : ` ${next}`;
+        j++;
+      }
+    }
+    if (j > i && text.endsWith("|")) {
+      out.push({ ...lines[i], text, to: lines[j].to, styled: lines.slice(i, j + 1).some((l) => l.styled) });
+      i = j;
+    } else out.push(lines[i]);
+  }
+  return out;
+}
+
+/** A Markdown pipe table from line i: a "|" header row, its "|---|" line, then "|" rows:
+ *  {to, head, rows, align}, or undefined. Its own widget even where an agent colored other text
+ *  (Codex's inline code): a pipe table is no rendering of its own. */
+export function pipeTable(lines, i) {
+  const row = (k) => /^\s*\|.*\|\s*$/.test(lines[k]?.text ?? "");
+  if (!row(i) || !TABLE_SEP.test(lines[i + 1]?.text.trim() ?? "")) return undefined;
+  const cells = (k) => lines[k].text.trim().slice(1, -1).split(/(?<!\\)\|/).map((c) => c.trim());
+  let j = i + 2;
+  while (row(j)) j++;
+  const head = cells(i), rows = [];
+  for (let k = i + 2; k < j; k++) rows.push(cells(k));
+  const n = Math.max(head.length, ...rows.map((r) => r.length)), pad = (r) => [...r, ...Array(n - r.length).fill("")];
+  const align = lines[i + 1].text.trim().slice(1, -1).split("|").map((c) => /-:\s*$/.test(c));
+  return { to: j - 1, head: pad(head), rows: rows.map(pad), align: pad(align).map(Boolean) };
+}
+
 /** The regions of `rows` that become widgets, in order and never overlapping:
  *  {kind: "code"|"markdown"|"mermaid"|"table", from, to (row indexes, inclusive), lang, text
  *  (a table's as Markdown), guessed, table (drawntable.js: its cells)}.
@@ -66,7 +107,7 @@ export const regions = (rows, end) => scan(rows, end).found;
  *  after `end` (a fence or a file not finished, a document that may go on); scanning again from
  *  there finds the same regions after it. */
 export function scan(rows, end = rows.length) {
-  const lines = logicalLines(rows.slice(0, end));
+  const lines = joinTableRows(logicalLines(rows.slice(0, end)));
   const next = rows[end]?.text ?? null;                           // the cursor's row
   const found = [];
   let open = lines.length;                                        // the first line still undecided
@@ -81,6 +122,18 @@ export function scan(rows, end = rows.length) {
     if (printed) {
       if (printed.to >= printed.from) add(printed.kind, printed.from, printed.to, printed.lang, body(lines, printed.from, printed.to));
       i = printed.to;
+      continue;
+    }
+    const piped = pipeTable(lines, i);                            // a Markdown table, colored text around it or not
+    if (piped) {
+      add("table", i, piped.to, "", tableMarkdown(piped), false, piped);
+      i = piped.to;
+      continue;
+    }
+    const changed = diffTable(lines, i, MAX_LINES);               // a Markdown table in an agent's diff
+    if (changed) {
+      add("table", i, changed.to, "", tableMarkdown(changed), false, changed);
+      i = changed.to;
       continue;
     }
     const table = drawnTable(lines, i, MAX_LINES);

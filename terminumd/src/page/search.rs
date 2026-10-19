@@ -5,7 +5,7 @@
 //! matches on that row come before it, as the page finds it among the row's text. A port of
 //! iterm-enhancer's search.py; reading the rows from tmux is the stream's.
 
-use super::folds::{py_rstrip, py_strip};
+use super::pystr::{py_rstrip, py_strip};
 use serde_json::{Value, json};
 
 /// Matches told at most (the count says when there are more).
@@ -16,7 +16,7 @@ pub const MAX_QUERY: usize = 200;
 #[cfg(test)]
 /// Rows numbered from `first` out of lines in the page format ({"r", "e"}): (n, text, hard end).
 pub fn rows_of(first: i64, lines: &[Value]) -> Vec<(i64, String, bool)> {
-    lines.iter().enumerate().map(|(k, l)| (first + k as i64, super::folds::text_of(l), l["e"].as_bool().unwrap_or(false))).collect()
+    lines.iter().enumerate().map(|(k, l)| (first + k as i64, super::pystr::text_of(l), l["e"].as_bool().unwrap_or(false))).collect()
 }
 
 /// (row, matches before it on that row) for each match of `query` (case aside) in rows (n,

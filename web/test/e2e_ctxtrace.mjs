@@ -118,8 +118,8 @@ export async function webCtxTrace(browser, name = "chromium") {
   const joined = (rows) => rows.map((l) => l.replace(/^[|:][^|]*\|/, "").trim()).join(" ").replace(/^❯ /, "").replace(/\s+/g, " ");
   check(`${at} an agent's input box: iTerm2's rows with their classes, the page's lines of it, the same text`,
     boxAt > 0 && /^\|2 e?rh?\|─/.test(orig[0]) && /^\|3 ej\|❯ the problem/.test(orig[1]) && /^\|4 ec? 51\+1\*256\|  original/.test(orig[2]) &&
-      /^\d+ web \{/.test(webHead) && web.length > 2 && joined(web) === joined(orig.slice(1, 3)) &&
-      JSON.stringify(JSON.parse(webHead.replace(/^\d+ web /, "")).cur) === "[2,18]",
+      /^\d+ web \{/.test(webHead) && web.length === 2 && joined(web) === joined(orig.slice(1, 3)) &&
+      JSON.stringify(JSON.parse(webHead.replace(/^\d+ web /, "")).cur) === "[1,51]",                 // the page's lines are tmux's rows (AC-04)
     part.slice(0, 14).join(" ⏎ "));
   check(`${at} an input box that changed is kept with its time among the events`, /^\d+ box \{/m.test(t2.split("\n#state\n")[0]), "");
   // played again: the state's screen as the bridge sends it (tracereplay.mjs) is the screen that was sent
