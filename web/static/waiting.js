@@ -49,6 +49,7 @@ export function waitingCards(box, onOpen) {
   function draw() {
     const now = performance.now(), titles = new Map();
     for (const [id, w] of asking) if (now - w.since >= STEADY) titles.set(id, w.title);
+    const why = (id) => asking.get(id)?.why;      // what it asks, when its agent's hooks said (AC-39)
     for (const [id, w] of leaving) if (now - w.since < STEADY) titles.set(id, w.title); else leaving.delete(id);
     for (const id of seen) if (!asking.has(id) && !leaving.has(id)) seen.delete(id);   // asks again: remind again
     if (asking.has(shown) || leaving.has(shown)) seen.add(shown);
@@ -58,7 +59,7 @@ export function waitingCards(box, onOpen) {
     due.forEach((id, i) => {
       if (!cards.has(id)) { cards.set(id, card(id)); box.append(cards.get(id)); }
       const c = cards.get(id), title = textForm(titles.get(id) || "A session");
-      put(c.querySelector(".what"), "textContent", `${title} waits for your answer`);
+      put(c.querySelector(".what"), "textContent", why(id) ? `${title} asks: ${why(id)}` : `${title} waits for your answer`);
       put(c.querySelector(".go"), "title", `Open ${title}`);
       const more = i === room - 1 ? due.length - room : 0;       // the last card says how many more wait
       put(c.querySelector(".more"), "textContent", more > 0 ? `+${more} more` : "");
@@ -76,7 +77,7 @@ export function waitingCards(box, onOpen) {
         const w = asking.get(it.id);
         if (it.state === "waiting") {
           leaving.delete(it.id);
-          asking.set(it.id, { since: w?.since ?? now, title: it.title });
+          asking.set(it.id, { since: w?.since ?? now, title: it.title, why: it.why });
         } else if (w) {
           asking.delete(it.id);
           if (now - w.since >= STEADY) leaving.set(it.id, { since: now, title: it.title });

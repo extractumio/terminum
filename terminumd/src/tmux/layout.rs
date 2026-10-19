@@ -12,6 +12,7 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 use super::agentstate::{self, States};
+use super::hookstate::Hooks;
 use super::server::{Link, Server, Status, HOST_SESSION};
 use super::titles::{self, PaneFields, LIST_PANES_FORMAT};
 
@@ -26,7 +27,7 @@ pub struct Read {
 }
 
 /// Reads `server`'s panes; `theme(session)` names the theme a session wears (its dot).
-pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
+pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
     let lines = server.run(format!("list-panes -a -F '{LIST_PANES_FORMAT}'")).await?;
     let all: Vec<PaneFields> = lines.iter().filter_map(|l| titles::parse_list_panes(l)).collect();
     let mut sessions: Vec<(String, String)> = Vec::new();
@@ -38,7 +39,8 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, them
     // a host shows the session terminumd holds there and those the user attached, never the
     // host's others (OQ-81, AC-89)
     let panes: Vec<PaneFields> = all.into_iter().filter(|p| server.shows(&p.session)).collect();
-    let agents = agent_states(server, states, &panes).await;
+    let (agents, views) = agent_states(server, states, hooks, &panes).await;
+    hooks.retain(&server.key(""), &panes.iter().map(|p| server.key(&p.pane_id)).collect::<Vec<_>>());
     let mut groups: Vec<Value> = Vec::new();
     let mut map = HashMap::new();
     let mut keys = Vec::new();
@@ -64,13 +66,22 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, home: &str, them
                 let it = titles::item(p, k + 1, n, home);
                 let key = server.key(&p.pane_id);
                 let state = agents.get(&p.pane_id).copied().flatten();
-                let agent = it.agent.or_else(|| agents.contains_key(&p.pane_id).then_some("codex"));
-                items.push(json!({
+                // the hooks say what runs and does (AC-39), else the program's name and the screen
+                let hook = views.get(&p.pane_id);
+                let agent = it.agent.or(hook.as_ref().map(|h| h.agent)).or_else(|| agents.contains_key(&p.pane_id).then_some("codex"));
+                let mut row = json!({
                     "id": key, "title": it.title, "sub": it.sub, "index": p.window_index.to_string(),
                     "pane": it.pane, "host": (!server.is_local()).then(|| server.name.clone()),
                     "profile": profile, "agent": agent, "shell": it.shell && !p.alternate_on,
                     "state": state.map(|s| s.as_str()), "window": p.window_id, "alt": p.alternate_on,
-                }));
+                });
+                if let Some(h) = hook.filter(|h| h.state != agentstate::State::Done) {
+                    for (k, v) in [("tool", &h.tool), ("why", &h.why)] {
+                        if !v.is_empty() { row[k] = json!(v); }
+                    }
+                    if h.subagents > 0 { row["subagents"] = json!(h.subagents); }
+                }
+                items.push(row);
                 panes_of.push(*p);
             }
             i += n;
@@ -189,13 +200,41 @@ fn maybe_codex(p: &PaneFields) -> bool {
     p.command.trim() == "node"
 }
 
+/// The hooks' state while it holds (AC-39), no screen read for that pane; but a wait they said
+/// gives way to a screen that shows the agent at work (an approval answered fires no event until
+/// its tool ends).
+/// Also the hooks' views, by pane, for the rows.
+async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, panes: &[PaneFields])
+    -> (HashMap<String, Option<agentstate::State>>, HashMap<String, super::hookstate::View>) {
+    use agentstate::State::{Waiting, Working};
+    let now = Instant::now();
+    let (mut held, mut read) = (HashMap::new(), Vec::new());
+    for p in panes {
+        match hooks.view(&server.key(&p.pane_id), &p.command, now) {
+            Some(h) => {
+                if h.state == Waiting {
+                    read.push(p);
+                }
+                held.insert(p.pane_id.clone(), h);
+            }
+            None => read.push(p),
+        }
+    }
+    let mut out = screen_states(server, states, &read, now).await;
+    for (id, h) in &held {
+        if !(h.state == Waiting && out.get(id) == Some(&Some(Working))) {
+            out.insert(id.clone(), Some(h.state));
+        }
+    }
+    (out, held)
+}
+
 /// Agent states of the panes that run a coding agent, read only when due; a `node` pane is one
 /// while its last read screen is Codex's (its state is `None` otherwise, as for any program).
-async fn agent_states(server: &Server, states: &Mutex<States>, panes: &[PaneFields]) -> HashMap<String, Option<agentstate::State>> {
-    let now = Instant::now();
+async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFields], now: Instant) -> HashMap<String, Option<agentstate::State>> {
     let mut out = HashMap::new();
     let mut due = Vec::new();
-    for p in panes {
+    for &p in panes {
         let named = named_agent(p);
         if !named && !maybe_codex(p) {
             continue;

@@ -62,6 +62,15 @@ pub struct Item {
     pub title: String,
     pub host: Option<String>,
     pub at: i64,
+    /// a reminder (AC-91): it comes up each time its pane's agent ends a turn, until resolved
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub remind: bool,
+    /// a reminder up now: its pane's turn ended since it was made or closed
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub due: bool,
+    /// when a reminder was resolved (Unix seconds): it comes up no more
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<i64>,
 }
 
 impl Item {
@@ -83,6 +92,7 @@ pub struct NewMark {
     pub note: String,
     pub title: String,
     pub host: Option<String>,
+    pub remind: bool,
 }
 
 pub use super::bookmarks_find::{find, located, near, needs_whole, unlocated};
@@ -163,6 +173,9 @@ fn clean_stored(it: &Value) -> Result<Item, String> {
         title: opt("title").map(py_str).unwrap_or_default(),
         host: truthy(it.get("host")),
         at: opt("at").map(|v| int("at", v)).transpose()?.unwrap_or(0),
+        remind: it["remind"] == true,
+        due: it["due"] == true,
+        resolved: opt("resolved").map(|v| int("resolved", v)).transpose()?,
     })
 }
 
@@ -246,7 +259,7 @@ impl Store {
         if self.items.len() >= MAX_ITEMS {
             return err(format!("{MAX_ITEMS} bookmarks are kept at most: delete some first (Bookmarks, below the sessions)."));
         }
-        let at = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+        let at = crate::auth::store::unix_now() as i64;
         let item = Item {
             id: new_id(),
             key: new.key,
@@ -257,6 +270,9 @@ impl Store {
             title: new.title,
             host: new.host,
             at,
+            remind: new.remind,
+            due: false,
+            resolved: None,
         };
         self.items.push(item.clone());
         if let Err(e) = self.save() {
@@ -277,9 +293,39 @@ impl Store {
         Ok(self.items[k].clone())
     }
 
-    /// The bookmark with its note changed, saved.
-    pub fn set_note(&mut self, id: &str, note: String) -> Result<Item, MarkError> {
-        self.change(id, |i| i.note = note)
+    /// The bookmark with its note changed and, when `remind` says another kind, made a reminder
+    /// (an open one) or a bookmark (AC-91); saved once.
+    pub fn set_note(&mut self, id: &str, note: String, remind: Option<bool>) -> Result<Item, MarkError> {
+        self.change(id, |i| {
+            i.note = note;
+            if let Some(on) = remind.filter(|on| *on != i.remind) {
+                (i.remind, i.due, i.resolved) = (on, false, None);
+            }
+        })
+    }
+
+    /// A reminder closed (up again at its pane's next turn's end) or resolved (never again).
+    pub fn settle(&mut self, id: &str, resolve: bool) -> Result<Item, MarkError> {
+        let now = crate::auth::store::unix_now() as i64;
+        self.change(id, |i| { i.due = false; if resolve { i.resolved = Some(now); } })
+    }
+
+    /// The open reminders of panes `keys`, whose agents ended a turn, now up; those it changed.
+    pub fn due(&mut self, keys: &[String]) -> Result<Vec<Item>, MarkError> {
+        let up = |i: &Item| i.remind && !i.due && i.resolved.is_none() && i.key.as_ref().is_some_and(|k| keys.contains(k));
+        let ids: Vec<String> = self.items.iter().filter(|i| up(i)).map(|i| i.id.clone()).collect();
+        if ids.is_empty() {
+            return Ok(vec![]);
+        }
+        let old = self.items.clone();
+        for i in self.items.iter_mut().filter(|i| ids.contains(&i.id)) {
+            i.due = true;
+        }
+        if let Err(e) = self.save() {
+            self.items = old;
+            return Err(e);
+        }
+        Ok(self.items.iter().filter(|i| ids.contains(&i.id)).cloned().collect())
     }
 
     /// The bookmark at the line its text was found on (looked for there first next time).

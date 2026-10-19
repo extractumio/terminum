@@ -100,7 +100,33 @@ pub fn routes(app: Shared) -> Router {
         .route("/tmux", get(tmux_list))
         .route("/tmux/{action}", post(tmux_action))
         .route("/restore", post(restore))
+        .route("/hook", post(hook))
         .with_state(app)
+}
+
+/// A coding agent's hook event (`terminum hook`, AC-39), for a pane of a tmux terminumd knows:
+/// it changes what the list shows (and keeps a prompt, AC-15 sent history), nothing else.
+async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> StatusCode {
+    let (socket, pane) = (ev["socket"].as_str().unwrap_or(""), ev["pane"].as_str().unwrap_or(""));
+    let Some(server) = app.tmux.all().into_iter().find(|s| s.is_local() && s.socket == socket) else { return StatusCode::NO_CONTENT };
+    if server.session_of(pane).is_none() {
+        return StatusCode::NO_CONTENT;                  // a pane it does not list: nothing is made up
+    }
+    let key = server.key(pane);
+    if app.hooks.apply(&key, &ev, std::time::Instant::now()) {
+        app.dirty.notify_one();
+        // a turn ended: its reminders come up, also when it was too quick for a layout to show it working (AC-91)
+        if matches!(ev["event"].as_str(), Some("Stop" | "StopFailure" | "Interrupt")) {
+            let (app, key) = (app.clone(), key.clone());
+            tokio::spawn(async move { crate::manager::remind(&app, vec![key]).await });   // the hook is answered at once
+        }
+    }
+    let known = ev["agent"].as_str().and_then(crate::tmux::hookstate::agent).is_some();
+    if let (true, Some(prompt), Some(cwd)) = (known && ev["event"] == "UserPromptSubmit", ev["prompt"].as_str(), ev["cwd"].as_str()) {
+        let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook"}));
+        tokio::spawn(async move { crate::page::sent::keep(&app, "local", &cwd, &key, &prompt, info).await });
+    }
+    StatusCode::NO_CONTENT
 }
 
 fn rss_mb() -> f64 {
@@ -130,6 +156,8 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
         "tmux": {"ok": problem.is_none(), "message": problem},
         "signins": app.signins.count(), "workspaces": app.store.len(),
         "denied_requests": app.denied.load(Ordering::Relaxed), "rss_mb": rss_mb(),
+        "hooks": app.hooks.last.lock().iter().map(|(a, t)| (a.to_string(), json!(t.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()))))
+            .collect::<serde_json::Map<_, _>>(),
     }))
 }
 

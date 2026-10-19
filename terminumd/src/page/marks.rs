@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Bookmarks from the page (AC-33): `mark` (new {ref, sid, n, text, note}; changed {ref, id,
-//! note}), `unmark`, `locate`; the list goes to a page with its hello. Kept on the Mac in web-bookmarks.json and
+//! Bookmarks from the page (AC-33): `mark` (new {ref, sid, n, text, note, remind}; changed
+//! {ref, id, note, remind}), `unmark`, `locate`, `remind {id, action: close|resolve}` (AC-91); the list goes to a page with its hello. Kept on the Mac in web-bookmarks.json and
 //! told to every signed-in page at once; a bookmark is found again by its text.
 
 use std::sync::Arc;
@@ -31,6 +31,14 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
                 Err(e) => super::client::error(page, e.to_string(), None),
             }
         }
+        "remind" => {
+            // a reminder closed or resolved (AC-91)
+            let (id, resolve) = (msg["id"].as_str().unwrap_or(""), msg["action"] == "resolve");
+            match app.bookmarks.lock().settle(id, resolve) {
+                Ok(item) => tell_mark(app, &item),
+                Err(e) => super::client::error(page, e.to_string(), None),
+            }
+        }
         "locate" => {
             let (app, page, id) = (app.clone(), page.clone(), msg["id"].as_str().unwrap_or("").to_string());
             tokio::spawn(async move { locate(&app, &page, &id).await });
@@ -47,7 +55,7 @@ fn mark(app: &Shared, page: &Page, msg: &Value) {
         return;
     }
     let result = if let Some(id) = msg["id"].as_str().filter(|s| !s.is_empty()) {
-        bm::note_of(msg).and_then(|note| app.bookmarks.lock().set_note(id, note))
+        bm::note_of(msg).and_then(|note| app.bookmarks.lock().set_note(id, note, msg["remind"].as_bool()))
     } else {
         new_mark(app, page, msg)
     };
@@ -55,7 +63,7 @@ fn mark(app: &Shared, page: &Page, msg: &Value) {
         Ok(item) => {
             app.bookmarks.lock().remember(&r, &item.id);
             page.send_json(&json!({"t": "marked", "ref": r, "id": item.id}));
-            app.pages.tell(&json!({"t": "mark", "item": item.wire()}).to_string());
+            tell_mark(app, &item);
         }
         Err(e) => {
             tracing::warn!(event = "bookmark.refused", reason = %e);
@@ -80,13 +88,24 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
         note,
         title: item["title"].as_str().unwrap_or("").to_string(),
         host: item["host"].as_str().map(str::to_string),
+        remind: msg["remind"] == true,
     };
     app.bookmarks.lock().add(new)
 }
 
 /// The list's row of pane `key`.
 pub fn find_item(layout: &Value, key: &str) -> Option<Value> {
-    layout.as_array()?.iter().flat_map(|g| g["items"].as_array().cloned().unwrap_or_default()).find(|it| it["id"] == key)
+    layout_items(layout.as_array()?).find(|it| it["id"] == key).cloned()
+}
+
+/// Every row of the layout's groups.
+pub fn layout_items(groups: &[Value]) -> impl Iterator<Item = &Value> {
+    groups.iter().flat_map(|g| g["items"].as_array().into_iter().flatten())
+}
+
+/// Every page learns of a new or changed bookmark.
+pub fn tell_mark(app: &Shared, item: &bm::Item) {
+    app.pages.tell(&json!({"t": "mark", "item": item.wire()}).to_string());
 }
 
 /// Where a bookmark's text is now in the shown pane: near its line first, the whole history
@@ -130,7 +149,7 @@ async fn locate(app: &Shared, page: &Page, id: &str) {
     if let Some(f) = found.filter(|f| f.n != item.n) {
         // where to look first next time; the marks move there
         if let Ok(moved) = app.bookmarks.lock().set_n(id, f.n) {
-            app.pages.tell(&json!({"t": "mark", "item": moved.wire()}).to_string());
+            tell_mark(app, &moved);
         }
     }
 }

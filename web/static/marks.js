@@ -12,15 +12,19 @@ import { railBox, railSlots } from "./marktext.js";
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
 const ARMED = 3000;            // ms a Delete pressed once waits for the second press
+const COLUMN = ["splitfab", "sentfab", "remindfab"];   // the buttons under the magnifier, in order
 
-const el = (tag, cls, text) => {
+export const el = (tag, cls, text) => {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text !== undefined) e.textContent = text;
   return e;
 };
 const firstLine = (text, max = 90) => { const l = text.trim().split("\n")[0]; return l.length > max ? `${l.slice(0, max)}…` : l; };
-const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+export const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** A reminder not resolved (AC-91). */
+export const openReminder = (i) => !!i.remind && !i.resolved;
 
 // Delete asks again: a second press within 3 s deletes.
 function armed(button, label, act) {
@@ -40,7 +44,8 @@ function armed(button, label, act) {
 export class Marks {
   /** view, widgets, term: the terminal's; send(msg) to the bridge; sid(): the pane shown;
    *  alive(sid): an open pane's title now (renamed or not), null when it closed; pick(sid): show it (and close the drawer); toast(text);
-   *  onChange(): the session list is drawn again (its orange strips); copy(text): to the clipboard. */
+   *  onChange(): the bookmarks changed (the list's strips, reminders); copy(text): to the clipboard.
+   *  onPlaced (set after): the floating buttons were placed (their panes follow). */
   constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy }) {
     Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange });
     this.items = new Map();
@@ -53,6 +58,7 @@ export class Marks {
       onPick: (sel) => this.edit(null, sel), onCopy: copy });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
     $("markbox").addEventListener("close", () => { this.editing = null; });
+    for (const b of $("markkind").querySelectorAll("button")) b.onclick = () => this.setKind(b.dataset.kind);
     $("markbox").addEventListener("cancel", (e) => { if (this.saving) e.preventDefault(); });   // Esc while saving
     $("mbclose").onclick = () => this.hideBar();
     $("mbedit").onclick = () => this.shown && this.edit(this.shown);
@@ -96,7 +102,12 @@ export class Marks {
     }
   }
 
-  sids() { return new Set([...this.items.values()].map((i) => i.sid)); }
+  /** sid -> "remind" (an open reminder) or "mark": the list's strips. */
+  sids() {
+    const m = new Map();
+    for (const i of this.items.values()) if (openReminder(i)) m.set(i.sid, "remind"); else if (!m.has(i.sid)) m.set(i.sid, "mark");
+    return m;
+  }
   busy() { return $("markbox").open; }
   changed() { this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); }
   mine() { return [...this.items.values()].filter((i) => i.sid === this.sid()).sort((a, b) => a.n - b.n); }
@@ -107,12 +118,20 @@ export class Marks {
   edit(item, sel = null) {
     // one ref per dialog: a save sent again after no answer is kept once (bookmarks.py)
     this.editing = { ref: Math.random().toString(36).slice(2), ...(item ? { id: item.id } : { sid: this.sid(), ...sel, text: sel.text.slice(0, 2000) }) };
+    this.setKind(item?.remind ? "reminder" : "bookmark");
     $("marktext").textContent = item ? item.text : sel.text;
     $("marknote").value = item?.note ?? "";
     $("markerr").hidden = true;
     $("markbox").querySelector(".primary").disabled = false;
     $("markbox").showModal();
     $("marknote").focus();
+  }
+
+  /** The dialog's kind: a bookmark, or a reminder (AC-91). */
+  setKind(kind) {
+    for (const b of $("markkind").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.kind === kind));
+    $("marktitle").textContent = kind === "reminder" ? "Reminder" : "Bookmark";
+    this.kind = kind;
   }
 
   async submit(e) {
@@ -123,13 +142,14 @@ export class Marks {
     const reply = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve({ error: "The Mac did not answer: is the connection back?" }), ANSWER);
       this.replies.set(ref, (m) => { clearTimeout(timer); resolve(m); });
-      this.send(ed.id ? { t: "mark", ref, id: ed.id, note } : { t: "mark", ref, sid: ed.sid, n: ed.n, text: ed.text, note });
+      const remind = this.kind === "reminder";
+      this.send(ed.id ? { t: "mark", ref, id: ed.id, note, remind } : { t: "mark", ref, sid: ed.sid, n: ed.n, text: ed.text, note, remind });
     });
     this.replies.delete(ref);
     save.disabled = false; this.saving = false;
     if (reply.error) { $("markerr").textContent = reply.error; $("markerr").hidden = false; return; }
     $("markbox").close();
-    if (!ed.id) this.toast("Bookmarked.");
+    if (!ed.id) this.toast(this.kind === "reminder" ? "Reminder set: it comes up when this session's agent ends a turn." : "Bookmarked.", this.kind === "reminder" ? 3500 : undefined);
   }
 
   // ---------- the bar ----------
@@ -247,11 +267,14 @@ export class Marks {
     const fab = $("marksfab"), find = $("findfab"), term = this.term, n = this.sid() ? this.mine().length : 0;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
     const right = term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32, top = `${term.offsetTop + 8}px`;
-    find.hidden = $("splitfab").hidden = !shown;
+    find.hidden = $("splitfab").hidden = $("sentfab").hidden = !shown;
     if (!shown) this.search.toggle(false);
     else {
       find.style.top = top; find.style.left = `${right - (n > 0 ? 40 : 0)}px`; this.search.place();
-      Object.assign($("splitfab").style, { top: `${find.offsetTop + find.offsetHeight + 8}px`, left: find.style.left });   // the split under the magnifier
+      // under the magnifier, each shown one under the last: the split, sent history, reminders (whose own module shows or hides it)
+      let y = find.offsetTop + find.offsetHeight + 8;
+      for (const b of COLUMN.map($).filter((b) => !b.hidden)) { Object.assign(b.style, { top: `${y}px`, left: find.style.left }); y += b.offsetHeight + 8; }
+      this.onPlaced?.();
     }
     fab.hidden = !(shown && n > 0);
     if (fab.hidden) return this.togglePane(false);

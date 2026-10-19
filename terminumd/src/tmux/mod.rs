@@ -4,6 +4,7 @@
 //! are attached by name, AC-89, and the hosts) and pane keys.
 
 pub mod agentstate;
+pub mod hookstate;
 pub mod args;
 pub mod conf;
 pub mod control;

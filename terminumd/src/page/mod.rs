@@ -11,6 +11,7 @@ pub mod hist;
 pub mod marks;
 pub mod quick;
 pub mod search;
+pub mod sent;
 pub mod sessions;
 pub mod sizing;
 pub mod stream;

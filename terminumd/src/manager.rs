@@ -96,7 +96,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
     let host = (!local).then(|| server.name.clone());
     let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
     let looks = &app.looks;
-    let out = match layout::read(&server, &app.agent_states, &home, |s| looks.theme_name(host.as_deref(), s)).await {
+    let out = match layout::read(&server, &app.agent_states, &app.hooks, &home, |s| looks.theme_name(host.as_deref(), s)).await {
         Ok(read) => {
             let mut gs = read.groups;
             if !local {
@@ -155,20 +155,52 @@ pub async fn refresh(app: &Shared) {
         live.extend(keys);
     }
     groups.extend(absent);
-    {
+    let ended = {
         let mut last = app.layout.write();
         if last.as_array() != Some(&groups) {
             let told = json!({"t": "layout", "groups": groups}).to_string();
-            *last = Value::Array(groups);
+            let old = std::mem::replace(&mut *last, Value::Array(groups));
             drop(last);
             app.pages.tell(&told);
+            // a pane whose hooks speak ends its turns by their Stop (sock.rs): exact, also between two layouts
+            let mut ended = ended_turns(&old, app.layout.read().as_array().map_or(&[][..], Vec::as_slice));
+            ended.retain(|k| !app.hooks.has(k));
+            ended
+        } else {
+            vec![]
         }
+    };
+    if !ended.is_empty() {
+        remind(app, ended).await;
     }
     if complete && due {
         *app.inventory_at.lock() = Some(Instant::now());
         app.store.maintain(&live, false);
     }
     announce_offers(app);
+}
+
+/// The panes whose coding agent ended a turn between layouts `old` and `new`: it worked or
+/// waited, and now is done, failed or shows no agent (AC-91).
+pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
+    let busy = |it: &&Value| it["state"] == "working" || it["state"] == "waiting";
+    let old = old.as_array().map_or(&[][..], Vec::as_slice);
+    use crate::page::marks::layout_items as items;
+    let was: HashSet<&str> = items(old).filter(busy).filter_map(|it| it["id"].as_str()).collect();
+    items(new).filter(|it| !busy(it)).filter_map(|it| it["id"].as_str()).filter(|id| was.contains(id)).map(str::to_string).collect()
+}
+
+/// The reminders of panes whose agent ended a turn come up, on every page (AC-91).
+pub async fn remind(app: &Shared, ended: Vec<String>) {
+    let a = app.clone();
+    match tokio::task::spawn_blocking(move || a.bookmarks.lock().due(&ended).map_err(|e| e.to_string())).await.map_err(|e| e.to_string()).and_then(|r| r) {
+        Ok(items) => {
+            for item in items {
+                crate::page::marks::tell_mark(app, &item);
+            }
+        }
+        Err(e) => tracing::warn!(event = "reminder.unsaved", error = %e),
+    }
 }
 
 /// A host's files offer changed (its helper's state, its record, its link): its panels are
@@ -216,5 +248,21 @@ async fn stalls(app: Shared) {
                 app.pages.tell(&json!({"t": "stall", "server": label, "key": server.id(), "what": what, "ok": true}).to_string());
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_turn_ends_when_a_working_or_waiting_pane_is_done_failed_or_no_agent() {
+        let layout = |states: &[(&str, Value)]| -> Vec<Value> {
+            vec![json!({"items": states.iter().map(|(id, st)| json!({"id": id, "state": st})).collect::<Vec<_>>()})]
+        };
+        let old = Value::Array(layout(&[("a", json!("working")), ("b", json!("waiting")), ("c", json!("working")), ("d", json!(null)), ("e", json!("working"))]));
+        let new = layout(&[("a", json!("done")), ("b", json!("working")), ("c", json!("failed")), ("d", json!("done")), ("e", json!(null))]);
+        assert_eq!(ended_turns(&old, &new), ["a", "c", "e"]);
+        assert!(ended_turns(&json!([]), &new).is_empty(), "a first layout ends nothing");
     }
 }

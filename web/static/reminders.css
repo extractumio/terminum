@@ -1,0 +1,44 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Reminders (AC-91): the pale fuchsia button under the sent history (blinking while one is up
+   and unseen), its pane of reminders as Markdown, the strip in the session list, the dialog's
+   primary when the kind is Reminder. Fuchsia on every profile: it says "reminder". */
+:root { --remind: #e8a3dc; --remind-ink: #2a0f25; --remind-text: color-mix(in srgb, var(--remind) 55%, var(--t-fg)); }   /* text: readable on a light theme too */
+#remindfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
+  border-radius: var(--blob-b); animation: blob 7s ease-in-out infinite; animation-delay: -4.6s;
+  background: var(--remind); color: var(--remind-ink); box-shadow: var(--shadow-near); }
+#remindfab.due { animation: blob 7s ease-in-out infinite, remind 1s steps(2, jump-none) infinite;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--remind) 40%, transparent), 0 0 12px var(--remind); }
+#remindfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
+#remindfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
+  font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--remind-text); border: 1px solid var(--remind); }
+#remindfabn:empty { display: none; }
+@keyframes remind { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { #remindfab, #remindfab.due { animation: none; } }
+body:has(#markcopy:not([hidden])) #remindfab, body:has(#findbox:not([hidden])) #remindfab { visibility: hidden; }
+body:not([data-shown="term"]) :is(#remindfab, #remindpane) { display: none !important; }
+body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
+
+#remindpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 70%; overflow: auto; padding: var(--sp-2);
+  border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
+#remindpane .sphead { display: flex; align-items: center; }
+#remindpane h2 { flex: 1; margin: 0 4px; font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted); }
+#remindpane .icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 7px; }
+#remindlist ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.rmitem { padding: var(--sp-2); border-radius: var(--r-md); background: var(--surface-1); }
+.rmitem.due { box-shadow: inset 3px 0 0 var(--remind); }
+.rmhead { display: flex; gap: 8px; align-items: baseline; margin-bottom: 4px; font-size: var(--fs-meta); color: var(--muted); }
+.rmwhere { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rmitem.due .rmwhen { color: var(--remind-text); font-weight: var(--fw-head); }
+.rmitem .markdown { font: var(--fs-small)/var(--lh-prose) -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow-wrap: anywhere; }
+.rmitem .markdown blockquote { margin: 0; padding-left: 8px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); }
+.rmacts { display: flex; justify-content: flex-end; gap: 6px; margin-top: 6px; }
+.rmacts button { height: 28px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label); background: var(--surface-3); }
+.rmacts .primary { background: var(--remind); color: var(--remind-ink); font-weight: var(--fw-head); }
+@media (hover: none) { .rmacts button { height: var(--h-touch); padding: 0 14px; } }
+
+/* the session list: a fuchsia strip beside the profile's bar of a session with open reminders */
+.bmbar.remind { background: var(--remind); }
+/* the dialog: Bookmark | Reminder */
+#markkind { align-self: flex-start; }
+#markkind button[aria-pressed="true"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }
+#markbox:has(#markkind [data-kind="reminder"][aria-pressed="true"]) .actions .primary { background: var(--remind); color: var(--remind-ink); }

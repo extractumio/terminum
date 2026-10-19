@@ -18,6 +18,7 @@ import { webMotion } from "./e2e_motion.mjs";
 import { webMove } from "./e2e_move.mjs";
 import { webScreen } from "./e2e_screen.mjs";
 import { webSignin } from "./e2e_signin.mjs";
+import { webSent } from "./e2e_sent.mjs";
 import { webSplit } from "./e2e_split.mjs";
 import { webTerm } from "./e2e_term.mjs";
 import { webTmux } from "./e2e_tmux.mjs";
@@ -26,7 +27,7 @@ import { webTrace } from "./e2e_trace.mjs";
 import { webWidgets } from "./e2e_widgets.mjs";
 
 const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webMarks, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit };
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent };
 const BROWSERS = ["chromium", "webkit"];
 // Checks that drive the page with Chromium's own tools: a CDP touch screen, synthetic Touch events.
 const CHROMIUM_ONLY = { webClip: "synthetic Touch events", webTouch: "a CDP touch screen" };

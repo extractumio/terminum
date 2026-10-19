@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.10.0 |
-| Date | 2026-10-17 |
+| Version | 0.11.0 |
+| Date | 2026-10-19 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.11.0 | 2026-10-19 | `terminum hooks [status\|install\|remove] [claude\|codex]` and `POST /hook` on the socket for coding agents' hooks; sent history kept in `~/.terminum/sessions` (terminum-terminal.md AC-39, AC-90, AC-91). |
 | 0.10.0 | 2026-10-17 | Owner: one listener, one password. The loopback listener on 47900 with its one-time codes (`terminum open`) and the second, cookie-signed listener of web access (`terminum web on/off`, 48080) were two ways in with two sign-ins; now terminumd listens only on `127.0.0.1:48080` (held by launchd as 47900 was) and every browser, the Mac's and, through `tailscale serve` (HTTPS), other devices', signs in with the password set by `terminum password`; until one is set the page says how. The sign-in is the header token of 0.9 with its hello proof (not a cookie: a cookie on 127.0.0.1 reaches every local port). Mac-only actions are judged by forwarding headers, never the Host (tailscale serve passes the browser's Host through); Tailscale Funnel is refused; `terminum signout` and a new password restart the brakes; the old sign-in files are removed at start and the old web.json keys dropped; an install waits until the old terminumd has let go of the port before launchd binds it; a closed page's socket ends at once. Pragmatic review applied: the port handover, forwarding headers instead of the Host, every old sign-in dropped, Funnel refused, the brakes reset by the CLI, `terminum open` kept as an opener, a scheme per kind of name; rejected: a 12-character minimum (the brakes and PBKDF2 hold for 8, and the owner's password stays valid) and asking for the password during install (`curl … \| sh` has no terminal to ask on; the install says the command). Pragmatic review of the code applied: the brakes' count of all kept apart for this Mac's own requests and forwarded ones (guesses from the tailnet held the Mac's browser too), a Files panel socket of a revoked sign-in ends at its next ping, and (found here) a login the old password passed during `terminum password` makes no sign-in; documented: a program on this Mac can name any X-Forwarded-For; left as they were (not this change): `?t=` on any GET, `/custom.css` without a sign-in, the 10 s port wait of a stop when another program holds the port. AC-08, AC-09, AC-10. |
 | 0.9.5 | 2026-10-17 | Owner: after the hint's `tailscale serve --bg --https=443` (AC-10), the Mac's tailnet name opened terminum where iterm-enhancer had been, the same as terminum's own Tailscale Service name. The hint now says it takes the Mac's name and names the Service command as the way to keep that name for another program; README "Over Tailscale" starts from that choice. |
 | 0.9.4 | 2026-10-17 | Owner, on an iPad over `tailscale serve`: the web listener's page offered Add host and Attach tmux sessions but terminumd refused them, so the form waited on "Looking for running sessions…" and the refusal stayed in the page's banner; the form's fields were 16 px beside the form's text at the terminal's size. Now host, attach and restore actions work from the web listener's page too (its password already opens a shell as the user, so they add no power); fields follow the terminal's size on touch screens too, the viewport's `maximum-scale=1` keeping iOS from zooming in on focus (pinching still zooms on iOS; Chrome on Android, not a stated client, also stops pinch zoom). Pragmatic review applied: no pending form for the listing, which answers with a list and never an error (AC-10, AC-89). |
@@ -869,6 +870,7 @@ What each request may do (forwarded: it carries Forwarded, X-Forwarded-* or Tail
 | `GET /api/hello?n=&id=` | the proof (no sign-in): `{"proof": HMAC-SHA256(proof key, "tm-hello-v1:" + n)}`; 404 `unknown_signin` for an unknown id | AC-09 |
 | `GET /custom.css`, `/api/settings` | the user's stylesheet and the page settings | AC-19 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | AC-08, AC-09 |
+| `POST /hook` on `terminumd.sock` | `terminum hook claude\|codex`, run by a coding agent's hooks (`terminum hooks install`) | `terminum-terminal.md` AC-39 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 
 WebSocket messages, page → terminumd (`t` names iterm-enhancer's where they exist):

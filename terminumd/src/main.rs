@@ -35,6 +35,7 @@ mod restore;
 mod restore_srv;
 mod routes;
 mod screen;
+mod sent;
 mod settings;
 mod sock;
 mod termtext;
@@ -88,6 +89,8 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         refreshing: tokio::sync::Mutex::new(()),
         inventory_at: Mutex::new(None),
         agent_states: Mutex::new(tmux::agentstate::States::new()),
+        hooks: Default::default(),
+        sent: sent::Sent::new(cfg.home.join("sessions")),
         sizes: Default::default(),
         looks,
         signins: auth::signin::Signins::load(&dir),
@@ -145,6 +148,10 @@ async fn run_agent(socket: std::path::PathBuf) {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
+    // a coding agent's hook (AC-39): nothing else first, it runs on every tool call
+    if args.get(1).map(String::as_str) == Some("hook") {
+        std::process::exit(cli::hook::main(args.get(2).map_or("", String::as_str)));
+    }
     if cli::wanted(&args) {
         std::process::exit(cli::main(&args));
     }

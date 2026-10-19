@@ -14,7 +14,7 @@
    and the marks on the terminal's edge keep their own shapes. */
 :where(.box) { background: var(--fill); }
 @supports (clip-path: shape(evenodd from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
-  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row),
+  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row),
     .box, .field, .filter, .inline-edit input) {
     --r: var(--r-md); --t: var(--wave-m); --b: var(--wave-m); --x: 46%; --w: 1px;
     --te: calc(var(--t) * var(--k, 1)); --be: calc(var(--b) * var(--k, 1));
@@ -51,9 +51,9 @@
       close);
   }
   /* buttons: clipped; the ring is the border */
-  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row)) {
+  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row)) {
     position: relative; clip-path: var(--wave); }
-  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row))::after {
+  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #menu .row))::after {
     content: ""; position: absolute; inset: 0; pointer-events: none; background: var(--edge, transparent); clip-path: var(--ring); }
   /* neighbors bow differently: one edge in, the peak off the middle */
   :where(button:nth-child(3n + 2)) { --t: 2px; --b: -1px; --x: 56%; }

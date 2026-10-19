@@ -57,6 +57,10 @@ pub struct App {
     pub inventory_at: Mutex<Option<Instant>>,
     /// coding agents' states by pane key (AC-39)
     pub agent_states: Mutex<crate::tmux::agentstate::States>,
+    /// what coding agents' hooks said about their panes (AC-39)
+    pub hooks: crate::tmux::hookstate::Hooks,
+    /// the messages and commands sent, per project (AC-90)
+    pub sent: crate::sent::Sent,
     /// who sized which window (AC-13)
     pub sizes: crate::page::sizing::Sizes,
     /// settings, themes, hot keys, custom.css (AC-12, AC-18, AC-19)

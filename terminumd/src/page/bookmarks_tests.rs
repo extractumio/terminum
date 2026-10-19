@@ -152,7 +152,7 @@ fn kept_across_a_restart_readable_by_the_user_only() {
     let d = Dir::new();
     let mut s = Store::load(d.file());
     let a = s.add(mark("tmux:local:terminum:%1", 4, "x", "n")).unwrap();
-    s.set_note(&a.id, "later".into()).unwrap();
+    s.set_note(&a.id, "later".into(), None).unwrap();
     let b = s.add(NewMark { host: Some("devbox.example".into()), created: Some(1792000000), ..mark("tmux:devbox.example:default:%2", 9, "y", "") }).unwrap();
     assert!(s.remove(&b.id).unwrap());
     assert!(!s.remove(&b.id).unwrap(), "gone already");
@@ -204,7 +204,7 @@ fn the_cap_and_a_failed_write_keep_nothing_half_saved() {
     let d = Dir::new();
     let mut s = Store::load(d.file());
     for k in 0..MAX_ITEMS {
-        s.items.push(Item { id: k.to_string(), key: None, created: None, n: 0, text: String::new(), note: String::new(), title: String::new(), host: None, at: 0 });
+        s.items.push(Item { id: k.to_string(), key: None, created: None, n: 0, text: String::new(), note: String::new(), title: String::new(), host: None, at: 0, remind: false, due: false, resolved: None });
     }
     assert!(s.add(mark("k", 1, "x", "")).unwrap_err().0.contains("at most"));
     let mut s = Store::load(d.file());
@@ -212,11 +212,11 @@ fn the_cap_and_a_failed_write_keep_nothing_half_saved() {
     fs::set_permissions(&d.0, fs::Permissions::from_mode(0o500)).unwrap(); // the write fails
     let e = s.add(mark("k", 2, "y", "")).unwrap_err();
     assert!(e.0.starts_with("Not saved: ") && !e.0.contains("os error"), "{e}");
-    assert!(s.set_note(&a.id, "z".into()).is_err());
+    assert!(s.set_note(&a.id, "z".into(), None).is_err());
     assert!(s.remove(&a.id).is_err());
     assert_eq!(s.all(), std::slice::from_ref(&a));
     fs::set_permissions(&d.0, fs::Permissions::from_mode(0o700)).unwrap();
-    assert_eq!(s.set_note("gone", "z".into()).unwrap_err().0, DELETED);
+    assert_eq!(s.set_note("gone", "z".into(), None).unwrap_err().0, DELETED);
     assert_eq!(Store::load(d.file()).all(), [a]);
 }
 
@@ -245,4 +245,30 @@ fn a_save_sent_again_is_kept_once() {
     }
     assert_eq!(s.ref_id("same"), None, "the oldest of more than REFS go");
     assert_eq!(s.ref_id("r99"), Some("x"));
+}
+
+#[test]
+fn a_reminder_comes_up_at_each_turns_end_until_resolved() {
+    let d = Dir::new();
+    let mut s = Store::load(d.file());
+    let k = "tmux:local:terminum:%1";
+    let r = s.add(NewMark { remind: true, ..mark(k, 4, "the retry loop", "check it") }).unwrap();
+    let b = s.add(mark(k, 5, "a bookmark", "")).unwrap();
+    s.add(NewMark { remind: true, ..mark("tmux:local:terminum:%2", 1, "other", "") }).unwrap();
+    let up = s.due(&[k.to_string()]).unwrap();
+    assert_eq!(up.iter().map(|i| i.id.as_str()).collect::<Vec<_>>(), [r.id.as_str()], "its pane's reminders, not a bookmark or another pane's");
+    assert!(s.due(&[k.to_string()]).unwrap().is_empty(), "up already");
+    assert!(Store::load(d.file()).get(&r.id).unwrap().due, "kept across a restart");
+    assert!(!s.settle(&r.id, false).unwrap().due, "closed");
+    assert_eq!(s.due(&[k.to_string()]).unwrap().len(), 1, "up again at the next turn's end");
+    let done = s.settle(&r.id, true).unwrap();
+    assert!(done.resolved.is_some() && !done.due);
+    assert!(s.due(&[k.to_string()]).unwrap().is_empty(), "resolved: never again");
+    let made = s.set_note(&b.id, "now".into(), Some(true)).unwrap();
+    assert!(made.remind && made.note == "now", "a bookmark made a reminder, its note changed, saved once");
+    assert!(s.set_note(&r.id, String::new(), Some(true)).unwrap().resolved.is_some(), "the same kind: as it was");
+    s.set_note(&r.id, String::new(), Some(false)).unwrap();
+    assert!(s.set_note(&r.id, String::new(), Some(true)).unwrap().resolved.is_none(), "made a reminder again: open");
+    let wire = b.wire();
+    assert!(wire.get("remind").is_none() && wire.get("due").is_none(), "a bookmark's file entry is as before");
 }

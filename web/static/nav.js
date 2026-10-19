@@ -31,6 +31,9 @@ let hues = new Map();                  // each folder's hue, for the list as las
 // a coding agent's own mark (their owners' trademarks, outside terminum's licenses: NOTICE)
 const MARKS = { claude: ["agents/claude.svg", "Claude Code"], codex: ["agents/codex.svg", "Codex"] };
 
+/** A coding agent's name ("Claude Code"), undefined for another program. */
+export const agentName = (agent) => MARKS[agent]?.[1];
+
 /** What runs in a pane, as an icon: a coding agent's mark, else the terminal's (also when a mark
  *  file was left out of the build). */
 export function agentMark(item, size = 14) {
@@ -95,7 +98,7 @@ function grip(kind, label) {
   return g;
 }
 
-function row(item, current, onPick, movable, child = false, marked = new Set()) {
+function row(item, current, onPick, movable, child = false, marked = new Map()) {
   const li = document.createElement("li");
   if (movable) li.append(grip("row", "this window"));
   const b = el("button", "item" + (child ? " child" : "") + (item.id === current ? " on" : ""));
@@ -112,12 +115,20 @@ function row(item, current, onPick, movable, child = false, marked = new Set()) 
   if (parts.length) txt.append(metaLine(parts, !!item.host));
   const st = el("span", "st");
   const mark = stateIcon(item.state);
+  const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
+  if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);
+  if (item.subagents) {
+    const n = el("span", "subs", String(item.subagents));
+    n.title = `${item.subagents} subagent${item.subagents > 1 ? "s" : ""} running`;
+    st.append(n);
+  }
   // the bar's column holds the orange strip beside it: the row's grid keeps its three columns
   const bar = folderBar(item, item.id === current, item.state === "working");
   if (marked.has(item.id)) {
-    const both = el("span", "bars"), m = el("span", "bmbar");
-    m.title = "Has bookmarks";
+    const remind = marked.get(item.id) === "remind";
+    const both = el("span", "bars"), m = el("span", remind ? "bmbar remind" : "bmbar");
+    m.title = remind ? "Has reminders" : "Has bookmarks";
     both.append(bar, m);
     b.append(both, txt, st);
   } else b.append(bar, txt, st);
@@ -139,7 +150,7 @@ export function hostState(g) {
 // A group's header collapses and expands it; while a filter is typed every match is shown. A
 // host's group has a menu of its own (onHost(group, button)), also while it has no rows, and
 // while its tmux runs other sessions an icon that offers them (onImport(group), AC-89).
-export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, onNew, marked = new Set(), onHost = null, onCopy = null, onImport = null) {
+export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, onNew, marked = new Map(), onHost = null, onCopy = null, onImport = null) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look

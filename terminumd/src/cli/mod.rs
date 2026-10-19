@@ -4,7 +4,9 @@
 //! the newest build's terminumd) or with a command as its first argument (`terminumd install`,
 //! as install.sh runs it from the package).
 
+pub mod agentsetup;
 mod commands;
+pub mod hook;
 mod ctx;
 mod direct;
 mod importer;
@@ -40,12 +42,15 @@ usage: terminum [command]
   rollback                back to the build before
   restart                 load the launchd agent again (a new port; a port taken back)
   uninstall               remove it (keeps settings, state and logs; tmux untouched)
+  hooks [install|remove] [claude|codex]
+                          the coding agents found and terminum's hooks in them: exact
+                          states, prompts and reminders (no agent named: every one found)
   import                  workspaces, bookmarks and hosts of iterm-enhancer
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";
 
-const COMMANDS: [&str; 16] = [
-    "status", "open", "password", "signout", "hosts", "tmux", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+const COMMANDS: [&str; 17] = [
+    "status", "open", "password", "signout", "hosts", "tmux", "hooks", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -67,6 +72,8 @@ pub enum Cmd {
     /// `tmux [attach|detach <session> [--socket S | --host H]]` (AC-89): action, session, and
     /// where ("socket" or "host", and its value; empty: plain `tmux` here)
     Tmux(Option<(String, String, String, String)>),
+    /// `hooks [status|install|remove] [claude|codex]` (AC-39)
+    Hooks(String, Option<String>),
     Upgrade(Option<String>),
     Rollback,
     Restart,
@@ -125,6 +132,12 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
                 Ok(Cmd::Tmux(Some((a.clone(), session.clone(), f[2..].to_string(), v.clone())))),
             _ => Err(usage("usage: terminum tmux [attach|detach <session> [--socket S | --host H]]")),
         },
+        "hooks" => match rest {
+            [] => Ok(Cmd::Hooks("status".into(), None)),
+            [a, more @ ..] if ["status", "install", "remove"].contains(&a.as_str()) && more.len() <= 1
+                && more.first().is_none_or(|x| agentsetup::AGENTS.contains(&x.as_str())) => Ok(Cmd::Hooks(a.clone(), more.first().cloned())),
+            _ => Err(usage("usage: terminum hooks [status|install|remove] [claude|codex]")),
+        },
         "upgrade" => match rest {
             [] => Ok(Cmd::Upgrade(None)),
             [to, tag] if to == "--to" => Ok(Cmd::Upgrade(Some(tag.clone()))),
@@ -167,8 +180,8 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
     match cmd {
         Cmd::Help => ctx.say(USAGE),
         Cmd::Version => ctx.say(crate::config::build_id()),
-        Cmd::Status => commands::status(ctx),
-        Cmd::Open { print } => commands::open_page(ctx, print)?,
+        Cmd::Status => { commands::status(ctx); hooks_tip(ctx); }
+        Cmd::Open { print } => { commands::open_page(ctx, print)?; hooks_tip(ctx); }
         Cmd::Signout => commands::signout(ctx)?,
         Cmd::Password => commands::password(ctx)?,
         Cmd::Hosts(None, ..) => commands::hosts_list(ctx)?,
@@ -178,6 +191,10 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         Cmd::Hosts(Some(h), Some(name), _) => commands::hosts_action(ctx, &h, &name)?,
         Cmd::Tmux(None) => commands::tmux_list(ctx)?,
         Cmd::Tmux(Some((action, session, flag, value))) => commands::tmux_action(ctx, &action, &session, &flag, &value)?,
+        Cmd::Hooks(action, agent) => {
+            as_user()?;
+            agentsetup::run(ctx, &action, agent.as_deref())?;
+        }
         Cmd::Upgrade(tag) => return upgrade::upgrade(ctx, tag.as_deref()),
         Cmd::Import => commands::import_state(ctx)?,
         Cmd::Logs { lines, follow } => commands::logs(ctx, lines, follow)?,
@@ -189,6 +206,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
                     let pkg = ctx.pkg.clone().ok_or("cannot tell which package this terminumd came in")?;
                     install::install(ctx, &pkg)?;
                     install::path_tip(ctx);
+                    hooks_tip(ctx);
                 }
                 Cmd::Rollback => install::rollback(ctx)?,
                 Cmd::Uninstall => install::uninstall(ctx)?,
@@ -197,6 +215,13 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         }
     }
     Ok(0)
+}
+
+/// The agents found without terminum's hooks, said once after status, open and install.
+fn hooks_tip(ctx: &Ctx) {
+    if let Some(tip) = agentsetup::hint(ctx) {
+        ctx.say(if ctx.color() { format!("\x1b[38;5;69mTip: {tip}\x1b[0m") } else { format!("Tip: {tip}") });
+    }
 }
 
 /// The command line of this process; the exit status.

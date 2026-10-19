@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// Sent history (AC-90) and reminders (AC-91) against a fake terminumd (fake.mjs), at a wide and
+// a phone size: Enter at a shell prompt tells what it sends before the key; the button under the
+// split opens the last one as Markdown, ↑ asks for the one before; a reminder up makes the pale
+// fuchsia button blink until it is pressed, its pane shows it as Markdown with Resolve; the
+// dialog makes a reminder; the session list's strip is fuchsia for a session with one.
+
+import fs from "node:fs";
+import path from "node:path";
+import { check, runningIn } from "./check.mjs";
+import { drawn, group, item, line, openPage, pause, SIZES } from "./fake.mjs";
+
+const DIST = path.join(import.meta.dirname, "../../ui/dist");   // the renderers, as terminumd serves them at /fb/
+const SID = "tmux:local:terminum:%1";
+const LAYOUT = [group("main", [item(SID, "api", { shell: true, sub: ["zsh", "~/work/api"] }), item("tmux:local:terminum:%2", "docs", { index: "2" })])];
+const SCREEN = [line("out 1"), line("reminder text here"), { r: [["alex@mac api % git status", null, null, 0], [" ", null, null, 256]], e: true }];
+const REMINDER = { id: "R1", sid: SID, key: SID, n: 1, text: "reminder text here", note: "**check** the retry", title: "api", host: null, at: 1792000000, remind: true, due: true };
+const ITEM = { at: 1792000000, text: "fix the **tests**", agent: "claude", title: "api" };
+
+export async function webSent(browser, name) {
+  for (const [size, device] of SIZES) {
+    runningIn(`${name} ${size}`);
+    const f = await openPage(browser, { device, layout: LAYOUT, screen: SCREEN, hook: (m, say) => {
+      if (m.t === "sentget") say({ t: "sentone", sid: SID, n: m.n, total: 2, item: m.n === 0 ? ITEM : { ...ITEM, text: "ls -la", agent: undefined }, host: "local", path: "/Users/alex/work/api" });
+    } });
+    const { page, sent } = f;
+    await page.route("**/fb/**", (route) => {
+      const file = path.join(DIST, path.normalize(new URL(route.request().url()).pathname.slice(4)));
+      return file.startsWith(DIST) && fs.existsSync(file) ? route.fulfill({ contentType: "text/javascript", body: fs.readFileSync(file) }) : route.fulfill({ status: 404, body: "" });
+    });
+    await drawn(page);
+    await pause(page, 300);
+
+    await page.focus("#kbd");
+    const n = sent.length;
+    await page.keyboard.press("Enter");
+    await pause(page, 150);
+    const after = sent.slice(n).map((m) => m.t);
+    const told = sent.slice(n).find((m) => m.t === "sent");
+    check("sent: Enter at a shell prompt tells the command after the prompt, before the key", told?.text === "git status" && told.agent === ""
+      && after.indexOf("sent") < after.indexOf("in"), JSON.stringify(sent.slice(n)));
+
+    const at = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(), s = r("sentfab"), p = r("splitfab");
+      return { below: s.top >= p.bottom, aligned: Math.abs(s.left - p.left) < 1, shown: !document.getElementById("sentfab").hidden }; });
+    check("sent: its button stands under the split", at.shown && at.below && at.aligned, JSON.stringify(at));
+    await page.click("#sentfab");
+    await page.waitForFunction(() => document.querySelector("#spbody strong")?.textContent === "tests", null, { timeout: 5000 }).catch(() => {});
+    const shown = await page.evaluate(() => ({ pos: document.getElementById("sppos").textContent, where: document.getElementById("spwhere").textContent,
+      md: document.querySelector("#spbody strong")?.textContent, newer: document.getElementById("spnewer").disabled, inView: (() => { const r = document.getElementById("sentpane").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })() }));
+    check("sent: the last one as Markdown, where, 1 of 2; newer is off; the pane fits the view", shown.md === "tests" && shown.pos === "1 of 2"
+      && shown.where.replace(/\u200e/g, "") === "/Users/alex/work/api" && shown.newer && shown.inView, JSON.stringify(shown));
+    await page.click("#spolder");
+    await page.waitForFunction(() => document.querySelector("#spbody code")?.textContent.includes("ls -la"), null, { timeout: 5000 }).catch(() => {});
+    const older = await page.evaluate(() => ({ code: document.querySelector("#spbody code")?.textContent, pos: document.getElementById("sppos").textContent }));
+    check("sent: ↑ the one before; a command as a shell block", older.code?.includes("ls -la") && older.pos === "2 of 2" && sent.some((m) => m.t === "sentget" && m.n === 1), JSON.stringify(older));
+    await page.click("#spclose");
+
+    // a reminder up: the button blinks until pressed; its pane: Markdown, Resolve
+    f.say({ t: "marks", items: [REMINDER] });
+    await pause(page, 300);
+    const up = await page.evaluate(() => { const b = document.getElementById("remindfab"); return { shown: !b.hidden, due: b.classList.contains("due"), n: document.getElementById("remindfabn").textContent }; });
+    check("reminders: one up shows the button blinking, with its count", up.shown && up.due && up.n === "1", JSON.stringify(up));
+    await page.click("#remindfab");
+    await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
+    const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
+      acts: [...document.querySelectorAll(".rmacts button")].map((b) => b.textContent), due: document.getElementById("remindfab").classList.contains("due") }));
+    check("reminders: pressed, it blinks no more; its note as Markdown, its text quoted, Open, Close, Resolve", pane.md === "check" && pane.quote === "reminder text here"
+      && pane.acts.join() === "Open,Close,Resolve" && !pane.due, JSON.stringify(pane));
+    await page.click(".rmacts .primary");
+    await pause(page, 100);
+    check("reminders: Resolve tells terminumd", sent.some((m) => m.t === "remind" && m.id === "R1" && m.action === "resolve"));
+    if (size === "1400×900") {
+      const strip = await page.evaluate((id) => document.querySelector(`#sessions .item[data-id="${id}"] .bmbar`)?.className, SID);
+      check("reminders: a fuchsia strip in the session list", strip === "bmbar remind", strip);
+      // the dialog: Reminder sends remind
+      await page.evaluate(() => { const row = [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("out 1"));
+        const r = document.createRange(); r.selectNodeContents(row); getSelection().removeAllRanges(); getSelection().addRange(r); });
+      await page.waitForSelector("#markadd:not([hidden])", { timeout: 3000 }).catch(() => {});
+      await page.click("#markadd");
+      await page.waitForSelector("#markbox[open]");
+      await page.click('#markkind [data-kind="reminder"]');
+      const title = await page.textContent("#marktitle");
+      await page.click('#markbox button[value="save"]');
+      await pause(page, 150);
+      const mark = sent.find((m) => m.t === "mark" && !m.id);
+      check("reminders: the dialog's Reminder makes one", title === "Reminder" && mark?.remind === true, JSON.stringify({ title, mark }));
+    }
+    await f.context.close();
+  }
+}

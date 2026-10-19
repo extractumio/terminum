@@ -4,6 +4,7 @@
 //! on the socket (no real terminumd, no launchd, no tmux), and a stub launchctl.
 
 mod cmd_tests;
+mod hooks_tests;
 mod import_tests;
 mod install_tests;
 mod launch_tests;

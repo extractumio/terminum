@@ -70,7 +70,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "more" => super::hist::older(app, page, msg["before"].as_i64().unwrap_or(0), msg["to"].as_i64()).await,
         "unfold" => super::hist::unfold(app, page, msg["n"].as_i64().unwrap_or(0), msg["to"].as_i64().unwrap_or(-1)).await,
         "find" => super::find::start(app, page, &msg),
-        "mark" | "unmark" | "locate" => super::marks::handle(app, page, t, &msg).await,
+        "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => files(app, page).await,
         "size" | "fit" | "unfit" | "screenmode" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
         "new" | "newsession" | "split" | "rename" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
@@ -81,6 +81,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
                 error(page, e, None);
             }
         }
+        "sent" | "sentget" => super::sent::handle(app, page, t, &msg).await,
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => pause(page, true),
         "resume" => resume(app, page),
@@ -127,23 +128,24 @@ fn resume(app: &Shared, page: &Arc<Page>) {
 
 /// The shown pane's folder, home and host, for the Files view and printed paths (AC-51).
 async fn files(app: &Shared, page: &Arc<Page>) {
+    match shown_cwd(page).await {
+        Ok((key, server, cwd)) => page.send_json(&files_message(&server, &key, &cwd).await),
+        Err((key, e)) => page.send_json(&json!({"t": "files", "sid": key, "error": e})),
+    };
+    let _ = app;
+}
+
+/// The shown pane's key, server and folder; Err(its key if any, why).
+pub async fn shown_cwd(page: &Page) -> Result<(String, Arc<Server>, String), (Option<String>, String)> {
     let (key, server, pane) = {
         let st = page.state.lock();
-        let Some(s) = &st.shown else {
-            page.send_json(&json!({"t": "files", "error": "No pane is shown."}));
-            return;
-        };
+        let s = st.shown.as_ref().ok_or((None, "No pane is shown.".to_string()))?;
         (s.key.clone(), s.server.clone(), s.pane.clone())
     };
-    let cwd = match server.run(format!("display -p -t {pane} '#{{pane_current_path}}'")).await {
-        Ok(lines) => lines.into_iter().next().unwrap_or_default(),
-        Err(e) => {
-            page.send_json(&json!({"t": "files", "sid": key, "error": format!("The pane's folder is not known: {e}")}));
-            return;
-        }
-    };
-    page.send_json(&files_message(&server, &key, &cwd).await);
-    let _ = app;
+    match server.run(format!("display -p -t {pane} '#{{pane_current_path}}'")).await {
+        Ok(lines) => Ok((key, server, lines.into_iter().next().unwrap_or_default())),
+        Err(e) => Err((Some(key), format!("The pane's folder is not known: {e}"))),
+    }
 }
 
 /// The `files` message: the shown pane's key, folder, home and host (for the Files panel).

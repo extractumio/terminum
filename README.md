@@ -53,6 +53,7 @@ terminum signout              # every browser signs in again
 terminum upgrade              # the latest signed release (--to vX.Y.Z); rollback; uninstall
 terminum restart              # load the launchd agent again (a new port in settings.json; a port taken back)
 terminum logs                 # terminumd's log (-n N, -f)
+terminum hooks install        # Claude Code's and Codex's own hooks: exact states, prompts, reminders
 ```
 
 Every browser, on the Mac or another device, signs in with the password; until one is set the
@@ -63,6 +64,15 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **Quick shell**: the button in the header (or "Quick shell below" / "on the left" in the menu)
   opens a shell of its own under the shown pane, in its folder, for quick commands; drag its edge
   to size it, ⇄ moves it, × closes it. It is a tmux window marked with its pane, listed under it.
+- **Coding agents**: with `terminum hooks install` Claude Code (a plugin of terminum's, added
+  with `claude plugin`) and Codex (entries in `~/.codex/hooks.json`; trust them once in Codex's
+  `/hooks`) tell terminum when they work, wait for an approval or an answer, stop, fail or run
+  subagents; without them terminum reads their screens. `terminum hooks` says what is set up,
+  `terminum hooks remove` takes terminum's hooks out.
+- **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
+  (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer.
+- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell blinks when that
+  session's agent ends a turn. Close puts it down until the next turn ends, Resolve ends it.
 - **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
   host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
 

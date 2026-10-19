@@ -92,6 +92,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
 .s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
 .item .st { display: grid; place-items: center; padding-top: 2px; }
+.item .st .subs { font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* subagents running (hooks) */
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
 #sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }
 .item.child { padding-top: 4px; padding-bottom: 4px; }

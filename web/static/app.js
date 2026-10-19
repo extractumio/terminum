@@ -7,6 +7,9 @@ import "./press.js";                                // a pressed button's ripple
 import { Input } from "./input.js";
 import { agentMark, findItem, folderBar, metaLine, renderNav, stateIcon } from "./nav.js";
 import { textForm } from "./render.js";
+import { sessionDrawer } from "./drawer.js";
+import { sentHistory } from "./sent.js";
+import { reminders as reminderBox } from "./reminders.js";
 import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
 import { askConfirm, navTools } from "./navtools.js";
@@ -80,7 +83,7 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 } });
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
-  send: (data, path, e) => { send({ t: "in", data, ...trace.keyFields(data, path, e) }); screen.typed(); if (data.includes("\r")) st.ran = true; },
+  send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); screen.typed(); if (data.includes("\r")) st.ran = true; },
   options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
     tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
@@ -147,7 +150,7 @@ view.onRows = (full, keep) => { if (widgetsOn()) (keep ? widgets.keepPlace(() =>
 view.onReset = () => { widgets.reset(); shownFiles.forget(); };
 // Bookmarks of a selection, with a note, kept on the Mac (AC-57)
 const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive: (id) => findItem(st.groups, id)?.item.title ?? null,
-  pick: (id) => pick(id), toast, onChange: () => drawNav(), copy: (text) => input.copySelection(text, true) });
+  pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); }, copy: (text) => input.copySelection(text, true) });
 trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => shownMode(), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
 $("term").addEventListener("scroll", () => { if (!kbdFrame) kbdFrame = requestAnimationFrame(() => { kbdFrame = 0; placeKbd(); }); }, { passive: true });
@@ -250,6 +253,7 @@ function onMessage(m) {
     case "stall": tools.showStall(m); break;
     case "build": conn.checkBuild(m.id); break;
     case "trace": trace.onMessage(m); break;
+    case "sentone": case "sentnew": sent.onMessage(m); break;
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
@@ -268,6 +272,9 @@ function pick(id) {
   if (of) quick.focus(); else focusTerminal();
 }
 const reminders = waitingCards($("asks"), pick);
+const sent = sentHistory({ view, send, item: () => findItem(st.groups, st.sid)?.item ?? null, copy: (text) => input.copySelection(text, true), toast });
+const reminded = reminderBox({ marks: bookmarks, send, restack: () => bookmarks.placeFab() });
+bookmarks.onPlaced = () => { sent.place(); reminded.place(); };
 function drawNav() {
   if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);
   reminders.show(st.sid);
@@ -324,41 +331,11 @@ function select(id, force = false) {
   send({ t: "sub", id });                          // first: the server answers "files" for the subscribed pane
   screen.opened();                                 // its Screen mode and this view's size
   views.sessionChanged(id);
+  sent.shown();
   drawNav(); syncControls();
 }
 
-function openDrawer() {
-  if (!narrow.matches) { $("app").classList.remove("nav-hidden"); store.set("navHidden", false); return; }
-  $("app").classList.add("nav-open");
-  $("navbtn").setAttribute("aria-expanded", "true");
-  $("sessions").querySelector(".item.on")?.scrollIntoView({ block: "center" });
-}
-function closeDrawer() {
-  $("app").classList.remove("nav-open");
-  $("navbtn").setAttribute("aria-expanded", "false");
-}
-$("navbtn").onclick = openDrawer;
-$("current").onclick = () => (narrow.matches ? openDrawer() : $("filter").focus());
-
-$("scrim").onclick = closeDrawer;
-$("drawerclose").onclick = closeDrawer;
-// "/" filters the sessions, unless the keys go to a field or the terminal
-document.addEventListener("keydown", (e) => {
-  if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey || e.target.closest?.("input, textarea, [contenteditable]")) return;
-  e.preventDefault();
-  openDrawer();
-  $("filter").focus();
-});
-$("navclose").onclick = () => {
-  if (narrow.matches) return closeDrawer();
-  $("app").classList.add("nav-hidden"); store.set("navHidden", true);
-};
-$("filter").addEventListener("input", drawNav);
-$("filter").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") $("sessions").querySelector(".item")?.click();
-  if (e.key === "Escape") { $("filter").value = ""; drawNav(); input.focus(); }
-});
-if (store.get("navHidden", false)) $("app").classList.add("nav-hidden");
+const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus() });
 
 // ---------- theme ----------
 
