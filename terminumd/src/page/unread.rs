@@ -40,13 +40,15 @@ pub fn read(app: &Shared, key: &str) {
     }
 }
 
-/// The list's rows of unread panes say so; when the list is whole, panes gone are forgotten.
+/// The list's rows of unread panes say so, but not while busy (working, waiting, its subagents
+/// running: its work goes on, and a list sent before a hook's Stop may still say so). When the
+/// list is whole, panes gone are forgotten.
 pub fn mark(app: &Shared, groups: &mut [Value], whole: bool) {
     let mut unread = app.unread.lock();
     let mut listed = std::collections::HashSet::new();
     for it in groups.iter_mut().flat_map(|g| g["items"].as_array_mut().into_iter().flatten()) {
         let Some(id) = it["id"].as_str() else { continue };
-        let on = unread.contains(id);
+        let on = unread.contains(id) && !crate::page::turns::busy(it);
         listed.insert(id.to_string());
         match it.as_object_mut() {
             Some(o) if on => { o.insert("unread".into(), json!(true)); }

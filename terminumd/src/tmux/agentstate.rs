@@ -29,6 +29,13 @@ const FAILED: [&str; 10] = ["api error", "overloaded_error", "request timed out"
 /// program is `node` (Codex installed with npm) runs Codex while its screen shows one.
 const CODEX_WORDS: [&str; 5] = ["openai codex (v", "ask codex to do anything", "tell codex what to do differently",
                                 "enter to submit answer", "tab to add notes"];
+/// What Claude Code's footer counts of the work it runs in the background, after the number
+/// ("1 shell, 1 monitor", "2 local agents"; measured in its code): its session is not done while
+/// one runs. An Artifact comment monitor, a dream or a memory import is no work of a turn.
+/// Rows of its footer: the status line, the mode and the counts, a notice.
+const FOOTER: usize = 4;
+const BACKGROUND: [&str; 9] = ["shell", "monitor", "local agent", "team", "background dynamic workflow",
+                               "remote dynamic workflow", "cloud session", "mcp task", "background task"];
 /// Codex's title while it waits for the user, blinking: "[ ! ] Action Required | <thread> | <folder>".
 pub const CODEX_ASKS: [&str; 2] = ["[ ! ] Action Required", "[ . ] Action Required"];
 
@@ -126,6 +133,47 @@ fn text_then_paren(tail: &[char], start: usize) -> bool {
     })
 }
 
+/// Whether Claude Code's newest turn line says its subagents still run: "✻ Waiting for 2
+/// background agents to finish" (also "1 background agent and 1 dynamic workflow", "dynamic
+/// workflows"; measured in its code), not a later "✻ Worked for 3m 2s" (a turn after they ended).
+/// Its turn goes on until they end.
+fn background_work(tail: &str) -> bool {
+    let mark = |c: char| matches!(c, '\u{2722}'..='\u{273d}' | '\u{b7}' | '*');
+    let turn_line = |l: &str| -> Option<bool> {
+        let mut c = l.trim_start().chars();
+        if !c.next().is_some_and(mark) || c.next() != Some(' ') {
+            return None;
+        }
+        let rest = c.as_str().to_lowercase();
+        if rest.starts_with("waiting for") && rest.contains("to finish") && (rest.contains(" background agent") || rest.contains(" dynamic workflow")) {
+            return Some(true);
+        }
+        // "Worked for 2m 12s", "Cooked for 9s": its verb, " for ", a duration
+        let (verb, after) = rest.split_once(" for ")?;
+        (!verb.contains(' ') && after.starts_with(|c: char| c.is_ascii_digit())).then_some(false)
+    };
+    tail.lines().rev().find_map(turn_line).unwrap_or(false)
+}
+
+/// Whether Claude Code's footer counts work in the background: the rows (at most FOOTER) under
+/// its input box (a rule, "❯ " and what is typed, a rule), "⏵⏵ bypass permissions on · 1 shell,
+/// 1 monitor · ← 1 agent": each item exactly a number and a word of BACKGROUND. It is live; a turn
+/// line's "· 1 shell still running" stays when the shell has ended.
+pub fn background_tasks(rows: &[String]) -> bool {
+    let rule = |r: &String| r.trim_start().starts_with("\u{2500}\u{2500}");
+    let Some(bottom) = rows.iter().rposition(rule) else { return false };
+    let Some(top) = rows[..bottom].iter().rposition(rule) else { return false };
+    if !rows[top + 1].trim_start().starts_with('\u{276f}') {
+        return false;                                       // not Claude Code's input box (Codex: "›")
+    }
+    rows[bottom + 1..].iter().take(FOOTER).any(|r| r.split(" \u{b7} ").flat_map(|part| part.split(", ")).any(|item| {
+        let item = item.trim().trim_start_matches(|c: char| !c.is_alphanumeric()).to_lowercase();   // a mark before ("◇ 1 cloud session")
+        let Some((n, what)) = item.split_once(' ') else { return false };
+        let what = what.trim_end();
+        n.parse::<u32>().is_ok_and(|n| n > 0) && BACKGROUND.iter().any(|w| what == *w || what.strip_suffix('s') == Some(*w))
+    }))
+}
+
 /// The state from the raw title and the screen's last rows.
 pub fn state_of(title: &str, rows: &[String]) -> State {
     let rows: Vec<String> = rows.iter().map(|r| r.replace('\0', " ")).collect();   // skipped cells
@@ -134,7 +182,8 @@ pub fn state_of(title: &str, rows: &[String]) -> State {
         return State::Waiting;
     }
     let chars: Vec<char> = tail.chars().collect();
-    let working = spinning(title) || any_of(&tail, &["esc to interrupt"]) || status_line(&chars);
+    let working = spinning(title) || any_of(&tail, &["esc to interrupt"]) || status_line(&chars) || background_work(&tail)
+        || background_tasks(&rows[rows.len().saturating_sub(ROWS)..]);
     if !working && any_of(&tail, &FAILED) {
         return State::Failed;
     }
@@ -232,6 +281,45 @@ mod tests {
         let done = with_footer(&["\u{273b} Worked for 2m 12s \u{b7} done 8:17 AM \u{b7} 1 shell still running", ""]);
         assert_eq!(state_of("Demo stand preparation", &working), Working);
         assert_eq!(state_of("Demo stand preparation", &done), Done);
+    }
+
+    #[test]
+    fn background_subagents_keep_the_turn_going() {
+        for line in ["\u{273b} Waiting for 2 background agents to finish", "\u{273b} Waiting for 1 background agent and 1 dynamic workflow to finish",
+                     "\u{273b} Waiting for 3 dynamic workflows to finish"] {
+            assert_eq!(state_of("\u{2733} Fix it", &with_footer(&[line, ""])), Working, "{line}");
+        }
+        assert_eq!(state_of("\u{2733} x", &with_footer(&["waiting for the build to finish", ""])), Done, "words of the transcript");
+        let after = with_footer(&["\u{273b} Waiting for 2 background agents to finish", "\u{23fa} Both agents are done.", "\u{273b} Worked for 3m 2s", ""]);
+        assert_eq!(state_of("\u{2733} x", &after), Done, "a turn after they ended: its own line counts");
+    }
+
+    #[test]
+    fn background_work_in_the_footer_keeps_the_session_going() {
+        let turn = ["\u{273b} Worked for 2m 12s \u{b7} 1 shell still running", "", "\u{2500}\u{2500}\u{2500}\u{2500}", "\u{276f} ", "\u{2500}\u{2500}\u{2500}\u{2500}", "  ~/p Opus 5.5 ctx:47%"];
+        let with = |pill: &str| { let mut v = rows(&turn); v.push(pill.to_string()); v };
+        for pill in ["  \u{23f5}\u{23f5} bypass permissions on \u{b7} 1 shell, 1 monitor \u{b7} \u{2190} 1 agent      current: 2.1.302",
+                     "  1 shell", "  2 monitors \u{b7} ? for shortcuts", "  \u{23f5}\u{23f5} accept edits on \u{b7} 2 local agents",
+                     "  1 background dynamic workflow", "  \u{25c7} 1 cloud session", "  3 background tasks", "  1 MCP task", "  2 teams"] {
+            assert_eq!(state_of("\u{2733} Fix it", &with(pill)), Working, "{pill}");
+        }
+        for pill in ["  \u{23f5}\u{23f5} bypass permissions on \u{b7} \u{2190} 1 agent", "  ? for shortcuts", "  1 Artifact comment monitor", "  dreaming"] {
+            assert_eq!(state_of("\u{2733} Fix it", &with(pill)), Done, "{pill}: the turn line's shell has ended");
+        }
+        let above = rows(&["  1 shell", "\u{2500}\u{2500}\u{2500}\u{2500}", "\u{276f} ", "\u{2500}\u{2500}\u{2500}\u{2500}", "  ~/p ctx:47%"]);
+        assert_eq!(state_of("\u{2733} x", &above), Done, "words above the input box are the transcript");
+        for pill in ["  1 Artifact comment monitor, 1 shell", "  dreaming, 2 shells \u{b7} ? for shortcuts", "  1 teammate \u{b7} 1 shell"] {
+            assert_eq!(state_of("\u{2733} Fix it", &with(pill)), Working, "{pill}");
+        }
+        for pill in ["  1 shell script added", "  3 monitors found", "  1 teammate"] {
+            assert_eq!(state_of("\u{2733} Fix it", &with(pill)), Done, "{pill}: no count of Claude Code's");
+        }
+        let md = rows(&["\u{2500}\u{2500}\u{2500}\u{2500}", "## Notes", "\u{2500}\u{2500}\u{2500}\u{2500}", "  1 shell"]);
+        assert!(!background_tasks(&md), "a rule of the transcript, no input box under it");
+        let codex = rows(&["\u{2500}\u{2500}\u{2500}\u{2500}", "\u{203a} Ask Codex to do anything", "\u{2500}\u{2500}\u{2500}\u{2500}", "  1 shell"]);
+        assert!(!background_tasks(&codex), "Codex's composer is no Claude Code input box");
+        let typed = rows(&["\u{2500}\u{2500}\u{2500}\u{2500}", "\u{276f} first line", "  second line", "\u{2500}\u{2500}\u{2500}\u{2500}", "  ~/p ctx:47%", "  1 shell"]);
+        assert!(background_tasks(&typed), "a prompt of two lines in the box");
     }
 
     #[test]

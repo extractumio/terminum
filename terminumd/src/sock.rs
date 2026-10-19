@@ -115,11 +115,11 @@ async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> StatusCode {
     let key = server.key(pane);
     if app.hooks.apply(&key, &ev, std::time::Instant::now()) {
         app.dirty.notify_one();
-        // a turn ended (its last background subagent too): its reminders come up, also when it
-        // was too quick for a layout to show it working (AC-91)
+        // a turn ended (its last background subagent too): its reminders come up with the list
+        // read this notice brings, also when it was too quick for a layout to show it working,
+        // once its screen shows no work in the background (AC-91, page/turns.rs)
         if app.hooks.take_ended(&key) {
-            let (app, key) = (app.clone(), key.clone());
-            tokio::spawn(async move { crate::manager::remind(&app, vec![key]).await });   // the hook is answered at once
+            app.turns.hook_ended(&key, std::time::Instant::now());
         }
     }
     let known = ev["agent"].as_str().and_then(crate::tmux::hookstate::agent).is_some();

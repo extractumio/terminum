@@ -16,6 +16,7 @@ from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import BIN, Terminumd, check, summary, tmux_on, wait_layout  # noqa: E402
+from e2e_agentstate import DONE_CC, PROGRAM, SHELL_CC  # noqa: E402
 
 PORT, SOCKET = 47975, "tm-test-hooks"
 tmux = partial(tmux_on, SOCKET)
@@ -143,6 +144,23 @@ def main():
         seen(pane, lambda r: r["state"] == "working")
         hook("claude", {"hook_event_name": "Stop", "session_id": "s1", "prompt_id": "t5"})
         check("AC-93 a turn that ends while it is shown leaves it read", seen(pane, lambda r: r.get("unread"), 2) is None)
+        # a Stop while a shell it started runs on (Claude Code's footer: "1 shell"): the turn ends
+        # once the shell has (AC-93); the stand-in draws Claude Code's screen, then drops the count
+        prog = os.path.join(t.app, "standin.js")
+        with open(prog, "w") as f:
+            f.write(PROGRAM)
+        screens = {"title": "\u2733 Fix it", "rows": [], "phases": [[SHELL_CC, 8000], [DONE_CC, 0]]}
+        cc = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "node", prog, json.dumps(screens)).strip()
+        seen(cc, lambda r: r["agent"] == "claude")
+        hook("claude", {"hook_event_name": "UserPromptSubmit", "session_id": "s2", "prompt_id": "b1"}, {"TMUX_PANE": cc})
+        hook("claude", {"hook_event_name": "Stop", "session_id": "s2", "prompt_id": "b1"}, {"TMUX_PANE": cc})
+        start = time.monotonic()
+        early = seen(cc, lambda r: r.get("unread"), 5)
+        r = seen(cc, lambda r: r["state"] == "working", 1)
+        check("AC-93 hooks' Stop with a shell still running (its footer counts it): working, not unread",
+              early is None and r is not None, (early, r))
+        r = seen(cc, lambda r: r.get("unread"), 10)
+        check("AC-93 the shell ended: the turn ends, unread", r is not None and r["state"] == "done" and time.monotonic() - start > 2, r)
         h = t.health()
         check("AC-39 /health says when Claude Code's hooks last spoke", isinstance(h.get("hooks", {}).get("claude"), int), h.get("hooks"))
         stopped = Terminumd.__new__(Terminumd)

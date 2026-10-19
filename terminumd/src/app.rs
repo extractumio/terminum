@@ -81,6 +81,8 @@ pub struct App {
     pub projects: Mutex<crate::page::projects::Projects>,
     /// panes whose agent ended a turn nobody has looked at since (AC-93)
     pub unread: Mutex<std::collections::HashSet<String>>,
+    /// turn ends read from the screen, waiting to stay so (AC-91, AC-93)
+    pub turns: crate::page::turns::Turns,
 }
 
 pub type Shared = Arc<App>;

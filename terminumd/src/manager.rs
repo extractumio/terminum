@@ -100,7 +100,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
     let host = (!local).then(|| server.name.clone());
     let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
     let looks = &app.looks;
-    let out = match layout::read(&server, &app.agent_states, &app.hooks, &home, |s| looks.theme_name(host.as_deref(), s)).await {
+    let out = match layout::read(&server, &app.agent_states, &app.hooks, &app.turns.hooked(), &home, |s| looks.theme_name(host.as_deref(), s)).await {
         Ok(read) => {
             let mut gs = read.groups;
             if !local {
@@ -180,6 +180,12 @@ pub async fn refresh(app: &Shared) {
             vec![]
         }
     };
+    // a turn ends when its pane stayed done a while, its subagents too (turns.rs)
+    let ended = {
+        let layout = app.layout.read();
+        let busy = |k: &str| crate::page::marks::find_item(&layout, k).map(|it| crate::page::turns::busy(&it));
+        app.turns.settle(ended, busy, complete, Instant::now())
+    };
     if !ended.is_empty() {
         remind(app, ended).await;
     }
@@ -190,10 +196,10 @@ pub async fn refresh(app: &Shared) {
     announce_offers(app);
 }
 
-/// The panes whose coding agent ended a turn between layouts `old` and `new`: it worked or
-/// waited, and now is done, failed or shows no agent (AC-91).
+/// The panes whose coding agent ended a turn between layouts `old` and `new`: it worked,
+/// waited or had subagents running, and now is done, failed or shows no agent (AC-91).
 pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
-    let busy = |it: &&Value| it["state"] == "working" || it["state"] == "waiting";
+    let busy = |it: &&Value| crate::page::turns::busy(it);
     let old = old.as_array().map_or(&[][..], Vec::as_slice);
     use crate::page::marks::layout_items as items;
     let was: HashSet<&str> = items(old).filter(busy).filter_map(|it| it["id"].as_str()).collect();
@@ -235,12 +241,14 @@ fn announce_offers(app: &Shared) {
     }
 }
 
-/// The loop: a refresh on every change notice (coalesced), every 2 s while a page looks.
+/// The loop: a refresh on every change notice (coalesced), every 2 s while a page looks, and
+/// when a turn's end has settled (turns.rs).
 pub async fn run(app: Shared) {
     tokio::spawn(stalls(app.clone()));
     loop {
         refresh(&app).await;
         let wait = if app.tmux_problem.lock().is_some() { TMUX_AGAIN } else if app.pages.any_active() { EVERY } else { Duration::from_secs(30) };
+        let wait = app.turns.due_in(Instant::now()).map_or(wait, |d| wait.min(d + Duration::from_millis(50)));   // a turn's end, settled
         tokio::select! {
             _ = app.dirty.notified() => tokio::time::sleep(Duration::from_millis(100)).await,
             _ = tokio::time::sleep(wait) => {}

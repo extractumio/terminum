@@ -102,6 +102,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),
         projects: Mutex::new(page::projects::Projects::load(dir.join("projects.json"))),
         unread: Mutex::default(),
+        turns: Default::default(),
         cfg,
     })
 }
