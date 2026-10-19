@@ -2,7 +2,7 @@
 // The header's menu (AC-07, AC-15, AC-17): its pane actions, the splits (the quick shell), Move window
 // to session…, Close pane (asked first), Restore again after a restore report, the report's
 // banner over the terminal, and the chip of a newer release with its own menu.
-import { askConfirm } from "./navtools.js";
+import { closeSession } from "./navtools.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -37,8 +37,7 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
     const found = current();
     close();
     if (!found) return;
-    const prog = found.item.sub?.[0] || "a program";
-    if (await askConfirm(`Close this pane? The program running in it (${prog}) ends.`, "Close")) send({ t: "kill", id: found.item.id });
+    closeSession(found.item, send);
   };
 
   function hideMoves() { $("movelist").hidden = true; $("movewin").setAttribute("aria-expanded", "false"); }

@@ -7,6 +7,7 @@ a killed tmux server. Browser checks of the page are in web/test.
 
     python3 scripts/e2e_core.py      (needs terminumd built: cd terminumd && cargo build)
 """
+import json
 import os
 import subprocess
 import sys
@@ -55,11 +56,21 @@ def main():
         sized = ws.until(lambda m: m["t"] == "sized", 5)
         check("AC-13 the page that opens a pane sizes it", sized and sized["cols"] == 80 and sized["mine"], sized)
         check("AC-13 the window is 80x24 with window-size manual", "80x24 manual" in tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}"))
+        bounds = []
+        for cols, rows in ((10, 3), (500, 200), (80, 24)):
+            ws.send({"t": "size", "cols": cols, "rows": rows, "typing": True})
+            got = ws.until(lambda m: m["t"] == "sized" and m["mine"], 5)
+            bounds.append(got and (got["cols"], got["rows"]))
+        check("AC-13 a grid stays within 45x14 (an iPhone in portrait) and 240x70 (a big desktop window)",
+              bounds == [(45, 14), (240, 70), (80, 24)] and "80x24" in tmux("list-windows", "-F", "#{window_width}x#{window_height}"), bounds)
 
         t0 = time.time()
         ws.send({"t": "in", "data": f"cd '{work}' && echo typed-$((40+2))\r", "k": 1})
         echo = screen_with(ws, "typed-42")
         check("AC-03 typed text and Enter reach the pane", echo is not None, f"{(time.time() - t0) * 1000:.0f} ms")
+        ws.send({"t": "in", "data": "clear; printf '⏺ Bash(ls)\\n  ⎿  total 12\\n     a\\n'; seq -f '     line %g' 1 10; printf '\\n⏺ Done.\\n'\r"})
+        folded = ws.until(lambda m: m["t"] == "screen" and any(f[2].startswith("⋯") for f in m.get("folds", [])), 8)
+        check("AC-32 a tool's long output still on the screen comes with its fold", folded is not None, folded and folded.get("folds"))
         ws.send({"t": "in", "data": "printf '<%s>' ab\x1b[D\x1b[3~X\r"})
         check("AC-03 special keys go by name (Left, DC)", screen_with(ws, "<aX>") is not None)
 
@@ -118,12 +129,56 @@ def main():
         ws.send({"t": "rename", "id": created["id"], "name": "dep#(id)loy"})
         renamed = wait_layout(ws, lambda gs: any(i["title"] == "dep#(id)loy" for i in items(gs)))
         check("AC-07 a rename shows in the list, # kept literally", renamed is not None, tmux("list-windows", "-a", "-F", "#{window_name}"))
+        ws.send({"t": "rename", "id": created["id"], "name": "-x deploy"})
+        dashed = wait_layout(ws, lambda gs: any(i["title"] == "-x deploy" for i in items(gs)))
+        check("AC-07 a name that starts with \"-\" is a name, not a flag", dashed is not None, tmux("list-windows", "-a", "-F", "#{window_name}"))
+        ws.send({"t": "rename", "id": created["id"], "name": "dep#(id)loy"})
+        wait_layout(ws, lambda gs: any(i["title"] == "dep#(id)loy" for i in items(gs)))
         ws.send({"t": "move", "id": created["id"], "session": "local/notes"})
         moved = wait_layout(ws, lambda gs: any(g["label"] == "notes" and any(i["id"] == created["id"] for i in g["items"]) for g in gs))
         check("AC-07 a window moves to another session", moved is not None)
         ws.send({"t": "kill", "id": split["id"]})
         killed = wait_layout(ws, lambda gs: not any(i["id"] == split["id"] for i in items(gs)))
         check("AC-07 a closed pane leaves the list", killed is not None)
+        # AC-07 Clone and AC-92 projects: a window right after the row's in its folder; a project's
+        # Clone and [+] join it; a closed pane leaves it, an empty project goes
+        win_of = lambda k: tmux("display", "-p", "-t", k.rsplit(":", 1)[-1], "#{session_name}:#{window_index}").strip()
+        time.sleep(1.1)
+        ws.send({"t": "clone", "id": created["id"]})
+        twin = ws.until(lambda m: m["t"] in ("created", "error"), 5)
+        before, after = win_of(created["id"]), twin and win_of(twin.get("id", "x:%0"))
+        check("AC-07 Clone opens a window right after the row's, in its folder",
+              twin and twin["t"] == "created" and after == f"{before.split(':')[0]}:{int(before.split(':')[1]) + 1}"
+              and tmux("display", "-p", "-t", twin["id"].rsplit(":", 1)[-1], "#{pane_current_path}").strip() == os.path.realpath(odd), (before, after, twin))
+        ws.send({"t": "project", "action": "add", "id": created["id"]})
+        made = ws.until(lambda m: m["t"] == "projects" and m["items"], 5)
+        pj = (made or {"items": [{}]})["items"][0]
+        check("AC-92 Add to Project makes Group 1 in the pane's folder", pj.get("name") == "Group 1" and pj.get("members") == [created["id"]]
+              and pj.get("dir") == os.path.realpath(odd), made)
+        # a group's reorder moves only the windows it lists: the project's keeps its place in tmux
+        prefix = created["id"].rsplit(":", 1)[0] + ":"
+        firsts = tmux("list-panes", "-s", "-t", "notes", "-F", "#{window_index} #{pane_id}").split("\n")
+        head = prefix + next(l.split()[1] for l in firsts if l.startswith("0 "))
+        place = win_of(created["id"])
+        ws.send({"t": "reorder", "group": "local/notes", "ids": [twin["id"], head]})
+        wait_layout(ws, lambda gs: win_of(twin["id"]).endswith(":0"), 5)
+        check("AC-92 a tmux group's reorder leaves a project's window in its place", win_of(twin["id"]).endswith(":0") and win_of(created["id"]) == place,
+              (place, win_of(created["id"]), win_of(twin["id"])))
+        time.sleep(1.1)
+        ws.send({"t": "clone", "id": created["id"]})
+        joined = ws.until(lambda m: m["t"] == "projects" and len(m["items"][0]["members"]) == 2, 5)
+        third = ws.until(lambda m: m["t"] in ("created", "error"), 5)
+        check("AC-92 a project's session cloned: the window joins the project after it", joined and third and joined["items"][0]["members"] == [created["id"], third["id"]], joined)
+        tmux("kill-pane", "-t", third["id"].rsplit(":", 1)[-1])
+        left = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["members"] == [created["id"]], 5)
+        check("AC-92 a pane closed leaves its project", left is not None)
+        ws.send({"t": "project", "action": "rename", "project": pj.get("id"), "name": "API"})
+        renamed = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["name"] == "API", 5)
+        ws.send({"t": "project", "action": "remove", "id": created["id"]})
+        gone = ws.until(lambda m: m["t"] == "projects" and not m["items"], 5)
+        check("AC-92 renamed; its last session taken out, the project goes; kept in projects.json",
+              renamed is not None and gone is not None and json.load(open(os.path.join(t.app, "projects.json")))["projects"] == [], renamed)
+        tmux("kill-pane", "-t", twin["id"].rsplit(":", 1)[-1])
         tmux("new-window", "-d", "-t", "main:", "-n", "byhand")
         check("AC-01 a window made by hand shows within 2 s", wait_layout(ws, lambda gs: any(i["title"] == "byhand" for i in items(gs)), 3) is not None)
 

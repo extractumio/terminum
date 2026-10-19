@@ -100,6 +100,11 @@ def main():
         ws.send({"t": "in", "data": "echo again-$((2+3))\r"})
         check("AC-81 typing works again after the reconnect",
               ws.until(lambda m: m["t"] == "screen" and "again-5" in json.dumps(m["ch"]), 10) is not None)
+        ws.send({"t": "paste", "data": "-x pasted-on-host", "bracket": False})
+        pasted = ws.until(lambda m: m["t"] == "screen" and "-x pasted-on-host" in json.dumps(m["ch"]), 10)
+        err = ws.until(lambda m: m["t"] == "error" and "paste" in m.get("msg", ""), 0.5)
+        check("AC-03 a paste on a host that starts with \"-\" is text (set-buffer --), not a flag", pasted is not None and err is None, err)
+        ws.send({"t": "in", "data": "\x03"})
 
         # AC-15: the host's tmux started anew (a reboot, its server killed): its session's windows come back
         os.makedirs(os.path.join(remote_home, "build"), exist_ok=True)
@@ -141,6 +146,38 @@ def main():
               again.strip() and "build" not in again, again)
         os.system(f"tmux -L {REMOTE_SOCKET} kill-session -t keep")
 
+        # its last pane closed with no other session: its tmux ends with it, and the fresh session is
+        # not filled with what the user closed (the window "Restored host … 1 window" brought back)
+        def windows():
+            return subprocess.run(["tmux", "-L", REMOTE_SOCKET, "list-windows", "-t", "terminum", "-F", "#{window_id} #{window_name}"],
+                                  capture_output=True, text=True).stdout.split("\n")
+        os.system(f"tmux -L {REMOTE_SOCKET} new-window -d -t terminum: -n solo -c {os.path.join(remote_home, 'build')}")
+        for line in windows():
+            if line and not line.endswith(" solo"):
+                os.system(f"tmux -L {REMOTE_SOCKET} kill-window -t {line.split()[0]}")
+        for _ in range(40):
+            time.sleep(0.5)
+            try:
+                kept = json.load(open(layout_json)).get("servers", {}).get("devbox:default", {})
+            except (OSError, ValueError):
+                kept = {}
+            if [w["name"] for s in kept.get("sessions", []) for w in s["windows"]] == ["solo"]:
+                break
+        time.sleep(1.2)
+        ws.until(lambda m: False, 1.5)                    # what came before is not this restore
+        os.system(f"tmux -L {REMOTE_SOCKET} kill-window -t terminum:solo")
+        after = []
+        for _ in range(30):
+            time.sleep(0.5)
+            after = [w for w in windows() if w]
+            if after:
+                break
+        time.sleep(3)
+        after = [w for w in windows() if w]
+        report = ws.until(lambda m: m["t"] == "restore" and m.get("report") and "devbox" in m["report"]["text"], 1)
+        check("AC-15 the last pane closed ends the host's tmux: made anew with one shell, nothing restored",
+              len(after) == 1 and not after[0].endswith(" solo") and report is None, (after, report))
+
         st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refused", "recipe": "alex@refused.example"})
         failed = wait_layout(ws, lambda gs: (g := host_group(gs, "refused")) is not None and g.get("state") == "failed", 10)
         why = (host_group(failed or [], "refused") or {}).get("why", "")
@@ -150,6 +187,14 @@ def main():
 
         st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2200"})
         check("AC-81 a name made that another host has is refused", st == 409 and "devbox is already a host" in body["message"], body)
+
+        # AC-89: a second host that is the same machine lists none of its panes twice
+        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "twin", "recipe": "alex@devbox.example -p 2222"})
+        twin = wait_layout(ws, lambda gs: "shown there" in ((host_group(gs, "twin") or {}).get("why") or ""), 20)
+        tg, dg = host_group(twin or [], "twin") or {}, host_group(twin or [], "devbox") or {}
+        check("AC-89 a host that is the same tmux as another lists its panes once, and says where",
+              st == 200 and tg.get("items") == [] and "the same tmux as devbox" in tg.get("why", "") and dg.get("items"), (st, tg, dg.get("items")))
+        unix_request(t.sock, "POST", "/hosts/remove", {"name": "twin"})
 
         # AC-83: files ticked in Add host are set up once the host is attached; a failure asks again
         def offer_until(pred):

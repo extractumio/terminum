@@ -114,6 +114,25 @@ async function wide(browser, name) {
   const theme = JSON.parse(fs.readFileSync(path.join(HOME, "themes/local.json"), "utf8"));
   fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   await within("AC-12 a changed theme file reaches the page without a reload", () => page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#102030", null, { timeout: 5000 }));
+  // a color scheme picked in one browser is every browser's (settings.json page.colorScheme)
+  const other = await browser.newContext({ viewport: { width: 1000, height: 700 } });
+  const page2 = await other.newPage();
+  await signIn(page2);
+  const bg = (p) => p.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim());
+  const kept = () => JSON.parse(fs.readFileSync(path.join(HOME, "settings.json"), "utf8")).page?.colorScheme ?? null;
+  await page.click("#menubtn");
+  await page.click('#schemes .swatch[data-scheme="Nord"]');
+  await within("AC-12 a color scheme picked in one browser shows in another at once and is kept in settings.json", async () => {
+    await page2.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#2e3440", null, { timeout: 5000 });
+    if (await bg(page) !== "#2e3440" || kept() !== "Nord") throw new Error(`${await bg(page)} ${kept()}`);
+  });
+  await page.click('#schemes .swatch[data-scheme=""]');
+  await within("AC-12 Theme goes back to the theme's colors in every browser", async () => {
+    await page2.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#102030", null, { timeout: 5000 });
+    if (kept() !== null) throw new Error(String(kept()));
+  });
+  await page.keyboard.press("Escape");
+  await other.close();
   await stop();
   await start();
   await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3 && !document.getElementById("status").innerText.includes("not running"), null, { timeout: 8000 }));

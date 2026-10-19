@@ -19,6 +19,23 @@ export function askConfirm(text, yes) {
   return new Promise((resolve) => box.addEventListener("close", () => resolve(box.returnValue === "ok"), { once: true }));
 }
 
+/** Close Session (the menu's, a row's): asked first, as the program in it ends; then sent. */
+export async function closeSession(item, send) {
+  const prog = item.sub?.[0] || "a program";
+  if (await askConfirm(`Close the session ${item.title}? The program running in it (${prog}) ends.`, "Close Session")) send({ t: "kill", id: item.id });
+}
+
+/** Asks for a name with a dialog: the text typed (trimmed), or null for Cancel and Esc. */
+export function askName(text, value) {
+  const box = $("namebox");
+  $("nametext").textContent = text;
+  $("namefield").value = value;
+  box.returnValue = "";
+  box.showModal();
+  $("namefield").select();
+  return new Promise((resolve) => box.addEventListener("close", () => resolve(box.returnValue === "ok" ? $("namefield").value.trim() : null), { once: true }));
+}
+
 /** Wires the tools; `current()` is the shown pane's {group, item} or null, `onResize()` refits the terminal. */
 export function navTools({ send, store, current, groups, onResize, onRenamed }) {
   // The session list's width, dragged at its border (wide screens), remembered per browser.

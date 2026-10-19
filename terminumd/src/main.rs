@@ -100,6 +100,8 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         restore: Default::default(),
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),
+        projects: Mutex::new(page::projects::Projects::load(dir.join("projects.json"))),
+        unread: Mutex::default(),
         cfg,
     })
 }

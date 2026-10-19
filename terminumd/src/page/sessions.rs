@@ -71,7 +71,7 @@ async fn created(app: &Shared, page: &Page, server: &Server, pane_id: &str, note
 
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
-    if matches!(t, "new" | "newsession" | "split") && !allowed_now(page) {
+    if matches!(t, "new" | "newsession" | "split" | "clone") && !allowed_now(page) {
         error(page, "Wait a second: one new window, session or split a second.", None);
         return;
     }
@@ -79,6 +79,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         "new" => new_window(app, page, &s("group")).await,
         "newsession" => new_session(app, page, &s("name")).await,
         "split" => split(app, page, &s("id"), &s("how")).await,
+        "clone" => clone_window(app, page, &s("id"), msg["project"].as_str()).await,
         "rename" => rename(app, &s("id"), msg["name"].as_str().unwrap_or("")).await,
         "reorder" => reorder(app, &s("group"), msg["ids"].as_array().cloned().unwrap_or_default()).await,
         "move" => move_window(app, &s("id"), &s("session")).await,
@@ -111,9 +112,44 @@ async fn new_window(app: &Shared, page: &Page, wid: &str) -> Result<(), String> 
         Some((_, w)) => format!("-a -t {w}"),
         None => format!("-t {}", args::quote(&format!("={session}:"))),
     };
-    let line = format!("new-window {target} -c {} -P -F '#{{pane_id}}'", args::format_arg(&dir));
-    let pane = server.run(line).await.map_err(|e| format!("No new window: {}", said(&e)))?;
-    created(app, page, &server, pane.first().map_or("", |s| s.as_str()), note).await;
+    let pane = open_window(&server, &target, &dir).await?;
+    created(app, page, &server, &pane, note).await;
+    Ok(())
+}
+
+/// A new window at `target` ("-a -t @2": right after it) in `dir`: its pane's id.
+async fn open_window(server: &Server, target: &str, dir: &str) -> Result<String, String> {
+    let line = format!("new-window {target} -c {} -P -F '#{{pane_id}}'", args::format_arg(dir));
+    let made = server.run(line).await.map_err(|e| format!("No new window: {}", said(&e)))?;
+    Ok(made.into_iter().next().unwrap_or_default())
+}
+
+/// Clone (AC-07): a new window right after pane `id`'s, in its folder, with a shell (what runs
+/// there is not copied). A session of a project (or its [+], `project`) gives the project's
+/// window: in the project's folder while that is usable, and in the project after it (AC-92).
+async fn clone_window(app: &Shared, page: &Page, id: &str, project: Option<&str>) -> Result<(), String> {
+    let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
+    let window = window_of(&server, &pane).await?;
+    let joins = {
+        let ps = app.projects.lock();
+        project.and_then(|p| ps.list().iter().find(|x| x.id == p)).or_else(|| ps.of(id)).map(|p| (p.id.clone(), p.dir.clone()))
+    };
+    let usable = |d: &str| !d.is_empty() && args::check_text(d).is_ok() && (!server.is_local() || std::path::Path::new(d).is_dir());
+    let (dir, note) = match &joins {
+        Some((_, d)) if usable(d) => (d.clone(), None),
+        _ => folder_of(&server, &pane).await,
+    };
+    let new = open_window(&server, &format!("-a -t {window}"), &dir).await?;
+    if let Some((pid, d)) = joins {
+        let (key, after, a) = (server.key(&new), id.to_string(), app.clone());
+        let host = (!server.is_local()).then(|| server.name.clone());
+        let r = tokio::task::spawn_blocking(move || a.projects.lock().add(&key, Some(&pid), Some(&after), host, d)).await;
+        if let Ok(Err(e)) = r {
+            error(page, e, None);
+        }
+        super::projects::tell(app);
+    }
+    created(app, page, &server, &new, note).await;
     Ok(())
 }
 
@@ -150,7 +186,8 @@ async fn rename(app: &Shared, id: &str, name: &str) -> Result<(), String> {
         vec![format!("set-option -w -t {window} automatic-rename on"), format!("select-pane -t {pane} -T ''")]
     } else {
         let name = args::check_name(name)?;
-        vec![format!("rename-window -t {window} {}", args::format_arg(&name)), format!("select-pane -t {pane} -T {}", args::format_arg(&name))]
+        // `--`: a name that starts with "-" is the name, not a flag (-T's value is safe as it is)
+        vec![format!("rename-window -t {window} -- {}", args::format_arg(&name)), format!("select-pane -t {pane} -T {}", args::format_arg(&name))]
     };
     for a in server.run_all_on(&pane, lines).await {
         a.map_err(|e| format!("Not renamed: {}", said(&e)))?;
@@ -176,11 +213,10 @@ async fn reorder(app: &Shared, wid: &str, ids: Vec<Value>) -> Result<(), String>
                 want.push(w);
             }
     }
-    for w in current.clone() {
-        if !want.contains(&w) {
-            want.push(w);
-        }
-    }
+    // the windows named take, in their order, the places they hold; the others keep theirs
+    // (a project's, listed elsewhere, AC-92)
+    let mut order = want.iter();
+    let want: Vec<String> = current.iter().map(|w| if want.contains(w) { order.next().cloned().unwrap_or_else(|| w.clone()) } else { w.clone() }).collect();
     for i in 0..current.len() {
         if current[i] != want[i] {
             let j = current.iter().position(|w| *w == want[i]).ok_or("The windows changed meanwhile.")?;

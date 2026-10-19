@@ -52,6 +52,13 @@ export class Views {
     this.layout();
   }
 
+  /** ⌘B: Files open or closed (docked at WIDE, else in the terminal's place). */
+  toggleFiles() {
+    if (WIDE.matches) this.setDocked(!this.docked);
+    else this.show(this.current === "files" ? "term" : "files");
+    return true;
+  }
+
   setDocked(on) {
     this.docked = on;
     this.store.set("filesDocked", on);

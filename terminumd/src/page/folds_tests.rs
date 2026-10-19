@@ -286,3 +286,17 @@ fn codexs_tool_output_folds_to_a_summary_too() {
     let found = spans(&folds(&r, true));
     assert_eq!(found, one(4, 31, "⋯ 28 more lines of output"), "the command, its first output line and 2 more stay");
 }
+
+/// AC-32: a tool's long output on the screen folds as it would in the history, but never on a
+/// full-screen program's rows, nor around the cursor.
+#[test]
+fn a_tool_output_on_the_screen_folds_too() {
+    let out: Vec<String> = (1..=12).map(|i| format!("     line {i}")).collect();
+    let texts = cat(&[&s(&["⏺ Bash(ls -l)", "  ⎿  total 12"]), &out, &s(&["", "⏺ Done.", "> "])]);
+    let hard = vec![true; texts.len()];
+    let f = on_screen(&texts, &hard, Some(texts.len() - 1), false);
+    let first = f.as_array().unwrap().first().cloned().unwrap_or_default();
+    assert!(first[0].as_u64() == Some(4) && first[2].as_str().is_some_and(|l| l.starts_with('⋯')), "{f}");
+    assert_eq!(on_screen(&texts, &hard, None, true), serde_json::json!([]), "a full-screen program's rows stay");
+    assert_eq!(on_screen(&texts, &hard, Some(6), false), serde_json::json!([]), "the cursor's rows stay");
+}

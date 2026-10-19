@@ -185,7 +185,11 @@ pub fn add(app: &Shared, place: &Place, sessions: &[String]) -> Result<(), Strin
         return Err("Name a session, or tick one".into());
     }
     let have = place.names(app);
+    let twin = same_tmux(app, place);
     for s in &names {
+        if let Some(other) = twin.iter().find(|o| o.shows(s)) {
+            return Err(format!("{s} is listed already from {}: the same tmux", other.label()));
+        }
         match place {
             Place::Local(socket) if *socket == app.tmux.local.socket => return Err(format!("{s} is a session of terminum's own tmux: it is in the list already")),
             Place::Host(h) if s == HOST_SESSION => return Err(format!("{HOST_SESSION} is terminum's own session on {h}: it is in the list already")),
@@ -197,6 +201,14 @@ pub fn add(app: &Shared, place: &Place, sessions: &[String]) -> Result<(), Strin
         return Err(format!("At most {MOST} sessions can be attached."));
     }
     save(app, place, |l| l.extend(names.iter().map(|n| json!(n))))
+}
+
+/// The other servers that are the tmux of `place` reached another way (a host that is this Mac,
+/// two hosts that are one machine), as far as their identities are known.
+fn same_tmux(app: &Shared, place: &Place) -> Vec<Arc<Server>> {
+    let Some(me) = place.server(app) else { return Vec::new() };
+    let Some(id) = me.identity_known() else { return Vec::new() };
+    app.tmux.all().into_iter().filter(|s| s.id() != me.id() && s.identity_known().as_deref() == Some(id.as_str())).collect()
 }
 
 /// Forgets `session` at `place`; the session itself goes on, its windows at tmux's own size again.
@@ -250,7 +262,9 @@ pub async fn running(app: &Shared, place: &Place) -> Vec<Running> {
             None => Vec::new(),
         },
     };
-    listed(&lines).into_iter().filter(|r| r.name != HOST_SESSION || matches!(place, Place::Local(_))).filter(|r| !have.contains(&r.name)).collect()
+    let twin = same_tmux(app, place);
+    listed(&lines).into_iter().filter(|r| r.name != HOST_SESSION || matches!(place, Place::Local(_)))
+        .filter(|r| !have.contains(&r.name) && !twin.iter().any(|o| o.shows(&r.name))).collect()
 }
 
 /// Every attached session: (place, session), this Mac's first.

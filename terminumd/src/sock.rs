@@ -115,8 +115,9 @@ async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> StatusCode {
     let key = server.key(pane);
     if app.hooks.apply(&key, &ev, std::time::Instant::now()) {
         app.dirty.notify_one();
-        // a turn ended: its reminders come up, also when it was too quick for a layout to show it working (AC-91)
-        if matches!(ev["event"].as_str(), Some("Stop" | "StopFailure" | "Interrupt")) {
+        // a turn ended (its last background subagent too): its reminders come up, also when it
+        // was too quick for a layout to show it working (AC-91)
+        if app.hooks.take_ended(&key) {
             let (app, key) = (app.clone(), key.clone());
             tokio::spawn(async move { crate::manager::remind(&app, vec![key]).await });   // the hook is answered at once
         }

@@ -64,6 +64,7 @@ async fn a_killed_server_ends_the_client_and_its_waiters() {
     let why = tokio::time::timeout(Duration::from_secs(5), done).await.expect("ended").unwrap();
     assert!(!why.is_empty());
     assert!(!c.alive());
+    assert!(c.clean.load(Ordering::Relaxed), "kill-server is an exit on purpose");
     assert!(c.run("display -p y").await.is_err(), "no answer from a dead client");
 }
 

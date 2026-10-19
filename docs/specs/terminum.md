@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.12.2 |
+| Version | 0.14.0 |
 | Date | 2026-10-19 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,8 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.0 | 2026-10-19 | Owner: every row has Clone (a new window right after it, in its folder; the groups' [+] goes) and a menu on a right click or a long press, its head the session's name and ×: Clone, Add to Project, Remove from Project, Close Session, Move to the Top, Up, Down, to the Bottom (AC-07); projects, named groups of sessions with a color of their own, [+] and drag, the same on every page (AC-92); a row whose agent finished a turn nobody saw is unread until shown (AC-93); a row's second line puts its folder first and its program at the right edge (AC-01); ⌘Z and ⌘⇧Z send the program's undo and redo where it has one, a finger resting on the keyboard button offers both (AC-03); the search's magnifier is out of sight while its field is open; ⌘V after a copy from the history pastes into the terminal's input with no click first (AC-03); text that starts with "-" pasted on a host, a window named so or a path typed by Files is no longer a tmux flag ("invalid flag -", AC-03). |
+| 0.13.0 | 2026-10-19 | Owner: the color scheme is one for every browser, kept in settings.json (page.colorScheme) and shown at once on every page (AC-12); a pane's grid stays within 45×14 (an iPhone in portrait at 13 px) and 240×70 (a large desktop window) whatever the view (AC-13); the last pane closed by the user ends its tmux with nothing made again, a host's, terminum's own or the user's own (tmux's own %exit while one pane was shown: a closed window came back as "Restored host ai4: 0 sessions, 1 window"), a reboot or a crash restored as before (AC-15); a tmux reached twice (two hosts that are one machine, a host that is this Mac, grouped sessions, a linked window) lists each pane once and refuses to attach a session listed already (AC-89); ⌘[ and ⌘] back and forward through the last 20 sessions shown, ⌘F the history's search, ⌘B Files (AC-07). |
 | 0.12.2 | 2026-10-19 | AC-15: a host is restored only when its tmux server started after the checkpoint (#{start_time}), not when its terminum session was made again because the user closed its last window (the closed window came back); the restore report goes with × on every page and by itself after 30 s, and a page connecting 10 minutes later gets none (it stayed on every page). AC-31: a pipe table is a widget of its own where an agent colored the text around it (Codex's inline code), its rows re-joined where they were wrapped. The page shows its version and build date under the session list. |
 | 0.12.1 | 2026-10-19 | Owner: 20 color schemes in the menu over the session's theme (AC-12); Markdown size and history lines in the menu (AC-19); Option/⌘ + ↑/↓ page (AC-03); the split's button is the header's on a computer, the floating one on a phone; no floating button on a split's page (AC-88). |
 | 0.12.0 | 2026-10-19 | Owner: one view, the pane as tmux has it, sized to the active browser window: Wrap, Grid, Fit, Screen mode (Auto/Always/Never), "Fit to this screen" and the size policies `largest` and `manual` are gone (AC-04, AC-05, AC-13); a page sizes on opening, on becoming the active page and on typing; a plain view change resizes only a window it sizes; a window of several panes is never resized; a wider pane is scaled to the view (7 px at least); the mouse reaches full-screen programs (Codex: the wheel only; Shift selects). The menu's tmux "Split right/below" is gone: the splits are the quick shell's (AC-07, AC-88). Pragmatic review applied: claims on open/active/typing only (a phone's toolbar would take the window), split windows never resized, the 7 px floor kept, the mouse predicate keeps selection in agents, full-screen programs still hide history, old settings reported, old messages tolerated for a release. |
@@ -128,6 +130,8 @@ Open questions:
 | AC-19 | [SHOULD / P1] | The user customizes the page with a stylesheet of their own (`custom.css`) and settings in `settings.json`, with the page reloading when they change and refusing nothing silently. |
 | AC-20 | [SHOULD / P1] | terminumd stays within its budgets: under 60 MB with 60 panes and two pages, under 0.5 % CPU idle, a key echoed in 25 ms median on the Mac, a frame encoded in 3 ms; the page under 150 MB with 10,000 lines. |
 | AC-88 | [SHOULD / P1] | On a computer the user opens a quick shell for the shown pane, below it or on its left, in the pane's folder: a terminal of its own taking a third of the view, resized by dragging its edge and closed with its ×; it stays with its pane until closed. |
+| AC-92 | [SHOULD / P1] | The user groups sessions into named projects, each in a color of its own far from the others, listed first with a [+] that opens a window in the project's folder, reordered by dragging; every page shows the same. |
+| AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started, closed or resized by merely looking, and shows while it does not run as a group that says so. |
 
 ## 5. BDD scenarios
@@ -139,8 +143,8 @@ Scenario: AC-01 happy path — sessions, windows and panes
   Given the local tmux server has sessions "main" (windows 1 "api" in ~/work/api, 2 "docs") and "notes"
   And window 1 is split into panes %3 (running claude) and %4 (zsh)
   When the page opens
-  Then the list shows group "main" with rows "1 api · claude · ~/work/api" and, under it shifted in, "%4" as "zsh · ~/work/api", then "2 docs"
-  And group "notes" below it, each group with its count and a [+]
+  Then the list shows group "main" with row "1 api", its second line "~/work/api" with "claude" at its right edge (host and folder first, then the titles; what runs there on the right), and, under it shifted in, "%4" as "~/work/api … zsh", then "2 docs"
+  And group "notes" below it, each group with its count; each row with its Clone (AC-07)
   And a row's window number names, on hover, the host the window runs on: "This machine" here, the host's name on a host
   And each group has a copy button (its title the command) that copies how another terminal attaches to that session: "tmux -L terminum attach -t =main" (a host's group: its session's name "terminum" beside the host's, and "ssh -t <recipe> -- <destination> 'tmux attach -t =terminum'")
   And a window the user named (automatic-rename off) shows that name; one tmux names after its program shows the pane's title, else its program; status marks of coding agents (✳ ✻ ✶ ◐ ⏺) are stripped
@@ -211,6 +215,16 @@ Scenario: AC-03 happy path — paste
   When the user pastes 20 KB of text
   Then terminumd loads it into a tmux buffer ("set-buffer -b tm-<n>" from the control channel, 64 KB a command, more in parts) and pastes it with "paste-buffer -p -d -b tm-<n> -t %3", so a program that asked for bracketed paste gets its markers (the menu's "Bracketed paste" switch turns -p off)
   And a paste holding control characters other than newline and tab is refused with "The text holds control characters and was not sent"
+  And text that starts with "-" (a paste on a host, a name, a path the Files panel types) is text: tmux takes a word that starts with "-" before the first other word for a flag, so every such argument comes after "--" (a paste of "-x …" said "invalid flag -")
+  When the user selects lines in the history, copies them (⌘C) and presses ⌘V with the keys anywhere but a field (the selection, the list, a button)
+  Then the terminal's input takes the keys back first and the text is pasted into the pane at its cursor, typing going on there without a click (not under a dialog, nor while Files is shown in the terminal's place)
+Scenario: AC-03 happy path — undo and redo
+  When the user presses ⌘Z on the terminal's input (another field keeps its own undo)
+  Then the shown program's undo goes: Ctrl+_ for Claude Code, zsh, bash and fish; another program gets nothing and a toast says so (Ctrl+_ is nano's Go To Line)
+  When the user presses ⌘⇧Z
+  Then fish gets its redo (Alt+/); Claude Code, Codex, zsh and bash have no redo by default, so nothing is sent and a toast says "zsh has no redo" (Codex has no undo either: "Codex has no undo")
+  When on a phone the user rests a finger on the keyboard button (half a second), or uses iOS's own undo on the input (three fingers, a shake)
+  Then a menu offers Undo and Redo, which do the same
 Scenario Outline: AC-03 happy path — special keys by name
   When the user presses "<key>"
   Then terminumd sends "send-keys -t %3 <name>" and tmux encodes it for the pane's mode (application cursor keys in vim and mc)
@@ -301,12 +315,19 @@ Scenario: AC-06 failure — the report cannot be sent
 ```gherkin
 Scenario: AC-07 happy path — new window, new session, split
   Given the page shows pane %3 of window "api" in session "main", folder /Users/alex/work/api
-  When the user presses the group's [+] ("New window")
-  Then terminumd runs "new-window -a -t main:api -c '/Users/alex/work/api'" and the page shows the new pane within 2 s, placed right after "api"
+  When the user presses Clone on the row of "api" (the groups have no [+]: AC-07 Clone)
+  Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" and the page shows the new pane within 2 s, placed right after "api" (the `new` message, a group's window after the shown pane's, stays for scripts)
   When the user picks "Split below", "Split right" or "Split left" from the pane's menu
   Then the pane's quick shell opens there (AC-88); the page offers no tmux split, and a window of several panes made elsewhere (the user's own tmux, an agent, the `split` message) shows its panes under the window's first one
   When the user presses "New session" at the list's foot and types "scratch"
   Then terminumd runs "new-session -d -s scratch -c ~" and the page shows its pane; a name tmux refuses (empty, with ":" or ".") is refused inline with tmux's message
+Scenario: AC-07 happy path — Clone and the row's menu
+  Then every row has a Clone button at its right end (over the row's end on hover with a mouse, a column of its own with a finger); the groups have no [+]
+  When the user presses Clone on window "api" (or picks Clone in its menu)
+  Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane; a session of a project gives the project's window (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
+  When the user right-clicks a row, or rests a finger on it for half a second
+  Then a menu opens there (below the finger; from the keyboard's menu key or ⇧F10 at the row, ↑ ↓ through it): Clone, Add to Project…, Remove from <project> (in one), Move to the Top, Move Up, Move Down, Move to the Bottom (those its place allows), Close Session (asked first: "Close the session api? The program running in it (claude) ends."); its head names the session and has × to close it
+  And a move reorders the row among its group's rows: a tmux session's windows in tmux ("swap-window"), a project's sessions in the project
 Scenario: AC-07 happy path — rename and reorder
   When the user presses the pencil beside the title, types "deploy" and presses Enter
   Then terminumd runs "rename-window -t @2 'deploy'" and "select-pane -t %3 -T 'deploy'", and the list, the header and tmux's own status line show it within 2 s; an empty name restores "automatic-rename on"
@@ -320,6 +341,13 @@ Scenario: AC-07 happy path — close a pane
   Then the page asks "Close this pane? The program running in it (claude) ends." with "Close" and "Cancel"
   When the user confirms
   Then terminumd runs "kill-pane -t %3", the list drops it within 2 s, and the page shows the next pane of the same window, else the list
+Scenario: AC-07 happy path — an IDE's keys
+  Given the user showed "api", then "docs", then "notes"
+  When the user presses ⌘[ twice and ⌘] once
+  Then "docs", then "api", then "docs" again are shown, as an IDE's Back and Forward; past the first or the last nothing moves; showing another session drops what was ahead
+  And the last 20 sessions shown are kept in this browser across reloads; a pane that is gone is skipped
+  When the user presses ⌘F (the terminal shown) or ⌘B
+  Then the search in the history opens with its field focused (AC-56), or Files opens or closes (docked on a computer, in the terminal's place on a phone); the browser's own Back, Forward, Find and bookmarks bar do not take these keys; inside Files and View (their own frames) the editor keeps ⌘[, ⌘] and ⌘F for indent and its own search, and ⌘B does nothing there
 Scenario: AC-07 edge — names and folders on tmux's command line
   Given a folder name holds a quote, "#(…)", "$" or a newline
   Then quoted names reach tmux as single arguments and run nothing; a name with a control character is not put on the command line: the window opens in the home folder with a note "folder name not usable: opened in ~"
@@ -443,7 +471,7 @@ Scenario: AC-12 happy path — rules and live changes
   Then themes with a "light" variant switch (the page is told "dark": false); others stay
 Scenario: AC-12 happy path — a color scheme from the menu
   When the user presses one of the menu's 20 color swatches (Dracula, Solarized Dark and Light, Nord, Gruvbox Dark and Light, One Dark, Monokai, Tokyo Night, Catppuccin Mocha and Latte, GitHub Dark and Light, Tomorrow Night, Night Owl, Ayu Dark, Everforest Dark, Rosé Pine, Kanagawa, Cobalt2)
-  Then the terminal, the page's chrome and the widgets take its background, text, cursor, selection and 16 ANSI colors at once over the session's theme (its font and size stay); the choice is kept in this browser; "Theme" goes back to the session's theme
+  Then the terminal, the page's chrome and the widgets take its background, text, cursor, selection and 16 ANSI colors at once over the session's theme (its font and size stay); the choice is kept in settings.json (page.colorScheme: the scheme's name) and every page, in every browser, shows it at once; "Theme" removes it, back to the session's theme; a scheme an older page kept in its own browser is not carried over (picked once again)
 Scenario: AC-12 error — a theme that does not parse
   Given "work.json" has a syntax error or a color that is not "#rrggbb"
   Then the page keeps the last good theme, shows "Theme work.json: line 7: expected a color" once as a toast, and terminumd logs it; a rule naming a missing theme uses the default and says so
@@ -461,6 +489,9 @@ Scenario: AC-13 happy path — the active page sizes the pane
   Then the window is resized to the phone's 48×30; the Mac's view draws the 48-column grid as it is until the Mac's page is the active one again
   When the Mac's browser window comes to the front (focus) or its page types
   Then the window is 180×50 again; a page sizes on opening the pane, on becoming the active page (in sight and, on a computer, focused), and on typing; a change of its view's size (a split, a dragged edge, the keyboard, the phone's toolbar) resizes only a window this page already sizes or nobody does, so a phone's toolbar never takes the window from the Mac being typed on; a pane is resized at most once a second per client, and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size: each narrowing re-wraps the pane, and a program that redraws, such as Claude Code, leaves its old top lines in the history, as it does on each switch between pages of different sizes)
+Scenario: AC-13 edge — the smallest and the largest grid
+  When a page's view holds fewer than 45×14 cells (a phone's split, a narrow window, big text) or more than 240×70 (a large display)
+  Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is drawn scaled to it (7 px at least), rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
 Scenario: AC-13 edge — the page that sized it is put away
   Given the iPhone sized %3 (the window is 103×21) and the Mac's browser shows %3 too
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
@@ -515,6 +546,8 @@ Scenario: AC-15 happy path — tmux killed, a host's tmux started anew, the user
   Then its "terminum" session gets its windows back in their folders on the host (its fresh first window goes), and the user's sessions attached there that no longer run are made again
   When the user closes the last window of devbox's "terminum" session while devbox's tmux runs (another session keeps it)
   Then terminumd makes the session anew with one shell and restores nothing: what the user closed stays closed
+  When the user closes the last pane of devbox's tmux (no other session keeps it), of terminum's here, or of an attached server of the user's own, and that tmux ends with it
+  Then nothing is made again (tmux said %exit itself while terminumd showed one pane there, as its main control client saw): devbox's "terminum" is made anew with one shell, terminum's tmux starts "main" in ~, the user's own stays down; tmux ends the same way on kill-server and on SIGTERM (a host shut down cleanly), so a server stopped so while it showed one pane is not restored either (its one shell comes back in ~, not in its folder); one that showed more is restored as a killed server
   When the server of the user's own tmux on this Mac does not run (a reboot, it was killed)
   Then the sessions attached from it are made again with their windows and folders (once per checkpoint); a session the user closed while that server runs stays closed
   And a host or a server that cannot be read keeps what the checkpoint held for it
@@ -653,6 +686,45 @@ Scenario: AC-88 edge — a host
   Then the quick shell opens on devbox in the pane's folder there
 ```
 
+### AC-92 — Projects [SHOULD / P1]
+
+```gherkin
+Scenario: AC-92 happy path — a project
+  When the user picks Add to Project… → New project in the menu of "api" (in ~/work/api)
+  Then terminumd makes project "Group 1" (the lowest "Group N" free), its color the first of ten hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
+  And the list shows the projects first, each a group tinted and named in its color with its sessions, their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
+  When the user adds "docs" to Group 1, or a second project
+  Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
+Scenario: AC-92 happy path — new sessions, order, names
+  When the user presses the project's [+]
+  Then a window opens right after its last session, in the project's folder (the session's own when that folder is gone), and joins the project; Clone of a project's session joins it right after that session
+  When the user drags a project by its grip, or a session in it, or picks a move in a session's menu
+  Then the projects (every page's order) or its sessions are in that order
+  When the user picks Rename… in the project's ⋯ menu and types "API", or Ungroup
+  Then it is named "API" (1–40 characters), or it goes and its sessions are back in their tmux groups
+Scenario: AC-92 edge — sessions that close
+  When a project's pane closes
+  Then it leaves its project when its server's list is read next (one added in the last 5 s is spared: a read on its way may not have it); a project left without sessions goes (a server that cannot be read keeps its panes' places)
+  When a tmux server starts anew (a reboot, a crash) its panes are numbered anew
+  Then the sessions restored from its checkpoint keep their projects (restore says which new pane each old one is); without a restore (its @terminum-id differs) its old members go, never naming other panes
+  And a projects.json that cannot be read is set aside as projects.json.bak, never written over
+  And a move in a tmux group reorders only the windows that group lists (a project's windows keep their places in tmux)
+  And a project is not a bookmark's project (AC-33: a host and folder)
+```
+
+### AC-93 — Unread [SHOULD / P1]
+
+```gherkin
+Scenario: AC-93 happy path — a finished turn nobody saw
+  Given the user sent a prompt to Claude Code in %3 and went to another session (or locked the phone)
+  When its turn ends (its hook's Stop, or its screen going from working to done)
+  Then %3's row shows a small blob (8 px, not round) in its group's name's color (a project's for its rows), its middle on the line of the row's Clone, "Unread: its agent finished", on every page, while no page in sight showed %3 at that moment
+  When a page in sight shows %3 (opened, or a hidden page showing it comes back)
+  Then the mark goes on every page; a turn that ends while a page in sight shows it leaves none
+  And "in sight" is as for streaming (AC-13): a page in front and, on a computer, focused; a window on another display while the user types elsewhere is not looking, so a turn that ends there is unread
+  And the marks live while terminumd runs; a pane gone takes its mark with it
+```
+
 ### AC-89 — Sessions of the user's own tmux [SHOULD / P1]
 
 ```gherkin
@@ -684,6 +756,11 @@ Scenario: AC-89 edge — many sessions on a host
 Scenario: AC-89 failure — refused
   When the user attaches a session attached already, one of terminum's own server ("main") or a host's "terminum", a name with ":" or ".", or a 33rd session (hosts and this Mac together)
   Then the form (or the command) says why and nothing changes
+Scenario: AC-89 edge — one tmux reached twice
+  Given two hosts are one machine (two ssh strings for it), a host is this Mac, or a window is in two sessions of one tmux (grouped sessions, a linked window)
+  Then each pane is listed once, under the first group of the list that shows it (by an id terminumd gives each tmux server, its option @terminum-id, set where none is and read once a connection); a group left without rows says "the same tmux as devbox's terminum: shown there" and offers no new window
+  When the user attaches there a session listed already from the other place
+  Then it is refused: "work is listed already from devbox: the same tmux", and the form does not offer it
 Scenario: AC-89 edge — the user's tmux.conf
   Then terminumd's control clients are clients of the user's server ("tmux -N … attach-session -E": they never start it, and the session's environment is not updated from terminumd's): hooks such as client-attached and plugins such as tmux-resurrect see them; a session attached on a server of another tmux version says tmux's own message ("protocol version mismatch")
   When the user detaches a session, terminum stops, or the socket goes from settings.json
@@ -1002,7 +1079,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 | tmux history | `history-limit` 12,000 in terminumd's tmux.conf (AS-04) | tmux drops the oldest; numbering per OQ-05 |
 | Paste | 1 MB | refused: "Paste is larger than 1 MB" |
 | A set-buffer command | 64 KB | split into parts |
-| A page's grid | at least 20×5 | the last size kept |
+| A pane's grid | 45×14 to 240×70 | a smaller view draws the pane scaled down; a larger one leaves the rest blank |
 | Resizes per client | 1 a second | later ones wait for the next second |
 | New sessions, windows, splits per client | 1 a second | "Wait a second" in the status line |
 | Pages per terminumd | 100 WebSockets (iterm-enhancer's 100 windows, AC 41) | the 101st is refused with 503 "Too many pages" |
@@ -1092,3 +1169,5 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] AC-89 (2026-10-16) — `scripts/e2e_attach.py` against a second private server standing for the user's own (`-L tm-test-own`): attach by name, kept in settings.json, its copy command, refusals (twice, terminum's own), a session not running yet shows and attaches when it starts, no resize by looking (also after a later size) and a resize after typing, the private server's same window id untouched, the environment not updated (`-E`), New window there, `terminum tmux`, detach leaves it running at tmux's own size → 15/15; the size and environment checks fail without their fixes (checked); `cargo test` (servers told apart by socket, `attach` settings); `web/test/e2e_tmux.mjs` (the form with its choices, a waiting group, Detach) in Chromium and WebKit.
 - [x] AC-89 destroy-unattached and AC 81 no new window without tmux (2026-10-16) — `e2e_attach.py`: the choices name a session held by a client with destroy-unattached on in `ends`; `e2e_remote.py`: a failed host's group has no `new`; `e2e_tmux.mjs`: the warning beside that tick only, no "+" on a host that is not attached; `cargo test` (`list-sessions` lines read with the option's values off, on, keep-last).
 - [x] AC-89 on hosts (2026-10-16) — `scripts/e2e_hostattach.py` through `scripts/fake_ssh.py` (a private tmux server for the host's): the host's other sessions counted and offered by name, `terminum` and an unknown host refused, attach by name kept in the host's record, one more ssh connection attached by id with `-E` (no name in its command), the environment kept, no resize by looking and a marked resize after typing, a client that keeps ending started again with back-off (≤ 4 starts in 6 s; 30 without it, checked), the host's link dropping (sessions wait with its state, come back with it), a marked window no page sizes reclaimed on reconnect (fails without `reclaim`, checked), `terminum tmux` naming the host, detach, a removed host's sized window given its size back (fails without the release, checked) → 17/17; `e2e_attach.py` 15/15 and `e2e_remote.py` 22/22 on the same tree; `cargo test` (a host's attached sessions shown and the user's, attach command by id only, `hosts.*.attach` checked); `web/test/e2e_tmux.mjs` (On and ticks, a late answer ignored, one message for ticked and named, the offer after Add host once attached, the import icon with its count and the menu item, none without others) in Chromium and WebKit at both sizes.
+- [x] 0.14.0 (2026-10-19) — AC-07, AC-92 `scripts/e2e_core.py` (Clone right after the row's window in its folder; Group 1 in the pane's folder; a project's Clone joins it after its session; a pane closed leaves it; rename; the last session out, the project goes; projects.json), `cargo test page::projects` (names, colors, one project a pane, order, members, closed panes by server); AC-93 `scripts/e2e_hooks.py` (a turn ended on a hidden page: unread; shown: read; a turn ended while shown: none); `web/test/e2e_projects.mjs` (Clone on every row and no [+]; the row's menu by right click and long press and its moves; projects first, out of their tmux groups, one color each, [+], Rename…; unread; the folder first and the program at the right; ⌘Z Ctrl+_, ⌘⇧Z fish's Alt+/ and "zsh has no redo"; the magnifier out of sight while the search is open) → pass.
+- [x] 0.13.0 (2026-10-19) — AC-12 `web/test/e2e_live.mjs` (a scheme picked in one browser shows in another at once, is in settings.json, Theme removes it), `cargo test settings` (a bad page.colorScheme said); AC-13 `scripts/e2e_core.py` (10×3 → 45×14, 500×200 → 240×70), `cargo test page::sizing`, `e2e_screen.mjs` (a small view still says its size); `scripts/e2e_sizing.py` drag check waits for the first resize to land (it assumed the second began at it: a late opening resize let a passing size through); AC-15 `scripts/e2e_remote.py` (the host's only session's last pane closed: one fresh shell, no report; fails without the fix) and `scripts/e2e_restore.py` (the same for terminum's tmux and the user's own; terminumd runs with a HOME of its own, so the user's tmux.conf and its plugins never run on the test server); AC-89 `e2e_remote.py` (a second host for the same machine: no rows, "the same tmux as devbox's terminum") and `cargo test tmux::layout`; AC-07 `web/test/e2e_idekeys.mjs`, `recent.test.mjs` → pass.

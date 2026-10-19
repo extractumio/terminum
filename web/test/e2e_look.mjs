@@ -50,8 +50,8 @@ export async function webLook(browser, name) {
       const s = getComputedStyle(b);
       return [b.className, `${s.width} ${s.height} ${s.borderRadius} ${s.color}`];
     }));
-    check("look: a group header's buttons (copy, import, +, ⋯) share one size, radius and color",
-      head.length === 4 && new Set(head.map(([, l]) => l)).size === 1, JSON.stringify(head));
+    check("look: a group header's buttons (copy, import, ⋯) share one size, radius and color; no [+] (each row has Clone)",
+      head.length === 3 && new Set(head.map(([, l]) => l)).size === 1, JSON.stringify(head));
     if (phone) {
       const list = await small(page, "#nav button:not(.item):not(.grip)", 40);
       await page.click("#addhostbtn");

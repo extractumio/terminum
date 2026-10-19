@@ -33,8 +33,8 @@ export async function webMove(browser, name) {
     await menu("#closepane");
     await page.click("#confirmok");
     await pause(page);
-    check("AC-07 menu: Close pane asks \"Close this pane? The program running in it (claude) ends.\"; Cancel sends nothing, Close kills the pane",
-      asked.open && asked.text === "Close this pane? The program running in it (claude) ends." && asked.yes === "Close" && kept
+    check("AC-07 menu: Close session asks \"Close the session …? The program running in it (claude) ends.\"; Cancel sends nothing, Close Session kills the pane",
+      asked.open && /^Close the session .+\? The program running in it \(claude\) ends\.$/.test(asked.text) && asked.yes === "Close Session" && kept
         && last("kill")?.id === SHOWN, JSON.stringify({ asked, kill: last("kill") }));
 
     await page.click("#menubtn");

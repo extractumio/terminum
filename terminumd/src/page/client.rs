@@ -69,7 +69,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => files(app, page).await,
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
-        "new" | "newsession" | "split" | "rename" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
+        "new" | "newsession" | "split" | "clone" | "rename" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
+        "project" => super::projects::handle(app, page, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
         "addhost" | "hostaction" | "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
         "updatechoice" if !page.web => {
@@ -79,6 +80,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         }
         "sent" | "sentget" => super::sent::handle(app, page, t, &msg).await,
         "history" => crate::looks::set_history(app, page, &msg),
+        "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
@@ -104,6 +106,9 @@ pub async fn subscribe(app: &Shared, page: &Arc<Page>, key: &str) {
     let ctl = Arc::new(Ctl::default());
     let task = tokio::spawn(super::stream::run(app.clone(), page.clone(), server.clone(), pane.clone(), key.to_string(), ctl.clone()));
     page.state.lock().shown = Some(Shown { key: key.to_string(), server, pane, ctl, task });
+    if !page.state.lock().paused {
+        super::unread::read(app, key);
+    }
 }
 
 fn pause(page: &Page, on: bool) {
@@ -122,7 +127,11 @@ fn resume(app: &Shared, page: &Arc<Page>) {
     if let Some(s) = &st.shown {
         s.ctl.pause(false);
     }
+    let shown = st.shown.as_ref().map(|s| s.key.clone());
     drop(st);
+    if let Some(k) = shown {
+        super::unread::read(app, &k);
+    }
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     super::sizing::activated(app, page);           // the active page sizes its pane (AC-13)
 }

@@ -21,8 +21,16 @@ use crate::screen::frame::Fields;
 use crate::tmux::{mouse, Server};
 
 const EVERY: Duration = Duration::from_secs(1);
-/// The smallest grid terminumd sizes a pane to (smaller is refused by the page).
-const MIN: (u16, u16) = (20, 5);
+/// The grids a pane is sized to, whatever the screen (AC-13): the smallest fits an iPhone in
+/// portrait at the default 13 px (a smaller view draws the pane scaled down), the largest a
+/// big desktop window, about 1920×1200 (a larger view leaves the rest blank).
+const MIN: (u16, u16) = (45, 14);
+const MAX: (u16, u16) = (240, 70);
+
+/// A page's grid within MIN and MAX.
+fn bounded(cols: u16, rows: u16) -> (u16, u16) {
+    (cols.clamp(MIN.0, MAX.0), rows.clamp(MIN.1, MAX.1))
+}
 
 /// Who sized which window: (server id, @window) -> its record.
 #[derive(Default)]
@@ -88,7 +96,7 @@ async fn resize(app: &Shared, page: &Arc<Page>) {
     }
     let view = page.state.lock().view;
     let (Some((server, pane, f)), Some(grid)) = (shown_window(page), view) else { return };
-    let (cols, rows) = (grid.0.max(MIN.0) as usize, grid.1.max(MIN.1) as usize);
+    let (cols, rows) = (grid.0 as usize, grid.1 as usize);
     let key = (server.id(), f.window.clone());
     if f.panes > 1 {
         return; // a window of several panes keeps its layout; the page draws its pane scaled (AC-04)
@@ -151,7 +159,7 @@ async fn claim(app: &Shared, page: &Arc<Page>, why: Why) {
     }
     // free: nobody sizes it, or the page that does no longer shows it or is hidden (a locked phone, a tab in the background)
     let free = by.is_none_or(|id| !viewers(app, &server, &f.window).iter().any(|v| v.id == id && !v.state.lock().paused));
-    let view = page.state.lock().view.map(|(c, r)| (c.max(MIN.0) as usize, r.max(MIN.1) as usize));
+    let view = page.state.lock().view.map(|(c, r)| (c as usize, r as usize));
     if mine && view == Some((f.width, f.height)) {
         return;                                         // it has this page's grid already: the once-a-second slot stays free
     }
@@ -230,7 +238,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
             if c == 0 || r == 0 {
                 return;
             }
-            page.state.lock().view = Some((c, r));
+            page.state.lock().view = Some(bounded(c, r));
             later(app, page, if msg["typing"].as_bool().unwrap_or(false) { Why::Typed } else { Why::View });
         }
         _ => mouse_event(app, page, msg),
@@ -323,3 +331,17 @@ fn from_message(msg: &Value, sgr: bool) -> Option<Vec<u8>> {
 
 /// Most wheel steps one message carries.
 const WHEEL_MAX: u64 = 100;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// AC-13: a phone narrower than an iPhone in portrait, a split, or a huge display get the bounds.
+    #[test]
+    fn a_grid_stays_within_its_bounds() {
+        assert_eq!(bounded(80, 24), (80, 24));
+        assert_eq!(bounded(20, 5), MIN);
+        assert_eq!(bounded(400, 120), MAX);
+        assert_eq!(bounded(30, 90), (45, 70));
+    }
+}

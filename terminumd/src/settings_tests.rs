@@ -14,7 +14,7 @@ fn missing_or_empty_gives_every_default_and_no_message() {
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (48080, "terminum", 12000, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
-    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "widgets": true, "folds": true, "messages": []}));
+    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "widgets": true, "folds": true, "colorScheme": null, "messages": []}));
     let (s, m) = load(Path::new("/nonexistent/terminum/settings.json"));
     assert_eq!((s, m), (Settings::default(), vec![]));
 }
@@ -24,14 +24,14 @@ fn the_spec_example_is_read_whole() {
     let text = r#"{"port": 47901, "tmux": {"socket": "tm-test", "history": 20000},
  "restore": false,
  "themes": {"default": "local", "hosts": {"*": "remote", "devbox": "work"}, "sessions": {"notes": "paper"}},
- "page": {"textSize": 15, "markdownSize": 16, "widgets": false, "folds": false},
+ "page": {"textSize": 15, "markdownSize": 16, "widgets": false, "folds": false, "colorScheme": "Rosé Pine"},
  "hosts": {"devbox": {"ssh": ["-p", "2222", "alex@devbox.example"], "files": "enabled"}}}"#;
     let (s, m) = parse(text);
     assert!(m.is_empty(), "{m:?}");
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (47901, "tm-test", 20000, false));
     assert_eq!(s.themes.hosts.get("devbox").map(String::as_str), Some("work"));
     assert_eq!(s.themes.sessions.get("notes").map(String::as_str), Some("paper"));
-    assert_eq!(s.page, PageSettings { text_size: 15, markdown_size: 16, widgets: false, folds: false });
+    assert_eq!(s.page, PageSettings { text_size: 15, markdown_size: 16, widgets: false, folds: false, color_scheme: Some("Rosé Pine".into()) });
     assert_eq!(s.hosts["devbox"]["files"], "enabled");
 }
 
@@ -59,6 +59,8 @@ fn a_wrong_value_keeps_only_that_default() {
     for want in ["page.widgets must be true or false", "port must be 1–65535", "restore must be true or false"] {
         assert!(m.contains(&format!("settings.json: {want}")), "{want}: {m:?}");
     }
+    let (s, m) = parse(r#"{"page": {"colorScheme": "bad\u0007name"}}"#);
+    assert_eq!((s.page.color_scheme, m), (None, vec!["settings.json: page.colorScheme must be a color scheme's name".to_string()]));
     let (_, m) = parse(r#"{"page": {"textSize": 12.5}, "tmux": {"socket": "../x", "history": 5}, "themes": {"hosts": {"a": "../evil"}, "default": 3}}"#);
     assert_eq!(m.len(), 5, "{m:?}");
     assert!(m.contains(&"settings.json: themes.hosts.a must be a theme name".to_string()));

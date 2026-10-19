@@ -51,6 +51,9 @@ pub struct Control {
     pub ended: Arc<Mutex<Option<String>>>,
     /// set once the first answer arrived: the client attached
     pub attached: Arc<AtomicBool>,
+    /// tmux said `%exit` with no reason: its session or server ended on purpose (its last
+    /// window closed, `kill-server`), not a crash, a kill or a lost link
+    pub clean: Arc<AtomicBool>,
     pid: Option<u32>,
     pending: Arc<Mutex<VecDeque<Pending>>>,
 }
@@ -70,6 +73,7 @@ impl Control {
         let alive = Arc::new(AtomicBool::new(true));
         let attached = Arc::new(AtomicBool::new(false));
         let ended: Arc<Mutex<Option<String>>> = Arc::default();
+        let clean = Arc::new(AtomicBool::new(false));
         let errors: Arc<Mutex<Vec<u8>>> = Arc::default();
 
         // writer: the lines queued now (a frame's display and capture, a batch of keys), their
@@ -113,7 +117,7 @@ impl Control {
         });
 
         // reader: notices and answers; at the end every waiter learns why
-        let (p, a, att, end) = (pending.clone(), alive.clone(), attached.clone(), ended.clone());
+        let (p, a, att, end, cl) = (pending.clone(), alive.clone(), attached.clone(), ended.clone(), clean.clone());
         tokio::spawn(async move {
             let mut reader = BufReader::with_capacity(1 << 16, stdout);
             let mut block: Option<(String, bool)> = None; // (the %begin's "time num flags", ours)
@@ -164,6 +168,7 @@ impl Control {
                 }
             }
             a.store(false, Ordering::Relaxed);
+            cl.store(exit_reason.as_deref() == Some(""), Ordering::Relaxed);
             let why = exit_reason.filter(|r| !r.is_empty()).or_else(|| last_line(&errors.lock())).unwrap_or_else(|| "tmux exited".into());
             for w in p.lock().drain(..) {
                 let _ = w.reply.send(Err(why.clone()));
@@ -193,7 +198,7 @@ impl Control {
             let _ = child.wait().await;
         });
 
-        Ok(Control { lines: tx, alive, ended, attached, pid, pending })
+        Ok(Control { lines: tx, alive, ended, attached, clean, pid, pending })
     }
 
     pub fn alive(&self) -> bool {

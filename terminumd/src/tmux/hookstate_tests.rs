@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 use super::*;
 use serde_json::json;
+use std::time::Duration;
 
 const K: &str = "tmux:local:terminum:%3";
 
@@ -19,9 +20,38 @@ fn a_turn_is_working_then_done_with_its_tool_and_subagents() {
     h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a1"})), t);
     let v = h.view(K, "2.1.303", t).unwrap();
     assert_eq!((v.state, v.tool.as_str(), v.subagents), (State::Working, "Bash: npm test", 1));
+    h.apply(K, &ev("claude", "SubagentStop", json!({"turn": "p1", "sub": "a1"})), t);
     h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
     let v = h.view(K, "2.1.303", t).unwrap();
     assert_eq!((v.state, v.subagents, v.tool.as_str()), (State::Done, 0, ""));
+    assert!(h.take_ended(K) && !h.take_ended(K), "its end is told once");
+}
+
+/// A turn that stops while its subagents run in the background is working until the last stops.
+#[test]
+fn a_turn_with_subagents_in_the_background_ends_with_the_last() {
+    let h = Hooks::default();
+    let t = Instant::now();
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a2"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Working, 2)), "Claude Code is done; its subagents are not");
+    assert!(!h.take_ended(K), "no end yet: no reminder, no unread");
+    let later = t + LEASE + Duration::from_secs(5);
+    assert_eq!(h.view(K, "c", later).map(|v| v.state), Some(State::Working), "a background subagent may be quiet longer than a turn");
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "tool": "Bash: ls"})), later);
+    h.apply(K, &ev("claude", "SubagentStop", json!({"turn": "p1", "sub": "a1"})), later);
+    assert_eq!(h.view(K, "c", later).map(|v| (v.state, v.subagents)), Some((State::Working, 1)));
+    h.apply(K, &ev("claude", "SubagentStop", json!({"turn": "p1", "sub": "a2"})), later);
+    assert_eq!(h.view(K, "c", later).map(|v| (v.state, v.subagents)), Some((State::Done, 0)));
+    assert!(h.take_ended(K), "the last one's stop ends the turn");
+    // an interrupt ends it at once, subagents or not
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p2"})), later);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p2", "sub": "b1"})), later);
+    h.apply(K, &ev("claude", "Interrupt", json!({"turn": "p2"})), later);
+    assert_eq!(h.view(K, "c", later).map(|v| v.state), Some(State::Done));
+    assert!(h.take_ended(K));
 }
 
 #[test]

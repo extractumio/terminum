@@ -84,13 +84,15 @@ def split(t, pid, pane):
 
 
 def drag(t, pid, pane):
-    """A dragged window: sizes within a second reach tmux once, the last one."""
+    """A dragged window: the sizes passing within the second after a resize reach tmux once, the last one."""
     d = open_pane(t, pid, 100, 30, typing=True)
     settle(pane, "100x30")
     d.until(lambda m: False, 1.2)   # past the second; the opening's messages read
     d.send({"t": "size", "cols": 96, "rows": 30, "typing": False})
+    # the second starts when 96 lands (it may wait for the opening's own second): the drag is in it
+    first = d.until(lambda m: m["t"] == "sized" and m["mine"], 3)
     for cols in (90, 84, 88, 80):
-        time.sleep(0.15)
+        time.sleep(0.1)
         d.send({"t": "size", "cols": cols, "rows": 30, "typing": False})
     sized, end = [], time.time() + 3
     while time.time() < end:
@@ -98,7 +100,7 @@ def drag(t, pid, pane):
         if m:
             sized.append(m["cols"])
     check("AC-13 a dragged window: the passing sizes held back never reach tmux, the last does",
-          sized and sized[-1] == 80 and len(sized) <= 2 and not {90, 84, 88} & set(sized) and window_of(pane) == "80x30", (sized, window_of(pane)))
+          first and first["cols"] == 96 and sized == [80] and window_of(pane) == "80x30", (first and first["cols"], sized, window_of(pane)))
     d.close()
 
 

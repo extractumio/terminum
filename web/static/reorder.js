@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Dragging in the session list (AC-52): a row by its grip within its group (iTerm2 reorders
-// that window's tabs), a group by its grip among the groups (this browser's list only).
+// Dragging in the session list (AC-52): a row by its grip within its group (tmux reorders
+// that session's windows; a project's sessions, AC-92, in the project), a group by its grip
+// among the groups (this browser's list only), a project among the projects (every page's).
 // Pointer events, so a finger drags as a mouse does (iOS Safari's own drag and drop is not).
 
 /** Starts a drag at a grip in `list`; `done(kind, container, ids)` gets the new order. */
@@ -9,7 +10,7 @@ export function bindReorder(list, done, ended = () => {}) {
   list.addEventListener("pointerdown", (e) => {
     const grip = e.target.closest(".grip");
     if (!grip || e.button > 0) return;
-    const el = grip.closest(grip.dataset.kind === "group" ? "section" : "li");
+    const el = grip.closest(grip.dataset.kind === "row" ? "li" : "section");
     if (!el) return;
     e.preventDefault();
     grip.setPointerCapture(e.pointerId);
@@ -38,7 +39,7 @@ export function bindReorder(list, done, ended = () => {}) {
     const parent = el.parentElement;
     if (!commit) parent.insertBefore(el, [...parent.children].filter((c) => c !== el)[start] ?? null);   // back where it was
     else if ([...parent.children].indexOf(el) !== start) {
-      const ids = [...parent.children].map((c) => (kind === "group" ? c.dataset.wid : c.querySelector(".item")?.dataset.id)).filter(Boolean);
+      const ids = [...parent.children].map((c) => (kind === "group" ? c.dataset.wid : kind === "project" ? c.dataset.pid : c.querySelector(".item")?.dataset.id)).filter(Boolean);
       done(kind, parent, ids);
     }
     ended();

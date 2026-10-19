@@ -270,6 +270,43 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
     out
 }
 
+/// Every pane listed once (AC-89): a tmux server reached twice (two hosts that are one machine,
+/// a host that is this Mac: the same `identity` by server id) or a window in two of its sessions
+/// (grouped sessions, a linked window) shows its panes in the first group of the list only; a
+/// group left without rows says where they are, and offers no new window.
+pub fn once_each(groups: &mut [Value], identity: &HashMap<String, String>) {
+    let mut seen: HashMap<(String, String), String> = HashMap::new();     // (identity, %N) -> where it is shown
+    for g in groups.iter_mut() {
+        let Some(id) = g["server"].as_str().and_then(|s| identity.get(s)) else { continue };
+        let label = g["label"].as_str().unwrap_or_default();
+        let place = match (g["host"].as_str(), g["session"].as_str()) {
+            (Some(h), Some(s)) if h == label => format!("{h}'s {s}"),
+            (Some(h), _) => format!("{label} on {h}"),
+            _ => label.to_string(),
+        };
+        let Some(items) = g["items"].as_array_mut().filter(|a| !a.is_empty()) else { continue };
+        let mut elsewhere = None;
+        items.retain(|it| {
+            let pane = it["id"].as_str().and_then(|k| k.rsplit_once(':')).map_or("", |(_, p)| p);
+            match seen.get(&(id.clone(), pane.to_string())) {
+                Some(at) => {
+                    elsewhere.get_or_insert_with(|| at.clone());
+                    false
+                }
+                None => {
+                    seen.insert((id.clone(), pane.to_string()), place.clone());
+                    true
+                }
+            }
+        });
+        if items.is_empty() && let Some(at) = elsewhere {
+            g["state"] = json!("absent");
+            g["why"] = json!(format!("the same tmux as {at}: shown there"));
+            g["new"] = Value::Null;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -318,5 +355,29 @@ mod tests {
             assert!(out[i].get("quickOf").is_none() && out[i].get("quick").is_none(), "{why}");
         }
         assert!(out[1].get("quick").is_none(), "a quick shell is never a parent");
+    }
+
+    /// AC-89: a pane reached through two places is listed under the first only.
+    #[test]
+    fn a_pane_is_listed_once() {
+        let row = |k: &str| json!({"id": k});
+        let mut groups = vec![
+            json!({"server": "devbox:default", "label": "devbox", "host": "devbox", "session": "terminum", "items": [row("tmux:devbox:default:%1")], "new": "New window"}),
+            json!({"server": "devbox:default", "label": "work", "host": "devbox", "session": "work", "items": [row("tmux:devbox:default:%2"), row("tmux:devbox:default:%3")]}),
+            json!({"server": "box2:default", "label": "box2", "host": "box2", "session": "terminum", "items": [row("tmux:box2:default:%1")], "new": "New window"}),
+            json!({"server": "box2:default", "label": "work2", "host": "box2", "session": "work2", "items": [row("tmux:box2:default:%3"), row("tmux:box2:default:%4")]}),
+            json!({"server": "local:terminum", "label": "main", "items": [row("tmux:local:terminum:%1")]}),
+        ];
+        let same = "devbox\t/tmp/tmux-501/default\t42".to_string();
+        let identity = HashMap::from([("devbox:default".to_string(), same.clone()), ("box2:default".to_string(), same),
+            ("local:terminum".to_string(), "mac\t/tmp/tmux-501/terminum\t7".to_string())]);
+        once_each(&mut groups, &identity);
+        assert_eq!(groups[2]["items"], json!([]));
+        assert_eq!((groups[2]["state"].as_str(), groups[2]["why"].as_str()), (Some("absent"), Some("the same tmux as devbox's terminum: shown there")));
+        assert!(groups[2]["new"].is_null(), "no new window where nothing is listed");
+        assert_eq!(groups[3]["items"], json!([row("tmux:box2:default:%4")]), "a linked window's pane goes, the others stay");
+        assert!(groups[3].get("state").is_none());
+        assert_eq!(groups[4]["items"].as_array().unwrap().len(), 1, "another server's %1 is another pane");
+        assert_eq!(groups[1]["items"].as_array().unwrap().len(), 2);
     }
 }

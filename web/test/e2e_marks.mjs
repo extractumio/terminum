@@ -275,9 +275,9 @@ export async function webMarks(browser, name = "") {
   await page.keyboard.press("Enter");
   await page.waitForFunction(() => document.getElementById("findn").textContent === "Not found", null, { timeout: 5000 }).catch(() => {});
   const none = await page.evaluate(() => ({ n: document.getElementById("findn").textContent, rail: document.getElementById("findrail").hidden }));
-  await page.click("#findfab");
+  await page.click("#findclose");
   const shut = await page.evaluate(() => ({ box: document.getElementById("findbox").hidden, rail: document.getElementById("findrail").hidden, hl: !!CSS.highlights?.get("find")?.size }));
-  check(`${at58} search: nothing found says so; the magnifier pressed again closes the field, its marks and its highlight`,
+  check(`${at58} search: nothing found says so; × closes the field, its marks and its highlight (the magnifier is out of sight while it is open)`,
     none.n === "Not found" && none.rail && shut.box && shut.rail && !shut.hl, JSON.stringify({ none, shut }));
 
   // a part of its text (rendered Markdown lacks a link's address); text not found says so

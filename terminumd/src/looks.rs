@@ -197,3 +197,20 @@ pub fn set_history(app: &Shared, page: &Page, msg: &Value) {
         crate::page::client::error(page, e, None);
     }
 }
+
+/// `scheme {name}` from the page's Colors: one color scheme for every browser, kept in
+/// settings.json as page.colorScheme (none: the themes' own colors), told to every page (AC-12).
+pub fn set_scheme(app: &Shared, page: &Page, msg: &Value) {
+    let name = msg["name"].as_str().map(str::to_string);
+    if name.as_deref().is_some_and(|n| !crate::settings::is_short_name(n)) {
+        return crate::page::client::error(page, "Not a color scheme", None);
+    }
+    let path = app.looks.home.join("settings.json");
+    let saved = crate::settings::save_object(&path, "page", |p| match name {
+        Some(n) => { p.insert("colorScheme".into(), json!(n)); }
+        None => { p.remove("colorScheme"); }
+    });
+    if let Err(e) = saved {
+        crate::page::client::error(page, e, None);
+    }
+}

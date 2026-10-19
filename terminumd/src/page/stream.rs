@@ -57,6 +57,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     let mut shown = Shown::default();
     // the last frame's rows, cursor columns and encodings: an unchanged row is not encoded again
     let mut encodings: Vec<(rows::Row, Option<usize>, String)> = Vec::new();
+    let mut last_folds: Option<(Vec<String>, Option<usize>, bool, serde_json::Value)> = None;
     let mut generation = u64::MAX;
     let mut said_lost = false;
     let mut server_pid: Option<u32> = None;
@@ -123,6 +124,14 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             Step::Same => {}
         }
         let cursor = (f.cursor_on && f.cy < screen.len()).then_some(f.cy);
+        // a full-screen program's rows never fold (a coding agent's own alternate screen is an
+        // agent's); worked out again only when the screen changed
+        let hard: Vec<bool> = screen.iter().map(|r| r.hard).collect();
+        let full_screen = f.alt && crate::tmux::titles::agent_of(&f.command).is_none();
+        if last_folds.as_ref().is_none_or(|(t, c, a, _)| *t != texts || *c != cursor || *a != full_screen) {
+            last_folds = Some((texts.clone(), cursor, full_screen, super::folds::on_screen(&texts, &hard, cursor, full_screen)));
+        }
+        let folds = last_folds.as_ref().map(|l| l.3.clone()).unwrap_or_default();
         let cols: Vec<Option<usize>> = (0..screen.len()).map(|i| (cursor == Some(i)).then_some(f.cx)).collect();
         let encoded: Vec<String> = screen.iter().zip(&cols).enumerate().map(|(i, (r, &c))| match encodings.get(i) {
             Some((was, at, e)) if was == r && *at == c => e.clone(),
@@ -131,7 +140,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         encodings = screen.into_iter().zip(cols).zip(encoded.iter().cloned()).map(|((r, c), e)| (r, c, e)).collect();
         let moved = prev_cursor != Some((f.cx, f.cy)) || shown.changed(f.cy, &encoded);
         let extra = super::timing::frame(&page, moved);
-        if let Some(msg) = shown.frame(&key, &f, encoded, extra)
+        if let Some(msg) = shown.frame(&key, &f, encoded, folds, extra)
             && !page.send(msg) {
                 return;
             }

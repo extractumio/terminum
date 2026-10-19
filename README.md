@@ -76,8 +76,16 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   ends, Resolve ends it. Bookmarks and reminders show in every session of their folder; once all
   of them closed, they wait in the list below the sessions (Bookmarks | Reminders, Open all).
 - **The view** is the pane as tmux has it, sized to the browser window you use (in front, or
-  the phone in your hand); a wider one is scaled to fit. The menu has 20 color schemes, the
-  Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
+  the phone in your hand), from 45×14 (an iPhone in portrait) to 240×70 cells; a wider one is
+  scaled to fit. The menu has 20 color schemes (one for every browser, kept in settings.json),
+  the Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
+- **Keys of an IDE**: ⌘[ and ⌘] go back and forward through the last 20 sessions you showed,
+  ⌘F searches the history, ⌘B opens or closes Files.
+- **The list**: each row's Clone opens a window beside it in its folder; a right click or a long
+  press on a row opens its menu (Clone, Add to Project, Close, moves). Projects are named groups
+  of sessions in a color of their own, with [+] for a new window in the project's folder, the same
+  on every browser. A pale fuchsia blob marks a session whose agent finished while you were away.
+  ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish).
 - **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
   host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
 

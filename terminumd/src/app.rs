@@ -77,6 +77,10 @@ pub struct App {
     pub recorder: Arc<crate::page::trace::Recorder>,
     /// bookmarks (AC-33)
     pub bookmarks: Mutex<crate::page::bookmarks::Store>,
+    /// named groups of sessions in the list (AC-92)
+    pub projects: Mutex<crate::page::projects::Projects>,
+    /// panes whose agent ended a turn nobody has looked at since (AC-93)
+    pub unread: Mutex<std::collections::HashSet<String>>,
 }
 
 pub type Shared = Arc<App>;

@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -16,6 +16,7 @@ use tokio::process::Command;
 use tokio::sync::{mpsc, oneshot, Notify};
 
 use super::control::{Answer, Control, Notice};
+pub use super::command::{host_attach_command, host_command, plain};
 
 /// How a server is reached.
 #[derive(Clone, Debug)]
@@ -73,11 +74,16 @@ pub struct Server {
     extended: Mutex<Option<(u64, bool)>>,
     /// a host's `HOME`, as read once per generation
     home: Mutex<Option<(u64, String)>>,
+    /// its identity (machine, socket, pid), as read once per generation
+    identity: Mutex<Option<(u64, String)>>,
     /// the user's own sessions attached by name (AC-89): on a server of the user's own on
     /// this Mac all it lists; on a host besides `terminum`; `None` for the private server
     pub only: Mutex<Option<Vec<String>>>,
     /// a host's session clients started again after an end: session -> (delay s, not before, started)
     pub tries: Mutex<HashMap<String, (u64, std::time::Instant, std::time::Instant)>>,
+    /// its last client ended with tmux's own `%exit` while one pane at most was shown: the
+    /// user closed the last one (or ran kill-server on it), nothing to make again (AC-15)
+    closed_by_user: AtomicBool,
 }
 
 impl Server {
@@ -95,8 +101,10 @@ impl Server {
             generation: AtomicU64::new(0),
             extended: Mutex::new(None),
             home: Mutex::new(None),
+            identity: Mutex::new(None),
             only: Mutex::new(None),
             tries: Mutex::default(),
+            closed_by_user: AtomicBool::new(false),
         })
     }
 
@@ -190,6 +198,11 @@ impl Server {
         }
     }
 
+    /// Whether its tmux was closed by the user since this was last asked (AC-15).
+    pub fn took_closed_by_user(&self) -> bool {
+        self.closed_by_user.swap(false, Ordering::Relaxed)
+    }
+
     /// The pane -> session map of the last list.
     pub fn set_panes(&self, panes: HashMap<String, String>) {
         self.inner.lock().panes = panes;
@@ -228,14 +241,39 @@ impl Server {
 
     /// The server's `HOME` (for "~" in a host's paths), read once per connection.
     pub async fn home(&self) -> Option<String> {
+        self.per_connection(&self.home, async {
+            self.run("show-environment -g HOME").await.ok()?.into_iter().find_map(|l| l.strip_prefix("HOME=").map(str::to_string))
+        }).await
+    }
+
+    /// Which tmux server this is, however it is reached: an id terminumd gives it once, a
+    /// server option `@terminum-id` (set only where none is, so two connections to one server
+    /// read the same), read once per connection. Two hosts that are one machine, or a host that
+    /// is this Mac, have the same (a pane is listed once, AC-89).
+    pub async fn identity(&self) -> Option<String> {
+        self.per_connection(&self.identity, async {
+            let mine = crate::auth::crypto::random_hex::<8>();
+            let set = format!("if -F '#{{@terminum-id}}' '' 'set -s @terminum-id {mine}'");
+            let read = self.run_all(vec![set, "show -sv @terminum-id".into()]).await.pop()?.ok()?;
+            read.into_iter().next().map(|l| l.trim().to_string()).filter(|l| !l.is_empty())
+        }).await
+    }
+
+    /// The identity as last read (none before the first read or after a reconnect).
+    pub fn identity_known(&self) -> Option<String> {
         let generation = self.generation.load(Ordering::Relaxed);
-        if let Some((g, h)) = self.home.lock().as_ref() && *g == generation {
-            return Some(h.clone());
+        self.identity.lock().as_ref().filter(|(g, _)| *g == generation).map(|(_, i)| i.clone())
+    }
+
+    /// `read`'s answer, kept in `slot` while this connection (generation) lasts.
+    async fn per_connection(&self, slot: &Mutex<Option<(u64, String)>>, read: impl std::future::Future<Output = Option<String>>) -> Option<String> {
+        let generation = self.generation.load(Ordering::Relaxed);
+        if let Some((g, v)) = slot.lock().as_ref() && *g == generation {
+            return Some(v.clone());
         }
-        let lines = self.run("show-environment -g HOME").await.ok()?;
-        let home = lines.into_iter().find_map(|l| l.strip_prefix("HOME=").map(str::to_string))?;
-        *self.home.lock() = Some((generation, home.clone()));
-        Some(home)
+        let v = read.await?;
+        *slot.lock() = Some((generation, v.clone()));
+        Some(v)
     }
 
     pub fn attached(&self) -> bool {
@@ -359,6 +397,7 @@ impl Server {
 
     /// A control client for `session`; `bulk`: it takes no pane output; `remote`: a host's command.
     fn spawn(self: &Arc<Self>, session: &str, bulk: bool, remote: String) -> Result<Control, String> {
+        let judged = bulk || (!self.is_local() && session == HOST_SESSION);   // the client the server is judged by
         let flags = if bulk { "ignore-size,no-output" } else { "ignore-size" };
         let cmd = match &self.link {
             // the user's own server (AC-89): never started by us (-N), and its sessions keep
@@ -387,9 +426,15 @@ impl Server {
         let me = Arc::downgrade(self);
         tokio::spawn(notices(me.clone(), nrx));
         let session = session.to_string();
+        let clean = control.clean.clone();
         tokio::spawn(async move {
             let why = drx.await.unwrap_or_default();
             if let Some(s) = me.upgrade() {
+                // the client the server is judged by (the bulk one; a host's `terminum`) says it
+                if judged {
+                    let by_user = clean.load(Ordering::Relaxed) && s.inner.lock().panes.len() <= 1;
+                    s.closed_by_user.store(by_user, Ordering::Relaxed);
+                }
                 tracing::info!(event = "client.end", server = %s.name, session, why);
                 s.dirty.notify_one();
                 s.ended.notify_one();
@@ -401,31 +446,6 @@ impl Server {
         }
         Ok(control)
     }
-}
-
-/// The remote command of a host's control client, quoted for the host's shell (AC-81):
-/// the session `terminum`, created when missing; `-A` without `-D` leaves other clients.
-pub fn host_command() -> String {
-    format!("tmux -u -C new-session -A -f ignore-size -s {HOST_SESSION}")
-}
-
-/// The remote command of a client of the user's session `$N` on a host (AC-89): by id, so no
-/// name reaches the host's shell; `-E`: the session's environment is not updated from ssh's.
-pub fn host_attach_command(id: &str) -> String {
-    let id: String = id.chars().filter(|c| *c == '$' || c.is_ascii_digit()).collect();
-    format!("tmux -u -C attach-session -E -f ignore-size -t '{id}'")
-}
-
-/// A tmux command with a UTF-8 locale (launchd gives none: tmux would draw `_` for every
-/// wide character) and without the TMUX of a terminal terminumd may run in (tests).
-pub fn plain(tmux: &std::path::Path) -> Command {
-    let mut c = Command::new(tmux);
-    c.env_remove("TMUX").env_remove("TMUX_PANE");
-    let utf8 = ["LC_ALL", "LC_CTYPE", "LANG"].iter().any(|k| std::env::var(k).is_ok_and(|v| v.to_uppercase().contains("UTF-8") || v.to_uppercase().contains("UTF8")));
-    if !utf8 {
-        c.env("LANG", "en_US.UTF-8");
-    }
-    c
 }
 
 async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceiver<Notice>) {
@@ -459,13 +479,6 @@ async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceive
 mod tests {
     use super::*;
 
-    /// AC-89: a host's session client attaches by id, never a name the host's shell would read.
-    #[test]
-    fn a_hosts_session_is_attached_by_its_id() {
-        assert_eq!(host_attach_command("$12"), "tmux -u -C attach-session -E -f ignore-size -t '$12'");
-        assert_eq!(host_attach_command("$1'; rm -rf ~"), "tmux -u -C attach-session -E -f ignore-size -t '$1'");
-    }
-
     #[test]
     fn keys_name_host_socket_and_pane() {
         let n = Arc::new(Notify::new());
@@ -474,10 +487,5 @@ mod tests {
         let h = Server::new("devbox", "default", Link::Ssh { ssh: "ssh".into(), args: vec!["devbox.example".into()] }, n);
         assert_eq!(h.key("%7"), "tmux:devbox:default:%7");
         assert!(!h.is_local());
-    }
-
-    #[test]
-    fn the_host_command_creates_or_attaches_terminum() {
-        assert_eq!(host_command(), "tmux -u -C new-session -A -f ignore-size -s terminum");
     }
 }

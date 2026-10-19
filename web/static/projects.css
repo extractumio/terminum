@@ -1,0 +1,53 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The session list's projects (AC-92): a group of its own, tinted and named in its color, its
+   rows' bars in it; a row's Clone button (AC-07), its unread mark (AC-93), its program on the
+   right of its second line; the row menu (rowmenu.js). */
+:root { --proj-l: .72; --proj-c: .16; }
+:root.light { --proj-l: .56; --proj-c: .17; }
+.projects { display: contents; }
+.grp.project { border-radius: 10px; background: color-mix(in srgb, var(--proj) 8%, transparent); box-shadow: inset 2px 0 0 color-mix(in srgb, var(--proj) 70%, transparent); }
+.grp.project { --name: color-mix(in srgb, var(--proj) 60%, var(--t-fg)); }   /* its name's color: the label, its rows' unread mark */
+.grp.project h2 .label { color: var(--name); }
+.grp.project .pdot { flex: none; width: 8px; height: 8px; border-radius: 45% 55% 50% 50% / 55% 45% 55% 45%; background: var(--proj); }
+.grp.project .pbar { opacity: .75; }
+.grp.project .pbar.on { opacity: 1; }
+.grp h2 .rename { flex: 1; min-width: 0; height: 26px; padding: 0 6px; border-radius: 6px; font: inherit; }
+
+/* Clone: a column of its own at the row's right end (the state column stays in sight); with a
+   mouse it shows on hover, with a finger always */
+.grp li:has(> .clone) > .item { width: calc(100% - 30px); }
+.grp li > .clone { position: absolute; right: 0; top: 8px; width: 28px; height: 28px; display: grid; place-items: center;
+  border-radius: 7px; color: var(--muted); opacity: 0; }
+@media (hover: hover) { .grp li:hover > .clone, .grp li > .clone:focus-visible { opacity: 1; } .grp li > .clone:hover { color: var(--t-fg); background: var(--surface-3); } }
+@media (hover: none) {
+  .grp li:has(> .clone) > .item { width: calc(100% - 40px); }
+  .grp li > .clone { opacity: .8; width: 40px; height: 40px; top: 4px; }
+}
+
+/* unread: its agent finished a turn nobody has looked at; a small blob in its group's name's
+   color, its middle on the Clone button's (the row's first 28 px past its padding) */
+.item .st .unread { width: 8px; height: 8px; margin-top: 8px; background: var(--name, var(--t-fg));
+  border-radius: 64% 36% 57% 43% / 40% 62% 38% 60%; rotate: 18deg; }
+@media (hover: none) { .item .st .unread { margin-top: 8px; } }
+
+/* the second line: folder and titles first, what runs there at the right edge */
+.s > .progs { flex: none; margin-left: auto; padding-left: 8px; display: flex; gap: 6px; }
+
+/* the search's own field is open: its magnifier stays out of sight (the field has ×) */
+#findfab[aria-expanded="true"] { visibility: hidden; }
+
+#rowmenu { position: fixed; z-index: 31; width: 210px; display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--r-lg);
+  --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
+#rowmenu[hidden] { display: none; }
+#rowmenu .mhead { display: flex; align-items: center; gap: 6px; padding: 0 0 2px 10px; color: var(--muted); font-size: var(--fs-label); }
+#rowmenu .mhead span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#rowmenu .mhead button { flex: none; width: 30px; height: 30px; padding: 0; justify-content: center; font-size: 18px; color: var(--muted); }
+#rowmenu hr { width: 100%; margin: 3px 0; border: 0; border-top: 1px solid var(--line); }
+#rowmenu button { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border-radius: 7px; text-align: left; }
+#rowmenu button:disabled { opacity: .4; }
+#rowmenu button[data-action="close"] { color: var(--danger-text); }
+#rowmenu .pdot { flex: none; width: 8px; height: 8px; border-radius: 3px; background: var(--proj); }
+@media (hover: hover) { #rowmenu button:not(:disabled):hover { background: var(--surface-4); } }
+#rowmenu button:focus-visible { background: var(--surface-4); }
+@media (hover: none) { #rowmenu button { height: 44px; border-radius: 12px; } }
+#sessions .item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }

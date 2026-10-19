@@ -31,6 +31,10 @@ import { uploads } from "./upload.js";
 import { waitingCards } from "./waiting.js";
 import { Widgets } from "./widgets.js";
 import { Marks } from "./marks.js";
+import { recentSessions } from "./recent.js";
+import { rowMenus, saveOrder } from "./rowmenu.js";
+import { ideKeys } from "./idekeys.js";
+import { undoKey, undoTouch } from "./undo.js";
 import * as trace from "./trace.js";
 
 const $ = (id) => document.getElementById(id);
@@ -46,21 +50,23 @@ if (embedded) document.body.classList.add("embed");
 
 const SIZE_MIN = 7, SIZE_MAX = 28;                 // the text sizes the − and + buttons allow
 const st = {
-  groups: [], sid: embedded ?? store.get("sid", null),
+  groups: [], sid: embedded ?? store.get("sid", null), projects: [],
   size: null, base: null, step: store.get("sizeStep", 0),
   collapsed: new Set(store.get("collapsed", [])),   // session groups closed in the list
   appCursor: false, bracketed: store.get("bracketed", true),
 };
+/** The layout row of pane `id`, or null. */
+const itemOf = (id) => findItem(st.groups, id)?.item ?? null;
 
 // ---------- connection (conn.js) ----------
 const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => onMessage(m), status,
   busy: () => [$("files"), ...$("filewin").querySelectorAll("iframe")].some((f) => { try { return f.contentWindow?.fbBusy?.(); } catch { return false; } }),
   onOpen: (ws) => {
     trace.connected(send, ws);
+    active = true;                                 // a new connection streams until told otherwise:
+    syncActive();                                  // a hidden page says so before it shows a pane (AC-93: it reads nothing)
     if (st.sid) select(st.sid, true);
     if (!embedded || focusAsked) focusTerminal();  // a computer types into the chat at once; a phone opens no keyboard
-    active = true;                                 // a new connection streams until told otherwise
-    syncActive();
   } });
 // Nothing typed waits for a connection: it would arrive late, all at once (AC-14).
 function send(m) {
@@ -80,12 +86,13 @@ const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.kee
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
   if (page.textSize) setBase(page.textSize);
   prefs.page(page);
+  schemes.page(page);
   view.keepBottom(syncControls);
 } });
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
-  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
+  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
     tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
@@ -98,6 +105,15 @@ const shownFiles = paneFiles(() => views.paneInfo(), undefined, signedUrl);
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const views = new Views({ send, store, onShow: () => { view.keepBottom(applyFit); marks(); }, onBack: () => focusTerminal() });
+// the sessions shown last, ⌘[ and ⌘] through them; ⌘F the history's search, ⌘B Files (AC-07)
+const recent = recentSessions({ store, exists: (id) => !!findItem(st.groups, id), show: (id) => pick(id) });
+if (!embedded) ideKeys({ back: recent.back, forward: recent.forward, files: () => views.toggleFiles(), undo: undoRedo,
+  find: () => document.body.dataset.shown === "term" && !!st.sid && (bookmarks.search.toggle(true), true) });
+/** Undo or redo in the shown pane (AC-03): its program's key, or why it has none. */
+function undoRedo(redo) {
+  const how = undoKey(itemOf(st.sid), redo);
+  if (how.bytes) { send({ t: "in", data: how.bytes }); sizing.typed(); } else toast(how.why, 3000);
+}
 // Addresses open in a new tab here, paths in File (on the pane's host).
 // (a quick shell's page has no View: its pane's page opens it)
 const openFile = (p, host) => (embedded ? parent.postMessage({ type: "tm-open", path: p, host }, location.origin) : views.open(p, host));
@@ -253,7 +269,7 @@ function onMessage(m) {
     case "lines":
       if (m.error) { widgets.folds.failed(m.first); toast(m.error, 5000); break; }
       view.refill(m.first, m.lines); widgets.keepPlace(() => widgets.folds.filled(m.first, m.lines.length)); break;
-    case "screen": view.onScreen(m); sizing.sync(); break;
+    case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); break;
     case "sized": sizing.onSized(m); break;
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
@@ -269,6 +285,7 @@ function onMessage(m) {
     case "build": conn.checkBuild(m.id); showBuild(m); break;
     case "trace": trace.onMessage(m); break;
     case "sentone": case "sentnew": sent.onMessage(m); break;
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; drawNav(); break;
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }
@@ -276,9 +293,16 @@ function onMessage(m) {
 // ---------- navigation ----------
 
 // Rows reorder tmux's windows in their session; groups reorder this browser's list only.
+// Clone (AC-07): a new window right after the row's, in its folder; in its project when it has one (AC-92)
+function cloneRow(item) { send({ t: "clone", id: item.id }); }
+const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow });
+
+// a finger resting on the keyboard button offers Undo and Redo, as iOS's own undo does (AC-03)
+undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo });
 const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   if (kind === "group") store.set("groupOrder", ids);
-  else send({ t: "reorder", group: parent.dataset.wid, ids });
+  else if (kind === "project") send({ t: "project", action: "order", ids });
+  else saveOrder(send, parent, ids);
 }, () => drawNav());                                // a layout may have come while dragging
 
 function pick(id) {
@@ -287,7 +311,7 @@ function pick(id) {
   if (of) quick.focus(); else focusTerminal();
 }
 const reminders = waitingCards($("asks"), pick);
-const sent = sentHistory({ view, send, item: () => findItem(st.groups, st.sid)?.item ?? null, copy: (text) => input.copySelection(text, true), toast });
+const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast });
 const reminded = reminderBox({ marks: bookmarks, send });
 bookmarks.onPlaced = () => { sent.place(); reminded.place(); };
 function drawNav() {
@@ -295,7 +319,8 @@ function drawNav() {
   reminders.show(st.sid);
   if (reorder.dragging()) return;                  // the next layout redraws it
   renderNav($("sessions"), ordered(st.groups, store.get("groupOrder", [])), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
-    (wid) => send({ t: "new", group: wid }), bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux);
+    bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
+    { projects: st.projects, onClone: cloneRow, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }), onProjectMenu: rowMenu.headMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
     const first = st.groups.flatMap((g) => g.items)[0];
@@ -339,6 +364,7 @@ function showCurrent(found) {
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;
   st.sid = id; store.set("sid", id);
+  recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane
   view.reset();
@@ -357,7 +383,7 @@ const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focu
 let shownTheme = "", shownFont = "", themeSent = null;
 const prefs = menuPrefs({ store, send, toast });       // Markdown size, history lines (AC-19)
 // a color scheme picked in the menu goes over the session's theme at once (AC-12)
-const schemes = colorSchemes({ box: $("schemes"), store, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); } });
+const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); } });
 function applyTheme(theme) {
   // sent with every subscribe and resume; the same one changes nothing (and rebuilds no line)
   const key = JSON.stringify(theme);

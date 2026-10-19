@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="find.css">
 <link rel="stylesheet" href="shapes.css">
 <link rel="stylesheet" href="tmux.css">
+<link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="motion.css">
 <!-- The user's own stylesheet (~/.terminum/custom.css, AC-19): after the page's, so it wins. -->
@@ -36,6 +37,7 @@
     </div>
     <div id="sessions"></div>
     <div id="hostmenu" class="box" role="menu" hidden></div>
+    <div id="rowmenu" class="box" role="menu" aria-label="Session" hidden></div>
     <form id="newsess" class="footform box" hidden>
       <input id="newsessname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Name of the new session" placeholder="Session name" enterkeyhint="go">
@@ -248,7 +250,7 @@
     <button id="quickleft" class="row wide-only" type="button"><span>Split left</span></button>
     <button id="movewin" class="row" type="button" aria-expanded="false" aria-controls="movelist" hidden><span>Move window to session…</span></button>
     <div id="movelist" hidden></div>
-    <button id="closepane" class="row" type="button"><span>Close pane<small>Ends the program running in it</small></span></button>
+    <button id="closepane" class="row" type="button"><span>Close session<small>Ends the program running in it</small></span></button>
     <button id="restoreagain" class="row" type="button" hidden><span>Restore again<small>Recreates what the last restore could not</small></span></button>
     <label class="row"><span>Application cursor keys<small>For apps that ignore the arrow keys</small></span><input id="appcur" type="checkbox" role="switch"></label>
     <label class="row"><span>Bracketed paste<small>Turn off if pasted text shows extra characters</small></span><input id="bracket" type="checkbox" role="switch"></label>
@@ -304,6 +306,17 @@
     <div class="actions">
       <button value="cancel" type="submit">Cancel</button>
       <button id="confirmok" value="ok" type="submit" class="primary">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="namebox" class="box">
+  <form method="dialog">
+    <label id="nametext" for="namefield"></label>
+    <input id="namefield" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+    <div class="actions">
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="nameok" value="ok" type="submit" class="primary">Rename</button>
     </div>
   </form>
 </dialog>

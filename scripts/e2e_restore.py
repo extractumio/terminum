@@ -26,8 +26,9 @@ own = partial(tmux_on, OWN)
 
 
 def main():
-    t = Terminumd(PORT, SOCKET, env={"TM_BOOT_ID": "boot-A"})
     work = os.path.realpath(tempfile.mkdtemp(prefix="tmr-", dir="/tmp"))
+    # a HOME of its own: the user's own tmux made again by terminumd reads no tmux.conf of the user's
+    t = Terminumd(PORT, SOCKET, env={"TM_BOOT_ID": "boot-A", "HOME": work})
     for d in ("api", "docs", "notes"):
         os.makedirs(os.path.join(work, d))
     try:
@@ -109,6 +110,48 @@ def main():
                 break
         check("AC-15 the user's own tmux killed: its attached session is made again with its windows and folders",
               made == [f"logs {work}/notes", f"build {work}/docs"], made)
+
+        # the last pane closed by the user ends that tmux with it: nothing is made again (here and in the user's own)
+        def kept_windows(server):
+            try:
+                v = json.load(open(layout))
+            except (OSError, ValueError):
+                return None
+            ss = v.get("servers", {}).get(server, {}).get("sessions", []) if server else v.get("sessions", [])
+            return [w["name"] for s in ss for w in s["windows"]]
+
+        def down_to_one(run, server, target):
+            for name in run("list-sessions", "-F", "#S").split():
+                if name != target.split(":")[0]:
+                    run("kill-session", "-t", name)
+            for line in run("list-windows", "-a", "-F", "#{session_name}:#{window_name} #{window_id}").splitlines():
+                if not line.startswith(target + " "):
+                    run("kill-window", "-t", line.split()[-1])
+            for _ in range(40):
+                time.sleep(0.5)
+                if kept_windows(server) == [target.split(":")[1]]:
+                    break
+            time.sleep(1.5)
+            run("kill-window", "-t", target)
+
+        down_to_one(own, f"local:{OWN}", "work:logs")
+        time.sleep(4)
+        left = subprocess.run(["tmux", "-L", OWN, "list-sessions"], capture_output=True, text=True)
+        check("AC-15 the user's own tmux ended by its last pane closing is not made again", left.returncode != 0, left.stdout)
+        down_to_one(tmux, None, "main:docs")
+        fresh = []
+        for _ in range(30):
+            time.sleep(0.5)
+            try:
+                fresh = tmux("list-windows", "-a", "-F", "#{session_name}:#{window_name}").splitlines()
+            except Exception:
+                fresh = []
+            if fresh:
+                break
+        time.sleep(2)
+        fresh = tmux("list-windows", "-a", "-F", "#{session_name}:#{window_name}").splitlines()
+        check("AC-15 terminum's tmux ended by its last pane closing starts a fresh main, nothing restored",
+              len(fresh) == 1 and fresh[0].startswith("main:") and fresh[0] != "main:docs", fresh)
     finally:
         if not all(results):
             print(t.log())

@@ -46,7 +46,8 @@ async fn ensure_local(app: &Shared) {
     let sessions = match sessions {
         Some(s) if !s.is_empty() => s,
         _ => {
-            if crate::restore::at_start(app).await {
+            // the user closed the last pane and tmux ended with it: a fresh "main", nothing restored
+            if !server.took_closed_by_user() && crate::restore::at_start(app).await {
                 tracing::info!(event = "tmux.restored");
             } else if let Err(e) = server.start_local("main", &crate::config::home().display().to_string()).await {
                 set_problem(app, Some(format!("tmux could not start: {e}")));
@@ -124,6 +125,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
             } else {
                 Vec::new()
             };
+            crate::page::projects::seen(app, &server, &read.keys).await;   // closed panes leave their projects (AC-92)
             server.set_panes(read.panes);
             (gs, live, true)
         }
@@ -158,6 +160,11 @@ pub async fn refresh(app: &Shared) {
         live.extend(keys);
     }
     groups.extend(absent);
+    // a tmux reached twice lists each pane once (AC-89)
+    // (each server's identity was read with its list: projects::seen)
+    let ids = app.tmux.all().into_iter().filter_map(|s| s.identity_known().map(|i| (s.id(), i))).collect();
+    layout::once_each(&mut groups, &ids);
+    crate::page::unread::mark(app, &mut groups, complete);
     let ended = {
         let mut last = app.layout.write();
         if last.as_array() != Some(&groups) {
@@ -195,6 +202,7 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
 
 /// The reminders of the projects whose agent ended a turn (in panes `ended`) come up, on every page (AC-91).
 pub async fn remind(app: &Shared, ended: Vec<String>) {
+    crate::page::unread::ended(app, &ended);           // a turn nobody saw end is unread (AC-93)
     let projects: Vec<(String, Option<String>, String)> = {
         let layout = app.layout.read();
         ended.into_iter().map(|k| {

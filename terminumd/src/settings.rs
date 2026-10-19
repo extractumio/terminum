@@ -41,6 +41,8 @@ pub struct PageSettings {
     pub markdown_size: u32,
     pub widgets: bool,
     pub folds: bool,
+    /// the terminal's color scheme, one of the page's by name, over every theme's colors (AC-12)
+    pub color_scheme: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -71,7 +73,7 @@ impl Default for Settings {
                 hosts: BTreeMap::from([("*".to_string(), "remote".to_string())]),
                 sessions: BTreeMap::new(),
             },
-            page: PageSettings { text_size: 13, markdown_size: 14, widgets: true, folds: true },
+            page: PageSettings { text_size: 13, markdown_size: 14, widgets: true, folds: true, color_scheme: None },
             hosts: Map::new(),
             attach: BTreeMap::new(),
             messages: Vec::new(),
@@ -84,8 +86,14 @@ impl Settings {
     pub fn page_json(&self) -> Value {
         let p = &self.page;
         json!({"textSize": p.text_size, "markdownSize": p.markdown_size, "history": self.tmux_history,
-               "widgets": p.widgets, "folds": p.folds, "messages": self.messages})
+               "widgets": p.widgets, "folds": p.folds, "colorScheme": p.color_scheme, "messages": self.messages})
     }
+}
+
+/// A short name a person gives or reads (a color scheme's "Rosé Pine", a project's): 1–40
+/// characters, none a control one.
+pub fn is_short_name(s: &str) -> bool {
+    (1..=40).contains(&s.chars().count()) && !s.chars().any(char::is_control)
 }
 
 /// A file name or a socket name: letters, digits, `-`, `_`, `.`, not starting with a dot.
@@ -222,6 +230,11 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
                     "markdownSize" => match v.as_f64().filter(|n| n.fract() == 0.0 && (10.0..=32.0).contains(n)) {
                         Some(n) => p.markdown_size = n as u32,
                         None => m.bad("page.markdownSize must be 10–32"),
+                    },
+                    "colorScheme" => match v {
+                        Value::Null => p.color_scheme = None,
+                        Value::String(n) if is_short_name(n) => p.color_scheme = Some(n.clone()),
+                        _ => m.bad("page.colorScheme must be a color scheme's name"),
                     },
                     "widgets" => boolean(v, "page.widgets", &mut p.widgets, m),
                     "folds" => boolean(v, "page.folds", &mut p.folds, m),

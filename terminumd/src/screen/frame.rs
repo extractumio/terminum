@@ -65,6 +65,7 @@ pub struct Shown {
     size: Option<(usize, usize)>,
     alt: Option<bool>,
     mouse: Option<bool>,
+    folds: Option<serde_json::Value>,
 }
 
 impl Shown {
@@ -79,8 +80,9 @@ impl Shown {
     }
 
     /// The `screen` message for `rows` (each an encoded line), or None when nothing changed.
-    /// `extra` fields (a trace's keys) are added when there is a message.
-    pub fn frame(&mut self, sid: &str, f: &Fields, rows: Vec<String>, extra: Option<serde_json::Value>) -> Option<String> {
+    /// `folds` (the rows' folds, AC-32) go when they changed; `extra` fields (a trace's keys)
+    /// are added when there is a message.
+    pub fn frame(&mut self, sid: &str, f: &Fields, rows: Vec<String>, folds: serde_json::Value, extra: Option<serde_json::Value>) -> Option<String> {
         let size = (f.width, f.height);
         let full = self.size != Some(size) || self.rows.is_empty();
         let mut changed: Vec<usize> = Vec::new();
@@ -110,6 +112,9 @@ impl Shown {
             out.push_str(&format!("[{i},{}]", rows[i]));
         }
         out.push(']');
+        if full || self.folds.as_ref() != Some(&folds) {
+            out.push_str(&format!(",\"folds\":{folds}"));
+        }
         if let Some(serde_json::Value::Object(m)) = extra {
             for (k, v) in m {
                 out.push_str(&format!(",{}:{}", json!(k), v));
@@ -120,6 +125,7 @@ impl Shown {
         self.size = Some(size);
         self.alt = Some(f.alt);
         self.mouse = Some(f.mouse);
+        self.folds = Some(folds);
         Some(out)
     }
 }
@@ -146,15 +152,17 @@ mod tests {
         let mut s = Shown::default();
         let f = fields(10, 3);
         let rows = |a: &str| vec![r#"{"r":[],"e":true}"#.to_string(), a.to_string(), r#"{"r":[],"e":true}"#.to_string()];
-        let first: serde_json::Value = serde_json::from_str(&s.frame("k", &f, rows(r#"{"r":[["a",null,null,0]],"e":true}"#), None).unwrap()).unwrap();
+        let first: serde_json::Value = serde_json::from_str(&s.frame("k", &f, rows(r#"{"r":[["a",null,null,0]],"e":true}"#), json!([]), None).unwrap()).unwrap();
         assert_eq!(first["full"], true);
         assert_eq!(first["ch"].as_array().unwrap().len(), 3);
-        assert_eq!(s.frame("k", &f, rows(r#"{"r":[["a",null,null,0]],"e":true}"#), None), None, "same spinner frame twice: nothing");
-        let next: serde_json::Value = serde_json::from_str(&s.frame("k", &f, rows(r#"{"r":[["b",null,null,0]],"e":true}"#), Some(json!({"keys": [17]}))).unwrap()).unwrap();
+        assert_eq!(s.frame("k", &f, rows(r#"{"r":[["a",null,null,0]],"e":true}"#), json!([]), None), None, "same spinner frame twice: nothing");
+        let next: serde_json::Value = serde_json::from_str(&s.frame("k", &f, rows(r#"{"r":[["b",null,null,0]],"e":true}"#), json!([[0, 1, "⋯ 2 lines"]]), Some(json!({"keys": [17]}))).unwrap()).unwrap();
         assert_eq!(next["full"], false);
         assert_eq!(next["ch"], json!([[1, {"r": [["b", null, null, 0]], "e": true}]]));
         assert_eq!(next["keys"], json!([17]));
-        let resized: serde_json::Value = serde_json::from_str(&s.frame("k", &fields(12, 3), rows(r#"{"r":[["b",null,null,0]],"e":true}"#), None).unwrap()).unwrap();
+        assert_eq!(next["folds"], json!([[0, 1, "⋯ 2 lines"]]), "changed folds go with the frame");
+        assert!(first.get("folds").is_some(), "a full frame says its folds");
+        let resized: serde_json::Value = serde_json::from_str(&s.frame("k", &fields(12, 3), rows(r#"{"r":[["b",null,null,0]],"e":true}"#), json!([[0, 1, "⋯ 2 lines"]]), None).unwrap()).unwrap();
         assert_eq!(resized["full"], true, "a new size is a full frame");
     }
 }

@@ -50,12 +50,32 @@ let lastShown;                         // the session shown when the list was la
 
 /** The bar beside a session's two lines in its folder's color: at full strength for the session
  *  the page shows, half otherwise, pulsing while a coding agent in it works. (A dot read as "unread".) */
-export function folderBar(item, shown = false, busy = false) {
+export function folderBar(item, shown = false, busy = false, project = null) {
   const d = el("span", "pbar" + (shown ? " on" : "") + (busy ? " busy" : ""));
   const key = folderKey(item), hue = key && hues.get(key);
-  if (hue != null) d.style.setProperty("--dot", `oklch(var(--dir-l) var(--dir-c) ${hue.toFixed(1)})`);
+  if (project) d.style.setProperty("--dot", projectColor(project));   // a project's rows: its color, not the folder's (AC-92)
+  else if (hue != null) d.style.setProperty("--dot", `oklch(var(--dir-l) var(--dir-c) ${hue.toFixed(1)})`);
   d.title = (key ? `Folder ${key.split("\n")[1]}` : "No folder") + (busy ? ", working" : "");
   return d;
+}
+
+// Projects' colors (AC-92): ten hues far apart, strong, so two projects never read as one
+const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
+export const projectColor = (p) => `oklch(var(--proj-l) var(--proj-c) ${PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length]})`;
+
+/** A row's second line (AC-01): host and folder first, then its titles; what runs there (the
+ *  program, a quick shell's mark) at the right edge. */
+function rowLine(item) {
+  const sub = item.sub ?? [], dir = sub.findIndex((p) => /^[~/]/.test(p));
+  const progs = dir > 0 ? sub.slice(0, dir) : dir < 0 ? sub.slice(0, 1) : [];
+  const rest = dir >= 0 ? sub.slice(dir) : sub.slice(1);
+  const s = metaLine([...(item.host ? [item.host] : []), ...rest], !!item.host);
+  if (progs.length) {
+    const r = el("span", "progs");
+    progs.forEach((p, i) => { if (i) r.append(el("span", "sep", "·")); r.append(el("span", ["prog", AGENT_WORDS[p]].filter(Boolean).join(" "), p)); });
+    s.append(r);
+  }
+  return s;
 }
 
 const AGENT_WORDS = { claude: "ag-claude", codex: "ag-codex" };   // the program's own name, in its color
@@ -88,6 +108,17 @@ function el(tag, cls, text) {
   return e;
 }
 
+/** A small icon button of the list (a header's, a row's Clone): its class, icon, label for a screen reader, tooltip. */
+function iconButton(cls, name, label, title, onClick) {
+  const b = el("button", cls);
+  b.type = "button";
+  b.title = title;
+  b.setAttribute("aria-label", label);
+  b.append(icon(name, 14));
+  b.addEventListener("click", (e) => { e.stopPropagation(); onClick(b); });
+  return b;
+}
+
 // The handle a row or a group is dragged by (reorder.js); not while a filter shows a subset.
 function grip(kind, label) {
   const g = el("span", "grip");
@@ -98,7 +129,7 @@ function grip(kind, label) {
   return g;
 }
 
-function row(item, current, onPick, movable, child = false, marked = new Map()) {
+function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
   if (movable) li.append(grip("row", "this window"));
   const b = el("button", "item" + (child ? " child" : "") + (item.id === current ? " on" : ""));
@@ -111,9 +142,15 @@ function row(item, current, onPick, movable, child = false, marked = new Map()) 
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
   head.append(idx, agentMark(item), el("span", "t", item.title));
   txt.append(head);
-  const parts = [...(item.host ? [item.host] : []), ...item.sub];
-  if (parts.length) txt.append(metaLine(parts, !!item.host));
+  if (item.host || item.sub?.length) txt.append(rowLine(item));
   const st = el("span", "st");
+  if (item.unread) {                               // its agent finished a turn nobody has looked at (AC-93)
+    const u = el("span", "unread");
+    u.title = "Unread: its agent finished";
+    u.setAttribute("role", "img");
+    u.setAttribute("aria-label", u.title);
+    st.append(u);
+  }
   const mark = stateIcon(item.state);
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
@@ -124,7 +161,7 @@ function row(item, current, onPick, movable, child = false, marked = new Map()) 
     st.append(n);
   }
   // the bar's column holds the orange strip beside it: the row's grid keeps its three columns
-  const bar = folderBar(item, item.id === current, item.state === "working");
+  const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
   // its project's bookmarks and reminders: a wavy orange and a wavy pink line beside the folder's bar
   const has = marked.get(item.id);
   if (has) {
@@ -140,6 +177,8 @@ function row(item, current, onPick, movable, child = false, marked = new Map()) 
   } else b.append(bar, txt, st);
   b.addEventListener("click", () => onPick(item.id));
   li.append(b);
+  // a new window beside it, in its folder (AC-07)
+  if (opts.onClone && !child) li.append(iconButton("clone", "copy-plus", `Clone ${item.title}`, "Clone: a new window in its folder", () => opts.onClone(item)));
   return li;
 }
 
@@ -156,15 +195,77 @@ export function hostState(g) {
 // A group's header collapses and expands it; while a filter is typed every match is shown. A
 // host's group has a menu of its own (onHost(group, button)), also while it has no rows, and
 // while its tmux runs other sessions an icon that offers them (onImport(group), AC-89).
-export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, onNew, marked = new Map(), onHost = null, onCopy = null, onImport = null) {
+// Projects (AC-92) come first, each its sessions with their panes and quick shells, which
+// their tmux groups then leave out; every row has its Clone button (onClone(item)).
+export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
+  { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
   hues = folderHues(groups.flatMap((g) => g.items.map(folderKey)));
   const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
+  // a project's session takes its window's other panes and its quick shells with it: one pass
+  const all = groups.flatMap((g) => g.items), win = (it) => it.id.slice(0, it.id.lastIndexOf(":") + 1) + it.window;
+  const byId = new Map(all.map((it) => [it.id, it]));
+  const projectOf = new Map(projects.flatMap((p) => p.members.map((k) => [k, p])));
+  const under = new Map();                         // a window's first pane or a quick shell's pane -> what goes under it
+  const firsts = new Map(all.filter((it) => !(it.pane > 1)).map((it) => [win(it), it]));
+  for (const it of all) {
+    const top = it.quickOf ? byId.get(it.quickOf) : it.pane > 1 ? firsts.get(win(it)) : null;
+    if (top) under.set(top.id, [...(under.get(top.id) ?? []), it]);
+  }
+  const kids = (top) => under.get(top.id) ?? [];
+  const taken = new Set([...projectOf.keys()].flatMap((k) => [k, ...(byId.has(k) ? kids(byId.get(k)).map((it) => it.id) : [])]));
+  const box = el("div", "projects");
+  for (const p of projects) {
+    const tops = p.members.map((k) => byId.get(k)).filter(Boolean);
+    if (!tops.length) continue;                    // its sessions closed: terminumd forgets it at its next read
+    const rows = tops.filter((t) => [t, ...kids(t)].some((it) => matches(it, q)));
+    if (q && !rows.length) continue;
+    shown += rows.length;
+    const key = `project\n${p.id}`, closed = !q && collapsed.has(key);
+    const sec = el("section", "grp project");
+    sec.dataset.pid = p.id;
+    sec.style.setProperty("--proj", projectColor(p));
+    const h = el("h2");
+    if (!q) h.append(grip("project", "this project"));
+    const t = el("button", "toggle");
+    t.type = "button";
+    t.setAttribute("aria-expanded", String(!closed));
+    t.addEventListener("click", () => onToggle(key));
+    const count = el("span", "count", String(tops.length));
+    count.title = `${tops.length} session${tops.length === 1 ? "" : "s"}`;
+    if (closed && tops.some((it) => it.id === current || kids(it).some((k) => k.id === current))) count.classList.add("on");
+    t.append(icon("chevron-down", 14), el("span", "pdot"), el("span", "label", p.name), count);
+    h.append(t);
+    if (onProjectNew) h.append(iconButton("new", "plus", `New session in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
+    if (onProjectMenu) {
+      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: rename, ungroup`, (b) => onProjectMenu(p, b));
+      m.setAttribute("aria-haspopup", "true");
+      h.append(m);
+    }
+    sec.append(h);
+    if (!closed) {
+      const ul = el("ul");
+      ul.dataset.project = p.id;
+      for (const top of rows) {
+        const li = row(top, current, onPick, !q, false, marked, { onClone, project: p });
+        const ks = kids(top);
+        if (ks.length) {
+          const kl = el("ul", "kids");
+          for (const k of ks) kl.append(row(k, current, onPick, false, true, marked, { project: p }));
+          li.append(kl);
+        }
+        ul.append(li);
+      }
+      sec.append(ul);
+    }
+    box.append(sec);
+  }
+  if (box.children.length) frag.append(box);
   for (const g of groups) {
-    const items = g.items.filter((it) => matches(it, q));
+    const left = g.items.filter((it) => !taken.has(it.id)), items = left.filter((it) => matches(it, q));
     const own = g.host || g.attached;            // a host's group, or a session of the user's tmux (AC-89)
     if (!items.length && !(own && !q)) continue;
     shown += items.length;
@@ -183,8 +284,9 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     if (g.session) t.append(el("span", "tsess", g.session));      // a tmux group: its session's name; the rows name the host
     else if (g.host && g.host !== g.label) t.append(el("span", "host", g.host));
     if (g.where) t.append(el("span", "where", g.where));
-    const count = el("span", "count", g.items.length ? String(g.items.length) : "");   // a group without rows says its state instead
-    count.title = `${g.items.length} pane${g.items.length === 1 ? "" : "s"}`;
+    const n = left.length;                       // a project's panes are counted there
+    const count = el("span", "count", n ? String(n) : "");   // a group without rows says its state instead
+    count.title = `${n} pane${n === 1 ? "" : "s"}`;
     if (closed && items.some((it) => it.id === current)) count.classList.add("on");   // the shown session is inside
     t.append(count);
     h.append(t);
@@ -204,15 +306,6 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       n.setAttribute("aria-label", n.title);
       n.append(icon("import", 14));
       n.addEventListener("click", (e) => { e.stopPropagation(); onImport(g); });
-      h.append(n);
-    }
-    if (g.wid && g.new) {
-      const n = el("button", "new");
-      n.type = "button";
-      n.title = g.new;
-      n.setAttribute("aria-label", `${g.new} in ${g.label}`);
-      n.append(icon("plus", 14));
-      n.addEventListener("click", () => onNew(g.wid));
       h.append(n);
     }
     if (own && onHost) {
@@ -238,13 +331,13 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       let parent = null;
       const kid = (it) => {
         if (!parent.kids) parent.append(parent.kids = el("ul", "kids"));
-        parent.kids.append(row(it, current, onPick, false, true, marked));
+        parent.kids.append(row(it, current, onPick, false, true, marked));   // no Clone: a pane of its window
       };
       const quicks = (it) => { for (const k of quickOf.get(it.id) ?? []) kid(k); };
       for (const it of items) {
         if (quickOf.has(it.quickOf)) continue;     // listed under its pane
         if (!q && it.pane > 1 && parent) { kid(it); quicks(it); continue; }
-        parent = row(it, current, onPick, !!g.wid && !q, false, marked);
+        parent = row(it, current, onPick, !!g.wid && !q, false, marked, { onClone: g.new ? onClone : null });   // no tmux, no Clone
         ul.append(parent);
         quicks(it);
       }

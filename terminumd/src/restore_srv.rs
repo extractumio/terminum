@@ -6,7 +6,8 @@
 //! while it is read; a server that cannot be read keeps what was written before. They are made
 //! again only where the whole tmux is gone: a server of the user's own that does not run, a
 //! host whose tmux server started after its checkpoint (a reboot, a killed server). A session
-//! or window the user closed while its server runs stays closed.
+//! or window the user closed while its server runs stays closed, and so does the last pane
+//! whose closing ended its tmux (tmux's own `%exit` while one pane was shown).
 
 use std::path::Path;
 
@@ -66,6 +67,7 @@ pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> boo
         let ps: Vec<Value> = fields.iter().filter(|g| g[1] == f[1]).map(|p| {
             let mut k = kind(p[3], p[4]);
             k["dir"] = json!(p[5]);
+            k["id"] = json!(p[2]);                      // its pane's id, for what keeps pane keys (projects, AC-92)
             k
         }).collect();
         let win = json!({"name": f[3], "layout": f[4], "panes": ps});
@@ -85,6 +87,8 @@ pub struct Made {
     pub programs: Vec<String>,
     pub errors: Vec<String>,
     pub notes: Vec<String>,
+    /// the panes made again: (the checkpoint's pane id, the new one)
+    pub panes: Vec<(String, String)>,
 }
 
 /// Makes `sessions` on the server `exec` reaches, but those in `existing`; `into` names a
@@ -119,12 +123,19 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
             let wname = w["name"].as_str().unwrap_or("");
             let target = format!("={name}:");
             let made = if first {
-                exec.run(&["new-session", "-d", "-s", name, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id}"]).await
+                exec.run(&["new-session", "-d", "-s", name, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id} #{pane_id}"]).await
             } else {
-                exec.run(&["new-window", "-d", "-t", &target, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id}"]).await
+                exec.run(&["new-window", "-d", "-t", &target, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id} #{pane_id}"]).await
             };
+            let old = |p: Option<&Value>| p.and_then(|p| p["id"].as_str()).map(str::to_string);
             let wid = match made {
-                Ok(id) => id,
+                Ok(ids) => {
+                    let (wid, pane) = ids.split_once(' ').unwrap_or((ids.as_str(), ""));
+                    if let Some(o) = old(panes.first()) {
+                        out.panes.push((o, pane.to_string()));
+                    }
+                    wid.to_string()
+                }
                 Err(e) => {
                     out.errors.push(format!("{name}: {e}"));
                     if first { break } else { continue }
@@ -136,8 +147,9 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
             first = false;
             out.windows += 1;
             for p in panes.iter().skip(1) {
-                if let Err(e) = exec.run(&["split-window", "-d", "-t", &wid, "-c", &dir_of(p)]).await {
-                    out.errors.push(format!("{name}: {e}"));
+                match exec.run(&["split-window", "-d", "-t", &wid, "-c", &dir_of(p), "-P", "-F", "#{pane_id}"]).await {
+                    Ok(new) => out.panes.extend(old(Some(p)).map(|o| (o, new))),
+                    Err(e) => out.errors.push(format!("{name}: {e}")),
                 }
             }
             if let Some(layout) = w["layout"].as_str().filter(|l| !l.is_empty()) {
@@ -171,7 +183,6 @@ pub async fn checkpoint(app: &Shared, prev: &Value) -> Value {
     Value::Object(servers)
 }
 
-/// When a host's `terminum` session was made (Unix seconds).
 /// When the server started (Unix seconds): a session closed and made again by terminumd while it
 /// runs (the user closed its last window) is no new server.
 async fn started(server: &Server) -> Option<i64> {
@@ -198,13 +209,14 @@ fn report(app: &Shared, place: &str, m: Made) {
 /// The user's own tmux on this Mac does not run (a reboot, its server killed): its attached
 /// sessions are made again from their checkpoint, once while terminumd runs.
 pub async fn users_local(app: &Shared, server: &Server) {
+    let by_user = server.took_closed_by_user();
     let Link::Local { tmux, socket, .. } = &server.link else { return };
     if !app.looks.settings.read().restore {
         return;
     }
     let Some(saved) = saved(app, &server.id()) else { return };
-    if !app.restore.first_try(&format!("{}@{}", server.id(), saved["at"])) {
-        return;                                         // this checkpoint was made again already
+    if !app.restore.first_try(&format!("{}@{}", server.id(), saved["at"])) || by_user {
+        return;                                         // made again already, or the user closed its last pane
     }
     let only = server.only.lock().clone().unwrap_or_default();
     let wanted: Vec<Value> = saved["sessions"].as_array().into_iter().flatten().filter(|s| only.iter().any(|o| s["name"] == o.as_str())).cloned().collect();
@@ -214,6 +226,7 @@ pub async fn users_local(app: &Shared, server: &Server) {
     let mut m = Made::default();
     let home = crate::config::home().display().to_string();
     make(&Exec::Local { tmux, socket, conf: None }, &wanted, &[], None, crate::restore::usable, &home, &mut m).await;
+    crate::page::projects::restarted(app, &server.key(""), &m.panes);
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
@@ -221,13 +234,15 @@ pub async fn users_local(app: &Shared, server: &Server) {
 /// server), the `terminum` session's windows and the user's attached sessions there are made
 /// again. `seen`: the sessions running there.
 pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
+    let by_user = server.took_closed_by_user();
     if server.is_local() || !app.looks.settings.read().restore {
         return;
     }
     let Some(saved) = saved(app, &server.id()) else { return };
     let at = saved["at"].as_i64().unwrap_or(i64::MAX);
     let started = started(server).await.unwrap_or(0);
-    if started <= at || !app.restore.first_try(&format!("{}@{started}", server.id())) {
+    // the user closed its last pane and its tmux ended with it: nothing to make again
+    if started <= at || !app.restore.first_try(&format!("{}@{started}", server.id())) || by_user {
         return;
     }
     let existing: Vec<String> = seen.iter().map(|(n, _)| n.clone()).collect();
@@ -236,6 +251,7 @@ pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let mut m = Made::default();
     let home = server.home().await.unwrap_or_default();
     make(&Exec::Ctl(server), &sessions, &existing, Some(HOST_SESSION), |_| true, if home.is_empty() { "~" } else { &home }, &mut m).await;
+    crate::page::projects::restarted(app, &server.key(""), &m.panes);
     // the fresh session's own first window goes once the kept ones are there
     if m.windows > 0 && fresh.len() == 1 {
         let _ = server.run(format!("kill-window -t {}", args::word(&fresh[0]))).await;
@@ -255,7 +271,7 @@ mod tests {
         let s = sessions_of(&wins, &panes, |n| n != "other", |c, _| simple_kind(c));
         assert_eq!(s.len(), 2, "a session the server does not show is not kept");
         assert_eq!(s[0]["windows"].as_array().unwrap().len(), 1, "the quick shell's window is not kept");
-        assert_eq!(s[0]["windows"][0]["panes"][1], json!({"kind": "other", "program": "node", "dir": "/Users/alex/api/web"}));
-        assert_eq!(s[1]["windows"][0]["panes"][0], json!({"kind": "shell", "dir": "/var/log"}));
+        assert_eq!(s[0]["windows"][0]["panes"][1], json!({"kind": "other", "program": "node", "dir": "/Users/alex/api/web", "id": "%2"}));
+        assert_eq!(s[1]["windows"][0]["panes"][0], json!({"kind": "shell", "dir": "/var/log", "id": "%4"}));
     }
 }

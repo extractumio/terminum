@@ -82,8 +82,9 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 .bars .pbar { margin: 1px 0; }
 /* its project's bookmarks (orange) and reminders (pink, reminders.css) as wavy lines beside the
    folder's straight bar, so the three never read as one */
+:root { --wave-line: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E"); }   /* a wavy line, 6px wide, repeated down: a mask */
 .wave { width: 6px; min-height: 30px; margin: 1px 0; background: var(--mark);
-  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y center / 6px 12px; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y center / 6px 12px; }
+  -webkit-mask: var(--wave-line) repeat-y center / 6px 12px; mask: var(--wave-line) repeat-y center / 6px 12px; }
 
 /* the list below the sessions: Bookmarks | Reminders, Open all; the full-screen view of them (markdoc.js) */
 .mkhead { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 6px 4px; }

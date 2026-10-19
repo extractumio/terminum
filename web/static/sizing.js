@@ -3,15 +3,16 @@
 // page tells terminumd the grid that fits its terminal at the chosen text size: after opening
 // a pane, after the view or the text size changed (300 ms after the last change), and with the
 // first key typed after a pause (at most once a second); terminumd decides whether it sizes the
-// window (the active page does). A pane another page sized is drawn as it is (app.js scales a
-// wider one) with "Sized for another screen" until this page sizes it again.
+// window (the active page does) and keeps it within 45×14 and 240×70. A pane another page
+// sized is drawn as it is (app.js scales a wider one) with "Sized for another screen" until
+// this page sizes it again.
 // A full-screen program (tmux's alternate screen, not a coding agent's) hides the history and
 // the widgets, and gets the mouse when it asked for it.
 
 const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
 const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
-const MIN = { cols: 20, rows: 5 };
+const SLIVER = { cols: 20, rows: 5 };   // a view smaller than this is passing: no size sent
 
 /** view: the TermView; sid(): the shown pane's id; refit(): the drawn size may have changed;
  *  notify(text): a toast. */
@@ -28,7 +29,9 @@ export function paneSizing({ view, send, sid, refit, notify }) {
   function sendSize(typing) {
     if (!sid() || term.hidden || !term.clientWidth) return;
     const g = grid();
-    if (!(g.cols >= MIN.cols && g.rows >= MIN.rows)) return;   // too small a view: the pane keeps its size
+    // a sliver (an animation, a drag, a hidden part) keeps the pane's size; terminumd keeps the
+    // others within 45×14 and 240×70
+    if (!(g.cols >= SLIVER.cols && g.rows >= SLIVER.rows)) return;
     if (!typing && last && last.cols === g.cols && last.rows === g.rows) return;
     last = { ...g };
     send({ t: "size", cols: g.cols, rows: g.rows, typing });

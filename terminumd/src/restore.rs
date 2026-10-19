@@ -145,7 +145,7 @@ pub async fn follow(app: Shared) {
 }
 
 /// terminum's tmux has no session (a reboot, its server killed, its last session closed while
-/// terminumd ran): the last checkpoint is made again. True when sessions were made.
+/// terminumd ran, but not by the user closing its last pane): the last checkpoint is made again. True when sessions were made.
 pub async fn at_start(app: &Shared) -> bool {
     if !enabled(app) {
         return false;
@@ -175,6 +175,7 @@ async fn run(app: &Shared, saved: &Value) -> bool {
     let existing: Vec<String> = exec.run(&["list-sessions", "-F", "#{session_name}"]).await.unwrap_or_default().lines().map(String::from).collect();
     let mut m = Made::default();
     make(&exec, saved["sessions"].as_array().map(Vec::as_slice).unwrap_or_default(), &existing, None, usable, &home, &mut m).await;
+    crate::page::projects::restarted(app, &app.tmux.local.key(""), &m.panes);
     let made = m.sessions;
     let mut text = format!("Restored {made} session{}, {} window{}.", if made == 1 { "" } else { "s" }, m.windows, if m.windows == 1 { "" } else { "s" });
     if !m.programs.is_empty() {

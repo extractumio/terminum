@@ -3,7 +3,9 @@
 // or output of a coding agent's tools, rows of encoded data, nearly equal lines) are one line,
 // "⋯ 26 lines of diff", with Show and Copy. Lines the bridge has not sent (opening a pane,
 // older lines) are empty rows until the user shows them: then it is asked for them. The fold's
-// first row holds the line in its shadow root (widgetui.js); its other rows are hidden.
+// first row holds the line in its shadow root (widgetui.js); its other rows are hidden. The
+// rows on the screen fold too, by the same rules (terminumd sends them with each screen that
+// changes them): a fold opened there stays open while its first row reads the same.
 import { hostOf } from "./widgetui.js";
 
 const MARKS = /[︎️]/g;          // the text-style marks render.js adds
@@ -24,7 +26,11 @@ export class Folds {
     this.hosts = new Map();      // first row -> {f, rows, open}: as drawn
     this.rows = new WeakSet();   // rows of a fold (no widget, no image button there)
     this.waiting = new Map();    // first line -> "show" | "again" | {resolve, reject}: its lines are asked for
+    this.onScreen = [];          // the screen's: [from row, to row, label]
   }
+
+  /** The screen's folds, as the last screen message told. */
+  screen(list) { this.onScreen = Array.isArray(list) ? list : []; }
 
   /** Folds told by the bridge. Back-to-back folds of nearly equal lines (a long listing comes
    *  in pages of 1000 lines, each folded by itself) are one. */
@@ -57,6 +63,20 @@ export class Folds {
         continue;
       }
       const rows = hist.slice(a, b + 1).map((r) => r.el);
+      drawn.set(rows[0], { f, rows, open });
+      this.draw(rows[0], f, rows, open);
+    }
+    // a screen fold is known by its kind and first row (its counts grow while its output does),
+    // the same one twice by its place among them
+    const scr = this.view.screen, seen = new Map();
+    for (const [a, b, label] of this.onScreen) {
+      const rows = scr.slice(a, b + 1).map((r) => r?.el);
+      if (rows.length !== b - a + 1 || !rows.every(Boolean) || drawn.has(rows[0])) continue;
+      const kind = `screen|${label.replace(/[\d.,]+/g, "#")}|${rows[0].textContent}`, k = (seen.get(kind) ?? 0) + 1;
+      seen.set(kind, k);
+      const n = `${kind}|${k}`, open = this.open.has(n), was = this.hosts.get(rows[0]);
+      if (was?.f.n === n && was.open === open && was.rows.at(-1) === rows.at(-1)) { drawn.set(rows[0], was); continue; }
+      const f = { n, label, screen: rows };
       drawn.set(rows[0], { f, rows, open });
       this.draw(rows[0], f, rows, open);
     }
@@ -97,6 +117,7 @@ export class Folds {
 
   // the history's records of a fold (its top may have been dropped)
   records(f) {
+    if (f.screen) return f.screen.map((el) => ({ el }));
     const hist = this.view.hist, base = hist.length ? hist[0].n : 0;
     return hist.slice(Math.max(0, f.n - base), Math.max(0, f.to - base + 1));
   }

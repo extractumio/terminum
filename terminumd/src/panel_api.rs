@@ -121,7 +121,7 @@ pub async fn terminal(State(app): State<Shared>, UrlPath(action): UrlPath<String
         return Err(err(StatusCode::CONFLICT, "busy", format!("Terminal is busy ({job}) — command not sent")));
     }
     let text = termtext::line(&job, &action, &b.paths, b.path.as_deref()).map_err(|m| err(StatusCode::BAD_REQUEST, "not_typed", m))?;
-    let line = format!("send-keys -t {pane} -l {}", crate::tmux::args::quote(&text));
+    let line = format!("send-keys -t {pane} -l -- {}", crate::tmux::args::quote(&text));   // a "-name" is text
     for a in server.run_all_on(&pane, vec![line]).await {
         a.map_err(|e| err(StatusCode::BAD_GATEWAY, "tmux", format!("tmux did not take the text: {e}")))?;
     }

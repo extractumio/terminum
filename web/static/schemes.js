@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Color schemes (AC-12): 20 well-known terminal palettes as swatches in the menu. A press shows
-// the scheme at once over the session's theme (its font and size stay) and is remembered in this
-// browser; "Theme" goes back to the theme terminumd sends for the session. Each scheme: its
+// the scheme at once over the session's theme (its font and size stay) and keeps it in
+// settings.json (page.colorScheme): one scheme for every browser, each told when it changes;
+// "Theme" goes back to the theme terminumd sends for the session. Each scheme: its
 // background, text, cursor, selection, whether it is dark, and the 16 ANSI colors (black, red,
 // green, yellow, blue, magenta, cyan, white, then their bright forms).
 
@@ -28,7 +29,6 @@ export const SCHEMES = [
   S("Kanagawa", "#1f1f28", "#dcd7ba", "#c8c093", "#2d4f67", true, "#16161d #c34043 #76946a #c0a36e #7e9cd8 #957fb8 #6a9589 #c8c093 #727169 #e82424 #98bb6c #e6c384 #7fb4ca #938aa9 #7aa89f #dcd7ba"),
   S("Cobalt2", "#193549", "#ffffff", "#f0cc09", "#185588", true, "#000000 #ff0000 #38de21 #ffe50a #1460d2 #ff005d #00bbbb #bbbbbb #555555 #f40e17 #3bd01d #edc809 #5555ff #ff55ff #6ae3fa #ffffff"),
 ];
-const KEY = "colorScheme";
 
 /** The theme with scheme `name`'s colors over it (its font and size kept); the theme itself for none. */
 export function withScheme(theme, name) {
@@ -38,10 +38,12 @@ export function withScheme(theme, name) {
 }
 
 /** The swatches in `box` (the menu's Colors row): a press applies a scheme at once, "Theme" the
- *  session's own; the choice is kept in `store`. onPick(): the colors changed. */
-export function colorSchemes({ box, store, onPick }) {
-  let chosen = store.get(KEY, null);
-  if (!SCHEMES.some((s) => s.name === chosen)) chosen = null;
+ *  session's own, and sends the choice to terminumd; settings.json's choice comes with `page(p)`.
+ *  onPick(): the colors changed. */
+export function colorSchemes({ box, send, onPick }) {
+  let chosen = null;
+  try { localStorage.removeItem("colorScheme"); } catch { /* where a page before 0.9 kept its own: gone */ }
+  const known = (name) => (SCHEMES.some((s) => s.name === name) ? name : null);
   const swatch = (s) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -63,12 +65,20 @@ export function colorSchemes({ box, store, onPick }) {
   function mark() {
     for (const b of box.querySelectorAll(".swatch")) b.setAttribute("aria-pressed", String((b.dataset.scheme || null) === chosen));
   }
-  function pick(name) {
+  function show(name) {
+    if (name === chosen) return;
     chosen = name;
-    store.set(KEY, name);
     mark();
     onPick();
   }
+  function pick(name) {
+    show(name);
+    send({ t: "scheme", name });
+  }
   mark();
-  return { over: (theme) => withScheme(theme, chosen) };
+  return {
+    over: (theme) => withScheme(theme, chosen),
+    /** settings.json's page part: its scheme, on every browser. */
+    page(p) { show(known(p.colorScheme ?? null)); },
+  };
 }

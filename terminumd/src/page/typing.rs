@@ -201,7 +201,8 @@ async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, serv
         for part in chunks(text, BUFFER_PART) {
             let append = if first { "" } else { "-a " };
             first = false;
-            client.run(format!("set-buffer {append}-b {name} {}", double_quoted(part))).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
+            // `--`: a part that starts with "-" is text, not a flag (tmux stops at the first word)
+            client.run(format!("set-buffer {append}-b {name} -- {}", double_quoted(part))).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
         }
     }
     client.run(format!("paste-buffer -p -d -b {name} -t {pane}")).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;

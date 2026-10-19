@@ -3,7 +3,9 @@
 //! it runs, what it waits for, its subagents. A hint with a lease, not the whole truth: an
 //! interrupt in Claude Code fires no Stop and a crash no SessionEnd, so a working state no event
 //! renewed for LEASE (a waiting one for WAIT_LEASE) gives way to the screen's reading again
-//! (agentstate.rs), as does a pane whose program changed. Hook events come out of order (they
+//! (agentstate.rs), as does a pane whose program changed. A turn that stopped while its
+//! subagents run (in the background) is working until the last of them stops (or BG_LEASE
+//! passes without an event): its end is then, for reminders and unread. Hook events come out of order (they
 //! run in the background): a working event of a turn that stopped changes nothing. Codex has no
 //! failure event and no question event: its done and its questions are the screen's.
 
@@ -19,6 +21,8 @@ use super::agentstate::State;
 pub const LEASE: Duration = Duration::from_secs(30);
 /// A waiting state lasts this long without an event (an approval answered by Esc fires none).
 pub const WAIT_LEASE: Duration = Duration::from_secs(120);
+/// A turn stopped with subagents running stays working this long without an event.
+pub const BG_LEASE: Duration = Duration::from_secs(600);
 /// Panes kept at most (one per pane that ran an agent).
 const MOST: usize = 500;
 
@@ -34,6 +38,8 @@ struct Rec {
     turn: String,
     stopped: Option<String>,
     command: Option<String>,
+    /// its turn ended (a Stop, a failure, its last background subagent): not told yet
+    ended: bool,
 }
 
 /// What the list shows of a pane's hooks.
@@ -89,7 +95,7 @@ impl Hooks {
             return false;
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
-            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None });
+            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false });
         let before = (r.state, r.tool.clone(), r.why.clone(), r.subs.len());
         let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
         let working = |r: &mut Rec| { r.state = Some(State::Working); r.why.clear(); };
@@ -112,10 +118,20 @@ impl Hooks {
                 "idle_prompt" => r.state = Some(State::Done),
                 _ => {}
             },
-            "Stop" | "Interrupt" => { r.state = Some(State::Done); r.tool.clear(); r.subs.clear(); r.stopped = Some(turn.clone()); }
-            "StopFailure" => { r.state = Some(State::Failed); r.why = s(ev, "error"); r.tool.clear(); r.subs.clear(); r.stopped = Some(turn.clone()); }
+            // its subagents still run (in the background): working until the last one stops
+            "Stop" if !r.subs.is_empty() => { r.tool.clear(); r.stopped = Some(turn.clone()); }
+            "Stop" | "Interrupt" => { r.state = Some(State::Done); r.tool.clear(); r.subs.clear(); r.stopped = Some(turn.clone()); r.ended = true; }
+            "StopFailure" => { r.state = Some(State::Failed); r.why = s(ev, "error"); r.tool.clear(); r.subs.clear(); r.stopped = Some(turn.clone()); r.ended = true; }
             "SubagentStart" if !stopped => { r.subs.insert(s(ev, "sub")); working(r); }
-            "SubagentStop" => { r.subs.remove(&s(ev, "sub")); }
+            "SubagentStop" => {
+                r.subs.remove(&s(ev, "sub"));
+                if r.stopped.is_some() && r.subs.is_empty() && r.state == Some(State::Working) {
+                    r.state = Some(State::Done);
+                    r.ended = true;
+                }
+            }
+            // a background subagent's tools: it still works
+            "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" if !r.subs.is_empty() => {}
             _ => return false,
         }
         r.at = now;
@@ -134,13 +150,19 @@ impl Hooks {
             _ => {}
         }
         let state = r.state?;
+        let lease = if r.stopped.is_some() && !r.subs.is_empty() { BG_LEASE } else { LEASE };
         let held = match state {
-            State::Working => now.duration_since(r.at) < LEASE,
+            State::Working => now.duration_since(r.at) < lease,
             State::Waiting => now.duration_since(r.at) < WAIT_LEASE,
             State::Done => r.agent == "claude",
             State::Failed => true,
         };
         held.then(|| View { agent: r.agent, state, tool: r.tool.clone(), why: r.why.clone(), subagents: r.subs.len() })
+    }
+
+    /// Whether pane `key`'s turn ended since this was last asked (its reminders, unread).
+    pub fn take_ended(&self, key: &str) -> bool {
+        self.recs.lock().get_mut(key).is_some_and(|r| std::mem::take(&mut r.ended))
     }
 
     /// Whether pane `key`'s agent has hooks that spoke (its prompts come from them).

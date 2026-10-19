@@ -120,7 +120,7 @@ export async function webTmux(browser, name) {
     const failed = await page.evaluate(() => { const g = document.querySelector('#sessions .grp[data-wid="devbox/terminum"]'), s = g.querySelector(".gstate");
       return { label: g.querySelector("h2 .label").textContent, state: s.textContent, lines: Math.round(s.getBoundingClientRect().height / parseFloat(getComputedStyle(s).lineHeight)),
         inside: s.getBoundingClientRect().right <= g.getBoundingClientRect().right }; });
-    check("AC-81 a host group that is not attached offers no new window", await page.isHidden('#sessions .grp[data-wid="devbox/terminum"] h2 .new'));
+    check("AC-81 a host group that is not attached offers no new window", !(await page.$('#sessions .grp[data-wid="devbox/terminum"] .clone')));
     const tsess = await page.evaluate(() => { const h = document.querySelector('#sessions .grp[data-wid="devbox/terminum"] h2');
       return { sess: h.querySelector(".tsess")?.textContent, copy: h.querySelector(".attach")?.title }; });
     check("AC-01 a group names its tmux session and has a copy button for the attach command",

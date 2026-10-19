@@ -1,0 +1,267 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! Projects (AC-92): named groups of sessions in the list, the same on every page, kept in
+//! `projects.json`. Each has a name ("Group 1" …), a color of its own (the lowest of COLORS no
+//! other project has: the page's palette, far apart), the host and folder of the session it
+//! was made from (its [+] opens a window there) and its sessions by pane key, in the list's
+//! order. A pane that closed leaves its project when its server's list is read (one added in
+//! the last seconds is spared: a read on its way may not have it yet); a project with no
+//! session left goes. A tmux server started anew numbers its panes anew: restored, its
+//! sessions keep their projects (restore says which pane is which); else its panes leave
+//! them, never naming other panes. (A bookmark's project, AC-33, is a folder: another thing.)
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::path::PathBuf;
+use std::time::{Duration, Instant};
+
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+
+use super::Page;
+use crate::app::Shared;
+
+/// The page's palette of project colors.
+pub const COLORS: usize = 10;
+/// Projects at most; sessions at most in one.
+const MOST: usize = 50;
+const MOST_MEMBERS: usize = 200;
+/// A session added this recently is not taken for closed by a list read.
+const FRESH: Duration = Duration::from_secs(5);
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+pub struct Project {
+    pub id: String,
+    pub name: String,
+    pub color: usize,
+    pub host: Option<String>,
+    pub dir: String,
+    pub members: Vec<String>,
+}
+
+#[derive(Default)]
+pub struct Projects {
+    path: PathBuf,
+    list: Vec<Project>,
+    /// each server's identity (its `@terminum-id`) by its keys' start, as its members were read
+    servers: BTreeMap<String, String>,
+    /// members added lately, when (in memory)
+    fresh: HashMap<String, Instant>,
+}
+
+/// A project's name as typed (trimmed): a short name (settings::is_short_name).
+fn name_ok(name: &str) -> Result<String, String> {
+    let n = name.trim();
+    if crate::settings::is_short_name(n) { Ok(n.to_string()) } else { Err("A project's name has 1–40 characters".into()) }
+}
+
+impl Projects {
+    pub fn load(path: PathBuf) -> Projects {
+        // one that cannot be read is set aside (projects.json.bak), never written over
+        let v = crate::auth::store::read_or_set_aside(&path, Ok).unwrap_or(Value::Null);
+        let list = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
+        let servers = serde_json::from_value(v["servers"].clone()).unwrap_or_default();
+        Projects { path, list, servers, fresh: HashMap::new() }
+    }
+
+    pub fn list(&self) -> &[Project] {
+        &self.list
+    }
+
+    /// Writes projects.json (each change does; after `seen` or `restarted`, their caller).
+    pub fn save(&self) -> Result<(), String> {
+        if self.path.as_os_str().is_empty() {
+            return Ok(());                                  // in tests: kept in memory
+        }
+        crate::config::write_private(&self.path, json!({"projects": self.list, "servers": self.servers}).to_string().as_bytes()).map_err(|e| format!("projects.json: {e}"))
+    }
+
+    fn find(&mut self, id: &str) -> Result<&mut Project, String> {
+        self.list.iter_mut().find(|p| p.id == id).ok_or_else(|| "That project is gone.".to_string())
+    }
+
+    /// Puts pane `key` into project `to` (a new one when none: "Group N", made from the pane's
+    /// host and folder), after `after` when that is a member, else last; out of any other.
+    /// The project's id.
+    pub fn add(&mut self, key: &str, to: Option<&str>, after: Option<&str>, host: Option<String>, dir: String) -> Result<String, String> {
+        let id = match to {
+            Some(id) => self.find(id)?.id.clone(),
+            None => {
+                if self.list.len() >= MOST {
+                    return Err(format!("At most {MOST} projects."));
+                }
+                let taken = |n: usize| self.list.iter().any(|p| p.name == format!("Group {n}"));
+                let n = (1..).find(|n| !taken(*n)).unwrap_or(1);
+                let color = (0..COLORS).find(|c| !self.list.iter().any(|p| p.color == *c)).unwrap_or(self.list.len() % COLORS);
+                let id = crate::auth::crypto::random_hex::<6>();
+                self.list.push(Project { id: id.clone(), name: format!("Group {n}"), color, host, dir, members: Vec::new() });
+                id
+            }
+        };
+        if self.find(&id)?.members.len() >= MOST_MEMBERS {
+            self.list.retain(|p| !p.members.is_empty());   // a project made just now goes again
+            return Err(format!("At most {MOST_MEMBERS} sessions in a project."));
+        }
+        let p = self.find(&id)?;
+        p.members.retain(|m| m != key);
+        let at = after.and_then(|a| p.members.iter().position(|m| m == a)).map_or(p.members.len(), |i| i + 1);
+        p.members.insert(at, key.to_string());
+        for p in self.list.iter_mut().filter(|p| p.id != id) {
+            p.members.retain(|m| m != key);
+        }
+        self.list.retain(|p| !p.members.is_empty());
+        self.fresh.insert(key.to_string(), Instant::now());
+        self.save()?;
+        Ok(id)
+    }
+
+    /// Takes pane `key` out of its project (an empty project goes).
+    pub fn remove(&mut self, key: &str) -> Result<(), String> {
+        self.prune(|m| m != key);
+        self.save()
+    }
+
+    pub fn rename(&mut self, id: &str, name: &str) -> Result<(), String> {
+        let name = name_ok(name)?;
+        self.find(id)?.name = name;
+        self.save()
+    }
+
+    /// The project goes; its sessions are back in their tmux groups.
+    pub fn delete(&mut self, id: &str) -> Result<(), String> {
+        self.find(id)?;
+        self.list.retain(|p| p.id != id);
+        self.save()
+    }
+
+    /// The projects in the order of `ids` (those not named keep their order, after).
+    pub fn order(&mut self, ids: &[String]) -> Result<(), String> {
+        let at = |p: &Project| ids.iter().position(|i| *i == p.id).unwrap_or(usize::MAX);
+        self.list.sort_by_key(|p| at(p));
+        self.save()
+    }
+
+    /// Project `id`'s sessions in the order of `keys` (those not named keep their order, after).
+    pub fn members(&mut self, id: &str, keys: &[String]) -> Result<(), String> {
+        let p = self.find(id)?;
+        let at = |m: &String| keys.iter().position(|k| k == m).unwrap_or(usize::MAX);
+        p.members.sort_by_key(|m| at(m));
+        self.save()
+    }
+
+    /// The panes of a server whose list was just read (`prefix` its keys' start, `identity` its
+    /// `@terminum-id`): its members that are not `live` closed, but those added lately; a server
+    /// started anew without a restore (another identity) leaves no member of its old panes; one
+    /// not seen before (just restored) keeps them all once. True when something changed (then
+    /// `save`).
+    pub fn seen(&mut self, prefix: &str, identity: Option<&str>, live: &HashSet<&str>) -> bool {
+        self.fresh.retain(|_, at| at.elapsed() < FRESH);
+        let was = identity.and_then(|now| self.servers.insert(prefix.to_string(), now.to_string()));
+        let adopted = identity.is_some() && was.is_none();
+        let anew = matches!((&was, identity), (Some(old), Some(now)) if old != now);
+        let fresh: HashSet<String> = self.fresh.keys().cloned().collect();
+        let gone = if adopted { 0 } else { self.prune(|m| !m.starts_with(prefix) || (!anew && (live.contains(m) || fresh.contains(m)))) };
+        adopted || anew || gone > 0
+    }
+
+    /// The server of `prefix` was made again from its checkpoint (AC-15): its members take the
+    /// new panes' keys (`panes`: old id, new id), the others go, and its next read adopts it.
+    pub fn restarted(&mut self, prefix: &str, panes: &[(String, String)]) -> bool {
+        let new_key = |m: &str| m.strip_prefix(prefix).and_then(|old| panes.iter().find(|(o, _)| o == old)).map(|(_, n)| format!("{prefix}{n}"));
+        let mut changed = self.servers.remove(prefix).is_some();
+        for p in self.list.iter_mut() {
+            for m in p.members.iter_mut().filter(|m| m.starts_with(prefix)) {
+                let new = new_key(m).unwrap_or_default();     // not made again: "" goes below
+                changed |= *m != new;
+                *m = new;
+            }
+        }
+        self.prune(|m| !m.is_empty());
+        changed
+    }
+
+    /// Members `keep` refuses go, and projects left empty with them; how many members went.
+    fn prune(&mut self, keep: impl Fn(&str) -> bool) -> usize {
+        let before: usize = self.list.iter().map(|p| p.members.len()).sum();
+        for p in self.list.iter_mut() {
+            p.members.retain(|m| keep(m));
+        }
+        self.list.retain(|p| !p.members.is_empty());
+        before - self.list.iter().map(|p| p.members.len()).sum::<usize>()
+    }
+
+    /// The project pane `key` is in.
+    pub fn of(&self, key: &str) -> Option<&Project> {
+        self.list.iter().find(|p| p.members.iter().any(|m| m == key))
+    }
+}
+
+fn message(app: &Shared) -> String {
+    json!({"t": "projects", "items": app.projects.lock().list()}).to_string()
+}
+
+/// A page that connects learns the projects.
+pub fn hello(app: &Shared, page: &Page) {
+    page.send(message(app));
+}
+
+/// Every page learns the projects (after a change).
+pub fn tell(app: &Shared) {
+    app.pages.tell(&message(app));
+}
+
+/// A server's list was read with these pane keys: its closed panes leave their projects.
+pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
+    let identity = server.identity().await;
+    let live: HashSet<&str> = keys.iter().map(String::as_str).collect();
+    if app.projects.lock().seen(&server.key(""), identity.as_deref(), &live) {
+        saved(app).await;
+    }
+}
+
+/// The server of `prefix` was restored (AC-15): its sessions keep their projects.
+pub fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
+    if app.projects.lock().restarted(prefix, panes) {
+        let a = app.clone();
+        tokio::spawn(async move { saved(&a).await });
+    }
+}
+
+/// projects.json written off the async workers, and every page told.
+async fn saved(app: &Shared) {
+    let a = app.clone();
+    if let Ok(Err(e)) = tokio::task::spawn_blocking(move || a.projects.lock().save()).await {
+        tracing::warn!(event = "projects.unsaved", error = %e);
+    }
+    tell(app);
+}
+
+/// `project {action, …}` from the page's session list (AC-92).
+pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
+    let s = |k: &str| msg[k].as_str().map(str::to_string);
+    let ids = |k: &str| msg[k].as_array().map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect::<Vec<_>>()).unwrap_or_default();
+    let action = s("action").unwrap_or_default();
+    let (key, project, name) = (s("id").unwrap_or_default(), s("project"), s("name").unwrap_or_default());
+    let (order, keys) = (ids("ids"), ids("keys"));
+    // the pane's host and folder, for a new project's [+]
+    let (host, dir) = if action == "add" { crate::page::marks::find_item(&app.layout.read(), &key).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default() } else { Default::default() };
+    let a = app.clone();
+    let done = tokio::task::spawn_blocking(move || {
+        let mut ps = a.projects.lock();
+        match action.as_str() {
+            "add" if crate::tmux::parse_key(&key).is_some() => ps.add(&key, project.as_deref(), None, host, dir.unwrap_or_default()).map(|_| ()),
+            "remove" => ps.remove(&key),
+            "rename" => ps.rename(project.as_deref().unwrap_or(""), &name),
+            "delete" => ps.delete(project.as_deref().unwrap_or("")),
+            "order" => ps.order(&order),
+            "members" => ps.members(project.as_deref().unwrap_or(""), &keys),
+            _ => Err(format!("Not a project action: {action}")),
+        }
+    }).await.map_err(|e| e.to_string()).and_then(|r| r);
+    match done {
+        Ok(()) => tell(app),
+        Err(e) => super::client::error(page, e, None),
+    }
+}
+
+#[cfg(test)]
+#[path = "projects_tests.rs"]
+mod tests;

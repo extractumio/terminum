@@ -10,6 +10,7 @@ pub mod folds;
 pub mod pystr;
 pub mod hist;
 pub mod marks;
+pub mod projects;
 pub mod quick;
 pub mod search;
 pub mod sent;
@@ -19,6 +20,7 @@ pub mod stream;
 pub mod trace;
 pub mod timing;
 pub mod typing;
+pub mod unread;
 pub mod upload;
 pub mod ws;
 

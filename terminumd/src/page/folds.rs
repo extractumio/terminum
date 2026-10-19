@@ -207,6 +207,18 @@ pub fn folds<S: AsRef<str>>(rows: &[(S, bool)], newest: bool) -> Vec<RowFold> {
     out
 }
 
+/// Folds of the rows on a pane's screen (AC-32), as `[[from, to, label], …]`: a coding agent's
+/// tool output folds there too, before it scrolls into the history. Never on a full-screen
+/// program's rows (vim, mc), nor one holding the cursor; the last part may go on, so it waits.
+pub fn on_screen(texts: &[String], hard: &[bool], cursor: Option<usize>, full_screen: bool) -> Value {
+    if full_screen {
+        return Value::Array(Vec::new());
+    }
+    let rows: Vec<(&str, bool)> = texts.iter().zip(hard).map(|(t, h)| (t.as_str(), *h)).collect();
+    let kept = folds(&rows, true).into_iter().filter(|f| !cursor.is_some_and(|c| f.from <= c && c <= f.to));
+    Value::Array(kept.map(|f| serde_json::json!([f.from, f.to, f.label])).collect())
+}
+
 /// Runs of BLOB_MIN or more rows of encoded data, the next row after them come.
 fn blobs(text: &[&str], newest: bool) -> Vec<RowFold> {
     let (mut out, n, mut i) = (Vec::new(), text.len(), 0);

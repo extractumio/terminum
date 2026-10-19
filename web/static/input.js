@@ -183,6 +183,14 @@ export class Input {
       e.preventDefault();
       this.copySelection(text);
     }, true);
+    // ⌘V with the keys off the terminal's input (after a copy from the history, a click in the
+    // list): the input takes them back first, so the paste lands in the pane at its cursor and
+    // typing goes on there (Safari pastes only into a field); not under a dialog, nor in Files
+    document.addEventListener("keydown", (e) => {
+      if (!e.metaKey || e.ctrlKey || e.altKey || e.key.toLowerCase() !== "v" || field(e.target) || document.activeElement === k) return;
+      if (document.querySelector("dialog[open]") || this.term.hidden || !this.options.shown?.()) return;
+      this.focus();
+    }, true);
     document.addEventListener("copy", () => {
       const at = document.activeElement;
       if (at !== k && !field(at)) this.afterCopy(true);

@@ -176,8 +176,8 @@ export async function webScreen(browser, name) {
     check("AC-13 sized: a refused resize is said with tmux's reason; this page's own size clears it",
       refused === "Sized for another screen (180×50): size too small" && await page.isHidden("#sized"), JSON.stringify(refused));
 
-    // too small a view: the last size stays (big text first, its size settled; then a
-    // narrow view in one step, so no size between the two is a valid one)
+    // a sliver of a view (under 20×5: an animation, a drag) keeps the pane's last size (big
+    // text first, its size settled; then a narrow view in one step); terminumd bounds the rest
     await page.click("#menubtn");
     for (let i = 0; i < 16; i++) await page.click("#bigger");
     await page.keyboard.press("Escape");
