@@ -3,6 +3,7 @@
 //! time. A page that stops reading is dropped, never waited for (a phone that sleeps).
 
 pub mod bookmarks;
+pub mod bookmarks_find;
 pub mod client;
 pub mod find;
 pub mod folds;

@@ -5,6 +5,7 @@
 //! counterpart: a bookmark is keyed by its tmux pane.
 
 use super::*;
+use crate::page::bookmarks_find::{loose, Found};
 use std::os::unix::fs::PermissionsExt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Instant;
