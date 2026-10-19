@@ -16,8 +16,15 @@ use serde_json::{json, Map, Value};
 const KEEP: usize = 1 << 20;
 const BUDGET: Duration = Duration::from_millis(150);
 
-/// Runs the hook for `agent`; always 0.
+/// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown
+/// agent, or a terminal for stdin), it says what to run instead: it would wait for the keys.
 pub fn main(agent: &str) -> i32 {
+    // SAFETY: isatty has no preconditions
+    let by_hand = unsafe { libc::isatty(0) } == 1;
+    if let Some(why) = refused(agent, by_hand) {
+        eprintln!("{why}");
+        return 2;
+    }
     let mut kept = Vec::new();
     let mut buf = [0u8; 65536];
     let mut stdin = std::io::stdin().lock();
@@ -35,6 +42,15 @@ pub fn main(agent: &str) -> i32 {
         let _ = super::sockhttp::call(&sock, "POST", "/hook", Some(&ev), BUDGET);
     }
     0
+}
+
+/// Why `terminum hook <agent>` is not an agent's run (`by_hand`: its stdin is a terminal).
+pub fn refused(agent: &str, by_hand: bool) -> Option<String> {
+    let how = "terminum hook is what a coding agent's hooks run; to set them up: terminum hooks install";
+    if crate::tmux::hookstate::agent(agent).is_none() {
+        return Some(format!("usage: terminum hook claude|codex (an event on stdin)\n{how}"));
+    }
+    by_hand.then(|| how.to_string())
 }
 
 /// At most `n` characters of `s`, control characters dropped.
@@ -135,6 +151,13 @@ mod tests {
         let key = format!("sk-{}", "ant-api03-abcdefghijkl");               // no secret's shape in the source
         assert_eq!(tool_summary("Bash", &json!({"command": format!("echo {key}")})), "Bash: echo [redacted]");
         assert_eq!(tool_summary("Bash", &json!({"command": "make X=1"})), "Bash: make X=…");
+    }
+
+    #[test]
+    fn run_by_a_person_it_says_what_to_run() {
+        assert!(refused("install", false).unwrap().contains("terminum hooks install"), "terminum hook install: a typo of hooks");
+        assert!(refused("claude", true).unwrap().contains("terminum hooks install"), "a terminal for stdin: it would wait for the keys");
+        assert_eq!(refused("codex", false), None);
     }
 
     #[test]

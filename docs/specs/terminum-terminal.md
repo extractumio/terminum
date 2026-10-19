@@ -334,6 +334,7 @@ Scenario: AC-39 failure — the screen cannot be read, no terminumd, a broken ho
   When terminumd cannot capture the pane (closed meanwhile)
   Then the row shows no state this refresh and the next refresh tries again; nothing else is delayed
   When terminumd does not run, the hook returns at once and the agent goes on as without it
+  When a person runs "terminum hook" (an unknown agent such as "terminum hook install", or a terminal for its input), it says "terminum hooks install" sets them up and exits 2 instead of waiting for keys
   When Codex's hooks.json does not parse or is not an object of lists, "terminum hooks install" refuses with why and changes nothing; without "claude" on PATH it says so
 ```
 
