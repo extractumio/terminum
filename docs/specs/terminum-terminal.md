@@ -364,11 +364,12 @@ Scenario: AC-90 failure — not written
 ```gherkin
 Scenario: AC-91 happy path — a reminder
   When the user picks Reminder in the bookmark dialog (Bookmark | Reminder; its title and Save turn pale fuchsia) and saves
-  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); its session's row has a pale fuchsia strip instead of the orange one; a pale fuchsia bell under the sent history counts the open reminders of every session
+  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); its session's row has a pale fuchsia strip instead of the orange one; a pale fuchsia bell under the bookmarks' button counts the open reminders of every session
+  And the floating buttons stand in one column at the terminal's top right: find, the split and the sent history, then, set apart, the colored ones (bookmarks, reminders) of one size and look without glow; each pane opens beside its button (under it on a phone); a split's embedded page shows none of them
 
 Scenario: AC-91 happy path — up when the turn ends
   When the coding agent of its pane ends a turn: its hooks say it stopped, failed or was interrupted (also a turn too quick for the list to show it working), or the pane worked or waited and now is done, failed or shows no agent
-  Then terminumd puts that pane's open reminders up, keeps that, and tells every page; the bell blinks once a second over whichever session is shown (with Reduce Motion it glows, still) until pressed
+  Then terminumd puts that pane's open reminders up, keeps that, and tells every page; the bell blinks once a second over whichever session is shown (with Reduce Motion a still ring) until pressed
   When the user presses it
   Then its pane lists every open reminder, those up first ("up now"), each its session, its note as Markdown and its text quoted, with Open (its session at its text, AC-33), Close (put down: up again at its pane's next turn's end) and Resolve (it comes up no more and stays in Bookmarks); a reminder seen there blinks again only once put down and up anew
 

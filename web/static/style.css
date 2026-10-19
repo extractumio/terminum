@@ -201,7 +201,7 @@ svg.lu circle { fill: none; stroke: currentColor; }
 #restored > span { flex: 1; }
 /* other sessions waiting for an answer: cards at the terminal's top right; on a phone, slim
    lines across it under the header */
-#asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 12px; z-index: 7; width: min(340px, calc(100% - 24px));
+#asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 74px;   /* left of the floating buttons' column and the marks */ z-index: 7; width: min(340px, calc(100% - 24px));
   display: flex; flex-direction: column; gap: 6px; }
 #asks[hidden] { display: none; }
 #asks .ask { position: relative; display: flex; align-items: center; border-radius: var(--r-lg); --fill: var(--chrome-2); color: var(--t-fg);

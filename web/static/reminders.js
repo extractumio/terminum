@@ -19,9 +19,9 @@ export function openReminders(items) {
   return [...items].filter(openReminder).sort((a, b) => Number(!!b.due) - Number(!!a.due) || b.at - a.at);
 }
 
-/** marks: marks.js's Marks (its items, alive, jump); send(msg) to terminumd; restack(): the
- *  floating buttons placed again (this one shown or hidden). */
-export function reminders({ marks, send, restack }) {
+/** marks: marks.js's Marks (its items, alive, jump; it shows and places this button with the
+ *  bookmarks'); send(msg) to terminumd. */
+export function reminders({ marks, send }) {
   const seen = new Set();          // reminders up that the user saw in the pane: they blink no more
   let drawn = "";                  // what the pane shows, as its key: drawn again only when it changes
   const fab = $("remindfab");
@@ -31,7 +31,6 @@ export function reminders({ marks, send, restack }) {
     const all = openReminders(marks.items.values()), up = all.filter((i) => i.due).length;
     for (const id of seen) if (!all.some((i) => i.id === id && i.due)) seen.delete(id);   // put down: blinks when up again
     if (pane.open()) for (const i of all) if (i.due) seen.add(i.id);
-    if (fab.hidden !== !all.length) { fab.hidden = !all.length; restack(); }
     fab.classList.toggle("due", all.some((i) => i.due && !seen.has(i.id)));
     $("remindfabn").textContent = all.length ? String(all.length) : "";
     fab.title = up ? `Reminders: ${up} up of ${all.length}` : `Reminders: ${all.length}`;

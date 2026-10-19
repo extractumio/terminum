@@ -273,7 +273,7 @@ function pick(id) {
 }
 const reminders = waitingCards($("asks"), pick);
 const sent = sentHistory({ view, send, item: () => findItem(st.groups, st.sid)?.item ?? null, copy: (text) => input.copySelection(text, true), toast });
-const reminded = reminderBox({ marks: bookmarks, send, restack: () => bookmarks.placeFab() });
+const reminded = reminderBox({ marks: bookmarks, send });
 bookmarks.onPlaced = () => { sent.place(); reminded.place(); };
 function drawNav() {
   if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);

@@ -227,9 +227,9 @@ export async function webMarks(browser, name = "") {
   check(`${at} from the list: a bookmark in a fold asks for its lines, opens it and marks the text`,
     sent.some((x) => x.t === "unfold" && x.n === 500) && m?.text === "folded secret line 515" && inView(m), JSON.stringify(m));
 
-  // search (AC-58): the magnifier left of the bookmarks' button opens a field; Find goes to the first match
+  // search (AC-58): the magnifier, atop the buttons' column (the bookmarks' set apart below), opens a field; Find goes to the first match
   const at58 = at.replace("AC-57", "AC-58");
-  const fabs = await page.evaluate(() => [document.getElementById("findfab"), document.getElementById("marksfab")].map((b) => !b.hidden && Math.round(b.getBoundingClientRect().left)));
+  const fabs = await page.evaluate(() => ["findfab", "splitfab", "sentfab", "marksfab"].map((id) => document.getElementById(id)).map((b) => !b.hidden && { left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), h: Math.round(b.getBoundingClientRect().height) }));
   await page.click("#findfab");
   const focused = await page.evaluate(() => document.activeElement?.id);
   await page.fill("#findq", "alpha");
@@ -241,8 +241,10 @@ export async function webMarks(browser, name = "") {
     return { n: document.getElementById("findn").textContent, row: r.startContainer.parentElement.closest(".ln")?.textContent, inView: b.top >= t.top && b.bottom <= t.bottom,
       marks: document.querySelectorAll("#findrail .fm").length, on: document.querySelectorAll("#findrail .fm.on").length };
   });
-  check(`${at58} search: the magnifier stands left of the bookmarks' button, opens a focused field, Find says how many and shows the first, older lines loaded`,
-    fabs[0] && fabs[1] && fabs[0] < fabs[1] && focused === "findq" && first.n === "1 / 3" && first.row === "find alpha here" && first.inView && first.marks === 2 && first.on === 1,
+  const column = fabs.every((b) => b && b.left === fabs[0].left) && fabs.every((b, i) => !i || b.top > fabs[i - 1].top)
+    && fabs[3].top - (fabs[2].top + fabs[2].h) > fabs[2].top - (fabs[1].top + fabs[1].h);      // the colored ones set apart
+  check(`${at58} search: the buttons stand in one column, the magnifier first and the bookmarks' set apart below; it opens a focused field, Find says how many and shows the first, older lines loaded`,
+    column && focused === "findq" && first.n === "1 / 3" && first.row === "find alpha here" && first.inView && first.marks === 2 && first.on === 1,
     JSON.stringify({ fabs, focused, first }));
   await page.click("#findnext");
   await findShown("alpha");

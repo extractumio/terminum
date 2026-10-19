@@ -84,11 +84,11 @@ export async function webLook(browser, name) {
       await page.waitForSelector("#asks .ask:not([hidden])", { timeout: 6000 }).catch(() => {});
       const boxes = await page.evaluate(() => {
         const r = (id) => document.getElementById(id)?.getBoundingClientRect();
-        const ask = document.querySelector("#asks .ask:not([hidden])")?.getBoundingClientRect(), banner = r("restored"), fab = r("findfab");
+        const ask = document.querySelector("#asks .ask:not([hidden])")?.getBoundingClientRect(), banner = r("restored");
         const meets = (a, b) => !!(a && b && b.width && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom);
-        return { ask: !!ask, banner: meets(ask, banner), fab: meets(ask, fab) };
+        return { ask: !!ask, banner: meets(ask, banner), fabs: ["findfab", "splitfab", "sentfab", "marksfab", "remindfab"].filter((id) => meets(ask, r(id))) };
       });
-      check("look: a waiting card covers neither the banners nor the find button", boxes.ask && !boxes.banner && !boxes.fab, JSON.stringify(boxes));
+      check("look: a waiting card covers neither the banners nor a floating button", boxes.ask && !boxes.banner && !boxes.fabs.length, JSON.stringify(boxes));
     }
     await f.close();
   }

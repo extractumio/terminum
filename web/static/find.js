@@ -4,6 +4,7 @@
 // says how many, goes to the first and steps to the next and the one before, each brought into
 // view as a bookmark is (markjump.js: older lines loaded, folds opened, widgets' text) and marked;
 // every match is a white mark on the terminal's edge. A second press on the magnifier closes it.
+import { placeBeside } from "./fabpane.js";
 import { Jumper } from "./markjump.js";
 import { railBox, railSlots } from "./marktext.js";
 
@@ -75,10 +76,7 @@ export class Find {
   }
 
   place() {
-    const fab = $("findfab"), box = $("findbox");
-    if (box.hidden || fab.hidden) return;
-    box.style.top = `${fab.offsetTop + fab.offsetHeight + 8}px`;
-    box.style.left = `${Math.max(8, fab.offsetLeft + fab.offsetWidth - box.offsetWidth)}px`;
+    if (!$("findfab").hidden) placeBeside($("findfab"), $("findbox"));
   }
 
   say(text) { $("findn").textContent = text; }

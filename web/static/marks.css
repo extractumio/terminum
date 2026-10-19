@@ -3,12 +3,12 @@
    one shown, the dialog, the list below the sessions and the strip in the session list. Orange
    on every profile: it says "bookmark", as blue and violet say where a session runs. */
 :root { --mark: #ff9f1a; }
-#markadd, #markcopy, #marksfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
+#markadd, #markcopy, #marksfab, #remindfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
   border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite;
   background: var(--mark); color: #1b1200; box-shadow: var(--shadow-near); }
 #markcopy { background: #9ba1a9; color: #16181b; animation-delay: -3.5s; }
 #marksfab { animation-delay: -1.7s; }
-body:has(#markcopy:not([hidden])) #marksfab { visibility: hidden; }   /* a selection's Copy and + stand there */
+body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab), body:has(#findbox:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* a selection's Copy and + stand there */
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
@@ -21,7 +21,9 @@ body:has(#markcopy:not([hidden])) #marksfab { visibility: hidden; }   /* a selec
   33% { border-radius: 45% 55% 41% 59% / 57% 44% 56% 43%; }
   66% { border-radius: 53% 47% 60% 40% / 42% 58% 47% 53%; }
 }
-@media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #marksfab { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #marksfab, #remindfab { animation: none; } }
+/* only the tab's own page shows the floating buttons: a split's embedded page shows its shell alone */
+body.embed :is(#findfab, #splitfab, #sentfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
 /* one Copy beside a selection: the floating one of a touch screen waits while this one shows */
 body:has(#markcopy:not([hidden])) #fabs #copyfab { display: none !important; }
 #markrail { position: absolute; z-index: 4; width: 16px; pointer-events: none; }

@@ -60,6 +60,11 @@ export async function webSent(browser, name) {
     await pause(page, 300);
     const up = await page.evaluate(() => { const b = document.getElementById("remindfab"); return { shown: !b.hidden, due: b.classList.contains("due"), n: document.getElementById("remindfabn").textContent }; });
     check("reminders: one up shows the button blinking, with its count", up.shown && up.due && up.n === "1", JSON.stringify(up));
+    const look = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect(), cs = (id) => getComputedStyle(g(id));
+      return { marks: !g("marksfab").hidden, under: r("remindfab").top > r("marksfab").bottom && Math.abs(r("remindfab").left - r("marksfab").left) < 1,
+        size: r("remindfab").width === r("marksfab").width, shadow: cs("remindfab").boxShadow === cs("marksfab").boxShadow }; });
+    check("reminders: the bell stands under the bookmarks' button, the colored ones alike: same size, same shadow, no glow",
+      look.marks && look.under && look.size && look.shadow, JSON.stringify(look));
     await page.click("#remindfab");
     await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
     const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
@@ -87,4 +92,14 @@ export async function webSent(browser, name) {
     }
     await f.context.close();
   }
+  // a split's embedded page shows its shell alone: no floating buttons
+  runningIn(`${name} 1400×900`);
+  const e = await openPage(browser, { layout: LAYOUT, screen: SCREEN, url: `/?embed=${encodeURIComponent(SID)}` });
+  await drawn(e.page);
+  e.say({ t: "marks", items: [{ ...REMINDER, sid: SID }] });
+  await pause(e.page, 300);
+  const fabs = await e.page.evaluate(() => ["findfab", "splitfab", "sentfab", "marksfab", "remindfab"]
+    .filter((id) => { const b = document.getElementById(id); return getComputedStyle(b).display !== "none" && b.getBoundingClientRect().width > 0; }));
+  check("a split's embedded page shows none of the floating buttons", !fabs.length, fabs.join());
+  await e.context.close();
 }

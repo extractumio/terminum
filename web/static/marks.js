@@ -6,13 +6,15 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { markPicker } from "./markpick.js";
+import { placeBeside } from "./fabpane.js";
 import { Find } from "./find.js";
 import { railBox, railSlots } from "./marktext.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
 const ARMED = 3000;            // ms a Delete pressed once waits for the second press
-const COLUMN = ["splitfab", "sentfab", "remindfab"];   // the buttons under the magnifier, in order
+// the floating buttons at the terminal's top right, top down: the plain ones, then the colored ones together
+const PLAIN = ["findfab", "splitfab", "sentfab"], COLORED = ["marksfab", "remindfab"];
 
 export const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -260,35 +262,32 @@ export class Marks {
 
   // ---------- this session's bookmarks, from the button at the terminal's top right ----------
 
-  /** The buttons stand at the terminal's top right, left of the marks: the bookmarks' with their
-   *  number on it, only while the session has one at least, and the magnifier left of it (in its
-   *  place when there is none). */
+  /** The floating buttons stand in one column at the terminal's top right, left of the marks:
+   *  find, the split and the sent history; then, set apart, the colored ones: this session's
+   *  bookmarks (with their number, while it has one) and the reminders (while one is open). */
   placeFab() {
-    const fab = $("marksfab"), find = $("findfab"), term = this.term, n = this.sid() ? this.mine().length : 0;
+    const term = this.term, n = this.sid() ? this.mine().length : 0;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
-    const right = term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32, top = `${term.offsetTop + 8}px`;
-    find.hidden = $("splitfab").hidden = $("sentfab").hidden = !shown;
-    if (!shown) this.search.toggle(false);
-    else {
-      find.style.top = top; find.style.left = `${right - (n > 0 ? 40 : 0)}px`; this.search.place();
-      // under the magnifier, each shown one under the last: the split, sent history, reminders (whose own module shows or hides it)
-      let y = find.offsetTop + find.offsetHeight + 8;
-      for (const b of COLUMN.map($).filter((b) => !b.hidden)) { Object.assign(b.style, { top: `${y}px`, left: find.style.left }); y += b.offsetHeight + 8; }
-      this.onPlaced?.();
-    }
-    fab.hidden = !(shown && n > 0);
-    if (fab.hidden) return this.togglePane(false);
+    for (const id of PLAIN) $(id).hidden = !shown;
+    $("marksfab").hidden = !(shown && n > 0);
+    $("remindfab").hidden = !shown || ![...this.items.values()].some(openReminder);
     $("marksfabn").textContent = String(n);
-    fab.setAttribute("aria-label", `Bookmarks of this session: ${n}`);
-    fab.style.top = top;
-    fab.style.left = `${right}px`;
+    $("marksfab").setAttribute("aria-label", `Bookmarks of this session: ${n}`);
+    if (!shown) this.search.toggle(false);
+    if ($("marksfab").hidden) this.togglePane(false);
+    if (!shown) return;
+    const left = `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
+    let y = term.offsetTop + 8;
+    for (const group of [PLAIN, COLORED]) {
+      const shownOnes = group.map($).filter((b) => !b.hidden);
+      for (const b of shownOnes) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 8; }
+      y += 8;                                      // the colored ones set apart
+    }
+    this.search.place();
     if (!$("markpane").hidden) this.placePane();
+    this.onPlaced?.();
   }
-  placePane() {
-    const fab = $("marksfab"), pane = $("markpane");
-    pane.style.top = `${fab.offsetTop + fab.offsetHeight + 8}px`;
-    pane.style.left = `${Math.max(8, fab.offsetLeft + fab.offsetWidth - pane.offsetWidth)}px`;
-  }
+  placePane() { placeBeside($("marksfab"), $("markpane")); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {
     $("markpane").hidden = !open;
