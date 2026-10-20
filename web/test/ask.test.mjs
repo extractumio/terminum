@@ -10,7 +10,7 @@ test("the quote numbered with four digits, in guillemets, the question under it,
   assert.ok(askText(12345, "x", "q").startsWith("Quote #12345:\n"), "more digits as they come");
 });
 
-test("set off by a blank line before and after: typed as Ctrl+J around the paste in an agent's box, inside the paste elsewhere", () => {
-  assert.deepEqual(askSends("Q", true), [["keys", "\n\n"], ["paste", "Q"], ["keys", "\n\n"]]);
-  assert.deepEqual(askSends("Q", false), [["paste", "\n\nQ\n\n"]], "a shell: Ctrl+J would run the line");
+test("a blank line after it, none before: typed as Ctrl+J after the paste in an agent's box, inside the paste elsewhere", () => {
+  assert.deepEqual(askSends("Q", true), [["paste", "Q"], ["keys", "\n\n"]]);
+  assert.deepEqual(askSends("Q", false), [["paste", "Q\n\n"]], "a shell: Ctrl+J would run the line");
 });

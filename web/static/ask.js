@@ -2,9 +2,9 @@
 // Ask about a selection (AC-37): Ask (markpick.js) opens a dialog with the selected text and a
 // field for the question; Add to Chat asks terminumd for the pane's next quote number (it
 // counts up across devices: `askno`) and pastes the quote, the question and a rule at the
-// input's cursor, set off by a blank line before and after, without Enter: in a coding agent's
-// box by two Ctrl+J (a new line there; the edges of a paste are trimmed or folded into "[Pasted
-// text]"), elsewhere (a shell, where Ctrl+J would run the line) inside the paste.
+// input's cursor, a blank line after it, without Enter: in a coding agent's box by two Ctrl+J
+// (a new line there; the edges of a paste are trimmed or folded into "[Pasted text]"), elsewhere
+// (a shell, where Ctrl+J would run the line) inside the paste.
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
@@ -16,7 +16,7 @@ export function askText(n, quote, question) {
 
 /** What goes to the pane for `text`, in order: [kind, data], kind "keys" (typed) or "paste". */
 export function askSends(text, agent) {
-  return agent ? [["keys", "\n\n"], ["paste", text], ["keys", "\n\n"]] : [["paste", `\n\n${text}\n\n`]];
+  return agent ? [["paste", text], ["keys", "\n\n"]] : [["paste", `${text}\n\n`]];
 }
 
 /** send(msg) to terminumd; toChat(text): pasted into the shown pane's input; keys(data): typed

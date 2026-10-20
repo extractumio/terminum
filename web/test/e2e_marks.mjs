@@ -440,9 +440,9 @@ export async function webMarks(browser, name = "") {
   const asked = sent.slice(k), quoted = asked.filter((x) => x.t === "in").map((x) => x.data).join("");
   check(`${at} Ask: a dialog with the selection, Add to Chat off until a question; the quote numbered by terminumd, the question and a rule pasted, no Enter`,
     dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
-    && quoted.startsWith("\x1b[200~\r\rQuote #0007:\r - Quote Start ----\r«out 2500 lorem ipsum") && quoted.endsWith("»\r- Quote End ----\rwhy does it never reset?\r----\r\r\x1b[201~"),
+    && quoted.startsWith("\x1b[200~Quote #0007:\r - Quote Start ----\r«out 2500 lorem ipsum") && quoted.endsWith("»\r- Quote End ----\rwhy does it never reset?\r----\r\r\x1b[201~"),
     JSON.stringify({ dialog, quoted }));
-  // in a coding agent's box the blank lines before and after are typed (Ctrl+J), the paste between them
+  // in a coding agent's box the blank line after it is typed (Ctrl+J), none before
   say({ t: "layout", groups: [{ ...LAYOUT[0], items: [{ ...LAYOUT[0].items[0], agent: "claude", shell: false }, LAYOUT[0].items[1]] }] });
   await page.waitForTimeout(150);
   await selectRow(page, "out 2500 lorem");
@@ -452,8 +452,8 @@ export async function webMarks(browser, name = "") {
   await page.click('#askbox button[value="add"]');
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data);
-  check(`${at} Ask in a coding agent's box: two Ctrl+J, the paste, two Ctrl+J (a blank line before and after, nothing sent)`,
-    typed.length === 3 && typed[0] === "\n\n" && typed[2] === "\n\n" && typed[1].startsWith("\x1b[200~Quote #0007:\r") && typed[1].endsWith("and now?\r----\x1b[201~"), JSON.stringify(typed));
+  check(`${at} Ask in a coding agent's box: the paste, then two Ctrl+J (a blank line after it, none before; nothing sent)`,
+    typed.length === 2 && typed[1] === "\n\n" && typed[0].startsWith("\x1b[200~Quote #0007:\r") && typed[0].endsWith("and now?\r----\x1b[201~"), JSON.stringify(typed));
   say({ t: "layout", groups: LAYOUT });
   await page.waitForTimeout(150);
   await selectRow(page, "out 2500 lorem");

@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.16 |
+| Version | 0.3.18 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,8 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.18 | 2026-10-20 | Owner: Ask's quote has a blank line after it only, none before (AC-37). |
+| 0.3.17 | 2026-10-20 | Owner: every dialog's fields and buttons share its type, the terminal's font at its size (Ask's question and a project's name were 16 px, the name in the interface font); the Bookmarks / Reminders window's head as a dialog's, its list as the session list's (AC-37, AC-33). |
 | 0.3.16 | 2026-10-20 | Owner: a pale blue mark where each answer of the agent ended, kept by terminumd from the screen at the turn's end (AC-90); a question's words in the transcript above Claude Code's input box no longer make a session waiting (a false ?) (AC-39). Pragmatic review applied: the screen read at the hooks' Stop (not at the list's turn end, seconds later), the turn line, rules and rows too short to be found again passed over, nothing kept for a full-screen program, `endnew` rather than `sentnew`; rejected: the answer's last line from the hooks' payload (terminum hook never forwards the agent's answer). |
 | 0.3.15 | 2026-10-20 | Owner: Ask's quote set off by a blank line before and after, typed as Ctrl+J in an agent's box (AC-37); the right edge's marks span the whole loadable history and a mark whose line left it is gone (it stayed at the top); Settings' Side marks switch (AC-90). |
 | 0.3.14 | 2026-10-20 | Owner: the header's bar does not breathe; a waiting session's ? goes at once when it is shown (it stayed seconds after the answer) (AC-39). |
@@ -310,9 +312,9 @@ Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
   Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (on a wide window the three stand left of the floating column); it is hidden otherwise
   When the user presses Ask, types a question and presses Add to Chat
-  Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, so it counts up across devices and reloads), and the page puts at the input's cursor, no Enter, set off by a blank line before and after:
+  Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, so it counts up across devices and reloads), and the page puts at the input's cursor, no Enter, a blank line after it (none before):
     "Quote #0007:\n - Quote Start ----\n«<the selected text>»\n- Quote End ----\n<the question>\n----"
-  And in a coding agent's box the blank lines are typed as two Ctrl+J before and after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) they are inside the paste
+  And in a coding agent's box the blank line is typed as two Ctrl+J after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) it is inside the paste
   And Cancel or Esc closes the dialog and pastes nothing; Add to Chat is off while the question is empty
 
 Scenario: AC-37 edge — a tablet's trackpad and a hidden page
