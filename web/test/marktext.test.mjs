@@ -33,7 +33,15 @@ test("a letter outside the basic plane before the text moves nothing (the bridge
   assert.equal(part("𠀀 alpha beta", 1, 5), "alpha");
 });
 
-test("marks are placed by their lines and merged when close", () => {
+test("marks are placed by their lines and merged when close; a line gone from the history has none", () => {
   const slots = railSlots([{ n: 0 }, { n: 500 }, { n: 505 }, { n: 1000 }, { n: -50 }], 0, 1000, 200, 8);
-  assert.deepEqual(slots.map((s) => [s.top, s.items.length]), [[0, 2], [100, 2], [200, 1]]);
+  assert.deepEqual(slots.map((s) => [s.top, s.items.length]), [[0, 1], [100, 2], [200, 1]]);
+});
+
+test("the rail is the whole loadable history: a mark moves up as it grows and goes once its line is trimmed (12000 kept)", () => {
+  const top = (oldest, end) => railSlots([{ n: 6000 }], oldest, end, 600).map((s) => s.top);
+  assert.deepEqual(top(0, 8000), [450]);
+  assert.deepEqual(top(0, 12000), [300], "half way up the chat, half way up the rail");
+  assert.deepEqual(top(4000, 16000), [100], "older lines dropped at the top: it moved up");
+  assert.deepEqual(top(7000, 19000), [], "its line left the history: no mark");
 });

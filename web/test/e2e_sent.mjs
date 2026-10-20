@@ -17,13 +17,16 @@ const LAYOUT = [group("main", [item(SID, "api", { shell: true, sub: ["zsh", "~/w
   item("tmux:local:terminum:%3", "api tests", { index: "3", dir: API })])];
 const SCREEN = [line("out 1"), line("reminder text here"), { r: [["alex@mac api % git status", null, null, 0], [" ", null, null, 256]], e: true }];
 const REMINDER = { id: "R1", sid: SID, key: SID, n: 1, text: "reminder text here", note: "**check** the retry", title: "api", host: null, at: 1792000000, remind: true, due: true };
-const ITEM = { at: 1792000000, text: "fix the **tests**", agent: "claude", title: "api" };
+const ITEM = { at: 1792000000, text: "fix the **tests**", agent: "claude", title: "api", key: SID, line: 2 };
 
 export async function webSent(browser, name) {
   for (const [size, device] of SIZES) {
     runningIn(`${name} ${size}`);
     const f = await openPage(browser, { device, layout: LAYOUT, screen: SCREEN, hook: (m, say) => {
-      if (m.t === "sentget") say({ t: "sentone", sid: SID, n: m.n, total: 2, item: m.n === 0 ? ITEM : { ...ITEM, text: "ls -la", agent: undefined }, host: "local", path: "/Users/alex/work/api" });
+      if (m.t === "sentget") say({ t: "sentone", sid: SID, n: m.n, total: 2, item: m.n === 0 ? ITEM : { ...ITEM, text: "ls -la", agent: undefined, key: undefined, line: undefined }, host: "local", path: "/Users/alex/work/api" });
+      // where a sent message stands (AC-90): "ls -la" and "out 1" are found, the newest is gone
+      if (m.t === "locate" && m.text) say(/ls -la|out 1/.test(m.text) ? { t: "located", id: m.id, sid: SID, n: 0, start: 0, size: 3 } : { t: "located", id: m.id, sid: SID, n: null, why: "These lines are no longer in this session's history." });
+      if (m.t === "sentmarks") say({ t: "sentmarks", sid: SID, items: [{ n: 0, text: "out 1" }], ends: [{ n: 2, text: "alex@mac api % git status" }] });
     } });
     const { page, sent } = f;
     await page.route("**/fb/**", (route) => {
@@ -39,12 +42,14 @@ export async function webSent(browser, name) {
     await pause(page, 150);
     const after = sent.slice(n).map((m) => m.t);
     const told = sent.slice(n).find((m) => m.t === "sent");
-    check("sent: Enter at a shell prompt tells the command after the prompt, before the key", told?.text === "git status" && told.agent === ""
-      && after.indexOf("sent") < after.indexOf("in"), JSON.stringify(sent.slice(n)));
+    check("sent: Enter at a shell prompt tells the command after the prompt and the line it began on, before the key", told?.text === "git status" && told.agent === ""
+      && Number.isInteger(told.line) && told.line >= 2 && after.indexOf("sent") < after.indexOf("in"), JSON.stringify(sent.slice(n)));
 
     const at = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect(), s = r("sentfab"), p = r("findfab");
       return { below: s.top >= p.bottom, aligned: Math.abs(s.left - p.left) < 1, shown: !document.getElementById("sentfab").hidden }; });
     check("sent: its button stands under find (a phone's split is in the row at the bottom left)", at.shown && at.below && at.aligned, JSON.stringify(at));
+    const menu = await page.evaluate(() => { const c = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.left + r.width / 2; }; return Math.round(c("menubtn") - c("findfab")); });
+    check("the header's ⋯ stands right over the floating buttons' column (its middle on the magnifier's)", Math.abs(menu) <= 1, String(menu));
     await page.click("#sentfab");
     await page.waitForFunction(() => document.querySelector("#spbody strong")?.textContent === "tests", null, { timeout: 5000 }).catch(() => {});
     const shown = await page.evaluate(() => ({ pos: document.getElementById("sppos").textContent, where: document.getElementById("spwhere").textContent,
@@ -55,13 +60,38 @@ export async function webSent(browser, name) {
     await page.waitForFunction(() => document.querySelector("#spbody code")?.textContent.includes("ls -la"), null, { timeout: 5000 }).catch(() => {});
     const older = await page.evaluate(() => ({ code: document.querySelector("#spbody code")?.textContent, pos: document.getElementById("sppos").textContent }));
     check("sent: ↑ the one before; a command as a shell block", older.code?.includes("ls -la") && older.pos === "2 of 2" && sent.some((m) => m.t === "sentget" && m.n === 1), JSON.stringify(older));
-    await page.click("#spclose");
+    // Jump to message: another pane's (no line) is looked for nearest the end; found, the pane closes
+    let k = sent.length;
+    await page.click("#spjump");
+    await pause(page, 400);
+    const asked = sent.slice(k).find((m) => m.t === "locate");
+    check("sent: Jump to message asks terminumd for its text (no line: kept without one); found, the pane closes",
+      asked?.text === "ls -la" && asked.n === undefined && await page.evaluate(() => document.getElementById("sentpane").hidden), JSON.stringify(asked));
+    await page.click("#sentfab");
+    await page.waitForFunction(() => document.querySelector("#spbody strong")?.textContent === "tests", null, { timeout: 5000 }).catch(() => {});
+    k = sent.length;
+    await page.click("#spjump");
+    await page.waitForFunction(() => !document.getElementById("spwhy").hidden && document.getElementById("spwhy").classList.contains("err"), null, { timeout: 3000 }).catch(() => {});
+    const gone = await page.evaluate(() => ({ why: document.getElementById("spwhy").textContent, open: !document.getElementById("sentpane").hidden }));
+    check("sent: Jump to message of this pane's own goes with its line; not there, the pane says so and stays open",
+      sent.slice(k).some((m) => m.t === "locate" && m.n === 2 && m.text === "fix the **tests**") && gone.open && /no longer in this session's history/.test(gone.why), JSON.stringify(gone));
+    k = sent.length;
+    await page.click("#spinsert");
+    await pause(page, 150);
+    const inserted = sent.slice(k).filter((m) => m.t === "in").map((m) => m.data).join("");
+    check("sent: Insert into chat pastes the message as it was sent, no Enter; the pane closes; its button looks as a reminder's",
+      inserted.includes("fix the **tests**") && !inserted.replace(/\x1b\[201~$/, "").endsWith("\r") && await page.evaluate(() => document.getElementById("sentpane").hidden), JSON.stringify(inserted));
 
     // a reminder up: the button blinks until pressed; its pane: Markdown, Resolve
     f.say({ t: "marks", items: [REMINDER, { ...REMINDER, id: "B1", remind: false, due: false, note: "a bookmark" }] });
     await pause(page, 300);
-    const up = await page.evaluate(() => { const b = document.getElementById("remindfab"); return { shown: !b.hidden, due: b.classList.contains("due"), n: document.getElementById("remindfabn").textContent }; });
-    check("reminders: one up shows the button blinking, with its count (reminders only)", up.shown && up.due && up.n === "1", JSON.stringify(up));
+    await page.emulateMedia({ reducedMotion: "no-preference" });       // the others run with reduced motion: no blink anywhere
+    const up = await page.evaluate(() => { const b = document.getElementById("remindfab"), n = document.getElementById("remindfabn");
+      return { shown: !b.hidden, due: b.classList.contains("due"), n: n.textContent, touch: matchMedia("(hover: none)").matches,
+        blinks: getComputedStyle(b).animationName.includes("remind"), filled: getComputedStyle(n).backgroundColor !== getComputedStyle(document.body).backgroundColor }; });
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    check("reminders: one up shows the button with its count (reminders only), blinking on a touch screen, still with its count filled on a computer",
+      up.shown && up.due && up.n === "1" && up.blinks === up.touch && (up.touch || up.filled), JSON.stringify(up));
     const look = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect(), cs = (id) => getComputedStyle(g(id));
       const row = matchMedia("(hover: none), (max-width: 860px)").matches;   // a phone's: beside it in the row at the bottom left
       return { marks: !g("marksfab").hidden, under: row ? r("remindfab").left > r("marksfab").right && Math.abs(r("remindfab").top - r("marksfab").top) < 1
@@ -70,15 +100,65 @@ export async function webSent(browser, name) {
         fill: cs("remindfab").backgroundColor === cs("findfab").backgroundColor, pink: cs("remindfab").color !== cs("findfab").color }; });
     check("reminders: the bell stands under the bookmarks' button (a phone's: right of it), as large, the same shadow, no glow; the plain buttons' fill, the bell itself pink",
       look.marks && look.under && look.size && look.shadow && look.fill && look.pink, JSON.stringify(look));
+    // the marks on the right edge (a wide window): the message sent (white) and, on one line, the bookmark and the reminder (pink over orange)
+    await page.waitForFunction(() => document.querySelectorAll("#msgrail .dot").length >= 2, null, { timeout: 3000 }).catch(() => {});
+    const strip = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = g("msgrail").getBoundingClientRect(), t = g("term").getBoundingClientRect();
+      const bar = g("msgrail").querySelector(".dot"), cs = bar && getComputedStyle(bar, "::before");
+      return { shown: !g("msgrail").hidden && r.width > 0, edge: Math.round(r.left - (t.left + g("term").clientLeft + g("term").clientWidth - 18)), bar: cs && [cs.width, cs.height, cs.borderRadius, cs.opacity, cs.scale].join(),
+        right: g("markrail").hidden,
+        gap: bar && Math.round(bar.getBoundingClientRect().left + bar.offsetWidth / 2 - 2 - (t.left + g("term").clientLeft + g("term").clientWidth - parseFloat(getComputedStyle(g("term")).paddingRight))),
+        dots: [...document.querySelectorAll("#msgrail .dot")].map((d) => d.className.replace("dot ", "")), titles: [...document.querySelectorAll("#msgrail .dot")].map((d) => d.title) }; });
+    if (size === "1400×900") {
+      check("the right edge's marks: a bookmark's rounded bar each, white where a message was sent, one pink where a bookmark and a reminder meet, a pale blue one where the agent's answer ended; no bookmarks' marks of their own; the text stops 6 px before them",
+        strip.shown && Math.abs(strip.edge) <= 1 && strip.bar === "4px,14px,2px,1,none" && strip.gap === 6 && strip.right && strip.dots.join() === "sent,remind,end" && /Reminder: \*\*check\*\* the retry/.test(strip.titles[1]) && /Bookmark: a bookmark/.test(strip.titles[1]), JSON.stringify(strip));
+      const k = sent.length;
+      await page.click("#msgrail .dot.sent");
+      await pause(page, 300);
+      check("the right edge's marks: a message's bar asks terminumd where its text is, near its line", sent.slice(k).some((m) => m.t === "locate" && m.text === "out 1" && m.n === 0), JSON.stringify(sent.slice(k)));
+      const k3 = sent.length;
+      f.say({ t: "endnew", key: "tmux:local:terminum:%2" });           // another pane's answer: nothing to ask
+      f.say({ t: "endnew", key: SID });                                // this pane's: its places again
+      await pause(page, 600);
+      check("the right edge's marks: an answer ended in this pane asks for the places again, one in another pane does not",
+        sent.slice(k3).filter((m) => m.t === "sentmarks").length === 1, JSON.stringify(sent.slice(k3).map((m) => m.t)));
+      // Settings' Side marks: off hides them (and asks terminumd no more), kept in this browser; on by default
+      const onAtFirst = await page.evaluate(() => document.getElementById("sidemarks").checked);
+      await page.click("#menubtn");
+      await page.click('label:has(#sidemarks)');
+      await page.keyboard.press("Escape");
+      await pause(page, 200);
+      const off = await page.evaluate(() => ({ rail: getComputedStyle(document.getElementById("msgrail")).display, kept: localStorage.getItem("sideMarks") }));
+      const k2 = sent.length;
+      await page.evaluate(() => document.dispatchEvent(new Event("sidemarks")));   // what would ask terminumd again
+      await pause(page, 500);
+      const asked = sent.slice(k2).some((m) => m.t === "sentmarks");
+      await page.click("#menubtn");
+      await page.click('label:has(#sidemarks)');
+      await page.keyboard.press("Escape");
+      await page.waitForFunction(() => getComputedStyle(document.getElementById("msgrail")).display !== "none", null, { timeout: 3000 }).catch(() => {});
+      const back = await page.evaluate(() => getComputedStyle(document.getElementById("msgrail")).display);
+      check("Settings' Side marks: on by default; off hides the right edge's marks, is kept in this browser and asks terminumd no more; on brings them back",
+        onAtFirst && off.rail === "none" && off.kept === "false" && !asked && back !== "none", JSON.stringify({ onAtFirst, off, asked, back }));
+    } else check("the right edge's message marks: none on a phone (the bookmarks' own marks there)", !strip.shown, JSON.stringify(strip));
     await page.click("#remindfab");
     await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
     const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
       acts: [...document.querySelectorAll(".rmacts button")].map((b) => b.textContent), due: document.getElementById("remindfab").classList.contains("due") }));
-    check("reminders: pressed, it blinks no more; its note as Markdown, its text quoted, Open, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
-      && pane.acts.join() === "Open,Close,Delete,Resolve" && !pane.due, JSON.stringify(pane));
+    check("reminders: pressed, it blinks no more; its note as Markdown, its text quoted, Open, Insert into chat, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
+      && pane.acts.join() === "Open,Insert into chat,Close,Delete,Resolve" && !pane.due, JSON.stringify(pane));
     await page.click(".rmacts .primary");
     await pause(page, 100);
     check("reminders: Resolve tells terminumd", sent.some((m) => m.t === "remind" && m.id === "R1" && m.action === "resolve"));
+    const before = sent.length;
+    const looks = await page.evaluate(() => { const cs = (e) => { const s = getComputedStyle(e); return [s.height, s.backgroundColor, s.fontSize, s.borderRadius].join(); };
+      return [cs(document.querySelector(".rmacts .tochat")), cs(document.getElementById("spinsert")), cs(document.getElementById("mbsend"))]; });
+    check("Insert into chat looks the same on a reminder, the sent history and a bookmark's bar", new Set(looks).size === 1, JSON.stringify(looks));
+    await page.click('.rmacts button:text-is("Insert into chat")');
+    await pause(page, 100);
+    const pasted = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
+    check("reminders: Insert into chat pastes its note and, under it, its text quoted into the input, no Enter; the pane closes",
+      pasted.includes("**check** the retry\r\r> reminder text here") && !/reminder text here\r$/.test(pasted.replace(/\x1b\[201~$/, ""))
+      && await page.evaluate(() => document.getElementById("remindpane").hidden), JSON.stringify(pasted));
     if (size === "1400×900") {
       const strip = await page.evaluate((id) => [...document.querySelectorAll(`#sessions .item[data-id="${id}"] .wave`)].map((w) => w.className), SID);
       check("reminders: a wavy orange and a wavy pink line in the session list, side by side", strip.join() === "wave mark,wave remind", strip.join());
@@ -122,6 +202,7 @@ export async function webSent(browser, name) {
       await page.waitForFunction(() => document.getElementById("markdoc").open && document.querySelector("#markdocbody h3"), null, { timeout: 5000 }).catch(() => {});
       const docOpen = await page.evaluate(() => ({ open: document.getElementById("markdoc").open, h: [...document.querySelectorAll("#markdocbody h3")].map((h) => h.textContent),
         full: document.getElementById("markdoc").getBoundingClientRect().height > innerHeight * 0.8 }));
+      await page.keyboard.press("Escape");                            // the document, then the list's window
       await page.keyboard.press("Escape");
       check("projects: a session shows its project's bookmarks made in its other sessions, also one whose session closed (the project lives), none of another project or another session outside it",
         pane.join() === "from the tests session,from a closed session:closed" && head === "Bookmarks of Work", JSON.stringify({ pane, head }));

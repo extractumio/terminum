@@ -156,7 +156,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 
 /* ---------- main column ---------- */
 #main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
-#bar { display: flex; align-items: center; gap: 10px; min-height: var(--h-bar); padding: 0 10px 0 14px;
+#bar { display: flex; align-items: center; gap: 10px; min-height: var(--h-bar); padding: 0 26px 0 14px;   /* ⋯ over the floating buttons' column (marks.js placeFab) */
   padding-top: env(safe-area-inset-top); --fill: var(--chrome); }   /* .wavebar: its lower edge waves over the terminal */
 .icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 8px; flex: 0 0 auto; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); }
 @media (hover: hover) { .icon:hover { background: var(--chrome-2); color: var(--t-fg); } }
@@ -227,7 +227,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 }
 
 /* ---------- terminal ---------- */
-#term { flex: 1; overflow: auto; padding: 4px 8px; background: var(--t-bg); color: var(--t-fg); outline: none;
+#term { flex: 1; overflow: auto; padding: 4px 18px 4px 8px;   /* the text stops 6 px before the marks on the right edge */ background: var(--t-bg); color: var(--t-fg); outline: none;
   font-family: var(--term-font); font-size: var(--size); line-height: 1.25;
   font-variant-ligatures: none; overscroll-behavior: contain; -webkit-text-size-adjust: none;
   -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; }
@@ -398,7 +398,7 @@ body.ctxtrace #fabs { display: flex; }
   #toast { bottom: calc(68px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }   /* above the floating buttons */
   #updchip { order: 2; align-self: flex-start; margin-top: 9px; }   /* before ⋯, not between ☰ and the title */
   /* the header: title row, then the view switch across the width */
-  #bar { flex-wrap: wrap; gap: 4px 4px; padding: env(safe-area-inset-top) 8px 8px; }
+  #bar { flex-wrap: wrap; gap: 4px 4px; padding: env(safe-area-inset-top) 14px 8px 8px; }   /* ⋯ over the floating buttons' column */
   #current { order: 1; align-self: flex-start; padding-top: 11px; }   /* the title row centers on ☰ and ⋯ (44px) */
   #navbtn, #menubtn { align-self: flex-start; }
   #renamebox { order: 1; }

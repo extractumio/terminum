@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Sent history (AC-90): the messages and commands the user sent, per project (a host and a
 //! folder), in `~/.terminum/sessions/<id>/sent.jsonl` (0600; `meta.json` names the project),
-//! newest last, at most KEEP of them. A coding agent's prompt comes exactly from its hooks
-//! (`terminum hook`); otherwise the page says what stood at the cursor when Enter went. Kept
+//! newest last, at most KEEP of them, each with its pane's key and the history line its text
+//! began on (a hint: tmux numbers lines anew). A coding agent's prompt comes exactly from its
+//! hooks (`terminum hook`) and takes the line the page told for the same text (`hint`);
+//! otherwise the page says what stood at the cursor when Enter went. Kept
 //! out: a line starting with a space (a shell's "not in history"), an empty one, the same text
 //! again from the same pane within AGAIN, values of words named like secrets and secrets' known
 //! shapes (replaced by "[redacted]").
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -23,11 +25,17 @@ const BYTES: usize = 4 << 20;
 /// The most characters of one entry.
 pub const TEXT: usize = 20000;
 const AGAIN: Duration = Duration::from_secs(10);
+/// Lines the page told for a hooked pane's Enter, kept per pane for its hook's prompt.
+const HINTS: usize = 4;
 
 pub struct Sent {
     root: PathBuf,
     /// per pane: the last text kept and when (one Enter seen twice is kept once)
     last: Mutex<HashMap<String, (String, Instant)>>,
+    /// per hooked pane: (the loose first line of what the page saw, its line), newest last
+    hints: Mutex<HashMap<String, VecDeque<(String, i64)>>>,
+    /// per pane: the last question number given (AC-37 Ask), also before it was sent
+    asked: Mutex<HashMap<String, u64>>,
     write: Mutex<()>,
 }
 
@@ -90,11 +98,43 @@ fn pem_out(text: &str) -> String {
 
 impl Sent {
     pub fn new(root: PathBuf) -> Sent {
-        Sent { root, last: Mutex::default(), write: Mutex::default() }
+        Sent { root, last: Mutex::default(), hints: Mutex::default(), asked: Mutex::default(), write: Mutex::default() }
     }
 
     fn file(&self, host: &str, path: &str) -> PathBuf {
         self.root.join(id(host, path)).join("sent.jsonl")
+    }
+
+    /// Where the project's agents' answers ended (page/answers.rs), beside its sent history.
+    fn ends_file(&self, host: &str, path: &str) -> PathBuf {
+        self.root.join(id(host, path)).join("ends.jsonl")
+    }
+
+    /// Keeps that pane `key`'s agent's answer ended at `line` with `text` (AC-90). Blocking.
+    pub fn add_end(&self, host: &str, path: &str, key: &str, line: i64, text: &str) -> Result<(), String> {
+        let entry = json!({"at": crate::auth::store::unix_now(), "key": key, "line": line, "text": text});
+        let _w = self.write.lock();
+        let file = self.ends_file(host, path);
+        self.project_dir(&file, host, path)?;
+        append(&file, &(entry.to_string() + "\n")).map_err(|e| format!("{}: {e}", file.display()))?;
+        trim(&file).map_err(|e| format!("{}: {e}", file.display()))
+    }
+
+    /// The `most` newest answer ends of pane `key`: (text, line), newest first. Blocking.
+    pub fn ends_of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64)> {
+        of_key(&std::fs::read_to_string(self.ends_file(host, path)).unwrap_or_default(), key, most)
+    }
+
+    /// The project's folder (0700) with its meta.json, made once.
+    fn project_dir(&self, file: &Path, host: &str, path: &str) -> Result<(), String> {
+        let dir = file.parent().expect("a folder");
+        if !dir.is_dir() {
+            crate::config::private_dir(&self.root);
+            crate::config::private_dir(dir);
+            let meta = serde_json::to_vec(&json!({"host": host, "path": path})).expect("json");
+            crate::config::write_private(&dir.join("meta.json"), &meta).map_err(|e| e.to_string())?;
+        }
+        Ok(())
     }
 
     /// Keeps `text` sent in pane `key` of project (`host`, `path`); Ok(false) when it is left
@@ -115,24 +155,70 @@ impl Sent {
             }
             last.insert(key.to_string(), (text.clone(), Instant::now()));
         }
-        let mut entry = json!({"at": crate::auth::store::unix_now(), "text": text});
+        let mut entry = json!({"at": crate::auth::store::unix_now(), "text": text, "key": key});
         for k in ["agent", "title", "via"] {
             if let Some(v) = info[k].as_str().filter(|v| !v.is_empty()) {
                 entry[k] = json!(v);
             }
         }
+        if let Some(line) = info["line"].as_i64() {
+            entry["line"] = json!(line);
+        }
         let _w = self.write.lock();
         let file = self.file(host, path);
-        let dir = file.parent().expect("a folder");
-        if !dir.is_dir() {
-            crate::config::private_dir(&self.root);
-            crate::config::private_dir(dir);
-            let meta = serde_json::to_vec(&json!({"host": host, "path": path})).expect("json");
-            crate::config::write_private(&dir.join("meta.json"), &meta).map_err(|e| e.to_string())?;
-        }
+        self.project_dir(&file, host, path)?;
         append(&file, &(entry.to_string() + "\n")).map_err(|e| format!("{}: {e}", file.display()))?;
         trim(&file).map_err(|e| format!("{}: {e}", file.display()))?;
         Ok(true)
+    }
+
+    /// The page saw `text` sent at `line` in hooked pane `key`: its hook's prompt takes the line.
+    pub fn hint(&self, key: &str, text: &str, line: i64) {
+        let first = first_loose(text);
+        if first.is_empty() {
+            return;
+        }
+        let mut hints = self.hints.lock();
+        if hints.len() > 1000 {
+            hints.clear();
+        }
+        let ring = hints.entry(key.to_string()).or_default();
+        ring.push_back((first, line));
+        if ring.len() > HINTS {
+            ring.pop_front();
+        }
+    }
+
+    /// The line the page told for hooked pane `key`'s prompt `text`: the newest whose first
+    /// line's letters and digits begin the prompt's (the page's is what stood in the box).
+    pub fn take_hint(&self, key: &str, text: &str) -> Option<i64> {
+        let prompt = crate::page::bookmarks_find::loose(text);
+        let mut hints = self.hints.lock();
+        let ring = hints.get_mut(key)?;
+        let i = ring.iter().rposition(|(first, _)| prompt.starts_with(first.as_str()))?;
+        ring.remove(i).map(|(_, line)| line)
+    }
+
+    /// The `most` newest entries of a project sent in pane `key` with a line: (text, line),
+    /// newest first. Blocking.
+    pub fn of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64)> {
+        of_key(&std::fs::read_to_string(self.file(host, path)).unwrap_or_default(), key, most)
+    }
+
+    /// Pane `key`'s next question number (AC-37 Ask): one more than the highest "Quote #N"
+    /// it sent (kept in its project's history) or the last given. Blocking.
+    pub fn next_question(&self, host: &str, path: &str, key: &str) -> u64 {
+        let text = std::fs::read_to_string(self.file(host, path)).unwrap_or_default();
+        let sent = text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|v| v["key"] == key)
+            .flat_map(|v| quote_numbers(v["text"].as_str().unwrap_or("")))
+            .max().unwrap_or(0);
+        let mut asked = self.asked.lock();
+        if asked.len() > 1000 {
+            asked.clear();
+        }
+        let n = sent.max(asked.get(key).copied().unwrap_or(0)) + 1;
+        asked.insert(key.to_string(), n);
+        n
     }
 
     /// The `n`-th newest entry of a project (0: the last) and how many there are. Blocking.
@@ -142,6 +228,28 @@ impl Sent {
         let item = lines.len().checked_sub(n + 1).and_then(|i| serde_json::from_str(lines[i]).ok());
         (lines.len(), item)
     }
+}
+
+/// The `most` newest entries of `text` (a .jsonl file's) of pane `key` with a line: (text, line).
+fn of_key(text: &str, key: &str, most: usize) -> Vec<(String, i64)> {
+    text.lines().rev().filter_map(|l| serde_json::from_str::<Value>(l).ok())
+        .filter(|v| v["key"] == key)
+        .filter_map(|v| Some((v["text"].as_str()?.to_string(), v["line"].as_i64()?)))
+        .take(most)
+        .collect()
+}
+
+/// The numbers N of every "Quote #N" in `text`.
+fn quote_numbers(text: &str) -> Vec<u64> {
+    text.match_indices("Quote #").filter_map(|(i, m)| {
+        let digits: String = text[i + m.len()..].chars().take_while(char::is_ascii_digit).take(9).collect();
+        digits.parse().ok()
+    }).collect()
+}
+
+/// The letters and digits of `text`'s first line that has any.
+fn first_loose(text: &str) -> String {
+    text.lines().map(crate::page::bookmarks_find::loose).find(|l| !l.is_empty()).unwrap_or_default()
 }
 
 fn append(file: &Path, line: &str) -> std::io::Result<()> {
@@ -217,6 +325,57 @@ mod tests {
         assert_eq!(redact("curl -H 'Authorization: Bearer abc.def'"), "curl -H 'Authorization: Bearer [redacted]");
         let pem = ["-----BEGIN OPENSSH ", "PRIVATE KEY-----\nb3Blbn\n-----END OPENSSH ", "PRIVATE KEY-----"].concat();
         assert_eq!(redact(&format!("key:\n{pem}\ndone")), "key:\n[redacted]\ndone");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Each entry keeps its pane and line; a hooked pane's prompt takes the line the page told
+    /// for the same text, not another one's (an agent's own turn, a queued prompt).
+    #[test]
+    fn a_pane_and_a_line_kept_and_handed_to_the_hooks_prompt_by_its_text() {
+        let (s, dir) = store();
+        assert!(s.add("local", "/p", "k1", "make test", json!({"line": 120})).unwrap());
+        assert!(s.add("local", "/p", "k2", "ls", json!({})).unwrap());
+        assert!(s.add("local", "/p", "k1", "git status", json!({"line": 180})).unwrap());
+        assert_eq!(s.get("local", "/p", 0).1.unwrap()["key"], "k1");
+        assert_eq!(s.of_pane("local", "/p", "k1", 10), [("git status".to_string(), 180), ("make test".to_string(), 120)]);
+        assert_eq!(s.of_pane("local", "/p", "k1", 1).len(), 1);
+        assert!(s.of_pane("local", "/p", "k2", 10).is_empty(), "no line, no place");
+        s.hint("k1", "fix the\nlint", 300);
+        s.hint("k1", "Explain   this", 310);
+        assert_eq!(s.take_hint("k1", "Background task done: report"), None, "the agent's own turn takes none");
+        assert_eq!(s.take_hint("k2", "fix the lint"), None, "another pane's");
+        assert_eq!(s.take_hint("k1", "explain this, then the rest"), Some(310));
+        assert_eq!(s.take_hint("k1", "fix the\nlint"), Some(300));
+        assert_eq!(s.take_hint("k1", "fix the\nlint"), None, "taken once");
+        for i in 0..6 { s.hint("k3", &format!("p{i}"), i); }
+        assert_eq!((s.take_hint("k3", "p0"), s.take_hint("k3", "p5")), (None, Some(5)), "the newest four kept");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Ask's numbers count up per pane: from the highest it sent, and from the last given
+    /// before it was sent.
+    #[test]
+    fn quote_numbers_count_up_per_pane() {
+        let (s, dir) = store();
+        assert_eq!(s.next_question("local", "/p", "k1"), 1);
+        assert_eq!(s.next_question("local", "/p", "k1"), 2, "given, not sent yet");
+        s.add("local", "/p", "k2", "\nQuote #0041:\n - Quote Start ----\nx", json!({})).unwrap();
+        s.add("local", "/p", "k2", "see Quote #7 and Quote #12a", json!({})).unwrap();
+        assert_eq!(s.next_question("local", "/p", "k2"), 42, "another pane counts its own");
+        assert_eq!(s.next_question("local", "/p", "k1"), 3);
+        assert_eq!(quote_numbers("Quote #0007: Quote # 9 Quote #x Question #8"), [7]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Answer ends (AC-90) are kept beside the sent history, per pane, never in it.
+    #[test]
+    fn answer_ends_kept_per_pane_apart_from_what_was_sent() {
+        let (s, dir) = store();
+        s.add_end("local", "/p", "k1", 120, "All 42 pass.").unwrap();
+        s.add_end("local", "/p", "k2", 7, "Done here.").unwrap();
+        s.add_end("local", "/p", "k1", 300, "The essay is written.").unwrap();
+        assert_eq!(s.ends_of_pane("local", "/p", "k1", 10), [("The essay is written.".to_string(), 300), ("All 42 pass.".to_string(), 120)]);
+        assert_eq!(s.get("local", "/p", 0).0, 0, "not in the sent history");
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -48,6 +48,22 @@ fn the_place_nearest_the_line_wins() {
     assert_eq!(find(&rows, "$ npm test", 90).unwrap().n, 95);
 }
 
+/// The sent history's strip (AC-90): many texts in one read, each nearest its hint, a message
+/// without a hint nearest the end, one too short to tell or not there none.
+#[test]
+fn many_texts_each_nearest_its_hint() {
+    let rows: Vec<(i64, String)> = (100..400).map(|n| (n, match n {
+        110 | 300 => "> fix the tests please".to_string(),
+        200 => "> and the lint too".to_string(),
+        201 => "  of the web app".to_string(),
+        _ => format!("out {n}"),
+    })).collect();
+    let texts = [("fix the tests please".to_string(), Some(120)), ("fix the tests please".into(), Some(290)), ("fix the tests please".into(), None),
+        ("and the lint too\nof the web app".into(), Some(5)), ("yes".into(), Some(110)), ("never printed here".into(), None)];
+    assert_eq!(crate::page::bookmarks_find::find_each(&rows, &texts), [Some(110), Some(300), Some(300), Some(200), None, None]);
+    assert_eq!(crate::page::bookmarks_find::find_each::<String>(&[], &texts[..1]), [None]);
+}
+
 #[test]
 fn gone_text_is_none_and_text_without_letters_keeps_its_line() {
     let rows = [(1, "a"), (2, "b")];

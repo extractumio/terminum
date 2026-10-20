@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Bookmarks from the page (AC-33): `mark` (new {ref, sid, n, text, note, remind}; changed
-//! {ref, id, note, remind}), `unmark`, `locate`, `remind {id, action: close|resolve}` (AC-91); the list goes to a page with its hello. Kept on the Mac in web-bookmarks.json and
+//! {ref, id, note, remind}), `unmark`, `locate {id}` (or `{id, text, n?}`: a sent message's text,
+//! AC-90), `remind {id, action: close|resolve}` (AC-91); the list goes to a page with its hello. Kept on the Mac in web-bookmarks.json and
 //! told to every signed-in page at once; a bookmark is found again by its text.
 
 use std::sync::Arc;
@@ -40,8 +41,15 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
             }
         }
         "locate" => {
-            let (app, page, id) = (app.clone(), page.clone(), msg["id"].as_str().unwrap_or("").to_string());
-            tokio::spawn(async move { locate(&app, &page, &id).await });
+            let (app, page, id) = (app.clone(), page.clone(), msg["id"].as_str().unwrap_or("").chars().take(60).collect::<String>());
+            match msg["text"].as_str() {
+                // a sent message (AC-90): its text in the shown pane, nearest its line, else nearest the end
+                Some(text) => {
+                    let (text, hint) = (text.chars().take(bm::PRINT * 4).collect::<String>(), msg["n"].as_i64());
+                    tokio::spawn(async move { locate_text(&app, &page, &id, &text, hint).await });
+                }
+                None => { tokio::spawn(async move { locate(&app, &page, &id).await }); }
+            }
         }
         _ => mark(app, page, msg),
     }
@@ -125,40 +133,56 @@ async fn locate(app: &Shared, page: &Page, id: &str) {
         page.send_json(&bm::unlocated(id, bm::DELETED));
         return;
     };
-    let Some((key, server, pane, ctl)) = super::find::shown(page).filter(|s| Some(&s.0) == item.key.as_ref()) else {
+    if super::find::shown(page).is_none_or(|s| Some(&s.0) != item.key.as_ref()) {
         page.send_json(&bm::unlocated(id, bm::ELSEWHERE));
         return;
-    };
-    let keep = app.cfg.history;
-    // the rows read and searched, the search off the async workers (thousands of rows)
-    let read = |around| {
-        let (server, pane, ctl, text, n) = (server.clone(), pane.clone(), ctl.clone(), item.text.clone(), item.n);
-        async move {
-            let rows: Vec<(i64, String)> = super::find::rows_of(&server, &pane, &ctl, keep, around).await?.into_iter().map(|(n, t, _)| (n, t)).collect();
-            tokio::task::spawn_blocking(move || bm::find(&rows, &text, n)).await.map_err(|e| e.to_string())
-        }
-    };
-    let mut found = match read(Some(item.n)).await {
-        Ok(at) => at,
-        Err(e) => {
-            page.send_json(&bm::unlocated(id, &format!("The history could not be read: {e}")));
-            return;
-        }
-    };
-    if bm::needs_whole(found.as_ref(), &item.text) {
-        match read(None).await {
-            Ok(at) => found = at.or(found),
-            Err(e) => {
-                page.send_json(&bm::unlocated(id, &format!("The history could not be read: {e}")));
-                return;
-            }
-        }
     }
-    page.send_json(&bm::located(id, &key, found.as_ref()));
+    let Some(found) = search(app, page, id, &item.text, Some(item.n)).await else { return };
     if let Some(f) = found.filter(|f| f.n != item.n) {
         // where to look first next time; the marks move there
         if let Ok(moved) = app.bookmarks.lock().set_n(id, f.n) {
             tell_mark(app, &moved);
         }
     }
+}
+
+/// Where a sent message's `text` is in the shown pane (AC-90): nearest `hint`, its line when it
+/// was sent, else nearest the end.
+async fn locate_text(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i64>) {
+    let _ = search(app, page, id, text, hint).await;
+}
+
+/// Looks for `text` in the shown pane, near `hint` first, the whole history only when its whole
+/// print is not there (tmux renumbers when it drops lines or the scrollback is cleared), and
+/// tells the page `located`; None when it could not be read (the page was told why).
+async fn search(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i64>) -> Option<Option<super::bookmarks_find::Found>> {
+    let Some((key, server, pane, ctl)) = super::find::shown(page) else {
+        page.send_json(&bm::unlocated(id, bm::ELSEWHERE));
+        return None;
+    };
+    let keep = app.cfg.history;
+    // the rows read and searched, the search off the async workers (thousands of rows)
+    let read = |around: Option<i64>| {
+        let (server, pane, ctl, text) = (server.clone(), pane.clone(), ctl.clone(), text.to_string());
+        async move {
+            let rows: Vec<(i64, String)> = super::find::rows_of(&server, &pane, &ctl, keep, around).await?.into_iter().map(|(n, t, _)| (n, t)).collect();
+            tokio::task::spawn_blocking(move || bm::find(&rows, &text, hint.unwrap_or(i64::MAX))).await.map_err(|e| e.to_string())
+        }
+    };
+    let unread = |e: String| page.send_json(&bm::unlocated(id, &format!("The history could not be read: {e}")));
+    let mut found = None;
+    if let Some(h) = hint {
+        match read(Some(h)).await {
+            Ok(at) => found = at,
+            Err(e) => { unread(e); return None; }
+        }
+    }
+    if bm::needs_whole(found.as_ref(), text) {
+        match read(None).await {
+            Ok(at) => found = at.or(found),
+            Err(e) => { unread(e); return None; }
+        }
+    }
+    page.send_json(&bm::located(id, &key, found.as_ref()));
+    Some(found)
 }

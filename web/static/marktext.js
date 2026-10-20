@@ -84,11 +84,12 @@ export function railBox(term) {
 }
 
 /** The marks on the terminal's edge: a bookmark's line placed between the oldest line the
- *  pane can load and its last one, over `height` px; marks closer than `gap` px are one.
- *  items: [{n}]; returns [{top, items}], top to bottom. */
+ *  pane can load and its last one, over `height` px (the rail is the whole loadable history:
+ *  marks move up as it grows); one whose line left the history (tmux's limit) is not drawn;
+ *  marks closer than `gap` px are one. items: [{n}]; returns [{top, items}], top to bottom. */
 export function railSlots(items, oldest, end, height, gap = 8) {
   const span = Math.max(1, end - oldest);
-  const placed = items.map((it) => ({ it, top: Math.round(Math.min(1, Math.max(0, (it.n - oldest) / span)) * height) }))
+  const placed = items.filter((it) => it.n >= oldest && it.n <= end).map((it) => ({ it, top: Math.round(((it.n - oldest) / span) * height) }))
     .sort((a, b) => a.top - b.top);
   const out = [];
   for (const p of placed) {

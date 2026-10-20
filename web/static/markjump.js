@@ -70,7 +70,8 @@ export class Jumper {
     getSelection()?.removeAllRanges();             // a selection would hold the lines back
     this.clear();
     try {
-      this.send({ t: "locate", id: item.id });
+      // a sent message (AC-90) is looked for by its text, nearest the line it was sent on
+      this.send(item.find ? { t: "locate", id: item.id, text: item.text, n: item.n } : { t: "locate", id: item.id });
       const at = await this.wait((m) => m.t === "located" && m.id === item.id);
       if (gone()) return { cancelled: true };
       if (at.n === null || at.n === undefined) return { why: at.why, gone: true };

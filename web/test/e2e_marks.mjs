@@ -81,6 +81,7 @@ function bridge(items) {
       say({ t: "mark", item });
     }
     if (msg.t === "unmark") { items.delete(msg.id); say({ t: "unmark", id: msg.id }); }
+    if (msg.t === "askno") say({ t: "askno", sid: "S1", n: 7 });   // the pane's next quote number (AC-37)
     if (msg.t === "locate") say({ t: "located", id: msg.id, sid: "S1", ...locate(items.get(msg.id)) });
     if (msg.t === "find") {                                           // the bridge's search (search.py), line by line
       const q = msg.q.toLowerCase(), hits = [];
@@ -134,14 +135,14 @@ export async function webMarks(browser, name = "") {
   const { page, errors, sent, say } = await open(browser, { history: HISTORY, first: 2000, folds: FOLDS, screen: ["done"], hook: bridge(items), layout: LAYOUT });
   say({ t: "marks", items: ITEMS, error: null });
 
-  // a selection: [+] at the terminal's right edge, level with it
+  // a selection: [+] at the terminal's right edge (a wide window: left of the floating buttons' column), level with it
   await selectRow(page, "out 2500 lorem");
   const plus = await page.evaluate(() => {
     const b = document.getElementById("markadd").getBoundingClientRect(), t = document.getElementById("term");
     const tr = t.getBoundingClientRect(), s = getSelection().getRangeAt(0).getBoundingClientRect();
     return { visible: !document.getElementById("markadd").hidden, right: Math.round(tr.left + t.clientWidth - b.right), dy: Math.round(b.top + b.height / 2 - (s.top + s.height / 2)) };
   });
-  check(`${at} a selection gets [+] at the terminal's right edge, level with it`, plus.visible && plus.right >= 0 && plus.right < 20 && Math.abs(plus.dy) < 12, JSON.stringify(plus));
+  check(`${at} a selection gets [+] at the terminal's right edge, left of the floating buttons' column, level with it`, plus.visible && plus.right >= 60 && plus.right < 80 && Math.abs(plus.dy) < 12, JSON.stringify(plus));
   const pair = await page.evaluate(() => {
     const c = document.getElementById("markcopy"), a = document.getElementById("markadd");
     const cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect(), cs = getComputedStyle(c);
@@ -151,8 +152,14 @@ export async function webMarks(browser, name = "") {
   check(`${at} a gray Copy button stands just above it; both are blobs, not circles`,
     pair.shown && pair.above && pair.sameX && /^rgb\((\d+), \1, |^rgb\(1[45]\d, 1[56]\d, 1[67]\d\)/.test(pair.gray) && pair.radius !== pair.other, JSON.stringify(pair));
   await page.evaluate(() => { window.copied = []; document.addEventListener("copy", () => window.copied.push(String(getSelection()))); });
-  check(`${at} the bookmarks button gives way while Copy and + stand beside a selection`,
-    await page.evaluate(() => getComputedStyle(document.getElementById("marksfab")).visibility === "hidden"));
+  // Ask (AC-37): while text is selected, under the [+], on a pastel cornflower blue fill; the column stays in sight
+  const asking = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect();
+    return { shown: !g("askfab").hidden, under: r("askfab").top > r("markadd").bottom && r("askfab").top - r("markadd").bottom < 16 && Math.abs(r("askfab").left - r("markadd").left) < 1,
+      icon: !!g("askfab").querySelector("svg") && !g("askfab").textContent.trim(), fill: getComputedStyle(g("askfab")).backgroundColor,
+      marks: getComputedStyle(g("marksfab")).visibility, apart: r("markcopy").right < r("sentfab").left };
+  });
+  check(`${at} Ask shows while text is selected: an icon just under the [+], a pastel cornflower blue; the column stays in sight beside them`,
+    asking.shown && asking.under && asking.icon && /^(rgb\(1[6-8]\d, 1[89]\d, 2[34]\d\)|color\(srgb 0\.[67]\d* 0\.7\d* 0\.9\d*\))$/.test(asking.fill) && asking.marks === "visible" && asking.apart, JSON.stringify(asking));
   await page.click("#markcopy");
   await page.waitForTimeout(800);                                  // past the buttons' grace after a selection goes
   check(`${at} Copy copies the selected text and keeps the selection for a bookmark`,
@@ -168,9 +175,10 @@ export async function webMarks(browser, name = "") {
   const mark = sent.find((m) => m.t === "mark" && !m.id);
   check(`${at} Save sends the line, the text and the note; the dialog closes`,
     mark?.sid === "S1" && mark.n === 2500 && mark.text.startsWith("out 2500 lorem ipsum") && mark.note === "look again" && !await page.evaluate(() => document.getElementById("markbox").open), JSON.stringify(mark));
-  const rail = await page.evaluate(() => [...document.querySelectorAll("#markrail .mk")].map((b) => ({ top: parseFloat(b.style.top), title: b.title, n: b.dataset.count })));
-  check(`${at} the session's bookmarks are marks on the terminal's edge, placed by their lines`,
-    rail.length >= 4 && rail.some((m) => m.title === "look again") && rail.at(-1).title === "look again" && rail[0].top < rail.at(-1).top, JSON.stringify(rail));
+  await page.waitForFunction(() => document.querySelector('#msgrail .dot[title*="look again"]'), null, { timeout: 3000 }).catch(() => {});   // drawn at the next frame
+  const rail = await page.evaluate(() => [...document.querySelectorAll("#msgrail .dot.mark")].map((b) => ({ top: parseFloat(b.style.top), title: b.title })));
+  check(`${at} the session's bookmarks are orange dots on the left strip (a wide window; none on the right edge), placed by their lines`,
+    rail.length >= 4 && rail.at(-1).title.includes("Bookmark: look again") && rail[0].top < rail.at(-1).top && await page.evaluate(() => document.getElementById("markrail").hidden), JSON.stringify(rail));
   const rowsAt = await page.evaluate(() => ["S1", "S2"].map((id) => {
     const it = document.querySelector(`#sessions .item[data-id="${id}"]`), r = (sel) => it.querySelector(sel)?.getBoundingClientRect();
     return { strip: !!it.querySelector(".wave.mark"), text: Math.round(r(".txt").left), top: Math.round(r(".txt").top - it.getBoundingClientRect().top),
@@ -184,7 +192,7 @@ export async function webMarks(browser, name = "") {
   await page.waitForFunction(() => document.querySelector('#sessions .item[data-id="S1"] .t')?.textContent === "Renamed one");
   await page.click("#marksfab");
   const renamed = await page.evaluate(() => ({
-    rail: document.querySelectorAll("#markrail .mk").length, strip: !!document.querySelector('#sessions .item[data-id="S1"] .wave.mark'),
+    rail: document.querySelectorAll("#msgrail .dot.mark").length, strip: !!document.querySelector('#sessions .item[data-id="S1"] .wave.mark'),
     fab: document.getElementById("marksfabn").textContent, listed: document.querySelectorAll("#markpane .mkitem").length,
     head: document.querySelector("#markpane h2")?.textContent }));
   await page.click("#marksfab");
@@ -192,13 +200,19 @@ export async function webMarks(browser, name = "") {
     renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.listed) && renamed.listed >= 6 && renamed.head === "Bookmarks of this session", JSON.stringify(renamed));
 
   // the way back: into older lines not loaded, found by its text (its line moved)
-  await page.click('#markrail .mk[title="ask about the retry loop"]');
+  await page.click('#msgrail .dot[title*="Bookmark: ask about the retry loop"]');
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});
   let m = await marked(page);
   const more = sent.find((x) => x.t === "more" && x.to !== undefined);
   check(`${at} a mark loads the older lines down to its text in one request and marks it in view, a third from the top`,
     more?.before === 2000 && more.to === 110 && m?.text === "the retry loop never resets" && inView(m) && Math.abs(m.top - m.h / 3) < 40, JSON.stringify({ more, m }));
   check(`${at} the bar shows its note`, (await page.textContent("#mbnote")) === "ask about the retry loop" && await page.isVisible("#markbar"));
+  const before = sent.length;
+  await page.click("#mbsend");
+  await page.waitForTimeout(100);
+  const pasted = sent.slice(before).filter((x) => x.t === "in").map((x) => x.data).join("");
+  check(`${at} Insert into chat pastes the note and, under it, the text quoted into the input, no Enter`,
+    pasted.includes("ask about the retry loop\r\r> ") && pasted.includes("the retry loop never resets") && !pasted.replace(/\x1b\[201~$/, "").endsWith("\r"), JSON.stringify(pasted));
   check(`${at} the text keeps its look; a wavy line on its left from its first row to its last marks it`, m?.line === true
     && await page.evaluate(() => !CSS.highlights?.has("bookmark") && getComputedStyle(document.getElementById("markline")).backgroundImage.includes("svg")), JSON.stringify(m));
 
@@ -217,7 +231,7 @@ export async function webMarks(browser, name = "") {
     JSON.stringify({ pane, paneClosed }));
 
   // into a rendered Markdown widget, drawn only once it is near
-  await page.click('#markrail .mk[title="rendered"]');
+  await page.click('#msgrail .dot[title*="Bookmark: rendered"]');
   await page.waitForFunction(() => { const r = document.getElementById("markline")?.range; return r?.startContainer?.getRootNode() instanceof ShadowRoot; }, null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
   await page.waitForTimeout(400);
@@ -233,11 +247,27 @@ export async function webMarks(browser, name = "") {
     sent.some((x) => x.t === "unfold" && x.n === 500) && m?.text === "folded secret line 515" && inView(m), JSON.stringify(m));
   // the list below the sessions has only those no session shows
   await page.click("#marksbtn");
-  const left = await page.evaluate(() => ({ items: [...document.querySelectorAll("#marklist .mkitem .note")].map((n) => n.textContent),
-    count: document.getElementById("markcount").textContent, label: document.querySelector("#marksbtn").textContent.trim() }));
-  await page.click("#marksbtn");
+  const left = await page.evaluate(() => {
+    const b = document.getElementById("marksbtn"), shown = [...b.querySelectorAll("svg")].filter((s) => s.getBoundingClientRect().width > 0);
+    const color = (s) => getComputedStyle(s).color, more = b.querySelector(".more");
+    return { items: [...document.querySelectorAll("#marklist .mkitem .note")].map((n) => n.textContent),
+      count: document.getElementById("markcount").textContent, label: b.textContent.trim(),
+      // a phone: one blob with both icons; a computer: the bookmark, then " / ", the bell, "Reminders"
+      icons: shown.map((s) => s.classList.contains("two") ? "two" : s.classList.contains("bell") ? "bell" : "one"),
+      colors: shown.map(color).concat(shown.flatMap((s) => [...s.querySelectorAll(".bell")].map(color))),
+      mark: getComputedStyle(document.documentElement).getPropertyValue("--mark").trim(),
+      bellFirst: !!more && getComputedStyle(more).display !== "none" ? more.childNodes[1]?.nodeName === "svg" && more.childNodes[2]?.textContent === "Reminders" : null };
+  });
+  await page.waitForTimeout(400);                                  // its opening settled
+  const win = await page.evaluate(() => { const d = document.getElementById("marksdlg"), r = d.getBoundingClientRect();
+    return { open: d.open, right: Math.round(innerWidth - r.right), tall: r.height > innerHeight * 0.8, wide: r.width >= 400, inNav: !!document.querySelector("#nav #marklist") }; });
+  await page.keyboard.press("Escape");
+  check(`${at} "Bookmarks / Reminders" opens a large window on the right (not in the session list); Esc closes it`,
+    win.open && win.right <= 16 && win.tall && win.wide && !win.inNav && !await page.evaluate(() => document.getElementById("marksdlg").open), JSON.stringify(win));
   check(`${at} "Bookmarks / Reminders" below the sessions lists only the orphaned ones, its count theirs`,
     JSON.stringify(left.items) === '["closed one"]' && left.count === "1" && /^Bookmarks \/ Reminders/.test(left.label), JSON.stringify(left));
+  check(`${at} its button: the bookmark orange, the bell pink, before "Reminders" on a computer, both in one blob on a phone`,
+    left.colors.length === 2 && left.colors[0] !== left.colors[1] && (left.bellFirst === null ? left.icons.join() === "two" : left.icons.join() === "one,bell" && left.bellFirst), JSON.stringify(left));
 
   // search (AC-58): the magnifier, atop the buttons' column (the bookmarks' set apart below), opens a field; Find goes to the first match
   const at58 = at.replace("AC-57", "AC-58");
@@ -310,7 +340,7 @@ export async function webMarks(browser, name = "") {
   check(`${at} its text not on the line the bridge named: the bar says so`, /not found there/.test(await page.textContent("#mbwhy")));
 
   // the view is the user's again: the end of the output, another pane
-  await page.click('#markrail .mk[title="ask about the retry loop"]');
+  await page.click('#msgrail .dot[title*="Bookmark: ask about the retry loop"]');
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});
   await page.click("#bottom");
   say({ t: "screen", sid: "S1", full: false, n: 2, cols: 80, rows: 2, ch: [[0, line("after the jump")]] });
@@ -337,8 +367,9 @@ export async function webMarks(browser, name = "") {
   say({ t: "projects", items: [] });                // the project gone (deleted, or its last session closed): terminumd orphans its bookmark
   say({ t: "mark", item: { ...ITEMS[0], project: "P", orphaned: at0 + 10 } });
   await page.waitForFunction(() => document.getElementById("markcount").textContent === "2");
+  await page.waitForFunction(() => !document.querySelector('#msgrail .dot[title*="Bookmark: ask about the retry loop"]'), null, { timeout: 3000 }).catch(() => {});   // the strip: at the next frame
   check(`${at} its project gone, the bookmark is orphaned: off the session, in the list below the sessions`,
-    await page.evaluate(() => !document.querySelector('#markrail .mk[title="ask about the retry loop"]')), "");
+    await page.evaluate(() => !document.querySelector('#msgrail .dot[title*="Bookmark: ask about the retry loop"]')), "");
 
   // lines that are gone, a session that closed
   await fromPane(page, "gone");
@@ -348,8 +379,8 @@ export async function webMarks(browser, name = "") {
   await page.click("#marksbtn");
   const closed = await page.evaluate(() => [...document.querySelectorAll("#marklist .mkitem")].find((b) => b.textContent.includes("closed one"))?.querySelector(".closed")?.textContent);
   await page.click('#marklist .mkitem:has-text("closed one")');
-  check(`${at} an orphaned bookmark (its session closed) is listed as orphaned and shows its text`,
-    closed === "orphaned" && /project or its session is gone/.test(await page.textContent("#mbwhy")) && (await page.textContent("#mbtext")) === "from a session that closed");
+  check(`${at} an orphaned bookmark (its session closed) is listed as orphaned; picked, the window closes and its text shows`,
+    closed === "orphaned" && !await page.evaluate(() => document.getElementById("marksdlg").open) && /project or its session is gone/.test(await page.textContent("#mbwhy")) && (await page.textContent("#mbtext")) === "from a session that closed");
 
   // Delete asks again; a save the Mac refuses keeps the dialog with why
   await page.click("#mbdel");
@@ -369,7 +400,7 @@ export async function webMarks(browser, name = "") {
 
   // a selection in a widget's rendered text, by a mouse drag (WebKit keeps a script's range in a
   // shadow root out of the document's selection); the widget is drawn once near the view
-  await page.click('#markrail .mk[title="rendered"]');
+  await page.click('#msgrail .dot[title*="Bookmark: rendered"]');
   await page.waitForFunction(() => { const r = document.getElementById("markline")?.range; return r?.startContainer?.getRootNode() instanceof ShadowRoot; }, null, { timeout: 8000 }).catch(() => {});
   await page.click("#mbclose");
   const box = await page.evaluate(() => {
@@ -393,6 +424,56 @@ export async function webMarks(browser, name = "") {
   check(`${at} text selected in a rendered widget gets [+] too, with its rendered text`, /^A small tool/.test(fromWidget ?? ""), String(fromWidget));
   if (picked) await page.click('#markbox button[value="cancel"]');
 
+  // Ask (AC-37): the dialog shows the selection; Add to Chat is off until a question is typed; the
+  // quote numbered by terminumd, the question and a rule pasted at the cursor, no Enter; Esc pastes nothing
+  await page.click("#bottom").catch(() => {});
+  await selectRow(page, "out 2500 lorem");
+  await page.waitForSelector("#askfab:not([hidden])", { timeout: 3000 }).catch(() => {});
+  await page.click("#askfab");
+  await page.waitForSelector("#askbox[open]", { timeout: 3000 }).catch(() => {});
+  const dialog = await page.evaluate(() => ({ text: document.getElementById("asktext").textContent, off: document.querySelector("#askbox .primary").disabled,
+    focused: document.activeElement?.id, gone: document.getElementById("askfab").hidden }));
+  await page.fill("#askq", "why does it never reset?");
+  let k = sent.length;
+  await page.click('#askbox button[value="add"]');
+  await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
+  const asked = sent.slice(k), quoted = asked.filter((x) => x.t === "in").map((x) => x.data).join("");
+  check(`${at} Ask: a dialog with the selection, Add to Chat off until a question; the quote numbered by terminumd, the question and a rule pasted, no Enter`,
+    dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
+    && quoted.startsWith("\x1b[200~\r\rQuote #0007:\r - Quote Start ----\r«out 2500 lorem ipsum") && quoted.endsWith("»\r- Quote End ----\rwhy does it never reset?\r----\r\r\x1b[201~"),
+    JSON.stringify({ dialog, quoted }));
+  // in a coding agent's box the blank lines before and after are typed (Ctrl+J), the paste between them
+  say({ t: "layout", groups: [{ ...LAYOUT[0], items: [{ ...LAYOUT[0].items[0], agent: "claude", shell: false }, LAYOUT[0].items[1]] }] });
+  await page.waitForTimeout(150);
+  await selectRow(page, "out 2500 lorem");
+  await page.click("#askfab");
+  await page.fill("#askq", "and now?");
+  k = sent.length;
+  await page.click('#askbox button[value="add"]');
+  await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
+  const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data);
+  check(`${at} Ask in a coding agent's box: two Ctrl+J, the paste, two Ctrl+J (a blank line before and after, nothing sent)`,
+    typed.length === 3 && typed[0] === "\n\n" && typed[2] === "\n\n" && typed[1].startsWith("\x1b[200~Quote #0007:\r") && typed[1].endsWith("and now?\r----\x1b[201~"), JSON.stringify(typed));
+  say({ t: "layout", groups: LAYOUT });
+  await page.waitForTimeout(150);
+  await selectRow(page, "out 2500 lorem");
+  await page.click("#askfab");
+  await page.fill("#askq", "never mind");
+  k = sent.length;
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(200);
+  check(`${at} Ask: Esc closes it and pastes nothing`, !await page.evaluate(() => document.getElementById("askbox").open) && !sent.slice(k).some((x) => x.t === "in" || x.t === "askno"));
+  // a narrow window: Ask under the [+] there too (the column's buttons give way)
+  await page.setViewportSize({ width: 800, height: 900 });
+  await page.waitForTimeout(300);
+  await selectRow(page, "out 2500 lorem");
+  await page.waitForTimeout(200);
+  const narrow = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect();
+    return { above: r("askfab").top >= r("markadd").bottom && r("askfab").top - r("markadd").bottom < 16, sameX: Math.abs(r("askfab").left - r("markadd").left) < 1,
+      shown: !document.getElementById("askfab").hidden, sent: getComputedStyle(document.getElementById("sentfab")).visibility }; });
+  check(`${at} Ask on a narrow window: just under the [+]`, narrow.shown && narrow.above && narrow.sameX && narrow.sent === "hidden", JSON.stringify(narrow));
+  await page.evaluate(() => getSelection().removeAllRanges());
+  await page.setViewportSize({ width: 1400, height: 900 });
   check(`${at} no page error or CSP violation`, !errors.length && !(await page.evaluate(() => window.csp)).length, JSON.stringify([errors, await page.evaluate(() => window.csp)]));
   await page.close();
 }

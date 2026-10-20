@@ -34,6 +34,11 @@ export const openReminder = (i) => !!i.remind && !i.resolved;
 /** The selected text as a Markdown quote, its lines kept. */
 export const quote = (text) => text.split("\n").map((l) => `> ${l}`).join("\n");
 
+/** The label of the button that pastes into the shown pane's input, one look everywhere (.tochat). */
+export const INSERT = "Insert into chat";
+/** What Insert into chat pastes for a bookmark or a reminder: the note, under it its text quoted. */
+export const chatText = (item) => (item.note ? `${item.note}\n\n` : "") + quote(item.text);
+
 // Delete asks again: a second press within 3 s deletes.
 export function armed(button, label, act) {
   let timer = 0;
@@ -53,9 +58,10 @@ export class Marks {
   /** view, widgets, term: the terminal's; send(msg) to the bridge; sid(): the pane shown;
    *  alive(sid): an open pane's title now (renamed or not), null when it closed; pick(sid): show it (and close the drawer); toast(text);
    *  onChange(): the bookmarks changed (the list's strips, reminders); copy(text): to the clipboard;
-   *  projects(): terminumd's (AC-92). onPlaced (set after): the floating buttons were placed (their panes follow). */
-  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll }) {
-    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, projects, openAll });
+   *  projects(): terminumd's (AC-92); toChat(text): pasted into the shown pane's input (Insert into chat).
+   *  onPlaced (set after): the floating buttons were placed (their panes follow). */
+  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll, toChat }) {
+    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, projects, openAll, toChat });
     this.listKind = "bookmark";  // what the list below the sessions shows: bookmarks or reminders
     this.items = new Map();
     this.replies = new Map();    // ref -> resolve, for the dialog
@@ -63,18 +69,21 @@ export class Marks {
     this.jumper = new Jumper({ view, widgets, term, send, sid });
     this.search = new Find({ view, widgets, term, send, sid });   // its magnifier stands beside the bookmarks' button
     this.search.onOpen = () => this.togglePane(false);                // one of the two at a time
-    markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), view,
-      onPick: (sel) => this.edit(null, sel), onCopy: copy });
+    markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
+      onPick: (sel) => this.edit(null, sel), onCopy: copy, onAsk: (text) => this.onAsk?.(text) });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
     $("markbox").addEventListener("close", () => { this.editing = null; });
     for (const b of $("markkind").querySelectorAll("button")) b.onclick = () => this.setKind(b.dataset.kind);
     $("markbox").addEventListener("cancel", (e) => { if (this.saving) e.preventDefault(); });   // Esc while saving
     $("mbclose").onclick = () => this.hideBar();
     $("mbedit").onclick = () => this.shown && this.edit(this.shown);
+    $("mbsend").onclick = () => this.shown && this.toChat(chatText(this.shown));
     $("mbprev").onclick = () => this.step(-1);
     $("mbnext").onclick = () => this.step(1);
     armed($("mbdel"), () => ["Delete"], () => { if (this.shown) this.send({ t: "unmark", id: this.shown.id }); });
     $("marksbtn").onclick = () => this.toggleList();
+    $("marksdlgclose").onclick = () => this.toggleList(false);
+    $("marksdlg").addEventListener("close", () => $("marksbtn").setAttribute("aria-expanded", "false"));
     $("marksfab").onclick = () => this.togglePane();
     $("marksfab").addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") this.togglePane(false); });
@@ -139,7 +148,7 @@ export class Marks {
   }
   /** The shown pane's project, terminumd's (none outside projects). */
   hereProject() { this.here(); return this.projects().find((p) => p.id === this.hereOf.project) ?? null; }
-  busy() { return $("markbox").open; }
+  busy() { return $("markbox").open || $("askbox").open; }   // a dialog of theirs (Ask: ask.js) has the keys
   changed() { this.rev = (this.rev ?? 0) + 1; this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); }
   /** The shown session's own bookmarks it shows (not orphaned), top to bottom: its marks and the bar's steps. */
   mine() { return this.here().filter((i) => i.sid === this.sid()).sort((a, b) => a.n - b.n); }
@@ -205,6 +214,13 @@ export class Marks {
     if (i >= 0 && mine.length) this.jump(mine[(i + d + mine.length) % mine.length]);
   }
 
+  /** Brings a sent message's `text` into view in the shown pane (AC-90): terminumd finds it
+   *  nearest line `n` (its hint), else nearest the end. {ok}, {why} or {cancelled}. */
+  jumpText({ text, n }) {
+    this.hideBar();
+    return this.jumper.go({ id: `sent:${Math.random().toString(36).slice(2)}`, sid: this.sid(), text, n, find: true });
+  }
+
   /** Shows item's pane and brings its text into view; the bar says how it went. */
   async jump(item) {
     if (item.orphaned) return this.showBar(item, "Its project or its session is gone: here is what was selected.");
@@ -226,7 +242,8 @@ export class Marks {
     this.placeFab();
     const rail = $("markrail"), term = this.term, v = this.view, mine = this.mine();
     const box = railBox(term);
-    if (!mine.length || !box || !v.theme) { rail.hidden = true; this.railKey = ""; return; }
+    // a wide window has them on the strip at the left (promptrail.js)
+    if (!mine.length || !box || !v.theme || !matchMedia(FLOATING).matches) { rail.hidden = true; this.railKey = ""; return; }
     const { css, h } = box;
     const slots = railSlots(mine, v.oldest, v.top + v.screen.length, h - 14);
     const key = css + JSON.stringify(slots);       // the screen changes often; the marks seldom
@@ -250,10 +267,11 @@ export class Marks {
 
   // ---------- those no session shows, below the sessions ----------
 
-  toggleList(open = $("marklist").hidden) {
-    $("marklist").hidden = !open;
-    $("marksbtn").setAttribute("aria-expanded", String(open));
-    if (open) this.drawList();
+  /** Opens or closes the window of those no session shows (a large one on the right). */
+  toggleList(open = !$("marksdlg").open) {
+    if (open && !$("marksdlg").open) { $("marksdlg").showModal(); this.drawList(); }
+    else if (!open && $("marksdlg").open) $("marksdlg").close();
+    $("marksbtn").setAttribute("aria-expanded", String($("marksdlg").open));
   }
 
   /** The bookmarks or the reminders (the list's segment) no session shows, newest first: orphaned
@@ -263,7 +281,7 @@ export class Marks {
     const panes = this.panes(), of = projectsOf(this.projects());
     const left = [...this.items.values()].filter((b) => nowhere(b, panes, of));
     $("markcount").textContent = left.length ? String(left.length) : "";
-    if ($("marklist").hidden) return;
+    if (!$("marksdlg").open) return;
     const reminders = this.listKind === "reminder";
     const all = left.filter((b) => !!b.remind === reminders).sort((a, b) => b.at - a.at);
     const seg = el("div", "seg mkkind");
@@ -304,7 +322,7 @@ export class Marks {
       if (all && item.orphaned) meta.append(el("span", "closed", "orphaned"));
       else if (all && now === null) meta.append(el("span", "closed", away));
       b.append(meta);
-      b.onclick = () => { this.togglePane(false); this.jump(item); };
+      b.onclick = () => { this.togglePane(false); if (all) this.toggleList(false); this.jump(item); };
       const del = el("button", "mkdel");
       del.type = "button";
       del.title = "Delete this bookmark";
@@ -337,9 +355,9 @@ export class Marks {
     if (!shown) return;
     const left = `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
     const low = matchMedia(FLOATING).matches ? LOW : [], shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
-    let y = term.offsetTop + 8;
+    let y = term.offsetTop + 14;
     for (const group of [PLAIN, COLORED]) {
-      for (const b of shownOf(group.filter((id) => !low.includes(id)))) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 8; }
+      for (const b of shownOf(group.filter((id) => !low.includes(id)))) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 12; }
       y += 8;                                      // the colored ones set apart
     }
     let x = term.offsetLeft + term.clientLeft + 12;

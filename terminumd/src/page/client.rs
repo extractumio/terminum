@@ -78,7 +78,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
                 error(page, e, None);
             }
         }
-        "sent" | "sentget" => super::sent::handle(app, page, t, &msg).await,
+        "sent" | "sentget" | "sentmarks" | "askno" => super::sent::handle(app, page, t, &msg).await,
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),

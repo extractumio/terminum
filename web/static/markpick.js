@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The [+] beside a selection in the terminal (AC-57), and Copy above it: they stand at the
-// terminal's right edge, the [+] level with the selection's end, while text is selected. It lies outside the terminal's rows
+// terminal's right edge (a wide window: left of the floating buttons' column), the [+] level with
+// the selection's end, while text is selected; Ask (AC-37) shows then too, under the [+]. It lies outside the terminal's rows
 // (their taps, copying and line maths stay as they are). The selection is taken while it is
 // there: a tap on iOS clears it first, and the terminal then catches up and moves its lines.
 import { selectedText } from "./seltext.js";
 
 const KEEP_FOR = 600;          // ms the buttons stay after the selection went (a tap still lands)
 const AFTER_COPY = 5000;       // … after Copy: the [+] may still be wanted
+const FLOATING = "(hover: none), (max-width: 860px)";   // marks.js's: the column of floating buttons is not there
+const COLUMN = 58;             // px from the terminal's right edge to its floating buttons' column (marks.js placeFab)
 
 // The row a range starts on: in a widget's shadow root (AC-56), the row that holds the widget.
 function startRow(range) {
@@ -61,24 +64,28 @@ export function selection(term, view) {
   return { n, text, raw, rect: rects.at(-1) ?? range.getBoundingClientRect() };
 }
 
-/** Shows `button` beside the selection in `term` (within `main`) and `copyButton` above it; a
- *  press calls onPick({n, text}) or onCopy(text) (the text as taken while it was selected). */
-export function markPicker({ term, main, button, copyButton, view, onPick, onCopy }) {
+/** Shows `button` beside the selection in `term` (within `main`), `copyButton` above it and
+ *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text) (the text
+ *  as taken while it was selected). */
+export function markPicker({ term, main, button, copyButton, askButton, view, onPick, onCopy, onAsk }) {
   let kept = null, hide = 0, frame = 0, copied = false;
-  const show = (on) => { button.hidden = copyButton.hidden = !on; };
+  const floating = matchMedia(FLOATING);
+  const show = (on) => { button.hidden = copyButton.hidden = askButton.hidden = !on; };
   const gone = () => { clearTimeout(hide); hide = 0; kept = null; copied = false; show(false); };
   const place = () => {
     frame = 0;
     if (!kept) return;
     const t = term.getBoundingClientRect(), m = main.getBoundingClientRect(), r = kept.rect;
     const h = button.offsetHeight || 32, gap = 8;
-    // the pair inside the terminal; the [+] level with the selection unless an edge is near
-    const y = Math.min(Math.max(r.top + r.height / 2 - h / 2, t.top + 4 + h + gap), t.bottom - h - 4);
-    const w = button.offsetWidth || 32;              // left of a scroll bar (clientWidth ends there)
-    const x = `${Math.round(t.left - m.left + term.clientLeft + term.clientWidth - w - 6)}px`;
+    // inside the terminal, the [+] level with the selection unless an edge is near (Copy above it, Ask under it)
+    const ah = askButton.offsetHeight || h;
+    const y = Math.min(Math.max(r.top + r.height / 2 - h / 2, t.top + 4 + h + gap), t.bottom - h - gap - ah - 4);
+    const w = button.offsetWidth || 32;              // left of a scroll bar (clientWidth ends there), or of the column
+    const x = `${Math.round(t.left - m.left + term.clientLeft + term.clientWidth - w - (floating.matches ? 6 : COLUMN + 10))}px`;
     button.style.top = `${Math.round(y - m.top)}px`;
     copyButton.style.top = `${Math.round(y - h - gap - m.top)}px`;
     button.style.left = copyButton.style.left = x;
+    Object.assign(askButton.style, { top: `${Math.round(y + h + gap - m.top)}px`, left: x });
   };
   const later = () => { if (!frame) frame = requestAnimationFrame(place); };
   let pending = 0;                                 // a drag changes the selection on every move: once a frame
@@ -106,7 +113,13 @@ export function markPicker({ term, main, button, copyButton, view, onPick, onCop
     }
     later();
   }, { passive: true });
-  for (const b of [button, copyButton]) b.addEventListener("mousedown", (e) => e.preventDefault());   // the selection stays
+  for (const b of [button, copyButton, askButton]) b.addEventListener("mousedown", (e) => e.preventDefault());   // the selection stays
+  askButton.addEventListener("click", () => {
+    if (!kept) return;
+    const text = kept.raw;
+    gone();
+    onAsk(text);
+  });
   button.addEventListener("click", () => {
     if (!kept) return;
     const { n, text } = kept;

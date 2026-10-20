@@ -3,12 +3,13 @@
 // terminumd puts one up each time an agent there ends a turn; then the pale fuchsia button under the
 // bookmarks' blinks while a session of the project is shown, until it is pressed (one seen there
 // blinks again only once up anew). It opens the project's open reminders as Markdown, those up
-// first: Open shows its session at its text, Close puts it down until the next turn ends,
+// first: Open shows its session at its text, Insert into chat pastes its note and text into the shown
+// pane's input, Close puts it down until the next turn ends,
 // Resolve ends it, Delete (twice) removes it. The session list marks a session with open reminders
 // by a wavy pink line. The pane is the shown session's: it closes when another is shown.
 import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
-import { armed, el, openReminder, quote, when } from "./marks.js";
+import { armed, chatText, el, INSERT, openReminder, quote, when } from "./marks.js";
 import { markdownInto } from "./widgetui.js";
 
 const $ = (id) => document.getElementById(id);
@@ -55,6 +56,7 @@ export function reminders({ marks, send }) {
       const acts = el("div", "rmacts");
       const act = (label, fn, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; acts.append(b); };
       act("Open", () => { pane.toggle(false); marks.jump(item); });
+      act(INSERT, () => { pane.toggle(false); marks.toChat(chatText(item)); }, "tochat");
       if (item.due) act("Close", () => send({ t: "remind", id: item.id, action: "close" }));
       const del = el("button", "del", "Delete");                    // asks again: a second press deletes it for good
       del.type = "button";

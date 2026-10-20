@@ -136,6 +136,15 @@ fn text_then_paren(tail: &[char], start: usize) -> bool {
     })
 }
 
+/// Whether `row` is a turn's closing line: Claude Code's "✻ Worked for 2m 12s · …" (a mark, a
+/// verb, " for ", a duration) or Codex's "  Worked for 43s • 11:04" (no mark).
+pub fn turn_line(row: &str) -> bool {
+    let t = row.trim_start();
+    let t = t.strip_prefix(|c: char| matches!(c, '\u{2722}'..='\u{273d}' | '\u{b7}' | '*')).map_or(t, |r| r.strip_prefix(' ').unwrap_or(r));
+    let rest = t.to_lowercase();
+    rest.split_once(" for ").is_some_and(|(verb, after)| !verb.is_empty() && !verb.contains(' ') && after.starts_with(|c: char| c.is_ascii_digit()))
+}
+
 /// Whether Claude Code's newest turn line says its subagents still run: "✻ Waiting for 2
 /// background agents to finish" (also "1 background agent and 1 dynamic workflow", "dynamic
 /// workflows"; measured in its code), not a later "✻ Worked for 3m 2s" (a turn after they ended).
@@ -163,18 +172,23 @@ fn background_work(tail: &str) -> bool {
 /// 1 monitor · ← 1 agent": each item exactly a number and a word of BACKGROUND. It is live; a turn
 /// line's "· 1 shell still running" stays when the shell has ended.
 pub fn background_tasks(rows: &[String]) -> bool {
-    let rule = |r: &String| r.trim_start().starts_with("\u{2500}\u{2500}");
-    let Some(bottom) = rows.iter().rposition(rule) else { return false };
-    let Some(top) = rows[..bottom].iter().rposition(rule) else { return false };
-    if !rows[top + 1].trim_start().starts_with('\u{276f}') {
-        return false;                                       // not Claude Code's input box (Codex: "›")
-    }
+    let Some(bottom) = claude_box(rows) else { return false };
     rows[bottom + 1..].iter().take(FOOTER).any(|r| r.split(" \u{b7} ").flat_map(|part| part.split(", ")).any(|item| {
         let item = item.trim().trim_start_matches(|c: char| !c.is_alphanumeric()).to_lowercase();   // a mark before ("◇ 1 cloud session")
         let Some((n, what)) = item.split_once(' ') else { return false };
         let what = what.trim_end();
         n.parse::<u32>().is_ok_and(|n| n > 0) && BACKGROUND.iter().any(|w| what == *w || what.strip_suffix('s') == Some(*w))
     }))
+}
+
+/// The bottom rule of Claude Code's input box (a rule, "❯ " and what is typed, a rule), when it is
+/// on the screen: a question of its replaces the box, so words above it are the transcript.
+/// (Codex's composer: "›", which its menus start with too.)
+fn claude_box(rows: &[String]) -> Option<usize> {
+    let rule = |r: &String| r.trim_start().starts_with("\u{2500}\u{2500}");
+    let bottom = rows.iter().rposition(rule)?;
+    let top = rows[..bottom].iter().rposition(rule)?;
+    rows[top + 1].trim_start().starts_with('\u{276f}').then_some(bottom)
 }
 
 /// The state from the raw title and the screen's last rows.
@@ -187,7 +201,9 @@ pub fn state_of(title: &str, rows: &[String]) -> State {
 pub fn read(title: &str, rows: &[String]) -> (State, bool) {
     let rows: Vec<String> = rows.iter().map(|r| r.replace('\0', " ")).collect();   // skipped cells
     let tail = rows[rows.len().saturating_sub(ROWS)..].join("\n");
-    if codex_asks(title) || any_of(&rows[rows.len().saturating_sub(ASK_ROWS)..].join("\n"), &WAITING) {
+    // a question near the bottom; with Claude Code's input box there, only under it (its footer)
+    let ask_from = rows.len().saturating_sub(ASK_ROWS).max(claude_box(&rows).map_or(0, |b| b + 1));
+    if codex_asks(title) || any_of(&rows[ask_from..].join("\n"), &WAITING) {
         return (State::Waiting, false);
     }
     let chars: Vec<char> = tail.chars().collect();
@@ -296,6 +312,8 @@ mod tests {
         assert_eq!(state_of("", &with_footer(&["✻ Thinking… (12s · esc to interrupt)"])), Working);
         assert_eq!(state_of("", &rows(&["Allow edit to src/a.rs?"])), Waiting);
         assert_eq!(state_of("", &rows(&["Continue? [Y/n]"])), Waiting, "case-insensitive");
+        let told = with_footer(&["  \"Would you like to run the following command?\",", "  do you want to (y/n)", "✻ Thinking… (esc to interrupt)"]);
+        assert_eq!(state_of("◐ x", &told), Working, "a question's words in the transcript, above the input box, ask nothing");
     }
 
     #[test]

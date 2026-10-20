@@ -1,9 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Sent history from the page (AC-90): `sent {text, agent}` keeps what stood at the cursor of
-//! the shown pane when the user pressed Enter (a coding agent whose hooks spoke gives its prompt
-//! itself, sock.rs, and its pane's are dropped); `sentget {n}` answers `sentone {sid, n, total,
-//! item, host, path}`, the n-th newest of the shown pane's project. Every page hears `sentnew
-//! {host, path}` when a project gained one.
+//! Sent history from the page (AC-90): `sent {text, agent, line}` keeps what stood at the
+//! cursor of the shown pane when the user pressed Enter, and the history line it began on (a
+//! coding agent whose hooks spoke gives its prompt itself, sock.rs: the page's only leaves its
+//! line for it); `sentget {n}` answers `sentone {sid, n, total, item, host, path}`, the n-th
+//! newest of the shown pane's project; `sentmarks` answers `sentmarks {sid, items: [{n, text}],
+//! ends: [{n, text}]}`, where the newest MARKS of the shown pane's own messages and of its
+//! agent's answers' ends (answers.rs) stand now, found by their text near their line.
+//! `askno` answers `askno {sid, n}`, the shown pane's next question number (AC-37 Ask). Every
+//! page hears `sentnew {host, path, key}` when a project gained one (in pane `key`).
 
 use std::sync::Arc;
 
@@ -18,10 +22,14 @@ pub async fn keep(app: &Shared, host: &str, path: &str, key: &str, text: &str, m
     if info["title"].is_null() {
         info["title"] = json!(title_of(app, key));
     }
+    if info["line"].is_null() && let Some(line) = app.sent.take_hint(key, text) {
+        info["line"] = json!(line);                     // a hook's prompt: where the page saw it
+    }
     let (a, host, path, key, text) = (app.clone(), host.to_string(), path.to_string(), key.to_string(), text.to_string());
+    let k = key.clone();
     let (h, p) = (host.clone(), path.clone());
     match tokio::task::spawn_blocking(move || a.sent.add(&h, &p, &key, &text, info)).await.map_err(|e| e.to_string()).and_then(|r| r) {
-        Ok(true) => app.pages.tell(&json!({"t": "sentnew", "host": host, "path": path}).to_string()),
+        Ok(true) => app.pages.tell(&json!({"t": "sentnew", "host": host, "path": path, "key": k}).to_string()),
         Ok(false) => {}
         Err(e) => tracing::warn!(event = "sent.unsaved", error = %e),
     }
@@ -33,9 +41,20 @@ fn title_of(app: &Shared, key: &str) -> String {
 
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     let agent = msg["agent"].as_str().filter(|a| !a.is_empty());
-    let hooked = page.state.lock().shown.as_ref().is_some_and(|s| app.hooks.has(&s.key));
+    let shown_key = page.state.lock().shown.as_ref().map(|s| s.key.clone());
+    let hooked = shown_key.as_ref().is_some_and(|k| app.hooks.has(k));
+    let line = msg["line"].as_i64();
     if t == "sent" && agent.is_some() && hooked {
-        return;                                         // its hooks give the prompt exactly
+        // its hooks give the prompt exactly; where it stood is the page's
+        if let (Some(key), Some(line), Some(text)) = (shown_key, line, msg["text"].as_str()) {
+            app.sent.hint(&key, text, line);
+        }
+        return;
+    }
+    if t == "sentmarks" {
+        let (app, page) = (app.clone(), page.clone());
+        tokio::spawn(async move { marks(&app, &page).await });
+        return;
     }
     // the project: the pane's host ("local" for every server of this Mac) and folder
     let (key, host, path) = match super::client::shown_cwd(page).await {
@@ -45,13 +64,48 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
             return;
         }
     };
+    if t == "askno" {
+        let (a, h, p, k) = (app.clone(), host.clone(), path.clone(), key.clone());
+        let n = tokio::task::spawn_blocking(move || a.sent.next_question(&h, &p, &k)).await.unwrap_or(1);
+        page.send_json(&json!({"t": "askno", "sid": key, "n": n}));
+        return;
+    }
     if t == "sent" {
         let text = msg["text"].as_str().unwrap_or("");
-        return keep(app, &host, &path, &key, text, json!({"agent": agent, "via": "page"})).await;
+        return keep(app, &host, &path, &key, text, json!({"agent": agent, "via": "page", "line": line})).await;
     }
     let n = msg["n"].as_u64().unwrap_or(0) as usize;
     let a = app.clone();
     let (h, p) = (host.clone(), path.clone());
     let (total, item) = tokio::task::spawn_blocking(move || a.sent.get(&h, &p, n)).await.unwrap_or((0, None));
     page.send_json(&json!({"t": "sentone", "sid": key, "n": n, "total": total, "item": item, "host": host, "path": path}));
+}
+
+/// The newest messages of the shown pane's own placed on the sent history's strip (AC-90).
+const MARKS: usize = 200;
+
+/// Where the shown pane's newest MARKS messages stand now: each found by its text nearest the
+/// line it was sent on (one not found is left out); read beside typing.
+async fn marks(app: &Shared, page: &Arc<Page>) {
+    let Some((key, server, pane, ctl)) = super::find::shown(page) else { return };
+    let Ok((_, s, path)) = super::client::shown_cwd(page).await else { return };
+    let (a, host, k) = (app.clone(), s.name.clone(), key.clone());
+    let (sent, ends) = tokio::task::spawn_blocking(move || (a.sent.of_pane(&host, &path, &k, MARKS), a.sent.ends_of_pane(&host, &path, &k, MARKS))).await.unwrap_or_default();
+    let (items, ends): (Vec<Value>, Vec<Value>) = if sent.is_empty() && ends.is_empty() { Default::default() } else {
+        let rows = match super::find::rows_of(&server, &pane, &ctl, app.cfg.history, None).await {
+            Ok(rows) => rows,
+            Err(e) => return tracing::debug!(event = "sentmarks.unread", error = %e),
+        };
+        tokio::task::spawn_blocking(move || {
+            let rows: Vec<(i64, String)> = rows.into_iter().map(|(n, t, _)| (n, t)).collect();
+            let placed = |list: Vec<(String, i64)>| -> Vec<Value> {
+                let texts: Vec<(String, Option<i64>)> = list.iter().map(|(t, l)| (t.clone(), Some(*l))).collect();
+                super::bookmarks_find::find_each(&rows, &texts).into_iter().zip(list)
+                    .filter_map(|(n, (text, _))| Some(json!({"n": n?, "text": text.lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(120).collect::<String>()})))
+                    .collect()
+            };
+            (placed(sent), placed(ends))
+        }).await.unwrap_or_default()
+    };
+    page.send_json(&json!({"t": "sentmarks", "sid": key, "items": items, "ends": ends}));
 }

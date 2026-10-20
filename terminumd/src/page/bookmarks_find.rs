@@ -29,6 +29,20 @@ struct Joined {
 }
 
 impl Joined {
+    /// The rows' loose text, joined.
+    fn of<S: AsRef<str>>(rows: &[(i64, S)]) -> Joined {
+        let mut j = Joined { text: String::new(), bytes: Vec::new(), chars: Vec::new() };
+        let mut count = 0;
+        for (_, t) in rows {
+            let s = loose(t.as_ref());
+            j.bytes.push(j.text.len());
+            j.chars.push(count);
+            count += s.chars().count();
+            j.text.push_str(&s);
+        }
+        j
+    }
+
     fn row_at(&self, byte: usize) -> usize {
         self.bytes.partition_point(|&s| s <= byte).max(1) - 1
     }
@@ -63,16 +77,8 @@ pub fn find<S: AsRef<str>>(rows: &[(i64, S)], text: &str, hint: i64) -> Option<F
     if whole.is_empty() {
         return rows.iter().any(|(n, _)| *n == hint).then_some(Found { n: hint, start: 0, size: 0 });
     }
-    let mut j = Joined { text: String::new(), bytes: Vec::new(), chars: Vec::new() };
-    let mut count = 0;
-    for (_, t) in rows {
-        let s = loose(t.as_ref());
-        j.bytes.push(j.text.len());
-        j.chars.push(count);
-        count += s.chars().count();
-        j.text.push_str(&s);
-    }
-    let k = rows.iter().position(|(n, _)| *n >= hint).unwrap_or(rows.len().saturating_sub(1)); // the hint's row
+    let j = Joined::of(rows);
+    let k = hint_row(rows, hint);
     let at = j.chars.get(k).copied().unwrap_or(0);
     let found = |b: usize, start, size| Some(Found { n: rows[j.row_at(b)].0, start, size });
     if let Some((_, b)) = j.nearest(&whole.iter().collect::<String>(), k) {
@@ -97,6 +103,31 @@ pub fn find<S: AsRef<str>>(rows: &[(i64, S)], text: &str, hint: i64) -> Option<F
         }
     }
     best.and_then(|((_, b), start, size)| found(b, start, size))
+}
+
+/// The row of line `hint` (the last row when it is past them).
+fn hint_row<S>(rows: &[(i64, S)], hint: i64) -> usize {
+    rows.iter().position(|(n, _)| *n >= hint).unwrap_or(rows.len().saturating_sub(1))
+}
+
+/// The line where each of `texts` (text, its line's hint: none is the end) begins in rows, its
+/// whole print nearest the hint; None when it is not there or too short to tell (fewer than
+/// FEWEST letters and digits). Rows are joined once for all of them (the sent history's strip,
+/// AC-90).
+pub fn find_each<S: AsRef<str>>(rows: &[(i64, S)], texts: &[(String, Option<i64>)]) -> Vec<Option<i64>> {
+    const FEWEST: usize = 4;
+    if rows.is_empty() {
+        return vec![None; texts.len()];
+    }
+    let j = Joined::of(rows);
+    texts.iter().map(|(text, hint)| {
+        let whole: String = loose(text).chars().take(PRINT).collect();
+        if whole.chars().count() < FEWEST {
+            return None;
+        }
+        let (_, b) = j.nearest(&whole, hint.map_or(rows.len() - 1, |h| hint_row(rows, h)))?;
+        Some(rows[j.row_at(b)].0)
+    }).collect()
 }
 
 /// Lines first..end (end exclusive) read first: NEAR either side of a bookmark's line.

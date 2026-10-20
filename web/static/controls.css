@@ -34,7 +34,7 @@ dialog .actions .primary { background: var(--accent); color: var(--t-bg); --focu
   .grp h2 .acts { min-width: calc(2 * 40px + 6px); }
   .footform button, #findbox button, dialog .actions button, :is(#hostmenu, #updmenu) button { height: 44px; border-radius: 12px; }
   #findbox .icon { width: 44px; }
-  :is(#findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { width: 44px; height: 44px; }
+  :is(#findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { width: 44px; height: 44px; }   /* Ask stands beside Copy there, as large as it */
   #rename { width: 40px; height: 40px; }
   .stepper button { width: 44px; height: 44px; }
   #markbar button { height: 40px; }

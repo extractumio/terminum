@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.14.6 |
+| Version | 0.14.9 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,9 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.9 | 2026-10-20 | Owner: a row's unread mark stands level with its second line, its program's, not its name (AC-93). |
+| 0.14.8 | 2026-10-20 | Owner: a project's tinted group has as much space under its last session as above its name (its last row touched its edge) (AC-92). |
+| 0.14.7 | 2026-10-20 | Owner: Claude Code's process, named by its version ("2.1.304"), is "claude" in a row's line under its title, not its version (AC-01). |
 | 0.14.6 | 2026-10-20 | Owner: a view that changes width (docked Files opened, a dragged window, a phone turned, − and +) keeps the text at the chosen size, its rows clipped at the view's edge, until tmux has the new width, 2 s at most after the last change; the text no longer shrank to the old width and grew back when the pane re-wrapped a moment later (AC-04). |
 | 0.14.5 | 2026-10-20 | Owner: a tap on a program that did not ask for the mouse opens the keyboard only on the cursor's row, as in the terminal (terminum-terminal.md AC-37) (AC-06). |
 | 0.14.4 | 2026-10-20 | Owner: a project's bookmarks and reminders are its own, a project that goes orphans them; a restore again keeps the sessions still running in their projects (they left them) (AC-92; terminum-terminal.md AC-33, AC-91). |
@@ -156,7 +159,8 @@ Scenario: AC-01 happy path — sessions, windows and panes
   And a window the user named (automatic-rename off) shows that name; one tmux names after its program shows the pane's title, else its program; status marks of coding agents (✳ ✻ ✶ ◐ ⏺) are stripped
 Scenario: AC-01 happy path — what runs in a pane
   Given rows running Claude Code (its process named by its version, "2.1.302", whatever the window's title), Codex (also as npm's "node", by its screen) and a shell
-  Then each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (white on a dark gray tile with small round corners); a build without the marks' files shows the terminal icon for them
+  Then a row's line under its title names Claude Code's program "claude", never its version
+  And each row, before its title, and the header, before the shown pane's title, show Claude Code's mark, Codex's mark (their owners' trademarks, outside terminum's licenses: NOTICE) or the terminal icon (white on a dark gray tile with small round corners); a build without the marks' files shows the terminal icon for them
 Scenario: AC-01 happy path — a folder's color
   Given rows in ~/work/api, ~/work/web, ~/notes and two in ~/tools, and a row in ~/work/api/db
   Then the bar left of each row (and of the header's title), at one place in every row, is a pastel color of its folder: rows in the same folder (on the same host) share it, folders not inside one another get hues as far apart as their count allows
@@ -707,7 +711,7 @@ Scenario: AC-88 edge — a host
 Scenario: AC-92 happy path — a project
   When the user picks Add to Project… → New project… in the menu of "api" (in ~/work/api)
   Then a dialog asks its name at once ("Group 1" suggested, Enter or Create takes it, Cancel makes none) and terminumd makes it (the lowest "Group N" free when no name comes), its color the first of ten pastel hues far apart no other project has, its folder ~/work/api; it keeps it in projects.json and tells every page
-  And the list shows the projects first, each a group tinted and named in its color (nothing before its name but the chevron), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
+  And the list shows the projects first, each a group tinted and named in its color (nothing before its name but the chevron; under its last session as much space as above its name), with its sessions (the shown one's row a deeper tint of it, not a box of its own), their bars in the project's color (not the folder's), their panes and quick shells under them; their tmux groups list them no more (a group left empty goes); a project's rows are counted there
   When the user adds "docs" to Group 1, or a second project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
 Scenario: AC-92 happy path — new sessions, order, names
@@ -733,7 +737,7 @@ Scenario: AC-92 edge — sessions that close
 Scenario: AC-93 happy path — a finished turn nobody saw
   Given the user sent a prompt to Claude Code in %3 and went to another session (or locked the phone)
   When its turn ends: its hook's Stop with no subagent left running (else the last one's SubagentStop), or, read from its screen, its pane done for 10 s on end (not working, not waiting, no subagents: a moment's done between two steps of the turn ends nothing); either way not while Claude Code's footer counts work it runs in the background ("1 shell, 1 monitor", "2 local agents": the turn ends once the count has gone, or after 10 minutes of that count alone; terminum-terminal.md AC-39)
-  Then %3's row shows a small blob (6 px, not round) in the color of the session's name, level with its name's middle: on Clone's middle, Clone covering it when it shows (a mouse over the row); on a touch screen, Clone always shown, just left of it; "Unread: its agent finished", on every page, while no page in sight showed %3 at that moment
+  Then %3's row shows a small blob (6 px, not round) in the color of the session's name, level with the middle of its second line (the folder and its program): under Clone's middle, hidden while Clone shows (a mouse over the row); on a touch screen, Clone always shown, just left of it; "Unread: its agent finished", on every page, while no page in sight showed %3 at that moment
   When a page in sight shows %3 (opened, or a hidden page showing it comes back)
   Then the mark goes on every page; a turn that ends while a page in sight shows it leaves none
   And "in sight" is as for streaming (AC-13): a page in front and, on a computer, focused; a window on another display while the user types elsewhere is not looking, so a turn that ends there is unread

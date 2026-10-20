@@ -14,6 +14,20 @@ const STATES = {
   waiting: { label: "Waiting for your answer", icon: "circle-help" },
   failed: { label: "Failed", icon: "triangle-alert" },
 };
+// Waiting sessions the user showed (AC-39): their ? goes at once, until they wait anew.
+const seenWaits = new Set();
+/** Marks the waiting rows of `groups` the user saw (`shown`: the session shown now) with `seen`;
+ *  a row that stopped waiting is forgotten. */
+export function seeWaits(groups, shown) {
+  for (const it of (groups ?? []).flatMap((g) => g.items ?? [])) {
+    if (it.state !== "waiting") { seenWaits.delete(it.id); continue; }
+    if (it.id === shown) seenWaits.add(it.id);
+    it.seen = seenWaits.has(it.id);
+  }
+}
+/** A row's state as its mark shows it: a waiting one the user saw shows none. */
+export const shownState = (it) => (it.state === "waiting" && it.seen ? null : it.state);
+
 export function stateIcon(state, size = 16) {
   const s = STATES[state];
   if (!s) return null;
@@ -156,7 +170,7 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
     unread.setAttribute("aria-label", unread.title);
     if (!clone) st.append(unread);                 // where Clone would be (projects.css), else with its state
   }
-  const mark = stateIcon(item.state);
+  const mark = stateIcon(shownState(item));
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);

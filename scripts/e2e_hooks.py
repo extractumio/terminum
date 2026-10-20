@@ -109,6 +109,76 @@ def main():
         check("AC-90 the one before", older and older["n"] == 1 and older["item"]["agent"] == "claude", older)
         files = [os.path.join(dp, f) for dp, _, fs in os.walk(os.path.join(t.home, "sessions")) for f in fs]
         check("AC-90 kept in TM_HOME/sessions/<project>/, 0600", len(files) == 2 and all(os.stat(f).st_mode & 0o077 == 0 for f in files), files)
+        # where a message was sent (AC-90): a hooked prompt takes the line the page told for its text;
+        # terminumd finds it by its text in the pane's history for the strip and for Jump to message
+        printed = "for i in $(seq 1 300); do echo out $i; done; echo; echo '> deploy the staging build'; for i in $(seq 1 40); do echo after $i; done; sleep 600"
+        p2 = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "sh", "-c", printed).strip()
+        k2 = f"tmux:local:{SOCKET}:{p2}"
+        time.sleep(1)
+        ws.send({"t": "sub", "id": k2})
+        ws.until(lambda m: m["t"] == "hist" and m.get("mode") == "reset" and m.get("sid") == k2, 5)
+        cwd2 = tmux("display", "-p", "-t", p2, "#{pane_current_path}").strip()
+        env2 = {"TMUX_PANE": p2}
+        hook("claude", {"hook_event_name": "SessionStart", "session_id": "s2", "cwd": cwd2}, env2)
+        seen(p2, lambda r: r.get("agent") == "claude")
+        ws.send({"t": "locate", "id": "sent:probe", "text": "deploy the staging build"})
+        probe = ws.until(lambda m: m["t"] == "located" and m["id"] == "sent:probe", 8)
+        at = probe and probe.get("n")
+        check("AC-90 a message's text is found in the pane's history without a line, nearest the end", isinstance(at, int) and at > 300, probe)
+        ws.send({"t": "sent", "text": "deploy the staging\n  build", "agent": "claude", "line": 7})   # hooked: only its line is kept for the hook
+        hook("claude", {"hook_event_name": "UserPromptSubmit", "session_id": "s2", "prompt_id": "q1", "cwd": cwd2, "prompt": "Background task finished"}, env2)
+        hook("claude", {"hook_event_name": "UserPromptSubmit", "session_id": "s2", "prompt_id": "q2", "cwd": cwd2, "prompt": "deploy the staging build"}, env2)
+        for _ in range(2):
+            ws.until(lambda m: m["t"] == "sentnew", 5)
+        ws.send({"t": "sentget", "n": 0})
+        kept = ws.until(lambda m: m["t"] == "sentone", 5)
+        ws.send({"t": "sentget", "n": 1})
+        own = ws.until(lambda m: m["t"] == "sentone", 5)
+        item, other = (kept or {}).get("item") or {}, (own or {}).get("item") or {}
+        check("AC-90 a hooked prompt takes the page's line for the same text, an agent's own turn none; each keeps its pane",
+              item.get("line") == 7 and item.get("key") == k2 and other.get("text") == "Background task finished" and "line" not in other, (item, other))
+        ws.send({"t": "sentmarks"})
+        marks = ws.until(lambda m: m["t"] == "sentmarks", 8)
+        check("AC-90 the strip's places: found by text near the line (7 is far off: the whole history), only the pane's own with a line",
+              marks and marks["sid"] == k2 and [i["n"] for i in marks["items"]] == [at] and marks["items"][0]["text"] == "deploy the staging build", marks)
+        ws.send({"t": "locate", "id": "sent:near", "text": "deploy the staging build", "n": at - 5})
+        near = ws.until(lambda m: m["t"] == "located" and m["id"] == "sent:near", 8)
+        ws.send({"t": "locate", "id": "sent:gone", "text": "never printed in this pane", "n": at})
+        gone = ws.until(lambda m: m["t"] == "located" and m["id"] == "sent:gone", 8)
+        check("AC-90 Jump to message: found near its line; a text not there says so", near and near["n"] == at and gone and gone["n"] is None
+              and "no longer" in gone.get("why", ""), (near, gone))
+        # Ask's numbers (AC-37): per pane, counting up, also from what the pane sent
+        ws.send({"t": "askno"})
+        a1 = ws.until(lambda m: m["t"] == "askno", 5)
+        ws.send({"t": "askno"})
+        a2 = ws.until(lambda m: m["t"] == "askno", 5)
+        hook("claude", {"hook_event_name": "UserPromptSubmit", "session_id": "s2", "prompt_id": "q3", "cwd": cwd2,
+                        "prompt": "\nQuote #0041:\n - Quote Start ----\n«x»\n- Quote End ----\nwhy?\n----"}, env2)
+        ws.until(lambda m: m["t"] == "sentnew" and m.get("key") == k2, 5)
+        ws.send({"t": "askno"})
+        a3 = ws.until(lambda m: m["t"] == "askno", 5)
+        check("AC-37 Ask's quote numbers count up per pane, from the highest the pane sent; sentnew names its pane",
+              a1 and a2 and a3 and (a1["n"], a2["n"], a3["n"]) == (1, 2, 42) and a3["sid"] == k2, (a1, a2, a3))
+        # where an answer ended (AC-90): at its Stop terminumd reads the screen, the last row above the input box
+        rule = "─" * 40
+        drawn = f"for i in $(seq 1 50); do echo out $i; done; echo '⏺ The staging deploy is done and verified.'; echo; echo '✻ Worked for 9s'; echo; echo '{rule}'; echo '❯ '; echo '{rule}'; sleep 600"
+        p3 = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-t", "main", "sh", "-c", drawn).strip()
+        k3, env3 = f"tmux:local:{SOCKET}:{p3}", {"TMUX_PANE": p3}
+        time.sleep(1)
+        hook("claude", {"hook_event_name": "SessionStart", "session_id": "s3", "cwd": cwd2}, env3)
+        hook("claude", {"hook_event_name": "UserPromptSubmit", "session_id": "s3", "prompt_id": "e1", "cwd": cwd2, "prompt": "deploy staging"}, env3)
+        hook("claude", {"hook_event_name": "Stop", "session_id": "s3", "prompt_id": "e1"}, env3)
+        ended = ws.until(lambda m: m["t"] == "endnew" and m.get("key") == k3, 8)
+        ws.send({"t": "sub", "id": k3})
+        ws.until(lambda m: m["t"] == "hist" and m.get("mode") == "reset" and m.get("sid") == k3, 5)
+        ws.send({"t": "sentmarks"})
+        placed = ws.until(lambda m: m["t"] == "sentmarks" and m.get("sid") == k3, 8)
+        ends = (placed or {}).get("ends") or []
+        check("AC-90 at a Stop terminumd keeps where the answer ended: the last row above the input box, not the turn line; found by its text",
+              ended and len(ends) == 1 and ends[0]["text"] == "⏺ The staging deploy is done and verified." and isinstance(ends[0]["n"], int), (ended, placed))
+        tmux("kill-pane", "-t", p3)
+        tmux("kill-pane", "-t", p2)
+        ws.send({"t": "sub", "id": f"tmux:local:{SOCKET}:{pane}"})
         # a reminder (AC-91): up when the pane's turn ends, put down by Close, up again at the next
         ws.send({"t": "mark", "ref": "r1", "sid": f"tmux:local:{SOCKET}:{pane}", "n": 0, "text": "check the retry", "note": "", "remind": True})
         made = ws.until(lambda m: m["t"] == "marked" and m.get("ref") == "r1", 5)

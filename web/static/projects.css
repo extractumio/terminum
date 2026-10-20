@@ -7,6 +7,9 @@
 .projects { display: contents; }
 .grp.project { border-radius: 10px; background: color-mix(in srgb, var(--proj) 6%, transparent); }   /* a tint, no edge line (UI-GUIDELINES §4) */
 .grp.project { --name: color-mix(in srgb, var(--proj) 75%, var(--t-fg)); }   /* its name's color: the label, its rows' unread mark */
+/* under its last session as much space as above its name (its header's row is 30px, 40px where targets are a finger's) */
+.grp.project { padding-bottom: 7px; }
+@media (max-width: 860px), (pointer: coarse) { .grp.project { padding-bottom: 11px; } }
 .grp.project h2 .label { color: var(--name); }
 .grp.project .item.on { background: color-mix(in srgb, var(--proj) 16%, transparent); }   /* the shown session: its project's tint, deeper */
 .grp.project .pbar { opacity: .75; }
@@ -30,15 +33,12 @@
 .unread { width: 6px; height: 6px; background: currentColor; pointer-events: none;
   border-radius: 64% 36% 57% 43% / 40% 62% 38% 60%; rotate: 18deg; }
 .item .st .unread { margin-top: 6px; }
-.grp li > .unread { position: absolute; right: 11px; top: 15px; }
+.grp li > .unread { position: absolute; right: 11px; top: 33px; }   /* level with the row's second line (its program) */
 @media (hover: hover) { .grp li:hover > .unread, .grp li:has(> .clone:focus-visible) > .unread { visibility: hidden; } }
-@media (hover: none) { .grp li > .unread { right: 43px; top: 17px; } }
+@media (hover: none) { .grp li > .unread { right: 43px; top: 38px; } }
 
 /* the second line: folder and titles first, what runs there at the right edge */
 .s > .progs { flex: none; margin-left: auto; padding-left: 8px; display: flex; gap: 6px; }
-
-/* the search's own field is open: its magnifier stays out of sight (the field has ×) */
-#findfab[aria-expanded="true"] { visibility: hidden; }
 
 /* a modal dialog placed where it was asked for (not centered), the page shaded behind it */
 #rowmenu { position: fixed; inset: auto; margin: 0; width: 210px; max-height: none; padding: var(--sp-1); border: 0; border-radius: var(--r-lg);

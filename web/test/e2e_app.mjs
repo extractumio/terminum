@@ -71,11 +71,13 @@ export async function webApp(browser) {
   const tell = (m) => bridge.send(JSON.stringify(m));
   const $eval = (fn, arg) => page.evaluate(fn, arg);
 
-  // the profile bars: full for the shown session, breathing while its agent works
+  // the profile bars: full for the shown session, breathing in the list while its agent works; the header's stands still
   const bars = await $eval(() => ({ on: [...document.querySelectorAll("#sessions .pbar.on")].map((b) => b.closest(".item").dataset.id),
-    all: document.querySelectorAll("#sessions .pbar").length, header: !!document.querySelector("#curbar .pbar.on.busy"), dots: document.querySelectorAll("#sessions .pdot, #cursub .pdot").length }));
-  check("AC-52 web app: a bar per session, full only for the shown one; the header's breathes while it works",
-    bars.all === 3 && bars.on.join() === "S1" && bars.header && !bars.dots, JSON.stringify(bars));
+    all: document.querySelectorAll("#sessions .pbar").length, row: !!document.querySelector('#sessions .item[data-id="S1"] .pbar.busy'),
+    header: !!document.querySelector("#curbar .pbar.on") && getComputedStyle(document.querySelector("#curbar .pbar")).animationName === "none",
+    dots: document.querySelectorAll("#sessions .pdot, #cursub .pdot").length }));
+  check("AC-52 web app: a bar per session, full only for the shown one; the list's breathes while it works, the header's stands still",
+    bars.all === 3 && bars.on.join() === "S1" && bars.row && bars.header && !bars.dots, JSON.stringify(bars));
   check("AC-52 web app: on a computer the chat takes the keys when it opens", await $eval(() => document.activeElement?.id === "kbd"));
 
   // reminders: the bridge sends a layout only when it changes; a session waiting 2.5 s with no
@@ -112,6 +114,30 @@ export async function webApp(browser) {
   await settle();
   check("AC-52 web app: a reminder goes 2.5 s after its session stops waiting", stays.length === 1 && (await cards()).length === 0, JSON.stringify(stays));
   await page.click("#sessions .item[data-id='S1']");
+  await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length === 4);
+  // a waiting session's ? goes as soon as it is shown, and comes back only when it waits anew (AC-39)
+  const asks = () => $eval(() => ({ row: !!document.querySelector('#sessions .item[data-id="S2"] .state.waiting'), head: !!document.querySelector("#curstate .state.waiting") }));
+  tell({ t: "layout", groups: layout("done") });                     // its last wait (shown above) is over
+  await page.waitForTimeout(100);
+  tell({ t: "layout", groups: layout("waiting") });
+  await page.waitForTimeout(100);
+  const waitAsks = await asks();
+  await page.click("#sessions .item[data-id='S2']");
+  const shownAsks = await asks();
+  tell({ t: "layout", groups: layout("waiting") });
+  await page.waitForTimeout(100);
+  const stillAsks = await asks();
+  await page.click("#sessions .item[data-id='S1']");
+  await page.waitForTimeout(100);
+  const awayAsks = await asks();
+  tell({ t: "layout", groups: layout("done") });
+  await page.waitForTimeout(100);
+  tell({ t: "layout", groups: layout("waiting") });
+  await page.waitForTimeout(100);
+  const anewAsks = await asks();
+  check("AC-39 web app: a waiting session's ? goes at once when it is shown (row and header), stays gone while it waits, comes back when it waits anew",
+    waitAsks.row && !shownAsks.row && !shownAsks.head && !stillAsks.row && !stillAsks.head && !awayAsks.row && anewAsks.row, JSON.stringify({ waitAsks, shownAsks, stillAsks, awayAsks, anewAsks }));
+  tell({ t: "layout", groups: layout("done") });
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length === 4);
 
   // links: a faint dotted underline; with a mouse they open with ⌘ (Ctrl elsewhere) only
@@ -152,9 +178,10 @@ export async function webApp(browser) {
     && await $eval(() => document.body.dataset.shown) === "term");
 
   const rules = await $eval(() => [...document.querySelectorAll("#screen .ln.rule")].map((l) => [l.classList.contains("full"), Math.round(l.getBoundingClientRect().width)]));
-  const termWidth = await $eval(() => document.getElementById("term").clientWidth);
+  const termWidth = await $eval(() => { const t = document.getElementById("term"), cs = getComputedStyle(t);   // its text's width, inside the padding
+    return t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); });
   check("AC-52 web app: a separator half of the pane's width or longer runs across the view; a short one stays text",
-    rules[0][0] && !rules[1][0] && rules[0][1] >= termWidth - 20, JSON.stringify({ rules, termWidth }));
+    rules[0][0] && !rules[1][0] && rules[0][1] >= termWidth - 2, JSON.stringify({ rules, termWidth }));
 
   // renaming hands the keys back to the chat
   await page.click("#rename");

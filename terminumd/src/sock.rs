@@ -120,6 +120,7 @@ async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> StatusCode {
         // once its screen shows no work in the background (AC-91, page/turns.rs)
         if app.hooks.take_ended(&key) {
             app.turns.hook_ended(&key, std::time::Instant::now());
+            tokio::spawn(crate::page::answers::keep(app.clone(), key.clone()));   // at its Stop: the screen is final (AC-90)
         }
     }
     let known = ev["agent"].as_str().and_then(crate::tmux::hookstate::agent).is_some();

@@ -70,9 +70,19 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   subagents; without them terminum reads their screens. `terminum hooks` says what is set up,
   `terminum hooks remove` takes terminum's hooks out.
 - **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
-  (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer.
-- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell blinks when an agent
-  of its project ends a turn. Close puts it down until the next turn ends, Resolve ends it.
+  (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer;
+  Jump to message shows where it was sent, Insert into chat types it again (without Enter). On a
+  wide window small bars on the terminal's right edge mark where your messages (white), the
+  agent's answers ended (pale blue), bookmarks (orange) and reminders (pink) stand in the
+  history: press one to go there. Settings' Side marks turns them off.
+- **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
+  the selection's orange [+]); type a question and Add to Chat pastes the
+  selection quoted as "Quote #0007", your question and a rule into the input, without Enter.
+  The number counts up per session.
+- **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
+  of its project ends a turn (on a phone it blinks). Close puts it down until the next turn ends,
+  Resolve ends it. Insert into chat, on a reminder, a bookmark's bar or a sent message, pastes it
+  (a bookmark's note and its text) into the session's input, without Enter.
   Bookmarks and reminders made in a project's session show in every session of that project;
   made outside projects, only in their own session. Once their project is gone (deleted, or its
   last session closed), or a session outside projects closes, they wait under Bookmarks /

@@ -2,6 +2,7 @@
 //! The pages (browser tabs) connected over `/ws` (AC-01–AC-07): each shows one pane at a
 //! time. A page that stops reading is dropped, never waited for (a phone that sleeps).
 
+pub mod answers;
 pub mod bookmarks;
 pub mod bookmarks_find;
 pub mod client;

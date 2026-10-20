@@ -63,15 +63,14 @@
       <p id="addtmuxerr" role="alert"></p>
       <div class="row"><button class="primary" type="submit">Attach</button><button id="addtmuxcancel" type="button">Cancel</button></div>
     </form>
-    <div id="marklist" class="box scrolls" hidden></div>
     <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
       aria-valuemin="200" aria-valuemax="640"></div>
     <div class="nav-foot">
       <button id="newsessbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New<span class="more"> session</span></span>
       </button>
-      <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marklist" title="Bookmarks and reminders whose project or session is gone">
-        <svg class="lu two" viewBox="0 0 50 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><g transform="translate(26 0)"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></g></svg><span>Bookmarks<span class="more"> / Reminders</span></span><span id="markcount" class="count"></span>
+      <button id="marksbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="marksdlg" title="Bookmarks and reminders whose project or session is gone">
+        <svg class="lu two" viewBox="0 0 50 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/><g class="bell" transform="translate(26 0)"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></g></svg><svg class="lu one" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span>Bookmarks<span class="more"> / <svg class="lu bell" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg>Reminders</span></span><span id="markcount" class="count"></span>
       </button>
       <button id="addhostbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="addhost" title="The tmux session of another computer, over ssh">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01"/><path d="M6 18h.01"/></svg><span>Add host</span>
@@ -152,6 +151,8 @@
     <button id="markcopy" type="button" hidden title="Copy the selected text" aria-label="Copy the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
     <button id="markadd" type="button" hidden title="Bookmark the selected text" aria-label="Bookmark the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
     <div id="markrail" aria-label="Bookmarks of this session" hidden></div>
+    <!-- The strip on the left of a wide window (AC-90): sent messages, bookmarks and reminders as dots. -->
+    <div id="msgrail" aria-label="Sent messages, bookmarks and reminders of this session" hidden></div>
     <button id="marksfab" type="button" hidden title="Bookmarks of this session" aria-label="Bookmarks of this session" aria-expanded="false" aria-controls="markpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="marksfabn"></span></button>
     <div id="markpane" class="box scrolls" role="region" aria-label="Bookmarks of this session" hidden></div>
     <!-- Search of the session's history (AC-58): the magnifier, its field, its matches' marks. -->
@@ -162,12 +163,16 @@
     <button id="attachfab" type="button" hidden title="Attach files: upload them and type their paths" aria-label="Attach files"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></svg></button>
     <!-- Sent history (AC-90): what was sent in this folder, under the split. -->
     <button id="sentfab" type="button" hidden title="Sent in this folder" aria-label="Sent in this folder" aria-expanded="false" aria-controls="sentpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M13 8H7"/><path d="M17 12H7"/></svg></button>
+    <!-- Ask (AC-37): while text is selected; on a wide window under the sent history's button, else above the selection's Copy. -->
+    <button id="askfab" type="button" hidden title="Ask about the selected text" aria-label="Ask about the selected text"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
     <div id="sentpane" class="box" role="region" aria-label="Sent in this folder" tabindex="-1" hidden>
       <div class="sphead"><span id="spwhere"></span><span id="sppos"></span>
         <button id="spolder" class="icon" type="button" title="Older (↑)" aria-label="Older"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><button id="spnewer" class="icon" type="button" title="Newer (↓)" aria-label="Newer"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button>
         <button id="spcopy" class="icon" type="button" title="Copy" aria-label="Copy"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button><button id="spclose" class="icon" type="button" title="Close" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
       <p id="spmeta"></p>
       <div id="spbody" class="markdown"></div>
+      <p id="spwhy" role="status" hidden></p>
+      <div class="spacts"><button id="spjump" type="button" title="Show where it was sent in this session's history">Jump to message</button><button id="spinsert" class="tochat" type="button" title="Paste it into the input, no Enter">Insert into chat</button></div>
     </div>
     <!-- Reminders (AC-91): up when their session's agent ends a turn, under the sent history. -->
     <button id="remindfab" type="button" hidden title="Reminders" aria-label="Reminders" aria-expanded="false" aria-controls="remindpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span id="remindfabn"></span></button>
@@ -186,8 +191,7 @@
     <div id="findrail" aria-label="Matches in this session" hidden></div>
     <div id="markbar" class="box" role="region" aria-label="Bookmark" hidden>
       <div class="mbhead"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="mbnote"></span>
-        <button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button>
-        <button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button>
+        <span class="mbnav"><button id="mbprev" class="icon" type="button" title="The bookmark above" aria-label="The bookmark above"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m18 15-6-6-6 6"/></svg></button><span id="mbpos"></span><button id="mbnext" class="icon" type="button" title="The bookmark below" aria-label="The bookmark below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m6 9 6 6 6-6"/></svg></button></span><span class="mbacts"><button id="mbsend" class="tochat" type="button" title="Paste the note and the text into the input, no Enter">Insert into chat</button><button id="mbedit" type="button">Edit</button><button id="mbdel" type="button">Delete</button></span>
         <button id="mbclose" class="icon" type="button" aria-label="Close the bookmark"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <p id="mbwhy" hidden></p>
@@ -254,6 +258,7 @@
     <div id="movelist" hidden></div>
     <button id="closepane" class="row" type="button"><span>Close session<small>Ends the program running in it</small></span></button>
     <button id="restoreagain" class="row" type="button" hidden><span>Restore again<small>Recreates what the last restore could not</small></span></button>
+    <label class="row"><span>Side marks<small>Sent messages, answers, bookmarks and reminders on the terminal's right edge, kept in this browser</small></span><input id="sidemarks" type="checkbox" role="switch" checked></label>
     <label class="row"><span>Application cursor keys<small>For apps that ignore the arrow keys</small></span><input id="appcur" type="checkbox" role="switch"></label>
     <label class="row"><span>Bracketed paste<small>Turn off if pasted text shows extra characters</small></span><input id="bracket" type="checkbox" role="switch"></label>
     <button id="signout" class="row danger" type="button">Sign out</button>
@@ -283,6 +288,24 @@
 <dialog id="markdoc" class="box" aria-labelledby="markdoctitle">
   <div class="mdhead"><h2 id="markdoctitle">Bookmarks</h2><button id="markdocclose" class="icon" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
   <div id="markdocbody" class="markdown scrolls"></div>
+</dialog>
+<!-- Bookmarks / Reminders no session shows (AC-33): a large window on the right. -->
+<dialog id="marksdlg" class="box" aria-labelledby="marksdlgtitle">
+  <div class="mdhead"><h2 id="marksdlgtitle">Bookmarks / Reminders</h2><button id="marksdlgclose" class="icon" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+  <div id="marklist" class="scrolls"></div>
+</dialog>
+<dialog id="askbox" class="box" aria-labelledby="asktitle">
+  <form method="dialog">
+    <h2 id="asktitle">Ask about the selection</h2>
+    <div id="asktext"></div>
+    <label for="askq">Question</label>
+    <textarea id="askq" class="field" rows="3" maxlength="4000" autocapitalize="sentences" placeholder="What do you want to know about it?"></textarea>
+    <p id="askerr" role="alert" hidden></p>
+    <div class="actions">
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button value="add" type="submit" class="primary" disabled>Add to Chat</button>
+    </div>
+  </form>
 </dialog>
 <dialog id="markbox" class="box" aria-labelledby="marktitle">
   <form method="dialog">

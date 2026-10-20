@@ -33,11 +33,11 @@ export async function webProjects(browser, name) {
   check("AC-07 every row has Clone, no group header has [+]", look.news === 0 && look.clones === 4, JSON.stringify(look));
   check("AC-01 a row's second line: its folder first, its program at the right edge", look.first === "~/work/docs" && look.prog === "zsh" && look.right <= 1, JSON.stringify(look));
   check("AC-93 a row whose agent finished unseen has the unread mark, others none", look.unread && !look.plain, JSON.stringify(look));
-  // where the unread mark is: x its middle from Clone's (left of it < 0), y from the session name's middle
+  // where the unread mark is: x its middle from Clone's (left of it < 0), y from the middle of the row's second line (its program's)
   const mark = (pg = page) => pg.evaluate(() => {
-    const li = document.querySelector('#sessions li:has(> .item[data-id$="%4"])'), u = li.querySelector(".unread"), c = li.querySelector(":scope > .clone"), t = li.querySelector(".t");
+    const li = document.querySelector('#sessions li:has(> .item[data-id$="%4"])'), u = li.querySelector(".unread"), c = li.querySelector(":scope > .clone"), t = li.querySelector(".t"), s = li.querySelector(".s");
     const mid = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
-    return { w: u.offsetWidth, x: Math.round(mid(u)[0] - mid(c)[0]), y: Math.round(mid(u)[1] - mid(t)[1]), clear: Math.round(c.getBoundingClientRect().left - u.getBoundingClientRect().right),
+    return { w: u.offsetWidth, x: Math.round(mid(u)[0] - mid(c)[0]), y: Math.round(mid(u)[1] - mid(s)[1]), clear: Math.round(c.getBoundingClientRect().left - u.getBoundingClientRect().right),
       bg: getComputedStyle(u).backgroundColor, name: getComputedStyle(t).color, seen: getComputedStyle(u).visibility === "visible",
       round: getComputedStyle(u).borderTopLeftRadius !== getComputedStyle(u).borderTopRightRadius };
   });
@@ -45,7 +45,7 @@ export async function webProjects(browser, name) {
   await page.hover('#sessions .item[data-id$="%4"]');
   const covered = await mark();
   await page.mouse.move(700, 700);
-  check("AC-93 the unread mark: 6 px, not round, in the session name's color, level with its name's middle, on Clone's middle; Clone, shown, covers it",
+  check("AC-93 the unread mark: 6 px, not round, in the session name's color, level with the row's second line (its program), under Clone's middle; hidden while Clone shows",
     m1.w === 6 && m1.round && m1.bg === m1.name && Math.abs(m1.y) <= 1 && Math.abs(m1.x) <= 1 && m1.seen && !covered.seen, JSON.stringify({ m1, covered }));
   await page.hover('#sessions .item[data-id$="%2"]');
   await page.click('#sessions li:has(> .item[data-id$="%2"]) > .clone');
@@ -92,16 +92,20 @@ export async function webProjects(browser, name) {
     return { first: p.dataset.pid, name: p.querySelector("h2 .label").textContent, rows: ids(p), main: ids(secs.find((s) => s.dataset.wid === "local/main")),
       notes: !!secs.find((s) => s.dataset.wid === "local/notes"), same: new Set(bars).size === 1,
       mark: [p.querySelector("h2 .toggle").querySelectorAll("svg").length === 1, !p.querySelector("h2 .pdot, h2 .picon")],
-      apart: bars[0] !== secs[1].querySelector(".pbar").style.getPropertyValue("--dot") };
+      apart: bars[0] !== secs[1].querySelector(".pbar").style.getPropertyValue("--dot"),
+      // the space under its last session and above its name, from its tinted box's edges
+      pad: (() => { const r = (e) => e.getBoundingClientRect(), lis = p.querySelectorAll("li");
+        return [Math.round(r(p.querySelector("h2 .label")).top - r(p).top), Math.round(r(p).bottom - r(lis[lis.length - 1]).bottom)]; })() };
   });
   check("AC-92 projects come first, their sessions out of their tmux groups; a group left empty goes",
     grouped.first === "p1" && grouped.name === "Group 1" && grouped.rows.join() === "%1,%3" && grouped.main.join() === "%4" && !grouped.notes, JSON.stringify(grouped));
   check("AC-92 a project's rows share its color, another project's differs", grouped.same && grouped.apart, JSON.stringify(grouped));
   check("AC-92 a project's name has nothing before it but the chevron", grouped.mark.every(Boolean), JSON.stringify(grouped.mark));
+  check("AC-92 under a project's last session as much space as above its name", grouped.pad[0] > 0 && grouped.pad[0] === grouped.pad[1], JSON.stringify(grouped.pad));
   f.say({ t: "projects", items: [{ ...P1, members: [ID(1), ID(3), ID(4)] }, P2] });
   await pause(page, 200);
   const m2 = await mark();
-  check("AC-93 in a project too the unread mark takes the session name's color, on Clone's middle", m2.bg === m2.name && Math.abs(m2.x) <= 1 && Math.abs(m2.y) <= 1, JSON.stringify(m2));
+  check("AC-93 in a project too the unread mark takes the session name's color, level with the second line, under Clone's middle", m2.bg === m2.name && Math.abs(m2.x) <= 1 && Math.abs(m2.y) <= 1, JSON.stringify(m2));
   f.say({ t: "projects", items: [P1, P2] });
   await pause(page, 200);
   await page.click('#sessions section[data-pid="p1"] h2 .new');
@@ -144,8 +148,23 @@ export async function webProjects(browser, name) {
 
   await page.click("#findfab");
   await pause(page, 150);
-  check("the search's magnifier is out of sight while its field is open",
-    await page.evaluate(() => !document.getElementById("findbox").hidden && getComputedStyle(document.getElementById("findfab")).visibility === "hidden"));
+  // the magnifier stays in sight, ringed as the sent history's button is when open; the field beside it,
+  // its row level with the magnifier's middle; every pane 14 px left of its button, its first row so
+  const magnifier = await page.evaluate(() => {
+    const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect(), mid = (b) => Math.round(b.top + b.height / 2);
+    return { open: !g("findbox").hidden, seen: getComputedStyle(g("findfab")).visibility, ring: getComputedStyle(g("findfab")).boxShadow,
+      level: mid(r("findfab")) - mid(r("findq")), gap: Math.round(r("findfab").left - r("findbox").right), others: getComputedStyle(g("sentfab")).visibility };
+  });
+  await page.click("#findfab");
+  await page.click("#sentfab");
+  await pause(page, 200);
+  const sentRing = await page.evaluate(() => getComputedStyle(document.getElementById("sentfab")).boxShadow);
+  const sentLevel = await page.evaluate(() => { const r = (e) => e.getBoundingClientRect(), f = r(document.getElementById("sentfab")), h = r(document.querySelector("#sentpane .sphead"));
+    return Math.round(f.top + f.height / 2) - Math.round(h.top + h.height / 2); });
+  await page.click("#sentfab");
+  check("the search's magnifier stays in sight while its field is open, ringed as the sent history's button; the field and the sent pane 14 px left of their buttons, their first row level with them",
+    magnifier.open && magnifier.seen === "visible" && magnifier.ring === sentRing && magnifier.ring !== "none" && Math.abs(magnifier.level) <= 1 && magnifier.gap === 14 && magnifier.others === "visible" && Math.abs(sentLevel) <= 1,
+    JSON.stringify({ magnifier, sentRing, sentLevel }));
   check("no page errors", !f.errors.length, f.errors.join(" | "));
   await f.close();
 
@@ -162,7 +181,7 @@ export async function webProjects(browser, name) {
   const held = await menuItems(p.page);
   check("AC-07 a finger resting on a row opens its menu", held[0] === "Clone" && held.length === 7, held.join());
   const pm = await mark(p.page);
-  check("AC-93 on a phone (Clone always there) the unread mark stands just left of Clone, level with the session name's middle",
+  check("AC-93 on a phone (Clone always there) the unread mark stands just left of Clone, level with the row's second line",
     pm.seen && pm.clear >= 0 && pm.clear <= 4 && Math.abs(pm.y) <= 1, JSON.stringify(pm));
   check("AC-07 on a phone Clone is always there", await p.page.evaluate(() => getComputedStyle(document.querySelector("#sessions li > .clone")).opacity !== "0"));
   check("no page errors", !p.errors.length, p.errors.join(" | "));

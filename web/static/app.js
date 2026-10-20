@@ -5,7 +5,7 @@ import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
 import "./press.js";                                // a pressed button's ripple (motion.css)
 import { Input } from "./input.js";
-import { agentMark, findItem, folderBar, metaLine, renderNav, stateIcon } from "./nav.js";
+import { agentMark, findItem, folderBar, metaLine, renderNav, seeWaits, shownState, stateIcon } from "./nav.js";
 import { textForm } from "./render.js";
 import { sessionDrawer } from "./drawer.js";
 import { sentHistory } from "./sent.js";
@@ -31,6 +31,8 @@ import { uploads } from "./upload.js";
 import { waitingCards } from "./waiting.js";
 import { Widgets } from "./widgets.js";
 import { Marks } from "./marks.js";
+import { promptRail } from "./promptrail.js";
+import { askBox } from "./ask.js";
 import { recentSessions } from "./recent.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
 import { ideKeys } from "./idekeys.js";
@@ -175,7 +177,8 @@ const doc = markDoc({ alive });
 let paneList = [null, []];
 const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.groups, st.groups.flatMap((g) => g.items)])[1]);
 const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes, projects: () => st.projects,
-  openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); }, copy: (text) => input.copySelection(text, true) });
+  openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); rail?.draw(); }, copy: (text) => input.copySelection(text, true),
+  toChat: (text) => { input.paste(text); focusTerminal(); } });
 trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (view.tooWide() ? "scaled" : "tmux"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
 $("term").addEventListener("scroll", () => { if (!kbdFrame) kbdFrame = requestAnimationFrame(() => { kbdFrame = 0; placeKbd(); }); }, { passive: true });
@@ -261,8 +264,10 @@ function onMessage(m) {
   if (m.sid && m.sid !== st.sid) return;            // a frame from the session we just left
   trace.received(m);
   bookmarks.seen(m);
+  rail?.seen(m);
+  ask.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); tools.layoutCame(m.groups); views.forget(m.groups); break;
+    case "layout": st.groups = m.groups; seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -313,7 +318,11 @@ function pick(id) {
   if (of) quick.focus(); else focusTerminal();
 }
 const reminders = waitingCards($("asks"), pick);
-const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast });
+const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast, toChat: (text) => bookmarks.toChat(text),
+  jump: (it) => bookmarks.jumpText(it) });
+const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });
+const ask = askBox({ send, toChat: (text) => bookmarks.toChat(text), keys: (data) => input.type(data, "ask"), agent: () => !!itemOf(st.sid)?.agent });
+bookmarks.onAsk = (text) => ask.open(text);
 const reminded = reminderBox({ marks: bookmarks, send });
 bookmarks.onPlaced = () => { sent.place(); reminded.place(); };
 function drawNav() {
@@ -345,7 +354,7 @@ function toggleGroup(key) {
 // then one line that only shortens at its end: host, program, folder, profile, where the tab is, titles.
 function showCurrent(found) {
   $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
-  $("curstate").replaceChildren(...[found && stateIcon(found.item.state)].filter(Boolean));
+  $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
   view.setAgent(found?.item.agent ?? null);
   if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); }
   else {
@@ -356,7 +365,7 @@ function showCurrent(found) {
     const at = dir >= 0 ? dir + 1 : Math.min(sub.length, it.host ? 2 : 1);
     const line = metaLine([...sub.slice(0, at), it.profile || "", where, ...sub.slice(at)].filter(Boolean), !!it.host);
     $("cursub").replaceChildren(...line.childNodes);
-    $("curbar").replaceChildren(folderBar(it, true, it.state === "working"));
+    $("curbar").replaceChildren(folderBar(it, true));   // still: the list's bar breathes while it works
     $("curagent").replaceChildren(agentMark(it, 16));
   }
   document.title = found ? `${found.item.title} – terminum` : "terminum";
@@ -365,7 +374,7 @@ function showCurrent(found) {
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;
-  st.sid = id; store.set("sid", id);
+  st.sid = id; store.set("sid", id); seeWaits(st.groups, id);
   recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane

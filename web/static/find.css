@@ -8,9 +8,9 @@
 /* the split: the header's button on a computer, this one on a phone (quick.js) */
 @media (min-width: 861px) { #splitfab { display: none !important; } }
 #sentfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
-body:has(#findbox:not([hidden])) :is(#splitfab, #sentfab) { visibility: hidden; }   /* the field opens there */
+body:has(#findbox[data-under]:not([hidden])) :is(#splitfab, #sentfab) { visibility: hidden; }   /* the field opens under the magnifier */
 #findfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
-body:has(#markcopy:not([hidden])) :is(#findfab, #splitfab, #sentfab) { visibility: hidden; }   /* a selection's Copy and + stand there */
+@media (hover: none), (max-width: 860px) { body:has(#markcopy:not([hidden])) :is(#findfab, #splitfab, #sentfab) { visibility: hidden; } }   /* a selection's Copy and + stand there (a wide window: left of the column) */
 #findbox { position: absolute; z-index: 8; width: min(380px, calc(100% - 24px)); display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
   padding: var(--sp-2); border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
 #findq { flex: 1 1 160px; min-width: 0; height: 32px; padding: 0 8px; border-radius: var(--r-md); border: 0;
@@ -29,8 +29,8 @@ body:has(#markcopy:not([hidden])) :is(#findfab, #splitfab, #sentfab) { visibilit
 @media (hover: none) { #findrail .fm { left: -6px; width: 26px; height: 18px; margin-top: -4px; } }
 ::highlight(find) { background-color: #fff; color: #111; }
 #term .find-at { outline: 2px solid #fff; outline-offset: 1px; border-radius: 2px; }
-body:not([data-shown="term"]) :is(#findfab, #splitfab, #sentfab, #attachfab, #sentpane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
-body.wide :is(#findfab, #splitfab, #sentfab, #attachfab, #sentpane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
+body:not([data-shown="term"]) :is(#findfab, #splitfab, #sentfab, #askfab, #attachfab, #sentpane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
+body.wide :is(#findfab, #splitfab, #sentfab, #askfab, #attachfab, #sentpane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
 @media (prefers-reduced-motion: reduce) { :is(#findfab, #splitfab, #sentfab, #attachfab) { animation: none; } }
 /* the sent history's pane, left of its button: where, which of how many, ↑ ↓, Copy, ×; the text as Markdown */
 #sentpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 60%; overflow: auto; padding: var(--sp-2);
@@ -47,6 +47,11 @@ body.wide :is(#findfab, #splitfab, #sentfab, #attachfab, #sentpane), body.wide #
 #spmeta:empty { display: none; }
 #spbody { padding: 0 4px 4px; font: var(--md-size, 14px)/var(--lh-prose) -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow-wrap: anywhere; }
 #spbody.quiet { color: var(--muted); font-size: var(--fs-small); }
+#sentpane .spacts { position: sticky; bottom: calc(-1 * var(--sp-2)); display: flex; justify-content: flex-end; gap: 6px;
+  margin: 0 calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)); padding: var(--sp-2); background: var(--chrome-2); }
+#sentpane .spacts button:disabled { opacity: .4; }
+#spwhy { margin: 6px 4px 0; font-size: var(--fs-small); color: var(--muted); }
+#spwhy.err { color: var(--danger-text); }
 
 /* a phone's floating keyboard and hot keys buttons: the same nearly round, drifting shape */
 #fabs button { border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite; }

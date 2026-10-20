@@ -2,7 +2,7 @@
 // What Enter sends (sent.js, AC-90): an agent's input box, a shell's command line.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sentText } from "../static/sent.js";
+import { sentAt, sentText } from "../static/sent.js";
 
 const row = (txt, o = {}) => ({ txt, hard: true, cur: false, end: null, ...o });
 
@@ -23,4 +23,12 @@ test("an agent's input box: its typed rows, not a faint suggestion", () => {
   assert.equal(sentText(faint, { top: 0, bottom: 2 }, false), "", "only the prompt typed");
   const codex = [row(""), row("› explain this", { cur: true, end: 14 }), row("")];
   assert.equal(sentText(codex, { top: 0, bottom: 2 }, false), "explain this");
+});
+
+test("the row its text begins on: a wrapped command's first, an input box's first under its rule", () => {
+  const wrapped = [row("out"), row("$ echo one two", { hard: false }), row(" three", { cur: true })];
+  assert.deepEqual(sentAt(wrapped, null, true), { text: "echo one two three", row: 1 });
+  const box = [row("output"), row("────"), row("❯ fix the tests", { end: 15 }), row("  and the lint", { cur: true }), row("────")];
+  assert.deepEqual(sentAt(box, { top: 1, bottom: 4 }, false), { text: "fix the tests\nand the lint", row: 2 });
+  assert.equal(sentAt([row("vim text", { cur: true })], null, false).text, "", "not at a shell prompt: nothing");
 });

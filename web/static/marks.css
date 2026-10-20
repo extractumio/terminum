@@ -3,10 +3,12 @@
    one shown, the dialog, the list below the sessions and the strip in the session list. Orange
    on every profile: it says "bookmark", as blue and violet say where a session runs. */
 :root { --mark: #ff9f1a; }
-#markadd, #markcopy, #marksfab, #remindfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
+#markadd, #markcopy, #askfab, #marksfab, #remindfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center;
   border-radius: var(--blob-a); animation: blob 7s ease-in-out infinite;
   background: var(--mark); color: #1b1200; box-shadow: var(--shadow-near); }
 #markcopy { background: #9ba1a9; color: #16181b; animation-delay: -3.5s; }
+#askfab { background: var(--ask); color: var(--ask-ink); animation-delay: -1.75s; }   /* Ask (AC-37), under the [+] */
+:root { --ask: color-mix(in srgb, cornflowerblue 55%, #fff); --ask-ink: #0f1a33; }
 #marksfab { animation-delay: 0s; }   /* in phase with the column's other buttons */
 /* where the keyboard's buttons float: these and the split in a row at the bottom left, at their height (marks.js) */
 @media (hover: none), (max-width: 860px) {
@@ -15,7 +17,9 @@
   body:has(#copyfab:not([hidden]), #markcopy:not([hidden])) :is(#attachfab, #marksfab, #remindfab, #splitfab) { visibility: hidden; }
 }
 @media (hover: hover) and (min-width: 861px) { #attachfab { display: none !important; } }   /* a computer: Upload on the hot keys, or a drop */
-body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab), body:has(#findbox:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* a selection's Copy and + stand there */
+body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* find's field under its magnifier stands there */
+/* a selection's Copy and + stand at the column's place where the buttons float (a wide window: left of it) */
+@media (hover: none), (max-width: 860px) { body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; } }
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 8px;
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
@@ -28,9 +32,9 @@ body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab), body:has(#findbox:
   33% { border-radius: 45% 55% 41% 59% / 57% 44% 56% 43%; }
   66% { border-radius: 53% 47% 60% 40% / 42% 58% 47% 53%; }
 }
-@media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #marksfab, #remindfab { animation: none; } }
+@media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #askfab, #marksfab, #remindfab { animation: none; } }
 /* only the tab's own page shows the floating buttons: a split's embedded page shows its shell alone */
-body.embed :is(#findfab, #splitfab, #attachfab, #sentfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
+body.embed :is(#findfab, #splitfab, #attachfab, #sentfab, #askfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
 /* one Copy beside a selection: the floating one of a touch screen waits while this one shows */
 body:has(#markcopy:not([hidden])) #fabs #copyfab { display: none !important; }
 #markrail { position: absolute; z-index: 4; width: 16px; pointer-events: none; }
@@ -39,39 +43,77 @@ body:has(#markcopy:not([hidden])) #fabs #copyfab { display: none !important; }
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--t-bg) 70%, transparent); }
 #markrail .mk:hover::before, #markrail .mk:focus-visible::before { width: 6px; }
 @media (hover: none) { #markrail .mk { left: -8px; width: 26px; height: 24px; margin-top: -5px; } }   /* a finger's size */
+/* a wide window's marks on the terminal's right edge (promptrail.js): sent messages white, answers' ends pale blue, bookmarks orange, reminders pink, a bookmark's bar each */
+#msgrail { position: absolute; z-index: 4; width: 16px; pointer-events: none; }
+#msgrail .dot { position: absolute; left: 0; width: 16px; height: 14px; padding: 0; pointer-events: auto; display: grid; place-items: center; }
+#msgrail .dot::before { content: ""; width: 4px; height: 14px; border-radius: 2px; background: var(--t-fg);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--t-bg) 70%, transparent); }
+#msgrail .dot.mark::before { background: var(--mark); }
+#msgrail .dot.remind::before { background: var(--remind); }
+#msgrail .dot.end::before { background: var(--answer); }
+:root { --answer: color-mix(in srgb, cornflowerblue 45%, #fff); }
+:root.light { --answer: cornflowerblue; }   /* the pale one is too faint on a light page */
+#msgrail .dot:hover::before, #msgrail .dot:focus-visible::before { width: 6px; }
+body:not([data-shown="term"]) #msgrail, body.embed #msgrail { display: none !important; }
+body.nomarks :is(#msgrail, #markrail) { display: none !important; }   /* Settings' Side marks off (prefs.js) */
+body.wide #msgrail { grid-row: 1 / -1; }
 #markrail .mk[data-count]::after { content: attr(data-count); position: absolute; right: 9px; top: -1px; font-size: 9px; font-weight: 700;
   line-height: 14px; padding: 0 3px; border-radius: 7px; background: var(--mark); color: #1b1200; }
 #markbar { position: absolute; z-index: 6; left: 12px; right: 104px; max-width: 720px; margin: 0 auto; padding: 6px 6px 6px 10px; border-radius: var(--r-lg);
   --fill: var(--chrome-2); box-shadow: var(--shadow-far); font-size: var(--fs-small); }
 #markbar .mbhead { display: flex; align-items: center; gap: 6px; }
 #markbar .mbhead > svg { color: var(--mark); }
+#markbar :is(.mbnav, .mbacts) { display: flex; align-items: center; gap: 6px; }
+/* Insert into chat and its neighbours at a pane's foot (the reminders' cards, the sent history): one look everywhere */
+:is(#markbar, #remindlist, #sentpane) :is(.tochat, .spacts button) { height: 28px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label);
+  background: var(--surface-3); color: var(--t-fg); white-space: nowrap; }
+@media (hover: hover) { :is(#markbar, #remindlist, #sentpane) :is(.tochat, .spacts button):not(:disabled):hover { background: var(--surface-4); } }
+@media (hover: none) { :is(#markbar, #remindlist, #sentpane) :is(.tochat, .spacts button) { height: var(--h-touch); padding: 0 14px; } }
+/* a narrow bar: the note, ↑ ↓ and × on the first row, its buttons on a row under them */
+@media (max-width: 600px) { #markbar .mbhead { flex-wrap: wrap; } #markbar .mbacts { order: 1; flex: 1 0 100%; justify-content: flex-end; } }
 #mbnote { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 #mbnote.quiet, :is(#marklist, #markpane) .quiet { font-weight: 400; color: var(--muted); }
 #mbpos { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-#markbar button { height: 28px; padding: 0 8px; border-radius: 7px; }
+#markbar button { height: 28px; padding: 0 8px; border-radius: 7px; white-space: nowrap; }
 #markbar button.icon { width: 28px; padding: 0; display: grid; place-items: center; }
 @media (hover: hover) { #markbar button:hover { background: var(--surface-4); } }
 #mbdel.armed, .mkdel.armed { background: var(--danger-fill); color: #fff; }
 #mbwhy { margin: 6px 0 0; color: var(--muted); }
-#mbtext, #marktext { margin: 6px 0 0; max-height: 40vh; overflow: auto; padding: 6px 8px; border-radius: 7px; background: var(--t-bg);
+#mbtext, #marktext, #asktext { margin: 6px 0 0; max-height: 40vh; overflow: auto; padding: 6px 8px; border-radius: 7px; background: var(--t-bg);
   font: 12px/1.4 TermFont, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
-#marktext { max-height: 30vh; margin: 0; }
+#marktext, #asktext { max-height: 30vh; margin: 0; }
 body:not([data-shown="term"]) #markadd, body:not([data-shown="term"]) #markcopy, body:not([data-shown="term"]) #marksfab, body:not([data-shown="term"]) #markpane, body:not([data-shown="term"]) #markrail, body:not([data-shown="term"]) #markbar { display: none !important; }
 body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpane, body.wide #markrail, body.wide #markbar { grid-row: 1 / -1; }
 
-#markbox { width: min(520px, calc(100% - 24px)); --fill: var(--chrome); color: var(--t-fg); border: 0;
+:is(#markbox, #askbox) { width: min(520px, calc(100% - 24px)); --fill: var(--chrome); color: var(--t-fg); border: 0;
   border-radius: var(--r-xl); padding: var(--sp-4); box-shadow: var(--shadow-far); }
-#markbox form { display: flex; flex-direction: column; gap: 8px; }
-#markbox h2 { margin: 0; font-size: 15px; }
-#markbox label { font-size: 12px; color: var(--muted); }
-#marknote { font: inherit; font-size: 16px; color: inherit; background: var(--surface-3); border: 0;
+:is(#markbox, #askbox) form { display: flex; flex-direction: column; gap: 8px; }
+:is(#markbox, #askbox) h2 { margin: 0; font-size: 15px; }
+:is(#markbox, #askbox) label { font-size: 12px; color: var(--muted); }
+:is(#marknote, #askq) { font: inherit; font-size: 16px; color: inherit; background: var(--surface-3); border: 0;
   border-radius: var(--r-md); padding: 8px; resize: vertical; }
-#markerr { margin: 0; color: var(--danger-text); font-size: var(--fs-small); }
+:is(#markerr, #askerr) { margin: 0; color: var(--danger-text); font-size: var(--fs-small); }
 #markbox .actions .primary { background: var(--mark); color: #1b1200; font-weight: 600; }
+#askbox .actions .primary { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
+#askbox .actions .primary:disabled { opacity: .4; }
 
-#marksbtn > svg { color: var(--mark); }
+/* the list's foot button: the bookmark orange, the bell pink (reminders.css), before "Reminders" on a computer; a phone's blob holds both */
+#marksbtn svg { color: var(--mark); }
+#marksbtn .bell { color: var(--remind); }
+:root.light #marksbtn .bell { color: oklch(.56 .15 340); }
+#marksbtn .more svg { margin: 0 4px 0 2px; vertical-align: -2px; }
+#marksbtn > svg.two { display: none; }
+@media (max-width: 860px), (pointer: coarse) { #marksbtn > svg.two { display: block; } #marksbtn > svg.one { display: none; } }
 #marksbtn .count { margin-left: auto; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-#marklist { margin: 0 10px var(--sp-2); max-height: 45vh; overflow: auto; padding: var(--sp-1); border-radius: var(--r-lg); --fill: var(--chrome-2); }
+/* those no session shows: a large window on the right, the whole width on a phone */
+#marksdlg { position: fixed; inset: 12px 12px 12px auto; margin: 0; width: min(560px, calc(100vw - 24px)); height: auto; max-height: none; padding: 0; border: 0;
+  border-radius: var(--r-xl); --fill: var(--chrome); color: var(--t-fg); box-shadow: var(--shadow-far); display: none; flex-direction: column; }
+#marksdlg[open] { display: flex; }
+#marksdlg, #marksdlg button { font: var(--fs-body)/1.35 var(--ui); }   /* a list, as the session list's, not a dialog's terminal font (tmux.css) */
+#marksdlg .mdhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 4px; }
+#marksdlg h2 { margin: 0; font-size: var(--fs-title); }
+#marksdlg .mdhead .icon { width: 36px; height: 36px; border-radius: var(--r-md); font-size: 20px; }
+#marklist { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-3); }
 :is(#marklist, #markpane) ul { list-style: none; margin: 0; padding: 0; }
 :is(#marklist, #markpane) li { position: relative; display: flex; align-items: flex-start; padding-left: 8px; border-radius: 6px; margin: 2px 0; }
 /* a bookmark's mark: the list's wavy orange line, never a straight edge on a rounded box */
