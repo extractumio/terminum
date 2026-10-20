@@ -44,6 +44,16 @@ export async function webLook(browser, name) {
 
     check("look: every dialog's primary button is filled apart from its Cancel", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
       JSON.stringify(dialogs));
+    // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
+    const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu)")].map((d) => {
+      d.showModal();
+      const cs = (e) => `${getComputedStyle(e).fontSize} ${getComputedStyle(e).fontFamily.split(",")[0]}`;
+      const want = cs(d), odd = [...d.querySelectorAll("input:not([type=checkbox]), textarea, .actions button")].map((e) => [e.id || e.textContent.trim(), cs(e)]).filter(([, c]) => c !== want);
+      d.close();
+      return [d.id, want, odd];
+    }));
+    check("look: every dialog's fields and buttons share its type (the terminal's font, its size)", type.length >= 6 && type.every(([, w, odd]) => /TermFont/.test(w) && !odd.length),
+      JSON.stringify(type));
 
     if (phone) { await page.click("#navbtn"); await pause(page, 300); }
     const head = await page.evaluate(() => [...document.querySelectorAll('#sessions .grp[data-wid="devbox/terminum"] h2 button:not(.toggle)')].map((b) => {

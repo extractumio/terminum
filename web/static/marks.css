@@ -90,7 +90,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#markbox, #askbox) form { display: flex; flex-direction: column; gap: 8px; }
 :is(#markbox, #askbox) h2 { margin: 0; font-size: 15px; }
 :is(#markbox, #askbox) label { font-size: 12px; color: var(--muted); }
-:is(#marknote, #askq) { font: inherit; font-size: 16px; color: inherit; background: var(--surface-3); border: 0;
+:is(#marknote, #askq) { font: inherit; color: inherit; background: var(--surface-3); border: 0;
   border-radius: var(--r-md); padding: 8px; resize: vertical; }
 :is(#markerr, #askerr) { margin: 0; color: var(--danger-text); font-size: var(--fs-small); }
 #markbox .actions .primary { background: var(--mark); color: #1b1200; font-weight: 600; }
@@ -109,7 +109,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 #marksdlg { position: fixed; inset: 12px 12px 12px auto; margin: 0; width: min(560px, calc(100vw - 24px)); height: auto; max-height: none; padding: 0; border: 0;
   border-radius: var(--r-xl); --fill: var(--chrome); color: var(--t-fg); box-shadow: var(--shadow-far); display: none; flex-direction: column; }
 #marksdlg[open] { display: flex; }
-#marksdlg, #marksdlg button { font: var(--fs-body)/1.35 var(--ui); }   /* a list, as the session list's, not a dialog's terminal font (tmux.css) */
+#marklist, #marklist button { font: var(--fs-body)/1.35 var(--ui); }   /* its list as the session list's; its head a dialog's (tmux.css) */
 #marksdlg .mdhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 4px; }
 #marksdlg h2 { margin: 0; font-size: var(--fs-title); }
 #marksdlg .mdhead .icon { width: 36px; height: 36px; border-radius: var(--r-md); font-size: 20px; }
