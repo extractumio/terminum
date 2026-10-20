@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.14.4 |
+| Version | 0.14.5 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.5 | 2026-10-20 | Owner: a tap on a program that did not ask for the mouse opens the keyboard only on the cursor's row, as in the terminal (terminum-terminal.md AC-37) (AC-06). |
 | 0.14.4 | 2026-10-20 | Owner: a project's bookmarks and reminders are its own, a project that goes orphans them; a restore again keeps the sessions still running in their projects (they left them) (AC-92; terminum-terminal.md AC-33, AC-91). |
 | 0.14.3 | 2026-10-19 | Owner: background work alone holds a turn's end 10 minutes at most (AC-93; terminum-terminal.md AC-39). |
 | 0.14.2 | 2026-10-19 | Owner: a finger held still on the terminal's input for 2.5 s opens a menu of Paste (unless the clipboard is known empty), Undo and Redo; iOS's own menu never came there (the field is invisible); the keyboard button's menu is the same; a paste of an empty clipboard says so and sends nothing (AC-03); on a phone Attach (several files, their paths at the cursor), the bookmarks, the reminders and the split stand in a row at the bottom left under the input, and the agent's input box has no frame; Files and View on a phone take the terminal's place whole again (since the split view the terminal's row kept its half of the height) (AC-18); the reminders' bell on the plain buttons' fill, the bell itself pink (AC-91); a project's name has no mark before it (AC-92); the list: every row's bar at one place, the bookmarks' and reminders' waves thinner and gentler, a group's count in words and in one column, a terminal's icon white on a dark gray tile, no hourglass (its bar pulses), the shown session's row see-through (AC-01, AC-57, AC-39), the unread blob 6 px in the name's color on Clone (AC-93); a turn read from the screen ends only once its pane stayed done 10 s, Claude Code's "Waiting for 2 background agents to finish" is working, so is its footer's "1 shell, 1 monitor" (a shell still running in the background), and a busy row shows no unread mark (it showed while the turn went on) (AC-93, AC-39). |
@@ -305,7 +306,7 @@ Scenario: AC-06 happy path — touch
   Then a tap is a click at that cell, a swipe is wheel events, a two-finger tap is a right click; a long press selects text as in the terminal (no event sent)
 Scenario: AC-06 edge — the program did not ask for the mouse
   Given a program with #{mouse_any_flag} 0 (vim without "set mouse=a")
-  Then clicks move no cursor and send nothing; a tap opens the keyboard as in the terminal; the wheel scrolls the page
+  Then clicks move no cursor and send nothing; a tap on the cursor's row opens the keyboard, elsewhere it leaves it as it was, as in the terminal; the wheel scrolls the page
 Scenario: AC-06 edge — coding agents and selection
   Given Codex on the alternate screen asked for the mouse
   Then the wheel and a swipe go to it (it scrolls its own transcript), but presses and drags select text as on any page; on any program Shift held while pressing selects text instead of sending the press

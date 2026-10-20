@@ -220,9 +220,10 @@ export class Input {
       if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || !(mouse.matches || e.altKey) || String(getSelection()) || inWidget(e)) return;
       this.options.tapMove?.(e.clientX, e.clientY);
     });
-    // On a touch screen a short tap opens the keyboard; a long press selects text and a moving
-    // finger scrolls, so neither of those does. iOS opens the keyboard only for a focus() made
-    // inside the touch handler itself.
+    // On a touch screen only a tap on the input (the keyboard field lies over it, placeKbd) or
+    // the keyboard button opens the keyboard: a tap elsewhere on the terminal (reading, a link, a
+    // full-screen program's click) leaves it as it was; a long press selects text and a moving
+    // finger scrolls.
     // While the keyboard is up, iOS selects no page text on a long press (it taps instead; the
     // same on a plain page with a focused field). So a finger held still closes the keyboard and
     // selects the word under it, with iOS's handles; a tap on the selection shows Copy.
@@ -258,7 +259,6 @@ export class Input {
       if (sel && !sel.isCollapsed) { sel.removeAllRanges(); return; }   // a tap elsewhere clears a selection first
       if (t && this.options.tapLink?.(t.clientX, t.clientY)) return;    // a tap on an address or a path opens it
       if (t) this.options.tapMove?.(t.clientX, t.clientY);              // on the input: the cursor goes there
-      if (document.activeElement !== this.kbd) this.focus();
     });
     const form = this.pasteDialog.querySelector("form");
     form.addEventListener("submit", (e) => {

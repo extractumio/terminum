@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.6 |
+| Version | 0.3.7 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.7 | 2026-10-20 | Owner: on a touch screen only a tap on the input (the cursor's row, an agent's input box) or the keyboard button opens the keyboard; a tap elsewhere on the terminal (to read, on a link, a program's click) leaves it as it was (it opened it) (AC-37, AC-40). |
 | 0.3.6 | 2026-10-20 | Owner: a bookmark or a reminder belongs to the project (AC-92) its session was in when it was made, else to that session alone: only there it shows, comes up and marks the list (a folder's sessions in other projects showed it); terminumd orphans it once that project goes (deleted, or its last session closed) or, outside projects, that session closes, and the foot's "Bookmarks / Reminders" (both icons) lists only those no session shows; the bell's pane closes when another session is shown (it stayed open over it, at the window's top left) (AC-33, AC-91). `web-bookmarks.json` version 3: `project`, `orphaned`; an older file's bookmarks take the project their session is in, once; a restored server's bookmarks take their panes' new keys. |
 | 0.3.5 | 2026-10-19 | Owner: work in the background alone (a dev server, `tail -f`, a monitor) keeps a session working for 10 minutes at most, then it is done all the same (its turn ends, unread, reminders); the agent itself at work has no limit (AC-39, AC-93). |
 | 0.3.4 | 2026-10-19 | Owner: without hooks, Claude Code's "Waiting for N background agents to finish" is working (its subagents still run; it read done, and the session came up unread and its reminders due while they worked); a turn read from the screen ends once its pane stayed done 10 s; Claude Code's footer counting a shell, a monitor or an agent in the background is working (a session done but for a background shell came up unread) (AC-39, AC-91). |
@@ -287,8 +288,8 @@ Scenario: AC-37 happy path — a computer
   And while the selection lasts the screen pauses with "Paused while you select" over the terminal's first line (taps pass through) and catches up when it is cleared
 
 Scenario: AC-37 happy path — a phone
-  When the user taps the terminal
-  Then the keyboard opens and the page shrinks above it, growing back when it closes
+  When the user taps the input (the cursor's row, a coding agent's input box) or the keyboard button
+  Then the keyboard opens and the page shrinks above it, growing back when it closes; a tap elsewhere on the terminal leaves it as it was
   When the user long-presses
   Then iOS selects the word with its handles and Copy menu (each paragraph a block; a long one cut every 400 lines, so a tap on a selection in 3,000 lines never freezes); with the keyboard up a finger held still 0.45 s closes it and selects the word, kept in sight; a Copy button beside the keyboard button copies the selection, also after a tap cleared it and the terminal caught up
   And with a hardware keyboard ⌘C copies the selected terminal text and ⌘V pastes; the keyboard field gets the focus back when the user was typing when the selection began
@@ -451,7 +452,7 @@ Scenario: AC-40 edge — the cursor below the footer
 
 Scenario: AC-40 failure — not an agent's box
   Given a shell, less or htop
-  Then a tap on another row moves nothing (↑ and ↓ would recall history) and opens the keyboard; a tap on the cursor's row of a shell moves the cursor with ← and → as many as the columns between
+  Then a tap on another row moves nothing (↑ and ↓ would recall history) and leaves the keyboard as it was; a tap on the cursor's row of a shell moves the cursor with ← and → as many as the columns between
 ```
 
 ## 6. Flow and sequence diagrams

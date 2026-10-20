@@ -27,6 +27,17 @@ export async function webTouch(browser) {
   check(`${at} the keyboard field lies over the coding agent's whole input box (a finger held there gets Paste, Undo and Redo)`,
     cover.k[0] === cover.box[0] && cover.k[1] === cover.box[1], JSON.stringify(cover));
 
+  // only a tap on the input opens the keyboard: one on the answer above it leaves it closed
+  const tapAt = async (sel) => {
+    const r = await page.evaluate((s) => { const b = document.querySelector(s).getBoundingClientRect(); return { x: b.left + 40, y: b.top + b.height / 2 }; }, sel);
+    await page.touchscreen.tap(r.x, r.y);
+    await page.waitForTimeout(100);
+    return page.evaluate(() => document.activeElement?.id === "kbd");
+  };
+  const offInput = await tapAt("#screen .ln"), onInput = await tapAt("#kbd");
+  check(`${at} a tap on the terminal outside the input leaves the keyboard closed; a tap on the input opens it`, !offInput && onInput, JSON.stringify({ offInput, onInput }));
+  await page.evaluate(() => document.getElementById("kbd").blur());
+
   const shape = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById("kbdbtn")); return [cs.borderTopLeftRadius, cs.borderTopRightRadius]; });
   check(`${at} the floating keyboard buttons are nearly round blobs, not circles`, shape[0] !== shape[1] && !shape.includes("50%"), JSON.stringify(shape));
   // every other button a little uneven: bowed edges (neighbors differ), a border as a ring of that shape, a round one a blob
