@@ -18,7 +18,7 @@ use serde_json::json;
 
 use crate::app::Shared;
 
-pub const MAX_BYTES: usize = 20 << 20;
+pub const MAX_BYTES: usize = 100 << 20;
 const KEEP_DAYS: u64 = 7;
 /// Uploads at once (the body is held in memory).
 const AT_ONCE: usize = 2;
@@ -68,7 +68,7 @@ pub fn image_name(content_type: &str, data: &[u8]) -> Result<String, String> {
         return Err("The pasted image is empty.".into());
     }
     if data.len() > MAX_BYTES {
-        return Err("The image is larger than 20 MB.".into());
+        return Err("The image is larger than 100 MB.".into());
     }
     if !ok {
         return Err(format!("The pasted file is not a {} image.", ext.to_uppercase()));
@@ -82,7 +82,7 @@ pub fn upload_name(filename: &str, data: &[u8]) -> Result<String, String> {
         return Err("The file is empty.".into());
     }
     if data.len() > MAX_BYTES {
-        return Err("The file is larger than 20 MB.".into());
+        return Err("The file is larger than 100 MB.".into());
     }
     let base = filename.rsplit('/').next().unwrap_or("");
     let mut safe = String::new();

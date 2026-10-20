@@ -3,11 +3,16 @@
 // (a phone's row under the input), files dropped on the page. Each is saved where the pane's shell runs (this Mac or its host), keeping
 // a file's name, and its path is pasted as text without Enter: programs such as Claude Code take
 // a file by its path. Dropped files go one at a time (the bridge takes two at once) and their
-// paths are pasted together; so do picked ones.
+// paths are pasted together; so do picked ones. A file over the limit is not sent: the page says
+// to give its path instead (a browser never gives a page a file's path).
 import { shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
 const TAKEN = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+const MAX_BYTES = 100 << 20;            // terminumd's upload limit (page/upload.rs MAX_BYTES)
+
+/** Why a file over the upload limit was not sent. */
+export const tooLarge = (name) => `${name} is larger than the 100 MB an upload may be: type or paste the path to the file instead.`;
 
 /** The image as terminumd takes it: as it is, else drawn into a PNG (TIFF from Preview, HEIC). */
 export async function asTaken(blob) {
@@ -30,6 +35,7 @@ export function uploads({ sid, paste, toast, hideToast }) {
     const text = r ? await r.text().catch(() => "") : "";
     let m = {};
     try { m = JSON.parse(text); } catch { m = { error: text.trim() || undefined }; }   // the server's own refusals are plain text
+    if (r?.status === 413) return { error: tooLarge(blob.name ?? `The ${what}`) };   // never the server's own words
     if (!r?.ok || !m.path) return { error: m.error ?? (r ? `The ${what} was not uploaded (${r.status}).` : "The Mac does not answer.") };
     return { path: m.path };
   }
@@ -41,6 +47,7 @@ export function uploads({ sid, paste, toast, hideToast }) {
     const paths = [];
     let error = null;
     for (const [i, [blob, url]] of list.entries()) {
+      if (blob.size > MAX_BYTES) { error = tooLarge(blob.name ?? `The ${what}`); break; }   // not sent at all
       toast(list.length > 1 ? `Uploading ${i + 1} of ${list.length}…` : `Uploading the ${what}…`, 60000);
       ({ path: paths[i], error } = await save(blob, what, url, from));
       if (error) { paths.pop(); break; }

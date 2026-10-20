@@ -100,6 +100,9 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish).
 - **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
   host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
+- **A file dropped** on the page (or picked with Upload) is uploaded as a screenshot is and its
+  path pasted, up to 100 MB; give a larger file by its path (a browser never tells a page where a
+  dropped file is).
 
 ## Your own tmux sessions
 

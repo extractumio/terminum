@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-36 against a real private terminumd (e2e_live.mjs): a screenshot pasted into the
 // terminal is uploaded to ~/.terminum/tmp, never typed as text, and its path is pasted into
-// the shell, which then has it as one word.
+// the shell, which then has it as one word; a file over 100 MB is not sent: the page says why.
 import fs from "node:fs";
 import path from "node:path";
 import { check, within } from "./check.mjs";
@@ -48,6 +48,33 @@ async function pasteInto(page, home, b64, type, name, tag) {
     const m = document.getElementById("screen").innerText.match(new RegExp(`${tag}<(/[^>\\n]*)>`));
     return m && m[1];
   }, tag, { timeout: 5000 }).then((h) => h.jsonValue()).catch(() => null);
+}
+
+/** A drop of one file of `size` bytes named `fname`, modified at `mtime` (ms), on the page. */
+const dropFile = (page, fname, size, mtime) => page.evaluate(([fname, size, mtime]) => {
+  const dt = new DataTransfer();
+  dt.items.add(new File([new Uint8Array(size)], fname, { lastModified: mtime }));
+  for (const type of ["dragover", "drop"]) document.getElementById("term").dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
+}, [fname, size, mtime]);
+
+/** A file over 100 MB dropped (AC-36): not sent, the page says to give its path. */
+export async function liveDrop(page, { home }) {
+  // 22 MB (the owner's zip was refused at the old 20 MB): uploaded, its path pasted
+  const was = shots(home).length;
+  await dropFile(page, "Cat Package.zip", 22 << 20, 1_792_000_000_000);
+  for (let i = 0; i < 100 && shots(home).length === was; i++) await page.waitForTimeout(100);
+  const saved = shots(home).find((f) => f.endsWith("Cat_Package.zip") || f.endsWith("Cat-Package.zip") || /Cat.Package\.zip$/.test(f));
+  const size = saved ? fs.statSync(path.join(home, "tmp", saved)).size : 0;
+  await page.waitForTimeout(300);
+  const typed = await page.evaluate(() => document.getElementById("screen").innerText.includes("Package.zip"));
+  await page.keyboard.press("Control+U");
+  check("AC-36 a 22 MB file dropped is uploaded (100 MB at most) and its path pasted", size === 22 << 20 && typed, JSON.stringify({ saved, size, typed }));
+  const before = shots(home).length;
+  await dropFile(page, "Big Package.zip", (100 << 20) + 1, 1_792_000_000_000);
+  await page.waitForTimeout(800);
+  const said = await page.evaluate(() => document.getElementById("toast").innerText);
+  check("AC-36 a file over 100 MB is not sent: the page says to give its path instead",
+    said === "Big Package.zip is larger than the 100 MB an upload may be: type or paste the path to the file instead." && shots(home).length === before, said);
 }
 
 export async function livePaste(page, { home, name }) {

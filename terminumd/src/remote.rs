@@ -229,7 +229,7 @@ pub struct PasteName {
 pub async fn agent_paste(axum::extract::Query(q): axum::extract::Query<PasteName>, body: axum::body::Bytes) -> Response {
     let dir = crate::config::home().join(crate::page::upload::REMOTE_DIR);
     if body.len() > crate::page::upload::MAX_BYTES {
-        return err(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Larger than 20 MB");
+        return err(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Larger than 100 MB");
     }
     let name = q.name.clone();
     match crate::http::blocking(move || crate::page::upload::save_in(&dir, &name, &body)).await {

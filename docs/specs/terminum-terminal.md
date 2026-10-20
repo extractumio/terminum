@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.18 |
+| Version | 0.3.22 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,10 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.22 | 2026-10-20 | Owner: uploads take 100 MB (a 22 MB zip failed at 20 MB); a larger file is not sent and the page says to give its path instead, never the server's raw text; Starship's prompt with a variation selector after ❯ ("at 19:20 ❯︎") is told apart from the command sent (AC-36, AC-90). A file found on this Mac by its name, size and time and pasted by its own path was built and withdrawn at the owner's word. |
+| 0.3.21 | 2026-10-20 | Owner: a mark's press lands on its message (it went to a wrong place): an agent's prompt only on its prompt row, a folded paste's placeholder not looked for, a bar of several tries each, a hidden line brings what shows it; an answer's end never taken from a question's options (AC-90). Measured on a replayed real chat: 9 of 9 marks land in view. |
+| 0.3.20 | 2026-10-20 | Owner: Ask's quote numbers count on across terminumd's restarts (the last given was kept in memory only, and a pane without hooks never had its folded paste in the sent history: numbers began again at 1) (AC-37). |
+| 0.3.19 | 2026-10-20 | Owner: a bookmark's wavy line stands apart from the terminal's edge and the text (a 16 px gutter); a bookmark just saved is marked by it at once (it showed only once brought into view) (AC-33). |
 | 0.3.18 | 2026-10-20 | Owner: Ask's quote has a blank line after it only, none before (AC-37). |
 | 0.3.17 | 2026-10-20 | Owner: every dialog's fields and buttons share its type, the terminal's font at its size (Ask's question and a project's name were 16 px, the name in the interface font); the Bookmarks / Reminders window's head as a dialog's, its list as the session list's (AC-37, AC-33). |
 | 0.3.16 | 2026-10-20 | Owner: a pale blue mark where each answer of the agent ended, kept by terminumd from the screen at the turn's end (AC-90); a question's words in the transcript above Claude Code's input box no longer make a session waiting (a false ?) (AC-39). Pragmatic review applied: the screen read at the hooks' Stop (not at the list's turn end, seconds later), the turn line, rules and rows too short to be found again passed over, nothing kept for a full-screen program, `endnew` rather than `sentnew`; rejected: the answer's last line from the hooks' payload (terminum hook never forwards the agent's answer). |
@@ -203,6 +207,7 @@ Scenario: AC-33 happy path — marks, the way back, the lists
   Then each is an orange mark on the terminal's right edge, the text stopping 6 px before the marks (a narrow window or a phone; a wide one shows them among the sent messages' marks there, AC-90) placed by its line between the oldest loadable line and the last; the session's row has an orange strip; a round button at the top right shows the count and opens the session's list (note, text start, time)
   When the user presses a mark or a list entry
   Then terminumd looks for the text nearest its line (1000 lines either side first, the whole history after; tmux renumbers when it drops lines or the scrollback is cleared), the page loads older lines down to it, opens a fold it is in, scrolls so the text stands a third from the top, marked by a wavy orange line on its left; rendered text is found in the widget; "Its text was not found there: this is the line it was on." when only the line is found
+  And the wavy line stands in the terminal's 16 px left gutter, 5 px from its edge and 5 px before the text; a bookmark just saved gets it at once, where its text stands (the view does not move)
   And the place stays put under widgets drawing until the user scrolls, taps, types or shows another pane; a bar shows the note with Insert into chat, Edit, Delete and ×
   When the user presses Insert into chat
   Then its note and, under it after a blank line, its text quoted ("> " a line) are pasted into the shown pane's input as one paste, no Enter; on a computer the terminal takes the keys, a phone's keyboard stays as it was
@@ -280,15 +285,15 @@ Scenario: AC-35 failure — the folder is unknown
 Scenario: AC-36 happy path — paste an image
   Given the shown pane runs on this Mac, or on a host whose files helper is enabled
   When the user pastes an image (a screenshot: PNG, JPEG, GIF, WebP; another type the browser can draw, such as TIFF from Preview or HEIC in Safari, is turned into a PNG first) into the terminal, or presses the hot key Paste over HTTPS with an image on the clipboard
-  Then the image is never typed as text; the page uploads it (at most 20 MB, 2 at once, 300 s to arrive), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste
+  Then the image is never typed as text; the page uploads it (at most 100 MB, 2 at once, 300 s to arrive), terminumd saves it where the pane's shell runs ("~/.terminum/tmp/" on the Mac and on a host; folder 0700, file 0600, named by UTC time and 8 random hex digits), and the page pastes the absolute path shell-quoted as text (bracketed when on), no Enter; files older than 7 days go at the next paste
 
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
   Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together separated by spaces; the terminal is outlined while files are held over it; a folder is refused; a drop never makes the browser open the file
 
 Scenario: AC-36 failure — refused or failed
-  When the image is of another type, its bytes do not match, it is over 20 MB, or a third upload starts
-  Then nothing is typed and a toast says why ("Two uploads are running already")
+  When the image is of another type, its bytes do not match, it is over 100 MB, or a third upload starts
+  Then nothing is typed and a toast says why ("Two uploads are running already"); a file over 100 MB is not sent, the page saying "<name> is larger than the 100 MB an upload may be: type or paste the path to the file instead." (a browser never gives a page a file's path), and terminumd's own "too large" answer says the same, never the server's raw text
   When the pane's host has no helper, or ssh fails or takes longer than 30 s plus 1 s per 256 KB
   Then nothing is typed, the toast says to enable the host or shows ssh's message, no partial file is left under the name; when one of several files fails, the rest are not sent and the saved paths are pasted
 ```
@@ -312,7 +317,7 @@ Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
   Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (on a wide window the three stand left of the floating column); it is hidden otherwise
   When the user presses Ask, types a question and presses Add to Chat
-  Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, so it counts up across devices and reloads), and the page puts at the input's cursor, no Enter, a blank line after it (none before):
+  Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts; Claude Code's folded paste reaches the sent history only through its hooks), and the page puts at the input's cursor, no Enter, a blank line after it (none before):
     "Quote #0007:\n - Quote Start ----\n«<the selected text>»\n- Quote End ----\n<the question>\n----"
   And in a coding agent's box the blank line is typed as two Ctrl+J after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) it is inside the paste
   And Cancel or Esc closes the dialog and pastes nothing; Add to Chat is off while the question is empty
@@ -423,8 +428,8 @@ Scenario: AC-90 happy path — the marks on the right edge
   Given a window at least 861 px wide
   Then the terminal's right edge (where a narrow window shows the bookmarks' marks), placed over the loadable history as a scrollbar's thumb, shows a white rounded bar (4 × 14 px, as a bookmark's mark) where each message sent in the shown pane stands (its newest 200; terminumd finds each by its text near its line; one not found shows none), an orange one at each bookmark the session shows of its own and a pink one at each open reminder (one bar where they meet: pink over orange over white), each titled with its text
   When the user presses a bar
-  Then that message, bookmark or reminder is brought into view (a bookmark's bar shows)
-  And where each answer of the pane's coding agent ended is a pale blue bar (under white, orange and pink where they meet), titled "Answer ended: <its last row>": at the turn's end (the hooks' Stop, else a turn read from the screen) terminumd reads the pane's screen and keeps the last row above the agent's input box ("❯ ", Codex's "› ") that is not blank, a rule or the turn's "Worked for 43s" line and has 4 letters and digits at least, with its line, in the project's ends.jsonl (2000 kept, cut back as sent.jsonl is), never the sent history; a full-screen program's (no history), a screen at work or one without an input box keeps none; the answer's text never comes through the hooks; every page hears `endnew {key}` and the shown pane's asks for the places again
+  Then that message, bookmark or reminder is brought into view (a bookmark's bar shows); a bar of several tries them in turn (its color's kind first) until one is found; a coding agent's prompt is found only on a row its transcript opens with "❯ " ("› ", "> "), never where an answer or a tool's output quotes the same words; Claude Code's "[Pasted text #3 +5 lines]" is left out of the text looked for (the transcript shows the paste); a line hidden under a widget or a fold brings the widget or the nearest row shown into view
+  And where each answer of the pane's coding agent ended is a pale blue bar (under white, orange and pink where they meet), titled "Answer ended: <its last row>": at the turn's end (the hooks' Stop, else a turn read from the screen) terminumd reads the pane's screen and keeps the last row above the agent's input box (Claude Code's "❯ " between two rules, Codex's "› "; never a question's options, "❯ 1. Yes") that is not blank, a rule or the turn's "Worked for 43s" line and has 4 letters and digits at least, with its line, in the project's ends.jsonl (2000 kept, cut back as sent.jsonl is), never the sent history; a full-screen program's (no history), a screen at work or one without an input box keeps none; the answer's text never comes through the hooks; every page hears `endnew {key}` and the shown pane's asks for the places again
   And the rail's height is the whole loadable history (up to the history lines, 12,000 by default): a bar stands at its line's place in it, moves up as the history grows, and is gone once its line left the history
   And Settings' "Side marks" switch (on by default, kept in this browser) hides these marks and the bookmarks' marks of a narrow window, and terminumd is asked for no places while it is off
   And the bars are drawn again when the pane is shown, when its history starts anew, when a message is kept in that pane (not another's) and when the bookmarks change; a narrower window or a phone has no strip
@@ -639,7 +644,7 @@ Trace record (`logs/trace-*.jsonl`): `{"at": 1792003600123, "k": 17, "kind": "ch
 | Unfold | 20,000 lines, a told fold | refused with why |
 | Bookmarks | 300; text 2000, note 1000 characters | refused with why; a longer text is cut |
 | Search | 2000 matches told; 200 characters | "2000+"; refused inline |
-| Upload | 20 MB, 2 at once, 300 s | toast with why |
+| Upload | 100 MB, 2 at once, 300 s | toast with why |
 | Trace | 15 minutes, 20 MB, 10 files; ring 640 events, copy 120,000 characters | ends and says so; oldest events go first |
 | Pasted files kept | 7 days | removed at the next paste |
 | Agent states (AC-39) | an agent's or `node` pane's screen read at most once per 6 s unless its title changes, all of a server's in one batch | — |
