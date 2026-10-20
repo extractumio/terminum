@@ -234,6 +234,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #hist, #screen { display: contents; }
 /* The pane's rows as tmux has them (AC-04): one row a line, at its own width */
 #term { white-space: pre; }
+#term.holding { overflow-x: hidden; }   /* the view's new width on its way to tmux: clipped, not scrolled (AC-04) */
 #term .ln { display: block; min-height: 1.25em; width: max-content; }
 /* a long separator: its characters hidden (copied as they are), a line across the view instead */
 #term .ln.rule.full { display: block; width: auto; height: 1.25em; overflow: hidden; white-space: pre; -webkit-text-fill-color: transparent;

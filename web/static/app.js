@@ -423,9 +423,11 @@ function setSize(px, save = true) {
 // The pane's rows as they are at the chosen text size; the active page sizes the pane to its
 // view (AC-13). A pane wider than the view (another page sized it, the user's own tmux not
 // typed in yet, a window of several panes) is scaled to the view's width, down to SIZE_MIN px;
-// smaller than that, it stays at the chosen size and scrolls sideways.
+// smaller than that, it stays at the chosen size and scrolls sideways. While the view's new
+// width is on its way to tmux, the pane stays at the chosen size, clipped (sizing.js).
 function applyFit() {
-  const px = view.cols && view.tooWide() ? view.fitPx() : 0;
+  const hold = sizing.holding(), px = view.cols && !hold && view.tooWide() ? view.fitPx() : 0;
+  $("term").classList.toggle("holding", hold);
   $("term").style.fontSize = px >= SIZE_MIN ? `${px}px` : "";
 }
 view.onCols = () => view.keepBottom(applyFit);   // the pane's width changed

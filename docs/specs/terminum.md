@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.14.5 |
+| Version | 0.14.6 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.6 | 2026-10-20 | Owner: a view that changes width (docked Files opened, a dragged window, a phone turned, − and +) keeps the text at the chosen size, its rows clipped at the view's edge, until tmux has the new width, 2 s at most after the last change; the text no longer shrank to the old width and grew back when the pane re-wrapped a moment later (AC-04). |
 | 0.14.5 | 2026-10-20 | Owner: a tap on a program that did not ask for the mouse opens the keyboard only on the cursor's row, as in the terminal (terminum-terminal.md AC-37) (AC-06). |
 | 0.14.4 | 2026-10-20 | Owner: a project's bookmarks and reminders are its own, a project that goes orphans them; a restore again keeps the sessions still running in their projects (they left them) (AC-92; terminum-terminal.md AC-33, AC-91). |
 | 0.14.3 | 2026-10-19 | Owner: background work alone holds a turn's end 10 minutes at most (AC-93; terminum-terminal.md AC-39). |
@@ -266,6 +267,11 @@ Scenario: AC-04 happy path — one view, the tmux window's grid
 Scenario: AC-04 edge — a pane wider than the view
   Given the pane is wider than the view at the chosen text size: a session of the user's own tmux only looked at (AC-89), a window of several panes (never resized, AC-13), another page's size, a refused resize
   Then the rows are scaled down to the view's width, and when that would make the text smaller than 7 px (the smallest size − and + allow) they are drawn at the chosen size with the rest by scrolling sideways; "Sized for another screen (W×H)" says so when another page sized it
+Scenario: AC-04 edge — the view changes width
+  Given this page sized the pane to its view (its columns are the ones it sent)
+  When the view's width or the text size changes (docked Files opened or closed, a dragged window, a phone turned, − and +)
+  Then the text stays at the chosen size and rows wider than the view are clipped at its edge, with no sideways scrolling, until tmux's pane has the view's new width; then the pane is drawn re-wrapped, so the text size changes once at most and never shrinks to the old width first
+  And when the pane does not take the width within 2 s of the last change (a window of several panes, another page's size, a refused resize, the 45-column floor) it is drawn as a pane wider than the view
 Scenario: AC-04 edge — settings of earlier versions
   Given settings.json still has "size", "page.lines" or "page.screenMode"
   Then they are not used, and the page says once "settings.json: size, page.lines and page.screenMode are no longer used: the active page sizes the pane"

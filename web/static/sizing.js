@@ -5,7 +5,9 @@
 // first key typed after a pause (at most once a second); terminumd decides whether it sizes the
 // window (the active page does) and keeps it within 45×14 and 240×70. A pane another page
 // sized is drawn as it is (app.js scales a wider one) with "Sized for another screen" until
-// this page sizes it again.
+// this page sizes it again. A pane this page sized whose view changes width keeps the chosen
+// text size, clipped at the edge, until tmux has the new width (2 s at most after the last
+// change): the text never shrinks to the old width and grows back when the pane re-wraps (AC-04).
 // A full-screen program (tmux's alternate screen, not a coding agent's) hides the history and
 // the widgets, and gets the mouse when it asked for it.
 
@@ -13,12 +15,15 @@ const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
 const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
 const SLIVER = { cols: 20, rows: 5 };   // a view smaller than this is passing: no size sent
+const HOLD = 2000;              // ms after the last change a pane may wait for its new width unscaled
+const bounded = (cols) => Math.max(45, Math.min(240, cols));   // the columns terminumd gives a grid (its sizing.rs)
 
 /** view: the TermView; sid(): the shown pane's id; refit(): the drawn size may have changed;
  *  notify(text): a toast. */
 export function paneSizing({ view, send, sid, refit, notify }) {
   const term = $("term");
   let last = null, typedAt = -Infinity, settle = 0, elsewhere = null, full = false;
+  let holdUntil = 0, holdTimer = 0, heldFor = null;   // a hold, once for each size sent (heldFor)
 
   // a full-screen program: on the alternate screen, but not Codex's own (its input box, footer
   // and history are the page's); Claude Code draws none, so one in its pane is a program's
@@ -46,8 +51,30 @@ export function paneSizing({ view, send, sid, refit, notify }) {
     refit();
   }
 
+  /** True while the pane waits for this view's new width: drawn at the chosen size, clipped,
+   *  not scaled (AC-04). It starts when a pane at the width this page sent no longer has the
+   *  view's width, and ends when tmux's width is the view's, another screen sized it, or HOLD. */
+  function holding() {
+    if (elsewhere || !last || !view.cols) return false;
+    const fits = view.cols === bounded(grid().cols);
+    if (holdUntil > performance.now()) return !fits;
+    if (fits || view.cols !== bounded(last.cols) || heldFor === last) return false;
+    heldFor = last;
+    extend();
+    return true;
+  }
+  /** A hold lasts HOLD after the view's last change; its end draws the pane as it is then. */
+  function extend() {
+    holdUntil = performance.now() + HOLD;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => { holdUntil = 0; refit(); }, HOLD);
+  }
+
   // the view's size: the window, the session list, docked Files, the keyboard, the hot keys
-  const changed = () => { clearTimeout(settle); settle = setTimeout(() => sendSize(false), SETTLE); };
+  const changed = () => {
+    clearTimeout(settle); settle = setTimeout(() => sendSize(false), SETTLE);
+    if (holdUntil > performance.now()) extend();   // a dragged edge: the hold lasts while it moves
+  };
   new ResizeObserver(changed).observe(term);
 
   // Codex on tmux's alternate screen (started without --no-alt-screen) has no scrollback to load:
@@ -168,12 +195,13 @@ export function paneSizing({ view, send, sid, refit, notify }) {
   });
 
   return {
-    fullscreen, mouseOn, sync,
+    fullscreen, mouseOn, sync, holding,
     /** Another screen sized the pane: drawn as it is until this page sizes it. */
     elsewhere: () => !!elsewhere,
     /** A pane was opened: this view's size goes to terminumd. */
     opened() {
       last = null; elsewhere = null; showSized();
+      holdUntil = 0; heldFor = null; clearTimeout(holdTimer);   // a hold was the pane shown before
       sync();
       sendSize(false);
     },
