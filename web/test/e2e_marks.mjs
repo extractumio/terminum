@@ -175,6 +175,14 @@ export async function webMarks(browser, name = "") {
   const mark = sent.find((m) => m.t === "mark" && !m.id);
   check(`${at} Save sends the line, the text and the note; the dialog closes`,
     mark?.sid === "S1" && mark.n === 2500 && mark.text.startsWith("out 2500 lorem ipsum") && mark.note === "look again" && !await page.evaluate(() => document.getElementById("markbox").open), JSON.stringify(mark));
+  // its wavy line at once, where it stands, apart from the terminal's edge and the text
+  const just = await page.evaluate(() => { const l = document.getElementById("markline"), t = document.getElementById("term"), r = l?.getBoundingClientRect(), tr = t.getBoundingClientRect();
+    const row = [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("out 2500 lorem")), txt = row && document.createRange();
+    if (txt) txt.selectNodeContents(row);
+    const tx = txt?.getBoundingClientRect();
+    return { shown: !!l && !l.hidden, text: l?.range?.toString().slice(0, 14), edge: r && Math.round(r.left - tr.left - t.clientLeft), gap: r && tx && Math.round(tx.left - r.right) }; });
+  check(`${at} a bookmark just saved has its wavy line at once, 5 px from the terminal's edge and 5 px before the text`,
+    just.shown && just.text === "out 2500 lorem" && just.edge === 5 && just.gap === 5, JSON.stringify(just));
   await page.waitForFunction(() => document.querySelector('#msgrail .dot[title*="look again"]'), null, { timeout: 3000 }).catch(() => {});   // drawn at the next frame
   const rail = await page.evaluate(() => [...document.querySelectorAll("#msgrail .dot.mark")].map((b) => ({ top: parseFloat(b.style.top), title: b.title })));
   check(`${at} the session's bookmarks are orange dots on the left strip (a wide window; none on the right edge), placed by their lines`,

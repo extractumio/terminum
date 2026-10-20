@@ -71,7 +71,7 @@ export class Jumper {
     this.clear();
     try {
       // a sent message (AC-90) is looked for by its text, nearest the line it was sent on
-      this.send(item.find ? { t: "locate", id: item.id, text: item.text, n: item.n } : { t: "locate", id: item.id });
+      this.send(item.find ? { t: "locate", id: item.id, text: item.text, n: item.n, prompt: !!item.prompt } : { t: "locate", id: item.id });
       const at = await this.wait((m) => m.t === "located" && m.id === item.id);
       if (gone()) return { cancelled: true };
       if (at.n === null || at.n === undefined) return { why: at.why, gone: true };
@@ -82,6 +82,15 @@ export class Jumper {
     } catch (e) {
       return gone() ? { cancelled: true } : { why: e.message };
     }
+  }
+
+  /** Marks line n's needle where it stands, the view not moved (a bookmark just made, AC-33). */
+  markAt(n, needle) {
+    for (const o of Jumper.all) if (o !== this) o.token++;
+    this.token++;
+    this.clear();
+    this.find = () => this.target(n, needle, 0);
+    this.mark(this.find());
   }
 
   /** Brings line n into view, its needle marked (the skip+1-th on the row when exact). */
@@ -148,6 +157,14 @@ export class Jumper {
   target(n, needle, skip = 0) {
     const rec = this.view.recordAt(n);
     if (!rec) return null;
+    // the element that shows the line: its row, else the widget drawn over it, else the nearest
+    // row above that is laid out (a row hidden under a widget or a fold measures 0: the view would jump anywhere)
+    const shown = (el) => {
+      if (el.getClientRects().length) return el;
+      for (const [anchor, h] of this.widgets.hosts) if (h.rows.includes(el) && anchor.getClientRects().length) return anchor;
+      for (let k = n - 1; k > n - 200; k--) { const r = this.view.recordAt(k); if (!r) break; if (r.el.getClientRects().length) return r.el; }
+      return el;
+    };
     const first = (nodes) => [needle].flat().reduce((r, nd) => r || rangeOf(nodes, nd), null);
     const longest = [needle].flat()[0] ?? "";
     const count = (text) => { let c = 0, i = -1; while ((i = text.toLowerCase().indexOf(needle.toLowerCase(), i + 1)) >= 0) c++; return c; };
@@ -169,8 +186,8 @@ export class Jumper {
       letters += this.exact ? r.txt.length : loose(r.txt).length;
       if (this.exact && r.data.e) break;                            // a search's match lies within its line
     }
-    if (!needle) return rec.el;
-    return (this.exact ? rangeOfText(nodes, needle, skip) : first(nodes)) || rec.el;
+    if (!needle) return shown(rec.el);
+    return (this.exact ? rangeOfText(nodes, needle, skip) : first(nodes)) || shown(rec.el);
   }
 
   reveal(n, needle, skip = 0) {
@@ -201,7 +218,7 @@ export class Jumper {
     const rects = !live ? [] : at instanceof Range ? [...at.getClientRects()].filter((r) => r.height) : [at.getBoundingClientRect()];
     if (!rects.length) { line.hidden = true; return; }
     const t = this.term.getBoundingClientRect(), top = Math.min(...rects.map((r) => r.top)), bottom = Math.max(...rects.map((r) => r.bottom));
-    line.style.cssText = `top:${Math.round(top - t.top + this.term.scrollTop)}px;height:${Math.round(bottom - top)}px;left:${this.term.scrollLeft + 6}px`;   // in the terminal's 8 px gutter, beside the text
+    line.style.cssText = `top:${Math.round(top - t.top + this.term.scrollTop)}px;height:${Math.round(bottom - top)}px;left:${this.term.scrollLeft + 5}px`;   // in the middle of the terminal's 16 px gutter, apart from its edge and the text
     line.hidden = false;
   }
 

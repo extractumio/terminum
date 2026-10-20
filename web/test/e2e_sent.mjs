@@ -26,7 +26,7 @@ export async function webSent(browser, name) {
       if (m.t === "sentget") say({ t: "sentone", sid: SID, n: m.n, total: 2, item: m.n === 0 ? ITEM : { ...ITEM, text: "ls -la", agent: undefined, key: undefined, line: undefined }, host: "local", path: "/Users/alex/work/api" });
       // where a sent message stands (AC-90): "ls -la" and "out 1" are found, the newest is gone
       if (m.t === "locate" && m.text) say(/ls -la|out 1/.test(m.text) ? { t: "located", id: m.id, sid: SID, n: 0, start: 0, size: 3 } : { t: "located", id: m.id, sid: SID, n: null, why: "These lines are no longer in this session's history." });
-      if (m.t === "sentmarks") say({ t: "sentmarks", sid: SID, items: [{ n: 0, text: "out 1" }], ends: [{ n: 2, text: "alex@mac api % git status" }] });
+      if (m.t === "sentmarks") say({ t: "sentmarks", sid: SID, items: [{ n: 0, text: "gone from here", prompt: true }, { n: 0, text: "out 1", prompt: true }], ends: [{ n: 2, text: "alex@mac api % git status" }] });
     } });
     const { page, sent } = f;
     await page.route("**/fb/**", (route) => {
@@ -114,7 +114,8 @@ export async function webSent(browser, name) {
       const k = sent.length;
       await page.click("#msgrail .dot.sent");
       await pause(page, 300);
-      check("the right edge's marks: a message's bar asks terminumd where its text is, near its line", sent.slice(k).some((m) => m.t === "locate" && m.text === "out 1" && m.n === 0), JSON.stringify(sent.slice(k)));
+      check("the right edge's marks: a bar of two messages asks for the first, not found there, then the next, near its line, as an agent's prompt",
+        JSON.stringify(sent.slice(k).filter((m) => m.t === "locate").map((m) => [m.text, m.n, m.prompt])) === '[["gone from here",0,true],["out 1",0,true]]', JSON.stringify(sent.slice(k)));
       const k3 = sent.length;
       f.say({ t: "endnew", key: "tmux:local:terminum:%2" });           // another pane's answer: nothing to ask
       f.say({ t: "endnew", key: SID });                                // this pane's: its places again

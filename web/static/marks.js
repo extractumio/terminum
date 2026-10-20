@@ -9,7 +9,7 @@ import { markPicker } from "./markpick.js";
 import { placeBeside } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
-import { railBox, railSlots } from "./marktext.js";
+import { loose, railBox, railSlots } from "./marktext.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
@@ -190,6 +190,7 @@ export class Marks {
     save.disabled = false; this.saving = false;
     if (reply.error) { $("markerr").textContent = reply.error; $("markerr").hidden = false; return; }
     $("markbox").close();
+    if (!ed.id && ed.sid === this.sid()) this.jumper.markAt(ed.n, loose(ed.text));   // its wavy line at once, where it stands
     const where = this.hereProject() ? "an agent of this project" : "this session's agent";
     if (!ed.id) this.toast(this.kind === "reminder" ? `Reminder set: it comes up when ${where} ends a turn.` : "Bookmarked.", this.kind === "reminder" ? 3500 : undefined);
   }
@@ -215,10 +216,12 @@ export class Marks {
   }
 
   /** Brings a sent message's `text` into view in the shown pane (AC-90): terminumd finds it
-   *  nearest line `n` (its hint), else nearest the end. {ok}, {why} or {cancelled}. */
-  jumpText({ text, n }) {
+   *  nearest line `n` (its hint), else nearest the end; a coding agent's prompt (`prompt`) only
+   *  where its transcript shows it. {ok}, {why} or {cancelled}. */
+  jumpText({ text, n, prompt = false }) {
     this.hideBar();
-    return this.jumper.go({ id: `sent:${Math.random().toString(36).slice(2)}`, sid: this.sid(), text, n, find: true });
+    text = text.replace(/\[Pasted text #\d+[^\]\n]*\]/g, "").trim();   // a paste the input box folded: the transcript shows it whole (sent.rs findable)
+    return this.jumper.go({ id: `sent:${Math.random().toString(36).slice(2)}`, sid: this.sid(), text, n, prompt, find: true });
   }
 
   /** Shows item's pane and brings its text into view; the bar says how it went. */

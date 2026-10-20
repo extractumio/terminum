@@ -34,8 +34,6 @@ pub struct Sent {
     last: Mutex<HashMap<String, (String, Instant)>>,
     /// per hooked pane: (the loose first line of what the page saw, its line), newest last
     hints: Mutex<HashMap<String, VecDeque<(String, i64)>>>,
-    /// per pane: the last question number given (AC-37 Ask), also before it was sent
-    asked: Mutex<HashMap<String, u64>>,
     write: Mutex<()>,
 }
 
@@ -98,7 +96,7 @@ fn pem_out(text: &str) -> String {
 
 impl Sent {
     pub fn new(root: PathBuf) -> Sent {
-        Sent { root, last: Mutex::default(), hints: Mutex::default(), asked: Mutex::default(), write: Mutex::default() }
+        Sent { root, last: Mutex::default(), hints: Mutex::default(), write: Mutex::default() }
     }
 
     fn file(&self, host: &str, path: &str) -> PathBuf {
@@ -120,8 +118,8 @@ impl Sent {
         trim(&file).map_err(|e| format!("{}: {e}", file.display()))
     }
 
-    /// The `most` newest answer ends of pane `key`: (text, line), newest first. Blocking.
-    pub fn ends_of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64)> {
+    /// The `most` newest answer ends of pane `key`: (text, line, false), newest first. Blocking.
+    pub fn ends_of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64, bool)> {
         of_key(&std::fs::read_to_string(self.ends_file(host, path)).unwrap_or_default(), key, most)
     }
 
@@ -199,26 +197,29 @@ impl Sent {
         ring.remove(i).map(|(_, line)| line)
     }
 
-    /// The `most` newest entries of a project sent in pane `key` with a line: (text, line),
-    /// newest first. Blocking.
-    pub fn of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64)> {
+    /// The `most` newest entries of a project sent in pane `key` with a line: (text, line, an
+    /// agent's prompt), newest first. Blocking.
+    pub fn of_pane(&self, host: &str, path: &str, key: &str, most: usize) -> Vec<(String, i64, bool)> {
         of_key(&std::fs::read_to_string(self.file(host, path)).unwrap_or_default(), key, most)
     }
 
     /// Pane `key`'s next question number (AC-37 Ask): one more than the highest "Quote #N"
-    /// it sent (kept in its project's history) or the last given. Blocking.
-    pub fn next_question(&self, host: &str, path: &str, key: &str) -> u64 {
+    /// it sent (kept in its project's history; a paste Claude Code folds into "[Pasted text]"
+    /// is not there without its hooks) or the last given, kept per pane in the project's
+    /// quotes.json so it counts on across terminumd's restarts. Blocking.
+    pub fn next_question(&self, host: &str, path: &str, key: &str) -> Result<u64, String> {
         let text = std::fs::read_to_string(self.file(host, path)).unwrap_or_default();
         let sent = text.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|v| v["key"] == key)
             .flat_map(|v| quote_numbers(v["text"].as_str().unwrap_or("")))
             .max().unwrap_or(0);
-        let mut asked = self.asked.lock();
-        if asked.len() > 1000 {
-            asked.clear();
-        }
-        let n = sent.max(asked.get(key).copied().unwrap_or(0)) + 1;
-        asked.insert(key.to_string(), n);
-        n
+        let _w = self.write.lock();
+        let file = self.file(host, path).with_file_name("quotes.json");
+        let mut given: Value = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
+        let n = sent.max(given[key].as_u64().unwrap_or(0)) + 1;
+        given[key] = json!(n);
+        self.project_dir(&file, host, path)?;
+        crate::config::write_private(&file, given.to_string().as_bytes()).map_err(|e| format!("{}: {e}", file.display()))?;
+        Ok(n)
     }
 
     /// The `n`-th newest entry of a project (0: the last) and how many there are. Blocking.
@@ -230,13 +231,32 @@ impl Sent {
     }
 }
 
-/// The `most` newest entries of `text` (a .jsonl file's) of pane `key` with a line: (text, line).
-fn of_key(text: &str, key: &str, most: usize) -> Vec<(String, i64)> {
+/// The `most` newest entries of `text` (a .jsonl file's) of pane `key` with a line: (text, line,
+/// whether a coding agent's prompt).
+fn of_key(text: &str, key: &str, most: usize) -> Vec<(String, i64, bool)> {
     text.lines().rev().filter_map(|l| serde_json::from_str::<Value>(l).ok())
         .filter(|v| v["key"] == key)
-        .filter_map(|v| Some((v["text"].as_str()?.to_string(), v["line"].as_i64()?)))
+        .filter_map(|v| Some((v["text"].as_str()?.to_string(), v["line"].as_i64()?, v["agent"].as_str().is_some_and(|a| !a.is_empty()))))
         .take(most)
         .collect()
+}
+
+/// `text` as the agent's transcript shows it, to be found there: Claude Code's "[Pasted text #3
+/// +5 lines]" is how its input box folds a paste (the transcript shows the paste itself), so it
+/// is left out; "" when nothing else is left.
+pub fn findable(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(i) = rest.find("[Pasted text #") {
+        out.push_str(&rest[..i]);
+        let after = &rest[i..];
+        match after.find(']') {
+            Some(j) if after[..j].bytes().all(|b| b != b'\n') => rest = &after[j + 1..],
+            _ => { out.push_str(after); rest = ""; }
+        }
+    }
+    out.push_str(rest);
+    out.trim().to_string()
 }
 
 /// The numbers N of every "Quote #N" in `text`.
@@ -337,7 +357,7 @@ mod tests {
         assert!(s.add("local", "/p", "k2", "ls", json!({})).unwrap());
         assert!(s.add("local", "/p", "k1", "git status", json!({"line": 180})).unwrap());
         assert_eq!(s.get("local", "/p", 0).1.unwrap()["key"], "k1");
-        assert_eq!(s.of_pane("local", "/p", "k1", 10), [("git status".to_string(), 180), ("make test".to_string(), 120)]);
+        assert_eq!(s.of_pane("local", "/p", "k1", 10), [("git status".to_string(), 180, false), ("make test".to_string(), 120, false)]);
         assert_eq!(s.of_pane("local", "/p", "k1", 1).len(), 1);
         assert!(s.of_pane("local", "/p", "k2", 10).is_empty(), "no line, no place");
         s.hint("k1", "fix the\nlint", 300);
@@ -357,12 +377,15 @@ mod tests {
     #[test]
     fn quote_numbers_count_up_per_pane() {
         let (s, dir) = store();
-        assert_eq!(s.next_question("local", "/p", "k1"), 1);
-        assert_eq!(s.next_question("local", "/p", "k1"), 2, "given, not sent yet");
+        let next = |s: &Sent, k: &str| s.next_question("local", "/p", k).unwrap();
+        assert_eq!(next(&s, "k1"), 1);
+        assert_eq!(next(&s, "k1"), 2, "given, not sent yet");
+        let again = Sent::new(dir.clone());                              // terminumd started anew
+        assert_eq!(next(&again, "k1"), 3, "kept across a restart (a folded paste never reaches the history)");
         s.add("local", "/p", "k2", "\nQuote #0041:\n - Quote Start ----\nx", json!({})).unwrap();
         s.add("local", "/p", "k2", "see Quote #7 and Quote #12a", json!({})).unwrap();
-        assert_eq!(s.next_question("local", "/p", "k2"), 42, "another pane counts its own");
-        assert_eq!(s.next_question("local", "/p", "k1"), 3);
+        assert_eq!(next(&s, "k2"), 42, "another pane counts its own");
+        assert_eq!(next(&s, "k1"), 4);
         assert_eq!(quote_numbers("Quote #0007: Quote # 9 Quote #x Question #8"), [7]);
         let _ = std::fs::remove_dir_all(dir);
     }
@@ -374,9 +397,17 @@ mod tests {
         s.add_end("local", "/p", "k1", 120, "All 42 pass.").unwrap();
         s.add_end("local", "/p", "k2", 7, "Done here.").unwrap();
         s.add_end("local", "/p", "k1", 300, "The essay is written.").unwrap();
-        assert_eq!(s.ends_of_pane("local", "/p", "k1", 10), [("The essay is written.".to_string(), 300), ("All 42 pass.".to_string(), 120)]);
+        assert_eq!(s.ends_of_pane("local", "/p", "k1", 10), [("The essay is written.".to_string(), 300, false), ("All 42 pass.".to_string(), 120, false)]);
         assert_eq!(s.get("local", "/p", 0).0, 0, "not in the sent history");
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_folded_paste_is_not_looked_for() {
+        assert_eq!(findable("[Pasted text #71 +5 lines]"), "");
+        assert_eq!(findable("see [Pasted text #3 +12 lines] and fix it"), "see  and fix it");
+        assert_eq!(findable("[Image #70] - fix the font"), "[Image #70] - fix the font", "an image's mark is in the transcript too");
+        assert_eq!(findable("[Pasted text #1 no end"), "[Pasted text #1 no end");
     }
 
     #[test]

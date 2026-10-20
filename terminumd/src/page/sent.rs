@@ -66,8 +66,10 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     };
     if t == "askno" {
         let (a, h, p, k) = (app.clone(), host.clone(), path.clone(), key.clone());
-        let n = tokio::task::spawn_blocking(move || a.sent.next_question(&h, &p, &k)).await.unwrap_or(1);
-        page.send_json(&json!({"t": "askno", "sid": key, "n": n}));
+        match tokio::task::spawn_blocking(move || a.sent.next_question(&h, &p, &k)).await.map_err(|e| e.to_string()).and_then(|r| r) {
+            Ok(n) => page.send_json(&json!({"t": "askno", "sid": key, "n": n})),
+            Err(e) => page.send_json(&json!({"t": "askno", "sid": key, "error": format!("The quote's number could not be kept: {e}")})),
+        };
         return;
     }
     if t == "sent" {
@@ -98,10 +100,14 @@ async fn marks(app: &Shared, page: &Arc<Page>) {
         };
         tokio::task::spawn_blocking(move || {
             let rows: Vec<(i64, String)> = rows.into_iter().map(|(n, t, _)| (n, t)).collect();
-            let placed = |list: Vec<(String, i64)>| -> Vec<Value> {
-                let texts: Vec<(String, Option<i64>)> = list.iter().map(|(t, l)| (t.clone(), Some(*l))).collect();
-                super::bookmarks_find::find_each(&rows, &texts).into_iter().zip(list)
-                    .filter_map(|(n, (text, _))| Some(json!({"n": n?, "text": text.lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(120).collect::<String>()})))
+            // each as its transcript shows it (a folded paste left out: crate::sent::findable)
+            // an agent's prompt only on its prompt row (find_each), not where it is quoted
+            let placed = |list: Vec<(String, i64, bool)>| -> Vec<Value> {
+                let texts: Vec<super::bookmarks_find::Wanted> = list.into_iter()
+                    .map(|(t, l, prompt)| super::bookmarks_find::Wanted { text: crate::sent::findable(&t), hint: Some(l), prompt })
+                    .filter(|w| !w.text.is_empty()).collect();
+                super::bookmarks_find::find_each(&rows, &texts).into_iter().zip(texts)
+                    .filter_map(|(n, w)| Some(json!({"n": n?, "prompt": w.prompt, "text": w.text.lines().find(|l| !l.trim().is_empty()).unwrap_or("").chars().take(120).collect::<String>()})))
                     .collect()
             };
             (placed(sent), placed(ends))

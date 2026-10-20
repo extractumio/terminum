@@ -90,7 +90,7 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
     const it = last?.item;
     if (!it) return;
     say("Looking for it…");
-    const r = await jump({ text: it.text, n: it.key === item()?.id ? it.line : undefined });
+    const r = await jump({ text: it.text, n: it.key === item()?.id ? it.line : undefined, prompt: !!it.agent });
     if (r.cancelled) return say("");
     if (r.why) return say(r.why, true);
     say("");

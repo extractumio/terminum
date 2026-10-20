@@ -58,10 +58,29 @@ fn many_texts_each_nearest_its_hint() {
         201 => "  of the web app".to_string(),
         _ => format!("out {n}"),
     })).collect();
-    let texts = [("fix the tests please".to_string(), Some(120)), ("fix the tests please".into(), Some(290)), ("fix the tests please".into(), None),
-        ("and the lint too\nof the web app".into(), Some(5)), ("yes".into(), Some(110)), ("never printed here".into(), None)];
-    assert_eq!(crate::page::bookmarks_find::find_each(&rows, &texts), [Some(110), Some(300), Some(300), Some(200), None, None]);
-    assert_eq!(crate::page::bookmarks_find::find_each::<String>(&[], &texts[..1]), [None]);
+    use crate::page::bookmarks_find::{find_each, Wanted};
+    let w = |text: &str, hint: Option<i64>| Wanted { text: text.into(), hint, prompt: false };
+    let texts = [w("fix the tests please", Some(120)), w("fix the tests please", Some(290)), w("fix the tests please", None),
+        w("and the lint too\nof the web app", Some(5)), w("yes", Some(110)), w("never printed here", None)];
+    assert_eq!(find_each(&rows, &texts), [Some(110), Some(300), Some(300), Some(200), None, None]);
+    assert_eq!(find_each::<String>(&[], &texts[..1]), [None]);
+}
+
+/// An agent's prompt is found where its transcript shows it ("❯ " opens the row), not where an
+/// answer or a tool's output quotes the same words, however near the hint.
+#[test]
+fn an_agents_prompt_on_its_prompt_row_only() {
+    use crate::page::bookmarks_find::{find_each, Wanted};
+    let rows: Vec<(i64, String)> = (0..400).map(|n| (n, match n {
+        100 => "❯ закоммить и релизни".to_string(),
+        300 => "     m:%2 11861 page 'закоммить и релизни'".to_string(),
+        350 => "  ⎿  закоммить и релизни".to_string(),
+        _ => format!("out {n}"),
+    })).collect();
+    let p = |hint| Wanted { text: "закоммить и релизни".into(), hint, prompt: true };
+    assert_eq!(find_each(&rows, &[p(Some(310)), p(None), Wanted { prompt: false, ..p(Some(310)) }]), [Some(100), Some(100), Some(300)]);
+    let gone = Wanted { text: "never asked here".into(), hint: None, prompt: true };
+    assert_eq!(find_each(&rows, &[gone]), [None]);
 }
 
 #[test]

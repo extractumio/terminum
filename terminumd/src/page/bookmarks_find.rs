@@ -110,22 +110,41 @@ fn hint_row<S>(rows: &[(i64, S)], hint: i64) -> usize {
     rows.iter().position(|(n, _)| *n >= hint).unwrap_or(rows.len().saturating_sub(1))
 }
 
-/// The line where each of `texts` (text, its line's hint: none is the end) begins in rows, its
-/// whole print nearest the hint; None when it is not there or too short to tell (fewer than
-/// FEWEST letters and digits). Rows are joined once for all of them (the sent history's strip,
-/// AC-90).
-pub fn find_each<S: AsRef<str>>(rows: &[(i64, S)], texts: &[(String, Option<i64>)]) -> Vec<Option<i64>> {
+/// One text looked for by find_each: its line's hint (none: the end), and whether it is a coding
+/// agent's prompt (found only on a row its transcript starts with "❯ ", "› " or "> ": the same
+/// words quoted in an answer or a tool's output are not it).
+pub struct Wanted {
+    pub text: String,
+    pub hint: Option<i64>,
+    pub prompt: bool,
+}
+
+/// Whether a row opens a prompt in a coding agent's transcript.
+fn prompt_row(row: &str) -> bool {
+    matches!(row.trim_start().chars().next(), Some('\u{276f}' | '\u{203a}' | '>'))
+}
+
+/// The line where each of `texts` begins in rows, its whole print nearest the hint; None when it
+/// is not there or too short to tell (fewer than FEWEST letters and digits). Rows are joined once
+/// for all of them (the sent history's marks, AC-90).
+pub fn find_each<S: AsRef<str>>(rows: &[(i64, S)], texts: &[Wanted]) -> Vec<Option<i64>> {
     const FEWEST: usize = 4;
     if rows.is_empty() {
         return vec![None; texts.len()];
     }
     let j = Joined::of(rows);
-    texts.iter().map(|(text, hint)| {
-        let whole: String = loose(text).chars().take(PRINT).collect();
+    let prompts: Vec<usize> = (0..rows.len()).filter(|&k| prompt_row(rows[k].1.as_ref())).collect();
+    texts.iter().map(|w| {
+        let whole: String = loose(&w.text).chars().take(PRINT).collect();
         if whole.chars().count() < FEWEST {
             return None;
         }
-        let (_, b) = j.nearest(&whole, hint.map_or(rows.len() - 1, |h| hint_row(rows, h)))?;
+        let k = w.hint.map_or(rows.len() - 1, |h| hint_row(rows, h));
+        if w.prompt {
+            // the prompt rows its whole print starts at, the one nearest the hint
+            return prompts.iter().filter(|&&p| j.text[j.bytes[p]..].starts_with(&whole)).min_by_key(|&&p| p.abs_diff(k)).map(|&p| rows[p].0);
+        }
+        let (_, b) = j.nearest(&whole, k)?;
         Some(rows[j.row_at(b)].0)
     }).collect()
 }

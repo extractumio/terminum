@@ -16,11 +16,19 @@ use crate::tmux::agentstate::{self, State};
 const FEWEST: usize = 4;
 
 /// The row where the answer above the agent's input box ends, in `rows` (the screen); None
-/// without an input box.
+/// without an input box: Claude Code's "❯ " between two rules (a question's options also start
+/// with "❯ 1."), or Codex's "› " composer (not its menu's "› 1. Yes").
 pub fn answer_row(rows: &[String]) -> Option<usize> {
-    let prompt = |r: &String| { let t = r.trim_start(); t.starts_with("\u{276f} ") || t == "\u{276f}" || t.starts_with("\u{203a} ") };
     let rule = |r: &String| r.trim_start().starts_with("\u{2500}\u{2500}");
-    let at = rows.iter().rposition(prompt)?;
+    let option = |t: &str| t.chars().nth(2).is_some_and(|c| c.is_ascii_digit());
+    let at = (0..rows.len()).rev().find(|&i| {
+        let t = rows[i].trim_start();
+        if t.starts_with("\u{276f} ") || t == "\u{276f}" {
+            !option(t) && i > 0 && rule(&rows[i - 1]) && rows.get(i + 1).is_some_and(rule)
+        } else {
+            t.starts_with("\u{203a} ") && !option(t)
+        }
+    })?;
     (0..at).rev().find(|&i| {
         let r = &rows[i];
         !r.trim().is_empty() && !rule(r) && !agentstate::turn_line(r) && r.chars().filter(|c| c.is_alphanumeric()).count() >= FEWEST
@@ -68,6 +76,10 @@ mod tests {
         let fence = rows(&["⏺ Here it is:", "  ```", "  ok", "  ```", "", RULE, "❯ typing a new one", RULE]);
         assert_eq!(answer_row(&fence), Some(0), "rows too short to be found again are passed over; typing in the box changes nothing");
         assert_eq!(answer_row(&rows(&["$ ls", "a.txt", "$ "])), None, "a shell has no input box");
+        let asking = rows(&["⏺ Ready to release.", "", "│ May I push main, then run `make release`?", "❯ 1. Yes, v0.14.0", "  2. Commit only"]);
+        assert_eq!(answer_row(&asking), None, "a question's options are no input box");
+        let codex_menu = rows(&["• Would you like to run it?", "› 1. Yes, proceed", "  2. No"]);
+        assert_eq!(answer_row(&codex_menu), None, "nor Codex's menu");
     }
 
     #[test]

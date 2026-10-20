@@ -31,7 +31,7 @@ export function promptRail({ view, term, send, sid, marks, toast }) {
     if (!box) { rail.hidden = true; key = ""; return; }
     const { css, h } = box;
     const own = marks.mine();
-    const items = [...sent.map((s) => ({ n: s.n, kind: "sent", text: s.text })), ...ends.map((s) => ({ n: s.n, kind: "end", text: s.text })),
+    const items = [...sent.map((s) => ({ n: s.n, kind: "sent", text: s.text, prompt: !!s.prompt })), ...ends.map((s) => ({ n: s.n, kind: "end", text: s.text })),
       ...own.filter((b) => !b.remind).map((b) => ({ n: b.n, kind: "mark", b })),
       ...own.filter(openReminder).map((b) => ({ n: b.n, kind: "remind", b }))];
     const slots = railSlots(items, view.oldest, view.top + view.screen.length, h - 14);
@@ -47,16 +47,23 @@ export function promptRail({ view, term, send, sid, marks, toast }) {
       b.style.top = `${top}px`;
       b.title = here.map((i) => `${NAMES[i.kind]}: ${i.text ?? (i.b.note || i.b.text.split("\n")[0])}`.slice(0, 160)).join("\n");
       b.setAttribute("aria-label", b.title);
-      b.onclick = () => go(it);
+      b.onclick = () => go(KINDS.flatMap((x) => here.filter((i) => i.kind === x)));
       return b;
     }));
     rail.hidden = false;
   }
 
-  async function go(it) {
-    if (it.b) return marks.jump(it.b);
-    const r = await marks.jumpText({ text: it.text, n: it.n });
-    if (r.why) toast(r.why, 5000);
+  /** Brings the first of `items` (one bar's, its color's kind first) that is found into view: a
+   *  message whose text is not there now gives way to the next. */
+  async function go(items) {
+    let why = "";
+    for (const it of items) {
+      if (it.b) return marks.jump(it.b);
+      const r = await marks.jumpText({ text: it.text, n: it.n, prompt: it.prompt });
+      if (r.cancelled || (r.ok && !r.note)) return;
+      why = r.why ?? r.note ?? why;
+    }
+    if (why) toast(why, 5000);
   }
 
   const later = () => { if (!frame) frame = requestAnimationFrame(() => { frame = 0; draw(); }); };

@@ -45,8 +45,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
             match msg["text"].as_str() {
                 // a sent message (AC-90): its text in the shown pane, nearest its line, else nearest the end
                 Some(text) => {
-                    let (text, hint) = (text.chars().take(bm::PRINT * 4).collect::<String>(), msg["n"].as_i64());
-                    tokio::spawn(async move { locate_text(&app, &page, &id, &text, hint).await });
+                    let (text, hint, prompt) = (crate::sent::findable(text).chars().take(bm::PRINT * 4).collect::<String>(), msg["n"].as_i64(), msg["prompt"] == true);
+                    tokio::spawn(async move { locate_text(&app, &page, &id, &text, hint, prompt).await });
                 }
                 None => { tokio::spawn(async move { locate(&app, &page, &id).await }); }
             }
@@ -147,8 +147,24 @@ async fn locate(app: &Shared, page: &Page, id: &str) {
 }
 
 /// Where a sent message's `text` is in the shown pane (AC-90): nearest `hint`, its line when it
-/// was sent, else nearest the end.
-async fn locate_text(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i64>) {
+/// was sent, else nearest the end; a coding agent's prompt (`prompt`) on a row its transcript
+/// opens with "❯ " (bookmarks_find.rs find_each), else wherever its words are.
+async fn locate_text(app: &Shared, page: &Page, id: &str, text: &str, hint: Option<i64>, prompt: bool) {
+    if prompt && let Some((key, server, pane, ctl)) = super::find::shown(page) {
+        let read = super::find::rows_of(&server, &pane, &ctl, app.cfg.history, None).await;
+        let (text2, size) = (text.to_string(), super::bookmarks_find::loose(text).chars().take(bm::PRINT).count());
+        let at = match read {
+            Ok(rows) => tokio::task::spawn_blocking(move || {
+                let rows: Vec<(i64, String)> = rows.into_iter().map(|(n, t, _)| (n, t)).collect();
+                super::bookmarks_find::find_each(&rows, &[super::bookmarks_find::Wanted { text: text2, hint, prompt: true }])[0]
+            }).await.unwrap_or(None),
+            Err(_) => None,
+        };
+        if let Some(n) = at {
+            page.send_json(&bm::located(id, &key, Some(&super::bookmarks_find::Found { n, start: 0, size })));
+            return;
+        }
+    }
     let _ = search(app, page, id, text, hint).await;
 }
 
