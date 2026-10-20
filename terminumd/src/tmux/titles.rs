@@ -165,8 +165,11 @@ fn empty_title(p: &PaneFields) -> bool {
 /// The list's item for pane `p`, the `pane_no`-th (1-based) of `panes_in_window`; a pane after
 /// the first goes under it with its own title. `home` is the home folder of the pane's host.
 pub fn item(p: &PaneFields, pane_no: usize, panes_in_window: usize, home: &str) -> Item {
-    let mut job = p.command.trim().to_string();
-    let window_name = p.window_name.as_str();
+    // Claude Code's process (and the window tmux names after it) is named by its version: "claude"
+    let named = |s: &str| if is_version(s) { "claude".to_string() } else { s.to_string() };
+    let mut job = named(p.command.trim());
+    let window_name = if p.automatic_rename { named(&p.window_name) } else { p.window_name.clone() };
+    let window_name = window_name.as_str();
     let path = tilde(&p.path, home);
     let program_title = if empty_title(p) { String::new() } else { p.pane_title.clone() };
     let user_named = !window_name.is_empty() && !p.automatic_rename;

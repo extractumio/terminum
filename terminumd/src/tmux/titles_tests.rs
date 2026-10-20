@@ -114,6 +114,19 @@ fn agents() {
     }
 }
 
+/// The list names Claude Code's program "claude", never its version (its process's name).
+#[test]
+fn claude_by_its_name_not_its_version() {
+    let it = item(&pane("2.1.304", true, "Fix the build", "2.1.304", "/Users/alex/api"), 1, 1, HOME);
+    assert_eq!(it.title, "Fix the build");
+    assert_eq!(it.sub, ["claude", "~/api"]);
+    assert_eq!(it.agent, Some("claude"));
+    let untitled = item(&pane("2.1.304", true, "", "2.1.304", "/Users/alex/api"), 1, 1, HOME);
+    assert_eq!((untitled.title.as_str(), untitled.sub.as_slice()), ("claude", ["~/api".to_string()].as_slice()), "the window tmux named after it");
+    let named = item(&pane("2.1.304", false, "", "2.1.304", "/Users/alex/api"), 1, 1, HOME);
+    assert_eq!(named.title, "2.1.304", "a name the user gave stays");
+}
+
 #[test]
 fn marks_and_folders() {
     assert_eq!(bare("\u{2733} \u{273b} Title"), "Title");
