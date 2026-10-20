@@ -1,16 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Bookmarks and reminders belong to a project (AC-91): the host and folder of the session they
-// were made in. Every live session of the project shows them; once none is left they are
-// orphaned and shown only in the list below the sessions. One made before 0.8.0 has no folder:
-// its project is its own pane.
+// Bookmarks and reminders belong to the project (AC-92) their session was in when they were
+// made, while it lives, else to that session alone (AC-33, AC-91); terminumd orphans them once
+// that project went (deleted, or its last session closed) or, outside projects, that session closed. Here: which session shows one, and which ones only the list below the
+// sessions has.
 
-/** Whether bookmark `b` belongs to the project of layout row `it` (a pane). */
-export const inProject = (b, it) => !!it && (b.dir ? b.dir === it.dir && (b.host ?? null) === (it.host ?? null) : b.sid === it.id);
+/** Pane id -> the id of its project, of terminumd's projects. */
+export const projectsOf = (projects) => new Map(projects.flatMap((p) => p.members.map((k) => [k, p.id])));
 
-/** Bookmark `b`'s project as one key: its host and folder, or its pane before 0.8.0. */
-export const projectKey = (b) => (b.dir ? `${b.host ?? ""}\0${b.dir}` : `\0\0${b.sid}`);
-/** The keys a pane `it` matches: its host and folder, and itself (bookmarks before 0.8.0). */
-export const paneKeys = (it) => [`${it.host ?? ""}\0${it.dir}`, `\0\0${it.id}`];
+/** Whether bookmark `b` shows in pane `id`, whose project is `project` (none outside projects). */
+export const shownIn = (b, id, project) => !b.orphaned && (b.project ? b.project === project : b.sid === id);
 
-/** Whether no live pane of `panes` is in bookmark `b`'s project. */
-export const orphaned = (b, panes) => !panes.some((it) => inProject(b, it));
+/** Whether bookmark `b` shows in no pane of `panes` (layout rows; `of`: projectsOf): orphaned, or
+ *  none of its sessions is listed now (its host out of reach); the list below the sessions has it. */
+export const nowhere = (b, panes, of) => !!b.orphaned || !panes.some((it) => shownIn(b, it.id, of.get(it.id)));

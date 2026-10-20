@@ -110,10 +110,10 @@ fn kind_of(text: &str) -> String {
 /// the last restore report.
 fn hello(app: &Shared, page: &Page) {
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
+    crate::page::projects::hello(app, page);   // before the bookmarks: a project's ones never count as shown nowhere
     crate::page::marks::hello(app, page);
     crate::looks::hello(app, page);
     crate::restore::hello(app, page);
-    crate::page::projects::hello(app, page);
     crate::release::hello(page);
     if let Some(m) = app.tmux_problem.lock().clone() {
         page.send_json(&json!({"t": "error", "msg": m}));

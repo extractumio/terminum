@@ -174,7 +174,7 @@ const doc = markDoc({ alive });
 // every pane of the layout, one list a layout (bookmarks ask for it on every frame)
 let paneList = [null, []];
 const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.groups, st.groups.flatMap((g) => g.items)])[1]);
-const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes,
+const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes, projects: () => st.projects,
   openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); }, copy: (text) => input.copySelection(text, true) });
 trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (view.tooWide() ? "scaled" : "tmux"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
@@ -287,7 +287,7 @@ function onMessage(m) {
     case "build": conn.checkBuild(m.id); showBuild(m); break;
     case "trace": trace.onMessage(m); break;
     case "sentone": case "sentnew": sent.onMessage(m); break;
-    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; drawNav(); break;
+    case "projects": st.projects = Array.isArray(m.items) ? m.items : []; bookmarks.changed(); break;   // the list, and what each session shows
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
   }
 }

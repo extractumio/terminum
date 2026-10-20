@@ -72,9 +72,11 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
   (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell blinks when an agent
-  of that project (the folder it was made in) ends a turn. Close puts it down until the next turn
-  ends, Resolve ends it. Bookmarks and reminders show in every session of their folder; once all
-  of them closed, they wait in the list below the sessions (Bookmarks | Reminders, Open all).
+  of its project ends a turn. Close puts it down until the next turn ends, Resolve ends it.
+  Bookmarks and reminders made in a project's session show in every session of that project;
+  made outside projects, only in their own session. Once their project is gone (deleted, or its
+  last session closed), or a session outside projects closes, they wait under Bookmarks /
+  Reminders below the sessions (Open all).
 - **The view** is the pane as tmux has it, sized to the browser window you use (in front, or
   the phone in your hand), from 45×14 (an iPhone in portrait) to 240×70 cells; a wider one is
   scaled to fit. The menu has 20 color schemes (one for every browser, kept in settings.json),

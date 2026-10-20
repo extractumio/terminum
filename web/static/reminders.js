@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Reminders (AC-91): bookmarks of the Reminder kind, of a project (projects.js). terminumd puts
-// one up each time an agent of its project ends a turn; then the pale fuchsia button under the
+// Reminders (AC-91): bookmarks of the Reminder kind, of a project or a session (projects.js).
+// terminumd puts one up each time an agent there ends a turn; then the pale fuchsia button under the
 // bookmarks' blinks while a session of the project is shown, until it is pressed (one seen there
 // blinks again only once up anew). It opens the project's open reminders as Markdown, those up
 // first: Open shows its session at its text, Close puts it down until the next turn ends,
-// Resolve ends it, Delete (twice) removes it. The session list marks a session of a project with
-// open reminders by a wavy pink line.
+// Resolve ends it, Delete (twice) removes it. The session list marks a session with open reminders
+// by a wavy pink line. The pane is the shown session's: it closes when another is shown.
 import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
 import { armed, el, openReminder, quote, when } from "./marks.js";
@@ -22,9 +22,11 @@ export function openReminders(items) {
  *  bookmarks'); send(msg) to terminumd. */
 export function reminders({ marks, send }) {
   const seen = new Set();          // reminders up that the user saw in the pane: they blink no more
-  let drawn = "";                  // what the pane shows, as its key: drawn again only when it changes
+  let drawn = "", of = null;       // what the pane shows, as its key: drawn again only when it changes; the session it opened over
   const fab = $("remindfab");
-  const pane = fabPane({ fab, pane: $("remindpane"), close: $("remindclose"), onToggle: () => { drawn = ""; draw(); } });
+  const pane = fabPane({ fab, pane: $("remindpane"), close: $("remindclose"), onToggle: (on) => { of = on ? marks.sid() : null; drawn = ""; draw(); } });
+  // another session shown, or its button hidden: the pane is no more of the session shown
+  const stale = () => pane.open() && (fab.hidden || marks.sid() !== of);
 
   function draw() {
     const all = openReminders(marks.here()), up = all.filter((i) => i.due).length;   // the shown pane's project's
@@ -34,7 +36,7 @@ export function reminders({ marks, send }) {
     $("remindfabn").textContent = all.length ? String(all.length) : "";
     fab.title = up ? `Reminders: ${up} up of ${all.length}` : `Reminders: ${all.length}`;
     fab.setAttribute("aria-label", fab.title);
-    if (!all.length && pane.open()) return pane.toggle(false);
+    if ((!all.length && pane.open()) || stale()) return pane.toggle(false);
     if (!pane.open()) return;
     const key = JSON.stringify(all.map((i) => [i.id, i.due, i.note, i.text, marks.alive(i.sid)]));
     if (key !== drawn) { drawn = key; void drawPane(all); }
@@ -68,5 +70,5 @@ export function reminders({ marks, send }) {
   }
 
   $("remindclose").replaceChildren(icon("x", 16));
-  return { draw, place: pane.place };
+  return { draw, place: () => (stale() ? pane.toggle(false) : pane.place()) };
 }

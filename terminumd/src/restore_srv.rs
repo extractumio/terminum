@@ -48,6 +48,14 @@ impl Exec<'_> {
     }
 }
 
+/// The panes running on `exec`'s server before a restore makes any, each paired with itself:
+/// put after the panes made again, they keep their projects and bookmarks (a restore again
+/// passes over the sessions still running).
+pub async fn kept(exec: &Exec<'_>) -> Vec<(String, String)> {
+    let listed = exec.run(&["list-panes", "-a", "-F", "#{pane_id}"]).await.unwrap_or_default();
+    listed.lines().map(str::trim).filter(|p| p.starts_with('%')).map(|p| (p.to_string(), p.to_string())).collect()
+}
+
 /// The kind of a pane's program for the checkpoint (a shell, else another program: never its
 /// command line). terminum's own server says more (restore.rs: ssh recipes).
 pub fn simple_kind(command: &str) -> Value {
@@ -225,8 +233,10 @@ pub async fn users_local(app: &Shared, server: &Server) {
     }
     let mut m = Made::default();
     let home = crate::config::home().display().to_string();
-    make(&Exec::Local { tmux, socket, conf: None }, &wanted, &[], None, crate::restore::usable, &home, &mut m).await;
-    crate::page::projects::restarted(app, &server.key(""), &m.panes);
+    let exec = Exec::Local { tmux, socket, conf: None };
+    let kept = kept(&exec).await;
+    make(&exec, &wanted, &[], None, crate::restore::usable, &home, &mut m).await;
+    crate::page::projects::restarted(app, &server.key(""), &[m.panes.clone(), kept].concat()).await;
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
@@ -250,8 +260,9 @@ pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let sessions: Vec<Value> = saved["sessions"].as_array().cloned().unwrap_or_default();
     let mut m = Made::default();
     let home = server.home().await.unwrap_or_default();
+    let kept = kept(&Exec::Ctl(server)).await;
     make(&Exec::Ctl(server), &sessions, &existing, Some(HOST_SESSION), |_| true, if home.is_empty() { "~" } else { &home }, &mut m).await;
-    crate::page::projects::restarted(app, &server.key(""), &m.panes);
+    crate::page::projects::restarted(app, &server.key(""), &[m.panes.clone(), kept].concat()).await;
     // the fresh session's own first window goes once the kept ones are there
     if m.windows > 0 && fresh.len() == 1 {
         let _ = server.run(format!("kill-window -t {}", args::word(&fresh[0]))).await;

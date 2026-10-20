@@ -174,8 +174,9 @@ async fn run(app: &Shared, saved: &Value) -> bool {
     let home = crate::config::home().display().to_string();
     let existing: Vec<String> = exec.run(&["list-sessions", "-F", "#{session_name}"]).await.unwrap_or_default().lines().map(String::from).collect();
     let mut m = Made::default();
+    let kept = crate::restore_srv::kept(&exec).await;
     make(&exec, saved["sessions"].as_array().map(Vec::as_slice).unwrap_or_default(), &existing, None, usable, &home, &mut m).await;
-    crate::page::projects::restarted(app, &app.tmux.local.key(""), &m.panes);
+    crate::page::projects::restarted(app, &app.tmux.local.key(""), &[m.panes.clone(), kept].concat()).await;
     let made = m.sessions;
     let mut text = format!("Restored {made} session{}, {} window{}.", if made == 1 { "" } else { "s" }, m.windows, if m.windows == 1 { "" } else { "s" });
     if !m.programs.is_empty() {

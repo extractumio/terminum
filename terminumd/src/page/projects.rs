@@ -7,7 +7,8 @@
 //! the last seconds is spared: a read on its way may not have it yet); a project with no
 //! session left goes. A tmux server started anew numbers its panes anew: restored, its
 //! sessions keep their projects (restore says which pane is which); else its panes leave
-//! them, never naming other panes. (A bookmark's project, AC-33, is a folder: another thing.)
+//! them, never naming other panes. A bookmark made in a project's session is the project's
+//! (AC-33): orphaned once the project goes, or its session closes (bookmarks_scope.rs).
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -35,6 +36,15 @@ pub struct Project {
     pub host: Option<String>,
     pub dir: String,
     pub members: Vec<String>,
+}
+
+/// Which panes of a server whose list was read closed: none (just restored: adopted as they
+/// are), all (started anew: its pane ids name other panes now), those not in the list.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Closed {
+    None,
+    All,
+    NotLive,
 }
 
 #[derive(Default)]
@@ -152,15 +162,15 @@ impl Projects {
     /// `@terminum-id`): its members that are not `live` closed, but those added lately; a server
     /// started anew without a restore (another identity) leaves no member of its old panes; one
     /// not seen before (just restored) keeps them all once. True when something changed (then
-    /// `save`).
-    pub fn seen(&mut self, prefix: &str, identity: Option<&str>, live: &HashSet<&str>) -> bool {
+    /// `save`), and which of its panes closed.
+    pub fn seen(&mut self, prefix: &str, identity: Option<&str>, live: &HashSet<&str>) -> (bool, Closed) {
         self.fresh.retain(|_, at| at.elapsed() < FRESH);
         let was = identity.and_then(|now| self.servers.insert(prefix.to_string(), now.to_string()));
         let adopted = identity.is_some() && was.is_none();
         let anew = matches!((&was, identity), (Some(old), Some(now)) if old != now);
         let fresh: HashSet<String> = self.fresh.keys().cloned().collect();
         let gone = if adopted { 0 } else { self.prune(|m| !m.starts_with(prefix) || (!anew && (live.contains(m) || fresh.contains(m)))) };
-        adopted || anew || gone > 0
+        (adopted || anew || gone > 0, if adopted { Closed::None } else if anew { Closed::All } else { Closed::NotLive })
     }
 
     /// The server of `prefix` was made again from its checkpoint (AC-15): its members take the
@@ -213,16 +223,51 @@ pub fn tell(app: &Shared) {
 pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
     let identity = server.identity().await;
     let live: HashSet<&str> = keys.iter().map(String::as_str).collect();
-    if app.projects.lock().seen(&server.key(""), identity.as_deref(), &live) {
+    let prefix = server.key("");
+    let (changed, closed) = app.projects.lock().seen(&prefix, identity.as_deref(), &live);
+    if changed {
         saved(app).await;
     }
+    let live: HashSet<String> = keys.iter().cloned().collect();
+    orphan(app, move |k| k.starts_with(&prefix) && match closed {
+        Closed::None => false,
+        Closed::All => true,
+        Closed::NotLive => !live.contains(k),
+    }).await;
 }
 
-/// The server of `prefix` was restored (AC-15): its sessions keep their projects.
-pub fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
+/// The server of `prefix` was restored (AC-15; `panes`: old id, new id, its kept panes paired
+/// with themselves): its sessions keep their projects and bookmarks, before its lists are read.
+pub async fn restarted(app: &Shared, prefix: &str, panes: &[(String, String)]) {
     if app.projects.lock().restarted(prefix, panes) {
-        let a = app.clone();
-        tokio::spawn(async move { saved(&a).await });
+        saved(app).await;
+    }
+    let (a, prefix, panes) = (app.clone(), prefix.to_string(), panes.to_vec());
+    told(app, tokio::task::spawn_blocking(move || a.bookmarks.lock().restarted(&prefix, &panes)).await);
+}
+
+/// The bookmarks whose project went, or whose session `closed` says closed, are orphaned
+/// (AC-33): saved off the async workers when one is (named again there, under the lock), every
+/// page told.
+async fn orphan(app: &Shared, closed: impl Fn(&str) -> bool + Send + 'static) {
+    let projects: Vec<String> = app.projects.lock().list().iter().map(|p| p.id.clone()).collect();
+    if super::bookmarks::lost(app.bookmarks.lock().all(), &projects, &closed).is_empty() {
+        return;
+    }
+    let a = app.clone();
+    told(app, tokio::task::spawn_blocking(move || {
+        let mut store = a.bookmarks.lock();
+        let ids = super::bookmarks::lost(store.all(), &projects, &closed);
+        store.orphan(&ids)
+    }).await);
+}
+
+/// Every page learns of the bookmarks a change made; one not saved is logged.
+fn told(app: &Shared, done: Result<Result<Vec<super::bookmarks::Item>, super::bookmarks::MarkError>, tokio::task::JoinError>) {
+    match done {
+        Ok(Ok(items)) => items.iter().for_each(|i| super::marks::tell_mark(app, i)),
+        Ok(Err(e)) => tracing::warn!(event = "bookmarks.unsaved", error = %e),
+        Err(e) => tracing::warn!(event = "bookmarks.unsaved", error = %e),
     }
 }
 
@@ -259,7 +304,7 @@ pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
         }
     }).await.map_err(|e| e.to_string()).and_then(|r| r);
     match done {
-        Ok(()) => tell(app),
+        Ok(()) => { tell(app); orphan(app, |_| false).await }   // a project gone orphans its bookmarks
         Err(e) => super::client::error(page, e, None),
     }
 }

@@ -208,6 +208,7 @@ async fn serve() {
     let cfg = Config { port: env.port, agent: false, text_max: env.text_max,
         history: env.history as i64, dir: dir.clone(), home: home.clone(), agent_token: String::new() };
     let app = build_app(cfg, &env, looks, link, &env.tmux_socket);
+    page::bookmarks::adopt(&app);   // a file before version 3: its bookmarks take their projects
     tracing::info!(event = "start", port = env.port, pid = std::process::id(), build = config::build_id(), socket = %env.tmux_socket);
     tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());
     hosts::sync(&app);

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Bookmarks of the page's terminal (AC-33): text a user selected, with a note, kept on the
-//! Mac for every signed-in client (`web-bookmarks.json`, 0600, version 2). A bookmark is found
+//! Mac for every signed-in client (`web-bookmarks.json`, 0600, version 3); where each shows,
+//! its project or its session, is bookmarks_scope.rs's. A bookmark is found
 //! again by its text, nearest the line it was on: tmux numbers lines anew when it drops them
 //! and when the scrollback is cleared. A port of iterm-enhancer's bookmarks.py: the store, the
 //! checks of the page's messages and the pure search; reading the rows from tmux is the
@@ -51,7 +52,7 @@ fn err<T>(why: impl Into<String>) -> Result<T, MarkError> {
 
 /// A bookmark as kept in the file. `key` is the pane's key, `created` its session's creation
 /// time (OQ-31; unknown for a version 1 file), `at` when it was made (Unix seconds).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct Item {
     pub id: String,
     pub key: Option<String>,
@@ -71,10 +72,17 @@ pub struct Item {
     /// when a reminder was resolved (Unix seconds): it comes up no more
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resolved: Option<i64>,
-    /// the folder its pane was in when it was made: with `host`, its project (AC-91); none for
-    /// one made before 0.8.0 (its project is its pane's)
+    /// the folder its pane was in when it was made (none before 0.8.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dir: Option<String>,
+    /// the project (AC-92) its session was in when it was made: every session of it shows it
+    /// while the project lives; none: its own session alone
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+    /// when its project went or (outside projects) its session closed (Unix seconds): then it
+    /// shows only in the list below the sessions, and a reminder comes up no more
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub orphaned: Option<i64>,
 }
 
 impl Item {
@@ -98,6 +106,7 @@ pub struct NewMark {
     pub host: Option<String>,
     pub remind: bool,
     pub dir: Option<String>,
+    pub project: Option<String>,
 }
 
 pub use super::bookmarks_find::{find, located, near, needs_whole, unlocated};
@@ -182,6 +191,8 @@ fn clean_stored(it: &Value) -> Result<Item, String> {
         due: it["due"] == true,
         resolved: opt("resolved").map(|v| int("resolved", v)).transpose()?,
         dir: truthy(it.get("dir")),
+        project: truthy(it.get("project")),
+        orphaned: opt("orphaned").map(|v| int("orphaned", v)).transpose()?,
     })
 }
 
@@ -194,12 +205,14 @@ pub struct Store {
     broken: Option<String>,
     items: Vec<Item>,
     refs: VecDeque<(String, String)>, // the page's ref of a save -> the bookmark it made
+    /// read from a file before version 3: its bookmarks have no project yet (`adopt`)
+    pub(super) legacy: bool,
 }
 
 impl Store {
     /// A store kept in memory only.
     pub fn memory() -> Self {
-        Store { path: None, broken: None, items: Vec::new(), refs: VecDeque::new() }
+        Store { path: None, broken: None, items: Vec::new(), refs: VecDeque::new(), legacy: false }
     }
 
     /// The bookmarks of `path`; none when it does not exist; broken when it cannot be read.
@@ -211,7 +224,7 @@ impl Store {
             Ok(text) => Self::parse(&text),
         };
         match read {
-            Ok(items) => s.items = items,
+            Ok((items, version)) => (s.items, s.legacy) = (items, version < 3),
             Err(why) => {
                 let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
                 s.broken = Some(format!("{name} cannot be read ({why}); move it away to keep new bookmarks"));
@@ -221,7 +234,7 @@ impl Store {
         s
     }
 
-    fn parse(text: &str) -> Result<Vec<Item>, String> {
+    fn parse(text: &str) -> Result<(Vec<Item>, i64), String> {
         let data: Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
         let list = data.get("items").and_then(Value::as_array).ok_or("no list of items")?;
         let mut items: Vec<Item> = Vec::new();
@@ -232,7 +245,7 @@ impl Store {
                 None => items.push(item),
             }
         }
-        Ok(items)
+        Ok((items, data.get("version").and_then(py_int).unwrap_or(1)))
     }
 
     /// Why nothing can be saved (the file cannot be read), if so.
@@ -253,7 +266,7 @@ impl Store {
             return err(format!("Not saved: {b}."));
         }
         let Some(path) = &self.path else { return Ok(()) };
-        let data = json!({"version": 2, "items": self.items});
+        let data = json!({"version": 3, "items": self.items});
         write_atomic(path, data.to_string().as_bytes()).or_else(|e| err(format!("Not saved: {}.", os_message(&e))))
     }
 
@@ -263,7 +276,7 @@ impl Store {
             return err(format!("Not saved: {b}."));
         }
         if self.items.len() >= MAX_ITEMS {
-            return err(format!("{MAX_ITEMS} bookmarks are kept at most: delete some first (Bookmarks, below the sessions)."));
+            return err(format!("{MAX_ITEMS} bookmarks are kept at most: delete some first (a session's bookmarks' button, or Bookmarks / Reminders below the sessions)."));
         }
         let at = crate::auth::store::unix_now() as i64;
         let item = Item {
@@ -280,6 +293,8 @@ impl Store {
             due: false,
             resolved: None,
             dir: new.dir,
+            project: new.project,
+            orphaned: None,
         };
         self.items.push(item.clone());
         if let Err(e) = self.save() {
@@ -317,22 +332,28 @@ impl Store {
         self.change(id, |i| { i.due = false; if resolve { i.resolved = Some(now); } })
     }
 
-    /// The open reminders of the projects whose agents ended a turn, now up; those it changed.
-    /// `ended`: (pane key, host, folder) of each pane that ended one; a reminder of its project
-    /// (the same host and folder) comes up, or of that pane when it has no folder (before 0.8.0).
-    pub fn due(&mut self, ended: &[(String, Option<String>, String)]) -> Result<Vec<Item>, MarkError> {
-        let mine = |i: &Item| ended.iter().any(|(k, h, d)| match &i.dir {
-            Some(dir) => dir == d && i.host == *h,
+    /// The open reminders of the panes whose agents ended a turn, now up; those it changed.
+    /// `ended`: (pane key, its project) of each pane that ended one; a reminder of that project
+    /// comes up, or of that pane when it has none; an orphaned one never.
+    pub fn due(&mut self, ended: &[(String, Option<String>)]) -> Result<Vec<Item>, MarkError> {
+        let mine = |i: &Item| ended.iter().any(|(k, p)| match &i.project {
+            Some(project) => p.as_ref() == Some(project),
             None => i.key.as_ref() == Some(k),
         });
-        let up = |i: &Item| i.remind && !i.due && i.resolved.is_none() && mine(i);
-        let ids: Vec<String> = self.items.iter().filter(|i| up(i)).map(|i| i.id.clone()).collect();
+        self.edit_all(|i| {
+            let up = i.remind && !i.due && i.resolved.is_none() && i.orphaned.is_none() && mine(i);
+            i.due |= up;
+            up
+        })
+    }
+
+    /// Every bookmark through `edit` (true: it changed it), saved once when one changed, else
+    /// all as they were; those it changed.
+    pub(super) fn edit_all(&mut self, mut edit: impl FnMut(&mut Item) -> bool) -> Result<Vec<Item>, MarkError> {
+        let old = self.items.clone();
+        let ids: Vec<String> = self.items.iter_mut().filter_map(|i| edit(i).then(|| i.id.clone())).collect();
         if ids.is_empty() {
             return Ok(vec![]);
-        }
-        let old = self.items.clone();
-        for i in self.items.iter_mut().filter(|i| ids.contains(&i.id)) {
-            i.due = true;
         }
         if let Err(e) = self.save() {
             self.items = old;
@@ -398,3 +419,7 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> io::Result<()> {
 #[cfg(test)]
 #[path = "bookmarks_tests.rs"]
 mod tests;
+
+#[path = "bookmarks_scope.rs"]
+mod scope;
+pub use scope::{adopt, lost};

@@ -80,6 +80,7 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
     let (text, note, n) = bm::mark_of(msg)?;
     let item = find_item(&app.layout.read(), &key);
     let Some(item) = item else { return Err(bm::MarkError(bm::CLOSED.into())) };
+    let project = app.projects.lock().of(&key).map(|p| p.id.clone());   // its project's, else its session's
     let new = NewMark {
         key: Some(key),
         created: None,
@@ -90,6 +91,7 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
         host: project_of(&item).0,
         remind: msg["remind"] == true,
         dir: project_of(&item).1,
+        project,
     };
     app.bookmarks.lock().add(new)
 }

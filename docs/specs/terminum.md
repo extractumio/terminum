@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.14.3 |
-| Date | 2026-10-19 |
+| Version | 0.14.4 |
+| Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.4 | 2026-10-20 | Owner: a project's bookmarks and reminders are its own, a project that goes orphans them; a restore again keeps the sessions still running in their projects (they left them) (AC-92; terminum-terminal.md AC-33, AC-91). |
 | 0.14.3 | 2026-10-19 | Owner: background work alone holds a turn's end 10 minutes at most (AC-93; terminum-terminal.md AC-39). |
 | 0.14.2 | 2026-10-19 | Owner: a finger held still on the terminal's input for 2.5 s opens a menu of Paste (unless the clipboard is known empty), Undo and Redo; iOS's own menu never came there (the field is invisible); the keyboard button's menu is the same; a paste of an empty clipboard says so and sends nothing (AC-03); on a phone Attach (several files, their paths at the cursor), the bookmarks, the reminders and the split stand in a row at the bottom left under the input, and the agent's input box has no frame; Files and View on a phone take the terminal's place whole again (since the split view the terminal's row kept its half of the height) (AC-18); the reminders' bell on the plain buttons' fill, the bell itself pink (AC-91); a project's name has no mark before it (AC-92); the list: every row's bar at one place, the bookmarks' and reminders' waves thinner and gentler, a group's count in words and in one column, a terminal's icon white on a dark gray tile, no hourglass (its bar pulses), the shown session's row see-through (AC-01, AC-57, AC-39), the unread blob 6 px in the name's color on Clone (AC-93); a turn read from the screen ends only once its pane stayed done 10 s, Claude Code's "Waiting for 2 background agents to finish" is working, so is its footer's "1 shell, 1 monitor" (a shell still running in the background), and a busy row shows no unread mark (it showed while the turn went on) (AC-93, AC-39). |
 | 0.14.1 | 2026-10-19 | Owner: the row's menu is modal (the page shaded; a press outside closes it and does nothing else) (AC-07); New project… asks the project's name at once, Enter takes a name (it pressed Cancel: renaming did nothing), a double click on a project's name renames it; the name dialog looks as the page's others; projects' colors in pastel (lighter, muted, the hues as far apart); no colored line along a rounded box's side, a project group tinted only, a bookmark's mark the list's wavy line (AC-92, AC-33). |
@@ -716,7 +717,7 @@ Scenario: AC-92 edge — sessions that close
   Then the sessions restored from its checkpoint keep their projects (restore says which new pane each old one is); without a restore (its @terminum-id differs) its old members go, never naming other panes
   And a projects.json that cannot be read is set aside as projects.json.bak, never written over
   And a move in a tmux group reorders only the windows that group lists (a project's windows keep their places in tmux)
-  And a project is not a bookmark's project (AC-33: a host and folder)
+  And a bookmark or a reminder made in a project's session is the project's (terminum-terminal.md AC-33): a project that goes orphans it
 ```
 
 ### AC-93 — Unread [SHOULD / P1]

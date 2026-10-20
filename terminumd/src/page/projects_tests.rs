@@ -64,15 +64,15 @@ fn closed_panes_leave_when_their_server_is_read() {
     let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
     ps.add(C, Some(&p1), None, None, "/a".into(), None).unwrap();
     let live: HashSet<&str> = [B].into_iter().collect();
-    assert!(ps.seen("tmux:local:terminum:", Some("m1"), &live), "the first read adopts the server");
+    assert!(ps.seen("tmux:local:terminum:", Some("m1"), &live).0, "the first read adopts the server");
     assert_eq!(ps.of(A).unwrap().members, [A, C], "added just now: spared (a read on its way may not have it)");
     ps.fresh.clear();
-    assert!(ps.seen("tmux:local:terminum:", Some("m1"), &live));
+    assert!(ps.seen("tmux:local:terminum:", Some("m1"), &live).0);
     assert_eq!(ps.of(C).unwrap().members, [C], "another server's pane stays until that server is read");
-    assert!(!ps.seen("tmux:local:terminum:", Some("m1"), &live), "nothing more to change");
+    assert!(!ps.seen("tmux:local:terminum:", Some("m1"), &live).0, "nothing more to change");
     ps.seen("tmux:devbox:default:", Some("d1"), &HashSet::new());
     ps.fresh.clear();
-    assert!(ps.seen("tmux:devbox:default:", Some("d1"), &HashSet::new()));
+    assert!(ps.seen("tmux:devbox:default:", Some("d1"), &HashSet::new()).0);
     assert!(ps.list().is_empty());
 }
 
@@ -88,10 +88,21 @@ fn a_server_started_anew_keeps_projects_only_through_its_restore() {
     // restored: %1 -> %7, %2 not made again; the next read (with the old keys still) adopts it
     assert!(ps.restarted("tmux:local:terminum:", &[("%1".into(), "%7".into())]));
     assert_eq!(ps.of("tmux:local:terminum:%7").unwrap().members, ["tmux:local:terminum:%7"]);
-    ps.seen("tmux:local:terminum:", Some("m2"), &HashSet::new());
+    assert_eq!(ps.seen("tmux:local:terminum:", Some("m2"), &HashSet::new()).1, Closed::None, "bookmarks: none closed");
     assert!(ps.of("tmux:local:terminum:%7").is_some(), "a read right after the restore takes nothing");
+    assert_eq!(ps.seen("tmux:local:terminum:", Some("m2"), &HashSet::new()).1, Closed::NotLive, "then those not listed");
     // started anew without a restore: its %7 is another pane now
     let seven: HashSet<&str> = ["tmux:local:terminum:%7"].into_iter().collect();
-    assert!(ps.seen("tmux:local:terminum:", Some("m3"), &seven));
+    assert_eq!(ps.seen("tmux:local:terminum:", Some("m3"), &seven), (true, Closed::All), "bookmarks: all its panes' closed");
     assert!(ps.list().is_empty(), "another server's pane %7 is not the project's");
+}
+
+/// A restore again passes over the sessions still running: paired with themselves, they keep their projects.
+#[test]
+fn a_restore_again_keeps_the_running_sessions() {
+    let mut ps = store();
+    let p1 = ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    ps.add(B, Some(&p1), None, None, "/a".into(), None).unwrap();
+    ps.restarted("tmux:local:terminum:", &[("%9".into(), "%12".into()), ("%1".into(), "%1".into()), ("%2".into(), "%2".into())]);
+    assert_eq!(ps.of(A).unwrap().members, [A, B]);
 }

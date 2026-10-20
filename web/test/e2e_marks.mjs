@@ -37,7 +37,7 @@ const ITEMS = [
   { id: "B", sid: "S1", key: null, n: 303, text: "A small tool that keeps bookmarks.", note: "rendered", title: "One", host: null, at: at0 + 2 },
   { id: "C", sid: "S1", key: null, n: 515, text: "folded secret line 515", note: "", title: "One", host: null, at: at0 + 3 },
   { id: "D", sid: "S1", key: null, n: 10, text: "never printed anywhere", note: "gone", title: "One", host: null, at: at0 + 4 },
-  { id: "E", sid: "S9", key: null, n: 7, text: "from a session that closed", note: "closed one", title: "Old", host: null, at: at0 + 5 },
+  { id: "E", sid: "S9", key: null, n: 7, text: "from a session that closed", note: "closed one", title: "Old", host: null, at: at0 + 5, orphaned: at0 + 9 },
   { id: "F", sid: "S1", key: null, n: 2200, text: "See the guide for the install steps", note: "guide", title: "One", host: null, at: at0 + 6 },
   { id: "G", sid: "S1", key: null, n: 2300, text: "phantom words", note: "phantom", title: "One", host: null, at: at0 + 7 },
   { id: "H", sid: "S1", key: null, n: 2400, text: LONG.join("\n"), note: "long answer", title: "One", host: null, at: at0 + 8 },
@@ -110,6 +110,12 @@ const marked = (page) => page.evaluate(() => {
 });
 const inView = (m) => m && m.top >= 0 && m.top < m.h;
 
+/** Brings the shown session's bookmark noted `text` into view from its pane (the top right button). */
+async function fromPane(page, text) {
+  if (await page.evaluate(() => document.getElementById("markpane").hidden)) await page.click("#marksfab");
+  await page.click(`#markpane .mkitem:has-text("${text}")`);
+}
+
 async function selectRow(page, text) {
   await page.evaluate((text) => {
     const row = [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes(text));
@@ -176,14 +182,14 @@ export async function webMarks(browser, name = "") {
   // renaming the session (the pencil) keeps its bookmarks: they belong to the pane, which keeps its id
   say({ t: "layout", groups: [{ ...LAYOUT[0], items: [{ ...LAYOUT[0].items[0], title: "Renamed one" }, LAYOUT[0].items[1]] }] });
   await page.waitForFunction(() => document.querySelector('#sessions .item[data-id="S1"] .t')?.textContent === "Renamed one");
-  await page.click("#marksbtn");
+  await page.click("#marksfab");
   const renamed = await page.evaluate(() => ({
     rail: document.querySelectorAll("#markrail .mk").length, strip: !!document.querySelector('#sessions .item[data-id="S1"] .wave.mark'),
-    fab: document.getElementById("marksfabn").textContent,
-    titles: [...document.querySelectorAll("#marklist .mkitem")].filter((b) => !b.querySelector(".closed")).map((b) => b.querySelector(".meta").textContent.split(" · ")[0]) }));
-  await page.click("#marksbtn");
-  check(`${at} a renamed session keeps its bookmarks (marks, strip, count), listed under its new name`,
-    renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.titles.length) && renamed.titles.length >= 6 && renamed.titles.every((t) => t === "Renamed one"), JSON.stringify(renamed));
+    fab: document.getElementById("marksfabn").textContent, listed: document.querySelectorAll("#markpane .mkitem").length,
+    head: document.querySelector("#markpane h2")?.textContent }));
+  await page.click("#marksfab");
+  check(`${at} a renamed session keeps its bookmarks (marks, strip, count); outside projects its pane lists its own`,
+    renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.listed) && renamed.listed >= 6 && renamed.head === "Bookmarks of this session", JSON.stringify(renamed));
 
   // the way back: into older lines not loaded, found by its text (its line moved)
   await page.click('#markrail .mk[title="ask about the retry loop"]');
@@ -220,12 +226,18 @@ export async function webMarks(browser, name = "") {
     m?.shadow && /small tool that keeps bookmarks/.test(m.text) && inView(m) && Math.abs(later.top - m.top) < 2, JSON.stringify({ m, later }));
 
   // into a fold whose lines were never sent
-  await page.click("#marksbtn");
-  await page.click('#marklist .mkitem:has-text("folded secret line 515")');
+  await fromPane(page, "folded secret line 515");
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString() === "folded secret line 515", null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
   check(`${at} from the list: a bookmark in a fold asks for its lines, opens it and marks the text`,
     sent.some((x) => x.t === "unfold" && x.n === 500) && m?.text === "folded secret line 515" && inView(m), JSON.stringify(m));
+  // the list below the sessions has only those no session shows
+  await page.click("#marksbtn");
+  const left = await page.evaluate(() => ({ items: [...document.querySelectorAll("#marklist .mkitem .note")].map((n) => n.textContent),
+    count: document.getElementById("markcount").textContent, label: document.querySelector("#marksbtn").textContent.trim() }));
+  await page.click("#marksbtn");
+  check(`${at} "Bookmarks / Reminders" below the sessions lists only the orphaned ones, its count theirs`,
+    JSON.stringify(left.items) === '["closed one"]' && left.count === "1" && /^Bookmarks \/ Reminders/.test(left.label), JSON.stringify(left));
 
   // search (AC-58): the magnifier, atop the buttons' column (the bookmarks' set apart below), opens a field; Find goes to the first match
   const at58 = at.replace("AC-57", "AC-58");
@@ -281,19 +293,19 @@ export async function webMarks(browser, name = "") {
     none.n === "Not found" && none.rail && shut.box && shut.rail && !shut.hl, JSON.stringify({ none, shut }));
 
   // a part of its text (rendered Markdown lacks a link's address); text not found says so
-  await page.click('#marklist .mkitem:has-text("guide")');
+  await fromPane(page, "guide");
   await page.waitForFunction(() => /install steps/.test(document.getElementById("markline")?.range?.toString() ?? ""), null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
   check(`${at} found by a part of its text, that part is marked`, /for the install steps$/.test(m?.text ?? "") && !/https/.test(m.text) && inView(m), JSON.stringify(m));
   // longer than the 200 letters it is found by: the line covers it all, both paragraphs
-  await page.click('#marklist .mkitem:has-text("long answer")');
+  await fromPane(page, "long answer");
   await page.waitForFunction(() => /closing words of the answer$/.test(document.getElementById("markline")?.range?.toString() ?? ""), null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
   const lastRow = await page.evaluate(() => { const row = [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("closing words"));
     const r = row.getClientRects()[0], l = document.getElementById("markline").getBoundingClientRect(); return { rowBottom: Math.round(r.bottom), lineBottom: Math.round(l.bottom) }; });
   check(`${at} a bookmark longer than the letters it is found by: the wavy line covers its whole text, to its last row`,
     /^Long answer/.test(m?.text ?? "") && /closing words of the answer$/.test(m.text) && m.line && lastRow.lineBottom >= lastRow.rowBottom - 1, JSON.stringify({ m, lastRow }));
-  await page.click('#marklist .mkitem:has-text("phantom")');
+  await fromPane(page, "phantom");
   await page.waitForFunction(() => !document.getElementById("mbwhy").hidden, null, { timeout: 5000 }).catch(() => {});
   check(`${at} its text not on the line the bridge named: the bar says so`, /not found there/.test(await page.textContent("#mbwhy")));
 
@@ -311,21 +323,33 @@ export async function webMarks(browser, name = "") {
   check(`${at} a pane without bookmarks has no bookmarks button`, await page.evaluate(() => document.getElementById("marksfab").hidden));
   check(`${at} another pane: no bar, no mark from the last one`,
     await page.evaluate(() => document.getElementById("markbar").hidden && (document.getElementById("markline")?.hidden ?? true)));
-  await page.click('#marklist .mkitem:has-text("ask about the retry loop")');
+  // in one project, the two sessions show each other's bookmarks made in it (AC-92)
+  say({ t: "projects", items: [{ id: "P", name: "Work", color: 0, host: null, dir: "~/p", members: ["S1", "S2"] }] });
+  say({ t: "mark", item: { ...ITEMS[0], project: "P" } });
+  await page.waitForFunction(() => !document.getElementById("marksfab").hidden);
+  await page.click("#marksfab");
+  const head = await page.textContent("#markpane h2");
+  await page.click('#markpane .mkitem:has-text("ask about the retry loop")');
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
-  check(`${at} a bookmark of another pane shows that pane and its text`, m?.text === "the retry loop never resets" && inView(m)
-    && await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id === "S1"), JSON.stringify(m));
+  check(`${at} a bookmark of the project made in another session shows that session and its text`, m?.text === "the retry loop never resets" && inView(m)
+    && head === "Bookmarks of Work" && await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id === "S1"), JSON.stringify({ m, head }));
+  say({ t: "projects", items: [] });                // the project gone (deleted, or its last session closed): terminumd orphans its bookmark
+  say({ t: "mark", item: { ...ITEMS[0], project: "P", orphaned: at0 + 10 } });
+  await page.waitForFunction(() => document.getElementById("markcount").textContent === "2");
+  check(`${at} its project gone, the bookmark is orphaned: off the session, in the list below the sessions`,
+    await page.evaluate(() => !document.querySelector('#markrail .mk[title="ask about the retry loop"]')), "");
 
   // lines that are gone, a session that closed
-  await page.click('#marklist .mkitem:has-text("gone")');
+  await fromPane(page, "gone");
   await page.waitForFunction(() => !document.getElementById("mbwhy").hidden, null, { timeout: 5000 }).catch(() => {});
   check(`${at} lines no longer in the history: the bar says so and shows the text and the note`,
     (await page.textContent("#mbwhy")).startsWith(GONE) && (await page.textContent("#mbtext")) === "never printed anywhere" && (await page.textContent("#mbnote")) === "gone");
+  await page.click("#marksbtn");
   const closed = await page.evaluate(() => [...document.querySelectorAll("#marklist .mkitem")].find((b) => b.textContent.includes("closed one"))?.querySelector(".closed")?.textContent);
   await page.click('#marklist .mkitem:has-text("closed one")');
-  check(`${at} a bookmark of a project with no session left is listed as orphaned and shows its text`,
-    closed === "orphaned" && /no longer open/.test(await page.textContent("#mbwhy")) && (await page.textContent("#mbtext")) === "from a session that closed");
+  check(`${at} an orphaned bookmark (its session closed) is listed as orphaned and shows its text`,
+    closed === "orphaned" && /project or its session is gone/.test(await page.textContent("#mbwhy")) && (await page.textContent("#mbtext")) === "from a session that closed");
 
   // Delete asks again; a save the Mac refuses keeps the dialog with why
   await page.click("#mbdel");

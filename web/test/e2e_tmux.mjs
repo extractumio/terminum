@@ -62,7 +62,8 @@ export async function webTmux(browser, name) {
     // a phone's footer is a row of blobs: alike but for the blob's outline, each its own and no circle
     const foot = await page.evaluate((phone) => [...document.querySelectorAll(".nav-foot > button")].map((b) => {
       const s = getComputedStyle(b), i = getComputedStyle(b.querySelector("svg"));
-      return [b.id, [s.height, s.width, s.backgroundColor, s.paddingLeft, s.fontWeight, s.justifyContent, i.width, i.backgroundColor].join(" "),
+      // the icon's height: Bookmarks / Reminders has two icons side by side
+      return [b.id, [s.height, s.width, s.backgroundColor, s.paddingLeft, s.fontWeight, s.justifyContent, i.height, i.backgroundColor].join(" "),
         phone ? i.borderRadius : s.borderRadius];
     }), phone);
     const radii = foot.map(([, , r]) => r);

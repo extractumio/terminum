@@ -206,15 +206,13 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
     items(new).filter(|it| !busy(it)).filter_map(|it| it["id"].as_str()).filter(|id| was.contains(id)).map(str::to_string).collect()
 }
 
-/// The reminders of the projects whose agent ended a turn (in panes `ended`) come up, on every page (AC-91).
+/// The reminders of the panes whose agent ended a turn (in panes `ended`), and of their
+/// projects, come up, on every page (AC-91).
 pub async fn remind(app: &Shared, ended: Vec<String>) {
     crate::page::unread::ended(app, &ended);           // a turn nobody saw end is unread (AC-93)
-    let projects: Vec<(String, Option<String>, String)> = {
-        let layout = app.layout.read();
-        ended.into_iter().map(|k| {
-            let (host, dir) = crate::page::marks::find_item(&layout, &k).map(|it| crate::page::marks::project_of(&it)).unwrap_or_default();
-            (k, host, dir.unwrap_or_default())
-        }).collect()
+    let projects: Vec<(String, Option<String>)> = {
+        let ps = app.projects.lock();
+        ended.into_iter().map(|k| { let p = ps.of(&k).map(|p| p.id.clone()); (k, p) }).collect()
     };
     let a = app.clone();
     match tokio::task::spawn_blocking(move || a.bookmarks.lock().due(&projects).map_err(|e| e.to_string())).await.map_err(|e| e.to_string()).and_then(|r| r) {

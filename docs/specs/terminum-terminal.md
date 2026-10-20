@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.5 |
-| Date | 2026-10-19 |
+| Version | 0.3.6 |
+| Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.6 | 2026-10-20 | Owner: a bookmark or a reminder belongs to the project (AC-92) its session was in when it was made, else to that session alone: only there it shows, comes up and marks the list (a folder's sessions in other projects showed it); terminumd orphans it once that project goes (deleted, or its last session closed) or, outside projects, that session closes, and the foot's "Bookmarks / Reminders" (both icons) lists only those no session shows; the bell's pane closes when another session is shown (it stayed open over it, at the window's top left) (AC-33, AC-91). `web-bookmarks.json` version 3: `project`, `orphaned`; an older file's bookmarks take the project their session is in, once; a restored server's bookmarks take their panes' new keys. |
 | 0.3.5 | 2026-10-19 | Owner: work in the background alone (a dev server, `tail -f`, a monitor) keeps a session working for 10 minutes at most, then it is done all the same (its turn ends, unread, reminders); the agent itself at work has no limit (AC-39, AC-93). |
 | 0.3.4 | 2026-10-19 | Owner: without hooks, Claude Code's "Waiting for N background agents to finish" is working (its subagents still run; it read done, and the session came up unread and its reminders due while they worked); a turn read from the screen ends once its pane stayed done 10 s; Claude Code's footer counting a shell, a monitor or an agent in the background is working (a session done but for a background shell came up unread) (AC-39, AC-91). |
 | 0.3.3 | 2026-10-19 | Owner: a turn that stops while its subagents run in the background stays working until the last of them stops (it showed done while they worked), and ends then (AC-39). |
@@ -191,18 +192,23 @@ Scenario: AC-33 happy path — marks, the way back, the lists
   When the user presses a mark or a list entry
   Then terminumd looks for the text nearest its line (1000 lines either side first, the whole history after; tmux renumbers when it drops lines or the scrollback is cleared), the page loads older lines down to it, opens a fold it is in, scrolls so the text stands a third from the top, marked by a wavy orange line on its left; rendered text is found in the widget; "Its text was not found there: this is the line it was on." when only the line is found
   And the place stays put under widgets drawing until the user scrolls, taps, types or shows another pane; a bar shows the note with Edit, Delete and ×
-  When the user opens "Bookmarks" at the list's foot
-  Then every bookmark is listed newest first with its session's current title ("closed" for a gone one); picking one shows that session and the bookmark, or the text and note of a closed one
+  When the user opens "Bookmarks / Reminders" at the list's foot (a bookmark's and a bell's icon, the count of those it lists)
+  Then the bookmarks no session shows are listed newest first with their session's title: "orphaned" (its project or session gone) or "out of reach" (its session not listed now, its host unreachable); picking one shows its text and note, or that session and the bookmark when it is listed
 
-Scenario: AC-33 happy path — by project
-  Given a bookmark made in a session whose folder is /Users/alex/work/api on this Mac
-  Then every live session of that host and folder lists it under its bookmarks' button (its own session's top to bottom, then the others', newest first) and the session list marks those sessions with a wavy orange line; a session of another folder lists none
-  When the last session of that folder closes
-  Then the bookmark is orphaned: it is only in the list below the sessions (Bookmarks | Reminders), said "orphaned", until deleted there (for good); a bookmark is deleted from a session's list or bar too
-  And "Open all" in that list shows its bookmarks or reminders as one document, full screen; a bookmark made before 0.8.0 has no folder: its project is its pane
+Scenario: AC-33 happy path — by project or session
+  Given a bookmark made in a session of the project "iQuantize" (AC-92)
+  Then every session of "iQuantize" lists it under its bookmarks' button, headed "Bookmarks of iQuantize" (its own session's top to bottom, then the others', newest first), and the session list marks those sessions with a wavy orange line; a session of another project, or outside projects, lists none, whatever its folder
+  Given a bookmark made in a session outside projects
+  Then only that session lists it ("Bookmarks of this session"), also after it joins a project
+  When its own session closes while the project has other sessions
+  Then it stays the project's: listed "closed" in their bookmarks' pane, its reminder comes up as before, Open shows its text and note
+  When its project goes (deleted, or its last session closed), or a bookmark made outside projects loses its session
+  Then terminumd orphans it: it is only in the list below the sessions (Bookmarks | Reminders), said "orphaned", until deleted there (for good); a bookmark is deleted from a session's list or bar too
+  And "Open all" in that list shows its bookmarks or reminders as one document, full screen
+  And a web-bookmarks.json before version 3 (bookmarks of a folder) has each bookmark take the project its session is in at terminumd's start, else that session, once
 Scenario: AC-33 edge — the lines are gone, a rename, a server restart
   Then a bookmark whose text is no longer in the history says "These lines are no longer in this session's history." with its text and note; it stays until deleted
-  And a renamed window keeps its bookmarks (the key is the pane's); after a tmux server restart a reused pane id with another creation time is another pane (OQ-31)
+  And a renamed window keeps its bookmarks (the key is the pane's); a tmux server restored from its checkpoint (AC 15) gives its bookmarks their panes' new keys, those of a pane not made again orphaned (a project's stays with its project); one started anew without a restore (another @terminum-id) orphans its bookmarks: a reused pane id is another pane (OQ-31)
 
 Scenario: AC-33 failure — cannot keep or reach
   When the Mac has 300 bookmarks, the pane closed meanwhile, or the file cannot be written
@@ -390,7 +396,7 @@ Scenario: AC-90 failure — not written
 ```gherkin
 Scenario: AC-91 happy path — a reminder
   When the user picks Reminder in the bookmark dialog (Bookmark | Reminder; its title and Save turn pale fuchsia) and saves
-  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); the sessions of its project have a wavy pink line in the list; a pale fuchsia bell (on the plain buttons' fill) under the bookmarks' button counts the open reminders of the shown session's project
+  Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); the sessions that show it have a wavy pink line in the list; a pale fuchsia bell (on the plain buttons' fill) under the bookmarks' button counts the open reminders the shown session shows
   And the floating buttons stand in one column at the terminal's top right: find, the split and the sent history, then, set apart, the colored ones (bookmarks, reminders) of one size and look without glow; each pane opens beside its button (under it on a phone); a split's embedded page shows none of them
 
 Scenario: AC-91 happy path — up when the turn ends
@@ -399,8 +405,10 @@ Scenario: AC-91 happy path — up when the turn ends
   When the user presses it
   Then its pane lists every open reminder, those up first ("up now"), each its session, its note as Markdown and its text quoted, with Open (its session at its text, AC-33), Close (put down: up again at its pane's next turn's end) and Resolve (it comes up no more and stays in Bookmarks); a reminder seen there blinks again only once put down and up anew
 
-Scenario: AC-91 happy path — by project
-  Then a reminder belongs to its folder's project as a bookmark does (AC-33): it comes up when an agent of any session of the project ends a turn, the bell shows the shown session's project's reminders, the session list marks the project's sessions with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions; Delete (twice) in the bell's pane removes one
+Scenario: AC-91 happy path — by project or session
+  Then a reminder belongs to its project, or its session, as a bookmark does (AC-33): it comes up when an agent of any session of the project ends a turn (outside projects: its own session's), the bell shows the reminders the shown session shows, the session list marks those sessions with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions; Delete (twice) in the bell's pane removes one
+  When another session is shown while the bell's pane is open
+  Then the pane closes (its reminders are the last session's)
 Scenario: AC-91 edge — restarts, kinds
   Then a reminder up stays up across terminumd's restart; a first layout after a restart ends no turn; a bookmark made a reminder in its dialog (Edit) is open, and a reminder made a bookmark comes up no more
 
@@ -548,7 +556,7 @@ Example:
   "n": 18342, "text": "the retry loop never resets its counter", "note": "ask about this", "title": "api refactor", "host": "devbox", "at": 1792003600}]}
 ```
 
-A bookmark may carry `"remind": true`, `"due": true` and `"resolved": 1792007200` (AC-91); a bookmark without them is as before.
+A bookmark may carry `"remind": true`, `"due": true` and `"resolved": 1792007200` (AC-91); a bookmark without them is as before. Version 3 (0.3.6) adds `"project": "a1b2c3d4e5f6"` (the project its session was in when it was made, AC-92; none: its session's) and `"orphaned": 1792007300` (when its project went or its session closed); a file of version 2 or 1 is read, its bookmarks given their projects once.
 
 `sessions/<project>/sent.jsonl` (AC-90; project: the first 16 hex digits of SHA-256 of `host\0path`, `meta.json` `{"host", "path"}`), one entry a line, newest last:
 
@@ -647,4 +655,5 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] AC-39 — `cargo test tmux::agentstate` and `web/test/e2e_app.mjs` reminders → pass. Update 0.2.3 (Codex, 2026-10-18): screens of a real Codex 0.162.1 installed with npm in a private tmux server (idle, working, done, approval, question tool, cancel, draft) → `cargo test tmux::` (Codex's measured screens, failures, a `node` pane by its screen, the title without its mark); `scripts/e2e_agentstate.py` (a private terminumd and tmux, `node` stand-ins drawing Codex's and a dev server's screens: done, working, a question over "esc to interrupt", the title, a dev server's "(Y/n)" without state, a pane leaving Codex for a dev server) → 8/8; against the build before the change → 3/8 (the dev-server checks only); a real Codex 0.162.1 (npm, `node`) under a private terminumd and tmux, asked for a question in Plan mode: its row went done ("play") → working ("play", the spinner's "| " dropped) → waiting ("Ask language choice | play", the mark dropped).
 - [x] AC-90 (2026-10-19) — `cargo test sent::` (kept per project newest last, 0600 and meta.json, a space, an empty line, the same Enter twice, redaction cases, cut back by count) and `page::`; `node --test web/test/sent.test.mjs` (a shell's line after its prompt with wrapped rows and a leading space kept, an agent's typed rows, a faint suggestion, Codex's box); `scripts/e2e_hooks.py` (a hook's prompt kept with its secret's value redacted, a page's shell command, an agent's page entry dropped when its hooks speak, a line after a space dropped, the one before, the folder 0600 under TM_HOME/sessions); `web/test/e2e_sent.mjs` in Chromium and WebKit at both sizes (Enter tells the command before the key, the button under the split, Markdown, "1 of 2", ↑, a shell block, the pane in view).
 - [x] AC-91 (2026-10-19) — `cargo test page::bookmarks` (up at each turn's end until resolved, closed and up again, kept across a restart, kinds switched in one save) and `manager::` (turn ends from layouts); `scripts/e2e_hooks.py` (a reminder up when its pane's turn ends by its hooks, closed then up again, resolved never again); `web/test/e2e_sent.mjs` (the bell blinking with its count, pressed: no blink, Markdown note and quoted text, Open, Close, Resolve sent, the fuchsia strip, the dialog's Reminder).
+- [x] AC-33, AC-91 by project or session (0.3.6, 2026-10-20) — `cargo test page::bookmarks` (a reminder up for any session of its project, not another project's, a session outside projects its own only; orphaned when its project went or, outside projects, its session closed, a live project's kept with its session closed; an orphaned one never up, orphaned once, kept across a restart; a restored server's bookmarks on their panes' new keys, those not made again orphaned but a project's, a kept pane paired with itself unchanged; a version 2 file takes its sessions' projects once) and `page::projects` (a list read's closed panes: none right after a restore, then those not listed, all for a server started anew; a restore again keeps the running sessions in their projects); `web/test/e2e_marks.mjs` in Chromium and WebKit (outside projects a session's pane lists its own, "Bookmarks of this session"; in one project two sessions show each other's, "Bookmarks of Work", Open shows the other session; the project gone: off the rail, in the foot's list; "Bookmarks / Reminders" lists only the orphaned, its count theirs; an orphaned one shows its text) and `web/test/e2e_sent.mjs` (a project's bookmarks from its other session and from one closed, "closed", none of another project or another session; the foot's list: orphaned and out of reach only; the bell's pane closes when another session is shown); `scripts/e2e_restore.py` 14/14, `e2e_hooks.py` 24/24, `e2e_core.py` 42/42, `e2e_agentstate.py` 11/11; `node web/test/e2e_all.mjs` 812, Panel 129, `make test`, `scripts/security_check.sh` pass. Reviewed by the pragmatic agent: a restore again orphaned the running sessions' bookmarks (and took them out of their projects, as before) — fixed by pairing kept panes with themselves; the restore's rekey raced the next list read — awaited; orphans named again under the store's lock; the closed verdicts tested; projects sent before bookmarks at a page's hello. The owner's answer (2026-10-20): a project's bookmarks and reminders stay in the project while it lives; orphaned once all its sessions are gone (first built: when its own session closed).
 - [x] AC-40 — `web/test/e2e_boxnav.mjs` (with `claude-input-60.json`) → pass.
