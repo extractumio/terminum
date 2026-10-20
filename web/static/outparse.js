@@ -24,7 +24,7 @@ const CODEISH = new RegExp([
 ].join("|"));
 // a shell prompt, by its common shapes: "alex@devbox ~ %", "$ ", "❯ ", "➜ dir", "(venv) …$", and
 // a prompt mark after a short lead (Starship's "at 12:21 ❯ ", "[main] ❯ ")
-const PROMPT = /^(?:\S+@[\w.-]+[:\s].*?[$#%>](?:\s|$)|[$%❯➜λ»›](?:\s|$)|\(\S+\)\s.*?[$%#❯](?:\s|$)|[^❯➜›]{1,40}[❯➜›](?:\s|$))/;
+const PROMPT = /^(?:\S+@[\w.-]+[:\s].*?[$#%>][\uFE0E\uFE0F]?(?:\s|$)|[$%❯➜λ»›][\uFE0E\uFE0F]?(?:\s|$)|\(\S+\)\s.*?[$%#❯][\uFE0E\uFE0F]?(?:\s|$)|[^❯➜›]{1,40}[❯➜›][\uFE0E\uFE0F]?(?:\s|$))/;   // a variation selector may follow a mark (Starship's ❯︎)
 // the end of the output: a prompt, a line a program colored (a prompt's other lines usually are),
 // a coding agent's next message or tool result (⏺ or ●, ⎿), or a drawn table (a widget of its own)
 const ends = (l, next) => l.styled || PROMPT.test(l.text) || /^\s*[⏺●⎿]/.test(l.text) || tableTop(l.text, next?.text);

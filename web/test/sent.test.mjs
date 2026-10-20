@@ -32,3 +32,8 @@ test("the row its text begins on: a wrapped command's first, an input box's firs
   assert.deepEqual(sentAt(box, { top: 1, bottom: 4 }, false), { text: "fix the tests\nand the lint", row: 2 });
   assert.equal(sentAt([row("vim text", { cur: true })], null, false).text, "", "not at a shell prompt: nothing");
 });
+
+test("Starship's prompt: a variation selector after its mark (\"at 19:20 ❯︎ \")", () => {
+  assert.equal(sentText([row("at 19:20 \u276f\ufe0e echo MARK-1", { cur: true })], null, true), "echo MARK-1");
+  assert.equal(sentText([row("~/p \u276f\ufe0f make test", { cur: true })], null, true), "make test");
+});
