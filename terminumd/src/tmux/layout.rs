@@ -273,7 +273,7 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
         let mut g = states.lock();
         let codex = !named_agent(p) && rows.as_deref().map_or(g.codex(&key), agentstate::codex_screen);
         // a pane that cannot be read shows no state this time (AC-39 failure)
-        let state = rows.map(|rows| agentstate::state_of(&p.pane_title, &rows));
+        let state = rows.map(|rows| g.limited(&key, agentstate::read(&p.pane_title, &rows), now));
         if let Some(s) = state {
             g.store(&key, &p.pane_title, now, s, codex);
         }

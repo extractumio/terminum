@@ -33,9 +33,11 @@ impl Turns {
         self.pending.lock().insert(key.to_string(), (now.checked_sub(SETTLE).unwrap_or(now), true));
     }
 
-    /// The panes whose hooks ended a turn that waits: their footers are read (layout.rs).
-    pub fn hooked(&self) -> HashSet<String> {
-        self.pending.lock().iter().filter(|(_, (_, hook))| *hook).map(|(k, _)| k.clone()).collect()
+    /// The panes whose hooks ended a turn that waits: their footers are read (layout.rs), for
+    /// BACKGROUND_LIMIT after the Stop; past it the turn ends whatever runs on.
+    pub fn hooked(&self, now: Instant) -> HashSet<String> {
+        let limit = SETTLE + crate::tmux::agentstate::BACKGROUND_LIMIT;   // its time is SETTLE before the Stop
+        self.pending.lock().iter().filter(|(_, (at, hook))| *hook && now.duration_since(*at) < limit).map(|(k, _)| k.clone()).collect()
     }
 
     /// Takes the panes `ended` just now and gives back, once, those that have stayed done for
@@ -107,9 +109,10 @@ mod tests {
         assert_eq!(t.settle(vec![], |_| Some(false), true, t0 + SETTLE * 3), ["a"], "the shell ended: its turn ends, once");
         assert!(t.settle(vec![], |_| Some(false), true, t0 + SETTLE * 4).is_empty());
         t.hook_ended("c", t0);
-        assert!(t.settle(vec![], |_| None, false, t0).is_empty() && t.hooked().contains("c"), "its host did not answer: it waits");
+        assert!(t.settle(vec![], |_| None, false, t0).is_empty() && t.hooked(t0).contains("c"), "its host did not answer: it waits");
+        assert!(!t.hooked(t0 + crate::tmux::agentstate::BACKGROUND_LIMIT).contains("c"), "ten minutes on: its footer is read no more");
         assert!(t.settle(vec![], |_| None, true, t0).is_empty() && t.settle(vec![], |_| Some(false), true, t0).is_empty(), "closed: no end");
-        assert!(t.hooked().is_empty());
+        assert!(t.hooked(t0).is_empty());
     }
 
     #[test]

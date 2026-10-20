@@ -100,7 +100,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
     let host = (!local).then(|| server.name.clone());
     let home = if local { home.to_string() } else { server.home().await.unwrap_or_default() };
     let looks = &app.looks;
-    let out = match layout::read(&server, &app.agent_states, &app.hooks, &app.turns.hooked(), &home, |s| looks.theme_name(host.as_deref(), s)).await {
+    let out = match layout::read(&server, &app.agent_states, &app.hooks, &app.turns.hooked(Instant::now()), &home, |s| looks.theme_name(host.as_deref(), s)).await {
         Ok(read) => {
             let mut gs = read.groups;
             if !local {

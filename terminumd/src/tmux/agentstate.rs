@@ -15,6 +15,9 @@ pub const ROWS: usize = 25;
 pub const ASK_ROWS: usize = 12;
 /// How long a state stands while the title stays the same.
 pub const STATE_EVERY: Duration = Duration::from_secs(6);
+/// How long work in the background alone (a dev server, `tail -f`, a monitor: Claude Code's
+/// footer counts it) keeps a session working; past it the session is done all the same.
+pub const BACKGROUND_LIMIT: Duration = Duration::from_secs(600);
 /// Panes remembered before the cache starts anew (panes long closed).
 const KEEP: usize = 500;
 
@@ -175,19 +178,25 @@ pub fn background_tasks(rows: &[String]) -> bool {
 }
 
 /// The state from the raw title and the screen's last rows.
+#[cfg(test)]
 pub fn state_of(title: &str, rows: &[String]) -> State {
+    read(title, rows).0
+}
+
+/// The state, and whether only the footer's work in the background makes it Working.
+pub fn read(title: &str, rows: &[String]) -> (State, bool) {
     let rows: Vec<String> = rows.iter().map(|r| r.replace('\0', " ")).collect();   // skipped cells
     let tail = rows[rows.len().saturating_sub(ROWS)..].join("\n");
     if codex_asks(title) || any_of(&rows[rows.len().saturating_sub(ASK_ROWS)..].join("\n"), &WAITING) {
-        return State::Waiting;
+        return (State::Waiting, false);
     }
     let chars: Vec<char> = tail.chars().collect();
-    let working = spinning(title) || any_of(&tail, &["esc to interrupt"]) || status_line(&chars) || background_work(&tail)
-        || background_tasks(&rows[rows.len().saturating_sub(ROWS)..]);
-    if !working && any_of(&tail, &FAILED) {
-        return State::Failed;
+    let working = spinning(title) || any_of(&tail, &["esc to interrupt"]) || status_line(&chars) || background_work(&tail);
+    let background = !working && background_tasks(&rows[rows.len().saturating_sub(ROWS)..]);
+    if !working && !background && any_of(&tail, &FAILED) {
+        return (State::Failed, false);
     }
-    if working { State::Working } else { State::Done }
+    (if working || background { State::Working } else { State::Done }, background)
 }
 
 /// The last state per pane key, read again only when the title changed (Claude Code turns its
@@ -196,6 +205,8 @@ pub fn state_of(title: &str, rows: &[String]) -> State {
 pub struct States {
     /// key -> title, read at, state, and whether a `node` pane's screen was Codex's
     known: HashMap<String, (String, Instant, State, bool)>,
+    /// key -> since when only work in the background kept it working
+    background: HashMap<String, Instant>,
 }
 
 impl States {
@@ -221,10 +232,22 @@ impl States {
         self.known.get(key).is_some_and(|k| k.3)
     }
 
+    /// The state read for `key` at `now` (`background`: Working only through the footer's work
+    /// in the background): Done once that has gone on for BACKGROUND_LIMIT.
+    pub fn limited(&mut self, key: &str, (state, background): (State, bool), now: Instant) -> State {
+        if !background {
+            self.background.remove(key);
+            return state;
+        }
+        let since = *self.background.entry(key.to_string()).or_insert(now);
+        if now.saturating_duration_since(since) >= BACKGROUND_LIMIT { State::Done } else { state }
+    }
+
     /// Remembers `state`, read at `now` for `title`, and whether the screen was Codex's.
     pub fn store(&mut self, key: &str, title: &str, now: Instant, state: State, codex: bool) {
         if self.known.len() >= KEEP && !self.known.contains_key(key) {
             self.known.clear();
+            self.background.clear();
         }
         self.known.insert(key.to_string(), (title.to_string(), now, state, codex));
     }
@@ -320,6 +343,20 @@ mod tests {
         assert!(!background_tasks(&codex), "Codex's composer is no Claude Code input box");
         let typed = rows(&["\u{2500}\u{2500}\u{2500}\u{2500}", "\u{276f} first line", "  second line", "\u{2500}\u{2500}\u{2500}\u{2500}", "  ~/p ctx:47%", "  1 shell"]);
         assert!(background_tasks(&typed), "a prompt of two lines in the box");
+    }
+
+    #[test]
+    fn background_work_alone_counts_for_ten_minutes() {
+        let shell = rows(&["\u{273b} Worked for 2m 12s", "", "\u{2500}\u{2500}", "\u{276f} ", "\u{2500}\u{2500}", "  ~/p", "  1 shell"]);
+        let spinning = read("\u{25d0} Fix it", &shell);
+        assert_eq!(read("\u{2733} Fix it", &shell), (Working, true), "the footer alone");
+        assert_eq!(spinning, (Working, false), "the agent itself at work: no limit");
+        let (mut s, t0) = (States::new(), Instant::now());
+        assert_eq!(s.limited("k", (Working, true), t0), Working);
+        assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT / 2), Working, "since it began");
+        assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT), Done, "a dev server: done after ten minutes");
+        assert_eq!(s.limited("k", spinning, t0 + BACKGROUND_LIMIT), Working, "a new turn");
+        assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT * 2), Working, "its background work counts anew");
     }
 
     #[test]
