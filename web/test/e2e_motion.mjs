@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Motion (docs/UI-GUIDELINES.md §2.8) against a fake terminumd (fake.mjs), with motion on: a
-// popover comes in and is in place within 300 ms, and goes at once; a press ripples; the
+// popover comes in and is in place within 300 ms, and goes at once; a pressed key sinks, a blob pulses; the
 // selected row settles once; nothing moves in the terminal; with reduced motion nothing moves.
 // The other checks run with reduced motion, so they measure boxes at their place.
 
@@ -33,16 +33,24 @@ export async function webMotion(browser, name) {
     Number(opening) < 1 && lasts.split(", ").every((d) => d === "0.2s") && settled && closed === "none",
     JSON.stringify({ opening, lasts, opened, closed }));
 
+  // a key sinks into the panel while pressed (its well), nothing scales or ripples; a blob pulses
   const box = await page.$("#newsessbtn").then((b) => b.boundingBox());
   await page.mouse.move(box.x + 20, box.y + 10);
   await page.mouse.down();
-  await page.waitForFunction(() => Number(getComputedStyle(document.getElementById("newsessbtn")).scale) < 1, null, { timeout: 1000 }).catch(() => {});
-  const press = await page.evaluate(() => { const b = document.getElementById("newsessbtn"); return [b.dataset.press, b.style.getPropertyValue("--px"), getComputedStyle(b).scale]; });
+  await page.waitForFunction(() => /1px 3px/.test(getComputedStyle(document.getElementById("newsessbtn")).boxShadow), null, { timeout: 1000 }).catch(() => {});
+  const press = await page.evaluate(() => { const b = document.getElementById("newsessbtn"), cs = getComputedStyle(b);
+    return { shadow: cs.boxShadow, scale: cs.scale, mark: b.dataset.press ?? null, before: getComputedStyle(b, "::before").content }; });
   await page.mouse.up();
-  const ripples = await page.evaluate(() => document.getAnimations().filter((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "newsessbtn").length);
-  check("motion: a press shrinks the button and ripples from where it was pressed", ["a", "b"].includes(press[0]) && press[1] === "20px" && Number(press[2]) < 1 && ripples === 1,
-    JSON.stringify({ press, ripples }));
   await page.click("#newsesscancel");
+  const fab = await page.$("#findfab").then((b) => b.boundingBox());
+  await page.mouse.click(fab.x + fab.width / 2, fab.y + fab.height / 2);
+  await page.waitForFunction(() => document.getAnimations().some((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "findfab"), null, { timeout: 1000 }).catch(() => {});
+  const pulse = await page.evaluate(() => ({ mark: document.getElementById("findfab").dataset.press,
+    running: document.getAnimations().filter((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "findfab").length }));
+  await page.keyboard.press("Escape");
+  check("motion: a pressed key sinks into the panel (its well), nothing scales or ripples; a pressed blob pulses",
+    /0px 1px 3px 0px/.test(press.shadow) && /inset/.test(press.shadow) && press.scale === "none" && press.mark === null && press.before === "none" && ["a", "b"].includes(pulse.mark) && pulse.running === 1,
+    JSON.stringify({ press, pulse }));
 
   await page.click("#sessions .item[data-id='tmux:local:terminum:%2']");
   const settle = await moving(page, "#sessions .item.on");

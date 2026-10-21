@@ -1,107 +1,39 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* Every box drawn a little uneven, as by hand (docs/UI-GUIDELINES.md §2.7): a rectangle's top and
-   bottom edges bow out or in (clip-path shape(): corners --r in pixels, each edge one arc peaking
-   at --x; --t and --b how far, + out, − in; --k how much of it, motion.css), neighbors a little
-   differently; a round thing is a blob, never a circle. The outline is one property, --wave,
-   computed on each element from its own values; the Page and the Panel (ui/src/style.css) share
-   this file.
-   - a button is clipped to it; its border is a ring of the same shape (::after) in --edge;
-   - a box (.box: popovers, forms, dialogs, cards) keeps its shadow: its fill (--fill) is a
-     clipped ::before, its box-shadow sits 3px inside so the wave hides the straight edge;
-   - a field (.field) only bows in, so its focus ring (thicker at top and bottom) is never cut;
-   - a header (.wavebar) bows in at its bottom edge only, over the terminal's own color.
-   The blobs that drift (marks.css, find.css), the footer's blobs on a touch screen (style.css)
-   and the marks on the terminal's edge keep their own shapes. */
+/* The material (docs/UI-GUIDELINES.md §2.7), after todobem's worn instrument panel: no outline is
+   drawn and no box bows; a surface is told by its fill and two hairlines of light (tokens.css
+   --m-*: a light catch on the top edge, a shade on the bottom one), a key is matte and a little
+   raised, a field is recessed, a bar has a seam under it. Corners are almost square (--r-*). The
+   Page and the Panel (ui/src/style.css) share this file; the grain is the Page's (grain.css).
+   Round things stay blobs (the floating buttons, the touch footer: marks.css, find.css,
+   style.css), and the bookmark and reminder marks stay wavy lines (marks.css). */
 :where(.box) { background: var(--fill); }
-@supports (clip-path: shape(evenodd from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
-  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #askfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #msgrail *, #menu .row, #schemes *),
-    .box, .field, .filter, .inline-edit input) {
-    --r: var(--r-md); --t: var(--wave-m); --b: var(--wave-m); --x: 46%; --w: 1px;
-    --te: calc(var(--t) * var(--k, 1)); --be: calc(var(--b) * var(--k, 1));
-    --ct: max(var(--te), 0px); --cb: max(var(--be), 0px);
-    --up: calc(var(--ct) - var(--te) * 4 / 3); --dn: calc(100% - var(--cb) + var(--be) * 4 / 3);   /* the arcs' pull */
-    --ti: calc(var(--ct) + var(--w)); --bi: calc(100% - var(--cb) - var(--w));
-    --wave: shape(from 0 calc(var(--ct) + var(--r)),
-      curve to var(--r) var(--ct) with 0 var(--ct),
-      curve to calc(100% - var(--r)) var(--ct) with var(--x) var(--up) / var(--x) var(--up),
-      curve to 100% calc(var(--ct) + var(--r)) with 100% var(--ct),
-      line to 100% calc(100% - var(--cb) - var(--r)),
-      curve to calc(100% - var(--r)) calc(100% - var(--cb)) with 100% calc(100% - var(--cb)),
-      curve to var(--r) calc(100% - var(--cb)) with calc(100% - var(--x)) var(--dn) / calc(100% - var(--x)) var(--dn),
-      curve to 0 calc(100% - var(--cb) - var(--r)) with 0 calc(100% - var(--cb)),
-      close);
-    /* the ring: the outline, and inside it the outline --w in (even-odd: only the band between) */
-    --ring: shape(evenodd from 0 calc(var(--ct) + var(--r)),
-      curve to var(--r) var(--ct) with 0 var(--ct),
-      curve to calc(100% - var(--r)) var(--ct) with var(--x) var(--up) / var(--x) var(--up),
-      curve to 100% calc(var(--ct) + var(--r)) with 100% var(--ct),
-      line to 100% calc(100% - var(--cb) - var(--r)),
-      curve to calc(100% - var(--r)) calc(100% - var(--cb)) with 100% calc(100% - var(--cb)),
-      curve to var(--r) calc(100% - var(--cb)) with calc(100% - var(--x)) var(--dn) / calc(100% - var(--x)) var(--dn),
-      curve to 0 calc(100% - var(--cb) - var(--r)) with 0 calc(100% - var(--cb)),
-      close,
-      move to var(--w) calc(var(--ct) + var(--r)),
-      curve to var(--r) var(--ti) with var(--w) var(--ti),
-      curve to calc(100% - var(--r)) var(--ti) with var(--x) calc(var(--up) + var(--w)) / var(--x) calc(var(--up) + var(--w)),
-      curve to calc(100% - var(--w)) calc(var(--ct) + var(--r)) with calc(100% - var(--w)) var(--ti),
-      line to calc(100% - var(--w)) calc(100% - var(--cb) - var(--r)),
-      curve to calc(100% - var(--r)) var(--bi) with calc(100% - var(--w)) var(--bi),
-      curve to var(--r) var(--bi) with calc(100% - var(--x)) calc(var(--dn) - var(--w)) / calc(100% - var(--x)) calc(var(--dn) - var(--w)),
-      curve to var(--w) calc(100% - var(--cb) - var(--r)) with var(--w) var(--bi),
-      close);
-  }
-  /* buttons: clipped; the ring is the border */
-  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #askfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #msgrail *, #menu .row, #schemes *)) {
-    position: relative; clip-path: var(--wave); }
-  :where(button:not(#markadd, #markcopy, #marksfab, #findfab, #splitfab, #sentfab, #askfab, #remindfab, #fabs button, #bottom, #backterm, #markrail *, #findrail *, #msgrail *, #menu .row, #schemes *))::after {
-    content: ""; position: absolute; inset: 0; pointer-events: none; background: var(--edge, transparent); clip-path: var(--ring); }
-  /* neighbors bow differently: one edge in, the peak off the middle */
-  :where(button:nth-child(3n + 2)) { --t: 2px; --b: -1px; --x: 56%; }
-  :where(button:nth-child(3n)) { --t: -1px; --b: 2px; --x: 51%; }
-  /* the clip cuts the focus outline: the ring shows it (--focus: on a button filled with the accent) */
-  button:focus-visible { --edge: var(--focus, var(--ring)) !important; --w: 2px; }
 
-  /* boxes: the fill is a clipped layer under the content; the shadow stays the box's */
-  :where(.box) { --r: var(--r-lg); --t: var(--wave-l); --b: calc(-1 * var(--wave-l)); --x: 42%; isolation: isolate; background: none; }
-  :where(.box:nth-of-type(2n)) { --t: calc(-1 * var(--wave-l)); --b: var(--wave-l); --x: 57%; }
-  :where(.box)::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; border-radius: inherit;
-    background: var(--fill); clip-path: var(--wave); }
-  :where(dialog.box) { --r: var(--r-xl); --t: var(--wave-xl); --b: calc(-1 * var(--wave-xl)); }
-  /* a box that scrolls would scroll its fill away: it is clipped itself, its shadow with it */
-  :where(.box.scrolls) { background: var(--fill); clip-path: var(--wave); }
-  :where(.box.scrolls)::before { content: none; }
+/* keys: the filled buttons, matte, their edges; a press sinks them into the panel */
+:where(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, .grp h2 .new,
+  #splitnote button, .stepper button, #findbox button:not(.icon), #markbar button:not(.icon), .seg button[aria-pressed="true"],
+  .seg button[aria-selected="true"]) {
+  background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); border-radius: var(--r-sm); }
+:where(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, .grp h2 .new,
+  #splitnote button, .stepper button, #findbox button:not(.icon), #markbar button:not(.icon)):active:not(:disabled) {
+  box-shadow: var(--m-well); }
+/* a segmented control's track is a recess its pressed key stands in */
+:where(.seg) { box-shadow: var(--m-well); }
 
-  /* fields: bow in only (the corners on the box), the ring thicker by the bow at top and bottom */
-  :where(.field, .filter, .inline-edit input) { --r: var(--r-md); --t: calc(-1 * var(--wave-s)); --b: calc(-1 * var(--wave-s)); --x: 54%;
-    clip-path: var(--wave); }
-  :where(.field:nth-of-type(2n)) { --x: 40%; }
-  :where(.field, .filter, .inline-edit input):is(:focus-visible, :focus-within) { outline: none;
-    box-shadow: inset 0 0 0 2px var(--ring), inset 0 3px 0 var(--ring), inset 0 -3px 0 var(--ring); }
-  :where(.field) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) rings for its input */
-  /* a light theme's steps are too faint to show a field alone: a resting ring of the line's color */
-  :root.light :where(.field, .filter, .inline-edit input):not(:focus-visible, :focus-within) { box-shadow: inset 0 0 0 1px var(--line), inset 0 2px 0 var(--line), inset 0 -2px 0 var(--line); }
+/* the focus ring: off the control, as on the panel's keys (--focus: on a key filled with the accent) */
+:where(button):focus-visible { outline: 2px solid var(--focus, var(--ring)); outline-offset: 2px; }
 
-  /* headers over the terminal: a long lower edge in three uneven troughs, the terminal's color in them */
-  :where(.wavebar) { --a: var(--wave-l); position: relative; isolation: isolate; background: none; }
-  :where(.wavebar)::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
-    background: var(--fill, var(--chrome));
-    clip-path: shape(from 0 0, line to 100% 0, line to 100% calc(100% - .5px),
-      curve to 56% calc(100% - .3px) with 78% calc(100% - 2 * var(--a)),
-      curve to 15% 100% with 35% calc(100% - 1.4 * var(--a)),
-      curve to 0 calc(100% - .5px) with 7% calc(100% - var(--a)), close); }
-}
-/* a browser without shape() (Safari before 18.4): straight edges, the border an inset ring */
-@supports not (clip-path: shape(evenodd from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
-  button { box-shadow: inset 0 0 0 1px var(--edge, transparent); }
-  .wavebar { background: var(--fill, var(--chrome)); }
-  :where(.field):focus-within { outline: 2px solid var(--ring); outline-offset: -2px; }   /* a wrapper's input has none */
-  :root.light :where(.field, .filter):not(:focus-within) { box-shadow: inset 0 0 0 1px var(--line); }
-}
+/* fields: a recess; focus rings it inside */
+:where(.field, .filter, .inline-edit input) { box-shadow: var(--m-well); border-radius: var(--r-sm); }
+:where(.field, .filter, .inline-edit input):is(:focus-visible, :focus-within) { outline: none;
+  box-shadow: var(--m-well), inset 0 0 0 2px var(--ring); }
+:where(.field) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) rings for its input */
 
-/* Increase contrast (macOS): every field, box and outlined control gets its edge back */
+/* bars over the terminal: their fill, a seam under them */
+:where(.wavebar) { position: relative; z-index: 1; background: var(--fill, var(--chrome)); box-shadow: var(--m-seam); }
+
+/* Increase contrast (macOS): every field, box and key gets a plain edge */
 @media (prefers-contrast: more) {
   :where(.field, .filter, .inline-edit input, .box, dialog) { box-shadow: inset 0 0 0 1px var(--muted); }
-  :where(button) { --edge: var(--line); }
 }
 
 /* round and pill-shaped buttons with a shadow: an uneven radius keeps the border and the shadow */

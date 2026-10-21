@@ -25,9 +25,21 @@
   --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));       /* secondary text, idle icons, placeholders */
   --faint: color-mix(in srgb, var(--t-fg) 40%, var(--t-bg));       /* a quiet dot, a disabled glyph */
   --shadow-a: 40%;                                                  /* 18% on a light theme (below) */
-  /* 3px inside the box: its straight edge hides under the wave (shapes.css) */
-  --shadow-near: 0 4px 12px -3px color-mix(in srgb, #000 calc(var(--shadow-a) * .8), transparent);
-  --shadow-far: 0 14px 32px -3px color-mix(in srgb, #000 var(--shadow-a), transparent);
+  --shadow-near: 0 4px 12px -3px color-mix(in srgb, #000 calc(var(--shadow-a) * .8), transparent);   /* a blob */
+  --shadow-far: var(--m-edge), 0 14px 34px -2px color-mix(in srgb, #000 var(--shadow-a), transparent);   /* a box: its edges and a deep drop */
+
+  /* ---- the material (§2.7, after todobem's panel): light on a top edge, shade on a bottom one;
+     the alphas are the material's, stronger shade and fainter light on a light theme (below) ---- */
+  --m-hi: rgb(255 255 255 / .05); --m-lo: rgb(0 0 0 / .28);           /* a surface */
+  --m-hi-ctl: rgb(255 255 255 / .09); --m-lo-ctl: rgb(0 0 0 / .38); --m-drop: rgb(0 0 0 / .22);   /* a key */
+  --m-well-a: rgb(0 0 0 / .6); --m-well-ring: rgb(0 0 0 / .25);       /* a recess */
+  --m-edge: inset 0 1px 0 var(--m-hi), inset 0 -1px 0 var(--m-lo);
+  --m-edge-ctl: inset 0 1px 0 var(--m-hi-ctl), inset 0 -1px 0 var(--m-lo-ctl), 0 1px 0 var(--m-drop);
+  --m-well: inset 0 1px 3px var(--m-well-a), inset 0 0 0 1px var(--m-well-ring);
+  --m-matte: linear-gradient(180deg, rgb(255 255 255 / .035), rgb(0 0 0 / .06));
+  --m-seam: 0 1px 0 rgb(0 0 0 / .4), 0 2px 0 rgb(255 255 255 / .025);
+  --chamfer: polygon(3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px), 0 3px);
+  --grain-opacity: .1;   /* grain.css: the grain itself is the Page's (the Panel's bundle takes no url()) */
 
   /* ---- fixed hues by meaning (§2.2); text in a hue is mixed with --t-fg so it reads on a light theme ---- */
   --local: #4f9dff; --remote: #a98bff; --host-label: cornflowerblue;
@@ -37,24 +49,18 @@
   /* a folder's bar (dircolors.js gives the hue): pastel on a dark theme, deeper on a light one (3:1) */
   --dir-l: .80; --dir-c: .085;
 
-  /* ---- radii, before the wave ---- */
-  --r-xs: 4px;    /* kbd, badges */
-  --r-sm: 6px;    /* controls ≤ 28px */
-  --r-md: 8px;    /* controls 30–40px, fields, rows */
-  --r-lg: 12px;   /* popovers, forms, touch controls ≥ 44px */
-  --r-xl: 14px;   /* dialogs, the View window */
+  /* ---- radii: an instrument panel's, barely rounded ---- */
+  --r-xs: 2px;    /* a tag: kbd, badges, a menu's row */
+  --r-sm: 3px;    /* every control (a key), fields, rows */
+  --r-md: 3px;    /* controls 30–44px */
+  --r-lg: 4px;    /* a panel: popovers, forms, cards */
+  --r-xl: 4px;    /* dialogs, the View window */
   --r-pill: 999px;
   /* round things are never round: four blobs, one per neighbor */
   --blob-a: 56% 44% 52% 48% / 47% 55% 45% 53%;
   --blob-b: 46% 54% 43% 57% / 55% 45% 56% 44%;
   --blob-c: 52% 48% 58% 42% / 44% 53% 47% 56%;
   --blob-d: 44% 56% 49% 51% / 52% 43% 57% 48%;
-
-  /* ---- the wave: how far a horizontal edge bows (shapes.css), by the box's size ---- */
-  --wave-s: 1px;     /* fields, controls ≤ 28px */
-  --wave-m: 1.5px;   /* buttons, rows */
-  --wave-l: 2px;     /* forms, popovers, the find box; a header's lower edge (three troughs) */
-  --wave-xl: 2.5px;  /* dialogs, the View window */
 
   /* ---- type: --ui at fixed sizes for chrome; --term-font at --size for what is typed (§4.6) ---- */
   --fs-display: 22px;   /* 600: the phone sheet's title */
@@ -77,20 +83,23 @@
   --dur-hover: 120ms;   /* hover in, color, ring */
   --dur-out: 160ms;     /* hover out */
   --dur-enter: 200ms;   /* a popover, form, dialog or toast appears */
-  --dur-settle: 320ms;  /* a click's ripple and the outline's wobble, after the action: it never delays */
+  --dur-settle: 320ms;  /* a blob's pulse, a row's settle: after the action, never delaying it */
   --ease-out: cubic-bezier(.2, .8, .2, 1);
   --ease-press: cubic-bezier(.3, 0, .5, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
-  --ease-wobble: cubic-bezier(.34, 1.36, .64, 1);
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
     --ease-spring: linear(0, .32 8%, .7 18%, .95 30%, 1.04 42%, 1.02 55%, .997 70%, 1);   /* ~4% over, settled by 70% */
-    --ease-wobble: linear(0, .55 10%, 1.18 26%, .9 46%, 1.05 64%, .98 82%, 1);           /* a pen's swing, once */
   }
 }
-/* a light theme (app.js sets .light): shadows lift rather than stain, folder hues darken */
-:root.light { --shadow-a: 18%; --dir-l: .62; --dir-c: .11; }
+/* a light theme (app.js sets .light): shadows lift rather than stain, folder hues darken; the
+   material's light shows only where it is brighter than the surface, its shade is softer */
+:root.light { --shadow-a: 18%; --dir-l: .62; --dir-c: .11;
+  --m-hi: rgb(255 255 255 / .7); --m-lo: rgb(0 0 0 / .1); --m-hi-ctl: rgb(255 255 255 / .8); --m-lo-ctl: rgb(0 0 0 / .16);
+  --m-drop: rgb(0 0 0 / .08); --m-well-a: rgb(0 0 0 / .14); --m-well-ring: rgb(0 0 0 / .1);
+  --m-matte: linear-gradient(180deg, rgb(255 255 255 / .3), rgb(0 0 0 / .03)); --m-seam: 0 1px 0 rgb(0 0 0 / .12), 0 2px 0 rgb(255 255 255 / .5);
+  --grain-opacity: .07; }
 @media (max-width: 860px), (pointer: coarse) {
   :root { --gutter: var(--sp-4); }
 }

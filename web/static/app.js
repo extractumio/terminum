@@ -3,7 +3,7 @@ import { signedUrl } from "./signin.js";              // first: it signs every r
 import { connection } from "./conn.js";
 import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
-import "./press.js";                                // a pressed button's ripple (motion.css)
+import "./press.js";                                // a pressed blob's pulse (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
 import { agentMark, findItem, folderBar, metaLine, renderNav, seeWaits, shownState, stateIcon } from "./nav.js";

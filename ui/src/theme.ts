@@ -12,7 +12,7 @@ export function applyTheme(t?: Theme): boolean {
   if (key === current) return false;
   current = key;
   const root = document.documentElement;
-  if (!t?.bg || !t.fg) { root.classList.remove("themed"); return true; }
+  if (!t?.bg || !t.fg) { root.classList.remove("themed", "light"); return true; }
   const set = (k: string, v?: string | null) => { if (v) root.style.setProperty(k, v); };
   set("--t-bg", t.bg);
   set("--t-fg", t.fg);
@@ -28,6 +28,7 @@ export function applyTheme(t?: Theme): boolean {
   // and the fallback chain keeps the layout if the font is not visible to WebKit
   ff.textContent = t.font ? `@font-face { font-family: TermFont; src: local("${t.font.replace(/["\\]/g, "")}"); }` : "";
   root.style.colorScheme = t.dark ? "dark" : "light";
+  root.classList.toggle("light", t.dark === false);   // tokens.css: the material's strengths on a light theme, as the Page's
   root.classList.add("themed");
   return true;
 }

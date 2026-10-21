@@ -40,18 +40,17 @@ export async function webTouch(browser) {
 
   const shape = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById("kbdbtn")); return [cs.borderTopLeftRadius, cs.borderTopRightRadius]; });
   check(`${at} the floating keyboard buttons are nearly round blobs, not circles`, shape[0] !== shape[1] && !shape.includes("50%"), JSON.stringify(shape));
-  // every other button a little uneven: bowed edges (neighbors differ), a border as a ring of that shape, a round one a blob
-  const uneven = await page.evaluate(() => {
-    const cs = (el, p) => getComputedStyle(el, p), tabs = [...document.querySelectorAll("#views button")];
-    const key = document.querySelector("#hotkeys .key"), down = cs(document.getElementById("bottom"));
-    return { tabs: tabs.map((b) => cs(b).clipPath.startsWith("shape(")), differ: cs(tabs[0]).clipPath !== cs(tabs[1]).clipPath,
-      save: cs(document.querySelector("#markbox .primary")).clipPath.startsWith("shape("),
-      key: [cs(key).borderTopWidth, cs(key, "::after").backgroundColor, cs(key, "::after").clipPath.startsWith("shape(evenodd")],
-      down: [down.borderTopLeftRadius, down.borderTopRightRadius, down.clipPath] };
+  // every other button wears the material (§2.7): no bowed outline, a key matte with its edges, no ring; a round one a blob
+  const material = await page.evaluate(() => {
+    const cs = (el) => getComputedStyle(el), tabs = [...document.querySelectorAll("#views button")];
+    const save = cs(document.querySelector("#markbox .primary")), key = cs(document.querySelector("#hotkeys .key")), down = cs(document.getElementById("bottom"));
+    return { tabs: tabs.map((b) => cs(b).clipPath), save: [save.clipPath, save.backgroundImage.startsWith("linear-gradient"), save.boxShadow.includes("inset"), parseFloat(save.borderTopLeftRadius)],
+      key: [key.borderTopWidth, key.clipPath], down: [down.borderTopLeftRadius, down.borderTopRightRadius, down.clipPath] };
   });
-  check(`${at} buttons are a little uneven: the tabs' and the bookmark dialog's bowed (neighbors differently), a hot key a fill of that shape with no ring (the design code: no outlines), Scroll to the bottom a blob`,
-    uneven.tabs.every(Boolean) && uneven.differ && uneven.save && uneven.key[0] === "0px" && /^rgba\(0, 0, 0, 0\)$|transparent/.test(uneven.key[1]) && uneven.key[2]
-    && uneven.down[0] !== uneven.down[1] && !uneven.down.includes("50%") && uneven.down[2] === "none", JSON.stringify(uneven));
+  check(`${at} buttons wear the material: no bowed outline on the tabs or the bookmark dialog's Save, which is a matte key with its edges and a 3px corner; a hot key a fill with no ring; Scroll to the bottom a blob`,
+    material.tabs.every((c) => c === "none") && material.save[0] === "none" && material.save[1] && material.save[2] && material.save[3] <= 3
+    && material.key[0] === "0px" && material.key[1] === "none"
+    && material.down[0] !== material.down[1] && !material.down.includes("50%") && material.down[2] === "none", JSON.stringify(material));
   await page.evaluate(() => document.getElementById("kbd").focus());
   const kept = await page.evaluate(() => document.getElementById("kbd").value);
   const before = sent.length;

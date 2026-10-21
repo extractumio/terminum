@@ -20,24 +20,24 @@ dialog::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
 :is(dialog.dlg, .footform) textarea.field { resize: vertical; }
 :is(dialog.dlg, .footform) [role="alert"] { margin: 0; color: var(--danger-text); font-size: var(--fs-label); }
 :is(dialog.dlg, .footform) .actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-3); }   /* 20px under the text */
-:is(dialog.dlg, .footform) .actions button { height: 40px; padding: 0 16px; border-radius: var(--r-md); background: var(--surface-3); }
-@media (hover: hover) { :is(dialog.dlg, .footform) .actions button:not(.primary):hover { background: var(--surface-4); } }
-:is(dialog.dlg, .footform) .actions .primary { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
+:is(dialog.dlg, .footform) .actions button { height: 38px; padding: 0 13px; border-radius: var(--r-sm); background-color: var(--surface-3); font-weight: var(--fw-head); }   /* keys (shapes.css) */
+@media (hover: hover) { :is(dialog.dlg, .footform) .actions button:not(.primary):hover { background-color: var(--surface-4); } }
+:is(dialog.dlg, .footform) .actions .primary { background-color: var(--accent); color: var(--t-bg); --focus: var(--t-bg); }
 :is(dialog.dlg, .footform) .actions button:disabled { opacity: .4; }
 
 /* a group header's buttons: copy the attach command, import a host's sessions, + new window, ⋯;
    one size; + keeps an edge as the group's own action */
 .grp h2 :is(.attach, .import, .new, .hostbtn) { flex: none; width: 26px; height: 26px; display: grid; place-items: center; padding: 0;
-  border-radius: 7px; color: var(--muted); }
-.grp h2 .new { background: var(--surface-3); }   /* the group's own action: filled, the others ghosts */
+  border-radius: var(--r-sm); color: var(--muted); }
+.grp h2 .new { background-color: var(--surface-3); }   /* the group's own action: filled, the others ghosts */
 .grp h2 .hostbtn[aria-expanded="true"] { color: var(--t-fg); background: var(--surface-3); }
 @media (hover: hover) {
-  .grp h2 :is(.attach, .import, .new, .hostbtn):hover { color: var(--t-fg); background: var(--surface-3); }
-  .grp h2 .new:hover { background: var(--surface-4); }
+  .grp h2 :is(.attach, .import, .new, .hostbtn):hover { color: var(--t-fg); background-color: var(--surface-3); }
+  .grp h2 .new:hover { background-color: var(--surface-4); }
 }
 
 /* popover menus: the host's ⋯, the update chip's */
-:is(#hostmenu, #updmenu) button { height: 34px; padding: 0 10px; border-radius: 7px; text-align: left; }
+:is(#hostmenu, #updmenu) button { height: 34px; padding: 0 10px; border-radius: var(--r-xs); text-align: left; }
 :is(#hostmenu, #updmenu) button:focus-visible { background: var(--surface-4); }
 @media (hover: hover) { :is(#hostmenu, #updmenu) button:hover { background: var(--surface-4); } }
 
@@ -45,9 +45,9 @@ dialog::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
 @media (max-width: 860px), (pointer: coarse) {
   .grp h2 { height: 40px; }   /* the row holds its 40px buttons */
   .grp h2 .toggle { height: 40px; }
-  .grp h2 :is(.attach, .import, .new, .hostbtn) { width: 40px; height: 40px; border-radius: 10px; }
+  .grp h2 :is(.attach, .import, .new, .hostbtn) { width: 40px; height: 40px; border-radius: var(--r-sm); }
   .grp h2 .acts { min-width: calc(2 * 40px + 6px); }
-  #findbox button, :is(dialog.dlg, .footform) .actions button, :is(#hostmenu, #updmenu) button, #splitnote button { height: 44px; border-radius: 12px; }
+  #findbox button, :is(dialog.dlg, .footform) .actions button, :is(#hostmenu, #updmenu) button, #splitnote button { height: 44px; border-radius: var(--r-sm); }
   .dhead .x { width: 44px; height: 44px; }
   .dhead { margin: -10px -12px -4px 0; }   /* the larger × keeps the title where it was */
   #findbox .icon { width: 44px; }

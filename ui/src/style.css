@@ -52,12 +52,12 @@ header { padding: 7px 8px 8px 10px; --fill: var(--bg-2); flex: none; }   /* .wav
 .top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; transition: background .3s; }
 .dot.stale, .dot.wait { background: var(--warn); } .dot.off { background: var(--bad); }
-.badge { font: 600 10px/1 var(--ui); letter-spacing: .05em; text-transform: uppercase; padding: 3px 6px; border-radius: 4px;
+.badge { font: 600 10px/1 var(--ui); letter-spacing: .05em; text-transform: uppercase; padding: 3px 6px; border-radius: var(--r-xs);
   background: var(--bg-hover); color: var(--accent); flex: none; }
 .badge.warn { color: var(--warn); }
 .title { flex: 1; min-width: 0; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 button.icon { border: 0; background: transparent; color: var(--fg-dim); cursor: pointer; width: 22px; height: 22px;
-  border-radius: 4px; display: grid; place-items: center; flex: none; padding: 0; }
+  border-radius: var(--r-xs); display: grid; place-items: center; flex: none; padding: 0; }
 button.icon:hover { background: var(--bg-hover); color: var(--fg); }
 button.icon.on { color: var(--accent); background: var(--bg-hover); }
 .where { display: flex; align-items: center; gap: 6px; margin-top: 5px; min-width: 0; }
@@ -91,7 +91,7 @@ button.icon.on { color: var(--accent); background: var(--bg-hover); }
 .link { color: var(--fg-faint); font-size: .85em; }
 .size { color: var(--fg-faint); font: .88em var(--mono); flex: none; }
 .muted { color: var(--fg-faint); font-style: italic; }
-.skeleton { height: 8px; width: 40%; border-radius: 4px; background: var(--bg-hover); }
+.skeleton { height: 8px; width: 40%; border-radius: var(--r-xs); background: var(--bg-hover); }
 .spin { width: 10px; height: 10px; border: 1.5px solid var(--fg-faint); border-top-color: transparent; border-radius: 50%;
   animation: spin .7s linear infinite; flex: none; display: inline-block; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -133,8 +133,9 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .banner { padding: 4px 10px; font-size: .9em; color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, var(--bg)); }
 .pinfo { padding: 18px; color: var(--fg-dim); display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
 .pinfo .big { font-size: 1.2em; color: var(--fg); }
-.btn { border: 0; background: var(--bg-hover); color: var(--fg); border-radius: var(--r-sm); padding: 4px 10px; cursor: pointer; }
-.btn:hover { background: color-mix(in srgb, var(--fg) 16%, var(--bg)); }
+.btn { border: 0; background-color: var(--bg-hover); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); color: var(--fg); border-radius: var(--r-sm); padding: 4px 10px; cursor: pointer; }   /* a key (shapes.css, §2.7) */
+.btn:hover { background-color: color-mix(in srgb, var(--fg) 16%, var(--bg)); }
+.btn:active:not(:disabled) { box-shadow: var(--m-well); }
 .imgview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px;
   background: repeating-conic-gradient(var(--bg-2) 0 25%, var(--bg) 0 50%) 0 0 / 16px 16px; }
 .imgview img { max-width: 100%; max-height: calc(100% - 30px); object-fit: contain; }
@@ -174,7 +175,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .md-body .task-list-item { list-style: none; margin-left: -1.3em; }
 .md-body .task-list-item input { margin: 0 .45em 0 0; vertical-align: -1px; accent-color: var(--accent); }
 .md-body blockquote { padding: .5em 1em; color: var(--fg-dim); background: var(--bg-2); border-radius: var(--r-md); }   /* a tint, not a bar */
-.md-body code { font: .88em var(--mono); background: var(--bg-hover); padding: .12em .38em; border-radius: 4px; }
+.md-body code { font: .88em var(--mono); background: var(--bg-hover); padding: .12em .38em; border-radius: var(--r-xs); }
 .md-body pre { background: var(--bg-2); border-radius: var(--r-md); padding: 12px 14px; overflow: auto; position: relative; line-height: 1.5; }
 .md-body pre code { background: none; padding: 0; font-size: .85em; }
 .md-body pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 4px; right: 8px; font: 10px var(--mono);
@@ -183,7 +184,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .md-body .md-diagram { position: relative; margin: 0 0 1em; padding: 26px 14px 12px; background: var(--bg-2); border-radius: var(--r-md); overflow-x: auto; }
 .md-body .md-diagram img.diagram { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .md-body .md-diagram pre { margin: 0; padding: 0; background: none; }
-.md-body .md-diagram-toggle { position: absolute; top: 4px; right: 8px; font: 10px var(--mono); color: var(--fg-dim); background: none; border: 0; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.md-body .md-diagram-toggle { position: absolute; top: 4px; right: 8px; font: 10px var(--mono); color: var(--fg-dim); background: none; border: 0; padding: 2px 4px; border-radius: var(--r-xs); cursor: pointer; }
 .md-body .md-diagram-toggle:hover { background: var(--bg-hover); color: var(--fg); }
 .md-body .md-diagram-error { color: var(--bad); font: .85em var(--mono); margin: 0 0 .3em; }
 @media (pointer: coarse) { .md-body .md-diagram-toggle { top: 0; right: 0; min-width: 44px; min-height: 44px; } }   /* a finger's target */
@@ -208,10 +209,10 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .tab.dirty .close { opacity: .9; color: var(--accent); font-size: 11px; }
 .tab.dirty .close:hover { color: var(--fg); }
 .btn.sm { padding: 1px 8px; font-size: .9em; }
-.btn.primary { background: var(--accent); color: var(--bg); --focus: var(--bg); }
-.btn.primary:hover { background: color-mix(in srgb, var(--accent) 85%, var(--fg)); }
+.btn.primary { background-color: var(--accent); color: var(--bg); --focus: var(--bg); }
+.btn.primary:hover { background-color: color-mix(in srgb, var(--accent) 85%, var(--fg)); }
 .btn.danger { color: var(--bad); }
-.btn.primary.danger { background: var(--bad); color: var(--bg); }
+.btn.primary.danger { background-color: var(--bad); color: var(--bg); }
 .banner .btn { margin-left: 6px; }
 
 .row.editing { background: var(--bg-hover); }
@@ -227,7 +228,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .modal-back { position: fixed; inset: 0; background: rgb(0 0 0 / .35); display: grid; place-items: center; z-index: 50; padding: 16px; }
 /* the Page's dialog (its controls.css): a head (title, × in the corner), then Cancel and the primary, 40px */
 .modal { position: relative; --fill: var(--bg-2); border-radius: var(--r-xl); padding: var(--sp-4); max-width: 480px; width: 100%;
-  box-shadow: 0 14px 40px -3px rgb(0 0 0 / .45); }   /* a .box */
+  box-shadow: var(--shadow-far); }   /* a .box: its edges and a deep drop (§2.7) */
 .mhead { display: flex; align-items: center; gap: var(--sp-2); margin: -6px -8px 6px 0; }
 .mtitle { flex: 1; min-width: 0; font-weight: 600; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
 .mx { flex: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-md);
@@ -235,12 +236,12 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .mx:hover { color: var(--fg); background: var(--bg-hover); }
 .mtext { color: var(--fg-dim); margin-bottom: var(--sp-5); }
 .mbtns { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: flex-end; }
-.mbtns .btn { height: 40px; padding: 0 16px; border-radius: var(--r-md); font: inherit; }
+.mbtns .btn { height: 38px; padding: 0 13px; border-radius: var(--r-sm); font: inherit; }
 .mbtns .btn.primary { font-weight: 600; }
 
 .ctx { position: fixed; z-index: 40; min-width: 210px; max-width: calc(100vw - 8px); padding: 4px; --fill: var(--bg-2);
-  border-radius: var(--r-lg); box-shadow: 0 10px 30px -3px rgb(0 0 0 / .45); }   /* a .box: its fill is --fill */
-.ctx .mi { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 4px 9px; border-radius: 4px; cursor: default; white-space: nowrap; }
+  border-radius: var(--r-lg); box-shadow: var(--shadow-far); }   /* a .box: its fill is --fill, its edges and drop --shadow-far */
+.ctx .mi { display: flex; align-items: center; gap: 16px; justify-content: space-between; padding: 4px 9px; border-radius: var(--r-xs); cursor: default; white-space: nowrap; }
 .ctx .mi.hot { background: var(--accent); color: var(--bg); }
 .ctx .mi.danger:not(.hot) { color: var(--bad); }
 .ctx .mi.off { opacity: .4; }
@@ -274,7 +275,7 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (pointer: coarse) {
   :root, html.themed { --row: max(36px, calc(var(--t-size, 13) * 1.6px)); }
   button.icon { width: 36px; height: 36px; }
-  .mbtns .btn, .mx { height: 44px; border-radius: 12px; }
+  .mbtns .btn, .mx { height: 44px; border-radius: var(--r-sm); }
   .mx { width: 44px; }
   .mhead { margin: -10px -12px 2px 0; }
 }

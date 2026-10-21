@@ -16,9 +16,9 @@ is next changed. CLAUDE.md and the specs win over this file.
 | Theme-driven colors | Surfaces, text, lines and accent derive from the session's theme (`--t-bg`, `--t-fg`, `--accent`). Fixed hues only for meaning that must not change with the theme (§2.2), and they must read on a light theme too. |
 | One look per kind | Two controls of the same kind share one class and one rule. Style by class; ids are for behavior and tests. |
 | Surfaces, not lines | Elements are set apart by space or by a step of background (§2.1); a 1px line only for a tree guide or rendered content. |
-| No edge stripes | Never a colored line along a box's side (a `border-left`, an inset `box-shadow`) on a rounded box: it bends at the corners. A group is tinted; a mark beside a row or a quote is the list's wavy line (`--wave-line`). |
-| Drawn by hand | Every box's horizontal edges bow a little and no round thing is a circle (§2.7). |
-| Calm motion | Feedback ≤ 120 ms, a box comes in ≤ 200 ms, a click's ripple fades ≤ 320 ms after the action (it never delays it); nothing moves in the terminal; one `prefers-reduced-motion: reduce` off-switch (§2.8). |
+| No edge stripes | Never a colored line along a box's side (a `border-left`, a colored inset `box-shadow`): the material's edges are light and shade only (§2.7). A group is tinted; a mark beside a row or a quote is the list's wavy line (`--wave-line`). |
+| A worn instrument panel | After todobem: matte surfaces with almost square corners, edges as a light catch on top and a shade below, recessed fields, keys that are matte and slightly raised, a fine grain on the chrome; never on terminal text. Round things stay blobs, never circles (§2.7). |
+| Calm motion | Feedback ≤ 120 ms, a box comes in ≤ 200 ms; a key only changes color and sinks into the panel when pressed (no ripple, no swing); blobs keep their drift and pulse; nothing moves in the terminal; one `prefers-reduced-motion: reduce` off-switch (§2.8). |
 
 ## 2. Tokens
 
@@ -40,7 +40,7 @@ Elevation is a step of background, never a line: each surface is `--t-fg` mixed 
 | `--surface-4` | Hover and pressed on a floating surface; Cancel in a form (`fg 18%`). |
 | `--line` | The few lines left: tree guides (`.kids`, the Panel's guides), rendered content, a field's resting ring on a light theme (`fg 16%`). |
 | `--muted`, `--faint` | Secondary text, idle icons, placeholders (`fg 58%`); a quiet dot (`fg 40%`). |
-| `--shadow-near`, `--shadow-far` | A floating button's / a box's shadow, 3px inside the box (§2.7); `#000` at `--shadow-a` (40%, 18% on a light theme). |
+| `--shadow-near`, `--shadow-far` | A floating button's shadow; a box's: its edges (`--m-edge`, §2.7) and a deep drop, `#000` at `--shadow-a` (40%, 18% on a light theme). |
 | `--accent` | The theme's cursor color: selection, primary button fill, active tab. |
 | `--ring` | The focus ring: `--accent`, or `--t-fg` when the accent is under 3:1 against `--t-bg` (contrast.js). |
 | `--sel`, `--selfg` | Terminal text selection. |
@@ -117,11 +117,11 @@ changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch scree
 
 | Radius | Use |
 | --- | --- |
-| `--r-xs` 4px | `kbd`, badges, the closed-session chip. |
-| `--r-sm` 6px | Small controls ≤ 28px: segment buttons, group-header buttons, form buttons, menu items. |
-| `--r-md` 8px | Controls 30–40px: icon buttons, footer buttons, fields, list rows (wide). |
-| `--r-lg` 12px | Popovers, footer forms, bookmark bar, waiting cards; phone controls ≥ 44px. |
-| `--r-xl` 14px | Dialogs, the View window. |
+| `--r-xs` 2px | A tag: `kbd`, badges, a menu's row, the closed-session chip; a plate may cut its corners instead (`--chamfer`). |
+| `--r-sm` 3px | Every control (a key): buttons, segments, fields, list rows, menu items; on a phone too. |
+| `--r-md` 3px | (= `--r-sm`) controls 30–44px. |
+| `--r-lg` 4px | A panel: popovers, footer forms, bookmark bar, waiting cards, widgets. |
+| `--r-xl` 4px | Dialogs, the View window. |
 | `--r-pill` | Pills: chips, `.tsess`, Screen label. |
 | `--blob-a` … `--blob-d` | Every round thing (floating buttons, the touch footer, dots, badges): four uneven radii, one per neighbor; never `50%`. |
 
@@ -161,28 +161,37 @@ changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch scree
 | Expanded (`aria-expanded="true"`) | Same as hover, held while open (footer buttons, ⋯, host menu button). |
 | Selected (`aria-selected`, `.on`) | Accent mix fill; wide `#views`: accent text and accent edge. |
 | Disabled | `opacity: .35–.4; cursor: default`. |
-| Focus | `:focus-visible` only: 2px `--ring` ring (shapes.css draws it as the ring for clipped buttons, as an inset ring for fields; `--focus: var(--t-bg)` on an accent-filled button; an outline 2px off a blob). Never `outline: none` without a replacement. |
+| Focus | `:focus-visible` only: a 2px `--focus` outline 2px off the control (`--focus` is `--ring`; `var(--t-bg)` on an accent-filled key), a field's as a 2px inset ring over its well. Never `outline: none` without a replacement. |
 | Busy | `.busy` breathing or `Searching…` text; no spinners in the Page. |
 
-### 2.7 Shapes (`web/static/shapes.css`, shared with the Panel)
+### 2.7 Material (`web/static/shapes.css`, shared with the Panel; the grain: `grain.css`, the Page's)
 
-A box's horizontal edges bow out or in by a pixel or two, as drawn by hand; corners stay round,
-vertical edges straight; neighbors bow differently. The outline is one property, `--wave`
-(`clip-path: shape()`), computed on each element from `--r` (corner), `--t`/`--b` (how far the top
-and bottom edges bow: + out, − in), `--x` (where they peak) and `--k` (how much: motion). The
-amplitude shrinks as the box grows relative to its size: `--wave-s` 1px fields, `--wave-m` 1.5px
-buttons, `--wave-l` 2px forms and popovers, `--wave-xl` 2.5px dialogs.
+After todobem's panel: no outline is drawn, no box bows. A surface is told by its fill (§2.1) and
+two hairlines of light, never a line of color: a light catch on its top edge and a shade on its
+bottom one. Tokens (tokens.css; their strengths change on a light theme under `:root.light`):
+
+| Token | What | Where |
+| --- | --- | --- |
+| `--m-edge` | A surface's edges: top light, bottom shade (inset) | Boxes (with `--shadow-far`), cards, the closed chip, plates. |
+| `--m-edge-ctl` | A key's edges, a little stronger, and a 1px drop | Filled buttons: dialog and form actions, footer buttons, segments' track, `.new`, banner and note buttons. |
+| `--m-well` | A recess: shade inside the top, a faint inner ring | Fields, the find field, a pressed key (`:active`), a toggle's track. |
+| `--m-matte` | A faint top-lit falloff over a key's fill (a gradient image) | Every filled key, so a fill is never one flat value. |
+| `--m-seam` | A bar's lower edge: a dark hairline and a faint light one under it | `.wavebar` headers (`#bar`, `.winhead`, the Panel's header), the list's right edge. |
+| `--chamfer` | A plate's corners cut instead of rounded (clip-path polygon) | Tags that are information, never pressed: the session pill, `kbd`. |
+| `--grain`, `--grain-opacity` | One 512px tile of monochrome specks laid twice (512 and 571px) | Over the chrome only (grain.css): the list, the header, Files' head, popovers, footer forms, the toast, the floating box; never over the terminal, Files' or View's content, a box that scrolls, or a modal dialog (WebKit then keeps the dialog at its opening scale). Always a raster drawn from grain.svg at the screen's density (grain.js, `data:` URLs; at most 2x and fainter on a phone): the SVG itself is never a background, WebKit re-evaluates its filters on every repaint. Off under `prefers-contrast: more`. |
 
 | Kind | Class | How |
 | --- | --- | --- |
-| Button | every `<button>` | Clipped; its border is a ring of the same shape (`::after`) in `--edge` (never `border`, which the clip cuts); the focus ring is that ring in the accent. |
-| Box | `.box` (popovers, footer forms, dialogs, find box, bookmark bar, waiting cards, toast; Panel `.modal`, `.ctx`) | Its fill is `--fill`, drawn by a clipped `::before`, so its own `box-shadow` (3px inside: `--shadow-far`) survives; a box that scrolls (`.box.scrolls`) is clipped itself and has no shadow. |
-| Field | `.field` (an input, a textarea, or a wrapper label such as `.search`, `.lead`; Panel `.filter`) | Bows in only, so the focus ring (inset, 2px, 3px at top and bottom) is never cut; on a light theme a resting ring in `--line`. |
-| Header | `.wavebar` (`#bar`, `.winhead`, the Panel's header) | Its lower edge in three uneven troughs over the terminal's color; the fill is `--fill`. |
-| Blob | `#fabs button`, `#findfab`, the bookmark buttons, `#bottom`, the touch footer's icons | A `--blob-*` radius (no clip: shadow and outline follow it); the drifting ones animate it. Excluded by id in shapes.css; a new floating button joins that list. |
+| Key (filled button) | the kinds above | `--r-sm`, fill + `--m-matte`, `--m-edge-ctl`; hover one surface step; pressed: `--m-well`. |
+| Ghost button | `.icon`, row buttons, menu items | No fill, no edge; hover fill as §2.6. |
+| Box | `.box` (popovers, footer forms, dialogs, find box, bookmark bar, waiting cards, toast; Panel `.modal`, `.ctx`) | `background: var(--fill)`, `--r-lg` (dialogs `--r-xl`), `box-shadow: var(--shadow-far)` (which carries `--m-edge`). |
+| Field | `.field` (an input, a textarea, or a wrapper label such as `.search`, `.lead`; Panel `.filter`) | A well on `--surface-2`: `--m-well`; focus adds a 2px inset `--ring`. |
+| Header | `.wavebar` (`#bar`, `.winhead`, the Panel's header) | `background: var(--fill)`, `--m-seam` under it. The class keeps its name. |
+| Blob | `#fabs button`, `#findfab`, the bookmark buttons, `#bottom`, the touch footer's icons | Kept from the earlier look: a `--blob-*` radius, its drift and pulse (motion.css). |
+| Marks | `.wave.mark`, `.wave.remind` | Kept: the wavy bookmark and reminder lines (`--wave-line`). |
 
-Without `shape()` (Safari before 18.4) everything is straight with its radius and shadow.
-`prefers-contrast: more` gives fields and boxes their edges back.
+The black and white alphas of these tokens are the material's own and the one exception to "no
+raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, §2.2).
 
 ### 2.8 Motion (`web/static/motion.css`, `press.js`)
 
@@ -191,21 +200,21 @@ Without `shape()` (Safari before 18.4) everything is straight with its radius an
 | `--dur-press` | 60ms | A press. |
 | `--dur-hover` / `--dur-out` | 120 / 160ms | Hover in / out, color, ring. |
 | `--dur-enter` | 200ms | A box or dialog comes in. |
-| `--dur-settle` | 320ms | A ripple, the outline's swing back, the selected row's settle: after the action. |
+| `--dur-settle` | 320ms | A blob's pulse, the selected row's settle: after the action. |
 | `--ease-out`, `--ease-press` | cubic-bezier | Most motion; a press. |
-| `--ease-spring`, `--ease-wobble` | `linear()` (cubic fallback) | A small overshoot; one swing of a pen. |
+| `--ease-spring` | `linear()` (cubic fallback) | A blob's small overshoot. |
 
 | Moment | What moves |
 | --- | --- |
 | Hover (`(hover: hover) and (pointer: fine)` only) | Color: one surface step. Never the outline or the size (a sweep across a toolbar must stay calm). Rows: fill and their folder bar brighten. Blobs lift 1px and grow 6%. |
-| Press | Scale .96 (.985 for wide controls and rows), the outline flattens (`--k` .15). Blobs squash to .9. |
-| Release | The outline swings back once (`--ease-wobble`); a ripple spreads from the pressed point inside the outline (Enter/Space: from the middle). Blobs pulse in their own outline. |
+| Press | A key sinks: `--m-well` for the press, no scale. Blobs squash to .9. |
+| Release | Color back. Blobs pulse in their own outline. |
 | A box opens | Fades in and rises 6px (a popover falls 4px), from .98 (a dialog from .96) with its backdrop; it closes at once. |
 | The shown session changes | Its row's fill settles from the accent, its bar grows in (`.fresh`, once). |
 | A session works | Its bar pulses, in the list and the header (its color glows and fades, 1.4 s); no hourglass. A state, not motion: nothing moves, so it stays with Reduce Motion. |
 | Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop. |
 
-`prefers-reduced-motion: reduce` sets every duration to 0 and turns off scale, translate, ripple and
+`prefers-reduced-motion: reduce` sets every duration to 0 and turns off scale, translate, pulse and
 settle; colors still change. The browser checks run with reduced motion (fake.mjs);
 `web/test/e2e_motion.mjs` checks the motion itself.
 
@@ -225,9 +234,9 @@ there, not into the file of the feature that first needed it.
 | Footer form | `form.footform.box` + `p.hint` + `p[role=alert]` + `.row` > `button.primary` + Cancel | tmux.css | One open at a time; opens above the footer; primary first, Cancel second; fields `.field`. Error text only in the `role="alert"` line. |
 | Header icon button | `button.icon` | style.css | Ghost; 32/44px. Pressed or expanded state via `aria-*`, not a class. |
 | Segmented control | `div.seg` > `button[aria-pressed]` or `[role=tab][aria-selected]` | style.css | Lines, Screen mode, Views. Text labels, 12.5px. |
-| Popover menu | `div.box[role=menu]` > `button` | tmux.css (`#hostmenu`, `#updmenu`), controls.css (items), style.css (`#menu`) | `--fill: var(--chrome-2)`, `--r-lg`, padding 4, `--shadow-far`, no border; items left-aligned, 34px, hover `--surface-4`; destructive item in `--danger-text`, last, set apart by 8px; Esc closes it. A new popover joins the `:is(#hostmenu, #updmenu)` item rules. |
+| Popover menu | `div.box[role=menu]` > `button` | tmux.css (`#hostmenu`, `#updmenu`), controls.css (items), style.css (`#menu`) | todobem's dropdown plate: `--fill: var(--chrome-2)`, `--r-lg`, padding 4, `--shadow-far`, no border; items left-aligned, 34px, `--r-xs`, hover `--surface-4`; destructive item in `--danger-text`, last, set apart by 8px; Esc closes it. A new popover joins the `:is(#hostmenu, #updmenu)` item rules. |
 | Settings menu row | `#menu .row` (button or label) with `small` description | style.css | Label left, control right; danger row last with a divider. |
-| Dialog, list foot form | `<dialog class="box dlg">` > `form[method=dialog]` > `.dhead` (`h2` title, `button.icon.x` ×) > labels over `.field`s > `.actions` (Cancel, then primary); a list foot's `form.footform.box` the same inside | controls.css (one rule set for both); feature sheets only for a primary's hue | `--fill: var(--chrome)`, `--r-xl` (a foot form `--r-lg`), padding 16, no border, `--shadow-far`, width ≤ 480px; title `--fs-title` 600; × 32px (44 on a phone) in the corner, as Esc; label `--fs-label` muted; every field `--term-font` at `--size`, padding 10/12, `--surface-3`, `--r-md`; a quote shown in it (`#asktext`, `#marktext`) as a field on `--t-bg`. The primary in the hue of what opened it: `--accent`, Ask's `--ask`, the bookmark's `--mark`, a reminder's `--remind`, an irreversible verb's `--danger-fill` (`#confirmbox`, whose question is its title). Use `askConfirm(text, verb)` (navtools.js) for every irreversible action. |
+| Dialog, list foot form | `<dialog class="box dlg">` > `form[method=dialog]` > `.dhead` (`h2` title, `button.icon.x` ×) > labels over `.field`s > `.actions` (Cancel, then primary); a list foot's `form.footform.box` the same inside | controls.css (one rule set for both); feature sheets only for a primary's hue | `--fill: var(--chrome)`, `--r-xl` (a foot form `--r-lg`), padding 16, no border, `--shadow-far`, width ≤ 480px; actions are keys (§2.7), 38px; title `--fs-title` 600; × 32px (44 on a phone) in the corner, as Esc; label `--fs-label` muted; every field `--term-font` at `--size`, padding 10/12, a well (§2.7) on `--surface-2`, `--r-sm`; a quote shown in it (`#asktext`, `#marktext`) as a field on `--t-bg`. The primary in the hue of what opened it: `--accent`, Ask's `--ask`, the bookmark's `--mark`, a reminder's `--remind`, an irreversible verb's `--danger-fill` (`#confirmbox`, whose question is its title). Use `askConfirm(text, verb)` (navtools.js) for every irreversible action. |
 | Primary button | `button.primary` | per container | Fill `--accent`, text `--t-bg`, weight 600, `--focus: var(--t-bg)`. Danger: `--danger-fill` + white. Bookmark: `--mark`. Make sure no container rule out-ranks it (test the computed fill). |
 | Banner | `div[role=status]` under the header (`#status`, `#restored`, `#stall`, `#sized`) | style.css | Full width, 6px 12px, white on a fixed fill (§2.2); a close `.x` when it does not clear itself. |
 | Toast | `#toast` via `toast(text, ms)` (app.js) | style.css | One line when short, wraps when long, never wider than the terminal column minus 32px; above the floating buttons on a phone. |
@@ -236,10 +245,10 @@ there, not into the file of the feature that first needed it.
 | Group header | `.grp h2` > `.grip`, `button.toggle`, `.attach`, `.import`, `.new`, `.hostbtn` | style.css, controls.css | The trailing buttons share size, radius and color (controls.css); `.new` is filled as the group's own action. The name keeps 6 characters; the session pill gives way first. |
 | Group state | `p.gstate` under a group's name | tmux.css | One look for every state: a 7px blob dot in its severity (failed `--danger`, reconnecting `--waiting`, off and absent `--faint`), then terminumd's words in `--muted`, a failure's in `--danger-text`; a session of the user's tmux on a host that is down takes its host's state. |
 | Badge / pill | `.tsess`, `.count`, `#scrlabel`, `#updchip`, `#marksfabn` | style.css, tmux.css, marks.css | Counts: muted 11px tabular; pills 999px. |
-| Floating button | `#fabs > button`, `#findfab`, `#splitfab`, `#sentfab`, `#remindfab`, `#marksfab`, `#bottom` | style.css, find.css, marks.css, reminders.css | 44px on touch, blob radius, blurred `--chrome-2`; exclude from shapes.css and motion.css's ripple list; one column at the terminal's top right (marks.js `placeFab`), one shape, phase and surface for all: find, split (a phone's; a computer splits from the header), sent, then set apart the colored ones (bookmarks, reminders: one base rule in marks.css, no glow, a blink or a still ring for attention); never on a split's embedded page; a pane opens beside its button, under it where narrow (`placeBeside`, fabpane.js); waiting cards stand left of the column. |
+| Floating button | `#fabs > button`, `#findfab`, `#splitfab`, `#sentfab`, `#remindfab`, `#marksfab`, `#bottom` | style.css, find.css, marks.css, reminders.css | 44px on touch, blob radius, blurred `--chrome-2`; listed in motion.css's blob rules; one column at the terminal's top right (marks.js `placeFab`), one shape, phase and surface for all: find, split (a phone's; a computer splits from the header), sent, then set apart the colored ones (bookmarks, reminders: one base rule in marks.css, no glow, a blink or a still ring for attention); never on a split's embedded page; a pane opens beside its button, under it where narrow (`placeBeside`, fabpane.js); waiting cards stand left of the column. |
 | Grip / splitter | `.grip` (rows), `[role=separator]` (`#navgrip`, `#quickgrip`) | style.css, tmux.css | A 6px band of the chrome between two surfaces (also docked Files' left edge, the Panel's `#splitter`), never a line; keyboard-operable (arrow keys), accent on hover/focus. |
 | Window head | `.winhead` | style.css | Title 14px/600 left, `.icon` close right. |
-| Output widget | `.wg` > `.bar` (name, `.seg` Raw/rendered, Copy) + `.body` (shadow root of a terminal row) | widgets.css | The design code inside the terminal too: the card is a `--surface-1` box with `--r-lg` and the wave, no border; the bar on the same surface; tables without frame or column lines, a muted head, rows 6×12px apart by a 7% hairline; Markdown headings apart by space, quotes on a tint, code on `--surface-0`; images on a quiet surface. The Panel's Markdown (`.md-body`) follows the same rules. |
+| Output widget | `.wg` > `.bar` (name, `.seg` Raw/rendered, Copy) + `.body` (shadow root of a terminal row) | widgets.css | The design code inside the terminal too: the card is a `--surface-1` box with `--r-lg` and `--m-edge`, no border, no grain; the bar on the same surface; tables without frame or column lines, a muted head, rows 6×12px apart by a 7% hairline; Markdown headings apart by space, quotes on a tint, code on `--surface-0`; images on a quiet surface. The Panel's Markdown (`.md-body`) follows the same rules. |
 | Panel tree row | `.row` (`.guides`, `.chev`, `.ico`, `.name`, `.size`) | ui/src/style.css | Height `--row`; selection `--bg-sel`; keyboard cursor inset ring. |
 | Panel tabs | `.tab` (`.tname`, `.close`), `.tab.active::after` accent bar | ui/src/style.css | Dirty: accent dot in `.close`. |
 | Panel buttons, dialogs, menus | `.btn` (`.primary`, `.danger`, `.sm`), `.modal` (`.mhead`: `.mtitle`, `.mx` ×; `.mbtns` 40px), `.ctx .mi` | ui/src/style.css | Same roles and sizes as the Page's; do not invent a third style. |
@@ -280,7 +289,7 @@ there, not into the file of the feature that first needed it.
    and tests.
 3. CSS in the file that owns the area (style.css: shell, list, header, terminal; tmux.css:
    terminum's additions, forms, dialogs; marks.css, find.css, widgets.css: their features;
-   shapes.css: button outlines only). Respect the 500-line cap; split by feature, not by squeezing.
+   shapes.css: the material by kind; grain.css: where the grain lies). Respect the 500-line cap; split by feature, not by squeezing.
 4. Tokens only (§2); no new font size, radius or height outside the scales.
 5. Phone: add the finger size in controls.css's `max-width: 860px` block (≥ 44px; 40 inside a 40px row; a segment 34).
 6. States: hover, focus-visible, pressed/expanded, disabled; `aria-*` drives them.
@@ -315,7 +324,7 @@ primary fill differs from Cancel's; a group header's buttons share size, radius 
 phone every button of the list, a form, the header and the menu ≥ 40px, a segment ≥ 34px; a long
 toast stays on the screen; a waiting card covers neither banners nor the find button) and
 `web/test/e2e_tmux.mjs` (footer buttons share computed look, a phone's blobs differ and none is
-round; form font sizes follow `--size`), `web/test/e2e_motion.mjs` (a popover comes in and goes
-at once, a press ripples, the selected row settles, nothing moves in the terminal or with
+round; form font sizes follow `--size`; keys carry the material's edges, fields a well, no wave clip), `web/test/e2e_motion.mjs` (a popover comes in and goes
+at once, a pressed key sinks, a blob pulses, the selected row settles, nothing moves in the terminal or with
 reduced motion). A new kind of control adds its check there. The other e2e checks test
 behavior, not look.

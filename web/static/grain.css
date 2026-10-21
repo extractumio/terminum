@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* The grain (docs/UI-GUIDELINES.md §2.7, from todobem): one 512px tile of monochrome specks
+   (grain.svg) laid twice, at 512 and 571px (coprime: the pair never repeats), over the chrome
+   that does not scroll: the list, the header, Files' and View's heads, the popovers, the footer
+   forms, the toast and the boxes over the terminal. Never over the terminal, Files' or View's
+   content, nor in a box that scrolls (it would scroll away), nor on a modal dialog (WebKit keeps a
+   dialog with a ::after at its @starting-style scale, .96: motion.css). The Page's alone: the Panel's bundle takes no
+   url(). grain.js draws the tile into rasters at the screen's density (a speck stays one CSS
+   pixel) and sets --grain: the SVG itself is never a background, as WebKit evaluates its noise
+   filters on every repaint (frames came late). Until then, and without scripts, no grain. A
+   phone's grain is fainter (--grain-opacity) and at most 2x. */
+:root { --grain: none; }
+@media (pointer: coarse) { :root { --grain-opacity: .06; } :root.light { --grain-opacity: .04; } }
+
+:is(#nav, #bar, .winhead, #sidehead, #menu, #hostmenu, #rowmenu, #updmenu, #toast, #findbox, .footform, #splitnote, #paused)::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: var(--grain); opacity: var(--grain-opacity); }
+
+/* a reader who asked the system for more contrast gets the flat surfaces back */
+@media (prefers-contrast: more) {
+  :is(#nav, #bar, .winhead, #sidehead, #menu, #hostmenu, #rowmenu, #updmenu, #toast, #findbox, .footform, #splitnote, #paused)::after { display: none; }
+}

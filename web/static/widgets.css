@@ -2,19 +2,13 @@
 /* The output widgets (AC-56), inside the shadow root of a terminal row (widgetui.js). They
    take the terminal's colors and font from the page (--t-bg, --t-fg, --tk-*) and the design code
    (tokens.css: its custom properties reach the shadow root): set apart by a surface and space, not
-   frames; a hairline only between a table's rows; a card's edges bow a little as the page's do. */
+   frames; a hairline only between a table's rows; a card has the material's edges (§2.7), no grain. */
 
 :host(.wg-host:not(.wg-raw)) slot { display: none; }      /* rendered: the row's own text is hidden */
 
 .wg { --hair: color-mix(in srgb, var(--t-fg) 7%, transparent);   /* the one line left: between a table's rows */
   display: block; margin: var(--sp-2) 0; border-radius: var(--r-lg); overflow: hidden; white-space: normal; overflow-wrap: break-word;
-  background: var(--surface-1); -webkit-user-select: text; user-select: text; }   /* break-word: a cell's long word wraps whole, not letter by letter */
-@supports (clip-path: shape(from 0 0, curve to 1px 0 with 0 0 / 1px 0, close)) {
-  .wg { --a: calc(var(--wave-l) * 4 / 3); clip-path: shape(from 0 var(--r-lg), curve to var(--r-lg) 0 with 0 0,
-    curve to calc(100% - var(--r-lg)) 0 with 42% var(--a) / 42% var(--a), curve to 100% var(--r-lg) with 100% 0,
-    line to 100% calc(100% - var(--r-lg)), curve to calc(100% - var(--r-lg)) 100% with 100% 100%,
-    curve to var(--r-lg) 100% with 57% calc(100% - var(--a)) / 57% calc(100% - var(--a)), curve to 0 calc(100% - var(--r-lg)) with 0 100%, close); }
-}
+  background: var(--surface-1); box-shadow: var(--m-edge); -webkit-user-select: text; user-select: text; }   /* break-word: a cell's long word wraps whole, not letter by letter */
 :host(.wg-raw) .wg { margin-bottom: 2px; }
 :host(.wg-raw) .body { display: none; }
 
@@ -26,7 +20,7 @@ button { font: inherit; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg));
   transition: background-color var(--dur-hover) var(--ease-out), color var(--dur-hover) var(--ease-out); }
 @media (hover: hover) { button:hover { background: var(--surface-3); color: var(--t-fg); } }
 button:focus-visible { outline: 2px solid var(--ring, var(--accent)); outline-offset: 1px; }
-.seg { display: inline-flex; padding: var(--sp-0); gap: var(--sp-0); background: var(--surface-2); border-radius: var(--r-md); }
+.seg { display: inline-flex; padding: var(--sp-0); gap: var(--sp-0); background: var(--surface-2); border-radius: var(--r-md); box-shadow: var(--m-well); }
 :host(.wg-raw) .seg [data-act="raw"], :host(:not(.wg-raw)) .seg [data-act="on"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }
 .err { flex-basis: 100%; color: var(--danger, #ff6b5e); white-space: pre-wrap; }
 svg.lu { width: var(--s, 14px); height: var(--s, 14px); fill: none; stroke: currentColor; stroke-width: 2;
