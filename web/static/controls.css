@@ -23,7 +23,7 @@ dialog::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
 :is(dialog.dlg, .footform) .actions button { height: 40px; padding: 0 16px; border-radius: var(--r-md); background: var(--surface-3); }
 @media (hover: hover) { :is(dialog.dlg, .footform) .actions button:not(.primary):hover { background: var(--surface-4); } }
 :is(dialog.dlg, .footform) .actions .primary { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
-:is(dialog.dlg, .footform) .actions .primary:disabled { opacity: .4; }
+:is(dialog.dlg, .footform) .actions button:disabled { opacity: .4; }
 
 /* a group header's buttons: copy the attach command, import a host's sessions, + new window, ⋯;
    one size; + keeps an edge as the group's own action */

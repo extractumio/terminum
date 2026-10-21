@@ -14,3 +14,7 @@ test("a blank line after it, none before: typed as Ctrl+J after the paste in an 
   assert.deepEqual(askSends("Q", true), [["paste", "Q"], ["keys", "\n\n"]]);
   assert.deepEqual(askSends("Q", false), [["paste", "Q\n\n"]], "a shell: Ctrl+J would run the line");
 });
+
+test("Send to Agent: the paste, then Enter typed a moment after (not a new line in the paste)", () => {
+  assert.deepEqual(askSends("Q", true, true), [["paste", "Q"], ["enter", "\r"]]);
+});

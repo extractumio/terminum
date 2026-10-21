@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.23 |
-| Date | 2026-10-20 |
+| Version | 0.3.24 |
+| Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.24 | 2026-10-21 | Owner: Ask's Send to Agent, left of Add to Chat, sends the quote and the question to the coding agent at once (pasted, then Enter); shown only when the pane runs a coding agent (AC-37). |
 | 0.3.23 | 2026-10-20 | Owner (iPhone): more typos than in the system's apps, the keyboard's space-bar trackpad moved nothing, the view jumped as the screen redrew. The keyboard field keeps what was typed since a line end or a move (iOS aims its keys by the word; an emptied field made every letter a word's first) and sends a change to it as backspaces and what is new (iOS's own corrections too); the trackpad's caret moves are ← and →; while the keyboard is up the field moves only when its row moves a row or more (iOS scrolls the page to a focused field that moves), and the page refits only when the visible area changed (AC-40). Not verified on an iPhone in this change: iOS's key aim and the jump need the owner's phone. |
 | 0.3.22 | 2026-10-20 | Owner: uploads take 100 MB (a 22 MB zip failed at 20 MB); a larger file is not sent and the page says to give its path instead, never the server's raw text; Starship's prompt with a variation selector after ❯ ("at 19:20 ❯︎") is told apart from the command sent (AC-36, AC-90). A file found on this Mac by its name, size and time and pasted by its own path was built and withdrawn at the owner's word. |
 | 0.3.21 | 2026-10-20 | Owner: a mark's press lands on its message (it went to a wrong place): an agent's prompt only on its prompt row, a folded paste's placeholder not looked for, a bar of several tries each, a hidden line brings what shows it; an answer's end never taken from a question's options (AC-90). Measured on a replayed real chat: 9 of 9 marks land in view. |
@@ -321,7 +322,9 @@ Scenario: AC-37 happy path — Ask about a selection
   Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts; Claude Code's folded paste reaches the sent history only through its hooks), and the page puts at the input's cursor, no Enter, a blank line after it (none before):
     "Quote #0007:\n - Quote Start ----\n«<the selected text>»\n- Quote End ----\n<the question>\n----"
   And in a coding agent's box the blank line is typed as two Ctrl+J after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) it is inside the paste
-  And Cancel or Esc closes the dialog and pastes nothing; Add to Chat is off while the question is empty
+  When the shown pane runs a coding agent and the user presses Send to Agent (left of Add to Chat) instead
+  Then the same text is pasted into the agent's box and Enter follows 0.2 s later (an Enter in the same read as a paste is a new line to Claude Code), so the agent gets it at once; in a shell the button is not shown
+  And Cancel or Esc closes the dialog and pastes nothing; Add to Chat and Send to Agent are off while the question is empty
 
 Scenario: AC-37 edge — a tablet's trackpad and a hidden page
   Then a trackpad selection on a tablet stays the browser's own and is copied by a tap on it and Copy; a hidden page (another app, a locked phone) or an unfocused page on a computer pauses its stream and gets the screen and the list within 2 s when it is back; a touch screen keeps about 2000 lines on the page while it follows the output, dropping the oldest blocks (loaded again on scrolling up)
