@@ -34,6 +34,7 @@ fs.mkdirSync(`${SB}/src`); fs.mkdirSync(`${SB}/docs`);
 fs.writeFileSync(`${SB}/README.md`, "# Sandbox\n\nSee [guide](docs/guide.md) and [web](https://example.com).\n\n![logo](docs/logo.png)\n\n<img src=x onerror=alert(1)>\n");
 fs.writeFileSync(`${SB}/docs/guide.md`, "# Guide\n\nBack to [readme](../README.md#sandbox) or [the page](page.html#sec2).\n");
 fs.writeFileSync(`${SB}/docs/page.html`, '<!doctype html><title>Page</title><h1>HTML page</h1><p><a href="../README.md#sandbox">to readme</a> <a href="guide.md">to guide</a></p><img src="logo.png"><img src="http://leak.example.invalid/x.png"><meta name="referrer" content="unsafe-url"><style>img[src*="t="]{background:url(http://leak.example.invalid/css)}</style><script>parent.document.title="PWNED"</script><div style="height:3000px"></div><p id="sec2">Section two</p>');
+fs.writeFileSync(`${SB}/docs/diagram.md`, "# Diagrams\n\n```mermaid\nflowchart LR\n  A[\"terminumd\"] --> B[\"tmux\"]\n```\n\n```mermaid\nflowchart LR\n  A --> \n```\n\n```rust\nfn main() {}\n```\n\n```mermaid\nflowchart LR\n  H[\"<img src=x onerror=alert(1)>\"] --> J\n  click H call alert(2)\n```\n");
 fs.writeFileSync(`${SB}/src/main.rs`, 'fn main() {\n    println!("hi");\n}\n');
 fs.writeFileSync(`${SB}/app.py`, "print(1)\n");
 for (const f of "abcde") fs.writeFileSync(`${SB}/${f}.log`, f);

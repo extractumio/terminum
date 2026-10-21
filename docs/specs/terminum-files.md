@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.3.2 |
-| Date | 2026-10-15 |
+| Version | 0.4.0 |
+| Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.0 | 2026-10-21 | Owner: the ```mermaid fences of a rendered Markdown document showed as plain text; they are drawn as diagrams, their source a click away (AC-54). Owner: docked Files opened or closed in one session did so in all; it is each session's now, in this browser (AC-70). |
 | 0.3.2 | 2026-10-16 | Owner: a file made with New File… opens where a click opens files (View in the page), not in the panel's own editor under the tree (AC-70). |
 | 0.3.1 | 2026-10-15 | AC-51: terminumd tells the page when the shown pane's folder changes (read with every frame); the page no longer asks again 0.7 s after Enter. |
 | 0.3.0 | 2026-10-15 | Owner: no App (the Mac's browser and an iPhone are the clients): "Open in Window" and the App's viewer window go; the private tmux server. |
@@ -167,7 +168,8 @@ Scenario: AC-53 error — gone or not a regular file
 ```gherkin
 Scenario: AC-54 happy path — rendered by default, source on a click
   When the user clicks "README.md"
-  Then the tab opens Rendered: proportional text, headings, tables, task lists, footnotes, fenced ```rust highlighted, relative images shown
+  Then the tab opens Rendered: proportional text, headings, tables, task lists, footnotes, fenced ```rust highlighted (as the editor highlights it), relative images shown
+  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, AC-31 of terminum-terminal.md; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it
   When the user clicks "Source"
   Then Markdown source with Markdown highlighting; the choice is remembered for the tab
 
@@ -457,7 +459,8 @@ Scenario: AC-69 edge — names win, folders and tabs
 ```gherkin
 Scenario: AC-70 happy path — a wide page
   Given the page is at least 1400 px wide
-  Then Files is docked on the right, full height, until its × closes it (remembered per browser); the Files button opens and closes it; it wears the shown pane's theme
+  Then Files is docked on the right, full height, until its × closes it; the Files button and ⌘B open and close it; it wears the shown pane's theme
+  And open or closed is remembered for each session in this browser: closing Files in one session leaves it open in the others, and switching to a session shows Files as that session last had it (a session never changed: docked); the view's new width reaches tmux with the opening's own size, never as a second resize
   When the user opens a file (a click in the tree, or a file just made with New File…: it never opens under the tree inside the page)
   Then View is a window over the terminal with its tabs and a bar showing the full path (selectable, with a copy button and a toast "Copied …"); × or closing its last file closes it; the terminal keeps its keys
 
@@ -721,3 +724,4 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] AC-70 (2026-10-16) — a new file opens in the page's View: `web/test/e2e_live.mjs` "a new file opens in View, where a click opens files, not under the tree" in Chromium and WebKit; it fails with the panel's own editor (checked by reverting the fix).
 - [x] AC-70 (2026-10-18) — View belongs to its session: `web/test/e2e_app.mjs` "View belongs to its session: another session hides it, coming back shows it as it was" and "a View whose last file closed does not come back with its session" in Chromium and WebKit → pass.
 - [ ] AC-72, AC-73 — backlog, not implemented.
+- [x] 0.4.0 (2026-10-21) — AC-54 `cd ui && node test/e2e_panel.mjs` (a ```mermaid fence drawn as an SVG image at its size, its source hidden; Source shows the fence's text, Diagram goes back; a fence Mermaid cannot draw keeps its source with Mermaid's message; a ```rust fence highlighted; a hostile fence (an HTML label with onerror, a click handler) drawn as an image only: no dialog, no element of its label); screenshots in Chromium and WebKit at 1200×800 and 390×844, dark and light (the toggle 44×44 on a touch screen; a dark theme's diagram drawn dark, again when the theme changes); AC-70 `web/test/e2e_switch.mjs` (docked Files closed in one session stays open in another and closed when back; "sub" carries the width the session's own Files leave, no other width after it) → pass.

@@ -179,6 +179,14 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .md-body pre code { background: none; padding: 0; font-size: .85em; }
 .md-body pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 4px; right: 8px; font: 10px var(--mono);
   color: var(--fg-faint); text-transform: lowercase; }
+/* a ```mermaid fence drawn as its diagram (AC-54), on the code's own tint; its source behind a toggle */
+.md-body .md-diagram { position: relative; margin: 0 0 1em; padding: 26px 14px 12px; background: var(--bg-2); border-radius: var(--r-md); overflow-x: auto; }
+.md-body .md-diagram img.diagram { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.md-body .md-diagram pre { margin: 0; padding: 0; background: none; }
+.md-body .md-diagram-toggle { position: absolute; top: 4px; right: 8px; font: 10px var(--mono); color: var(--fg-dim); background: none; border: 0; padding: 2px 4px; border-radius: 4px; cursor: pointer; }
+.md-body .md-diagram-toggle:hover { background: var(--bg-hover); color: var(--fg); }
+.md-body .md-diagram-error { color: var(--bad); font: .85em var(--mono); margin: 0 0 .3em; }
+@media (pointer: coarse) { .md-body .md-diagram-toggle { top: 0; right: 0; min-width: 44px; min-height: 44px; } }   /* a finger's target */
 .md-body table { border-collapse: collapse; display: block; overflow-x: auto; font-size: .93em; }
 /* tables: no frame, no columns' lines, no stripes; a muted head, rows apart by a hairline */
 .md-body th, .md-body td { padding: 6px 14px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); text-align: left; vertical-align: top; }

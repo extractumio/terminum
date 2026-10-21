@@ -12,6 +12,7 @@ import { renderOffer } from "./host-offer";
 import { contextMenu } from "./context-menu";
 import { acceptFromPage, emptiedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
 import { applyTheme } from "./theme";
+import { redrawDiagrams } from "./mermaid";
 import { Tree, type EditMode } from "./tree";
 import { Viewer } from "./viewer";
 import { PathBar } from "./viewer-path";
@@ -368,7 +369,7 @@ function startViewer(path: string) {
   viewer.open(path, "auto");
 }
 
-acceptFromPage({ open: (p) => viewer.open(p), reveal: revealInTree, theme: (t) => { if (applyTheme(t) && !VIEW) tree.themeChanged(); } });
+acceptFromPage({ open: (p) => viewer.open(p), reveal: revealInTree, theme: (t) => { if (applyTheme(t)) { if (!VIEW) tree.themeChanged(); void redrawDiagrams(); } } });
 if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page.");
 
 (async () => {

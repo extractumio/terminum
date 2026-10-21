@@ -152,22 +152,10 @@ function tableElement({ head, rows, align, marks }) {
   return table;
 }
 
-/** A Mermaid diagram as an image (SVG data URL), opened full screen on a click. */
+/** A Mermaid diagram as an image (SVG data URL, the panel's own: mermaid.ts), opened full screen on a click. */
 async function diagram(source, dark) {
-  const svg = await (await renderers()).mermaidSvg(source, dark);
-  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
-  const root = doc.documentElement;
-  if (root.nodeName !== "svg") throw new Error("The diagram did not draw.");
-  // its own size, so the image has one: Mermaid draws it at 100% width with a max-width
-  const [, , w, h] = (root.getAttribute("viewBox") ?? "").split(/[\s,]+/).map(Number);
-  if (w > 0 && h > 0) { root.setAttribute("width", String(w)); root.setAttribute("height", String(h)); }
-  root.removeAttribute("style");
-  const img = new Image();
-  img.className = "diagram";
-  img.alt = "Mermaid diagram";
+  const img = await (await renderers()).diagramImage(source, dark);   // in place at its size at once: the page does not move later
   img.dataset.act = "zoom";
-  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(new XMLSerializer().serializeToString(root));
-  await img.decode().catch(() => {});             // in place at its size at once: the page does not move later
   return img;
 }
 

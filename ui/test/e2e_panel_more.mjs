@@ -26,6 +26,31 @@ export async function viewerTools(context, base, SB, errors) {
   await vp.close();
 }
 
+/** AC-54 a ```mermaid fence is drawn as its diagram (an image), its source a click away; one
+ *  Mermaid cannot draw keeps its source with Mermaid's message; other fences are highlighted. */
+export async function diagrams(context, base, SB, errors) {
+  const vp = await context.newPage();
+  await vp.setViewportSize({ width: 1200, height: 800 });
+  vp.on("pageerror", (e) => errors.push("diagram: " + e.message));
+  vp.on("dialog", (d) => { errors.push("diagram dialog: " + d.message()); void d.dismiss(); });
+  await vp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
+  await within("AC-54 a mermaid fence is drawn as a diagram", (ms) => vp.waitForSelector(".md-diagram img.diagram", { timeout: ms }));
+  const img = await vp.$eval(".md-diagram img.diagram", (i) => ({ svg: i.src.startsWith("data:image/svg+xml;charset=utf-8,"), w: i.naturalWidth, shown: !i.hidden }));
+  check("AC-54 the diagram is an SVG image at its size, its source hidden",
+    img.svg && img.w > 0 && img.shown && (await vp.$eval(".md-diagram pre", (p) => p.hidden)), JSON.stringify(img));
+  await vp.click(".md-diagram-toggle");
+  const src = await vp.$eval(".md-diagram", (f) => ({ pre: !f.querySelector("pre").hidden, img: f.querySelector("img").hidden, text: f.querySelector("pre").textContent, button: f.querySelector("button").textContent }));
+  check("AC-54 Source shows the fence's text, Diagram goes back", src.pre && src.img && src.text.startsWith("flowchart LR") && src.button === "Diagram", JSON.stringify(src));
+  await within("AC-54 a fence Mermaid cannot draw keeps its source with its message", (ms) => vp.waitForSelector(".md-diagram-error + pre", { timeout: ms }));
+  check("AC-54 the message is Mermaid's", (await vp.textContent(".md-diagram-error")).startsWith("Mermaid: "), await vp.textContent(".md-diagram-error"));
+  check("AC-54 another fence is highlighted", !!(await vp.$('pre[data-lang="rust"] code span[class*="tok-"]')));
+  await within("AC-54 a hostile fence (an HTML label, a click handler) is drawn as an image only", (ms) => vp.waitForFunction(() => document.querySelectorAll(".md-diagram img.diagram").length === 2, null, { timeout: ms }));
+  await vp.click(".md-diagram:nth-of-type(2) img.diagram").catch(() => {});
+  await vp.waitForTimeout(300);
+  check("AC-54 nothing in a diagram runs: no dialog, no element of its label in the page", !errors.some((e) => e.startsWith("diagram dialog")) && !(await vp.$(".md-body img[src='x']")), errors.join(" | "));
+  await vp.close();
+}
+
 /** AC-70 in a page around it (same origin), a file opens in the page's View: the panel posts
  *  `fb-open` (with `window` for ⌘-click) and opens no tab of its own. */
 export async function embedTools(context, url, row) {

@@ -14,7 +14,7 @@ import os from "node:os";
 import path from "node:path";
 import { manyPanels } from "./e2e_sockets.mjs";
 import { layoutTools } from "./e2e_layout.mjs";
-import { embedTools, hostOffer, viewerTools } from "./e2e_panel_more.mjs";
+import { diagrams, embedTools, hostOffer, viewerTools } from "./e2e_panel_more.mjs";
 import {
   base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, within, wsKey,
 } from "./e2e_harness.mjs";
@@ -256,6 +256,7 @@ try {
   clearLine(PANE_A);
 
   await viewerTools(context, base, SB, errors);          // AC-70 the page's View (`?view=`)
+  await diagrams(context, base, SB, errors);             // AC-54 diagrams and highlighted fences
   await embedTools(context, panelUrl(), row);            // AC-70 files open in the page around
 
   // AC-70 a new panel starts from the latest split; an open one keeps its own
