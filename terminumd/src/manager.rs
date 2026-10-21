@@ -152,6 +152,7 @@ pub async fn refresh(app: &Shared) {
     let complete = users_sure && reads.iter().all(|(_, _, ok)| *ok);
     for server in app.tmux.all() {
         crate::page::sizing::reclaim_once(app, &server);
+        crate::tmux::orphans::sweep_once(&server);
     }
     let mut groups: Vec<Value> = Vec::new();
     let mut live: HashSet<String> = HashSet::new();

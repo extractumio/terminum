@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.0 |
-| Date | 2026-10-16 |
+| Version | 0.7.0 |
+| Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.7.0 | 2026-10-21 | Owner: a Linux host (tmux 3.4) held 12 control clients of terminum's, up to 4 days old, each left by a dropped link: once ssh's end goes, tmux keeps the client's pipes and unsent output and the client never exits (`detach-client` cannot end it, a signal does). Now, once each connection of a host, terminumd ends those of its control clients there that are orphaned: their parent is init, or a shell whose parent is init. Pragmatic review applied: orphaned proved by the parent, never by the absence of sshd (Tailscale SSH, dropbear, a test's fake ssh are live without one); the shape matched by its arguments (`tmux … -C … -f ignore-size …`), not a prefix; quiet and in the background (`run-shell -b`), every failing `ps` skipping its client, a ppid that is not one number too. Owner, then: those stuck before tmux listed them are found by `ps` too (Linux names a client `tmux: client`), those whose command line tmux rewrote (FreeBSD, OpenBSD) by tmux's list (control clients with `ignore-size`); the script answers the pids it ended in a user option of the server (`@tm-orphans-<terminumd's pid>`, read and removed), so the log names exactly those; checked over real sshd and tmux 3.4, where it showed that a server started by terminum's command keeps that command line: the server's pid is never a candidate and `ps` takes only a process named `tmux: client`. Pragmatic review applied: `read -r` and a pid that is not a number skipped (a backslash ended line joined the next), a listed pid still a tmux process, shells by name (`ssh` is none), `ps -ww`, the answer option named per connection and removed before and after; the script itself run under dash, busybox ash and macOS sh against a stand-in `ps` (AC-81). |
 | 0.6.0 | 2026-10-16 | Owner: OQ-81 amended: the host's other tmux sessions stay hidden unless the user attaches them by name (AC 89, `hosts.<name>.attach`); each attached session is a further ssh connection. |
 | 0.5.0 | 2026-10-15 | Owner: the helper is `terminumd-agent` (was `terminusd-agent`): a host with only the old one has it started, sees its old build and replaces it (AC-84); install and removal delete the old files. |
 | 0.4.0 | 2026-10-15 | Owner: Add host reads as `ssh <what you type>`; Name optional (the destination's host); "Browse its files" ticked in Add host enables files once attached (AC-81, AC-83). |
@@ -97,6 +98,12 @@ Scenario: AC-81 happy path — the link drops and comes back
   Then within 20 s (ServerAliveInterval × 2) the control client ends, the group "devbox" says "reconnecting (2 s)" on a line of its own under its name (a long state wraps there, never cut), a shown pane keeps its last screen with "Connection to devbox lost" over it, typing is refused with that message; terminumd reconnects after 1, 2, 4 … 30 s
   When ssh succeeds again
   Then the group is back within 5 s, the shown pane's screen is captured anew (its history too), and the notice goes; the tmux session on the host never noticed
+
+Scenario: AC-81 edge — a dropped link left its control client on the host
+  Given the link dropped while the host stayed up, and the host's tmux kept terminum's control client of it ("tmux -u -C new-session -A -f ignore-size -s terminum", its ssh end gone, its parent now init)
+  When terminumd connects to the host again
+  Then it ends that client (SIGTERM; detach-client cannot) once for that connection, logged as event=clients.orphans with exactly the pids ended; terminum's clients are those tmux lists as control clients with ignore-size (still a tmux process: a pid not reused), and (Linux) the user's processes named "tmux: client" with terminum's command line, also one stuck before tmux listed it
+  And the tmux server is never one, though a server terminum's command started keeps that command line; a control client whose parent lives (this connection's, another Mac's, through any ssh server), one of another shape, one under a subreaper are left alone; a failing ps leaves its client, and a host whose ps has no -U (busybox) is not swept
 
 Scenario: AC-81 edge — the pane's folder and programs
   Then a remote pane's folder is the host's path (for Files and "cd"); the program is #{pane_current_command} on the host; the agent state is read from its screen as locally
@@ -319,7 +326,7 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 
 ### Security
 
-The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`, `RemoteCommand=none` for the agent tunnel); a host is its record, never a name it reports; the agent's token on stdin; answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC 89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
+The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`, `RemoteCommand=none` for the agent tunnel); a host is its record, never a name it reports; the agent's token on stdin; on a host terminumd ends only the user's orphaned tmux control clients (AC-81: listed by that tmux with `ignore-size` and still a tmux process, or on Linux named `tmux: client` with terminum's command line; a parent that is init or a shell of init's; never the server; one with `ignore-size` that init runs on purpose is taken for one, an accepted risk); answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC 89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
 
 ### Compatibility
 
@@ -350,6 +357,7 @@ The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no rem
 Evidence of 2026-10-15: `scripts/e2e_remote.py` runs a private terminumd whose ssh is `scripts/fake_ssh.py` (this Mac plays the host with a private tmux server and a fake home; no sshd here) → 18/18.
 
 - [x] AC-81 — `scripts/e2e_remote.py` (add, list within 5 s, type, a dropped link reconnecting, typing after, a failing ssh's words) → pass; `scripts/e2e_remote_sshd.py` against a Linux container (Alpine, OpenSSH, tmux 3.4) over real ssh: the session listed in 0.1 s, typing, a killed sshd session reconnecting → pass.
+- [x] AC-81 orphans (2026-10-21) — `scripts/e2e_hostattach.py` through `scripts/fake_ssh.py` (macOS: tmux's list): on reconnect, orphaned control clients of terminum's (init's child, a shell's of init's, one of another command line that tmux lists with ignore-size) are ended and the log names exactly them; one of another shape and a live one of terminum's shape under a living parent are left; the answer option is removed; terminumd's new clients type on; `scripts/e2e_remote_sshd.py` (Alpine, OpenSSH 9.7, tmux 3.4, procps): a client planted under a shell of init's is ended after the sshd session is killed and logged as `ended=[<its pid>]`, the server started by terminum's command keeps its pid (a first version that matched `ps` by command line alone ended it: caught here, never installed); `cargo test tmux::orphans` (the script run by /bin/sh against a stand-in `ps`: ended only init's orphan, one under a shell of init's and a listed one whose command line tmux rewrote; left the server, clients under sshd, ssh or a living shell, a listed pid now another program, a line a backslash ends, a pid not a number; the same under dash and busybox ash in containers); dry runs on a Linux host (tmux 3.4, dash, procps): the first version chose exactly its 8 clients of parent init and left the 2 under sshd, the last chose none with only live clients and the server there → pass.
 - [x] AC-82 — `cargo test remote::` and `scripts/e2e_remote.py` (listing and reading through the agent, Finder refused) → pass.
 - [x] AC-83 — `scripts/e2e_remote.py` (enable copies the helper, remove takes it off) → pass; `scripts/e2e_remote_sshd.py`: the static linux-aarch64 helper copied, the host's home listed and a file read through it, removed → pass.
 - [x] AC-84 — `scripts/e2e_remote_sshd.py`: a helper answering another agent id is replaced by this build's at terminumd's next start (1.1 s), the panel's state says `updated` with the build, the host's record names the helper → pass. The 10-minute retry after a failed copy is not exercised.

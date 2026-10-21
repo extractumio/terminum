@@ -43,7 +43,7 @@ def on_host(cmd):
 def start_host(work):
     subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-C", "tm-test", "-f", f"{work}/key"], check=True)
     pub = open(f"{work}/key.pub").read().strip()
-    setup = ("apk add --no-cache openssh tmux >/dev/null && ssh-keygen -A && adduser -D -s /bin/sh alex && "
+    setup = ("apk add --no-cache openssh tmux procps >/dev/null && ssh-keygen -A && adduser -D -s /bin/sh alex && "
              "echo 'alex:*' | chpasswd -e && mkdir -p /home/alex/.ssh && "
              f"echo '{pub}' > /home/alex/.ssh/authorized_keys && chown -R alex /home/alex/.ssh && "
              "chmod 700 /home/alex/.ssh && chmod 600 /home/alex/.ssh/authorized_keys && "
@@ -122,10 +122,29 @@ def main():
         got = on_host("od -An -c /tmp/got | tr -s ' '").strip()
         check("AC-03 Shift+Enter reaches a program on a host whose tmux has extended-keys off", got == "033 [ 1 3 ; 2 u", got)
 
+        # a client of terminum's shape whose parent went, as a link that dropped while the host stayed up leaves one
+        on_host("(sleep 60 | tmux -u -C attach-session -E -f ignore-size -t terminum >/dev/null 2>&1) &")
+        time.sleep(0.5)
+        planted = on_host("pgrep -U alex -f '^tmux -u -C attach-session'").split()
+        server = on_host("tmux display -p '#{pid}'").strip()
         docker("exec", NAME, "pkill", "-f", "sshd-session: alex|sshd: alex", check_ok=False)
         lost = wait_layout(ws, lambda gs: (g := host_group(gs, "devbox")) is not None and g.get("state") in ("reconnecting", "failed"), 10)
         back = wait_layout(ws, lambda gs: (g := host_group(gs, "devbox")) is not None and g.get("state") == "attached" and g["items"], 20)
         check("AC-81 a dropped ssh link reconnects by itself", lost is not None and back is not None)
+        # the link dropped: terminum's control clients it orphaned on the host are ended (tmux 3.4)
+        alive = lambda: planted and on_host(f"ps -o pid= -p {planted[0]} || true").strip()
+        for _ in range(40):
+            if not alive():
+                break
+            time.sleep(0.25)
+        for _ in range(40):
+            if logged := [line for line in open(t.log_path).read().splitlines() if "clients.orphans" in line]:
+                break
+            time.sleep(0.25)
+        check("AC-81 the control client the dropped link orphaned is ended, and logged", len(planted) == 1 and not alive()
+              and any(f"ended=[{planted[0]}]" in line for line in logged), [planted, logged, on_host("ps -o pid,ppid,args -U alex")])
+        check("AC-81 the host's tmux server, started by terminum's own command, is never taken for one",
+              server and on_host("tmux display -p '#{pid}'").strip() == server, [server, on_host("ps -o pid,ppid,comm,args -U alex")])
 
         st, body = unix_request(t.sock, "POST", "/hosts/enable", {"name": "devbox"})
         copied = on_host(f"test -x $HOME/.terminum/bin/terminumd-agent-{own} && echo yes").strip()

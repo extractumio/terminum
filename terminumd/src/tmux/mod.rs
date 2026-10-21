@@ -12,6 +12,7 @@ pub mod control;
 pub mod keys;
 pub mod layout;
 pub mod mouse;
+pub mod orphans;
 pub mod server;
 pub mod titles;
 
@@ -21,6 +22,14 @@ use std::sync::Arc;
 use parking_lot::RwLock;
 
 pub use server::Server;
+
+/// True the first time `what` asks for this connection (generation) of `server`: work done once
+/// a connection, such as giving windows back (`reclaim`) or ending orphans (`orphans`).
+pub fn first_on_link(what: &'static str, server: &Server) -> bool {
+    static DONE: parking_lot::Mutex<BTreeMap<(&'static str, String), u64>> = parking_lot::const_mutex(BTreeMap::new());
+    let generation = server.generation.load(std::sync::atomic::Ordering::Relaxed);
+    DONE.lock().insert((what, server.id()), generation) != Some(generation)
+}
 
 /// A pane key's parts: `tmux:<host>:<socket>:%N`.
 pub fn parse_key(key: &str) -> Option<(&str, &str, &str)> {
