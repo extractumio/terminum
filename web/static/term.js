@@ -145,7 +145,8 @@ export class TermView {
     this.keepBottom(() => {
       lines.forEach((data, k) => {
         const i = first + k - base;
-        if (i >= 0 && i < this.hist.length && this.hist[i].gone) this.hist[i] = this.swap(this.hist[i], data, first + k);
+        // only into its own record: a history with a gap (an append that failed) never takes another line's
+        if (i >= 0 && i < this.hist.length && this.hist[i].gone && this.hist[i].n === first + k) this.hist[i] = this.swap(this.hist[i], data, first + k);
       });
       const a = Math.max(0, first - base - 1), b = Math.min(this.hist.length, first - base + lines.length + 1);
       for (let i = a; i < b; i++) this.link(i);

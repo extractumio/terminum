@@ -35,6 +35,11 @@ impl Numbering {
         self.top
     }
 
+    /// tmux's history_size at the last frame: what the screen's top was counted from.
+    pub fn history(&self) -> i64 {
+        self.history
+    }
+
     /// The oldest row a page may load: what tmux still has, and at most `keep` rows back.
     pub fn oldest(&self, keep: i64) -> i64 {
         let top = self.top.unwrap_or(0);
