@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Sessions of the user's own tmux attached by name (terminum.md AC-89), at the page's
 protocol, against a private terminumd. "The user's own tmux" is a second private server
-(`-L tm-test-own`), never the user's: attach, a session that does not run yet, sizing only
-after typing, two servers with the same window ids, a new window there, detach.
+(`-L tm-test-own`), never the user's: attach, a session that does not run yet, sized on
+opening as any pane, two servers with the same window ids, a new window there, detach.
 
     python3 scripts/e2e_attach.py      (needs terminumd built: cd terminumd && cargo build)
 """
@@ -82,7 +82,7 @@ def main():
         groups = wait_layout(ws, lambda gs: (x := group(gs, "later")) and x["items"], 8)
         check("AC-89 it attaches once it starts", group(groups, "later") is not None and group(groups, "later").get("state") != "absent")
 
-        # sizing: looking never resizes the user's window; typing does, and only that window
+        # sizing: opening sizes the user's window as any pane, and only that window
         main_pane = next(x for x in groups if x["label"] == "main")["items"][0]["id"]
         ws.send({"t": "sub", "id": main_pane})
         ws.send({"t": "size", "cols": 80, "rows": 24, "typing": False})
@@ -91,12 +91,12 @@ def main():
         before = size_of(own, "work:")
         ws.send({"t": "sub", "id": work_pane})
         ws.until(lambda m: m["t"] == "screen", 5)
+        opened = ws.until(lambda m: m["t"] == "sized", 5)
+        check("AC-89 opening a session of the user's tmux sizes it as any pane (window-size manual)",
+              opened and not before.startswith("80x24 manual") and size_of(own, "work:").startswith("80x24 manual"), [before, size_of(own, "work:")])
         ws.send({"t": "size", "cols": 100, "rows": 32, "typing": False})      # after its first frame: a view that changed
-        looked = ws.until(lambda m: m["t"] == "sized", 2)
-        check("AC-89 opening a session of the user's tmux does not resize it", not looked and size_of(own, "work:") == before, [before, size_of(own, "work:")])
-        ws.send({"t": "in", "data": "echo own-$((6*7))\r", "k": 1})
-        typed = ws.until(lambda m: m["t"] == "sized", 5)
-        check("AC-89 typing there sizes it as any pane (window-size manual)", typed and "100x32 manual" in size_of(own, "work:"), size_of(own, "work:"))
+        ws.until(lambda m: m["t"] == "sized", 5)
+        check("AC-89 its view's new size follows", "100x32 manual" in size_of(own, "work:"), size_of(own, "work:"))
         check("AC-89 the private server's window with the same id keeps its own size", size_of(tmux, "main:").startswith("80x24 "), size_of(tmux, "main:"))
 
         ws.send({"t": "new", "group": f"local:{OWN}/work"})

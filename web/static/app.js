@@ -16,6 +16,7 @@ import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
 import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
+import { switchGate } from "./switchgate.js";
 import { askConfirm, navTools } from "./navtools.js";
 import { embedded, quickShell } from "./quick.js";
 import { paneMenu } from "./menu.js";
@@ -86,6 +87,8 @@ const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"
   bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : Infinity });
 // Sizing and full-screen programs (AC-04, AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
 const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000) });
+// another pane opened: the one shown stays until the new one has this view's grid, then it is drawn at once (AC-04)
+const gate = switchGate({ release: (queue, reset) => { reset(); for (const m of queue) onMessage(m); } });
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
   if (page.textSize) setBase(page.textSize);
   prefs.page(page);
@@ -137,7 +140,7 @@ function tapLink(x, y) {
 const boxMoves = new BoxMoves(view, $("screen"));
 function tapMove(x, y) {
   const found = st.sid && findItem(st.groups, st.sid);
-  if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn()) return;
+  if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn() || gate.holding()) return;   // the screen drawn is the pane before
   const inBox = found.item.agent ? boxMoves.to(x, y, st.appCursor) : null;
   if (inBox !== null) { if (inBox) { input.forget?.(); send({ t: "in", data: inBox, ...trace.keyFields(inBox, "tap") }); view.typed(); } return; }
   const from = cursorCell($("screen")), to = cellAt($("screen"), x, y);
@@ -253,6 +256,7 @@ addEventListener("blur", () => setTimeout(syncActive, 0));   // the focus may ha
 
 function onMessage(m) {
   if (m.sid && m.sid !== st.sid) return;            // a frame from the session we just left
+  if (gate.take(m)) return;                         // the pane just opened, until its first frame
   trace.received(m);
   bookmarks.seen(m);
   rail?.seen(m);
@@ -369,12 +373,12 @@ function select(id, force = false) {
   recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane
-  view.reset();
-  view.end.pin();                                      // its last line, however late the layout settles
+  gate.start(id, () => { view.reset(); view.end.pin(); });   // pinned: its last line, however late the layout settles
   trace.opening(id);
-  send({ t: "sub", id });                          // first: the server answers "files" for the subscribed pane
+  views.follow(id);                                // its own Files open or closed (AC-70): the view's width
+  send({ t: "sub", id, ...sizing.grid() });        // with this view's grid: its first frame comes at it (AC-04)
+  views.sessionChanged(id);                        // after "sub": the server answers "files" for the subscribed pane
   sizing.opened();                                 // this view's size
-  views.sessionChanged(id);
   sent.shown();
   drawNav(); syncControls();
 }

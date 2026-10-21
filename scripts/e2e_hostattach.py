@@ -4,14 +4,16 @@
 protocol, against a private terminumd, with this Mac playing the host through
 scripts/fake_ssh.py (a private tmux server stands for the host's). Checks: the host's other
 sessions counted and offered, attach by id over one more ssh connection, keys and screens,
-sizing only after typing, a client that keeps ending started again with back-off, the host's
-link dropping and coming back, windows given their size back (reclaim, detach, host removed).
+sized on opening and given back when the page is hidden, a client that keeps ending started
+again with back-off, the host's link dropping and coming back, its orphaned control clients
+ended then, windows given their size back (reclaim, detach, host removed).
 
     python3 scripts/e2e_hostattach.py      (needs terminumd built: cd terminumd && cargo build)
 """
 import json
 import os
 import signal
+import subprocess
 import sys
 import time
 from functools import partial
@@ -49,6 +51,28 @@ def drop(pids, what):
             os.kill(int(pid), signal.SIGTERM)
         except (ProcessLookupError, ValueError):
             pass
+
+
+def clients():
+    return {int(p): c for p, c in (line.split(" ", 1) for line in remote("list-clients", "-F", "#{client_pid} #{client_name}").splitlines())}
+
+
+def orphan(args, shell=False, live=False):
+    """A control client `tmux -L <host's> <args>` of the host's tmux as a dropped ssh link
+    leaves one: init's child, or (`shell`) a shell's whose parent is init; `live`: under a
+    parent that lives (this check's). Its pid."""
+    cmd = f"tmux -L {REMOTE} {args}"
+    line = f"sleep 60 | {cmd} >/dev/null 2>&1"
+    if live:
+        subprocess.Popen(line, shell=True)
+    else:
+        subprocess.run(["sh", "-c", f"({line}) &" if shell else f"{line} &"])
+    for _ in range(50):
+        found = subprocess.run(["pgrep", "-fx", cmd], capture_output=True, text=True).stdout.split()
+        if found and int(found[0]) in clients():
+            return int(found[0])
+        time.sleep(0.1)
+    return None
 
 
 def settle(ws, seconds):
@@ -110,12 +134,35 @@ def main():
         ws.send({"t": "sub", "id": pane})
         ws.until(lambda m: m["t"] == "screen", 5)
         ws.send({"t": "size", "cols": 100, "rows": 32, "typing": False})
-        looked = ws.until(lambda m: m["t"] == "sized", 2)
-        check("AC-89 opening a host's session does not resize it", not looked and size_of("work:") == before, [before, size_of("work:")])
+        opened = ws.until(lambda m: m["t"] == "sized", 5)
+        check("AC-89 opening a host's session sizes it to the page, without a key (marked @tm-sized)",
+              opened and before != "100x32 manual 1" and size_of("work:") == "100x32 manual 1", [before, size_of("work:")])
+        ws.send({"t": "pause"})
+        for _ in range(30):
+            if "manual" not in size_of("work:"):
+                break
+            time.sleep(0.1)
+        check("AC-89 the page hidden with no other page on it: the window gets tmux's own size back", "manual" not in size_of("work:"), size_of("work:"))
+        ws.send({"t": "resume"})
+        resumed = ws.until(lambda m: m["t"] == "sized", 5)
+        check("AC-89 the page back in sight sizes it again", resumed and size_of("work:") == "100x32 manual 1", size_of("work:"))
         ws.send({"t": "in", "data": "echo host-own-$((6*7))\r", "k": 1})
         echo = ws.until(lambda m: m["t"] == "screen" and "host-own-42" in json.dumps(m.get("ch")), 10)
-        sized = ws.until(lambda m: m["t"] == "sized", 5) or size_of("work:")
-        check("AC-89 typing reaches it, and sizes it (marked @tm-sized)", echo and size_of("work:") == "100x32 manual 1", [bool(echo), size_of("work:")])
+        check("AC-89 typing reaches it", echo is not None)
+        phone = t.page()
+        phone.send({"t": "sub", "id": pane})
+        phone.until(lambda m: m["t"] == "screen", 5)
+        phone.send({"t": "pause"})
+        ws.send({"t": "sub", "id": own(groups)["items"][0]["id"]})
+        ws.until(lambda m: m["t"] == "screen", 5)
+        for _ in range(30):
+            if "manual" not in size_of("work:"):
+                break
+            time.sleep(0.1)
+        check("AC-89 another pane opened while only a hidden page still shows it: its own size back", "manual" not in size_of("work:"), size_of("work:"))
+        phone.close()
+        ws.send({"t": "sub", "id": pane})
+        ws.until(lambda m: m["t"] == "sized", 5)
 
         # a session client that keeps ending is started again after 1, 2, 4 … s, never in a loop
         start, end = len(ssh_runs(pids, "attach-session")), time.time() + 6
@@ -136,6 +183,11 @@ def main():
         remote("set-option", "-w", "-t", "api:", "@tm-sized", "1")
         unix_request(t.sock, "POST", "/tmux/attach", {"session": "api", "host": "devbox"})
         wait_layout(ws, lambda gs: (x := att(gs, "api")) and x["items"], 15)
+        ours = orphan("-u -C new-session -A -f ignore-size -s terminum")
+        under_shell = orphan("-u -C attach-session -E -f ignore-size -t work", shell=True)
+        flagged = orphan("-C attach -f ignore-size -t api")       # not terminum's command line: by tmux's list alone
+        other = orphan("-u -C attach-session -E -t work")
+        alive = orphan("-u -C attach-session -E -f ignore-size -t api", live=True)
         drop(pids, "new-session")
         lost = wait_layout(ws, lambda gs: (x := att(gs, "work")) and x.get("state") == "absent", 10)
         why = (att(lost or [], "work") or {}).get("why", "")
@@ -148,6 +200,27 @@ def main():
             time.sleep(0.2)
         check("AC-89 a window marked @tm-sized that no page sizes gets its size back on reconnect (reclaim)",
               "manual" not in size_of("api:"), size_of("api:"))
+        for _ in range(50):
+            if not {ours, under_shell, flagged} & set(clients()):
+                break
+            time.sleep(0.1)
+        now = clients()
+        check("AC-81 orphaned terminum control clients of the host's tmux (init's, a shell's of init's) are ended on reconnect",
+              ours and under_shell and ours not in now and under_shell not in now, [ours, under_shell, now])
+        check("AC-81 one known by tmux's flags alone (a command line tmux rewrote) is ended too", flagged and flagged not in now, [flagged, now])
+        for _ in range(40):      # the host's answer is read within 10 s
+            if logged := [line for line in open(t.log_path).read().splitlines() if "clients.orphans" in line]:
+                break
+            time.sleep(0.25)
+        check("AC-81 the log names exactly the pids the host ended", len(logged) == 1 and all(str(p) in logged[0] for p in (ours, under_shell, flagged))
+              and str(other) not in logged[0] and str(alive) not in logged[0], logged)
+        check("AC-81 the script's answer is taken off the host's tmux", "@tm-orphans" not in remote("show-options", "-g"), remote("show-options", "-g"))
+        check("AC-81 an orphaned client of another shape is left alone", other and other in now, [other, now])
+        check("AC-81 a live client of terminum's shape (another Mac's) is left alone", alive and alive in now, [alive, now])
+        ws.send({"t": "sub", "id": pane})
+        ws.send({"t": "in", "data": "echo swept-$((3+4))\r", "k": 1})
+        check("AC-81 terminumd's own new clients are untouched: typing reaches the host's session",
+              ws.until(lambda m: m["t"] == "screen" and "swept-7" in json.dumps(m.get("ch")), 10) is not None)
 
         listed = unix_request(t.sock, "GET", "/tmux")[1]["attached"]
         check("AC-89 terminum tmux lists the host's sessions with the host",
@@ -162,7 +235,7 @@ def main():
         ws.until(lambda m: m["t"] == "screen", 5)
         ws.send({"t": "size", "cols": 96, "rows": 28, "typing": True})
         ws.send({"t": "in", "data": "\r", "k": 1})
-        ws.until(lambda m: m["t"] == "sized", 5)
+        ws.until(lambda m: m["t"] == "sized" and m["cols"] == 96, 5)      # after the opening's own size
         held = size_of("work:")
         st, _ = unix_request(t.sock, "POST", "/hosts/remove", {"name": "devbox"})
         for _ in range(30):

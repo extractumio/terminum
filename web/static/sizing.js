@@ -196,6 +196,9 @@ export function paneSizing({ view, send, sid, refit, notify }) {
 
   return {
     fullscreen, mouseOn, sync, holding,
+    /** The grid that fits the terminal at the chosen text size, to send with "sub" ({} for none:
+     *  hidden, or a sliver). */
+    grid: () => { const g = grid(); return !term.hidden && term.clientWidth && g.cols >= SLIVER.cols && g.rows >= SLIVER.rows ? g : {}; },
     /** Another screen sized the pane: drawn as it is until this page sizes it. */
     elsewhere: () => !!elsewhere,
     /** A pane was opened: this view's size goes to terminumd. */

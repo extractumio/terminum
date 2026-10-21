@@ -93,12 +93,15 @@ export class Views {
   /** Another session is shown: its Files are another folder, and its View its own files: the
    *  View shown so far waits for its session, open or closed as it was. */
   sessionChanged(sid) {
-    if (sid !== this.sid) this.switchView(sid);
+    this.follow(sid);
     this.filesSrc = "";
     this.filesError = null;
     $("files").removeAttribute("src");
     if (this.filesShown) this.send({ t: "files" });
   }
+
+  /** The view of session `sid`: its View, its docked Files open or closed (AC-70). */
+  follow(sid) { if (sid !== this.sid) this.switchView(sid); }
 
   switchView(sid) {
     const old = $("file"), button = document.querySelector('button[data-view="file"]');

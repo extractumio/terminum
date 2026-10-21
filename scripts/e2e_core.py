@@ -51,9 +51,11 @@ def main():
         first = items(groups)[0]
         ws.send({"t": "sub", "id": first["id"]})
         ws.send({"t": "size", "cols": 80, "rows": 24, "typing": False})
-        hist = ws.until(lambda m: m["t"] == "hist", 5)
-        check("AC-02 opening a pane sends its history then its screen", hist and hist["mode"] == "reset" and ws.until(lambda m: m["t"] == "screen", 5))
-        sized = ws.until(lambda m: m["t"] == "sized", 5)
+        seen = []                       # the window may be sized before the first frame (AC-04): "sized" first
+        shown = ws.until(lambda m: seen.append(m) or m["t"] == "screen", 5)
+        hist = next((m for m in seen if m["t"] == "hist"), None)
+        check("AC-02 opening a pane sends its history then its screen", hist and hist["mode"] == "reset" and shown)
+        sized = next((m for m in seen if m["t"] == "sized"), None) or ws.until(lambda m: m["t"] == "sized", 5)
         check("AC-13 the page that opens a pane sizes it", sized and sized["cols"] == 80 and sized["mine"], sized)
         check("AC-13 the window is 80x24 with window-size manual", "80x24 manual" in tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}"))
         bounds = []

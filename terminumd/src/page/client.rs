@@ -40,8 +40,8 @@ pub struct State {
     pub last_new: Option<Instant>,
     /// typed, not yet handed to tmux
     pub queue: super::typing::Queue,
-    /// when this page last resized a window (at most once a second, AC-13)
-    pub resized_at: Option<Instant>,
+    /// the window this page last resized and when (a window at most once a second, AC-13)
+    pub resized_at: Option<((String, String), Instant)>,
 }
 
 /// What the page sent cannot be done: say why, on the page and in the log.
@@ -60,7 +60,10 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
     let t = msg["t"].as_str().unwrap_or("");
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     match t {
-        "sub" => subscribe(app, page, &s("id")).await,
+        "sub" => {
+            super::sizing::view_of(page, &msg);       // its grid with it: the first frame comes at it (AC-04)
+            subscribe(app, page, &s("id")).await
+        }
         "in" => super::typing::typed(app, page, s("data"), msg["k"].as_u64()),
         "paste" => super::typing::paste(app, page, s("data"), msg["bracket"].as_bool().unwrap_or(true)),
         "more" => super::hist::older(app, page, msg["before"].as_i64().unwrap_or(0), msg["to"].as_i64()).await,
@@ -85,7 +88,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             pause(page, true);
-            super::sizing::handover(app, page);
+            super::sizing::handover(app, page).await;
         }
         "resume" => resume(app, page),
         _ => tracing::debug!(event = "page.unknown", t),

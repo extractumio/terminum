@@ -111,6 +111,15 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             tracing::info!(event = "pane.closed", key, why = "tmux server restarted");
             return;
         }
+        let opened = ctl.fields.lock().is_none();
+        if opened {
+            // a pane just opened: the active page's grid first, then its first frame at it, never
+            // one at the window's old size (AC-04, AC-13)
+            *ctl.fields.lock() = Some(f.clone());
+            if super::sizing::opening(&app, &page).await {
+                continue;
+            }
+        }
         super::timing::captured(&page, started);
         let screen = rows::screen_rows(&capture.join("\n"), f.width, f.height);
         let texts: Vec<String> = screen.iter().map(rows::row_text).collect();
@@ -144,15 +153,14 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             && !page.send(msg) {
                 return;
             }
-        let first = ctl.fields.lock().is_none();
         // the pane's folder changed (a cd, by Enter, a hot key or a script): Files follows it
         let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path).map(|_| f.path.clone());
         *ctl.fields.lock() = Some(f);
         if let Some(cwd) = moved_to {
             page.send_json(&super::client::files_message(&server, &key, &cwd).await);
         }
-        if first {
-            super::sizing::activated(&app, &page);
+        if opened {
+            super::sizing::activated(&app, &page);       // its grid came after "sub" (or not yet): sized as it comes
         }
         super::hist::scan_folds(&page, &ctl, &key);
         let last = Instant::now();

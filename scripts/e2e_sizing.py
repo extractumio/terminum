@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""Sizing end to end, at the page's protocol (terminum.md AC-13: the active page sizes, a hidden
-one hands over, a window of several panes is never resized; AC-05 mc on a phone's 48×30) against
+"""Sizing end to end, at the page's protocol (terminum.md AC-13: the active page sizes, a pane
+opened comes at the page's grid from its first frame (AC-04), a hidden one hands over, a window of several panes is never resized; AC-05 mc on a phone's 48×30) against
 a private terminumd and a private tmux server (never the user's). mc runs with a temporary HOME
 and no subshell.
 
@@ -40,6 +40,18 @@ def open_pane(t, pid, cols, rows, typing=False):
     ws.send({"t": "size", "cols": cols, "rows": rows, "typing": typing})
     ws.until(lambda m: m["t"] == "screen", 5)
     return ws
+
+
+def first_frame(t, pid, pane):
+    tmux("resize-window", "-t", pane, "-x", "90", "-y", "25")           # the window's own size, not the page's
+    ws = t.page()
+    ws.send({"t": "sub", "id": pid, "cols": 132, "rows": 40})
+    first = ws.until(lambda m: m["t"] == "screen", 5)
+    got = first and (first["cols"], first["rows"])
+    check("AC-04 a pane opened with the page's grid comes at it from its first frame, never at the window's old size",
+          got == (132, 40) and window_of(pane) == "132x40", [got, window_of(pane)])
+    ws.close()
+    time.sleep(0.5)
 
 
 def hidden(t, pid, pane):
@@ -146,6 +158,7 @@ def main():
         pid = items(groups)[0]["id"]
         pane = pid.rsplit(":", 1)[-1]
         ws.close()
+        first_frame(t, pid, pane)
         hidden(t, pid, pane)
         split(t, pid, pane)
         drag(t, pid, pane)
