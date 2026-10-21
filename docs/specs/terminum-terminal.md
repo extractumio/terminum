@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.26 |
+| Version | 0.3.27 |
 | Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.27 | 2026-10-21 | Owner: Ask's dialog a quarter larger (600 px wide, a 4-line question, the quote up to 37.5% of the window's height) and centered on the terminal, not on the whole window (AC-37). |
 | 0.3.26 | 2026-10-21 | Owner: a running tool's "⋯ 2 more lines of the command" came and went every 0.6 s, the page jumping: Claude Code blinks the running tool's dot and the rule needed it; a row with the dot blinked off counts when the tool's result follows (AC-32). |
 | 0.3.25 | 2026-10-21 | Owner: Backspace or Delete over text selected in a coding agent's input deletes it, as in a text field (AC-40). |
 | 0.3.24 | 2026-10-21 | Owner: Ask's Send to Agent, left of Add to Chat, sends the quote and the question to the coding agent at once (pasted, then Enter); shown only when the pane runs a coding agent (AC-37). |
@@ -323,7 +324,9 @@ Scenario: AC-37 happy path — a phone
 Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
   Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (on a wide window the three stand left of the floating column); it is hidden otherwise
-  When the user presses Ask, types a question and presses Add to Chat
+  When the user presses Ask
+  Then its dialog opens centered on the terminal (not on the whole window, which also holds the session list and Files), kept inside the window, a quarter larger than other dialogs: 600 px wide, the quote up to 37.5% of the window's height, a 4-line question
+  When the user types a question and presses Add to Chat
   Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts; Claude Code's folded paste reaches the sent history only through its hooks), and the page puts at the input's cursor, no Enter, a blank line after it (none before):
     "Quote #0007:\n - Quote Start ----\n«<the selected text>»\n- Quote End ----\n<the question>\n----"
   And in a coding agent's box the blank line is typed as two Ctrl+J after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) it is inside the paste

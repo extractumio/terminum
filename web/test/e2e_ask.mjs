@@ -16,6 +16,10 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.waitForSelector("#askbox[open]", { timeout: 3000 }).catch(() => {});
   const dialog = await page.evaluate(() => ({ text: document.getElementById("asktext").textContent, off: document.querySelector("#askbox .primary").disabled, noSend: document.getElementById("asksend").hidden,
     focused: document.activeElement?.id, gone: document.getElementById("askfab").hidden }));
+  const placed = await page.evaluate(() => { const box = document.getElementById("askbox"), b = box.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
+    return { width: box.offsetWidth, dx: Math.round(b.left + b.width / 2 - (t.left + t.width / 2)), dy: Math.round(b.top + b.height / 2 - (t.top + t.height / 2)), termLeft: Math.round(t.left) }; });
+  check(`${at} Ask: its dialog 600 px wide (a quarter larger), centered on the terminal, not on the window`,
+    placed.width === 600 && Math.abs(placed.dx) <= 1 && Math.abs(placed.dy) <= 1 && placed.termLeft > 0, JSON.stringify(placed));
   await page.fill("#askq", "why does it never reset?");
   let k = sent.length;
   await page.click('#askbox button[value="add"]');

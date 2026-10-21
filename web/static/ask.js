@@ -23,6 +23,12 @@ export function askSends(text, agent, now = false) {
   return agent ? [["paste", text], ["keys", "\n\n"]] : [["paste", `${text}\n\n`]];
 }
 
+/** Where a box w×h stands centered on `area` (a rect), kept `gap` inside a vw×vh window. */
+export function centerOn(area, w, h, vw, vh, gap = 8) {
+  const at = (start, size, own, max) => Math.round(Math.max(gap, Math.min(start + (size - own) / 2, max - own - gap)));
+  return { x: at(area.left, area.width, w, vw), y: at(area.top, area.height, h, vh) };
+}
+
 /** send(msg) to terminumd; toChat(text): pasted into the shown pane's input; keys(data): typed
  *  there; agent(): the shown pane runs a coding agent. {open(text), seen(m)}. */
 export function askBox({ send, toChat, keys, agent }) {
@@ -31,6 +37,16 @@ export function askBox({ send, toChat, keys, agent }) {
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
   const ready = (on) => { add.disabled = now.disabled = !on; };
   q.addEventListener("input", () => ready(q.value.trim()));
+  // centered on the terminal, not on the window (the list and Files beside it); the window's middle without one
+  const place = () => {
+    const r = $("term").getBoundingClientRect();
+    if (!box.open || !r.width || !r.height) return box.classList.remove("placed");
+    const { x, y } = centerOn(r, box.offsetWidth, box.offsetHeight, innerWidth, innerHeight);
+    box.style.setProperty("--x", `${x}px`);
+    box.style.setProperty("--y", `${y}px`);
+    box.classList.add("placed");
+  };
+  addEventListener("resize", place);
   box.addEventListener("close", () => { waiting?.(null); });
   box.querySelector("form").addEventListener("submit", async (e) => {
     const how = e.submitter?.value;
@@ -62,6 +78,7 @@ export function askBox({ send, toChat, keys, agent }) {
       now.hidden = !agent();                                        // a shell would run the quote
       fail("");
       box.showModal();
+      place();
       q.focus();
     },
     /** Every message from terminumd (app.js dropped another pane's). */
