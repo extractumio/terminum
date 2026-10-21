@@ -5,6 +5,7 @@ import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
 import "./press.js";                                // a pressed button's ripple (motion.css)
 import { Input } from "./input.js";
+import { kbdPlacer } from "./kbdplace.js";
 import { agentMark, findItem, folderBar, metaLine, renderNav, seeWaits, shownState, stateIcon } from "./nav.js";
 import { textForm } from "./render.js";
 import { sessionDrawer } from "./drawer.js";
@@ -138,27 +139,17 @@ function tapMove(x, y) {
   const found = st.sid && findItem(st.groups, st.sid);
   if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn()) return;
   const inBox = found.item.agent ? boxMoves.to(x, y, st.appCursor) : null;
-  if (inBox !== null) { if (inBox) { send({ t: "in", data: inBox, ...trace.keyFields(inBox, "tap") }); view.typed(); } return; }
+  if (inBox !== null) { if (inBox) { input.forget?.(); send({ t: "in", data: inBox, ...trace.keyFields(inBox, "tap") }); view.typed(); } return; }
   const from = cursorCell($("screen")), to = cellAt($("screen"), x, y);
   // right of the cursor only as far as the typed text: → over a suggestion would take it
   if (from && to && to.row === from.row && to.col > from.col) to.col = Math.max(from.col, Math.min(to.col, typedEnd(view.screen[to.row]?.data)));
   const seq = arrowsTo(from, to, { appCursor: st.appCursor });
-  if (seq) send({ t: "in", data: seq, ...trace.keyFields(seq, "tap") });
+  if (seq) { input.forget?.(); send({ t: "in", data: seq, ...trace.keyFields(seq, "tap") }); }
   if (seq) view.typed();
 }
 
-// On a touch screen the invisible keyboard field lies over the cursor's row, so a finger held
-// there gets the page's Paste, Undo and Redo (Input); elsewhere it is out of the way.
-function placeKbd() {
-  // a coding agent's input box whole (where it draws its own cursor may not be tmux's), else the
-  // cursor's row; a full-screen program with the mouse on gets the taps
-  const k = $("kbd");
-  if (!touch.matches) { if (k.style.cssText) k.style.cssText = ""; return; }   // a computer's keys need no place
-  const cur = !sizing.mouseOn() ? $("screen").querySelector(".blk.inbox") ?? $("screen").querySelector(".cur") : null;
-  const t = $("term").getBoundingClientRect(), r = cur?.getBoundingClientRect();
-  if (!r || r.bottom < t.top || r.top > t.bottom) { k.style.cssText = ""; return; }
-  k.style.cssText = `left:${t.left}px;top:${Math.max(r.top, t.top)}px;width:${t.width}px;height:${Math.min(r.bottom, t.bottom) - Math.max(r.top, t.top)}px`;
-}
+// On a touch screen the invisible keyboard field lies over the cursor's row (kbdplace.js).
+const placeKbd = kbdPlacer({ touch, mouseOn: () => sizing.mouseOn() });
 view.onDrawn = () => { placeKbd(); marks(); trace.drawn(); };
 new ResizeObserver(() => placeKbd()).observe($("term"));   // a banner above it moved the terminal: the field follows, never over the banner
 
@@ -463,8 +454,12 @@ $("bracket").onchange = (e) => { st.bracketed = e.target.checked; store.set("bra
 // visible part of the screen, so the terminal and the hot keys sit just above the keyboard,
 // and give the space back when the keyboard closes.
 const vv = window.visualViewport;
+let fitted = "";
 function fitViewport() {
   if (!vv) return;
+  const now = `${Math.round(vv.height)} ${Math.round(vv.offsetTop)} ${innerWidth}`;
+  if (now === fitted) return;                      // iOS sends scroll and resize for one change, and some for none
+  fitted = now;
   const stick = view.atBottom();
   document.documentElement.style.setProperty("--app-h", `${Math.round(vv.height)}px`);
   $("app").style.transform = vv.offsetTop ? `translateY(${Math.round(vv.offsetTop)}px)` : "";

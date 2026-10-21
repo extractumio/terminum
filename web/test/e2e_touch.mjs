@@ -59,9 +59,59 @@ export async function webTouch(browser) {
   await page.keyboard.type("ab");
   await page.waitForTimeout(100);
   const typed = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data);
-  check(`${at} the field keeps a character to delete, each delete is one backspace, typing is as before`,
-    kept === "\u200b" && JSON.stringify(typed) === JSON.stringify(["\x7f", "\x7f", "\x7f", "a", "b"])
-    && await page.evaluate(() => document.getElementById("kbd").value) === "\u200b", JSON.stringify({ kept, typed }));
+  const keptWord = await page.evaluate(() => document.getElementById("kbd").value);
+  check(`${at} the field keeps characters to delete on both sides of its caret, each delete is one backspace, typing is as before, the typed word kept for the keyboard`,
+    kept === "\u200b".repeat(32) + "\u200b".repeat(32) && JSON.stringify(typed) === JSON.stringify(["\x7f", "\x7f", "\x7f", "a", "b"])
+    && keptWord === "\u200b".repeat(32) + "ab" + "\u200b".repeat(32), JSON.stringify({ kept, typed, keptWord }));
+
+  // a kept letter deleted ("ab" → "a"), then iOS's correction of the word to "the": the pane gets the
+  // difference (a backspace and "the"); a line end empties the field
+  const fix = sent.length;
+  await page.keyboard.press("Backspace");
+  await page.evaluate((pad) => {
+    const k = document.getElementById("kbd");
+    k.value = pad + "the" + pad; k.setSelectionRange(pad.length + 3, pad.length + 3);
+    k.dispatchEvent(new InputEvent("input", { inputType: "insertReplacementText", data: "the", bubbles: true }));
+  }, "\u200b".repeat(32));
+  await page.keyboard.press("Enter");
+  await page.waitForTimeout(100);
+  const fixed = sent.slice(fix).filter((m) => m.t === "in").map((m) => m.data);
+  const emptied = await page.evaluate(() => document.getElementById("kbd").value);
+  check(`${at} a kept letter's delete is one backspace; iOS's correction of the word sends the difference; Enter empties the field`,
+    JSON.stringify(fixed) === JSON.stringify(["\x7f", "\x7fthe", "\r"]) && emptied === "\u200b".repeat(64), JSON.stringify({ fixed, emptied: emptied.length }));
+
+  // a key of the bar over the keyboard (Tab: the shell completes) drops what was kept: iOS's later
+  // correction of the word sends no backspace for letters before the cursor's move; an emoji is one character
+  const tab = sent.length;
+  await page.keyboard.type("gi");
+  await page.evaluate(() => [...document.querySelectorAll("#hotkeys button.key")].find((b) => b.dataset.action === "\t").dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  await page.evaluate((pad) => {
+    const k = document.getElementById("kbd");
+    k.value = pad + "his" + pad; k.setSelectionRange(pad.length + 3, pad.length + 3);
+    k.dispatchEvent(new InputEvent("input", { inputType: "insertReplacementText", data: "his", bubbles: true }));
+    k.value = pad + "his\u{1F600}" + pad; k.setSelectionRange(pad.length + 5, pad.length + 5);
+    k.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "\u{1F600}", bubbles: true }));
+    k.value = pad + "his" + pad; k.setSelectionRange(pad.length + 3, pad.length + 3);
+    k.dispatchEvent(new InputEvent("input", { inputType: "deleteContentBackward", bubbles: true }));
+  }, "\u200b".repeat(32));
+  await page.waitForTimeout(100);
+  const barred = sent.slice(tab).filter((m) => m.t === "in").map((m) => m.data);
+  check(`${at} a key of the bar drops what the field kept (no backspace for letters before the cursor moved); an emoji typed and deleted is one character`,
+    JSON.stringify(barred) === JSON.stringify(["g", "i", "\t", "his", "\u{1F600}", "\x7f"]), JSON.stringify(barred));
+
+  // the space bar's trackpad moves the caret: as many arrows; a jump to an end (an up or down move) sends none
+  await page.evaluate(() => { const k = document.getElementById("kbd"); k.blur(); k.focus(); });   // focused again: an empty field
+  await page.waitForTimeout(700);                                // a caret moved this soon after a finger on the field is the finger's
+  const pad = sent.length;
+  await page.evaluate((n) => { const k = document.getElementById("kbd"); k.setSelectionRange(n - 2, n - 2); }, 32);
+  await page.waitForTimeout(50);
+  await page.evaluate((n) => { const k = document.getElementById("kbd"); k.setSelectionRange(n + 1, n + 1); }, 32);
+  await page.waitForTimeout(50);
+  await page.evaluate(() => document.getElementById("kbd").setSelectionRange(0, 0));
+  await page.waitForTimeout(50);
+  const moved = sent.slice(pad).filter((m) => m.t === "in").map((m) => m.data);
+  check(`${at} the space bar's trackpad: the caret's moves are sent as ← and →, a jump to the field's end as nothing`,
+    JSON.stringify(moved) === JSON.stringify(["\x1b[D\x1b[D", "\x1b[C"]), JSON.stringify(moved));
 
   // the caret before the kept character (iOS's space-bar trackpad): a delete still goes; a cut sends nothing
   const edge = sent.length;

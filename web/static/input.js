@@ -28,9 +28,15 @@ const HOLD = 400, REPEAT = 33;   // ms: as a keyboard's repeat
 const MENU_AFTER = 2500;   // ms a finger held still on the input before its menu (Paste, Undo, Redo; AC-03)
 const SLIDE_AFTER = 250;   // ms a finger rests on the input before sliding moves the cursor (held still, the page's menu at MENU_AFTER)
 const DELETES = { deleteContentBackward: "\x7f", deleteWordBackward: "\x7f", deleteContentForward: "\x1b[3~" };   // a word as one backspace where ^W is not a word (nano: search)
-// On a touch screen the keyboard field keeps one invisible character: iOS repeats a held delete
-// only while there is something to delete, and the field is emptied after every key.
-const KEEP = "\u200b";
+// On a touch screen the keyboard field keeps invisible characters on both sides of its caret: iOS
+// repeats a held delete only while there is something to delete, and its space bar's trackpad
+// moves the caret only where there is text to move over. Between them it keeps what was typed
+// since a line end or a move: iOS aims its keys by the word being typed (an emptied field made
+// every letter a word's first, and more typos).
+const KEEP = "\u200b", PAD = KEEP.repeat(32);
+const KEPT_MAX = 60;       // characters kept at most
+const chars = (s) => Array.from(s);
+const TAP_CARET = 600;     // ms after a finger on the field: a caret it moved is no trackpad's
 // keys that repeat while held: not the actions, the modifiers, Enter and the signals
 const REPEATS = (a) => !/^(copy|paste|upload|fn|mod:)/.test(a) && !["\r", "\x03", "\x04", "\x1a"].includes(a);
 
@@ -44,7 +50,11 @@ export class Input {
   }
 
   // path and e: how it was typed and when, for the latency trace (trace.js)
-  type(text, path = "other", e = null) { if (text) { this.send(text, path, e); this.options.onTyped(path === "line"); } }
+  type(text, path = "other", e = null) {
+    if (!text) return;
+    if (path !== "input" && path !== "compose") this.forget?.();   // a key, a paste, a move: what the field kept is not before the cursor now
+    this.send(text, path, e); this.options.onTyped(path === "line");
+  }
 
   withMods(text) {
     let out = text;
@@ -62,8 +72,38 @@ export class Input {
     let char = null;
     const stopChar = () => { if (char) { clearTimeout(char.timer); clearInterval(char.timer); char = null; } };
     const touchable = (this.touchable = navigator.maxTouchPoints > 0);
-    const refill = () => { if (touchable && k.value !== KEEP) { k.value = KEEP; k.setSelectionRange(1, 1); } };
+    // kept: the typed text left of the caret (touch); a change to it is sent as deletes and what is new
+    let kept = "", composingNow = false, touchedAt = -Infinity;
+    const refill = () => {
+      if (!touchable) return;
+      kept = "";
+      if (k.value !== PAD + PAD) k.value = PAD + PAD;
+      if (k.selectionStart !== PAD.length || k.selectionEnd !== PAD.length) k.setSelectionRange(PAD.length, PAD.length);
+    };
+    this.forget = refill;      // the pane's cursor moved elsewhere (a tap)
     k.addEventListener("focus", refill);
+    // what the field holds now against what was kept: iOS's corrections and suggestions too
+    const typedInField = (e) => {
+      const now = k.value.replaceAll(KEEP, ""), was = chars(kept), is = chars(now);   // by characters, not UTF-16 halves
+      let c = 0;
+      while (c < was.length && c < is.length && was[c] === is[c]) c++;
+      const out = "\x7f".repeat(was.length - c) + is.slice(c).join(""), modded = this.mods.ctrl || this.mods.alt;
+      kept = now;
+      if (modded || /\n/.test(now) || now.length > KEPT_MAX || k.selectionStart !== k.value.indexOf(now) + now.length) refill();
+      this.type(this.withMods(out.replace(/\n/g, "\r")), "input", e);
+    };
+    // the space bar's trackpad moved the caret: as many ← or → (a jump to an end is an up or down
+    // move of a one-line field, not ours to guess)
+    document.addEventListener("selectionchange", () => {
+      if (!touchable || document.activeElement !== k || composingNow) return;
+      const at = k.selectionStart, want = PAD.length + kept.length;
+      if (at === want && k.selectionEnd === at) return;
+      const by = at - want, tapped = performance.now() - touchedAt < TAP_CARET, chose = k.selectionEnd !== at;
+      refill();
+      if (tapped || chose || Math.abs(by) >= PAD.length) return;     // a selection in the field is no move
+      const dir = by > 0 ? "C" : "D", arrow = this.options.appCursor() ? `\x1bO${dir}` : `\x1b[${dir}`;
+      this.type(arrow.repeat(Math.abs(by)), "slide");
+    });
     k.addEventListener("keydown", (e) => {
       if (e.isComposing) return;
       // a delete takes the kept character, and the input event sends it: a held delete repeats
@@ -81,17 +121,25 @@ export class Input {
       const line = /^Arrow(Up|Down)$/.test(e.key) && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey && !this.mods.ctrl && !this.mods.alt
         ? this.options.lineMove?.(e.key === "ArrowUp" ? -1 : 1, e.repeat) ?? null : null;   // by the page's lines in an agent's input (boxnav.js)
       if (line !== null) seq = line;
-      if (seq !== null) { e.preventDefault(); if (seq) this.type(this.withMods(seq), line ? "line" : "keydown", e); }
+      if (seq !== null) { e.preventDefault(); refill(); if (seq) this.type(this.withMods(seq), line ? "line" : "keydown", e); }
     });
     k.addEventListener("input", (e) => {
       if (e.isComposing) return;
       if (touchable && e.inputType?.startsWith("delete")) {           // iOS's delete, held or not
-        refill();
+        // what iOS took of what was kept (a letter, or a word when held): a backspace a character
+        const now = k.value.replaceAll(KEEP, ""), gone = chars(kept).length - chars(now).length;
+        if (/^delete(Content|Word)Backward$/.test(e.inputType) && gone > 0 && kept.startsWith(now)) {
+          kept = now;
+          if (!now) refill();
+          return this.type(this.withMods("\x7f".repeat(gone)), "input", e);
+        }
+        refill();                                                     // a pad's character: as a key's delete
         // only a key's delete reaches the pane; a cut or a composition's own delete (an IME) does not
         const del = DELETES[e.inputType];
         const out = del !== "\x7f" ? del : e.inputType === "deleteWordBackward" && this.options.wordDeletes?.() ? WORD : this.backspace();
         return out ? this.type(this.withMods(out), "input", e) : undefined;
       }
+      if (touchable && e.inputType !== "insertLineBreak") return typedInField(e);
       const text = e.inputType === "insertLineBreak" ? "\r" : k.value.replaceAll(KEEP, "");
       k.value = "";
       refill();
@@ -99,8 +147,12 @@ export class Input {
     });
     k.addEventListener("keyup", (e) => { if (char?.code === e.code) stopChar(); });
     k.addEventListener("blur", stopChar);
-    k.addEventListener("compositionstart", (e) => { stopChar(); composing(e); });
-    k.addEventListener("compositionend", (e) => { this.type(k.value.replaceAll(KEEP, ""), "compose", e); k.value = ""; refill(); });
+    k.addEventListener("compositionstart", (e) => { stopChar(); composingNow = true; composing(e); });
+    k.addEventListener("compositionend", (e) => {
+      composingNow = false;
+      if (touchable) { typedInField(e); refill(); return; }
+      this.type(k.value.replaceAll(KEEP, ""), "compose", e); k.value = "";
+    });
     // The field lies over the cursor's row or a coding agent's input box: a short tap on it
     // still moves the cursor like a tap on the terminal, and a finger that rests a moment,
     // however long, and then slides moves the cursor as in a text field: in an agent's input box
@@ -112,6 +164,7 @@ export class Input {
     k.addEventListener("touchstart", (e) => {
       const t = e.touches[0];
       clearTimeout(menu);
+      touchedAt = performance.now();
       down = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: e.timeStamp, slide: false, moved: 0 } : null;
       if (down) menu = setTimeout((d) => { if (down === d) { d.menu = true; this.options.holdMenu?.(d.x, d.y); } }, MENU_AFTER, down);
     }, { passive: true });
@@ -150,6 +203,8 @@ export class Input {
     }, { passive: false });
     k.addEventListener("touchend", (e) => {
       clearTimeout(menu);
+      touchedAt = performance.now();
+      refill();                                                       // the pane's cursor goes where the finger says
       if (down?.slide || down?.scroll !== undefined || down?.menu) { e.preventDefault(); down = null; return; }   // its tap would move the cursor
       const t = e.changedTouches[0];
       if (down && t && e.timeStamp - down.at < 350 && Math.hypot(t.clientX - down.x, t.clientY - down.y) < 10
