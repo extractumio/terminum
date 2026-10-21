@@ -38,13 +38,15 @@
     <div id="sessions"></div>
     <div id="hostmenu" class="box" role="menu" hidden></div>
     <dialog id="rowmenu" class="box" role="menu" aria-label="Session"></dialog>
-    <form id="newsess" class="footform box" hidden>
+    <form id="newsess" class="footform box" aria-labelledby="newsesstitle" hidden>
+      <div class="dhead"><h2 id="newsesstitle">New session</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
       <input id="newsessname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Name of the new session" placeholder="Session name" enterkeyhint="go">
       <p id="newsesserr" role="alert"></p>
-      <div class="row"><button class="primary" type="submit">Create</button><button id="newsesscancel" type="button">Cancel</button></div>
+      <div class="actions"><button id="newsesscancel" type="button">Cancel</button><button class="primary" type="submit">Create</button></div>
     </form>
-    <form id="addhost" class="footform box" hidden>
+    <form id="addhost" class="footform box" aria-labelledby="addhosttitle" hidden>
+      <div class="dhead"><h2 id="addhosttitle">Add host</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
       <label class="lead field"><span>ssh</span><input id="addhostssh" maxlength="300" autocomplete="off" autocapitalize="off"
         autocorrect="off" spellcheck="false" aria-label="ssh" placeholder="devbox or alex@devbox.example -p 2222" enterkeyhint="go"></label>
       <p class="hint">As after <code>ssh</code> in a terminal: a Host of ~/.ssh/config, or user@host with -p -l -i -J. Your keys sign in; ssh must not ask for a password.</p>
@@ -52,16 +54,17 @@
         aria-label="Name in the list" placeholder="Name in the list (optional)">
       <label class="tick"><input id="addhostfiles" type="checkbox"> Browse its files <span>(copies a small helper to the host)</span></label>
       <p id="addhosterr" role="alert"></p>
-      <div class="row"><button class="primary" type="submit">Add host</button><button id="addhostcancel" type="button">Cancel</button></div>
+      <div class="actions"><button id="addhostcancel" type="button">Cancel</button><button class="primary" type="submit">Add host</button></div>
     </form>
-    <form id="addtmux" class="footform box" hidden>
+    <form id="addtmux" class="footform box" aria-labelledby="addtmuxtitle" hidden>
+      <div class="dhead"><h2 id="addtmuxtitle">Attach tmux sessions</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
       <label class="lead field"><span>On</span><select id="addtmuxon" aria-label="Where your tmux runs"></select></label>
       <div id="addtmuxticks" role="group" aria-label="Sessions running there"></div>
       <input id="addtmuxname" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Another session, by name" placeholder="Another session, by name" enterkeyhint="go">
       <p class="hint">Sessions of your own tmux there. They stay yours: terminum never closes them, and shows one as soon as it runs.</p>
       <p id="addtmuxerr" role="alert"></p>
-      <div class="row"><button class="primary" type="submit">Attach</button><button id="addtmuxcancel" type="button">Cancel</button></div>
+      <div class="actions"><button id="addtmuxcancel" type="button">Cancel</button><button class="primary" type="submit">Attach</button></div>
     </form>
     <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
       aria-valuemin="200" aria-valuemax="640"></div>
@@ -274,8 +277,9 @@
   <button type="submit">Sign in</button>
 </form>
 
-<dialog id="pastebox" class="box">
+<dialog id="pastebox" class="box dlg" aria-labelledby="pastetitle">
   <form method="dialog">
+    <div class="dhead"><h2 id="pastetitle">Paste</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label for="pastetext">Paste here, then send it to the terminal</label>
     <textarea id="pastetext" class="field" rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
     <div class="actions">
@@ -285,18 +289,18 @@
   </form>
 </dialog>
 
-<dialog id="markdoc" class="box" aria-labelledby="markdoctitle">
-  <div class="mdhead"><h2 id="markdoctitle">Bookmarks</h2><button id="markdocclose" class="icon" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+<dialog id="markdoc" class="box dlg" aria-labelledby="markdoctitle">
+  <div class="dhead"><h2 id="markdoctitle">Bookmarks</h2><button id="markdocclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div id="markdocbody" class="markdown scrolls"></div>
 </dialog>
 <!-- Bookmarks / Reminders no session shows (AC-33): a large window on the right. -->
-<dialog id="marksdlg" class="box" aria-labelledby="marksdlgtitle">
-  <div class="mdhead"><h2 id="marksdlgtitle">Bookmarks / Reminders</h2><button id="marksdlgclose" class="icon" type="button" title="Close (Esc)" aria-label="Close">×</button></div>
+<dialog id="marksdlg" class="box dlg" aria-labelledby="marksdlgtitle">
+  <div class="dhead"><h2 id="marksdlgtitle">Bookmarks / Reminders</h2><button id="marksdlgclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div id="marklist" class="scrolls"></div>
 </dialog>
-<dialog id="askbox" class="box" aria-labelledby="asktitle">
+<dialog id="askbox" class="box dlg" aria-labelledby="asktitle">
   <form method="dialog">
-    <h2 id="asktitle">Ask about the selection</h2>
+    <div class="dhead"><h2 id="asktitle">Ask about the selection</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="asktext"></div>
     <label for="askq">Question</label>
     <textarea id="askq" class="field" rows="3" maxlength="4000" autocapitalize="sentences" placeholder="What do you want to know about it?"></textarea>
@@ -307,9 +311,9 @@
     </div>
   </form>
 </dialog>
-<dialog id="markbox" class="box" aria-labelledby="marktitle">
+<dialog id="markbox" class="box dlg" aria-labelledby="marktitle">
   <form method="dialog">
-    <h2 id="marktitle">Bookmark</h2>
+    <div class="dhead"><h2 id="marktitle">Bookmark</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div class="seg" id="markkind" role="group" aria-label="Kind">
       <button type="button" data-kind="bookmark" aria-pressed="true">Bookmark</button>
       <button type="button" data-kind="reminder" aria-pressed="false" title="Comes up each time this session's agent ends a turn, until resolved">Reminder</button>
@@ -325,8 +329,9 @@
   </form>
 </dialog>
 
-<dialog id="confirmbox" class="box">
+<dialog id="confirmbox" class="box dlg" aria-labelledby="confirmtitle">
   <form method="dialog">
+    <div class="dhead"><h2 id="confirmtitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="confirmtext"></p>
     <div class="actions">
       <button value="cancel" type="submit">Cancel</button>
@@ -335,10 +340,10 @@
   </form>
 </dialog>
 
-<dialog id="namebox" class="box">
+<dialog id="namebox" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
-    <label id="nametext" for="namefield"></label>
-    <input id="namefield" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+    <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
       <button id="nameok" value="ok" type="submit" class="primary">Rename</button>

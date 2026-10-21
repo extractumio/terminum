@@ -26,10 +26,13 @@ export async function webMove(browser, name) {
 
     await menu("#closepane");
     const asked = await page.evaluate(() => ({ open: document.getElementById("confirmbox").open,
-      text: document.getElementById("confirmtext").textContent, yes: document.getElementById("confirmok").textContent }));
+      text: `${document.getElementById("confirmtitle").textContent} ${document.getElementById("confirmtext").textContent}`, yes: document.getElementById("confirmok").textContent }));
     await page.click('#confirmbox button[value="cancel"]');
     await pause(page);
-    const kept = !last("kill");
+    await menu("#closepane");
+    await page.click("#confirmbox .dhead .x");   // × as Cancel
+    await pause(page);
+    const kept = !last("kill") && !await page.evaluate(() => document.getElementById("confirmbox").open);
     await menu("#closepane");
     await page.click("#confirmok");
     await pause(page);

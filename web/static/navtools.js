@@ -8,10 +8,19 @@ import { addTmux } from "./addtmux.js";
 
 const $ = (id) => document.getElementById(id);
 
-/** Asks `text` with a dialog: true when the user pressed `yes` (else Cancel, Esc). */
+// Every dialog's ×, as Esc: a dialog that refuses Esc (the bookmark's while it saves) refuses it too.
+// The bookmarks' windows close their own way (marks.js, markdoc.js).
+for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
+  x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
+}
+
+/** Asks `text` with a dialog: true when the user pressed `yes` (else Cancel, ×, Esc). Its question
+ *  ("Close the session api?") is the title, what follows it the text. */
 export function askConfirm(text, yes) {
-  const box = $("confirmbox");
-  $("confirmtext").textContent = text;
+  const box = $("confirmbox"), [, title = text, more = ""] = /^(.+?\?)\s+(.+)$/s.exec(text) ?? [];
+  $("confirmtitle").textContent = title;
+  $("confirmtext").textContent = more;
+  $("confirmtext").hidden = !more;
   $("confirmok").textContent = yes;
   box.returnValue = "";
   box.showModal();
@@ -98,7 +107,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
   $("addtmuxbtn").onclick = () => { if ($("addtmux").hidden) tmux.open(); else closeForm("addtmux"); };
   for (const f of FORMS) {
     $(f).addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closeForm(f); } });
-    $(`${f}cancel`).onclick = () => closeForm(f);
+    $(`${f}cancel`).onclick = $(f).querySelector(".dhead .x").onclick = () => closeForm(f);
   }
   $("newsess").addEventListener("submit", (e) => {
     e.preventDefault();

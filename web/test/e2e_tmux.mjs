@@ -136,7 +136,7 @@ export async function webTmux(browser, name) {
     const retry = last("hostaction");
     await page.click('#sessions .grp[data-wid="devbox/terminum"] .hostbtn');
     await page.click('#hostmenu button[data-action="remove"]');
-    const ask = await page.textContent("#confirmtext");
+    const ask = `${await page.textContent("#confirmtitle")} ${await page.textContent("#confirmtext")}`;
     await page.click("#confirmok");
     for (let i = 0; i < 40 && last("hostaction")?.action !== "remove"; i++) await pause(page, 50);   // a loaded machine: up to 2 s
     check("AC-81 host group: its menu retries now, turns it off, removes it (asked first)",

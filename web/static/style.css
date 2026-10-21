@@ -348,19 +348,15 @@ body.ctxtrace #fabs { display: flex; }
 .stepper output { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; }
 #menu .danger { color: var(--danger-text); margin-top: var(--sp-2); }   /* set apart by space, not a line */
 
-/* ---------- sign-in and paste ---------- */
+/* ---------- sign-in ---------- */
 #login { max-width: 360px; margin: 18vh auto 0; padding: 0 24px; display: flex; flex-direction: column; gap: 8px; }
 #login h1 { margin: 0; font-size: 26px; font-weight: 600; letter-spacing: -0.01em; }
 #login p { margin: 0 0 16px; color: var(--muted); }
 #login label { font-size: 13px; color: var(--muted); }
-#login input, #pastebox textarea { font: inherit; font-size: 16px; color: inherit; background: var(--surface-3);
+#login input { font: inherit; font-size: 16px; color: inherit; background: var(--surface-3);
   border: 0; border-radius: var(--r-md); padding: 10px 12px; }
 #loginerr { min-height: 1.35em; color: var(--danger) !important; margin: 0 !important; }
 #login button { height: 44px; border-radius: 10px; background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
-#pastebox { --fill: var(--chrome); color: var(--t-fg); border: 0; border-radius: var(--r-xl); box-shadow: var(--shadow-far);
-  width: min(480px, calc(100vw - 32px)); padding: var(--sp-4); }
-#pastebox form { display: flex; flex-direction: column; gap: 10px; }
-#pastebox textarea { font-family: TermFont, Menlo, monospace; font-size: 16px; resize: vertical; }
 
 /* Off-screen but focusable; 16px stops iOS from zooming on focus. */
 #kbd { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; resize: none;

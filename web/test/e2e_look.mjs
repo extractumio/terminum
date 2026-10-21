@@ -44,6 +44,24 @@ export async function webLook(browser, name) {
 
     check("look: every dialog's primary button is filled apart from its Cancel", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
       JSON.stringify(dialogs));
+    // one kind (UI-GUIDELINES §5): every dialog and foot form has a title and × in its head, its fields
+    // one look, Cancel before the primary; the primary in the hue of what opened it
+    const kind = await page.evaluate(() => {
+      const st = (el) => { const c = getComputedStyle(el); return [c.fontFamily, c.fontSize, c.paddingTop, c.paddingLeft, c.backgroundColor, c.borderRadius].join("|"); };
+      const boxes = [...document.querySelectorAll("dialog.dlg, .footform")];
+      const shown = boxes.map((b) => { const was = b.hidden; b.hidden = false; return was; });   // a hidden form computes too, but its fields must be laid out
+      const out = {
+        heads: boxes.filter((b) => !(b.querySelector(".dhead h2") && b.querySelector(".dhead .x"))).map((b) => b.id),
+        fields: [...new Set([...document.querySelectorAll(":is(dialog.dlg, .footform) .field:not(.lead)")].map(st))],
+        order: [...document.querySelectorAll(":is(dialog.dlg, .footform) .actions")].filter((a) => a.lastElementChild?.classList.contains("primary") === false).map((a) => a.parentElement.closest("[id]").id),
+        ask: [getComputedStyle(document.querySelector("#askbox .primary")).backgroundColor, getComputedStyle(document.getElementById("askfab")).backgroundColor],
+      };
+      boxes.forEach((b, i) => { b.hidden = shown[i]; });
+      return out;
+    });
+    check("look: every dialog and foot form has a title and × in its head; its fields look alike; Cancel, then the primary",
+      kind.heads.length === 0 && kind.fields.length === 1 && kind.order.length === 0, JSON.stringify(kind));
+    check("look: Ask's primary is the Ask button's blue", kind.ask[0] === kind.ask[1], kind.ask.join(" vs "));
     // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
     const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu)")].map((d) => {
       d.showModal();

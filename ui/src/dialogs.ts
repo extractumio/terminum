@@ -5,13 +5,16 @@ import { esc } from "./api";
 
 export interface Choice { id: string; label: string; primary?: boolean; danger?: boolean }
 
-/** Modal with a message and buttons. Resolves to the chosen id, or "cancel" on Esc. */
+/** Modal with a message and buttons, × in its corner as the Page's dialogs. Resolves to the chosen
+ *  id, or "cancel" on × and Esc. */
 export function ask(title: string, message: string, choices: Choice[]): Promise<string> {
   return new Promise((resolve) => {
     const back = document.createElement("div");
     back.className = "modal-back";
     back.innerHTML =
-      `<div class="modal box" role="dialog" aria-label="${esc(title)}"><div class="mtitle">${esc(title)}</div>` +
+      `<div class="modal box" role="dialog" aria-label="${esc(title)}"><div class="mhead"><div class="mtitle">${esc(title)}</div>` +
+      `<button data-id="cancel" class="mx" title="Close (Esc)" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" ` +
+      `stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>` +
       (message ? `<div class="mtext">${esc(message)}</div>` : "") +
       `<div class="mbtns">${choices.map((c) =>
         `<button data-id="${esc(c.id)}" class="btn${c.primary ? " primary" : ""}${c.danger ? " danger" : ""}">${esc(c.label)}</button>`).join("")}</div></div>`;

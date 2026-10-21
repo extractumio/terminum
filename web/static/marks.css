@@ -81,21 +81,13 @@ body.wide #msgrail { grid-row: 1 / -1; }
 #mbwhy { margin: 6px 0 0; color: var(--muted); }
 #mbtext, #marktext, #asktext { margin: 6px 0 0; max-height: 40vh; overflow: auto; padding: 6px 8px; border-radius: 7px; background: var(--t-bg);
   font: 12px/1.4 TermFont, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
-#marktext, #asktext { max-height: 30vh; margin: 0; }
+#marktext, #asktext { max-height: 30vh; margin: 0; padding: 10px 12px; border-radius: var(--r-md); font: var(--size)/1.3 var(--term-font); }   /* the quote as the field under it */
 body:not([data-shown="term"]) #markadd, body:not([data-shown="term"]) #markcopy, body:not([data-shown="term"]) #marksfab, body:not([data-shown="term"]) #markpane, body:not([data-shown="term"]) #markrail, body:not([data-shown="term"]) #markbar { display: none !important; }
 body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpane, body.wide #markrail, body.wide #markbar { grid-row: 1 / -1; }
 
-:is(#markbox, #askbox) { width: min(520px, calc(100% - 24px)); --fill: var(--chrome); color: var(--t-fg); border: 0;
-  border-radius: var(--r-xl); padding: var(--sp-4); box-shadow: var(--shadow-far); }
-:is(#markbox, #askbox) form { display: flex; flex-direction: column; gap: 8px; }
-:is(#markbox, #askbox) h2 { margin: 0; font-size: 15px; }
-:is(#markbox, #askbox) label { font-size: 12px; color: var(--muted); }
-:is(#marknote, #askq) { font: inherit; color: inherit; background: var(--surface-3); border: 0;
-  border-radius: var(--r-md); padding: 8px; resize: vertical; }
-:is(#markerr, #askerr) { margin: 0; color: var(--danger-text); font-size: var(--fs-small); }
-#markbox .actions .primary { background: var(--mark); color: #1b1200; font-weight: 600; }
-#askbox .actions .primary { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
-#askbox .actions .primary:disabled { opacity: .4; }
+/* a dialog's primary in the hue of the button that opened it (controls.css) */
+#markbox .actions .primary { background: var(--mark); color: #1b1200; --focus: #1b1200; }
+#askbox .actions .primary { background: var(--ask); color: var(--ask-ink); --focus: var(--ask-ink); }
 
 /* the list's foot button: the bookmark orange, the bell pink (reminders.css), before "Reminders" on a computer; a phone's blob holds both */
 #marksbtn svg { color: var(--mark); }
@@ -110,9 +102,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
   border-radius: var(--r-xl); --fill: var(--chrome); color: var(--t-fg); box-shadow: var(--shadow-far); display: none; flex-direction: column; }
 #marksdlg[open] { display: flex; }
 #marklist, #marklist button { font: var(--fs-body)/1.35 var(--ui); }   /* its list as the session list's; its head a dialog's (tmux.css) */
-#marksdlg .mdhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 4px; }
-#marksdlg h2 { margin: 0; font-size: var(--fs-title); }
-#marksdlg .mdhead .icon { width: 36px; height: 36px; border-radius: var(--r-md); font-size: 20px; }
+#marksdlg .dhead { margin: 0; padding: 10px 10px 4px 16px; }   /* a dialog's head (controls.css) */
 #marklist { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-3); }
 :is(#marklist, #markpane) ul { list-style: none; margin: 0; padding: 0; }
 :is(#marklist, #markpane) li { position: relative; display: flex; align-items: flex-start; padding-left: 8px; border-radius: 6px; margin: 2px 0; }
@@ -148,9 +138,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 #markdoc { width: min(860px, calc(100vw - 24px)); height: calc(100dvh - 48px); max-height: none; padding: 0; border: 0; border-radius: var(--r-xl);
   --fill: var(--chrome); color: var(--t-fg); display: none; flex-direction: column; }
 #markdoc[open] { display: flex; }
-#markdoc .mdhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; }
-#markdoc h2 { margin: 0; font-size: var(--fs-title); }
-#markdoc .icon { width: 36px; height: 36px; border-radius: var(--r-md); font-size: 20px; }
+#markdoc .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 #markdocbody { flex: 1; overflow: auto; padding: 4px 22px 40px; font: var(--md-size, 14px)/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
 #markdocbody blockquote { margin: 0 0 6px; padding-left: 10px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); white-space: pre-wrap; }
 

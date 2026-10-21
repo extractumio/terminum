@@ -20,28 +20,20 @@
 
 /* the list foot's forms: New session, Add host, Attach tmux sessions; fields 8px apart, the
    buttons 16px under the last (20 on a touch screen) */
-.footform { position: relative; margin: 0 10px var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-3);
-  border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
+.footform { position: relative; margin: 0 10px var(--sp-2); display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4);
+  border-radius: var(--r-lg); --fill: var(--chrome); color: var(--t-fg); box-shadow: var(--shadow-far); }   /* a dialog's look (controls.css) */
 .footform[hidden] { display: none; }
-.footform input { font: inherit; font-size: 16px; color: inherit; background: var(--chrome); border: 0;
-  border-radius: var(--r-md); padding: 8px 10px; min-width: 0; }
-.footform p { margin: 0; font-size: 12.5px; color: var(--muted); line-height: 1.35; }
+.footform p { margin: 0; font-size: var(--fs-label); color: var(--muted); line-height: var(--lh-ui); }
 .footform p:empty { display: none; }
-.footform [role="alert"] { color: var(--danger-text); }
-.footform .lead { display: flex; align-items: center; background: var(--chrome); border-radius: var(--r-md); }
-.footform .lead span { padding-left: 10px; font-family: ui-monospace, Menlo, monospace; color: var(--muted); }
-.footform .lead :is(input, select) { flex: 1; min-width: 0; border: 0; background: none; outline: none; padding-left: 6px; }
-.footform select { font: inherit; color: inherit; height: 34px; }
+.footform .lead { display: flex; align-items: center; }
+.footform .lead span { padding-left: 12px; color: var(--muted); }
+.footform .lead :is(input, select) { flex: 1; min-width: 0; font: inherit; line-height: 1.3; color: inherit; border: 0; background: none; outline: none; padding: 10px 12px 10px 6px; }
 #addtmuxticks { display: flex; flex-direction: column; gap: 4px; max-height: 30vh; overflow: auto; }
 #addtmuxticks:empty { display: none; }
 .footform .tick { display: flex; align-items: center; gap: 6px; font-size: 13.5px; flex-wrap: wrap; }
 .footform .tick input { width: 16px; height: 16px; margin: 0; padding: 0; accent-color: var(--accent); }
 .footform .tick span { color: var(--muted); font-size: 12.5px; }
 .footform .tick.ends span { flex-basis: 100%; padding-left: 22px; color: var(--danger-text); }   /* a session that can be lost */
-.footform .row { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
-.footform button { height: 32px; padding: 0 14px; border-radius: var(--r-sm); background: var(--surface-4); }   /* 44 on a phone (controls.css) */
-.footform .primary { background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
-@media (max-width: 860px), (pointer: coarse) { .footform { padding: var(--sp-4); } .footform .row { margin-top: var(--sp-3); } }
 
 /* the menu's list of sessions a window can move to */
 #movelist { display: flex; flex-direction: column; padding-left: 16px; }
@@ -58,9 +50,7 @@
 #restored .x:hover { background: rgba(255, 255, 255, .18); }
 
 /* a question before something that cannot be undone (Close pane, Remove host) */
-#confirmbox { --fill: var(--chrome); color: var(--t-fg); border: 0; border-radius: var(--r-xl); box-shadow: var(--shadow-far);
-  width: min(420px, calc(100vw - 32px)); padding: 16px; }
-#confirmbox p { margin: 0 0 var(--sp-2); line-height: var(--lh-prose); }
+#confirmbox p { margin: 0; line-height: var(--lh-prose); }
 #confirmbox .actions .primary { background: var(--danger-fill); color: #fff; --focus: #fff; }   /* the irreversible verb */
 
 /* a newer release (AC-17): the header's chip and its menu */
@@ -72,9 +62,9 @@
 
 
 /* dialogs, forms and the search box speak in the terminal's font */
-dialog, .footform, #findbox, #asks, dialog input, dialog textarea, dialog button, .footform input, .footform button, #findbox input { font-family: var(--term-font); }
+dialog, .footform, #findbox, #asks, dialog :is(input, textarea, select, button), .footform :is(input, select, button), #findbox input { font-family: var(--term-font); }
 /* ... and at its size, fields too (the viewport's maximum-scale keeps iOS from zooming in on a small one) */
-dialog, .footform, #findbox, #asks, .footform :is(input, select), #findq, #marknote, #askq, #namebox input, #pastebox textarea { font-size: var(--size); }
+dialog, .footform, #findbox, #asks, :is(dialog, .footform) :is(input, textarea, select), #findq { font-size: var(--size); }
 
 /* the shown pane's quick shell (AC-88): below the terminal or on its left, its share dragged at its edge */
 #termrow { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
