@@ -47,7 +47,7 @@ dialog::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
   .grp h2 .toggle { height: 40px; }
   .grp h2 :is(.attach, .import, .new, .hostbtn) { width: 40px; height: 40px; border-radius: 10px; }
   .grp h2 .acts { min-width: calc(2 * 40px + 6px); }
-  #findbox button, :is(dialog.dlg, .footform) .actions button, :is(#hostmenu, #updmenu) button { height: 44px; border-radius: 12px; }
+  #findbox button, :is(dialog.dlg, .footform) .actions button, :is(#hostmenu, #updmenu) button, #splitnote button { height: 44px; border-radius: 12px; }
   .dhead .x { width: 44px; height: 44px; }
   .dhead { margin: -10px -12px -4px 0; }   /* the larger × keeps the title where it was */
   #findbox .icon { width: 44px; }

@@ -5,7 +5,7 @@
 use serde_json::json;
 
 /// The fields read with every capture, tab-separated; the folder last (it may hold a tab).
-pub const FIELDS: &str = "#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{history_size}\t#{pane_width}\t#{pane_height}\t#{mouse_any_flag}\t#{mouse_sgr_flag}\t#{history_limit}\t#{cursor_flag}\t#{window_id}\t#{window_zoomed_flag}\t#{window_panes}\t#{pid}\t#{pane_current_command}\t#{pane_current_path}";
+pub const FIELDS: &str = "#{cursor_x}\t#{cursor_y}\t#{alternate_on}\t#{history_size}\t#{pane_width}\t#{pane_height}\t#{mouse_any_flag}\t#{mouse_sgr_flag}\t#{history_limit}\t#{cursor_flag}\t#{window_id}\t#{window_zoomed_flag}\t#{window_panes}\t#{pane_active}\t#{window_width}\t#{pid}\t#{pane_current_command}\t#{pane_current_path}";
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Fields {
@@ -22,6 +22,9 @@ pub struct Fields {
     pub window: String,
     pub zoomed: bool,
     pub panes: usize,
+    /// the window's active pane (the zoomed one, when it is zoomed)
+    pub active: bool,
+    pub win_width: usize,
     /// the tmux server's process: another one means the pane ids name other panes (AC-14)
     pub server_pid: u32,
     pub command: String,
@@ -31,8 +34,8 @@ pub struct Fields {
 impl Fields {
     /// The display line, or None when it is not one (an older tmux, a broken answer).
     pub fn parse(line: &str) -> Option<Fields> {
-        let p: Vec<&str> = line.splitn(16, '\t').collect();
-        if p.len() < 16 {
+        let p: Vec<&str> = line.splitn(18, '\t').collect();
+        if p.len() < 18 {
             return None;
         }
         let n = |i: usize| p[i].trim().parse::<i64>().ok();
@@ -51,10 +54,25 @@ impl Fields {
             window: p[10].to_string(),
             zoomed: flag(11),
             panes: n(12).unwrap_or(1).max(1) as usize,
-            server_pid: n(13).unwrap_or(0) as u32,
-            command: p[14].to_string(),
-            path: p[15].to_string(),
+            active: flag(13),
+            win_width: n(14).unwrap_or(0).max(0) as usize,
+            server_pid: n(15).unwrap_or(0) as u32,
+            command: p[16].to_string(),
+            path: p[17].to_string(),
         })
+    }
+
+    /// Whether the pane fills its window: its only pane, or the zoomed one (AC-13).
+    pub fn whole(&self) -> bool {
+        self.panes <= 1 || (self.zoomed && self.active)
+    }
+
+    /// The window's split as the page says it (AC-13): null for a window of one pane.
+    pub fn split(&self) -> serde_json::Value {
+        if self.panes <= 1 {
+            return serde_json::Value::Null;
+        }
+        json!({"panes": self.panes, "zoomed": self.whole(), "wcols": self.win_width})
     }
 }
 
@@ -66,6 +84,7 @@ pub struct Shown {
     alt: Option<bool>,
     mouse: Option<bool>,
     folds: Option<serde_json::Value>,
+    split: Option<serde_json::Value>,
 }
 
 impl Shown {
@@ -91,7 +110,8 @@ impl Shown {
                 changed.push(i);
             }
         }
-        let flags_changed = self.alt != Some(f.alt) || self.mouse != Some(f.mouse);
+        let split = f.split();
+        let flags_changed = self.alt != Some(f.alt) || self.mouse != Some(f.mouse) || self.split.as_ref() != Some(&split);
         if !full && changed.is_empty() && !flags_changed && self.rows.len() == rows.len() {
             return None;
         }
@@ -115,6 +135,9 @@ impl Shown {
         if full || self.folds.as_ref() != Some(&folds) {
             out.push_str(&format!(",\"folds\":{folds}"));
         }
+        if full || self.split.as_ref() != Some(&split) {
+            out.push_str(&format!(",\"split\":{split}"));
+        }
         if let Some(serde_json::Value::Object(m)) = extra {
             for (k, v) in m {
                 out.push_str(&format!(",{}:{}", json!(k), v));
@@ -126,6 +149,7 @@ impl Shown {
         self.alt = Some(f.alt);
         self.mouse = Some(f.mouse);
         self.folds = Some(folds);
+        self.split = Some(split);
         Some(out)
     }
 }
@@ -140,10 +164,10 @@ mod tests {
 
     #[test]
     fn display_lines_parse_with_a_tab_in_the_folder() {
-        let f = Fields::parse("3\t4\t0\t120\t80\t24\t1\t1\t12000\t1\t@2\t0\t2\t4242\tzsh\t/tmp/a\tb").unwrap();
+        let f = Fields::parse("3\t4\t0\t120\t80\t24\t1\t1\t12000\t1\t@2\t0\t2\t1\t117\t4242\tzsh\t/tmp/a\tb").unwrap();
         assert_eq!((f.cx, f.cy, f.alt, f.history, f.width, f.height), (3, 4, false, 120, 80, 24));
         assert!(f.mouse && f.mouse_sgr && f.cursor_on && !f.zoomed);
-        assert_eq!((f.window.as_str(), f.panes, f.server_pid, f.command.as_str(), f.path.as_str()), ("@2", 2, 4242, "zsh", "/tmp/a\tb"));
+        assert_eq!((f.window.as_str(), f.panes, f.active, f.win_width, f.server_pid, f.command.as_str(), f.path.as_str()), ("@2", 2, true, 117, 4242, "zsh", "/tmp/a\tb"));
         assert_eq!(Fields::parse("1\t2\t3"), None);
     }
 
@@ -164,5 +188,24 @@ mod tests {
         assert!(first.get("folds").is_some(), "a full frame says its folds");
         let resized: serde_json::Value = serde_json::from_str(&s.frame("k", &fields(12, 3), rows(r#"{"r":[["b",null,null,0]],"e":true}"#), json!([[0, 1, "⋯ 2 lines"]]), None).unwrap()).unwrap();
         assert_eq!(resized["full"], true, "a new size is a full frame");
+    }
+
+    /// AC-13: a split window is said with each frame that changes it; one pane says null.
+    #[test]
+    fn a_split_window_is_said_when_it_changes() {
+        let mut s = Shown::default();
+        let row = || vec![r#"{"r":[],"e":true}"#.to_string()];
+        let one = fields(35, 1);
+        let first: serde_json::Value = serde_json::from_str(&s.frame("k", &one, row(), json!([]), None).unwrap()).unwrap();
+        assert_eq!(first["split"], serde_json::Value::Null, "one pane: null");
+        let split = Fields { panes: 2, win_width: 117, active: true, ..fields(35, 1) };
+        let m: serde_json::Value = serde_json::from_str(&s.frame("k", &split, row(), json!([]), None).expect("the split alone is a frame")).unwrap();
+        assert_eq!(m["split"], json!({"panes": 2, "zoomed": false, "wcols": 117}));
+        assert_eq!(s.frame("k", &split, row(), json!([]), None), None, "unchanged: nothing");
+        let zoomed = Fields { zoomed: true, ..split.clone() };
+        assert!(zoomed.whole() && !split.whole() && one.whole());
+        assert!(!Fields { active: false, ..zoomed.clone() }.whole(), "another pane zoomed: this one is not the window");
+        let z: serde_json::Value = serde_json::from_str(&s.frame("k", &zoomed, row(), json!([]), None).unwrap()).unwrap();
+        assert_eq!(z["split"]["zoomed"], true);
     }
 }

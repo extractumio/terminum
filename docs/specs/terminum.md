@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.15.1 |
+| Version | 0.16.0 |
 | Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.16.0 | 2026-10-21 | Owner: Claude Code's teammates split a session's window (its pane 35 of 117 columns) and the page showed a narrow terminal with no word why: a banner says the window is split and how wide this pane is, with Full width (tmux zooms the pane, and a zoomed pane's window is sized as a window of one pane) and Other pane (AC-13). Pragmatic review: rejected drawing the panes side by side and resizing a split window (see the scenario). |
 | 0.15.1 | 2026-10-21 | Owner, on what 0.15.0 left: at tmux's history-limit the rows read while the pane printed are numbered by the last frame's screen rows found where they moved, not dropped for a new history (AC-02); a project's pane closed in the 5 s after it joined leaves when they end, without another change (AC-92). |
 | 0.15.0 | 2026-10-21 | Owner, then: rows of a host's Claude Code session showed in another place (4 rows replaced by the 4 rows 60 lines later, then those again in their place): a capture's range is counted back from tmux's history end when tmux runs it, and the history had grown since the frame that numbered it; now each capture reaches above its range and comes with the history's size, and the rows are taken where they moved (AC-02). Pragmatic review applied: one round trip, no wait for a quiet pane (a burst over ssh never gives one); no shift trusted where tmux may have trimmed. Owner, then: switching between sessions drew the new pane at its old size, scaled, and then at the view's: the text size jumped; now "sub" carries the view's grid (after the session's own Files are laid out), terminumd sizes the window before the pane's first frame, and the view keeps the pane shown before until that frame, then draws it at once (AC-04); the once-a-second limit is a window's, so a quick switch is not held back (AC-13). Owner: a session of the user's own tmux on a host, opened without typing, kept the 158×59 tmux gave it and was drawn at a smaller text size until a key was typed. Now a pane of the user's own tmux is sized as any pane: on opening, on its page becoming active and on typing (AC-13); when no page in sight shows it any more (the page hidden, another pane, the page closed) its window gets tmux's own size back, so a locked phone never keeps the user's terminal at its size; a window at the page's grid already is still held (`window-size manual`), or tmux's own policy would give it to another client. A host's control clients a dropped link left behind are ended (terminum-remote.md AC-81). Pragmatic review applied: the release when the page is hidden (awaited, before the page's next message), a resize that waited its second skipped once the page is hidden (checked again as it is recorded), a window shown only by hidden pages given back when its page shows another pane (AC-13, AC-89). |
 | 0.14.10 | 2026-10-20 | Owner (iPhone): opening a session did not always reach its last message. The view now stays on the last line through what settles late, checked each frame until 4 s after the first frame or until the user scrolls, presses, types or selects text or a jump to a line takes the view (AC-02). Before it, one growth of the page outside the page's own redraws (a widget, an image, a note) left the view short and it stopped following. |
@@ -527,8 +528,16 @@ Scenario: AC-13 edge — the page that sized it is put away
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
   Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing
 Scenario: AC-13 edge — a window of several panes
-  Given %3's window holds two panes (split by the user's own tmux, an agent, or restored, AC-15)
+  Given %3's window holds two panes (split by the user's own tmux, an agent such as Claude Code's teammates, or restored, AC-15)
   Then no page resizes it: each pane is drawn at its own size, scaled to the view when wider (AC-04)
+  And a banner over the terminal says "This window is split: 2 panes, this one 35 of 117 columns" with Full width and Other pane, on a computer and a phone, within a frame of the split and gone within 2 s of the last other pane's end
+  When the user presses Full width
+  Then terminumd zooms %3 in tmux ("resize-pane -Z"): it fills its window, which is sized as a window of one pane (the active page's grid); the banner says "This window is split: 2 panes, this one zoomed" with Show split, which unzooms it
+  When a program splits the window again (tmux unzooms it then) or the user's own tmux unzooms it
+  Then the banner shows the split again within 2 s; nothing zooms by itself
+  When the user presses Other pane
+  Then the page shows the window's next pane, as its row in the list does
+  And rejected (pragmatic review, 2026-10-21): drawing the panes side by side as tmux does (a page per pane is scaled apart and splits keys and focus across pages; one page of several panes is a large change, kept until watching several panes at once is wanted) and resizing a split window (each resize re-wraps every pane, Claude Code leaves its old lines in each one's history, and the layout drifts from what its maker chose)
 Scenario: AC-13 edge — another tmux client is attached
   Given the user ran "tmux -L terminum attach -t main" in Terminal.app, or iTerm2's "tmux -CC -L terminum attach"
   Then terminumd's control client is attached with "-f ignore-size" (AS-02) and "window-size manual" on the windows it sizes: both clients see the size terminumd set; a window no page shows keeps tmux's own policy (latest) for that client
@@ -980,6 +989,7 @@ WebSocket messages, page → terminumd (`t` names iterm-enhancer's where they ex
 | `mouse` | `x, y, button, action, mods`, `count` (wheel steps, 1–100) | a mouse report to a full-screen program (AC-06) |
 | `more` | `before, to?` | older history lines |
 | `size` | `cols, rows, typing` | the view's grid; typing says the client acted (policy `latest`) |
+| `zoom` | `on` | Full width (true: tmux zooms the shown pane of a split window) or Show split (false) (AC-13) |
 | `fit`, `unfit` | `cols, rows` | Fit to this screen, Restore size |
 | `screenmode` | `mode: auto/always/never` | per pane |
 | `new`, `newsession`, `split` | `group`, `name`, `dir`, `id`, `how` | sessions (AC-07) |
@@ -987,7 +997,7 @@ WebSocket messages, page → terminumd (`t` names iterm-enhancer's where they ex
 | `unfold`, `find`, `mark`, `unmark`, `locate`, `marks` | as in iterm-enhancer | `terminum-terminal.md` |
 | `trace`, `pause`, `resume`, `files` | as in iterm-enhancer | — |
 
-terminumd → page: `layout`, `theme`, `screen` (with `alt` and `mouse`), `hist`, `folds`, `lines`, `found`, `marks`, `marked`, `created`, `files`, `fit`, `sized` (`cols`, `rows`, `mine`), `note`, `error`, `build`, `settings`, `restore` (the report), `stall`, `update` (`latest`); page → terminumd also `updatechoice` (`skip` with `tag`, `off`), the Mac's page only.
+terminumd → page: `layout`, `theme`, `screen` (with `alt`, `mouse` and, when it changed, `split`: null or `{panes, zoomed, wcols}`, AC-13), `hist`, `folds`, `lines`, `found`, `marks`, `marked`, `created`, `files`, `fit`, `sized` (`cols`, `rows`, `mine`), `note`, `error`, `build`, `settings`, `restore` (the report), `stall`, `update` (`latest`); page → terminumd also `updatechoice` (`skip` with `tag`, `off`), the Mac's page only.
 
 The inherited page's protocol (`web/static/app.js`, `nav.js`, `navtools.js`, `panefiles.js`) and what changes for tmux, the only edits to the page:
 

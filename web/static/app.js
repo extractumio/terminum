@@ -20,6 +20,7 @@ import { selectionCut } from "./selcut.js";
 import { switchGate } from "./switchgate.js";
 import { askConfirm, navTools } from "./navtools.js";
 import { embedded, quickShell } from "./quick.js";
+import { nextPane, splitNote } from "./splitnote.js";
 import { paneMenu } from "./menu.js";
 import { paneSizing } from "./sizing.js";
 import { pageSettings } from "./settings.js";
@@ -274,7 +275,7 @@ function onMessage(m) {
     case "lines":
       if (m.error) { widgets.folds.failed(m.first); toast(m.error, 5000); break; }
       view.refill(m.first, m.lines); widgets.keepPlace(() => widgets.folds.filled(m.first, m.lines.length)); break;
-    case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); break;
+    case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); split.seen(m); break;
     case "sized": sizing.onSized(m); break;
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
@@ -316,6 +317,7 @@ function pick(id) {
   if (of) quick.focus(); else focusTerminal();
 }
 const reminders = waitingCards($("asks"), pick);
+const split = splitNote({ send, other: () => { const id = nextPane(st.groups, st.sid); if (id) pick(id); } });
 const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast, toChat: (text) => bookmarks.toChat(text),
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });

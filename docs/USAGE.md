@@ -20,7 +20,10 @@ configuration. The overview is in the [README](../README.md).
   terminal, open or closed for each session, on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
   types there sizes it to its view (45×14 to 240×70 cells); a window of several panes keeps its
-  layout and is drawn scaled. Switching sessions shows the new one at once at your text size.
+  layout and is drawn scaled. A note over such a pane says the window is split (Claude Code's
+  teammates do that) and how wide the pane is: Full width zooms it in tmux to your view's size,
+  Show split gives the window back, Other pane shows the next one. Switching sessions shows the
+  new one at once at your text size.
 - **Sessions outlive everything**: terminals live in tmux; terminumd runs as a launchd agent
   and comes back after a crash; after a reboot, or when a tmux server was killed, the sessions,
   windows, splits and folders are restored: terminum's own, each host's and the sessions of your

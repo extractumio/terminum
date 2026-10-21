@@ -28,6 +28,8 @@ export class Views {
     this.sid = null;               // the shown session, whose View is #file
     this.theme = null;             // the shown pane's, for both frames (fbd's is the focused pane's)
     for (const f of ["files", "file"]) { const el = $(f); el.addEventListener("load", () => { if (el.id === f) this.tellTheme(el); }); }
+    // another session's Files show once its own folder is in (the last one asked for)
+    $("files").addEventListener("load", () => { if ($("files").getAttribute("src") === this.filesSrc) $("files").classList.remove("moving"); });
     for (const b of document.querySelectorAll("button[data-view]")) b.addEventListener("click", () => this.show(b.dataset.view, true));
     $("sideclose").addEventListener("click", () => this.setDocked(false));
     $("fileclose").addEventListener("click", () => this.show("term"));
@@ -98,7 +100,9 @@ export class Views {
     this.follow(sid);
     this.filesSrc = "";
     this.filesError = null;
-    $("files").removeAttribute("src");
+    // hidden, not emptied: WebKit may load an emptied frame's about:blank after the next folder
+    // set meanwhile, and the frame stays blank (a quick switch away and back)
+    $("files").classList.add("moving");
     if (this.filesShown) this.send({ t: "files" });
   }
 
@@ -181,7 +185,7 @@ export class Views {
       if (m.host) q.set("host", m.host);
       const src = `/fb/?${q}`;
       if (src !== this.filesSrc) $("files").src = this.filesSrc = src;   // reloaded only when it moved
-    }
+    } else $("files").classList.remove("moving");
     this.layout();
   }
 

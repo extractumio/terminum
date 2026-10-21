@@ -203,6 +203,17 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #restored { display: flex; align-items: center; gap: 8px; }
 #restored[hidden] { display: none; }
 #restored > span { flex: 1; }
+/* a split window (splitnote.js): a box over the terminal's top left, clear of the marks' strip and
+   the floating buttons; over the text, never moving it (a banner would re-size the pane's grid) */
+#splitnote { position: absolute; z-index: 6;   /* top and left: splitnote.js, under the header whatever its height */
+  max-width: calc(100% - 120px); display: flex; flex-wrap: wrap;
+  align-items: center; gap: 6px 8px; padding: 6px 6px 6px 12px; border-radius: var(--r-lg); --fill: var(--chrome-2); color: var(--t-fg);
+  font: var(--fs-body)/1.35 var(--ui); box-shadow: var(--shadow-far); }   /* a .box */
+#splitnote[hidden] { display: none; }
+#splitnote > span { flex: 1 1 auto; min-width: 0; }
+#splitnote button { flex: none; height: 28px; padding: 0 10px; border-radius: var(--r-md); background-color: var(--surface-4); color: inherit; }
+#splitnote #splitzoom { background-color: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }   /* its verb, as a dialog's primary */
+@media (hover: hover) { #splitnote button:hover { filter: brightness(1.12); } }
 /* other sessions waiting for an answer: cards at the terminal's top right; on a phone, slim
    lines across it under the header */
 #asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 74px;   /* left of the floating buttons' column and the marks */ z-index: 7; width: min(340px, calc(100% - 24px));
@@ -436,10 +447,11 @@ body.wide #sized { grid-row: 5; }
 body.wide #term { grid-row: 6; }
 body.wide #hotkeys { grid-row: 7; }
 /* Positioned children are placed in the terminal's column, not over the docked Files. */
-body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs { grid-row: 1 / -1; }
+body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs, body.wide #splitnote { grid-row: 1 / -1; }
 body.wide #asks { grid-row: 6 / -1; top: 48px; }   /* under the banners and the find button, never over them */
 /* docked Files is set apart by a band of the chrome (a splitter by background), not a line */
 body.docked #sidehead { display: flex; grid-column: 2; grid-row: 1; min-height: var(--h-bar); border-left: 6px solid var(--chrome); }
+#files.moving { visibility: hidden; }   /* another session's folder on its way (views.js) */
 body.docked #files, body.docked #viewnote { grid-column: 2; grid-row: 2 / -1; width: var(--side-w);
   height: auto; align-self: stretch; border-left: 6px solid var(--chrome); }
 body.wide #filewin { position: absolute; grid-row: 6; z-index: 7; top: 12px; right: 16px; bottom: 16px;

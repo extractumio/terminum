@@ -123,6 +123,8 @@
     <div id="stall" role="status" hidden></div>
     <div id="sized" role="status" hidden></div>
     <div id="asks" aria-live="polite" hidden></div>
+    <!-- A split window (AC-13): a note over the terminal's top, which moves nothing (splitnote.js). -->
+    <div id="splitnote" class="box" role="status" hidden><span></span><button id="splitzoom" type="button">Full width</button><button id="splitother" type="button" title="Show the window's next pane">Other pane</button></div>
     <!-- No whitespace inside: the terminal uses white-space: pre. -->
     <div id="termrow">
     <main id="term" class="view"><p id="note" hidden>Older lines are not loaded. The browser keeps the most recent part of long histories to stay fast.</p><div id="hist"></div><div id="screen"></div></main>

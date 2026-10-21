@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { check, playwright, results, runningIn, within } from "./check.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
+import { liveSplit } from "./e2e_livesplit.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -82,6 +83,7 @@ async function wide(browser, name) {
   const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
   await liveQuick(page, { tmux, work: WORK });
+  await liveSplit(page, { tmux, work: WORK });
   tmux("new-window", "-d", "-n", "byhand");
   await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction(() => document.getElementById("sessions").innerText.includes("byhand"), null, { timeout: 3000 }));
   await within("AC-70 Files is docked and shows the pane's folder", async () => {
