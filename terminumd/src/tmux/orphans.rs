@@ -46,14 +46,18 @@ fn answer_option(server: &Server) -> String {
 }
 
 async fn sweep(server: &Server) {
-    // the server's own pid, never a candidate: without it, nothing is swept
-    let Some(pid) = server.run("display-message -p '#{pid}'").await.ok().and_then(|l| l.first()?.trim().parse::<u32>().ok()) else { return };
+    // the server's own pid, never a candidate: without it, nothing is swept; its socket names
+    // its clients where tmux rewrote their command line
+    let Some((pid, socket)) = server.run("display-message -p '#{pid} #{socket_path}'").await.ok().and_then(|l| {
+        let (p, s) = l.first()?.trim().split_once(' ')?;
+        Some((p.parse::<u32>().ok()?, s.to_string()))
+    }) else { return };
     let lines = server.run("list-clients -F '#{client_pid} #{client_control_mode} #{client_flags}'").await.unwrap_or_default();
     let opt = answer_option(server);
     let _ = server.run(format!("set-option -gu {opt}")).await;
     // in the background (a slow `ps` never holds up the host's commands), quiet: a control
     // client gets run-shell's output outside its answer
-    if let Err(e) = server.run(format!("run-shell -b {}", quote(&script(pid, &listed(&lines), &opt)))).await {
+    if let Err(e) = server.run(format!("run-shell -b {}", quote(&script(pid, &socket, &listed(&lines), &opt)))).await {
         tracing::warn!(event = "clients.orphans", server = %server.id(), error = e);
         return;
     }
@@ -79,37 +83,50 @@ const SHELLS: &str = "sh|bash|dash|ash|zsh|ksh|mksh|fish|-*|*/sh|*/bash|*/dash|*
 const SHAPES: &str = "*\" -u -C new-session -A -f ignore-size -s terminum \"|*\" -u -C attach-session -E -f ignore-size -t \"*";
 
 /// The host's `/bin/sh` script: of the user's processes but the tmux server `server`, those that
-/// are terminum's control clients (`listed` by tmux, or named `tmux: client` with its command
-/// line) and orphaned get SIGTERM; their pids are set in the server's option `opt` after
-/// "done". Every `ps` that fails skips its process. No `#` (run-shell expands formats) and no
-/// `'` (it is quoted for the host's shell inside).
-fn script(server: u32, listed: &[u32], opt: &str) -> String {
+/// are terminum's control clients and orphaned get SIGTERM; their pids are set in the server's
+/// option `opt` after "done". A control client is one `listed` by tmux (a tmux process still: a
+/// pid not reused), one Linux names `tmux: client` with terminum's command line (also one stuck
+/// before tmux listed it), or where tmux rewrote its command line (FreeBSD, OpenBSD: `tmux:
+/// client (socket)`) one of this server's `socket` with no terminal: an interactive client has
+/// one (a socket path of other characters than [A-Za-z0-9/._-] leaves this rule out). Processes are
+/// read with `ps`, else (busybox: no -U, no -p) from /proc; every read that fails skips its
+/// process. No `#` (run-shell expands formats) and no `'` (it is quoted for the host's shell).
+fn script(server: u32, socket: &str, listed: &[u32], opt: &str) -> String {
     let listed = match listed {
         [] => "\" - \"".to_string(),                                   // a pattern no pid matches
         l => l.iter().map(|p| format!("\" {p} \"")).collect::<Vec<_>>().join("|"),
     };
+    let plain = !socket.is_empty() && socket.chars().all(|c| c.is_ascii_alphanumeric() || "/._-".contains(c));
+    let rewritten = if plain { format!("\" tmux: client ({socket}) \"") } else { "\" - \"".to_string() };
     let body = [
-        "exec >/dev/null 2>&1",
-        "set -f",
-        "ps -ww -U $(id -u) -o pid= -o ppid= -o args= | { e=",
-        "while read -r p q a",
-        "do case \"$p\" in \"\"|*[!0-9]*) continue ;; esac",
-        // listed by tmux: a tmux process still (a pid not reused); else Linux's client name and terminum's command
-        &format!("case \" $p \" in \" {server} \") continue ;; {listed}) case \"$(ps -o comm= -p $p)\" in *tmux*) ;; *) continue ;; esac ;; *) case \" $a \" in {SHAPES}) ;; *) continue ;; esac"),
-        "[ \"$(ps -o comm= -p $p)\" = \"tmux: client\" ] || continue ;; esac",
-        "case \"$q\" in \"\"|*[!0-9]*) continue ;; esac",
+        r#"exec >/dev/null 2>&1"#,
+        r#"set -f"#,
+        r#"u=$(id -u)"#,
+        // a process's name, parent and terminal, and the user's processes: by ps, else by /proc
+        // (only what a ps that worked says: busybox's prints its usage to stdout)
+        r#"pc() { x=$(ps -o comm= -p $1) && echo "$x" || cat /proc/$1/comm; }"#,
+        r#"pp() { x=$(ps -o ppid= -p $1) && echo "$x" || sed -n "s/^PPid:[[:space:]]*//p" /proc/$1/status; }"#,
+        // no terminal by /proc: its stat's tty_nr 0 (fields after the name's ")"); unknown: one
+        r#"pt() { x=$(ps -o tty= -p $1) && echo "$x" || { n=$(sed "s/.*) //" /proc/$1/stat | cut -d" " -f5); [ "$n" = 0 ] && echo "?" || echo tty; }; }"#,
+        r#"pl() { x=$(ps -ww -U $u -o pid= -o ppid= -o args=) && echo "$x" || for i in $(ls /proc); do case "$i" in *[!0-9]*) continue ;; esac; [ "$(sed -n "s/^Uid:[[:space:]]*\([0-9]*\).*/\1/p" /proc/$i/status)" = "$u" ] && echo "$i $(pp $i) $(tr "\0" " " < /proc/$i/cmdline)"; done; }"#,
+        r#"pl | { e="""#,
+        r#"while read -r p q a"#,
+        r#"do case "$p" in ""|*[!0-9]*) continue ;; esac"#,
+        &format!(r#"case " $p " in " {server} ") continue ;; {listed}) case "$(pc $p)" in *tmux*) ;; *) continue ;; esac ;; *) case " $a " in {SHAPES}) [ "$(pc $p)" = "tmux: client" ] || continue ;; {rewritten}) case "$(echo $(pt $p))" in ""|"?"|"??"|"-") ;; *) continue ;; esac ;; *) continue ;; esac ;; esac"#),
+        r#"case "$q" in ""|*[!0-9]*) q=$(echo $(pp $p)) ;; esac"#,
+        r#"case "$q" in ""|*[!0-9]*) continue ;; esac"#,
         // a parent other than init: orphaned only when it is a shell whose parent is init
-        "if [ $q -ne 1 ]",
-        "then case \"$(ps -o comm= -p $q)\" in {SHELLS}) ;; *) continue ;; esac",
-        "[ $(ps -o ppid= -p $q) -eq 1 ] || continue",
-        "fi",
-        "kill -TERM $p && e=\"$e $p\"",
-        "done",
-        &format!("tmux set-option -g {opt} \"done$e\"",),
-        "}",
-        "true",
+        r#"if [ $q -ne 1 ]"#,
+        &format!(r#"then case "$(pc $q)" in {SHELLS}) ;; *) continue ;; esac"#),
+        r#"[ $(pp $q) -eq 1 ] || continue"#,
+        r#"fi"#,
+        r#"kill -TERM $p && e="$e $p""#,
+        r#"done"#,
+        &format!(r#"tmux set-option -g {opt} "done$e""#),
+        r#"}"#,
+        r#"true"#,
     ];
-    format!("/bin/sh -c '{}'", body.join("; ").replace("{ e=;", "{ e=\"\";").replace("{SHELLS}", SHELLS))
+    format!("/bin/sh -c '{}'", body.join("; "))
 }
 
 #[cfg(test)]
@@ -131,31 +148,55 @@ mod tests {
     /// AC-81: the script is plain for run-shell (no format, no quote of its own) and names only pids.
     #[test]
     fn the_script_names_only_pids_and_passes_run_shell() {
-        for s in [script(99, &[12, 345], "@tm-orphans-7"), script(99, &[], "@tm-orphans-7")] {
+        for s in [script(99, "/tmp/tmux-1000/default", &[12, 345], "@tm-orphans-7"), script(99, "/tmp/tmux-1000/default", &[], "@tm-orphans-7")] {
             assert!(s.starts_with("/bin/sh -c '") && s.ends_with('\''));
             assert_eq!(s.matches('\'').count(), 2);
             assert!(!s.contains('#'));
             // the server is never a candidate; by `ps` only a process tmux named its client
             assert!(s.contains("case \" $p \" in \" 99 \") continue ;; "));
-            assert!(s.contains("[ \"$(ps -o comm= -p $p)\" = \"tmux: client\" ] || continue ;; esac"));
+            assert!(s.contains("[ \"$(pc $p)\" = \"tmux: client\" ] || continue ;; "));
             assert!(s.contains("kill -TERM $p && e=\"$e $p\""));
             assert!(s.contains("tmux set-option -g @tm-orphans-7 \"done$e\""));
             // a ppid that is not one number (a ps that failed or ignored -p) skips its process
             assert!(s.contains("case \"$q\" in \"\"|*[!0-9]*) continue ;; esac; if [ $q -ne 1 ]"));
+            // busybox: processes, names and parents from /proc when ps cannot say
+            // (by `ls`: the script globs nothing, set -f)
+            assert!(s.contains("|| for i in $(ls /proc); do") && s.contains("&& echo \"$x\" || cat /proc/$1/comm"));
         }
-        assert!(script(99, &[12, 345], "@o").contains("continue ;; \" 12 \"|\" 345 \") case "));
-        assert!(script(99, &[], "@o").contains("continue ;; \" - \") case "));
+        assert!(script(99, "/tmp/tmux-1000/default", &[12, 345], "@o").contains("continue ;; \" 12 \"|\" 345 \") case "));
+        assert!(script(99, "/tmp/tmux-1000/default", &[], "@o").contains("continue ;; \" - \") case "));
     }
 
-    /// AC-81: the script itself, under /bin/sh, against a stand-in `ps` (nothing is signalled:
-    /// `kill` and `tmux` print). Ended: an orphan of init's, one under a shell of init's, one
-    /// tmux lists whose command line tmux rewrote. Left: the server, a client under sshd, under
-    /// ssh, under a shell that lives, a listed pid now another program, a line a backslash ends,
-    /// a pid that is not a number.
+    /// The script itself under /bin/sh, `ps` a stand-in that answers from `list`, `comm`, `ppid`
+    /// and `tty` (or fails: `fails`); nothing is signalled (`kill` and `tmux` print). Its output.
+    fn run(server: u32, listed: &[u32], list: &[String], comm: &str, ppid: &str, tty: &str, fails: bool) -> String {
+        let dir = std::env::temp_dir().join(format!("tm-orphans-{}-{}", std::process::id(), fails));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("list"), list.join("\n") + "\n").unwrap();
+        for (f, t) in [("comm", comm), ("ppid", ppid), ("tty", tty)] {
+            std::fs::write(dir.join(f), t).unwrap();
+        }
+        let ps = dir.join("ps");
+        let answer = "d=$(dirname \"$0\"); for n; do :; done\ncase \"$*\" in *-U*) cat \"$d/list\" ;; *comm=*) grep \"^$n \" \"$d/comm\" | cut -d\" \" -f2- ;; *ppid=*) grep \"^$n \" \"$d/ppid\" | cut -d\" \" -f2- ;; *tty=*) grep \"^$n \" \"$d/tty\" | cut -d\" \" -f2- ;; esac\n";
+        std::fs::write(&ps, format!("#!/bin/sh\n{}", if fails { "echo usage >&2; exit 1\n" } else { answer })).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&ps, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let s = script(server, "/tmp/tmux-1001/default", listed, "@o");
+        let inner = s.strip_prefix("/bin/sh -c '").and_then(|x| x.strip_suffix('\'')).unwrap()
+            .replace("exec >/dev/null 2>&1; ", "exec 2>/dev/null; ").replace("kill -TERM $p", "echo KILL $p").replace("tmux set-option -g @o", "echo ANSWER");
+        let out = std::process::Command::new("/bin/sh").arg("-c").arg(&inner)
+            .env("PATH", format!("{}:/usr/bin:/bin", dir.display())).output().unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// AC-81: ended: an orphan of init's, one under a shell of init's, one tmux lists whose command
+    /// line tmux rewrote, one of a BSD whose command line tmux rewrote with no terminal. Left: the
+    /// server, a client under sshd, under ssh, under a shell that lives, a listed pid now another
+    /// program, a line a backslash ends, a pid that is not a number, a BSD client with a terminal,
+    /// one of another server's socket.
     #[test]
     fn the_script_ends_only_orphaned_clients() {
-        let dir = std::env::temp_dir().join(format!("tm-orphans-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
         let shape = "tmux -u -C new-session -A -f ignore-size -s terminum";
         let list = [
             format!("   10     1 {shape}"),
@@ -169,24 +210,24 @@ mod tests {
             format!("  abc     1 {shape}"),
             format!("   18    70 {shape}"),
             format!("   20    80 {shape}"),
+            "   21     1 tmux: client (/tmp/tmux-1001/default)".into(),
+            "   22     1 tmux: client (/tmp/tmux-1001/default)".into(),
+            "   23     1 tmux: client (/tmp/tmux-1001/other)".into(),
         ];
-        std::fs::write(dir.join("list"), list.join("\n") + "\n").unwrap();
-        std::fs::write(dir.join("comm"), "10 tmux: server\n11 tmux: client\n12 tmux: client\n13 tmux: client\n14 tmux: client\n15 vim\n16 tmux\n17 python3\n18 tmux: client\n20 tmux: client\n50 sh\n60 sshd\n70 ssh\n80 bash\n").unwrap();
-        std::fs::write(dir.join("ppid"), "50 1\n60 1\n70 1\n80 2\n").unwrap();
-        let ps = dir.join("ps");
-        std::fs::write(&ps, "#!/bin/sh\nd=$(dirname \"$0\"); for n; do :; done\ncase \"$*\" in *-U*) cat \"$d/list\" ;; *comm=*) grep \"^$n \" \"$d/comm\" | cut -d\" \" -f2- ;; *ppid=*) grep \"^$n \" \"$d/ppid\" | cut -d\" \" -f2- ;; esac\n").unwrap();
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&ps, std::fs::Permissions::from_mode(0o755)).unwrap();
-        let s = script(10, &[16, 17], "@o");
-        let inner = s.strip_prefix("/bin/sh -c '").and_then(|x| x.strip_suffix('\'')).unwrap()
-            .replace("exec >/dev/null 2>&1; ", "").replace("kill -TERM $p", "echo KILL $p").replace("tmux set-option -g @o", "echo ANSWER");
-        let out = std::process::Command::new("/bin/sh").arg("-c").arg(&inner)
-            .env("PATH", format!("{}:/usr/bin:/bin", dir.display())).output().unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
-        assert!(out.stderr.is_empty(), "{}", String::from_utf8_lossy(&out.stderr));
-        let out = String::from_utf8_lossy(&out.stdout);
+        let comm = "10 tmux: server\n11 tmux: client\n12 tmux: client\n13 tmux: client\n14 tmux: client\n15 vim\n16 tmux\n17 python3\n18 tmux: client\n20 tmux: client\n21 tmux\n22 tmux\n23 tmux\n50 sh\n60 sshd\n70 ssh\n80 bash\n";
+        let out = run(10, &[16, 17], &list, comm, "50 1\n60 1\n70 1\n80 2\n", "21 -\n22 ttys001\n23 -\n", false);
         let killed: Vec<&str> = out.lines().filter_map(|l| l.strip_prefix("KILL ")).collect();
-        assert_eq!(killed, ["11", "12", "16"], "{out}");
-        assert!(out.contains("ANSWER done 11 12 16"), "{out}");
+        assert_eq!(killed, ["11", "12", "16", "21"], "{out}");
+        assert!(out.contains("ANSWER done 11 12 16 21"), "{out}");
+    }
+
+    /// AC-81: a ps that cannot say (busybox: no -U, no -p) gives way to /proc; where there is none
+    /// (this Mac) nothing is ended, and the script still answers.
+    #[cfg(not(target_os = "linux"))]
+    #[test]
+    fn a_ps_that_cannot_say_ends_nothing_without_proc() {
+        let list = vec![format!("   11     1 tmux -u -C new-session -A -f ignore-size -s terminum")];
+        let out = run(10, &[], &list, "11 tmux: client\n", "", "", true);
+        assert!(!out.contains("KILL") && out.contains("ANSWER done"), "{out}");
     }
 }

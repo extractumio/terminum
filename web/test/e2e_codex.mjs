@@ -2,7 +2,8 @@
 // Codex in a pane (AC-40) against a fake terminumd (fake.mjs), at a wide and a phone size: its
 // own full screen (the alternate screen) stays in Lines mode, its input (the "›" row on a
 // background of its own) is a box drawn between two lines as Claude Code's, and on a phone its
-// footer waits behind ⓘ, also while it is typed into or works.
+// footer waits behind ⓘ, also while it is typed into or works. Backspace over a selection in its
+// input deletes exactly it (AC-40).
 
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, line, openPage, pause, SIZES } from "./fake.mjs";
@@ -53,6 +54,26 @@ export async function webCodex(browser, name) {
       await pause(page, 200);
       const note = await page.evaluate(() => !document.getElementById("toast").hidden && document.getElementById("toast").textContent);
       check("Codex: scrolling up on its alternate screen (no scrollback) says why and how", typeof note === "string" && note.includes("--no-alt-screen"), String(note));
+      // a selection in its input (an emoji in it) and Backspace: ← to its end, a backspace a character
+      const typed = "fix the 😀 parser bug", G = (t) => [...new Intl.Segmenter().segment(t)].map((x) => x.segment);
+      frame(codex(typed));
+      await shownText("parser");
+      const from = f.sent.length;
+      const selected = await page.evaluate(() => {
+        const walk = document.createTreeWalker(document.getElementById("screen"), NodeFilter.SHOW_TEXT);
+        let t = walk.nextNode();
+        while (t && !t.data.includes("😀")) t = walk.nextNode();
+        if (!t || !t.data.includes("bug")) return false;
+        const r = document.createRange(); r.setStart(t, t.data.indexOf("😀")); r.setEnd(t, t.data.indexOf("bug"));
+        document.activeElement?.blur(); getSelection().removeAllRanges(); getSelection().addRange(r);
+        return true;
+      });
+      await page.keyboard.press("Backspace");
+      await pause(page, 200);
+      const keys = f.sent.slice(from).filter((m) => m.t === "in" && m.data).map((m) => m.data);
+      const g = G(typed), a = G(typed.slice(0, typed.indexOf("😀"))).length, b = G(typed.slice(0, typed.indexOf("bug"))).length;
+      check("Codex: Backspace over a selection in its input (an emoji in it) deletes exactly it",
+        selected && keys.length === 1 && keys[0] === "\x1b[D".repeat(g.length - b) + "\x7f".repeat(b - a), JSON.stringify({ selected, keys }));
     }
     check("Codex: no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();

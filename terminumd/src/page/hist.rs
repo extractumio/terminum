@@ -27,24 +27,18 @@ const UNFOLD_MAX: i64 = 20_000;
 /// history's end when it runs it, and the pane may have printed since the frame that numbered
 /// them (a burst of output over ssh): so the capture reaches `margin` rows above the range and
 /// comes with the history's size read before and after it, and the rows asked for are taken
-/// from where those that scrolled meanwhile moved them. A width that changed (tmux re-wrapped),
-/// a history that shrank or may have been trimmed (at its `limit` tmux drops the oldest tenth:
-/// the count no longer says how far rows moved) is an error, never rows of another place shown
-/// as these (AC-02).
+/// from where those that scrolled meanwhile moved them. Where the count cannot say how far they
+/// moved (a history that shrank, or at its `limit`, where tmux drops the oldest tenth at once),
+/// the last frame's screen rows (`screen`, hashes, the first at `top`) are found in a capture
+/// down to the screen and number the rows. A width that changed (tmux re-wrapped) or rows found
+/// nowhere is an error, never rows of another place shown as these (AC-02).
 #[allow(clippy::too_many_arguments)]
-pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit: i64, from: i64, to: i64, width: usize) -> Result<Vec<Value>, String> {
+pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Value>, String> {
     if from >= to {
         return Ok(Vec::new());
     }
     let probe = format!("display -p -t {pane} '#{{history_size}} #{{pane_width}}'");
-    let read = |a: Option<crate::tmux::control::Answer>| -> Result<(i64, usize), String> {
-        let line = a.ok_or("no answer")??.into_iter().next().unwrap_or_default();
-        let mut f = line.split(' ').map(|x| x.trim().parse::<i64>().ok());
-        match (f.next().flatten(), f.next().flatten()) {
-            (Some(h), Some(w)) => Ok((h, w.max(0) as usize)),
-            _ => Err(format!("tmux said {line:?} of the pane's history")),
-        }
-    };
+    let read = sizes;
     let want = (to - from) as usize;
     let mut margin = MARGIN;
     for _ in 0..3 {
@@ -57,7 +51,7 @@ pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit
         }
         let moved = before.0 - history;                    // rows that scrolled off since the frame
         if moved < 0 || (moved > 0 && before.0 >= limit - limit / 10) {
-            return Err("the pane's history was cleared or trimmed while its lines were read".into());
+            return anchored(client, &probe, pane, top, screen, from, to, width).await;
         }
         if before.0 != after.0 || moved > margin {
             margin = 2 * moved.max(after.0 - history) + MARGIN;   // it went on meanwhile: once more, reaching further
@@ -78,9 +72,78 @@ pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit
     Err("the pane's history kept moving while its lines were read".into())
 }
 
+/// The pane's history_size and width, as the probe beside a capture said them.
+fn sizes(a: Option<crate::tmux::control::Answer>) -> Result<(i64, usize), String> {
+    let line = a.ok_or("no answer")??.into_iter().next().unwrap_or_default();
+    let mut f = line.split(' ').map(|x| x.trim().parse::<i64>().ok());
+    match (f.next().flatten(), f.next().flatten()) {
+        (Some(h), Some(w)) => Ok((h, w.max(0) as usize)),
+        _ => Err(format!("tmux said {line:?} of the pane's history")),
+    }
+}
+
 /// Rows a capture reaches above its range for those that scroll off meanwhile (one round trip
 /// of output: an agent's result over ssh); a capture that finds more reaches further once more.
 const MARGIN: i64 = 64;
+/// Rows a capture numbered by the screen's rows reaches above its range (the rows it may find
+/// them moved by).
+const ANCHOR_MARGIN: i64 = 512;
+/// The last frame's top screen rows that must be found as they were (at least two not blank).
+const ANCHOR_ROWS: usize = 6;
+
+/// `capture` where tmux's count cannot say how far rows moved: one capture from above the range
+/// down to the screen's end; the one move at which the last frame's top screen rows are found as
+/// they were numbers the rows. Found at two moves (output that repeats itself) or nowhere, it
+/// is an error; found below the capture's reach while tmux still has the rows, it reaches
+/// further once more.
+#[allow(clippy::too_many_arguments)]
+async fn anchored(client: &Control, probe: &str, pane: &str, top: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Value>, String> {
+    let lost = || Err::<Vec<Value>, String>("the pane's history was trimmed while its lines were read, and its rows were not found".into());
+    let n = screen.len().min(ANCHOR_ROWS);
+    if n == 0 {
+        return lost();
+    }
+    let mut margin = ANCHOR_MARGIN;
+    for _ in 0..2 {
+        let s = from - top - margin;
+        let mut answers = client.run_all(vec![probe.to_string(), format!("capture-pane -p -e -J -t {pane} -S {s} -E -"), probe.to_string()]).await.into_iter();
+        let (before, lines, after) = (sizes(answers.next())?, answers.next().ok_or("no answer")??, sizes(answers.next())?);
+        if before.1 != width || after.1 != width {
+            return Err("the pane changed width while its lines were read".into());
+        }
+        if before != after {
+            return lost();
+        }
+        let rows = rows::capture_rows(&lines.join("\n"), width);
+        let texts: Vec<String> = rows.iter().map(rows::row_text).collect();
+        let hashes: Vec<u64> = texts.iter().map(|t| crate::screen::history::hash(t)).collect();
+        // the screen's first row now, in the capture (it starts s rows back from tmux's end, never past its oldest)
+        let now_top = (-s).min(before.0).max(0) as usize;
+        let at = |k: usize| {
+            let j = now_top - k;
+            j + n <= hashes.len() && hashes[j..j + n] == screen[..n] && texts[j..j + n].iter().filter(|t| !t.trim().is_empty()).count() >= 2.min(n)
+        };
+        let found: Vec<usize> = (0..=now_top).filter(|&k| at(k)).take(2).collect();
+        let k = match found[..] {
+            [k] => k,
+            _ => return lost(),                           // nowhere, or at two moves: not which
+        };
+        let first = top - (now_top - k) as i64;          // the capture's first row, numbered by the screen's rows
+        if first > from && (-s) < before.0 {
+            margin += first - from + MARGIN;              // rows tmux still has above the capture's reach
+            continue;
+        }
+        let want = (to - from) as usize;
+        let lead = ((first - from).max(0) as usize).min(want);
+        let mut out: Vec<Value> = vec![json!({"r": [], "e": true}); lead];
+        out.extend(rows.iter().skip((from - first).max(0) as usize).take(want - lead).map(|r| rows::encode(r, None)));
+        while out.len() < want {
+            out.push(json!({"r": [], "e": true}));
+        }
+        return Ok(out);
+    }
+    lost()
+}
 
 #[cfg(test)]
 #[path = "hist_tests.rs"]
@@ -99,12 +162,12 @@ fn keep(app: &Shared) -> i64 {
 /// The page's history anew: the last rows before the screen, then (the caller) a full frame.
 pub async fn reset(app: &Shared, page: &Page, client: &Control, ctl: &Ctl, key: &str, pane: &str, f: &Fields) {
     let began = std::time::Instant::now();
-    let (top, history, oldest, truncated) = {
+    let (top, history, screen, oldest, truncated) = {
         let n = ctl.numbering.lock();
-        (n.top().unwrap_or(0), n.history(), n.oldest(keep(app)), n.truncated(keep(app)))
+        (n.top().unwrap_or(0), n.history(), n.screen().to_vec(), n.oldest(keep(app)), n.truncated(keep(app)))
     };
     let first = oldest.max(top - FIRST_HISTORY);
-    let lines = match capture(client, pane, top, history, f.limit, first, top, f.width).await {
+    let lines = match capture(client, pane, top, history, f.limit, &screen, first, top, f.width).await {
         Ok(l) => l,
         Err(e) => {
             tracing::warn!(event = "tmux.error", cmd = "capture-pane", msg = e);
@@ -133,13 +196,13 @@ pub async fn reset(app: &Shared, page: &Page, client: &Control, ctl: &Ctl, key: 
 /// Rows `from..to` scrolled off the screen: appended to the page's history.
 #[allow(clippy::too_many_arguments)]
 pub async fn append(app: &Shared, page: &Page, client: &Control, ctl: &Ctl, key: &str, pane: &str, f: &Fields, from: i64, to: i64) {
-    let (top, history, oldest, truncated) = {
+    let (top, history, screen, oldest, truncated) = {
         let n = ctl.numbering.lock();
-        (n.top().unwrap_or(0), n.history(), n.oldest(keep(app)), n.truncated(keep(app)))
+        (n.top().unwrap_or(0), n.history(), n.screen().to_vec(), n.oldest(keep(app)), n.truncated(keep(app)))
     };
     let from = from.max(oldest);
     let began = std::time::Instant::now();
-    let lines = match capture(client, pane, top, history, f.limit, from, to, f.width).await {
+    let lines = match capture(client, pane, top, history, f.limit, &screen, from, to, f.width).await {
         Ok(l) => l,
         Err(e) => {
             tracing::warn!(event = "tmux.error", cmd = "capture-pane", msg = e);
@@ -176,14 +239,14 @@ pub fn scan_folds(page: &Page, ctl: &Ctl, key: &str) {
 pub async fn older(app: &Shared, page: &Arc<Page>, before: i64, to: Option<i64>) {
     let Some((key, server, pane, ctl)) = shown(page) else { return };
     let Some(client) = server.bulk() else { return };
-    let (top, history, oldest, truncated, (width, limit)) = {
+    let (top, history, screen, oldest, truncated, (width, limit)) = {
         let n = ctl.numbering.lock();
         let Some(top) = n.top() else { return };
-        (top, n.history(), n.oldest(keep(app)), n.truncated(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit)))
+        (top, n.history(), n.screen().to_vec(), n.oldest(keep(app)), n.truncated(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit)))
     };
     let before = before.clamp(oldest, top);
     let first = to.map_or(before - PAGE, |t| t.min(before - PAGE)).max(oldest);
-    match capture(&client, &pane, top, history, limit, first, before, width).await {
+    match capture(&client, &pane, top, history, limit, &screen, first, before, width).await {
         Ok(lines) => {
             let (lines, folds) = match ctl.folds.lock().as_mut() {
                 Some(h) => h.take(first, lines, true),
@@ -204,9 +267,9 @@ pub async fn older(app: &Shared, page: &Arc<Page>, before: i64, to: Option<i64>)
 pub async fn unfold(app: &Shared, page: &Arc<Page>, a: i64, b: i64) {
     let Some((key, server, pane, ctl)) = shown(page) else { return };
     let Some(client) = server.bulk() else { return };
-    let (top, history, oldest, (width, limit)) = {
+    let (top, history, screen, oldest, (width, limit)) = {
         let n = ctl.numbering.lock();
-        (n.top().unwrap_or(0), n.history(), n.oldest(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit)))
+        (n.top().unwrap_or(0), n.history(), n.screen().to_vec(), n.oldest(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit)))
     };
     let a = a.max(oldest);
     let told = ctl.folds.lock().as_ref().is_some_and(|h| h.told(a, b));
@@ -223,7 +286,7 @@ pub async fn unfold(app: &Shared, page: &Arc<Page>, a: i64, b: i64) {
         page.send_json(&json!({"t": "lines", "sid": key, "first": a, "lines": [], "error": why}));
         return;
     }
-    match capture(&client, &pane, top, history, limit, a, b + 1, width).await {
+    match capture(&client, &pane, top, history, limit, &screen, a, b + 1, width).await {
         Ok(lines) => {
             page.send_json(&json!({"t": "lines", "sid": key, "first": a, "lines": lines}));
         }

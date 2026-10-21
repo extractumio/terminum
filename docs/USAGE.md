@@ -18,9 +18,9 @@ configuration. The overview is in the [README](../README.md).
   highlighting and rendered Markdown (its ```mermaid fences drawn as diagrams, "Source" shows
   their text), create, rename, Trash, live refresh; on a wide window it is docked beside the
   terminal, open or closed for each session, on a phone it is a view in its place.
-- **Sizing**: the pane follows the screen it is read on; by default the page that typed last
-  sizes it (`settings.json` `"size"`: `latest`, `largest` or `manual`); "Fit to this screen"
-  and "Restore size" in the menu.
+- **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
+  types there sizes it to its view (45×14 to 240×70 cells); a window of several panes keeps its
+  layout and is drawn scaled. Switching sessions shows the new one at once at your text size.
 - **Sessions outlive everything**: terminals live in tmux; terminumd runs as a launchd agent
   and comes back after a crash; after a reboot, or when a tmux server was killed, the sessions,
   windows, splits and folders are restored: terminum's own, each host's and the sessions of your

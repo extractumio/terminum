@@ -172,7 +172,8 @@ def main():
         third = ws.until(lambda m: m["t"] in ("created", "error"), 5)
         check("AC-92 a project's session cloned: the window joins the project after it", joined and third and joined["items"][0]["members"] == [created["id"], third["id"]], joined)
         tmux("kill-pane", "-t", third["id"].rsplit(":", 1)[-1])
-        left = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["members"] == [created["id"]], 5)
+        # a member added a moment ago is kept 5 s (its window may not be listed yet), then the list is read again
+        left = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["members"] == [created["id"]], 8)
         check("AC-92 a pane closed leaves its project", left is not None)
         ws.send({"t": "project", "action": "rename", "project": pj.get("id"), "name": "API"})
         renamed = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["name"] == "API", 5)

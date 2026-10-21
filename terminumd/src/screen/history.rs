@@ -40,6 +40,12 @@ impl Numbering {
         self.history
     }
 
+    /// The last frame's screen rows (`hash` of their text), the first at `top`: where rows
+    /// moved to is found by them when tmux's count cannot say (at its limit).
+    pub fn screen(&self) -> &[u64] {
+        &self.rows
+    }
+
     /// The oldest row a page may load: what tmux still has, and at most `keep` rows back.
     pub fn oldest(&self, keep: i64) -> i64 {
         let top = self.top.unwrap_or(0);
@@ -156,7 +162,8 @@ fn shift_is(old: &[u64], new: &[u64], text: &[String], k: usize) -> bool {
     k < n && (0..n - k).all(|i| old[k + i] == new[i]) && (0..n - k).filter(|&i| !text[i].trim().is_empty()).count() >= MIN_MATCH.min(n - k)
 }
 
-fn hash(s: &str) -> u64 {
+/// A row's plain text as the numbering knows it (its end's spaces aside).
+pub fn hash(s: &str) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     s.trim_end().hash(&mut h);

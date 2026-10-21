@@ -19,22 +19,25 @@ const COLS = 60, W = COLS - 4;                         // the text's room in a r
 const RULE = "─".repeat(COLS);
 const line = (text) => ({ r: [[text, null, null, 0]], e: true });
 
+/** A text's characters as Claude Code steps over them: graphemes (an emoji is one, a wide character one). */
+const G = (s) => [...new Intl.Segmenter().segment(s)].map((x) => x.segment);
+
 /** Claude Code's rows of `text`: [{start, text}] (start: the offset of the row's first character). */
 function rowsOf(text) {
   const rows = [];
   let at = 0;
   for (const part of text.split("\n")) {
-    let rest = part, start = at;
+    let rest = G(part), start = at;
     while (rest.length > W) {
       let cut = rest.lastIndexOf(" ", W);
       const glue = cut <= 0;
       if (glue) cut = W;
-      rows.push({ start, text: rest.slice(0, cut) });
+      rows.push({ start, text: rest.slice(0, cut).join("") });
       start += cut + (glue ? 0 : 1);
       rest = rest.slice(cut + (glue ? 0 : 1));
     }
-    rows.push({ start, text: rest });
-    at += part.length + 1;
+    rows.push({ start, text: rest.join("") });
+    at += G(part).length + 1;
   }
   return rows;
 }
@@ -46,12 +49,12 @@ function screen(text, at, parked = false) {
   let cr = rows.length - 1;
   while (cr > 0 && rows[cr].start > at) cr--;
   const box = rows.map((r, i) => {
-    const t = (i ? "  " : "❯ ") + r.text;
+    const t = (i ? "  " : "❯ ") + r.text, g = G(t);
     if (i !== cr) return line(t);
     const x = 2 + at - r.start;
     if (parked) return line(t);
-    return x < t.length
-      ? { r: [[t.slice(0, x), null, null, 0], [t[x], null, null, 256], ...(t.slice(x + 1) ? [[t.slice(x + 1), null, null, 0]] : [])], e: true }
+    return x < g.length
+      ? { r: [[g.slice(0, x).join(""), null, null, 0], [g[x], null, null, 256], ...(x + 1 < g.length ? [[g.slice(x + 1).join(""), null, null, 0]] : [])], e: true }
       : { r: [[t, null, null, 0], [" ", null, null, 256]], e: true };
   });
   return [line("⏺ Done."), line(""), line(RULE), ...box, line(RULE), line("  ~/app main"), line("  ⏵⏵ accept edits on"),
@@ -74,9 +77,9 @@ export async function webBoxNav(browser, name = "chromium") {
     cc.parked = false;                             // a key puts the cursor back on the caret (measured)
     for (const k of msg.data.match(/\x1b\[[A-D]|[^\x1b]+/g) ?? []) {
       if (k === "\x1b[D") cc.at = Math.max(0, cc.at - 1);
-      else if (k === "\x1b[C") cc.at = Math.min(cc.text.length, cc.at + 1);
+      else if (k === "\x1b[C") cc.at = Math.min(G(cc.text).length, cc.at + 1);
       else if (k === "\x1b[A" || k === "\x1b[B") cc.history++;
-      else for (const c of k) if (c === "\x7f" && cc.at > 0) { cc.text = cc.text.slice(0, cc.at - 1) + cc.text.slice(cc.at); cc.at--; }
+      else for (const c of k) if (c === "\x7f" && cc.at > 0) { const g = G(cc.text); g.splice(cc.at - 1, 1); cc.text = g.join(""); cc.at--; }
     }
     setTimeout(() => (cc.draw ?? draw)(), cc.delay);                    // the echo comes a moment later, as from iTerm2
   };
@@ -318,6 +321,15 @@ export async function webBoxNav(browser, name = "chromium") {
   check(`${at} Backspace over a selection across the page's lines deletes exactly it, the cursor where it began, the keys back in the input`,
     selected && cc.text === want && cc.at === TEXT.indexOf("wrapping") && cutKeys.length === 1 && cutAfter.sel === "" && cutAfter.kbd === "kbd",
     JSON.stringify({ selected, text: cc.text.slice(0, 40), at: cc.at, keys: cutKeys.map((k) => k.length), cutAfter }));
+  // an emoji and wide characters in the selection: each one character, as Claude Code steps over them
+  const WIDE = "fix 😀 the 漢字 bug now";
+  await page.waitForTimeout(1600);                     // the page takes its last move as on its way 1.5 s: here the fake moved the cursor itself
+  await set(WIDE, G(WIDE).length);
+  const wideSel = await select("😀", "bug"), wideFrom = sent.length;
+  await press("Backspace");
+  const wideKeys = sent.slice(wideFrom).filter((m) => m.t === "in" && m.data).map((m) => [(m.data.match(/\x1b\[[CD]/g) ?? []).join("").replace(/\x1b\[/g, ""), (m.data.match(/\x7f/g) ?? []).length]);
+  check(`${at} a selection holding an emoji and wide characters deletes exactly it`, wideSel && cc.text === "fix bug now" && cc.at === 4,
+    JSON.stringify({ wideSel, text: cc.text, at: cc.at, wideKeys }));
   // a selection reaching out of the input (the output above it) deletes nothing
   await set(TEXT, TEXT.length);
   const outFrom = sent.length;

@@ -106,3 +106,20 @@ fn a_restore_again_keeps_the_running_sessions() {
     ps.restarted("tmux:local:terminum:", &[("%9".into(), "%12".into()), ("%1".into(), "%1".into()), ("%2".into(), "%2".into())]);
     assert_eq!(ps.of(A).unwrap().members, [A, B]);
 }
+
+/// AC-92: a member kept for being fresh while the list no longer shows it asks for one list
+/// read when it stops being fresh, so its closed pane leaves the project without another change.
+#[test]
+fn a_fresh_member_the_list_lost_is_read_again_when_it_stops_being_fresh() {
+    let mut ps = store();
+    ps.add(A, None, None, None, "/a".into(), None).unwrap();
+    let none: HashSet<&str> = HashSet::new();
+    ps.seen("tmux:local:terminum:", Some("m1"), &none);
+    assert!(ps.of(A).is_some(), "kept: added a moment ago");
+    let left = ps.fresh_left("tmux:local:terminum:", &none).expect("a read is due");
+    assert!(left > Duration::from_secs(4) && left <= FRESH + Duration::from_millis(50), "{left:?}");
+    assert_eq!(ps.fresh_left("tmux:local:terminum:", &none), None, "one read is due already");
+    let live: HashSet<&str> = [A].into_iter().collect();
+    ps.recheck = None;
+    assert_eq!(ps.fresh_left("tmux:local:terminum:", &live), None, "listed: nothing to read again for");
+}

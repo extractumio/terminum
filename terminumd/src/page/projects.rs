@@ -55,6 +55,8 @@ pub struct Projects {
     servers: BTreeMap<String, String>,
     /// members added lately, when (in memory)
     fresh: HashMap<String, Instant>,
+    /// when a list read is due for a member kept only for being fresh (`fresh_left`)
+    recheck: Option<Instant>,
 }
 
 /// A project's name as typed (trimmed): a short name (settings::is_short_name).
@@ -69,7 +71,7 @@ impl Projects {
         let v = crate::auth::store::read_or_set_aside(&path, Ok).unwrap_or(Value::Null);
         let list = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
         let servers = serde_json::from_value(v["servers"].clone()).unwrap_or_default();
-        Projects { path, list, servers, fresh: HashMap::new() }
+        Projects { path, list, servers, fresh: HashMap::new(), recheck: None }
     }
 
     pub fn list(&self) -> &[Project] {
@@ -173,6 +175,20 @@ impl Projects {
         (adopted || anew || gone > 0, if adopted { Closed::None } else if anew { Closed::All } else { Closed::NotLive })
     }
 
+    /// How long until a member of `prefix` the list does not show stops being fresh, when one
+    /// was kept for that alone (its pane may have closed at once): the list is read again then,
+    /// so it leaves its project without waiting for another change (AC-92). None when one such
+    /// read is due already.
+    pub fn fresh_left(&mut self, prefix: &str, live: &HashSet<&str>) -> Option<Duration> {
+        let due = self.fresh.iter().filter(|(k, _)| k.starts_with(prefix) && !live.contains(k.as_str())).map(|(_, at)| *at + FRESH).min()?;
+        let now = Instant::now();
+        if self.recheck.is_some_and(|r| r > now && r <= due) {
+            return None;
+        }
+        self.recheck = Some(due);
+        Some(due.saturating_duration_since(now) + Duration::from_millis(50))
+    }
+
     /// The server of `prefix` was made again from its checkpoint (AC-15): its members take the
     /// new panes' keys (`panes`: old id, new id), the others go, and its next read adopts it.
     pub fn restarted(&mut self, prefix: &str, panes: &[(String, String)]) -> bool {
@@ -224,7 +240,18 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
     let identity = server.identity().await;
     let live: HashSet<&str> = keys.iter().map(String::as_str).collect();
     let prefix = server.key("");
-    let (changed, closed) = app.projects.lock().seen(&prefix, identity.as_deref(), &live);
+    let (changed, closed, left) = {
+        let mut p = app.projects.lock();
+        let (changed, closed) = p.seen(&prefix, identity.as_deref(), &live);
+        (changed, closed, p.fresh_left(&prefix, &live))
+    };
+    if let Some(wait) = left {
+        let dirty = app.dirty.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(wait).await;
+            dirty.notify_one();                         // the list read again: a closed fresh member goes
+        });
+    }
     if changed {
         saved(app).await;
     }
