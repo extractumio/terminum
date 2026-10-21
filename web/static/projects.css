@@ -19,12 +19,11 @@
 /* Clone: a column of its own at the row's right end (the state column stays in sight); with a
    mouse it shows on hover, with a finger always */
 .grp li:has(> .clone) > .item { width: calc(100% - 30px); }
-.grp li > .clone { position: absolute; right: 0; top: 8px; width: 28px; height: 28px; display: grid; place-items: center;
-  border-radius: var(--r-sm); color: var(--muted); opacity: 0; }
-@media (hover: hover) { .grp li:hover > .clone, .grp li > .clone:focus-visible { opacity: 1; } .grp li > .clone:hover { color: var(--t-fg); background: var(--surface-3); } }
+.grp li > .clone { position: absolute; right: 0; top: 8px; opacity: 0; }   /* an icon key (controls.css) */
+@media (hover: hover) { .grp li:hover > .clone, .grp li > .clone:focus-visible { opacity: 1; } }
 @media (hover: none) {
   .grp li:has(> .clone) > .item { width: calc(100% - 40px); }
-  .grp li > .clone { opacity: .8; width: 40px; height: 40px; top: 4px; }
+  .grp li > .clone { opacity: .8; top: 4px; }
 }
 
 /* unread: its agent finished a turn nobody has looked at; a small blob in the color of the
@@ -33,7 +32,7 @@
 .unread { width: 6px; height: 6px; background: currentColor; pointer-events: none;
   border-radius: 64% 36% 57% 43% / 40% 62% 38% 60%; rotate: 18deg; }
 .item .st .unread { margin-top: 6px; }
-.grp li > .unread { position: absolute; right: 11px; top: 33px; }   /* level with the row's second line (its program) */
+.grp li > .unread { position: absolute; right: calc(var(--icon-key-sm) / 2 - 3px); top: 33px; }   /* level with the row's second line, under Clone's middle */
 @media (hover: hover) { .grp li:hover > .unread, .grp li:has(> .clone:focus-visible) > .unread { visibility: hidden; } }
 @media (hover: none) { .grp li > .unread { right: 43px; top: 38px; } }
 

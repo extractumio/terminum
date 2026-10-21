@@ -8,25 +8,10 @@
    style.css), and the bookmark and reminder marks stay wavy lines (marks.css). */
 :where(.box) { background: var(--fill); }
 
-/* keys: the filled buttons, matte, their edges; a press sinks them into the panel */
-:where(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, .grp h2 .new,
-  #splitnote button, .stepper button, #findbox button:not(.icon), #markbar button:not(.icon), .seg button[aria-pressed="true"],
-  .seg button[aria-selected="true"]) {
-  background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); border-radius: var(--r-sm); }
-:where(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, .grp h2 .new,
-  #splitnote button, .stepper button, #findbox button:not(.icon), #markbar button:not(.icon)):active:not(:disabled) {
-  box-shadow: var(--m-well); }
-/* a segmented control's track is a recess its pressed key stands in */
-:where(.seg) { box-shadow: var(--m-well); }
+/* keys, icon keys, segments and fields wear these through controls.css, one rule per kind */
 
 /* the focus ring: off the control, as on the panel's keys (--focus: on a key filled with the accent) */
 :where(button):focus-visible { outline: 2px solid var(--focus, var(--ring)); outline-offset: 2px; }
-
-/* fields: a recess; focus rings it inside */
-:where(.field, .filter, .inline-edit input) { box-shadow: var(--m-well); border-radius: var(--r-sm); }
-:where(.field, .filter, .inline-edit input):is(:focus-visible, :focus-within) { outline: none;
-  box-shadow: var(--m-well), inset 0 0 0 2px var(--ring); }
-:where(.field) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) rings for its input */
 
 /* bars over the terminal: their fill, a seam under them */
 :where(.wavebar) { position: relative; z-index: 1; background: var(--fill, var(--chrome)); box-shadow: var(--m-seam); }

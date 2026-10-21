@@ -49,17 +49,20 @@ button { font: inherit; color: inherit; }
 
 /* ── header ─────────────────────────────────────────────── */
 header { padding: 7px 8px 8px 10px; --fill: var(--bg-2); flex: none; }   /* .wavebar (shapes.css) */
-.top { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.top { display: flex; align-items: center; gap: var(--icon-gap); min-width: 0; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex: none; transition: background .3s; }
 .dot.stale, .dot.wait { background: var(--warn); } .dot.off { background: var(--bad); }
 .badge { font: 600 10px/1 var(--ui); letter-spacing: .05em; text-transform: uppercase; padding: 3px 6px; border-radius: var(--r-xs);
   background: var(--bg-hover); color: var(--accent); flex: none; }
 .badge.warn { color: var(--warn); }
 .title { flex: 1; min-width: 0; color: var(--fg-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-button.icon { border: 0; background: transparent; color: var(--fg-dim); cursor: pointer; width: 22px; height: 22px;
-  border-radius: var(--r-xs); display: grid; place-items: center; flex: none; padding: 0; }
-button.icon:hover { background: var(--bg-hover); color: var(--fg); }
-button.icon.on { color: var(--accent); background: var(--bg-hover); }
+/* icon keys and fields as the Page's (web/static/controls.css), on the Panel's own colors */
+button.icon { border: 0; color: var(--fg-dim); cursor: pointer; width: var(--icon-key-sm); height: var(--icon-key-sm);
+  border-radius: var(--key-r); display: grid; place-items: center; flex: none; padding: 0;
+  background-color: var(--bg-hover); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
+button.icon:hover { background-color: color-mix(in srgb, var(--fg) 16%, var(--bg)); color: var(--fg); }
+button.icon:active, button.icon.on { box-shadow: var(--m-well); }
+button.icon.on { color: var(--accent); }
 .where { display: flex; align-items: center; gap: 6px; margin-top: 5px; min-width: 0; }
 .where .badge { flex: none; }
 .crumbs { flex: 1; min-width: 0; font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -67,8 +70,9 @@ button.icon.on { color: var(--accent); background: var(--bg-hover); }
 .crumbs b { color: var(--fg); font-weight: 600; }
 .note { margin-top: 2px; font-size: .88em; color: var(--fg-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .note:empty { display: none; }
-.filter { margin-top: 6px; width: 100%; padding: 4px 8px; border-radius: var(--r-sm); border: 0; background: var(--bg);
-  color: var(--fg); font: inherit; outline: none; }
+.filter { --field-fill: var(--bg); margin-top: 6px; width: 100%; padding: 4px var(--field-px); border-radius: var(--key-r); border: 0;
+  background-color: var(--field-fill); box-shadow: var(--field-edge); color: var(--fg); font: inherit; outline: none; }
+.filter:focus { background-image: var(--field-focus-fill); box-shadow: var(--field-focus-edge); }
 
 /* ── tree ───────────────────────────────────────────────── */
 #tree { flex: 1 1 auto; overflow: auto; position: relative; outline: none; min-height: 60px; }
@@ -121,7 +125,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 @media (hover: hover) { .tab:not(.active):hover { background: var(--bg-hover); color: var(--fg); } }
 .tab.active { background: var(--bg); color: var(--fg); }
 .tab.active::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--accent); }
-#tools { display: flex; align-items: center; gap: 3px; padding: 0 5px; flex: none; }
+#tools { display: flex; align-items: center; gap: var(--icon-gap); padding: 0 var(--sp-1); flex: none; }
 .seg { display: flex; padding: 1px; background: var(--bg-hover); border-radius: var(--r-sm); margin-right: 3px; }
 .seg button { border: 0; background: transparent; color: var(--fg-dim); padding: 2px 7px; font-size: .9em; cursor: pointer; }
 .seg button.on { background: var(--bg); color: var(--fg); }
@@ -231,9 +235,9 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
   box-shadow: var(--shadow-far); }   /* a .box: its edges and a deep drop (§2.7) */
 .mhead { display: flex; align-items: center; gap: var(--sp-2); margin: -6px -8px 6px 0; }
 .mtitle { flex: 1; min-width: 0; font-weight: 600; font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
-.mx { flex: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--r-md);
-  background: none; color: var(--fg-dim); cursor: pointer; }
-.mx:hover { color: var(--fg); background: var(--bg-hover); }
+.mx { flex: none; width: var(--icon-key); height: var(--icon-key); display: grid; place-items: center; padding: 0; border: 0; border-radius: var(--key-r);
+  background-color: var(--bg-hover); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); color: var(--fg-dim); cursor: pointer; }
+.mx:hover { color: var(--fg); background-color: color-mix(in srgb, var(--fg) 16%, var(--bg)); }
 .mtext { color: var(--fg-dim); margin-bottom: var(--sp-5); }
 .mbtns { display: flex; flex-wrap: wrap; gap: var(--sp-2); justify-content: flex-end; }
 .mbtns .btn { height: 38px; padding: 0 13px; border-radius: var(--r-sm); font: inherit; }
@@ -275,7 +279,6 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (pointer: coarse) {
   :root, html.themed { --row: max(36px, calc(var(--t-size, 13) * 1.6px)); }
   button.icon { width: 36px; height: 36px; }
-  .mbtns .btn, .mx { height: 44px; border-radius: var(--r-sm); }
-  .mx { width: 44px; }
+  .mbtns .btn { height: var(--key-h-touch); }
   .mhead { margin: -10px -12px 2px 0; }
 }

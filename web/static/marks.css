@@ -63,21 +63,14 @@ body.wide #msgrail { grid-row: 1 / -1; }
   --fill: var(--chrome-2); box-shadow: var(--shadow-far); font-size: var(--fs-small); }
 #markbar .mbhead { display: flex; align-items: center; gap: 6px; }
 #markbar .mbhead > svg { color: var(--mark); }
-#markbar :is(.mbnav, .mbacts) { display: flex; align-items: center; gap: 6px; }
-/* Insert into chat and its neighbours at a pane's foot (the reminders' cards, the sent history): one look everywhere */
-:is(#markbar, #remindlist, #sentpane) :is(.tochat, .spacts button) { height: 28px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label);
-  background: var(--surface-3); color: var(--t-fg); white-space: nowrap; }
-@media (hover: hover) { :is(#markbar, #remindlist, #sentpane) :is(.tochat, .spacts button):not(:disabled):hover { background: var(--surface-4); } }
-@media (hover: none) { :is(#markbar, #remindlist, #sentpane) :is(.tochat, .spacts button) { height: var(--h-touch); padding: 0 14px; } }
+#markbar :is(.mbnav, .mbacts) { display: flex; align-items: center; gap: var(--icon-gap); }
+/* Insert into chat and its neighbours at a pane's foot (the reminders' cards, the sent history): keys (controls.css) */
 /* a narrow bar: the note, ↑ ↓ and × on the first row, its buttons on a row under them */
 @media (max-width: 600px) { #markbar .mbhead { flex-wrap: wrap; } #markbar .mbacts { order: 1; flex: 1 0 100%; justify-content: flex-end; } }
 #mbnote { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 #mbnote.quiet, :is(#marklist, #markpane) .quiet { font-weight: 400; color: var(--muted); }
 #mbpos { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
-#markbar button { height: 28px; padding: 0 8px; border-radius: var(--r-sm); white-space: nowrap; }
-#markbar button.icon { width: 28px; padding: 0; display: grid; place-items: center; }
-@media (hover: hover) { #markbar button:hover { background-color: var(--surface-4); } }
-#mbdel.armed, .mkdel.armed { background: var(--danger-fill); color: #fff; }
+#mbdel.armed, .mkdel.armed { --key-fill: var(--danger-fill); --key-fill-hover: var(--danger-fill); --key-ink: #fff; --icon-ink: #fff; }   /* armed: a second press deletes */
 #mbwhy { margin: 6px 0 0; color: var(--muted); }
 #mbtext, #marktext, #asktext { margin: 6px 0 0; max-height: 40vh; overflow: auto; padding: 6px 8px; border-radius: var(--r-sm); background: var(--t-bg);
   font: 12px/1.4 TermFont, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
@@ -85,9 +78,9 @@ body.wide #msgrail { grid-row: 1 / -1; }
 body:not([data-shown="term"]) #markadd, body:not([data-shown="term"]) #markcopy, body:not([data-shown="term"]) #marksfab, body:not([data-shown="term"]) #markpane, body:not([data-shown="term"]) #markrail, body:not([data-shown="term"]) #markbar { display: none !important; }
 body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpane, body.wide #markrail, body.wide #markbar { grid-row: 1 / -1; }
 
-/* a dialog's primary in the hue of the button that opened it (controls.css) */
-#markbox .actions .primary { background-color: var(--mark); color: #1b1200; --focus: #1b1200; }
-#askbox .actions .primary { background-color: var(--ask); color: var(--ask-ink); --focus: var(--ask-ink); }
+/* a dialog's primary in the hue of the button that opened it (controls.css reads the tokens) */
+#markbox { --key-primary-fill: var(--mark); --key-primary-ink: #1b1200; }
+#askbox { --key-primary-fill: var(--ask); --key-primary-ink: var(--ask-ink); }
 /* Ask's dialog a quarter larger than a dialog, centered on the terminal where ask.js placed it (AC-37) */
 #askbox { width: min(600px, calc(100vw - 32px)); }
 #askbox.placed { position: fixed; inset: auto; margin: 0; left: var(--x); top: var(--y); }
@@ -120,7 +113,7 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 :is(#marklist, #markpane) .snip { font: 11.5px TermFont, Menlo, monospace; color: var(--muted); }
 :is(#marklist, #markpane) .meta { font-size: 11px; color: var(--muted); }
 :is(#marklist, #markpane) .closed { margin-left: 6px; padding: 0 5px; border-radius: var(--r-xs); background: var(--surface-4); }
-:is(#marklist, #markpane) .mkdel { flex: 0 0 auto; height: 28px; min-width: 28px; margin: 4px; border-radius: var(--r-sm); display: grid; place-items: center; font-size: 12px; }
+:is(#marklist, #markpane) .mkdel { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
 :is(#marklist, #markpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
 
 /* the session list: an orange strip beside the profile's bar of a session with bookmarks */

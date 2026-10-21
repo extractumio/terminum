@@ -224,9 +224,22 @@ Rule: style by a shared class, never by a single `#id` when a sibling of the sam
 Before adding a rule, find the sibling's class and reuse it; add a modifier only for a real
 difference.
 
-Rules shared by kind live in `web/static/controls.css` (loaded after the feature sheets): dialog
-actions, group-header buttons, popover items, the phone's touch sizes. A rule for a kind goes
-there, not into the file of the feature that first needed it.
+Every kind has one look, written once in `web/static/controls.css` (loaded after the feature
+sheets) from the "components" tokens of `tokens.css`: change a look there and it changes
+everywhere. A feature sheet sets a control's place and layout only (its flex, margin, a list's own
+`--key-h`), never its fill, edge, radius or size; a container gives its primary verb its hue by
+setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own.
+
+| Kind | Members (controls.css) | Tokens |
+| --- | --- | --- |
+| Key (secondary) | dialog and form actions, `.footbtn`, the note's, the sent pane's, `.tochat`, the bookmark bar's text buttons, a reminder's | `--key-h` (32; `--key-h-lg` 36 for the list's foot; 44 touch), `--key-px`, `--key-r`, `--key-fill`, `--key-fill-hover`, `--key-ink`, `--key-weight`; the material's `--m-matte`, `--m-edge-ctl`, pressed `--m-well` |
+| Primary key | `.primary` in a dialog, form, find box, note, reminder card; the sign-in | `--key-primary-fill`, `--key-primary-ink` (accent; Ask's, the bookmark's, a reminder's, danger's set by their container) |
+| Disabled | any `button:disabled` | `--key-disabled` opacity; flat, never pressed |
+| Icon key | `.icon` (header, dialogs' ×, panes, find, quick shell), a group header's +, ⋯, copy, import, clone, the name's pencil, a bookmark row's ×, a waiting card's ×, the steppers | `--icon-key` (30; touch 44), `--icon-key-sm` (24: a thin bar's), `--icon-gap` between them, `--icon-ink`; pressed or expanded: `--m-well` |
+| Segmented control | `.seg` | the track `--field-fill` with `--m-groove`; the chosen segment a key |
+| Field | `.field`, `.search`, `.filter`, `#findq`, the Panel's `.filter`; a quote (`#asktext`, `#marktext`) as its recess | `--field-fill`, `--field-px`, `--field-edge` at rest; `--field-focus-fill` (lit from the top in the accent) and `--field-focus-edge` in focus |
+| Pane | menus, the sent and reminders panes, the bookmarks pane, the find box, the bookmark bar, footer forms, the note, waiting cards | `--pane-shadow` |
+| Dialog | `dialog.dlg`, the bookmarks window | `--dialog-shadow` (a halo that shades the text around it), `--scrim` behind it |
 
 | Component | Class / markup | CSS | Notes and "do not" |
 | --- | --- | --- | --- |

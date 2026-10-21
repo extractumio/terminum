@@ -1,62 +1,102 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* Controls shared by kind (docs/UI-GUIDELINES.md §3): one rule per kind, whatever file owns the
-   feature. Loaded after the feature sheets, before custom.css. */
+/* Controls by kind (docs/UI-GUIDELINES.md §3): one rule per kind, whatever file owns the feature,
+   every value a token of tokens.css (its "components" block: change a look there). Loaded after the
+   feature sheets, before custom.css; a feature sheet sets only a control's place and layout, never
+   its look. The kinds: a key (secondary), a primary key, a disabled one, an icon key, a segmented
+   control, a field at rest and in focus, a pane, a dialog. */
+
+/* ---- keys: a text button, matte and a little raised; a press sinks it (shapes.css: --m-*) ---- */
+:is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, #splitnote button,
+  #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #findbox .primary, #login button) {
+  height: var(--key-h); padding: 0 var(--key-px); border-radius: var(--key-r); display: inline-flex; align-items: center;
+  gap: var(--sp-2); white-space: nowrap; font-weight: var(--key-weight); color: var(--key-ink);
+  background-color: var(--key-fill); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
+@media (hover: hover) {
+  :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, #splitnote button,
+    #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button):not(:disabled, .primary, #splitzoom):hover {
+    background-color: var(--key-fill-hover); }
+}
+/* a press sinks a key into the panel */
+:is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, #splitnote button,
+  #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #findbox .primary, #login button):active:not(:disabled) {
+  box-shadow: var(--m-well); }
+/* the keys at a pane's foot (Insert into chat and its neighbours): one size in every pane */
+:is(.tochat, #sentpane .spacts button, .rmacts button, #markbar button:not(.icon)) { font-size: var(--fs-label); }
+/* the primary verb: its container's hue (--key-primary-fill: the accent, Ask's, the bookmark's, a reminder's, danger's) */
+:is(dialog.dlg, .footform, #findbox, #splitnote, .rmacts) :is(.primary, #splitzoom), #login button {
+  background-color: var(--key-primary-fill); color: var(--key-primary-ink); --focus: var(--key-primary-ink); }
+@media (hover: hover) { :is(dialog.dlg, .footform, #findbox, #splitnote, .rmacts) :is(.primary, #splitzoom):not(:disabled):hover { filter: brightness(1.08); } }
+/* disabled: faded, flat, never pressed */
+:where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
+:where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
+
+/* ---- icon keys: every icon-only button is a key of its own, square ---- */
+:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, #restored .x, .stepper button) {
+  flex: none; width: var(--icon-key); height: var(--icon-key); padding: 0; display: grid; place-items: center;
+  border-radius: var(--key-r); color: var(--icon-ink); background-color: var(--key-fill); background-image: var(--m-matte);
+  box-shadow: var(--m-edge-ctl); }
+@media (hover: hover) {
+  :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, #restored .x, .stepper button):not(:disabled):hover {
+    color: var(--t-fg); background-color: var(--key-fill-hover); }
+}
+:is(.icon, .grp h2 .hostbtn)[aria-pressed="true"], :is(.icon, .grp h2 .hostbtn)[aria-expanded="true"] {
+  color: var(--t-fg); background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
+:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, #restored .x, .stepper button):active:not(:disabled) {
+  box-shadow: var(--m-well); }
+/* a thin bar's small ones (the quick shell's, a group header's, a name's pencil, a bookmark row's) */
+:is(#quick .qbar .icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel) { width: var(--icon-key-sm); height: var(--icon-key-sm); }
+/* icon keys side by side keep their distance (a group header's from its count: style.css) */
+/* icon keys side by side keep their distance */
+:is(#tools, .grp h2 .acts, .sphead, #findbox, .mbnav, .qbar, .dhead, #renamebox, .stepper) { gap: var(--icon-gap); }
+
+/* ---- a segmented control: a shallow track, the chosen segment a key in it ---- */
+.seg { padding: var(--sp-0); gap: var(--sp-0); border-radius: var(--key-r); background: var(--field-fill); box-shadow: var(--m-groove); }
+.seg button { border-radius: var(--r-xs); }
+.seg button:is([aria-pressed="true"], [aria-selected="true"]) { color: var(--t-fg); background-color: var(--key-fill-hover);
+  background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
+
+/* ---- fields: a recess at rest; in focus lit from the top in the accent, never a hard ring ---- */
+:is(.field, .search, .filter, .inline-edit input, #findq) { border: 0; border-radius: var(--key-r); color: inherit;
+  background-color: var(--field-fill); box-shadow: var(--field-edge); }
+:is(#mbtext, #marktext, #asktext) { border-radius: var(--key-r); box-shadow: var(--field-edge); }   /* a quote: a field's recess, the terminal's ground */
+:is(.field, .search, .filter, .inline-edit input, #findq):is(:focus, :focus-within) { outline: none;
+  background-image: var(--field-focus-fill); box-shadow: var(--field-focus-edge); }
+:is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
+
+/* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
+:is(#menu, #hostmenu, #rowmenu, #updmenu, #sentpane, #remindpane, #markpane, #findbox, #markbar, .footform, #splitnote, #asks .ask) {
+  box-shadow: var(--pane-shadow); }
+dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
+dialog::backdrop { background: var(--scrim); }
 
 /* a dialog (dialog.dlg) and a list foot's form (.footform) are one kind: a head (its title, × in the
-   corner), a label over its field, fields alike, then Cancel and the primary verb in the hue of
-   what opened it: the accent, Ask's, the bookmark's, the reminder's, an irreversible one's
-   --danger-fill (marks.css, reminders.css, tmux.css) */
+   corner), a label over its field, fields alike, then Cancel and the primary verb */
 dialog.dlg { width: min(480px, calc(100vw - 32px)); padding: var(--sp-4); border: 0; border-radius: var(--r-xl);
-  --fill: var(--chrome); color: var(--t-fg); box-shadow: var(--shadow-far); }
+  --fill: var(--chrome); color: var(--t-fg); }
 dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
-dialog::backdrop { background: color-mix(in srgb, #000 50%, transparent); }
-.dhead { display: flex; align-items: center; gap: var(--sp-2); margin: -6px -8px 0 0; }   /* × in the corner, the title at the text's edge */
+.dhead { display: flex; align-items: center; margin: -4px -4px 0 0; }   /* × in the corner, the title at the text's edge */
 .dhead h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-title); font-weight: 600; line-height: var(--lh-ui); overflow-wrap: anywhere; }
-.dhead .x { flex: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border-radius: var(--r-md); color: var(--muted); background: none; }
-@media (hover: hover) { .dhead .x:hover { color: var(--t-fg); background: var(--surface-3); } }
 :is(dialog.dlg, .footform) label:not(.tick, .lead) { font-size: var(--fs-label); color: var(--muted); }
-:is(dialog.dlg, .footform) .field { font: inherit; line-height: 1.3; color: inherit; background: var(--surface-3); border: 0; border-radius: var(--r-md); min-width: 0; }
-:is(dialog.dlg, .footform) .field:not(.lead) { padding: 10px 12px; }
+:is(dialog.dlg, .footform) .field { font: inherit; line-height: 1.3; min-width: 0; }
+:is(dialog.dlg, .footform) .field:not(.lead) { padding: var(--sp-2) var(--field-px); }
 :is(dialog.dlg, .footform) textarea.field { resize: vertical; }
 :is(dialog.dlg, .footform) [role="alert"] { margin: 0; color: var(--danger-text); font-size: var(--fs-label); }
-:is(dialog.dlg, .footform) .actions { display: flex; justify-content: flex-end; gap: var(--sp-2); margin-top: var(--sp-3); }   /* 20px under the text */
-:is(dialog.dlg, .footform) .actions button { height: 38px; padding: 0 13px; border-radius: var(--r-sm); background-color: var(--surface-3); font-weight: var(--fw-head); }   /* keys (shapes.css) */
-@media (hover: hover) { :is(dialog.dlg, .footform) .actions button:not(.primary):hover { background-color: var(--surface-4); } }
-:is(dialog.dlg, .footform) .actions .primary { background-color: var(--accent); color: var(--t-bg); --focus: var(--t-bg); }
-:is(dialog.dlg, .footform) .actions button:disabled { opacity: .4; }
+:is(dialog.dlg, .footform) .actions { display: flex; justify-content: flex-end; gap: var(--key-gap); margin-top: var(--sp-3); }
 
-/* a group header's buttons: copy the attach command, import a host's sessions, + new window, ⋯;
-   one size; + keeps an edge as the group's own action */
-.grp h2 :is(.attach, .import, .new, .hostbtn) { flex: none; width: 26px; height: 26px; display: grid; place-items: center; padding: 0;
-  border-radius: var(--r-sm); color: var(--muted); }
-.grp h2 .new { background-color: var(--surface-3); }   /* the group's own action: filled, the others ghosts */
-.grp h2 .hostbtn[aria-expanded="true"] { color: var(--t-fg); background: var(--surface-3); }
-@media (hover: hover) {
-  .grp h2 :is(.attach, .import, .new, .hostbtn):hover { color: var(--t-fg); background-color: var(--surface-3); }
-  .grp h2 .new:hover { background-color: var(--surface-4); }
-}
-
-/* popover menus: the host's ⋯, the update chip's */
+/* popover menus: the host's ⋯, the update chip's: rows, not keys */
 :is(#hostmenu, #updmenu) button { height: 34px; padding: 0 10px; border-radius: var(--r-xs); text-align: left; }
 :is(#hostmenu, #updmenu) button:focus-visible { background: var(--surface-4); }
 @media (hover: hover) { :is(#hostmenu, #updmenu) button:hover { background: var(--surface-4); } }
 
-/* a phone, a tablet or a narrow window: every target a finger's size (44px; 40 inside a 40px row) */
+/* a phone, a tablet or a narrow window: every target a finger's size (the key sizes: tokens.css) */
 @media (max-width: 860px), (pointer: coarse) {
   .grp h2 { height: 40px; }   /* the row holds its 40px buttons */
   .grp h2 .toggle { height: 40px; }
-  .grp h2 :is(.attach, .import, .new, .hostbtn) { width: 40px; height: 40px; border-radius: var(--r-sm); }
-  .grp h2 .acts { min-width: calc(2 * 40px + 6px); }
-  #findbox button, :is(dialog.dlg, .footform) .actions button, :is(#hostmenu, #updmenu) button, #splitnote button { height: 44px; border-radius: var(--r-sm); }
-  .dhead .x { width: 44px; height: 44px; }
+  :is(#quick .qbar .icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel) { width: 40px; height: 40px; }
+  .grp h2 .acts { min-width: calc(2 * 40px + var(--icon-gap)); }
+  :is(#hostmenu, #updmenu) button { height: var(--key-h-touch); }
   .dhead { margin: -10px -12px -4px 0; }   /* the larger × keeps the title where it was */
-  #findbox .icon { width: 44px; }
   :is(#findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { width: 44px; height: 44px; }   /* Ask stands beside Copy there, as large as it */
-  #rename { width: 40px; height: 40px; }
-  .stepper button { width: 44px; height: 44px; }
-  #markbar button { height: 40px; }
-  #markbar button.icon { width: 40px; }
   #menu .row { min-height: 44px; }
-  #asks .x { width: 40px; height: 40px; }
   .seg button { height: 34px; }   /* a segment in a full-width row */
 }

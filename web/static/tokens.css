@@ -25,21 +25,36 @@
   --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));       /* secondary text, idle icons, placeholders */
   --faint: color-mix(in srgb, var(--t-fg) 40%, var(--t-bg));       /* a quiet dot, a disabled glyph */
   --shadow-a: 40%;                                                  /* 18% on a light theme (below) */
-  --shadow-near: 0 4px 12px -3px color-mix(in srgb, #000 calc(var(--shadow-a) * .8), transparent);   /* a blob */
+  --shadow-near: 0 2px 8px -2px color-mix(in srgb, #000 calc(var(--shadow-a) * .5), transparent);   /* a blob: a soft lift, never a black halo */
   --shadow-far: var(--m-edge), 0 14px 34px -2px color-mix(in srgb, #000 var(--shadow-a), transparent);   /* a box: its edges and a deep drop */
 
   /* ---- the material (§2.7, after todobem's panel): light on a top edge, shade on a bottom one;
      the alphas are the material's, stronger shade and fainter light on a light theme (below) ---- */
   --m-hi: rgb(255 255 255 / .05); --m-lo: rgb(0 0 0 / .28);           /* a surface */
   --m-hi-ctl: rgb(255 255 255 / .09); --m-lo-ctl: rgb(0 0 0 / .38); --m-drop: rgb(0 0 0 / .22);   /* a key */
-  --m-well-a: rgb(0 0 0 / .6); --m-well-ring: rgb(0 0 0 / .25);       /* a recess */
+  --m-well-a: rgb(0 0 0 / .32); --m-well-ring: rgb(0 0 0 / .12);      /* a recess: a soft shade, never a black line */
   --m-edge: inset 0 1px 0 var(--m-hi), inset 0 -1px 0 var(--m-lo);
   --m-edge-ctl: inset 0 1px 0 var(--m-hi-ctl), inset 0 -1px 0 var(--m-lo-ctl), 0 1px 0 var(--m-drop);
   --m-well: inset 0 1px 3px var(--m-well-a), inset 0 0 0 1px var(--m-well-ring);
+  --m-groove: inset 0 1px 2px var(--m-well-a);                         /* a shallow track: a segmented control's */
   --m-matte: linear-gradient(180deg, rgb(255 255 255 / .035), rgb(0 0 0 / .06));
   --m-seam: 0 1px 0 rgb(0 0 0 / .4), 0 2px 0 rgb(255 255 255 / .025);
   --chamfer: polygon(3px 0, calc(100% - 3px) 0, 100% 3px, 100% calc(100% - 3px), calc(100% - 3px) 100%, 3px 100%, 0 calc(100% - 3px), 0 3px);
   --grain-opacity: .1;   /* grain.css: the grain itself is the Page's (the Panel's bundle takes no url()) */
+
+  /* ---- components: one look per kind (controls.css reads only these; change a look here) ---- */
+  --key-h: 32px;  --key-h-lg: 36px;  --key-h-touch: 44px;  --key-px: 12px;  --key-r: var(--r-sm);  --key-gap: 8px;   /* a text key: primary or secondary */
+  --key-fill: var(--surface-3);  --key-fill-hover: var(--surface-4);  --key-ink: var(--t-fg);  --key-weight: 600;
+  --key-primary-fill: var(--accent);  --key-primary-ink: var(--t-bg);   /* a container sets these to its verb's hue */
+  --key-disabled: .4;
+  --icon-key: 30px;  --icon-key-sm: 24px;  --icon-key-touch: 44px;  --icon-gap: 8px;   /* an icon key, a bar's small one; between them */
+  --icon-ink: color-mix(in srgb, var(--t-fg) 72%, var(--t-bg));
+  --field-fill: var(--surface-2);  --field-px: 12px;  --field-edge: var(--m-well);   /* a field at rest */
+  --field-focus-fill: linear-gradient(180deg, color-mix(in srgb, var(--accent) 30%, var(--field-fill)), color-mix(in srgb, var(--accent) 6%, var(--field-fill)));
+  --field-focus-edge: var(--m-well), inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);   /* lit from the top, not ringed */
+  --pane-shadow: var(--m-edge), 0 0 0 1px rgb(0 0 0 / .18), 0 16px 40px -6px color-mix(in srgb, #000 calc(var(--shadow-a) * 1.2), transparent);
+  --dialog-shadow: var(--m-edge), 0 0 0 1px rgb(0 0 0 / .22), 0 22px 70px 14px color-mix(in srgb, #000 calc(var(--shadow-a) * 1.4), transparent);
+  --scrim: color-mix(in srgb, #000 45%, transparent);   /* behind a modal: a dialog, a pane from a floating button */
 
   /* ---- fixed hues by meaning (§2.2); text in a hue is mixed with --t-fg so it reads on a light theme ---- */
   --local: #4f9dff; --remote: #a98bff; --host-label: cornflowerblue;
@@ -101,5 +116,5 @@
   --m-matte: linear-gradient(180deg, rgb(255 255 255 / .3), rgb(0 0 0 / .03)); --m-seam: 0 1px 0 rgb(0 0 0 / .12), 0 2px 0 rgb(255 255 255 / .5);
   --grain-opacity: .07; }
 @media (max-width: 860px), (pointer: coarse) {
-  :root { --gutter: var(--sp-4); }
+  :root { --gutter: var(--sp-4); --key-h: var(--key-h-touch); --icon-key: var(--icon-key-touch); }
 }

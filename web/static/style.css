@@ -38,8 +38,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #nav { background: var(--chrome); display: flex; flex-direction: column;
   min-width: 0; padding-top: env(safe-area-inset-top); }
 .nav-head { display: flex; align-items: center; gap: var(--sp-2); height: var(--h-bar); padding: 0 10px; }
-.search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px;
-  border-radius: var(--r-md); background: var(--surface-3); color: var(--muted); }
+.search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 var(--field-px); color: var(--muted); }   /* a field (controls.css) */
 #filter { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--t-fg); background: none; border: 0; outline: 0; padding: 0; }
 #filter::placeholder { color: var(--muted); }
 .search kbd { font: var(--fs-micro) ui-monospace, Menlo, monospace; color: var(--muted); background: var(--surface-4); border-radius: var(--r-xs); padding: 0 5px; }
@@ -60,7 +59,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .grp h2 .where { color: var(--muted); font-weight: 400; }
 .grp h2 .count { flex: none; margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* the header's buttons in a column two wide at least: every group's count ends at one place */
-.grp h2 .acts { flex: none; min-width: calc(2 * 26px + 6px); display: flex; justify-content: flex-end; gap: 6px; }
+.grp h2 .acts { flex: none; min-width: calc(2 * var(--icon-key-sm) + var(--icon-gap)); margin-left: var(--icon-gap); display: flex; justify-content: flex-end; }
 .grp h2 .count.on { color: var(--accent); font-weight: 600; }
 
 /* row: dot | title and meta | state */
@@ -126,10 +125,8 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 
 /* foot: New session, Bookmarks, Add host, Attach tmux sessions, and their forms above them (tmux.css) */
 .nav-foot { padding: var(--sp-1) 10px 10px; display: flex; flex-direction: column; gap: var(--sp-1); }
-.footbtn { width: 100%; height: 36px; display: flex; align-items: center; gap: var(--sp-2); padding: 0 12px; border-radius: var(--r-md);
-  background-color: var(--surface-2); font-weight: 500; }   /* a key (shapes.css) */
-.footbtn[aria-expanded="true"] { background-color: var(--surface-4); }
-@media (hover: hover) { .footbtn:hover { background-color: var(--surface-3); } }
+.footbtn { width: 100%; --key-h: var(--key-h-lg); justify-content: flex-start; font-weight: 500; }   /* a key (controls.css), the list's own size */
+.footbtn[aria-expanded="true"] { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 /* a touch screen or a narrow window: one row of blobs, the label's first words under each (the
    rest stays in the name: "New session"), the title says it all */
 @media (max-width: 860px), (pointer: coarse) {
@@ -158,8 +155,6 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #main { display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 #bar { display: flex; align-items: center; gap: 10px; min-height: var(--h-bar); padding: 0 26px 0 14px;   /* ⋯ over the floating buttons' column (marks.js placeFab) */
   padding-top: env(safe-area-inset-top); --fill: var(--chrome); }   /* .wavebar: its lower edge waves over the terminal */
-.icon { width: 32px; height: 32px; display: grid; place-items: center; border-radius: var(--r-sm); flex: 0 0 auto; color: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); }
-@media (hover: hover) { .icon:hover { background: var(--chrome-2); color: var(--t-fg); } }
 #app:not(.nav-hidden) #navbtn { display: none; }
 #current { flex: 1; min-width: 0; display: flex; align-items: center; cursor: pointer; border-radius: var(--r-sm); }
 /* The title block is a two-column grid: a 16px column holds the agent's state over the profile's
@@ -169,7 +164,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #current .tline { display: flex; align-items: center; gap: 8px; min-width: 0; height: 22px; }
 #current .t { font-size: 15px; line-height: 22px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #curstate { flex: 0 0 16px; height: 16px; display: grid; place-items: center; }
-#rename { flex: 0 0 auto; width: 28px; height: 28px; margin: -3px 0 -3px -4px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--muted); }
+#rename { margin: -3px 0 -3px var(--sp-1); }   /* an icon key (controls.css) */
 #rename:hover { color: var(--t-fg); background: var(--chrome-2); }
 /* the header's details: one line of text that ends in an ellipsis, so the folder at its end
    gives way first; it starts with the title, after the state's column */
@@ -189,12 +184,9 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
   background: var(--surface-3); color: inherit; font: inherit; font-size: 16px; outline: 0; }
 #tools { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 #tools .divider { width: 1px; height: 22px; background: var(--line); }
-#tools button[aria-pressed="true"], #tools button[aria-expanded="true"] { background: var(--chrome-2); color: var(--t-fg); }
-.seg { display: inline-flex; padding: var(--sp-0); border-radius: var(--r-md); background: var(--surface-2); }
-.seg button { height: 26px; padding: 0 11px; border-radius: var(--r-sm); font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.seg { display: inline-flex; }   /* its look: controls.css */
+.seg button { height: 26px; padding: 0 11px; font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 @media (hover: hover) { .seg button:hover { color: var(--t-fg); background-color: var(--surface-3); } }
-#tools .seg button[aria-pressed="true"], #menu .seg button[aria-pressed="true"], #views button[aria-selected="true"] {
-  background-color: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); color: var(--t-fg); font-weight: 500; }
 #views button:disabled { opacity: .35; cursor: default; }
 
 #status { background: var(--danger-fill); color: #fff; padding: 6px 12px; }
@@ -211,9 +203,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
   font: var(--fs-body)/1.35 var(--ui); box-shadow: var(--shadow-far); }   /* a .box */
 #splitnote[hidden] { display: none; }
 #splitnote > span { flex: 1 1 auto; min-width: 0; }
-#splitnote button { flex: none; height: 28px; padding: 0 10px; border-radius: var(--r-md); background-color: var(--surface-4); color: inherit; }
-#splitnote #splitzoom { background-color: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }   /* its verb, as a dialog's primary */
-@media (hover: hover) { #splitnote button:hover { filter: brightness(1.12); } }
+#splitnote button { flex: none; }   /* keys, Full width the primary (controls.css) */
 /* other sessions waiting for an answer: cards at the terminal's top right; on a phone, slim
    lines across it under the header */
 #asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 74px;   /* left of the floating buttons' column and the marks */ z-index: 7; width: min(340px, calc(100% - 24px));
@@ -226,15 +216,13 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #asks .state { flex: 0 0 18px; height: 18px; }
 #asks .more { flex: none; color: var(--muted); font-size: 12px; }
 #asks .more:empty { display: none; }
-#asks .x { flex: 0 0 auto; width: 32px; height: 32px; margin-right: 4px; display: grid; place-items: center; border-radius: var(--r-sm); color: var(--muted); }
+#asks .x { margin-right: var(--sp-1); }   /* an icon key (controls.css) */
 #asks .ask[hidden] { display: none; }
 #asks .go:hover .what { text-decoration: underline; }
-#asks .x:hover { color: var(--t-fg); background: color-mix(in srgb, var(--t-fg) 10%, transparent); }
 @media (max-width: 860px) {
   #asks { position: static; margin: 6px 8px 0; width: auto; gap: 4px; }   /* under the header and its view tabs, not over them */
   #asks .ask { border-radius: var(--r-md); }
   #asks .go { padding: 5px 4px 5px 10px; font-size: 12.5px; gap: 8px; }
-  #asks .x { width: 30px; height: 28px; }
 }
 
 /* ---------- terminal ---------- */
@@ -355,7 +343,7 @@ body.ctxtrace #fabs { display: flex; }
 @media (hover: hover) { #menu label.row:hover, #menu button.row:hover { background: var(--surface-3); } }
 #menu input[type="checkbox"] { width: 20px; height: 20px; accent-color: var(--accent); flex: 0 0 auto; }
 .stepper { display: flex; align-items: center; gap: 4px; }
-.stepper button { width: 32px; height: 32px; border-radius: var(--r-sm); background-color: var(--chrome-2); font-size: 18px; }
+.stepper button { font-size: 18px; }   /* icon keys (controls.css) */
 .stepper output { min-width: 28px; text-align: center; font-variant-numeric: tabular-nums; }
 #menu .danger { color: var(--danger-text); margin-top: var(--sp-2); }   /* set apart by space, not a line */
 
@@ -367,7 +355,7 @@ body.ctxtrace #fabs { display: flex; }
 #login input { font: inherit; font-size: 16px; color: inherit; background: var(--surface-3);
   border: 0; border-radius: var(--r-md); padding: 10px 12px; }
 #loginerr { min-height: 1.35em; color: var(--danger) !important; margin: 0 !important; }
-#login button { height: 44px; border-radius: var(--r-sm); background: var(--accent); color: var(--t-bg); --focus: var(--t-bg); font-weight: 600; }
+#login button { --key-h: var(--key-h-touch); }   /* the primary key (controls.css), a finger's size */
 
 /* Off-screen but focusable; 16px stops iOS from zooming on focus. */
 #kbd { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; resize: none;
@@ -390,18 +378,16 @@ body.ctxtrace #fabs { display: flex; }
   #nav { width: 100vw; border-right: 0; box-shadow: none; }
   .nav-title { align-items: center; justify-content: space-between; padding: 12px 12px 4px 16px; }
   .nav-title h1 { margin: 0; font-size: 22px; font-weight: 600; }
-  .nav-title .icon, #bar .icon { width: 44px; height: 44px; border-radius: var(--r-sm); }
   .nav-head { height: auto; padding: 4px 16px 10px; }
-  .search { height: 44px; border-radius: var(--r-sm); padding: 0 12px; }
+  .search { height: 44px; padding: 0 12px; }
   #filter { font-size: 16px; }
   #sessions { padding: 0 10px 12px; gap: 14px; }
   .grp h2 { height: 40px; font-size: 13.5px; }
-  .grp h2 .new { width: 40px; height: 40px; border-radius: var(--r-sm); }
   .item { min-height: 60px; grid-template-columns: 10px minmax(0, 1fr) 22px; column-gap: 10px; padding: 10px 12px; border-radius: var(--r-sm); }
   .item .t { font-size: 15px; }
   .item .s { font-size: 12.5px; }
   .nav-foot { padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
-  .footbtn { height: 48px; border-radius: var(--r-sm); font-size: 15px; }
+  .footbtn { --key-h: 48px; font-size: 15px; }
   #toast { bottom: calc(68px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }   /* above the floating buttons */
   #updchip { order: 2; align-self: flex-start; margin-top: 9px; }   /* before ⋯, not between ☰ and the title */
   /* the header: title row, then the view switch across the width */
@@ -418,8 +404,8 @@ body.ctxtrace #fabs { display: flex; }
 /* wide screens: the terminal is always shown; Files and File are toggles beside it */
 body.wide #views { background: none; padding: 0; gap: var(--sp-1); }
 body.wide #views button[data-view="term"] { display: none; }
-body.wide #views button { height: 30px; border-radius: var(--r-md); background-color: var(--surface-2); }
-body.wide #views button[aria-selected="true"] { color: var(--accent); background-color: color-mix(in srgb, var(--accent) 16%, var(--chrome)); }
+body.wide #views button { height: var(--icon-key); border-radius: var(--key-r); background-color: var(--key-fill); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }   /* keys */
+body.wide #views button[aria-selected="true"] { color: var(--accent); background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 @media (prefers-reduced-motion: reduce) { #nav, .grp h2 .toggle svg { transition: none; } }
 
 /* ---------- views: Terminal, Files, File ---------- */
