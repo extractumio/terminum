@@ -31,9 +31,10 @@ import { webProjects } from "./e2e_projects.mjs";
 import { webPhoneRow } from "./e2e_phonerow.mjs";
 import { webRows } from "./e2e_rows.mjs";
 import { webResize } from "./e2e_resize.mjs";
+import { webOpenEnd } from "./e2e_openend.mjs";
 
 const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webMarks, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webPhoneRow, webRows, webResize };
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webPhoneRow, webRows, webResize, webOpenEnd };
 const BROWSERS = ["chromium", "webkit"];
 // Checks that drive the page with Chromium's own tools: a CDP touch screen, synthetic Touch events.
 const CHROMIUM_ONLY = { webClip: "synthetic Touch events", webTouch: "a CDP touch screen" };

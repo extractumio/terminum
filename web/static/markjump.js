@@ -109,6 +109,7 @@ export class Jumper {
     const at = { n };
     for (const o of Jumper.all) if (o !== this) o.token++;            // one jump at a time: another one's stops
     try {
+      this.view.end.unpin();                                              // a session just opened for it lets its end go
       this.view.holding = (this.view.holding || 0) + 1;              // a phone following the output trims no line it loads
       for (let step = 0; ; step++) {
         await this.settled();

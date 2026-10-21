@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.14.9 |
+| Version | 0.14.10 |
 | Date | 2026-10-20 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.14.10 | 2026-10-20 | Owner (iPhone): opening a session did not always reach its last message. The view now stays on the last line through what settles late, checked each frame until 4 s after the first frame or until the user scrolls, presses, types or selects text or a jump to a line takes the view (AC-02). Before it, one growth of the page outside the page's own redraws (a widget, an image, a note) left the view short and it stopped following. |
 | 0.14.9 | 2026-10-20 | Owner: a row's unread mark stands level with its second line, its program's, not its name (AC-93). |
 | 0.14.8 | 2026-10-20 | Owner: a project's tinted group has as much space under its last session as above its name (its last row touched its edge) (AC-92). |
 | 0.14.7 | 2026-10-20 | Owner: Claude Code's process, named by its version ("2.1.304"), is "claude" in a row's line under its title, not its version (AC-01). |
@@ -196,6 +197,7 @@ Scenario: AC-02 happy path — open a pane
   Then within 1 s the page shows the theme, the last 1000 history lines and the screen (50 rows) with the cursor, in the session's theme
   And scrolling up loads older lines 1000 at a time, up to 10,000 (TM_HISTORY)
   And every line is tmux's: rows tmux wrapped join when copied, a hard line end stays one (AS-03)
+  And the view stays on the last line through what settles late (fonts, widgets, images, a phone's list closing, the keyboard), until 4 s after the first frame or the user scrolls, presses, types or selects text, or a jump to a line takes the view
 Scenario: AC-02 happy path — output streams
   When the pane prints 5,000 lines in 2 s
   Then terminumd captures the screen on its %output notices at most every 33 ms and sends only the rows that changed ("full": false, "ch": [[row, line]…]); lines that scrolled off the screen are appended to the history ("hist", "append") with their absolute numbers
@@ -1167,7 +1169,7 @@ Order across the four specs: this stage 1, then `terminum-files.md` stage 1 (the
 Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/release/terminumd`; tmux 3.6a; private servers `-L tm-test-*` only). Python e2e checks speak the page's protocol to a private terminumd; `web/test/e2e_live.mjs` drives the real page in Chromium and WebKit against one; `web/test/e2e_all.mjs` drives the page against a fake terminumd (509 checks).
 
 - [x] AC-01 — `scripts/e2e_core.py` (first start makes `main`, the user's server untouched, a window made by hand within 2 s, sessions and splits listed) and `web/test/e2e_live.mjs` → pass. tmux missing: `scripts/e2e_install.sh` ("tmux is needed") → pass. A folder's color (2026-10-18): `web/test/dircolors.test.mjs` (one hue per folder and host, unrelated folders evenly apart, "~" and "/" no parent, a nested folder near its parent's hue and nearer the deeper) → 5 pass; after-shots of the list on a dark and a light theme.
-- [x] AC-02 — `cargo test screen::` (SGR, rows, a real tmux capture, numbering incl. tmux's trims at its limit); `scripts/e2e_core.py` (history then screen, 3000 lines appended with their numbers, older lines, clear-history reset) → pass. Not done: a comparison with iterm-enhancer's frames on 20 fixtures (no iTerm2 here).
+- [x] AC-02 — `cargo test screen::` (SGR, rows, a real tmux capture, numbering incl. tmux's trims at its limit); `scripts/e2e_core.py` (history then screen, 3000 lines appended with their numbers, older lines, clear-history reset) → pass. Not done: a comparison with iterm-enhancer's frames on 20 fixtures (no iTerm2 here). Update 0.14.10: `web/test/e2e_openend.mjs` (after the first frame the page grows, the view is moved short of the end by no user's doing, then the page grows again: the view is at the end; after a wheel event later growth leaves it where it is) → pass in Chromium and WebKit at both sizes, and fails with the pin off.
 - [x] AC-03 — `scripts/e2e_core.py` (text, keys by name, a 20 KB bracketed paste through a buffer, refused control characters), `cargo test tmux::keys` (round trip into a raw pane; `shift_enter_is_csi_u_only_for_programs_that_ask`: S-Enter by name with extended-keys on, as bytes with it off) → pass; `scripts/bench_echo.py` → p50 11.2 ms, p95 14.9 ms.
 - [x] AC-04 — `web/test/e2e_all.mjs` (inherited Wrap, Grid, Fit cases) → pass.
 - [x] AC-05 — `web/test/e2e_live.mjs` (vim switches the page to Screen mode within ~30 ms and back) and `web/test/e2e_all.mjs` (screen cases) → pass; `scripts/e2e_sizing.py` (mc in a 48×30 Screen mode: the window 48×30, the menu bar whole, the key bar on row 30 as mc lays it out for 48 columns (six keys), F9 and ↓ open a menu, F10 quits and the frame leaves the alternate screen; in a split window the pane is zoomed to 48×30 and unzoomed after) → 16/16 pass. Update 0.9.1 (a pane wider than the view that the page does not size): `web/test/e2e_screen.mjs` in Chromium and WebKit at both sizes (a wider pane waiting for this view's size is Fit; in a session of the user's own tmux Codex-like text rows in a 210-column pane re-flow at the chosen size, a 120-column frame is Fit at the wide size and Grid on the phone, under 7 px, a 600-column frame is Grid at the chosen size, sideways, a frame with a third of its rows wide stays one and with a sixth re-flows; another screen's size re-flows text; each fails when its part of the fix is undone: the old "Fit" rule, the hysteresis, the own-tmux condition, the frame told on each frame).

@@ -4,6 +4,7 @@ import { codexBox, codexStatus, inputBox, parkedCaret, statusKey } from "./agent
 import { listOpen } from "./boxnav.js";
 import { cursorCol, typedEnd, withCursor } from "./cursor.js";
 import { lineRec, palette } from "./render.js";
+import { openEnd } from "./openend.js";
 import { glued, inputWraps, wrapsInto } from "./rejoin.js";
 
 const LOAD_OLDER_AT = 300;   // px from the top that triggers loading older lines
@@ -50,6 +51,7 @@ export class TermView {
     Object.assign(this, { term, histEl: hist, screenEl: screen, note, bottomBtn, paused, send, keep });
     this.theme = null; this.pal = []; this.cols = 0;
     this.recs = new WeakMap();   // row element -> its record (a bookmark's line, AC-57)
+    this.end = openEnd({ term, toBottom: () => this.toBottom() });   // a session just opened keeps to its end
     this.reset();
     this.touching = false;
     this.thawers = [];       // whenThawed's waiters, in the order asked
@@ -316,7 +318,7 @@ export class TermView {
     this.updateBottom();
   }
 
-  atBottom() { return this.term.scrollHeight - this.term.scrollTop - this.term.clientHeight < 8; }
+  atBottom() { return this.end.pinned() || this.term.scrollHeight - this.term.scrollTop - this.term.clientHeight < 8; }
   toBottom() { this.term.scrollTop = this.term.scrollHeight; this.updateBottom(); }
   updateBottom() { this.bottomBtn.hidden = this.atBottom(); }
   // sticking: fn runs before the view goes to the end (the widgets measure from there)
@@ -429,6 +431,7 @@ export class TermView {
       }
       this.onRows?.(false);
     });
+    this.end.drawn();
     if (performance.now() < (this.followUntil ?? 0)) this.showCursor();
     this.onDrawn?.();
   }

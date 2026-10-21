@@ -370,6 +370,7 @@ function select(id, force = false) {
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane
   view.reset();
+  view.end.pin();                                      // its last line, however late the layout settles
   trace.opening(id);
   send({ t: "sub", id });                          // first: the server answers "files" for the subscribed pane
   sizing.opened();                                 // this view's size
