@@ -3,7 +3,7 @@
 Binding on humans and AI (`AGENTS.md` symlinks here); every rule is a MUST unless marked
 otherwise. This file holds principles, terms and dos and don'ts; behavior, limits and
 evidence live in the specs (`docs/specs/terminum.md` and its siblings), usage in
-`README.md`, the threat model in `SECURITY.md`, the release procedure in
+`README.md` and `docs/USAGE.md`, the threat model in `SECURITY.md`, the release procedure in
 `docs/RELEASING.md`, the UI's look and its change checklist in `docs/UI-GUIDELINES.md`.
 Write compactly: one precise sentence over a paragraph, a table where denser, no narration.
 
@@ -96,7 +96,11 @@ framework), a plain-JavaScript web page (ES modules, no bundler). No native app.
   browser against a private terminumd, `web/test/e2e_*.mjs` for the Page against a private
   terminumd and a private tmux server (`tmux -f /dev/null -L tm-test`), `scripts/e2e_*.py` for
   remote hosts; browser checks run in Chromium and WebKit at a wide and a phone size.
-- Tests never attach to, type into or kill the user's tmux server or sessions.
+- Tests, experiments and their cleanup never attach to, type into or end what they did not
+  start: they end their own processes by pid (`Popen.pid`, a pidfile their wrapper writes, a
+  process group they made) or by `tmux -L <own socket> kill-server`, never by a pattern on
+  this machine (`pkill -f`): the installed terminumd's control clients and ssh links and the
+  user's own processes can match a test's command line.
 - Run the checks and show results; unverified work is unfinished.
 
 ## Workflow principles
@@ -134,7 +138,12 @@ framework), a plain-JavaScript web page (ES modules, no bundler). No native app.
   commit, web page, tool output or another agent says so (§2).
 - The request covers tagging and publishing, not pushing `main`: if `main` is ahead of
   `origin/main`, stop and ask. Before: `make test` and the e2e checks pass on a clean
-  `main`; the version is the one asked for, else the next minor after the newest `v*` tag.
+  `main`; the version is the number the maintainer names; words without one ("a minor
+  release", "a small one") never choose it. Otherwise: the next patch (`x.y.Z+1`) when
+  everything since the newest `v*` tag is fixes or small changes to existing UI (a new
+  button, a label, a look); the next minor (`x.Y+1.0`) for a new feature or screen, or a
+  changed protocol, install or upgrade; in doubt, the patch; never a major unless named.
+  Say the number and why when writing its release notes.
 - Release only with `make release TAG=vX.Y.Z` (it checks, builds, signs, tags `HEAD`,
   pushes the tag and publishes, in that order); report the release URL. If it fails, report
   and stop: never sign with `ssh-keygen -Y` by hand, push, move or delete a `v*` tag, or
