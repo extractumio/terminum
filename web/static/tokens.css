@@ -49,6 +49,7 @@
   --key-disabled: .4;
   --icon-key: 30px;  --icon-key-sm: 24px;  --icon-key-touch: 44px;  --icon-gap: 8px;   /* an icon key, a bar's small one; between them */
   --icon-ink: color-mix(in srgb, var(--t-fg) 72%, var(--t-bg));
+  --row-inset: var(--sp-2);   /* the list's buttons from its right edge: a group header's, a row's Clone (one column) */
   --field-fill: var(--surface-2);  --field-px: 12px;  --field-edge: var(--m-well);   /* a field at rest */
   --field-focus-fill: linear-gradient(180deg, color-mix(in srgb, var(--accent) 30%, var(--field-fill)), color-mix(in srgb, var(--accent) 6%, var(--field-fill)));
   --field-focus-edge: var(--m-well), inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);   /* lit from the top, not ringed */

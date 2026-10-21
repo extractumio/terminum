@@ -18,11 +18,13 @@
 
 /* Clone: a column of its own at the row's right end (the state column stays in sight); with a
    mouse it shows on hover, with a finger always */
-.grp li:has(> .clone) > .item { width: calc(100% - 30px); }
-.grp li > .clone { position: absolute; right: 0; top: 8px; opacity: 0; }   /* an icon key (controls.css) */
+/* the row's fill the list's whole width, Clone over its right end in the header buttons' column */
+.grp li { --clone-w: var(--icon-key-sm); }
+.grp li:has(> .clone) > .item { padding-right: calc(var(--clone-w) + 2 * var(--row-inset)); }
+.grp li > .clone { position: absolute; z-index: 1; right: var(--row-inset); top: 8px; opacity: 0; }   /* an icon key (controls.css) */
 @media (hover: hover) { .grp li:hover > .clone, .grp li > .clone:focus-visible { opacity: 1; } }
 @media (hover: none) {
-  .grp li:has(> .clone) > .item { width: calc(100% - 40px); }
+  .grp li { --clone-w: 40px; }
   .grp li > .clone { opacity: .8; top: 4px; }
 }
 
@@ -32,9 +34,9 @@
 .unread { width: 6px; height: 6px; background: currentColor; pointer-events: none;
   border-radius: 64% 36% 57% 43% / 40% 62% 38% 60%; rotate: 18deg; }
 .item .st .unread { margin-top: 6px; }
-.grp li > .unread { position: absolute; right: calc(var(--icon-key-sm) / 2 - 3px); top: 33px; }   /* level with the row's second line, under Clone's middle */
+.grp li > .unread { position: absolute; right: calc(var(--row-inset) + var(--clone-w) / 2 - 3px); top: 33px; }   /* level with the row's second line, under Clone's middle */
 @media (hover: hover) { .grp li:hover > .unread, .grp li:has(> .clone:focus-visible) > .unread { visibility: hidden; } }
-@media (hover: none) { .grp li > .unread { right: 43px; top: 38px; } }
+@media (hover: none) { .grp li > .unread { right: calc(var(--row-inset) + var(--clone-w) + 3px); top: 38px; } }   /* left of Clone, which a finger always sees */
 
 /* the second line: folder and titles first, what runs there at the right edge */
 .s > .progs { flex: none; margin-left: auto; padding-left: 8px; display: flex; gap: 6px; }
