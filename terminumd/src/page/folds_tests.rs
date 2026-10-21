@@ -114,6 +114,25 @@ fn a_written_file_and_a_long_command_and_output() {
     assert_eq!(spans(&folds(&out, true)), one(4, 31, "⋯ 28 more lines of output"));
 }
 
+/// AC-32: Claude Code blinks a running tool's dot (600 ms "⏺", 600 ms a space): its command
+/// folds alike in both phases, so the fold does not come and go; indented text that only looks
+/// like a call, with no tool result after it, never folds as a command.
+#[test]
+fn a_running_tools_command_folds_with_its_dot_blinked_off() {
+    let run = |dot: &str| rows(&[format!("{dot} Bash(D=/tmp/x; make build > $D/build.log 2>&1; echo \"rc=$?\"; grep -E \"^(warning|error)\" \\"),
+        "      $D/build.log | head -3; tail -2 $D/build.log; make install > $D/install.log".into(),
+        "      2>&1; echo \"install rc=$?\"; grep -v \"^$\" $D/install.log | tail".into(),
+        "      -3)".into(), "  ⎿  build rc=0".into(), "     (4m 10s · timeout 10m)".into()]);
+    let want = one(2, 3, "⋯ 2 more lines of the command");
+    assert_eq!(spans(&folds(&run("⏺"), true)), want);
+    assert_eq!(spans(&folds(&run(" "), true)), want, "the dot blinked off");
+    let mut gap = run(" ");
+    gap.insert(4, (String::new(), true));
+    assert_eq!(spans(&folds(&gap, true)), want, "a blank row before its result");
+    let call = rows(&["  printf(a,", "      b,", "      c,", "      d);", "done"]);
+    assert_eq!(folds(&call, true), vec![], "no tool result after it: not a command");
+}
+
 #[test]
 fn rows_tmux_wrapped_are_one_line() {
     let mut r = vec![("⏺ Update(a.ts)".to_string(), true), ("  ⎿  Updated a.ts with 7 additions".to_string(), true)];

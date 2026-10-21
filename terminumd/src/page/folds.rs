@@ -51,7 +51,17 @@ pub struct Fold {
 
 /// `^⏺ [\w.-]+\(`: Claude Code's tool call, "⏺ Bash(…".
 fn is_tool(t: &str) -> bool {
-    let Some(rest) = t.strip_prefix("⏺ ") else { return false };
+    t.strip_prefix("⏺ ").is_some_and(is_call)
+}
+
+/// `^  [\w.-]+\(`: a running tool's call while Claude Code blinks its dot off (600 ms of each
+/// 1.2 s): a tool's only when a tool's result follows its command.
+fn is_blinked_tool(t: &str) -> bool {
+    t.strip_prefix("  ").is_some_and(is_call)
+}
+
+/// `[\w.-]+\(`: a tool's name and its call.
+fn is_call(rest: &str) -> bool {
     let name = rest.find(|c: char| !(is_word(c) || c == '.' || c == '-')).unwrap_or(rest.len());
     name > 0 && rest[name..].starts_with('(')
 }
@@ -275,9 +285,13 @@ fn line_folds(lines: &[&str], newest: bool) -> Vec<RowFold> {
     let n = text.len();
     let mut f = Taken { out: Vec::new(), taken: vec![false; n] };
     for (i, t) in text.iter().enumerate() {
-        if is_tool(t) {
+        let blinked = !is_tool(t) && is_blinked_tool(t);
+        if is_tool(t) || blinked {
             // the command a tool ran, its lines
             let (j, ends) = cont(&text, i, 4);
+            if blinked && !text[j.min(n)..].iter().find(|r| !py_strip(r).is_empty()).is_some_and(|r| is_result(r)) {
+                continue;                               // indented text that only looks like a call
+            }
             if ends && j - (i + 1) >= CMD_KEEP + CMD_MIN {
                 let k = j - (i + 1) - CMD_KEEP;
                 f.fold(i + 1 + CMD_KEEP, j - 1, format!("⋯ {k} more lines of the command"));
