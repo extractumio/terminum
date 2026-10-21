@@ -41,10 +41,12 @@ export const tableTop = (text, next) => {
 
 /** The table whose top rule is line i of `lines` ([{text}]): {to (its bottom rule's line), head
  *  (cells, or null), rows (cells), align ("right" for a column of numbers, else "")}; null when
- *  its bottom rule is not printed yet; undefined when it is no table. A row's cell wrapped over
- *  lines is one cell again: between rules each part is a row, and without rules between the
- *  rows a line whose first cell is empty goes on the row above (box tables only: mysql and its
- *  kind never wrap a cell, and an empty first value is a row of its own). */
+ *  its bottom rule is not printed yet, also when a line off its grid has only blank lines after
+ *  it (a row printed halfway, a frame caught half-drawn: the rest is on its way); undefined
+ *  when it is no table. A row's cell wrapped over lines is one cell again: between rules each
+ *  part is a row, and without rules between the rows a line whose first cell is empty goes on
+ *  the row above (box tables only: mysql and its kind never wrap a cell, and an empty first
+ *  value is a row of its own). */
 export function drawnTable(lines, i, max) {
   const headless = headRow(lines[i].text, lines[i + 1]?.text);
   if (!headless && !tableTop(lines[i].text)) return undefined;
@@ -60,7 +62,7 @@ export function drawnTable(lines, i, max) {
     if (isRule(t, "end", next) && parts.at(-1).length) return grid(parts, j, ascii);
     if (isRule(t, "mid", next)) { if (!parts.at(-1).length) return undefined; parts.push([]); continue; }
     const cells = ascii ? t.split("|") : t.split(BOX.bar);
-    if (!row(t) || cells.length !== n + 2) return undefined;
+    if (!row(t) || cells.length !== n + 2) return lines.slice(j + 1).some((l) => l.text.trim()) ? undefined : null;
     parts.at(-1).push(cells.slice(1, -1).map((c) => c.trim()));
   }
   return lines.length - i < max ? null : undefined;

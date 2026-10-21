@@ -266,6 +266,20 @@ test("not a drawn table: an agent's box of one column, a line off the grid, a ta
   assert.equal(scan(rows("x\n".repeat(30) + open)).settled, 30, "it waits for its last rule");
 });
 
+test("a drawn table caught half-drawn waits for the rest: a row cut midway, blank rows under it; never settled past its top", () => {
+  // longer than the lines a scan keeps open at the end anyway
+  const body = Array.from({ length: 8 }, (_, i) => [`  │ row ${i}    │ value ${i}                   │`, "  ├─────────┼───────────────────────────┤"]).flat();
+  const table = [...CLAUDE_TABLE.slice(2, 5), ...body, ...CLAUDE_TABLE.slice(8, 10)], cut = table.at(-2).slice(0, 14);
+  const lead = "x\n".repeat(30);
+  for (const [why, text] of [["a row cut midway", [...table.slice(0, -2), cut]], ["blank rows under it", [...table.slice(0, -3), "", "", ""]]]) {
+    const s = scan(rows(lead + text.join("\n")));
+    assert.equal(s.found.length, 0, why);
+    assert.ok(s.settled <= 30, `${why}: its top rule is not settled as text (${s.settled})`);
+  }
+  assert.deepEqual(found(lead + table.join("\n")).map(({ kind, from }) => [kind, from]), [["table", 30]], "drawn whole, it is one");
+  assert.deepEqual(found("┌───┬───┐\n│ a │ b │\n│ c   d │\n\n  Done."), [], "a line off the grid with text after it: no table");
+});
+
 test("a Markdown document ends before a drawn table, which is a widget of its own", () => {
   const text = "## Plan\n\n- read **a**\n- write `b`\n" + CLAUDE_TABLE.slice(2, 10).join("\n");
   assert.deepEqual(found(text).map((r) => r.kind), ["markdown", "table"]);

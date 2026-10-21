@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.27 |
+| Version | 0.3.28 |
 | Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.28 | 2026-10-21 | Owner: a drawn table the page first saw half-drawn (its last row cut, or blank rows under it: an agent's frame caught midway over ssh) stayed text for good; it waits for the rest (AC-31). |
 | 0.3.27 | 2026-10-21 | Owner: Ask's dialog a quarter larger (600 px wide, a 4-line question, the quote up to 37.5% of the window's height) and centered on the terminal, not on the whole window (AC-37). |
 | 0.3.26 | 2026-10-21 | Owner: a running tool's "⋯ 2 more lines of the command" came and went every 0.6 s, the page jumping: Claude Code blinks the running tool's dot and the rule needed it; a row with the dot blinked off counts when the tool's result follows (AC-32). |
 | 0.3.25 | 2026-10-21 | Owner: Backspace or Delete over text selected in a coding agent's input deletes it, as in a text field (AC-40). |
@@ -132,7 +133,7 @@ Scenario: AC-31 happy path — a table drawn with rules
   Then the lines from the top rule to the bottom rule are a table widget: a bar ("Table · Raw | Table · Copy") over an HTML table, the first part (before the first rule) its head, each part between rules one row, a wrapped cell's lines one cell again; its cells wrap at the view's width, a table wider than that scrolls sideways in the widget
   And the rules may be light, heavy, double or rounded (rich, tabulate) or ASCII ("+----+", mysql, prettytable); a table without rules between its rows has a row per line, in a box table a line whose first cell is empty going on the row above (an ASCII table's never: mysql does not wrap); a column of numbers (units and "-" allowed) is aligned right; cells are put in as text
   And Copy copies it as a Markdown table ("|" in a cell as "\|"); Raw shows the drawn lines
-  And it is a widget although the program colored it; one rule of a single column (an agent's box, a banner), a line that does not fit the grid, or a table whose bottom rule is not printed yet is no table; a Markdown document ends before a drawn table
+  And it is a widget although the program colored it; one rule of a single column (an agent's box, a banner), or a line that does not fit the grid is no table; a table whose bottom rule is not printed yet, or whose line off the grid has only blank lines after it (a row printed halfway, a frame caught half-drawn), waits for the rest; a Markdown document ends before a drawn table
   And a table whose top rule is not there (scrolled away, or cut off where it was copied: "│ What │ Without │ With │" then "├───┼───┼───┤") starts at that head row, when the middle rule under it has as many columns
   And known limits: a table with rules between its rows and no head shows its first row as the head; a first cell wrapped without rules between rows (rich) becomes a row of its own; an unchanged table in a diff's context is a widget too; its colors are dropped in the widget (Raw keeps them)
 
