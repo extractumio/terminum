@@ -216,10 +216,21 @@ export async function webSent(browser, name) {
       await page.click("#remindfab");
       await page.waitForSelector("#remindpane:not([hidden])", { timeout: 3000 }).catch(() => {});
       const before = await page.isVisible("#remindpane");
-      await page.click('#sessions .item[data-id="tmux:local:terminum:%2"]');
+      const shaded = await page.evaluate(() => !document.getElementById("panescrim")?.hidden);
+      await page.mouse.click(5, 5);                                   // outside the pane: on its shade
+      await pause(page, 200);
+      const closed = await page.evaluate(() => document.getElementById("remindpane").hidden && document.getElementById("panescrim").hidden);
+      await page.click("#remindfab");
+      await page.waitForSelector("#remindpane:not([hidden])", { timeout: 3000 }).catch(() => {});
+      await page.keyboard.press("Escape");                           // the keys are the pane's while it is open
+      await pause(page, 200);
+      const esc = await page.evaluate(() => document.getElementById("remindpane").hidden);
+      await page.click("#remindfab");
+      await page.waitForSelector("#remindpane:not([hidden])", { timeout: 3000 }).catch(() => {});
+      f.say({ t: "marks", items: [] });                               // its reminders gone (another session's shown): it closes
       await pause(page, 400);
-      check("reminders: the bell's pane closes when another session is shown (its reminders are not that session's)",
-        before && await page.evaluate(() => document.getElementById("remindpane").hidden && document.getElementById("remindfab").hidden));
+      check("reminders: the bell's pane is modal: the page shaded behind it, a press outside or Esc closes it, and it closes when its reminders go",
+        before && shaded && closed && esc && await page.evaluate(() => document.getElementById("remindpane").hidden), JSON.stringify({ before, shaded, closed, esc }));
     }
     await f.context.close();
   }

@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.3.28 |
+| Version | 0.3.29 |
 | Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.3.29 | 2026-10-21 | Owner: the sent history's pane and the reminders' are modal: the page shaded behind them, a press outside closes them as × and Esc do, they take the keys while open and give them back (AC-90, AC-91). |
 | 0.3.28 | 2026-10-21 | Owner: a drawn table the page first saw half-drawn (its last row cut, or blank rows under it: an agent's frame caught midway over ssh) stayed text for good; it waits for the rest (AC-31). |
 | 0.3.27 | 2026-10-21 | Owner: Ask's dialog a quarter larger (600 px wide, a 4-line question, the quote up to 37.5% of the window's height) and centered on the terminal, not on the whole window (AC-37). |
 | 0.3.26 | 2026-10-21 | Owner: a running tool's "⋯ 2 more lines of the command" came and went every 0.6 s, the page jumping: Claude Code blinks the running tool's dot and the rule needed it; a row with the dot blinked off counts when the tool's result follows (AC-32). |
@@ -428,7 +429,7 @@ Scenario: AC-90 happy path — kept
 
 Scenario: AC-90 happy path — read back
   When the user presses the speech bubble under the magnifier
-  Then a pane beside it (under it where the view is narrow) shows the project's last one as Markdown (a shell's command as a shell block), its folder, "1 of N", the agent and the time; ↑ (the up key) the one before, ↓ the one after, Copy, × (Esc), and at its foot Insert into chat (the message pasted into the shown pane's input as it was sent, no Enter; the pane closes); another pane shown shows its project's; a new one in the project shows while the last is shown
+  Then a modal pane beside it (under it where the view is narrow; the page shaded behind it, the keys its own until it closes, a press outside it closing it as × and Esc do) shows the project's last one as Markdown (a shell's command as a shell block), its folder, "1 of N", the agent and the time; ↑ (the up key) the one before, ↓ the one after, Copy, × (Esc), and at its foot Insert into chat (the message pasted into the shown pane's input as it was sent, no Enter; the pane closes); another pane shown shows its project's; a new one in the project shows while the last is shown
 
 Scenario: AC-90 happy path — where it was sent, Jump to message
   Then each entry keeps its pane and the history line its text began on, a hint only (tmux numbers lines anew when it drops them, re-wraps or is cleared); a coding agent's prompt from its hooks takes the line the page told for the same text in that pane (matched by its letters and digits, not by time)

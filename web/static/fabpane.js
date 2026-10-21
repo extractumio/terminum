@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A floating button's pane (the sent history's, the reminders', the bookmarks', find's field):
-// the button opens and closes it without taking the keys from the terminal; Esc and the pane's ×
-// close it; it stands left of its button, its first row centered on the button, or under it
-// where the view is too narrow (then `data-under` is set: the buttons below make way).
+// A floating button's pane (the sent history's, the reminders'): modal, the page shaded behind it
+// (#panescrim, controls.css): it takes the keys while open; Esc, its ×, its button or a press
+// outside it close it, and the keys go back where they were. placeBeside also places the
+// bookmarks' pane and find's field: left of their button, the first row centered on it, or under
+// it where the view is too narrow (then `data-under` is set: the buttons below make way).
 
 const GAP = 14;                // px between a button and its pane
 
@@ -25,19 +26,36 @@ export function placeBeside(fab, pane) {
   if (fits) delete pane.dataset.under; else pane.dataset.under = "";
 }
 
+/** The shade behind an open pane, made once; a press on it calls `onPress`. */
+function scrim(onPress) {
+  let el = document.getElementById("panescrim");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "panescrim";
+    el.hidden = true;
+    document.getElementById("main").append(el);
+  }
+  el.onpointerdown = (e) => { e.preventDefault(); onPress(); };
+  return el;
+}
+
 /** fab, pane, close: elements; onToggle(open) after it opened or closed. {toggle(on?), open(), place()}. */
 export function fabPane({ fab, pane, close, onToggle }) {
-  let open = false;
+  let open = false, back = null;
   function toggle(on = !open) {
+    if (on === open) return;
     open = on;
     pane.hidden = !on;
+    scrim(() => toggle(false)).hidden = !on;
     fab.setAttribute("aria-expanded", String(on));
+    if (on) { back = document.activeElement; pane.focus({ preventScroll: true }); }
+    else if (back?.isConnected) { back.focus({ preventScroll: true }); back = null; }
     onToggle(on);
     place();
   }
   const place = () => placeBeside(fab, pane);
   fab.addEventListener("click", () => toggle());
-  fab.addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
+  fab.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   close.addEventListener("click", () => toggle(false));
   pane.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); toggle(false); } });
   return { toggle, open: () => open, place };
