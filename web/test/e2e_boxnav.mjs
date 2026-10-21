@@ -6,7 +6,8 @@
 // Claude Code's real rows, recorded in iTerm2 at 60 columns while a text was typed a character at
 // a time (claude-input-60.json: the text, each frame's row starts and cursor): every frame is one
 // line on the page, and the page counts the cursor where it is in the text. A menu Claude Code
-// draws between rules (its questions) keeps its own ↑ and ↓.
+// draws between rules (its questions) keeps its own ↑ and ↓. Backspace over a selection in the input
+// deletes exactly it (AC-40).
 // Alone: node web/test/e2e_boxnav.mjs.
 
 import fs from "node:fs";
@@ -75,6 +76,7 @@ export async function webBoxNav(browser, name = "chromium") {
       if (k === "\x1b[D") cc.at = Math.max(0, cc.at - 1);
       else if (k === "\x1b[C") cc.at = Math.min(cc.text.length, cc.at + 1);
       else if (k === "\x1b[A" || k === "\x1b[B") cc.history++;
+      else for (const c of k) if (c === "\x7f" && cc.at > 0) { cc.text = cc.text.slice(0, cc.at - 1) + cc.text.slice(cc.at); cc.at--; }
     }
     setTimeout(() => (cc.draw ?? draw)(), cc.delay);                    // the echo comes a moment later, as from iTerm2
   };
@@ -293,6 +295,37 @@ export async function webBoxNav(browser, name = "chromium") {
     JSON.stringify({ highBox, highIn, high, highParked, at: cc.at, highFrom, history: cc.history }));
   cc.parked = false; cc.draw = null;
   say({ t: "hist", mode: "reset", sid: "S1", first: 0, oldest: 0, truncated: false, lines: [] });
+
+  // a selection from "wrapping" to "differs", over the page's lines, then Backspace: exactly it goes
+  const select = (from, to) => page.evaluate(([a, b]) => {
+    const find = (word) => {
+      const walk = document.createTreeWalker(document.getElementById("screen"), NodeFilter.SHOW_TEXT);
+      for (let t = walk.nextNode(); t; t = walk.nextNode()) { const i = t.data.indexOf(word); if (i >= 0) return [t, i]; }
+      return null;
+    };
+    const s = find(a), e = find(b);
+    if (!s || !e) return false;
+    const r = document.createRange(); r.setStart(...s); r.setEnd(...e);
+    document.activeElement?.blur(); getSelection().removeAllRanges(); getSelection().addRange(r);   // as a mouse selection leaves it
+    return true;
+  }, [from, to]);
+  await set(TEXT, TEXT.length);
+  const selected = await select("wrapping", "differs"), cutFrom = sent.length;
+  await press("Backspace");
+  const want = TEXT.slice(0, TEXT.indexOf("wrapping")) + TEXT.slice(TEXT.indexOf("differs"));
+  const cutKeys = sent.slice(cutFrom).filter((m) => m.t === "in").map((m) => m.data);
+  const cutAfter = await page.evaluate(() => ({ sel: String(getSelection()), kbd: document.activeElement?.id }));
+  check(`${at} Backspace over a selection across the page's lines deletes exactly it, the cursor where it began, the keys back in the input`,
+    selected && cc.text === want && cc.at === TEXT.indexOf("wrapping") && cutKeys.length === 1 && cutAfter.sel === "" && cutAfter.kbd === "kbd",
+    JSON.stringify({ selected, text: cc.text.slice(0, 40), at: cc.at, keys: cutKeys.map((k) => k.length), cutAfter }));
+  // a selection reaching out of the input (the output above it) deletes nothing
+  await set(TEXT, TEXT.length);
+  const outFrom = sent.length;
+  const outSelected = await select("Done.", "wrapping");
+  await press("Backspace");
+  check(`${at} a selection reaching out of the input deletes nothing`, outSelected && cc.text === TEXT && sent.slice(outFrom).every((m) => m.t !== "in" || !m.data),
+    JSON.stringify({ text: cc.text.length, sent: sent.slice(outFrom).map((m) => [m.t, m.data]) }));
+  await page.evaluate(() => { getSelection().removeAllRanges(); document.getElementById("kbd").focus(); });
 
   // Claude Code's questions between rules, as drawn in iTerm2 (the hidden cursor at the chosen
   // item, 7 rows above the lower rule): ↓ is the menu's, not → to the next question

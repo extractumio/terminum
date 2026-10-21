@@ -16,6 +16,7 @@ import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
 import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
+import { selectionCut } from "./selcut.js";
 import { switchGate } from "./switchgate.js";
 import { askConfirm, navTools } from "./navtools.js";
 import { embedded, quickShell } from "./quick.js";
@@ -138,6 +139,8 @@ function tapLink(x, y) {
 // shell's prompt along the row. Only where arrows edit a line (not htop, less, mc); never ↑ or ↓,
 // which would recall history.
 const boxMoves = new BoxMoves(view, $("screen"));
+selectionCut({ term: $("term"), cut: (range) => (!gate.holding() && findItem(st.groups, st.sid)?.item.agent ? boxMoves.cut(range, st.appCursor) : null),
+  send: (data) => { input.forget?.(); send({ t: "in", data, ...trace.keyFields(data, "cut") }); view.typed(); }, focus: () => input.focus() });
 function tapMove(x, y) {
   const found = st.sid && findItem(st.groups, st.sid);
   if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn() || gate.holding()) return;   // the screen drawn is the pane before

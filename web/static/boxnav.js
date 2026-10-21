@@ -6,7 +6,7 @@
 // its text a character (a grapheme: an emoji is one) at a time, one more at a row's wrap at a
 // space or a line the user ended, none inside a word it broke at the row's edge (measured in
 // iTerm2). The page's lines are read from the characters' boxes, so a blank line or one out of
-// sight counts as any other.
+// sight counts as any other. Backspace or Delete over a selection in the box deletes it (AC-40).
 
 const PREFIX = 2;                 // the prompt ("❯ ", "! ") or the indentation of the next rows
 const FAINT = 2;
@@ -178,5 +178,31 @@ export class BoxMoves {
     const s = this.state(), p = s && this.at(s, x, y);
     this.goal = null;
     return p ? this.move(this.base(s), Math.min(p.o, Math.max(s.end, s.at)), appCursor) : null;
+  }
+
+  /** The offset in the input of a selection's end (node, offset), or null when it is not on a
+   *  row of the box: the characters before it on its row, after the prompt, at most its text. */
+  offsetAt(s, node, offset) {
+    const i = s.recs.findIndex((r) => r.el.contains(node));
+    if (i < 0) return null;
+    const r = document.createRange();
+    r.setStart(s.recs[i].el, 0);
+    r.setEnd(node, offset);
+    const col = graphemes(r.toString().replace(/︎/g, "")).length;
+    return s.lay[i].start + Math.min(s.lay[i].len, Math.max(0, col - PREFIX));
+  }
+
+  /** Backspace or Delete over `range`, a selection: the keys that delete exactly its characters
+   *  (→ or ← to its end, then a backspace each, AC-40), or null when it is not wholly in the
+   *  input's text (output, the rules, the footer; past the text typed: a suggestion). */
+  cut(range, appCursor) {
+    const s = this.state();
+    if (!s || !range || range.collapsed) return null;
+    const a = this.offsetAt(s, range.startContainer, range.startOffset), b = this.offsetAt(s, range.endContainer, range.endOffset);
+    if (a === null || b === null || b <= a || b > Math.max(s.end, s.at)) return null;
+    const from = this.base(s);
+    this.goal = null;
+    this.last = { lo: Math.min(from, a), hi: Math.max(from, b), to: a, t: performance.now() };   // the cursor ends where the selection began
+    return stepKeys(b - from, appCursor) + "\x7f".repeat(b - a);
   }
 }
