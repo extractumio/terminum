@@ -6,6 +6,7 @@
 // window over the terminal, each closed with its own [x]. Closing View's last file goes back to
 // the terminal. Each session has its own View: the shown session's frame is #file, the others'
 // wait hidden beside it with their tabs and unsaved edits (moving an iframe would reload it).
+// Docked Files is open or closed for each session, in this browser (AC-70).
 
 const $ = (id) => document.getElementById(id);
 const NAMES = ["term", "files", "file"];
@@ -17,7 +18,8 @@ export class Views {
     this.onShow = onShow;          // the terminal was shown or changed width: it may need a redraw
     this.onBack = onBack;          // View closed its last file: the terminal may take the keys
     this.current = "term";         // the view in the main column below WIDE
-    this.docked = store.get("filesDocked", true);   // Files is open on the right at WIDE
+    this.dockedBy = store.get("filesDockedBy", {}) ?? {};   // the sessions whose docked Files are closed (the others': open)
+    this.docked = true;            // Files is open on the right at WIDE, for the shown session
     this.floating = false;         // File is open over the terminal at WIDE
     this.filesSrc = "";            // what the Files frame shows: its pane, folder and host
     this.filesError = null;        // why the pane has no Files
@@ -61,7 +63,7 @@ export class Views {
 
   setDocked(on) {
     this.docked = on;
-    this.store.set("filesDocked", on);
+    if (this.sid) { if (on) delete this.dockedBy[this.sid]; else this.dockedBy[this.sid] = false; this.store.set("filesDockedBy", this.dockedBy); }
     this.layout();
   }
 
@@ -118,6 +120,7 @@ export class Views {
     }
     next.id = "file";
     this.sid = sid;
+    this.docked = this.dockedBy[sid] ?? true;
     this.fileHost = next.dataset.host || null;
     const reopen = next.dataset.open === "true";
     delete next.dataset.sid; delete next.dataset.open; delete next.dataset.host;
@@ -138,6 +141,10 @@ export class Views {
       try { dirty = !!f.contentWindow?.fbBusy?.(); } catch { /* not loaded yet: keep it */ }
       if (!live.has(sid) && !down.has(server) && !dirty) f.remove();
     }
+    // a closed session's goes; not one of a server this layout lists no pane of (its read failed, it reconnects)
+    const listed = new Set([...live].map((sid) => sid.split(":").slice(1, 3).join(":")));
+    const gone = Object.keys(this.dockedBy).filter((sid) => !live.has(sid) && listed.has(sid.split(":").slice(1, 3).join(":")));
+    if (gone.length) { for (const sid of gone) delete this.dockedBy[sid]; this.store.set("filesDockedBy", this.dockedBy); }
   }
 
   setTheme(theme) {

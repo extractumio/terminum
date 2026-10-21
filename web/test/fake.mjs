@@ -38,9 +38,10 @@ export function proofOf(secret, n) {
 /** Opens the page. secret: what the fake server knows (its proof; "unknown_signin": none, it
  *  answers 404 unknown_signin); stored: a sign-in already in the origin's storage; auth:
  *  /auth/check's answer (204, or {login}); login(body): /auth/login's answer as [status, json];
- *  hook(msg, say): every message the page sends. */
+ *  hook(msg, say): every message the page sends; onSub(msg, say): answers a "sub" in place of the
+ *  screen (true: answered). */
 export async function openPage(browser, { device = WIDE, secret = null, stored = null, auth = 204, login = null, layout = LAYOUT,
-  screen = SCREEN, cols = 80, hook = null, url = "/", css = "", settings = null } = {}) {
+  screen = SCREEN, cols = 80, hook = null, onSub = null, url = "/", css = "", settings = null } = {}) {
   // reduced motion: boxes measured at once are at their place and size (e2e_motion.mjs checks the motion)
   const context = await browser.newContext({ reducedMotion: "reduce", ...device });
   const page = await context.newPage();
@@ -81,7 +82,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     ws.onMessage((m) => {
       const msg = JSON.parse(String(m));
       sent.push(msg);
-      if (msg.t === "sub") {
+      if (msg.t === "sub" && !onSub?.(msg, (m) => ws.send(JSON.stringify(m)))) {
         say({ t: "theme", sid: msg.id, theme: THEME });
         say({ t: "hist", mode: "reset", sid: msg.id, first: 0, oldest: 0, truncated: false, lines: [] });
         say({ t: "screen", sid: msg.id, full: true, n: screen.length, cols, rows: screen.length, alt: false, ch: screen.map((l, i) => [i, l]) });
