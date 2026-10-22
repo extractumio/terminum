@@ -161,8 +161,10 @@ export function rowMenus({ list, send, item, projects, clone }) {
     const items = [...box.querySelectorAll("button:not(:disabled)")], i = items.indexOf(document.activeElement);
     items[(i + (e.key === "ArrowDown" ? 1 : items.length - 1)) % items.length]?.focus();
   });
-  longPress(list, (e) => !e.target.closest(".grip, .clone") && e.target.closest(".item:not(.child)")?.closest("li"),
-    (li, x, y) => rowMenu(li, x - 24, y + 28, true));
+  // a row that can move: its menu is a lift let go (reorder.js); one that cannot (a filter shows): a hold
+  /** A finger lifted `li` and let go at x, y without moving, or held one that cannot move. */
+  const held = (li, x, y) => rowMenu(li, x - 24, y + 28, true);
+  longPress(list, (e) => !e.target.closest(".clone") && e.target.closest(".item:not(.child)")?.closest("li:not([data-drag])"), held);
   // a press elsewhere closes it (pointerdown: iOS sends no click for a tap on a plain area)
   // a press on the shade (the dialog itself, outside its box) closes it, and reaches nothing
   // under it; the lift of the finger that opened it does not

@@ -29,6 +29,7 @@ import { webWidgets } from "./e2e_widgets.mjs";
 import { webIdeKeys } from "./e2e_idekeys.mjs";
 import { webScreenFolds } from "./e2e_screenfolds.mjs";
 import { webProjects } from "./e2e_projects.mjs";
+import { webListDrag } from "./e2e_listdrag.mjs";
 import { webPhoneRow } from "./e2e_phonerow.mjs";
 import { webRows } from "./e2e_rows.mjs";
 import { webResize } from "./e2e_resize.mjs";

@@ -136,19 +136,9 @@ function iconButton(cls, name, label, title, onClick) {
   return b;
 }
 
-// The handle a row or a group is dragged by (reorder.js); not while a filter shows a subset.
-function grip(kind, label) {
-  const g = el("span", "grip");
-  g.dataset.kind = kind;
-  g.title = `Drag to reorder ${label}`;
-  g.setAttribute("aria-hidden", "true");
-  g.append(icon("grip-vertical", 14));
-  return g;
-}
-
 function row(item, current, onPick, movable, child = false, marked = new Map(), opts = {}) {
   const li = document.createElement("li");
-  if (movable) li.append(grip("row", "this window"));
+  if (movable) li.dataset.drag = "row";           // dragged by its body (reorder.js); not while a filter shows a subset
   const b = el("button", "item" + (child ? " child" : "") + (item.id === current ? " on" : ""));
   b.type = "button";
   b.dataset.id = item.id;
@@ -249,7 +239,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     sec.dataset.pid = p.id;
     sec.style.setProperty("--proj", projectColor(p));
     const h = el("h2");
-    if (!q) h.append(grip("project", "this project"));
+    if (!q) h.dataset.drag = "project";
     const t = el("button", "toggle");
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));
@@ -300,7 +290,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     const sec = el("section", `grp ${g.kind}` + (g.host ? " hostgrp" : "") + (gs && gs !== "attached" ? ` ${gs}` : ""));
     if (g.wid) sec.dataset.wid = g.wid;
     const h = el("h2");
-    if (g.wid && !q) h.append(grip("group", "this session"));
+    if (g.wid && !q) h.dataset.drag = "group";
     const t = el("button", "toggle");
     t.type = "button";
     t.setAttribute("aria-expanded", String(!closed));

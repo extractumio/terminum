@@ -377,7 +377,7 @@ export async function webApp(browser) {
   const tree = await $eval(() => ({
     top: [...document.querySelectorAll("#sessions .grp > ul > li > .item")].map((b) => b.dataset.id),
     kids: [...document.querySelectorAll('#sessions .item[data-id="P1"] ~ .kids .item.child')].map((b) => b.dataset.id),
-    kidGrips: document.querySelectorAll("#sessions .kids .grip").length,
+    kidDrags: document.querySelectorAll("#sessions .kids [data-drag]").length,   // a pane under its window does not move alone
     kidIdx: [...document.querySelectorAll("#sessions .kids .idx")].map((i) => i.textContent).join(""),
     indent: document.querySelector("#sessions .kids .item").getBoundingClientRect().left - document.querySelector('#sessions .item[data-id="P1"]').getBoundingClientRect().left }));
   const shownMarks = await $eval(() => ({ states: [...document.querySelectorAll("#sessions .item")].map((b) => b.querySelector(".state")?.classList[1] ?? "-").join(),
@@ -387,8 +387,8 @@ export async function webApp(browser) {
   await page.fill("#filter", "pragmatic");
   const flat = await $eval(() => [...document.querySelectorAll("#sessions .item")].map((b) => b.dataset.id + (b.classList.contains("child") ? "*" : "")));
   await page.fill("#filter", "");
-  check("AC-52 web app: a tab's other panes go under its first one, shifted in, with no tab number or grip; a filter shows them flat",
-    tree.top.join() === "S1,P1,S4" && tree.kids.join() === "P2,P3" && !tree.kidGrips && !tree.kidIdx && tree.indent > 10 && flat.join() === "P2",
+  check("AC-52 web app: a tab's other panes go under its first one, shifted in, with no tab number, not draggable alone; a filter shows them flat",
+    tree.top.join() === "S1,P1,S4" && tree.kids.join() === "P2,P3" && !tree.kidDrags && !tree.kidIdx && tree.indent > 10 && flat.join() === "P2",
     JSON.stringify({ tree, flat }));
 
   // on a computer a page out of focus pauses its stream; the Files frame's focus is the page's

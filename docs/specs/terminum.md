@@ -361,14 +361,15 @@ Scenario: AC-07 happy path — Clone and the row's menu
   Then every row has a Clone button at its right end (over the row's end on hover with a mouse, a column of its own with a finger); the groups have no [+]
   When the user presses Clone on window "api" (or picks Clone in its menu)
   Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane; a session of a project gives the project's window (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
-  When the user right-clicks a row, or rests a finger on it for half a second
+  When the user right-clicks a row, or rests a finger on it (0.35 s) and lifts it without moving
   Then a modal menu opens there (the page shaded behind it; a press outside closes it and reaches nothing under it; Esc too; below the finger; from the keyboard's menu key or ⇧F10 at the row, ↑ ↓ through it): Clone, Add to Project…, Remove from <project> (in one), Move to the Top, Move Up, Move Down, Move to the Bottom (those its place allows), Close Session (asked first: "Close the session api? The program running in it (claude) ends."); its head names the session and has × to close it
   And a move reorders the row among its group's rows: a tmux session's windows in tmux ("swap-window"), a project's sessions in the project
 Scenario: AC-07 happy path — rename and reorder
   When the user presses the pencil beside the title, types "deploy" and presses Enter
   Then terminumd runs "rename-window -t @2 'deploy'" and "select-pane -t %3 -T 'deploy'", and the list, the header and tmux's own status line show it within 2 s; an empty name restores "automatic-rename on"
-  When the user drags a window's row by its grip above another in its group
-  Then terminumd runs "move-window -s main:3 -t main:1" (and renumbers) and the list shows the new order within 2 s; rows of another session are never moved by a drag
+  When the user drags a window's row above another in its group (no grip: the row itself; with a mouse once it moved 6 px, a press that does not move still opens it; a finger rests 0.35 s on the row, which lifts, then moves, and the list scrolls by itself near its top and bottom edge; a finger that lifts without moving opens the row's menu; a finger that moves before then scrolls the list; while the list is filtered rows do not move, and a finger resting half a second opens the menu)
+  Then the row follows the pointer, a dashed outline of its size stands where it will land, among its group's rows only; Esc or a cancelled touch puts it back
+  And on release terminumd runs "move-window -s main:3 -t main:1" (and renumbers) and the list shows the new order within 2 s; rows of another session are never moved by a drag; a group's header drags the group among the groups (this browser's order)
 Scenario: AC-07 happy path — move a window to another session
   When the user picks "Move to session…" on a window and chooses "notes"
   Then terminumd runs "move-window -s main:3 -t notes:" and the window appears under "notes"; tmux keeps its panes running
@@ -740,10 +741,11 @@ Scenario: AC-92 happy path — a project
 Scenario: AC-92 happy path — new sessions, order, names
   When the user presses the project's [+]
   Then a window opens right after its last session, in the project's folder (the session's own when that folder is gone), and joins the project; Clone of a project's session joins it right after that session
-  When the user drags a project by its grip, or a session in it, or picks a move in a session's menu
+  When the user drags a project by its header, or a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
   Then the projects (every page's order) or its sessions are in that order
-  When the user picks Rename… in the project's ⋯ menu (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
+  When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename), or picks Ungroup
   Then it is named "API" (1–40 characters), or it goes and its sessions are back in their tmux groups
+  And the menu also has New Session (as its [+]: a window after its last session, in the project), Move to the Top, Up, Down, to the Bottom (among the projects as the list shows them, off at an end), and Close Project… (red): it asks "Close the project <name> and its N sessions? The programs running in them end." and, confirmed, closes each of its sessions; Cancel closes nothing
 Scenario: AC-92 edge — sessions that close
   When a project's pane closes
   Then it leaves its project when its server's list is read next (one added in the last 5 s is spared: a read on its way may not have it; the list is read again when those 5 s end, so it leaves then without another change); a project left without sessions goes (a server that cannot be read keeps its panes' places)

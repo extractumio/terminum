@@ -111,15 +111,6 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 @keyframes ask { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .state.waiting { animation: none; } }
 
-/* drag handles: in the gutter, shown on hover; a finger long-presses the row's grip */
-.grip { position: absolute; left: -9px; top: 9px; width: 14px; height: 20px; display: grid; place-items: center; color: var(--muted);
-  cursor: grab; touch-action: none; opacity: 0; z-index: 1; }
-.grp h2 .grip { top: 0; bottom: 0; margin-block: auto; }
-.grp li:hover .grip, .grp h2:hover .grip, .grip:focus-visible { opacity: .8; }
-@media (hover: none) { .grip { opacity: .35; } }
-#sessions.reordering, #sessions.reordering * { cursor: grabbing; user-select: none; }
-.dragging { opacity: .7; }
-.dragging .item { background: var(--chrome-2); box-shadow: var(--shadow-far); }
 .empty { color: var(--muted); padding: 16px 10px; margin: 0; }
 #scrim { display: none; }
 

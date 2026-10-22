@@ -81,7 +81,7 @@ export async function webLook(browser, name) {
     check("look: a group header's buttons (copy, import, ⋯) share one size, radius and color; no [+] (each row has Clone)",
       head.length === 3 && new Set(head.map(([, l]) => l)).size === 1, JSON.stringify(head));
     if (phone) {
-      const list = await small(page, "#nav button:not(.item):not(.grip)", 40);
+      const list = await small(page, "#nav button:not(.item)", 40);
       await page.click("#addhostbtn");
       const form = await small(page, "#addhost button", 40);
       await page.click("#addhostcancel");

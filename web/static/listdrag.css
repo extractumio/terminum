@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Dragging in the session list (reorder.js, AC-07, AC-92): the row itself, its landing slot dashed. */
+/* what can move: a hand with a mouse; a finger's press stays the list's scroll until it lifts the row */
+@media (hover: hover) { #sessions [data-drag]:not(.dragging) { cursor: grab; } }
+#sessions.reordering, #sessions.reordering * { cursor: grabbing; user-select: none; }
+#sessions li[data-drag], #sessions h2[data-drag] { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+/* lifted: a finger rested on it long enough, it rises before it moves */
+#sessions .lifted { scale: 1.02; box-shadow: var(--shadow-far); border-radius: var(--r-lg); background: var(--chrome-2); transition: scale .12s, box-shadow .12s; }
+/* the landing slot: the element itself, its size kept, its content hidden, its outline dashed */
+#sessions .dragging { outline: 1.5px dashed var(--muted); outline-offset: -1.5px; border-radius: var(--r-lg); }
+#sessions .dragging > * { visibility: hidden; }
+/* the copy under the pointer: the row's look, above the list, no hits */
+#sessions .dragghost { position: fixed; z-index: 50; margin: 0; pointer-events: none; opacity: .92; border-radius: var(--r-lg);
+  background: var(--chrome-2); box-shadow: var(--shadow-far); list-style: none; }
+@media (prefers-reduced-motion: reduce) { #sessions .lifted { transition: none; } }

@@ -177,13 +177,19 @@ export async function webProjects(browser, name) {
     const el = document.querySelector('#sessions .item[data-id$="%2"]'), r = el.getBoundingClientRect();
     el.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerType: "touch", clientX: r.left + 40, clientY: r.top + 10 }));
   });
-  await pause(p.page, 650);
+  await pause(p.page, 450);
+  await p.page.evaluate(() => {
+    const el = document.querySelector('#sessions .item[data-id$="%2"]'), r = el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, pointerType: "touch", clientX: r.left + 40, clientY: r.top + 10 }));
+  });
+  await pause(p.page, 100);
   const held = await menuItems(p.page);
-  check("AC-07 a finger resting on a row opens its menu", held[0] === "Clone" && held.length === 7, held.join());
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Clone" && held.length === 7, held.join());
   const pm = await mark(p.page);
-  check("AC-93 on a phone (Clone always there) the unread mark stands just left of Clone, level with the row's second line",
-    pm.seen && pm.clear >= 0 && pm.clear <= 4 && Math.abs(pm.y) <= 1, JSON.stringify(pm));
-  check("AC-07 on a phone Clone is always there", await p.page.evaluate(() => getComputedStyle(document.querySelector("#sessions li > .clone")).opacity !== "0"));
+  check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
+  check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");
+  const ph = await head(p.page);
+  check("AC-01 on a phone (no hover) a header's buttons are always there, its count before them", ph.acts === "1" && ph.count !== null, JSON.stringify(ph));
   check("no page errors", !p.errors.length, p.errors.join(" | "));
   await p.close();
 }

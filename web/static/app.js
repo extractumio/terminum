@@ -310,7 +310,7 @@ const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   if (kind === "group") store.set("groupOrder", ids);
   else if (kind === "project") send({ t: "project", action: "order", ids });
   else saveOrder(send, parent, ids);
-}, () => drawNav());                                // a layout may have come while dragging
+}, () => drawNav(), rowMenu.held);                  // a layout may have come while dragging
 
 function pick(id) {
   const of = !narrow.matches && findItem(st.groups, id)?.item.quickOf;   // a quick shell's row: its pane, with it
