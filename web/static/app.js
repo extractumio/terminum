@@ -41,7 +41,7 @@ import { askBox } from "./ask.js";
 import { recentSessions } from "./recent.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
 import { ideKeys } from "./idekeys.js";
-import { undoKey, undoTouch } from "./undo.js";
+import { editChoices, undoKey, undoTouch } from "./undo.js";
 import * as trace from "./trace.js";
 
 const $ = (id) => document.getElementById(id);
@@ -101,8 +101,8 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
-  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line) => { view.typed(); if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
-    tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), holdMenu: (x, y) => editMenu(x, y), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
+  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line) => { view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
+    tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), holdMenu: (x, y) => editMenu(x, y), undo: () => undoRedo(false, true), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
     wordDeletes: () => { const it = st.sid && findItem(st.groups, st.sid)?.item; return !!(it?.agent ? view.box : it?.shell && !st.ran); } } });
@@ -119,9 +119,12 @@ const recent = recentSessions({ store, exists: (id) => !!findItem(st.groups, id)
 if (!embedded) ideKeys({ back: recent.back, forward: recent.forward, files: () => views.toggleFiles(), undo: undoRedo,
   find: () => document.body.dataset.shown === "term" && !!st.sid && (bookmarks.search.toggle(true), true) });
 /** Undo or redo in the shown pane (AC-03): its program's key, or why it has none. */
-function undoRedo(redo) {
+// said: a toast says it went (a swipe has no other sign); an Undo makes Redo apply, typing ends that
+function undoRedo(redo, said = false) {
   const how = undoKey(itemOf(st.sid), redo);
-  if (how.bytes) { send({ t: "in", data: how.bytes }); sizing.typed(); } else toast(how.why, 3000);
+  if (!how.bytes) return toast(how.why, 3000);
+  send({ t: "in", data: how.bytes }); sizing.typed(); st.undone = !redo;
+  if (said) toast(redo ? "Redo" : "Undo", 1500);
 }
 // Addresses open in a new tab here, paths in File (on the pane's host).
 // (a quick shell's page has no View: its pane's page opens it)
@@ -141,8 +144,9 @@ function tapLink(x, y) {
 // shell's prompt along the row. Only where arrows edit a line (not htop, less, mc); never ↑ or ↓,
 // which would recall history.
 const boxMoves = new BoxMoves(view, $("screen"));
+const sendCut = (data) => { input.forget?.(); send({ t: "in", data, ...trace.keyFields(data, "cut") }); view.typed(); };
 selectionCut({ term: $("term"), cut: (range) => (!gate.holding() && findItem(st.groups, st.sid)?.item.agent ? boxMoves.cut(range, st.appCursor) : null),
-  send: (data) => { input.forget?.(); send({ t: "in", data, ...trace.keyFields(data, "cut") }); view.typed(); }, focus: () => input.focus() });
+  send: sendCut, focus: () => input.focus() });
 function tapMove(x, y) {
   const found = st.sid && findItem(st.groups, st.sid);
   if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn() || gate.holding()) return;   // the screen drawn is the pane before
@@ -306,7 +310,9 @@ function cloneRow(item) { send({ t: "clone", id: item.id }); }
 const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow });
 
 // a finger resting on the keyboard button or held on the input offers Paste, Undo and Redo (AC-03)
-const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo, paste: () => input.pasteFromClipboard() });
+const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo, paste: () => input.pasteFromClipboard(), can: editChoices({ term: $("term"), item: () => itemOf(st.sid), undone: () => !!st.undone,
+  cuttable: (range) => !gate.holding() && !!itemOf(st.sid)?.agent && boxMoves.cuttable(range), cut: (range) => boxMoves.cut(range, st.appCursor),
+  copy: (text) => input.copySelection(text, true), send: sendCut, say: (text) => toast(text, 3000) }) });
 const reorder = bindReorder($("sessions"), (kind, parent, ids) => {
   if (kind === "group") store.set("groupOrder", ids);
   else if (kind === "project") send({ t: "project", action: "order", ids });

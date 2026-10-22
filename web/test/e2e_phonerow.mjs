@@ -79,7 +79,7 @@ export async function webPhoneRow(browser, name) {
     chooser.isMultiple() && JSON.stringify(posted) === JSON.stringify(["a.png", "notes b.txt"])
     && typed.includes("/Users/alex/api/a.png '/Users/alex/api/notes b.txt'") && !typed.includes("\r"), JSON.stringify({ posted, typed }));
 
-  // the input's menu (a finger held still 2.5 s; a CDP touch screen) where the page may read the clipboard
+  // the input's menu (a finger held still and lifted; a CDP touch screen) where the page may read the clipboard
   // unasked (a permission given): an empty one has no Paste; a full one's Paste pastes it
   if (name === "chromium") {
     await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
@@ -87,9 +87,9 @@ export async function webPhoneRow(browser, name) {
     const k = await page.evaluate(() => { const r = document.getElementById("kbd").getBoundingClientRect(); return { x: r.left + 60, y: r.top + r.height / 2 }; });
     const hold = async () => {
       await cdp.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [k] });
-      await page.waitForTimeout(2700);
+      await page.waitForTimeout(700);
       await cdp.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(400);                             // the lift's own click is not a choice (rowmenu.js)
       return page.evaluate(() => { const m = document.getElementById("rowmenu"); return m.open ? [...m.querySelectorAll("button[data-action]:not([data-action=x])")].map((b) => b.textContent) : null; });
     };
     await page.evaluate(() => navigator.clipboard.writeText(""));
@@ -101,7 +101,7 @@ export async function webPhoneRow(browser, name) {
     await page.waitForTimeout(200);
     const pasted = f.sent.slice(from).filter((m) => m.t === "in").map((m) => m.data).join("");
     check("AC-03 a phone: the input's menu has no Paste with the clipboard known empty; with it full, Paste pastes it",
-      JSON.stringify(empty) === JSON.stringify(["Undo", "Redo"]) && JSON.stringify(full) === JSON.stringify(["Paste", "Undo", "Redo"]) && pasted.includes("hi there"),
+      JSON.stringify(empty) === JSON.stringify(["Undo"]) && JSON.stringify(full) === JSON.stringify(["Paste", "Undo"]) && pasted.includes("hi there"),
       JSON.stringify({ empty, full, pasted }));
   }
 

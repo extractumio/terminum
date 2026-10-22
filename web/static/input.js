@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Keyboard, paste and the hot keys panel. Everything typed ends up in send(bytes).
 import { HeldDelete, WORD } from "./heldelete.js";
+import { inSelection, kbdTouch, MENU_AFTER, selectWordAt, TAP } from "./kbdtouch.js";
 import { ctrlChar, encodeKey } from "./keys.js";
 import { selectedText } from "./seltext.js";
 import { copyByCommand, keepSelectionAt } from "./touchcopy.js";
@@ -25,8 +26,6 @@ const FN_ROWS = [
 ];
 
 const HOLD = 400, REPEAT = 33;   // ms: as a keyboard's repeat
-const MENU_AFTER = 2500;   // ms a finger held still on the input before its menu (Paste, Undo, Redo; AC-03)
-const SLIDE_AFTER = 250;   // ms a finger rests on the input before sliding moves the cursor (held still, the page's menu at MENU_AFTER)
 const DELETES = { deleteContentBackward: "\x7f", deleteWordBackward: "\x7f", deleteContentForward: "\x1b[3~" };   // a word as one backspace where ^W is not a word (nano: search)
 // On a touch screen the keyboard field keeps invisible characters on both sides of its caret: iOS
 // repeats a held delete only while there is something to delete, and its space bar's trackpad
@@ -153,65 +152,7 @@ export class Input {
       if (touchable) { typedInField(e); refill(); return; }
       this.type(k.value.replaceAll(KEEP, ""), "compose", e); k.value = "";
     });
-    // The field lies over the cursor's row or a coding agent's input box: a short tap on it
-    // still moves the cursor like a tap on the terminal, and a finger that rests a moment,
-    // however long, and then slides moves the cursor as in a text field: in an agent's input box
-    // onto the character under the finger, over its lines too; at a shell's prompt along the
-    // line, a character a step. Held still for MENU_AFTER, it opens the page's menu of Paste, Undo
-    // and Redo (iOS shows its own for no invisible field). The finger's times are the events' own
-    // (when it touched), not when a busy page got to them.
-    let down = null, menu = 0;
-    k.addEventListener("touchstart", (e) => {
-      const t = e.touches[0];
-      clearTimeout(menu);
-      touchedAt = performance.now();
-      down = t && e.touches.length === 1 ? { x: t.clientX, y: t.clientY, at: e.timeStamp, slide: false, moved: 0 } : null;
-      if (down) menu = setTimeout((d) => { if (down === d) { d.menu = true; this.options.holdMenu?.(d.x, d.y); } }, MENU_AFTER, down);
-    }, { passive: true });
-    k.addEventListener("touchcancel", () => { clearTimeout(menu); down = null; });
-    k.addEventListener("touchmove", (e) => {
-      const t = e.touches[0];
-      if (!down || !t) return;
-      const dx = t.clientX - down.x, dy = t.clientY - down.y;
-      if (Math.hypot(dx, dy) > 10) clearTimeout(menu);
-      if (down.scroll !== undefined) {                                 // a swipe over the field scrolls the terminal
-        e.preventDefault();
-        this.term.scrollTop += down.scroll - t.clientY;
-        down.scroll = t.clientY;
-        return;
-      }
-      if (!down.slide) {
-        const rest = e.timeStamp - down.at;
-        if (rest < SLIDE_AFTER) { if (Math.hypot(dx, dy) > 10) down.scroll = t.clientY; return; }
-        down.box = !!this.options.inBox?.();                          // the finger draws the cursor over the box's lines
-        if (Math.hypot(dx, dy) < 4 || (!down.box && Math.abs(dx) < Math.abs(dy))) return;
-        down.slide = true;
-        clearTimeout(menu);
-      }
-      e.preventDefault();                                             // the slide is ours, not iOS's loupe
-      const w = this.options.cellWidth?.() || 8;
-      if (down.box) {                                                 // to the character under the finger, once it reaches another
-        if (down.to && Math.abs(t.clientX - down.to.x) < w / 2 && Math.abs(t.clientY - down.to.y) < w) return;
-        down.to = { x: t.clientX, y: t.clientY };
-        this.options.tapMove?.(t.clientX, t.clientY);
-        return;
-      }
-      const cells = Math.trunc(dx / w);
-      const step = (dir) => this.type(this.options.appCursor() ? `\x1bO${dir}` : `\x1b[${dir}`, "slide");
-      for (; down.moved < cells; down.moved++) step("C");
-      for (; down.moved > cells; down.moved--) step("D");
-    }, { passive: false });
-    k.addEventListener("touchend", (e) => {
-      clearTimeout(menu);
-      touchedAt = performance.now();
-      refill();                                                       // the pane's cursor goes where the finger says
-      if (down?.slide || down?.scroll !== undefined || down?.menu) { e.preventDefault(); down = null; return; }   // its tap would move the cursor
-      const t = e.changedTouches[0];
-      if (down && t && e.timeStamp - down.at < 350 && Math.hypot(t.clientX - down.x, t.clientY - down.y) < 10
-          && !this.options.tapLink?.(t.clientX, t.clientY))       // an address or a path on the row still opens
-        this.options.tapMove?.(t.clientX, t.clientY);
-      down = null;
-    });
+    kbdTouch({ kbd: k, term: this.term, options: this.options, type: (text, path) => this.type(text, path), refill, touched: () => { touchedAt = performance.now(); } });
     const typing = (on) => {
       this.term.classList.toggle("focused", on);
       this.kbdButton.setAttribute("aria-pressed", String(on));
@@ -291,7 +232,7 @@ export class Input {
       release();
       if (start && document.activeElement === this.kbd) {
         this.wasTyping = true;                     // a copy of what gets selected gives the focus back (bind)
-        hold = setTimeout(() => { if (start) { selectWordAt(this.kbd, this.term, start.x, start.y); start.held = true; } }, 450);
+        hold = setTimeout(() => { if (start) { const top = selectWordAt(this.kbd, start.x, start.y); if (top !== null) keepSelectionAt(this.term, top); start.held = true; } }, 450);
       }
     }, { passive: true });
     k.addEventListener("blur", () => { if (!start) this.wasTyping = false; });   // closed by the user, not by a selection
@@ -303,11 +244,13 @@ export class Input {
     this.term.addEventListener("touchend", (e) => {
       release();
       if (start?.held) { e.preventDefault(); start = null; return; }   // its click would drop the word
-      const tap = start && Date.now() - start.at < 350;
+      const tap = start && Date.now() - start.at < TAP, held = start && Date.now() - start.at >= MENU_AFTER;
       start = null;
-      if (!tap) return;
       const t = e.changedTouches[0];
       const sel = getSelection();
+      // a finger held on a selection in an agent's input box: the page's menu (Cut, Clear, Copy… AC-03)
+      if (held && t && sel && !sel.isCollapsed && sel.anchorNode?.parentElement?.closest(".inbox") && inSelection(sel, t.clientX, t.clientY)) { e.preventDefault(); this.options.holdMenu?.(t.clientX, t.clientY); return; }
+      if (!tap) return;
       if (t && sel && !sel.isCollapsed && inSelection(sel, t.clientX, t.clientY)) return;   // iOS shows its Copy menu
       // Without this the tap's emulated mousedown that follows moves focus off the keyboard field.
       e.preventDefault();
@@ -474,17 +417,3 @@ export function shellWord(path) {
   return /^[\w@%+=:,./-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`;
 }
 
-function inSelection(sel, x, y) {
-  return [...sel.getRangeAt(0).getClientRects()].some((r) => x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
-}
-
-function selectWordAt(kbd, term, x, y) {
-  const at = document.caretRangeFromPoint?.(x, y);
-  kbd.blur();
-  if (!at) return;
-  const sel = getSelection();
-  sel.collapse(at.startContainer, at.startOffset);
-  sel.modify("move", "backward", "word");
-  sel.modify("extend", "forward", "word");
-  if (sel.rangeCount) keepSelectionAt(term, sel.getRangeAt(0).getBoundingClientRect().top);
-}

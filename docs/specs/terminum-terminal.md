@@ -492,6 +492,8 @@ Scenario: AC-40 happy path — the cursor follows taps and arrows
   When the user presses ↑ or ↓ with no "@" or "/" list open
   Then the cursor goes to the character above or below by the page's lines at the view's width (a blank line and a line out of sight count), keeping the column; on the first line ↑ goes to the start, on the last ↓ to the end; on the input's first or last row in tmux too the key goes to the agent as it is (history recall), unless held
   And a menu the agent draws between rules (a question, a permission) is not the input box: ↑ and ↓ go to it as they are
+  When the user taps a word in the input box twice quickly
+  Then the word is selected with iOS's handles (the keyboard goes down; the handles take the touches while the selection lasts), and a finger held on it opens the page's menu with Cut, Clear and Copy (terminum.md AC-03): Cut and Clear send the keys Backspace over the selection sends; a selection the keys cannot reach exactly (outside the typed text) offers Copy only
 
 Scenario: AC-40 happy path — the panel, status lines, the view
   Then on a phone the input box is a panel at least two rows high, without its rules; the status lines below it (folder, model, context, limits, permission mode) are behind the ⓘ button, remembered per browser; a "/" or "@" list the input opened stays in sight (every other footer line waits, also those it shows only while it works); typing keeps the panel in sight; empty rows below the last text and the cursor are not shown; whole-line key hints ("(ctrl+b to run in background)") are left out on a phone, and a notice pushed right by spaces loses them

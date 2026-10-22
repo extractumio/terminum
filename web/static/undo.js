@@ -6,6 +6,7 @@
 
 import { agentName } from "./nav.js";
 import { longPress } from "./rowmenu.js";
+import { selectedText } from "./seltext.js";
 
 const UNDOES = ["Claude Code", "zsh", "bash", "fish"];
 
@@ -38,14 +39,45 @@ async function mayPaste() {
   } catch { return true; }
 }
 
-/** On a touch screen: a finger resting on the keyboard `button`, or held still on the input
- *  (Input's holdMenu, the returned function), offers Paste, Undo and Redo (`menu`'s show); iOS's
- *  own undo on the input `field` (three fingers, a shake) undoes too. */
-export function undoTouch({ button, field, menu, undo, paste }) {
+/** The menu's choices now (undoTouch's can): Cut and Clear for a selection in an agent's input
+ *  box (cuttable(range): whether it has keys; cut(range): the keys Backspace over it sends, then
+ *  send(keys)), Copy for any in `term`, Undo where the program of item() has it, Redo after the
+ *  page's Undo (undone()) where it has one. Cut and Clear delete only the text chosen: when the
+ *  box was drawn anew meanwhile, nothing goes and say(text) tells why. */
+export function editChoices({ term, item, undone, cuttable, cut, copy, send, say }) {
+  return () => {
+    const sel = getSelection(), range = sel?.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
+    const text = range ? selectedText(term) : null, chosen = range ? range.toString() : "";
+    const del = (copied) => () => {
+      const same = range.startContainer.isConnected && range.endContainer.isConnected && range.toString() === chosen;
+      const keys = same ? cut(range) : null;
+      if (!keys) return say("The input box changed: select the text again");
+      if (copied) copy(text);
+      getSelection().removeAllRanges();
+      send(keys);
+    };
+    const box = !!text && cuttable(range), it = item();
+    return { cut: box ? del(true) : null, clear: box ? del(false) : null, copy: text ? () => copy(text) : null,
+      undo: !!undoKey(it, false).bytes, redo: undone() && !!undoKey(it, true).bytes };
+  };
+}
+
+/** On a touch screen: a finger resting on the keyboard `button`, or held still on the input and
+ *  lifted (Input's holdMenu, the returned function), opens the page's menu (`menu`'s show) with what
+ *  applies, in the owner's order: Cut and Clear (a selection in an agent's input box), Paste,
+ *  Copy (a selection), Undo, Redo (AC-03). can(): {cut, clear, copy: () => void or null, undo,
+ *  redo: booleans}, taken when the menu opens (a tap on it may clear the selection). iOS's own undo
+ *  on the input `field` (three fingers, a shake) undoes too. */
+export function undoTouch({ button, field, menu, undo, paste, can }) {
   const editMenu = async (x, y) => {
-    const items = [["Undo", () => undo(false)], ["Redo", () => undo(true)]];
-    if (await mayPaste()) items.unshift(["Paste", paste]);
-    menu.show(items, x - 105, y - 60 - items.length * 44, true);
+    const c = can(), items = [];
+    if (c.cut) items.push(["Cut", c.cut]);
+    if (c.clear) items.push(["Clear", c.clear]);
+    if (await mayPaste()) items.push(["Paste", paste]);
+    if (c.copy) items.push(["Copy", c.copy]);
+    if (c.undo) items.push(["Undo", () => undo(false)]);
+    if (c.redo) items.push(["Redo", () => undo(true)]);
+    if (items.length) menu.show(items, x - 105, y - 60 - items.length * 44, true);
   };
   longPress(button, () => button, () => { const r = button.getBoundingClientRect(); editMenu(r.right - 105, r.top); });
   field.addEventListener("beforeinput", (e) => {

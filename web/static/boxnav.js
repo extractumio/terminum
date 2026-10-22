@@ -192,14 +192,23 @@ export class BoxMoves {
     return s.lay[i].start + Math.min(s.lay[i].len, Math.max(0, col - PREFIX));
   }
 
+  /** The input offsets [a, b] of `range` when it lies wholly in the input's text, else null. */
+  ends(s, range) {
+    if (!range || range.collapsed) return null;
+    const a = this.offsetAt(s, range.startContainer, range.startOffset), b = this.offsetAt(s, range.endContainer, range.endOffset);
+    return a === null || b === null || b <= a || b > Math.max(s.end, s.at) ? null : [a, b];
+  }
+
+  /** Whether cut(range) has keys for it (nothing moves). */
+  cuttable(range) { const s = this.state(); return !!s && !!this.ends(s, range); }
+
   /** Backspace or Delete over `range`, a selection: the keys that delete exactly its characters
    *  (→ or ← to its end, then a backspace each, AC-40), or null when it is not wholly in the
    *  input's text (output, the rules, the footer; past the text typed: a suggestion). */
   cut(range, appCursor) {
-    const s = this.state();
-    if (!s || !range || range.collapsed) return null;
-    const a = this.offsetAt(s, range.startContainer, range.startOffset), b = this.offsetAt(s, range.endContainer, range.endOffset);
-    if (a === null || b === null || b <= a || b > Math.max(s.end, s.at)) return null;
+    const s = this.state(), ends = s && this.ends(s, range);
+    if (!ends) return null;
+    const [a, b] = ends;
     const from = this.base(s);
     this.goal = null;
     this.last = { lo: Math.min(from, a), hi: Math.max(from, b), to: a, t: performance.now() };   // the cursor ends where the selection began

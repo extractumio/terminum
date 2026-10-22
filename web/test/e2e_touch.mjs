@@ -2,7 +2,8 @@
 // AC-52 checks for e2e_panel.mjs: typing on a touch screen (the page against a fake bridge, a
 // phone's size): a held delete has something to delete (iOS repeats it only then), the keyboard
 // field lies over a coding agent's whole input box, a finger that rests and then slides moves the
-// cursor, and one held still 2.5 s there opens Paste, Undo and Redo. Alone: node web/test/e2e_touch.mjs.
+// cursor, one held still half a second and lifted opens the page's menu, a quick swipe across is → or
+// Undo, two taps select a word. Alone: node web/test/e2e_touch.mjs.
 
 import { fileURLToPath } from "node:url";
 import { check, cleanup, playwright, results } from "./check.mjs";
@@ -156,6 +157,65 @@ export async function webTouch(browser) {
   check(`${at} in an agent's input box a finger held (however long) and slid takes the cursor onto the character under it`,
     boxMoves.length > 0 && Math.abs(net(boxMoves) - want) <= 1, JSON.stringify({ boxMoves, net: net(boxMoves), want }));
 
+  // a selection in the input box ("fix"): the field gives way to it, and a finger held on it and lifted
+  // opens the menu with Cut, Clear and Copy; Clear sends the keys Backspace over it sends (AC-03, AC-40)
+  const fixAt = await page.evaluate(() => {
+    const row = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("> fix the"));
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let n; while ((n = walk.nextNode()) && !n.data.includes("fix"));
+    const r = document.createRange(), i = n.data.indexOf("fix");
+    r.setStart(n, i); r.setEnd(n, i + 3);
+    document.getElementById("kbd").blur();
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    const b = r.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  });
+  await page.waitForTimeout(100);
+  const yielded = await page.evaluate(() => document.getElementById("kbd").classList.contains("yield") && getComputedStyle(document.getElementById("kbd")).pointerEvents === "none");
+  const at2 = (type, ms = 16) => cdp.send("Input.dispatchTouchEvent", { type, timestamp: after(ms), touchPoints: type === "touchEnd" ? [] : [{ x: fixAt.x, y: fixAt.y }] });
+  await at2("touchStart");
+  await page.waitForTimeout(650);
+  await at2("touchEnd", 650);
+  await page.waitForTimeout(200);
+  const selMenu = await page.evaluate(() => { const m = document.getElementById("rowmenu"); return m.open ? [...m.querySelectorAll("button[data-action]:not([data-action=x])")].map((b) => b.textContent) : null; });
+  const clearFrom = sent.length;
+  await page.waitForTimeout(250);                                 // the lift's own click is not a choice (rowmenu.js)
+  if (selMenu?.includes("Clear")) await page.click("#rowmenu button[data-action=clear]");
+  await page.waitForTimeout(150);
+  const cleared = sent.slice(clearFrom).filter((m) => m.t === "in").map((m) => m.data).join("");
+  check(`${at} a selection in the input box takes the touches; held on and lifted it opens Cut, Clear, Paste, Copy, Undo; Clear sends the deletes of its 3 characters`,
+    yielded && JSON.stringify(selMenu) === JSON.stringify(["Cut", "Clear", "Paste", "Copy", "Undo"]) && cleared.endsWith("\x7f\x7f\x7f") && !cleared.endsWith("\x7f\x7f\x7f\x7f"),
+    JSON.stringify({ yielded, selMenu, cleared }));
+  // Cut copies the selection and deletes it; Clear after the selected text changed deletes nothing and says why
+  await page.evaluate(() => { window.copied = []; document.addEventListener("copy", () => window.copied.push(String(getSelection())), true); });   // what a copy took
+  const pick = () => page.evaluate(() => {
+    const row = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("> fix the"));
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let n; while ((n = walk.nextNode()) && !n.data.includes("fix"));
+    const r = document.createRange(), i = n.data.indexOf("fix");
+    r.setStart(n, i); r.setEnd(n, i + 3);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+  });
+  const menuAt = async () => { await at2("touchStart"); await page.waitForTimeout(650); await at2("touchEnd", 650); await page.waitForTimeout(450); };
+  await pick();
+  await menuAt();
+  const cutFrom = sent.length;
+  await page.click("#rowmenu button[data-action=cut]");
+  await page.waitForTimeout(200);
+  const cutKeys = sent.slice(cutFrom).filter((m) => m.t === "in").map((m) => m.data).join(""), clip = await page.evaluate(() => window.copied.at(-1));
+  check(`${at} Cut copies the selection in the input box and sends its deletes`, clip === "fix" && cutKeys.endsWith("\x7f\x7f\x7f"), JSON.stringify({ clip, cutKeys }));
+  await pick();
+  await menuAt();
+  // the selected text rewritten under the open menu (the screen itself pauses while text is selected, AC-37)
+  await page.evaluate(() => { const r = getSelection().rangeCount ? getSelection().getRangeAt(0) : null; if (r) r.startContainer.data = r.startContainer.data.replace("fix", "fox"); });
+  await page.waitForTimeout(200);
+  const staleFrom = sent.length;
+  await page.click("#rowmenu button[data-action=clear]");
+  await page.waitForTimeout(200);
+  const stale = { sent: sent.slice(staleFrom).filter((m) => m.t === "in").length, toast: await page.evaluate(() => document.getElementById("toast").textContent) };
+  check(`${at} Clear after the selected text changed deletes nothing and says so`, stale.sent === 0 && /changed/.test(stale.toast), JSON.stringify(stale));
+  await page.evaluate(() => getSelection().removeAllRanges());
+
   // at a shell's prompt it moves along the line a character a step, both ways
   say({ t: "layout", groups: [{ kind: "window", label: "Window 1", where: "", host: null, wid: "W1", new: "New tab", pool: "",
     items: [{ id: "S1", title: "One", sub: ["zsh", "~/p"], index: "", host: null, profile: "Default", agent: null, shell: true, state: "" }] }] });
@@ -168,8 +228,8 @@ export async function webTouch(browser) {
   check(`${at} a finger that rests and then slides moves the cursor a character a step, both ways, and taps nothing`,
     JSON.stringify(moves) === JSON.stringify(["\x1b[C", "\x1b[C", "\x1b[C", "\x1b[D"]), JSON.stringify(moves));
 
-  // a finger held still on the input: at 2.5 s the page's menu, Paste, Undo and Redo (iOS shows none
-  // for the invisible field); lifted before then, none; Undo sends the shell's Ctrl+_
+  // a finger held still on the input and lifted after half a second: the page's menu, Paste and Undo
+  // (zsh has no redo; iOS shows none for the invisible field); lifted sooner, none; Undo sends Ctrl+_
   const hold = async (ms) => {
     await touch("touchStart", geo.x);
     await page.waitForTimeout(ms);
@@ -177,14 +237,14 @@ export async function webTouch(browser) {
     await page.waitForTimeout(150);
     return page.evaluate(() => { const m = document.getElementById("rowmenu"); return m.open ? [...m.querySelectorAll("button[data-action]:not([data-action=x])")].map((b) => b.textContent) : null; });
   };
-  const early = await hold(1200);
-  const menuFrom = sent.length, held = await hold(2700);
+  const early = await hold(420);
+  const menuFrom = sent.length, held = await hold(700);
   await page.waitForTimeout(300);
   await page.click("#rowmenu button[data-action=undo]");
   await page.waitForTimeout(150);
   const undone = sent.slice(menuFrom).filter((m) => m.t === "in").map((m) => m.data);
-  check(`${at} a finger held still on the input for 2.5 s opens the menu of Paste, Undo and Redo (none when lifted sooner, no tap on the lift); its Undo sends Ctrl+_`,
-    early === null && JSON.stringify(held) === JSON.stringify(["Paste", "Undo", "Redo"]) && JSON.stringify(undone) === JSON.stringify(["\x1f"])
+  check(`${at} a finger held still on the input half a second and lifted opens the menu of Paste and Undo (none when lifted sooner, no tap on the lift); its Undo sends Ctrl+_`,
+    early === null && JSON.stringify(held) === JSON.stringify(["Paste", "Undo"]) && JSON.stringify(undone) === JSON.stringify(["\x1f"])
     && await page.evaluate(() => !document.getElementById("rowmenu").open), JSON.stringify({ early, held, undone }));
 
   // a quick swipe is not a slide
@@ -193,7 +253,45 @@ export async function webTouch(browser) {
   for (let k = 1; k <= 5; k++) await touch("touchMove", geo.x + geo.w * k);
   await touch("touchEnd");
   await page.waitForTimeout(100);
-  check(`${at} a quick swipe moves nothing`, !sent.slice(swipeFrom).some((m) => m.t === "in" && /\x1b\[[CD]/.test(m.data)));
+  check(`${at} a short quick swipe moves nothing`, !sent.slice(swipeFrom).some((m) => m.t === "in" && /\x1b\[[CD]/.test(m.data)));
+
+  // a quick swipe across (48 px or more): to the right →, to the left the program's Undo with a toast; from the screen's edge nothing
+  const swipe = async (x0, dx) => {
+    const n = sent.length;
+    await touch("touchStart", x0);
+    for (let k = 1; k <= 4; k++) await cdp.send("Input.dispatchTouchEvent", { type: "touchMove", timestamp: after(30), touchPoints: [{ x: x0 + (dx * k) / 4, y: geo.y - 5 * k }] });   // a little slanted
+    await touch("touchEnd", 0, 30);
+    await page.waitForTimeout(120);
+    return sent.slice(n).filter((m) => m.t === "in").map((m) => m.data);
+  };
+  const top0s = await page.evaluate(() => { const t = document.getElementById("term"); t.scrollTop = t.scrollHeight / 2; return t.scrollTop; });
+  const right = await swipe(150, 90), left = await swipe(250, -90);
+  const top1s = await page.evaluate(() => document.getElementById("term").scrollTop);
+  const toast = await page.evaluate(() => { const t = document.getElementById("toast"); return t.hidden ? "" : t.textContent; });
+  const fromEdge = await swipe(8, 90);
+  check(`${at} a quick swipe right sends →, left the program's Undo (a toast says so), neither scrolls, one from the screen's edge nothing`,
+    JSON.stringify(right) === JSON.stringify(["\x1b[C"]) && JSON.stringify(left) === JSON.stringify(["\x1f"]) && toast === "Undo" && fromEdge.length === 0 && top1s === top0s,
+    JSON.stringify({ right, left, toast, fromEdge, top0s, top1s }));
+
+  // two quick taps on the input select the word under them; the keyboard goes down and the field gives way to the selection
+  const word = await page.evaluate(() => {
+    const row = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("git commit"));
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let n; while ((n = walk.nextNode()) && !n.data.includes("commit"));
+    const r = document.createRange(), i = n.data.indexOf("commit");
+    r.setStart(n, i + 2); r.setEnd(n, i + 3);
+    const b = r.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  });
+  await page.evaluate(() => document.getElementById("kbd").focus());
+  const tap2 = (type, ms) => cdp.send("Input.dispatchTouchEvent", { type, timestamp: after(ms), touchPoints: type === "touchEnd" ? [] : [{ x: word.x, y: word.y }] });
+  await tap2("touchStart", 16); await tap2("touchEnd", 60);
+  await tap2("touchStart", 120); await tap2("touchEnd", 60);
+  await page.waitForTimeout(150);
+  const picked = await page.evaluate(() => ({ text: String(getSelection()), focused: document.activeElement === document.getElementById("kbd"), yield: document.getElementById("kbd").classList.contains("yield") }));
+  check(`${at} two quick taps on the input select the word under them, the keyboard down, the field giving way`,
+    picked.text === "commit" && !picked.focused && picked.yield, JSON.stringify(picked));
+  await page.evaluate(() => getSelection().removeAllRanges());
 
   // a swipe up or down that starts on the input box scrolls the terminal
   await page.evaluate(() => { const t = document.getElementById("term"); t.scrollTop = t.scrollHeight; });
