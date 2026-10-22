@@ -218,8 +218,10 @@ pub async fn append(app: &Shared, page: &Page, client: &Control, ctl: &Ctl, key:
     page.send_json(&json!({"t": "hist", "mode": "append", "sid": key, "first": from, "oldest": oldest, "truncated": truncated, "lines": lines}));
 }
 
-/// Folds among the rows that scrolled off, at most every second (AC-32).
-pub fn scan_folds(page: &Page, ctl: &Ctl, key: &str) {
+/// Folds among the rows that scrolled off, at most every second (AC-32); `screen`: the rows
+/// on the screen now, read after them (none for a full-screen program's).
+pub fn scan_folds(page: &Page, ctl: &Ctl, key: &str, screen: &[(&str, bool)]) {
+    let top = ctl.numbering.lock().top();   // read apart: never two locks held at once
     let found = {
         let mut g = ctl.folds.lock();
         let Some(h) = g.as_mut() else { return };
@@ -227,7 +229,7 @@ pub fn scan_folds(page: &Page, ctl: &Ctl, key: &str) {
         if !h.due(now) {
             return;
         }
-        h.scan(now)
+        h.scan(now, top, screen)
     };
     if !found.is_empty() {
         page.send_json(&json!({"t": "folds", "sid": key, "items": found}));

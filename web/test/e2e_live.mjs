@@ -18,6 +18,7 @@ import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
+import { liveFolds } from "./e2e_livefolds.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -104,6 +105,7 @@ async function wide(browser, name) {
   });
   await liveView(page, { work: WORK });
   await page.click("#fileclose");
+  await liveFolds(page, { tmux, work: WORK });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

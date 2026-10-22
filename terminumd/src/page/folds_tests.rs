@@ -86,9 +86,9 @@ fn an_output_scrolling_in_at_a_blank_line_folds_whole() {
     let mut h = History::new(100000);
     let cut = 2 + 21; // the history ends on the script's blank line
     h.take(0, lines[..cut].to_vec(), false);
-    let first = h.scan(SCAN_EVERY);
+    let first = h.scan(SCAN_EVERY, None, &[]);
     h.take(cut as i64, lines[cut..].to_vec(), false);
-    let later: Vec<(i64, i64)> = h.scan(2.0 * SCAN_EVERY).iter().map(|f| (f.n, f.to)).collect();
+    let later: Vec<(i64, i64)> = h.scan(2.0 * SCAN_EVERY, None, &[]).iter().map(|f| (f.n, f.to)).collect();
     assert_eq!((first, later), (vec![], vec![(4, script.len() as i64)]));
 }
 
@@ -252,7 +252,7 @@ fn lines_that_scrolled_off_are_sent_and_folded_by_a_later_look() {
         assert_eq!((sent, found), (vec![line], vec![]));
     }
     assert!(h.due(SCAN_EVERY));
-    assert_eq!(h.scan(SCAN_EVERY), vec![fold(502, 513, "⋯ 12 lines of diff")]);
+    assert_eq!(h.scan(SCAN_EVERY, None, &[]), vec![fold(502, 513, "⋯ 12 lines of diff")]);
     assert!(!h.due(SCAN_EVERY + 0.1), "nothing new since");
 }
 
@@ -318,4 +318,26 @@ fn a_tool_output_on_the_screen_folds_too() {
     assert!(first[0].as_u64() == Some(4) && first[2].as_str().is_some_and(|l| l.starts_with('⋯')), "{f}");
     assert_eq!(on_screen(&texts, &hard, None, true), serde_json::json!([]), "a full-screen program's rows stay");
     assert_eq!(on_screen(&texts, &hard, Some(6), false), serde_json::json!([]), "the cursor's rows stay");
+}
+
+/// A tool's output that scrolled off whole, the next tool's ⏺ still on the screen: it folds at
+/// once, the screen read after the history; one going on onto the screen waits; with rows
+/// missing between the two (a gap) the screen is not read.
+#[test]
+fn an_output_in_the_history_folds_while_the_next_call_is_on_the_screen() {
+    let out: Vec<String> = (0..12).map(|i| format!("     {i}: line")).collect();
+    let block = cat(&[&s(&["⏺ Bash(grep -n x a.rs)", "  ⎿  first: line"]), &out, &s(&[""])]);
+    let screen = ["⏺ Bash(sed -n 1,9p b.rs)", "  ⎿  next"].map(|t| (t, true));
+    let fresh = || { let mut h = History::new(100000); h.take(0, enc(&block), false); h };
+    let last = block.len() as i64 - 1;
+    let alone = fresh().scan(SCAN_EVERY, None, &[]);
+    let gap = fresh().scan(SCAN_EVERY, Some(last + 2), &screen);
+    let read = fresh().scan(SCAN_EVERY, Some(last + 1), &screen);
+    assert_eq!((alone, gap), (vec![], vec![]), "without the screen it waits for the next ⏺");
+    assert_eq!(read, vec![fold(4, 13, "⋯ 10 more lines of output")]);
+    // the output goes on onto the screen: no fold yet (never a part of it)
+    let mut h = History::new(100000);
+    h.take(0, enc(&block[..8]), false);
+    let rest: Vec<(&str, bool)> = block[8..].iter().map(|t| (t.as_str(), true)).chain(screen).collect();
+    assert_eq!(h.scan(SCAN_EVERY, Some(8), &rest), vec![]);
 }

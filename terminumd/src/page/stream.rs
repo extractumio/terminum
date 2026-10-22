@@ -162,7 +162,8 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         if opened {
             super::sizing::activated(&app, &page);       // its grid came after "sub" (or not yet): sized as it comes
         }
-        super::hist::scan_folds(&page, &ctl, &key);
+        let below: Vec<(&str, bool)> = if full_screen { Vec::new() } else { texts.iter().map(String::as_str).zip(hard.iter().copied()).collect() };
+        super::hist::scan_folds(&page, &ctl, &key, &below);
         let last = Instant::now();
         // wait for output, a key, or the poll; then keep frames at most 30 a second
         let how = tokio::select! {

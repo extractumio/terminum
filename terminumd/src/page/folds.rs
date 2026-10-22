@@ -413,7 +413,7 @@ impl History {
             return (lines, Vec::new());
         }
         let len = lines.len() as i64;
-        let found = self.find(first, first + len + CONTEXT); // newer lines known: the end of a fold
+        let found = self.find(first, first + len + CONTEXT, &[]); // newer lines known: the end of a fold
         let mut out = lines;
         for f in &found {
             for n in f.n.max(first)..=f.to.min(first + len - 1) {
@@ -428,15 +428,20 @@ impl History {
         self.pending && now - self.scanned >= SCAN_EVERY
     }
 
-    /// Folds among the newest lines (they scrolled off the screen meanwhile).
-    pub fn scan(&mut self, now: f64) -> Vec<Fold> {
+    /// Folds among the newest lines (they scrolled off the screen meanwhile), the screen's rows
+    /// (from line `top`) read after them: a tool's output that scrolled off whole folds while
+    /// the next tool's ⏺ is still on the screen, not only once that scrolled off too. A fold
+    /// reaching into the screen waits; the screen folds its own.
+    pub fn scan(&mut self, now: f64, top: Option<i64>, screen: &[(&str, bool)]) -> Vec<Fold> {
         (self.pending, self.scanned) = (false, now);
         let Some(&last) = self.text.keys().next_back() else { return Vec::new() };
-        self.find(last + 1 - CONTEXT, last + 1)
+        let after = if top == Some(last + 1) { screen } else { &[] };   // right after them, no gap
+        self.find(last + 1 - CONTEXT, last + 1, after)
     }
 
-    /// New folds among the known lines from lo (a contiguous run of them, up to hi).
-    pub fn find(&mut self, lo: i64, hi: i64) -> Vec<Fold> {
+    /// New folds among the known lines from lo (a contiguous run of them, up to hi); rows
+    /// `after` the newest known lines are read too, never folded here.
+    fn find(&mut self, lo: i64, hi: i64, after: &[(&str, bool)]) -> Vec<Fold> {
         let mut ns: Vec<i64> = Vec::new();
         for n in lo..hi {
             if self.text.contains_key(&n) {
@@ -446,9 +451,15 @@ impl History {
             }
         }
         let newest = ns.last().is_none_or(|l| Some(l) == self.text.keys().next_back());
-        let rows: Vec<(&str, bool)> = ns.iter().map(|n| (self.text[n].0.as_str(), self.text[n].1)).collect();
+        let mut rows: Vec<(&str, bool)> = ns.iter().map(|n| (self.text[n].0.as_str(), self.text[n].1)).collect();
+        if newest {
+            rows.extend_from_slice(after);
+        }
         let mut found = Vec::new();
         for f in folds(&rows, newest) {
+            if f.to >= ns.len() {
+                continue; // it reaches the rows after: not yet
+            }
             let (a, mut b, mut label) = (ns[f.from], ns[f.to], f.label);
             let told: Vec<i64> = self.told.iter().filter(|&(x, y)| *x <= b && a <= *y).map(|(x, _)| *x).collect();
             if let Some(&low) = told.iter().min() {
