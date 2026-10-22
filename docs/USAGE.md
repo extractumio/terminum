@@ -96,10 +96,15 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **Keys of an IDE**: ⌘[ and ⌘] go back and forward through the last 20 sessions you showed,
   ⌘F searches the history, ⌘B opens or closes Files. In a coding agent's input, Backspace or
   Delete over text you selected deletes it, as in a text field.
-- **The list**: each row's Clone opens a window beside it in its folder; a right click or a long
-  press on a row opens its menu (Clone, Add to Project, Close, moves). Projects are named groups
 - **The header** names the shown pane under its title: its folder (the copy button copies its full
   path), tmux's `session:window`, then what runs there.
+- **The list**: a group's buttons (copy, import, [+], ⋯) show while the pointer is over its header,
+  in the place of its count; each row's Clone (shown while the pointer is over the row; on a phone always)
+  opens a window beside it in its folder; a row hatched with pale lines is unread (its agent finished
+  a turn nobody saw); a right click, or a finger
+  rested on a row and lifted, opens its menu (Clone, Add to Project, Close, moves). Drag a row, a
+  group's or a project's header to reorder: a dashed outline shows where it lands (a finger rests
+  a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser. A pale fuchsia blob marks a session whose agent finished while you were away.
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish).

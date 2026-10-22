@@ -10,6 +10,8 @@
 @media (hover: hover) and (pointer: fine) {
   :where(button:not(#term *, .key)):hover { transition-duration: var(--dur-hover), var(--dur-hover), var(--dur-press); }
 }
+/* the list's buttons that show on hover (Clone, a header's) come and go as their color does */
+.grp h2 .acts { transition: opacity var(--dur-hover) var(--ease-out); }
 
 /* ---- blobs: lift on hover, squash on a press, a pulse in their own outline ---- */
 #fabs button { position: relative; }

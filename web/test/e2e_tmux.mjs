@@ -7,6 +7,9 @@
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, LAYOUT, openPage, pause, SIZES } from "./fake.mjs";
 
+/** Clicks a button of a group's header: the pointer over the header first, where its buttons show. */
+const headClick = async (page, grp, btn) => { await page.hover(`${grp} h2 .label`); await page.click(`${grp} h2 ${btn}`); };
+
 export async function webTmux(browser, name) {
   for (const [size, device] of SIZES) {
     runningIn(`${name} ${size}`);
@@ -129,12 +132,12 @@ export async function webTmux(browser, name) {
     check("AC-81 host group: its name in cornflower blue, its state on a line under it (a long one wrapped in full), rows naming the host in violet",
       seen.label === "devbox" && seen.state === "reconnecting (2 s)" && seen.color === "rgb(100, 149, 237)" && seen.row === "rgb(169, 139, 255)" && seen.rowText === "devbox"
         && failed.label === "devbox" && failed.state === WHY && failed.lines >= 2 && failed.inside, JSON.stringify({ seen, failed }));
-    await page.click('#sessions .grp[data-wid="devbox/terminum"] .hostbtn');
+    await headClick(page, '#sessions .grp[data-wid="devbox/terminum"]', '.hostbtn');
     const offered = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     await page.click('#hostmenu button[data-action="retry"]');
     await pause(page, 100);
     const retry = last("hostaction");
-    await page.click('#sessions .grp[data-wid="devbox/terminum"] .hostbtn');
+    await headClick(page, '#sessions .grp[data-wid="devbox/terminum"]', '.hostbtn');
     await page.click('#hostmenu button[data-action="remove"]');
     const ask = `${await page.textContent("#confirmtitle")} ${await page.textContent("#confirmtext")}`;
     await page.click("#confirmok");
@@ -171,7 +174,7 @@ export async function webTmux(browser, name) {
     f.say({ t: "layout", groups: [...LAYOUT, own] });
     await pause(page);
     const absent = await page.textContent('#sessions .grp[data-wid="local:default/later"] .gstate');
-    await page.click('#sessions .grp[data-wid="local:default/later"] .hostbtn');
+    await headClick(page, '#sessions .grp[data-wid="local:default/later"]', '.hostbtn');
     const detach = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     await page.click('#hostmenu button[data-action="detach"]');
     await pause(page, 100);
@@ -200,11 +203,11 @@ export async function webTmux(browser, name) {
       !early && offered2.open && offered2.on === "box:default" && offered2.asked?.server === "box:default" && boxTicks.join() === "api:false,db:false",
       JSON.stringify({ early, offered2, boxTicks }));
     const icon = await page.getAttribute('#sessions .grp[data-wid="box/terminum"] h2 .import', "title");
-    await page.click('#sessions .grp[data-wid="box/terminum"] h2 .import');
+    await headClick(page, '#sessions .grp[data-wid="box/terminum"]', '.import');
     await pause(page);
     const byIcon = { open: await page.isVisible("#addtmux"), on: await page.inputValue("#addtmuxon") };
     await page.click("#addtmuxcancel");
-    await page.click('#sessions .grp[data-wid="box/terminum"] .hostbtn');
+    await headClick(page, '#sessions .grp[data-wid="box/terminum"]', '.hostbtn');
     const boxMenu = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     await page.click('#hostmenu button[data-action="import"]');
     await pause(page);

@@ -107,9 +107,11 @@ export async function webProjects(browser, name) {
   check("AC-93 in a project the hatching takes the project's name color", m2.hatched && m2.ink !== m1.ink, JSON.stringify({ m1, m2 }));
   f.say({ t: "projects", items: [P1, P2] });
   await pause(page, 200);
+  await page.hover('#sessions section[data-pid="p1"] h2 .label');   // its buttons show under the pointer
   await page.click('#sessions section[data-pid="p1"] h2 .new');
   check("AC-92 a project's [+] asks for a window after its last session, in the project",
     JSON.stringify(last(sent, "clone")) === JSON.stringify({ t: "clone", id: ID(3), project: "p1" }), JSON.stringify(last(sent, "clone")));
+  await page.hover('#sessions section[data-pid="p1"] h2 .label');   // its buttons show under the pointer
   await page.click('#sessions section[data-pid="p1"] h2 .hostbtn');
   await page.click('#rowmenu button[data-action="rename"]');
   await page.fill("#namefield", "API");

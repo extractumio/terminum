@@ -61,10 +61,21 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 /* the header's buttons in a column two wide at least: every group's count ends at one place */
 .grp h2 .acts { flex: none; min-width: calc(2 * var(--icon-key-list) + var(--icon-gap)); margin-left: var(--icon-gap); display: flex; justify-content: flex-end; }
 .grp h2 .count.on { color: var(--accent); font-weight: 600; }
+/* with a pointer a header's buttons show while it is over the header (or the keyboard's focus is
+   there, or their menu is open), in the count's place; at rest the count ends where the rows'
+   programs end (their state column and Clone's after it). A touch screen keeps them in sight. */
+@media (hover: hover) {
+  .grp h2 .toggle { padding-right: calc(var(--icon-key-list) + var(--row-inset) + var(--st-w, 18px) + var(--st-gap, 8px)); }
+  .grp h2 .acts { position: absolute; right: var(--row-inset); top: 0; bottom: 0; align-items: center; min-width: 0; margin: 0; }
+  .grp h2:not(:hover, :has(.acts :is(:focus-visible, [aria-expanded="true"]))) .acts { opacity: 0; pointer-events: none; }
+  .grp h2:is(:hover, :has(.acts :is(:focus-visible, [aria-expanded="true"]))) .toggle { padding-right: 6px; }
+  .grp h2:is(:hover, :has(.acts :is(:focus-visible, [aria-expanded="true"]))) .acts { position: static; margin-left: var(--icon-gap); }
+  .grp h2:is(:hover, :has(.acts :is(:focus-visible, [aria-expanded="true"]))) .count { display: none; }
+}
 
 /* row: dot | title and meta | state */
 .grp li { position: relative; }
-.item { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) 18px; column-gap: 8px; align-items: start;
+.item { width: 100%; display: grid; grid-template-columns: 10px minmax(0, 1fr) var(--st-w, 18px); column-gap: var(--st-gap, 8px); align-items: start;
   padding: 8px 10px 8px 8px; border-radius: var(--r-sm); text-align: left; }
 @media (hover: hover) { .item:hover { background: color-mix(in srgb, var(--t-fg) 7%, transparent); } .item:hover .pbar { opacity: .85; } }
 .item.on { background: color-mix(in srgb, var(--accent) 16%, transparent); }   /* see-through: a project's tint stays under it */
@@ -393,9 +404,9 @@ body.ctxtrace #fabs { display: flex; }
   .nav-head { height: auto; padding: 4px 16px 10px; }
   .search { height: 44px; padding: 0 12px; }
   #filter { font-size: 16px; }
-  #sessions { padding: 0 10px 12px; gap: 14px; }
+  #sessions { padding: 0 10px 12px; gap: 14px; --st-w: 22px; --st-gap: 10px; }   /* --st-*: the rows' state column (.item, a header's count) */
   .grp h2 { font-size: 13.5px; }
-  .item { min-height: 60px; grid-template-columns: 10px minmax(0, 1fr) 22px; column-gap: 10px; padding: 10px 12px; border-radius: var(--r-sm); }
+  .item { min-height: 60px; padding: 10px 12px; border-radius: var(--r-sm); }
   .item .t { font-size: 15px; }
   .item .s { font-size: 12.5px; }
   .nav-foot { padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
