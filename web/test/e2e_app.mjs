@@ -390,6 +390,18 @@ export async function webApp(browser) {
   check("AC-52 web app: a tab's other panes go under its first one, shifted in, with no tab number, not draggable alone; a filter shows them flat",
     tree.top.join() === "S1,P1,S4" && tree.kids.join() === "P2,P3" && !tree.kidDrags && !tree.kidIdx && tree.indent > 10 && flat.join() === "P2",
     JSON.stringify({ tree, flat }));
+  // the panes under it have no Clone: the pointer over one shows none, over the window's own row its
+  // Clone shows on that row's middle (it stood on the block's middle, among the panes)
+  const cloneAt = async (id) => {
+    const r = await page.$(`#sessions .item[data-id="${id}"]`).then((b) => b.boundingBox());
+    await page.mouse.move(r.x + 40, r.y + r.height / 2);
+    await page.waitForTimeout(50);
+    return $eval(() => { const li = document.querySelector('#sessions .item[data-id="P1"]').parentElement, c = li.querySelector(":scope > .clone"), b = c?.getBoundingClientRect(), i = li.querySelector(":scope > .item").getBoundingClientRect();
+      return c && { shown: getComputedStyle(c).opacity, mid: Math.round(b.top + b.height / 2 - (i.top + i.height / 2)), kids: li.querySelectorAll(".kids .clone").length }; });
+  };
+  const [overKid, overOwn] = [await cloneAt("P2"), await cloneAt("P1")];
+  check("AC-07 web app: a pane under its window has no Clone, the pointer over it shows the window's none; over the window's row its Clone is on that row's middle",
+    overKid?.shown === "0" && overKid.kids === 0 && overOwn?.shown !== "0" && Math.abs(overOwn.mid) <= 1, JSON.stringify({ overKid, overOwn }));
 
   // on a computer a page out of focus pauses its stream; the Files frame's focus is the page's
   const flow = async (focused, ev) => {

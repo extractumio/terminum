@@ -23,6 +23,16 @@
 .grp li:has(> .clone) > .item { padding-right: calc(var(--icon-key-list) + 2 * var(--row-inset)); }
 .grp li > .clone { position: absolute; z-index: 1; right: var(--row-inset); top: 0; bottom: 0; margin-block: auto; opacity: .8; }   /* an icon key (controls.css), on the row's middle */
 .grp li > .clone:focus-visible { opacity: 1; }
+/* a row with its panes under it: Clone on its own row's middle, not the block's (row 1 of a grid) */
+.grp li:has(> .kids) { display: grid; grid-template-columns: minmax(0, 1fr); }
+.grp li:has(> .kids) > :is(.item, .clone) { grid-area: 1 / 1; }
+.grp li:has(> .kids) > .clone { position: relative; inset: auto; justify-self: end; align-self: center; margin: 0 var(--row-inset) 0 0; }
+.grp li:has(> .kids) > .kids { grid-area: 2 / 1; }
+@media (hover: hover) {
+  /* its own row hovered or focused, not a pane under it; a clicked row keeps its focus: only the keyboard's shows it */
+  .grp li:not(:has(> :is(.item, .clone):hover), :has(> :is(.item, .clone):focus-visible)) > .clone { opacity: 0; pointer-events: none; }
+  .grp li > .clone:hover { opacity: 1; }
+}
 
 /* unread: its agent finished a turn nobody has looked at; the row hatched over its whole box,
    pale see-through lines in the session name's color, over its own fill (hover, shown) */
