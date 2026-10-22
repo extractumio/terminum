@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="shapes.css">
 <link rel="stylesheet" href="tmux.css">
 <link rel="stylesheet" href="projects.css">
+<link rel="stylesheet" href="dock.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="grain.css">
@@ -142,6 +143,8 @@
       <button id="sideclose" class="icon" type="button" aria-label="Close the Files panel"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
     <iframe id="files" class="view" title="Files" hidden></iframe>
+    <div id="dockgrip" role="separator" aria-orientation="vertical" aria-label="Width of the Files panel" tabindex="0"
+     ></div>
     <div id="filewin" class="view" hidden>
       <div class="winhead wavebar"><span>View</span>
         <button id="fileclose" class="icon" type="button" aria-label="Close the file window"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>

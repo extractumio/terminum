@@ -19,6 +19,7 @@ import { BoxMoves } from "./boxnav.js";
 import { selectionCut } from "./selcut.js";
 import { switchGate } from "./switchgate.js";
 import { askConfirm, navTools } from "./navtools.js";
+import { dockGrip } from "./dock.js";
 import { embedded, quickShell } from "./quick.js";
 import { paneMenu } from "./menu.js";
 import { paneSizing } from "./sizing.js";
@@ -211,6 +212,7 @@ files.bindDrop($("term"));
 
 const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
+dockGrip({ store, cellWidth: () => view.charRatio() * view.chosenSize(), onResize: () => view.keepBottom(applyFit) });   // docked Files' width (AC-70)
 const menu = paneMenu({ send, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   pick: (id) => pick(id), signOut: () => conn.signOut(), copy: (text) => input.copySelection(text), quick: (side) => quick.open(side) });
 const quick = quickShell({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, item: (id) => findItem(st.groups, id)?.item,

@@ -17,7 +17,8 @@ configuration. The overview is in the [README](../README.md).
 - **The Files panel** (`ui/`): the tree of the shown pane's folder, a viewer and editor with
   highlighting and rendered Markdown (its ```mermaid fences drawn as diagrams, "Source" shows
   their text), create, rename, Trash, live refresh; on a wide window it is docked beside the
-  terminal, open or closed for each session, on a phone it is a view in its place.
+  terminal, open or closed for each session, its width set by dragging its border with the
+  terminal; on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
   types there sizes it to its view (45×14 to 240×70 cells); a window of several panes (Claude
   Code's teammates split it) keeps its layout. Text is never scaled: a pane narrower or wider than

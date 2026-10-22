@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.5.0 | 2026-10-22 | Owner: docked Files' width follows a drag of its border with the terminal, remembered in this browser (AC-70). |
 | 0.4.1 | 2026-10-21 | Owner: in Safari a quick switch to another session and back left docked Files blank (the emptied frame's about:blank loaded after the folder set meanwhile); Files is hidden, not emptied, until the shown session's folder is in (AC-70). |
 | 0.4.0 | 2026-10-21 | Owner: the ```mermaid fences of a rendered Markdown document showed as plain text; they are drawn as diagrams, their source a click away (AC-54). Owner: docked Files opened or closed in one session did so in all; it is each session's now, in this browser (AC-70). |
 | 0.3.2 | 2026-10-16 | Owner: a file made with New File… opens where a click opens files (View in the page), not in the panel's own editor under the tree (AC-70). |
@@ -462,6 +463,7 @@ Scenario: AC-70 happy path — a wide page
   Given the page is at least 1400 px wide
   Then Files is docked on the right, full height, until its × closes it; the Files button and ⌘B open and close it; it wears the shown pane's theme
   And open or closed is remembered for each session in this browser: closing Files in one session leaves it open in the others, and switching to a session shows Files as that session last had it (a session never changed: docked); the view's new width reaches tmux with the opening's own size, never as a second resize
+  And the band between the terminal and Files is a separator: dragging it sets Files' width (at least 260 px, at most 60% of the page's column beside the list, never leaving the terminal under 45 columns), the terminal following at once and tmux once the drag rests; the width is kept in this browser for every session; with the keyboard, ← → move it 16 px; a double click puts back 380 px
   And on a switch Files shows nothing of the session left until the shown session's folder is in, also after a quick switch away and back (half a second or less)
   When the user opens a file (a click in the tree, or a file just made with New File…: it never opens under the tree inside the page)
   Then View is a window over the terminal with its tabs and a bar showing the full path (selectable, with a copy button and a toast "Copied …"); × or closing its last file closes it; the terminal keeps its keys
@@ -727,3 +729,4 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] AC-70 (2026-10-18) — View belongs to its session: `web/test/e2e_app.mjs` "View belongs to its session: another session hides it, coming back shows it as it was" and "a View whose last file closed does not come back with its session" in Chromium and WebKit → pass.
 - [ ] AC-72, AC-73 — backlog, not implemented.
 - [x] 0.4.0 (2026-10-21) — AC-54 `cd ui && node test/e2e_panel.mjs` (a ```mermaid fence drawn as an SVG image at its size, its source hidden; Source shows the fence's text, Diagram goes back; a fence Mermaid cannot draw keeps its source with Mermaid's message; a ```rust fence highlighted; a hostile fence (an HTML label with onerror, a click handler) drawn as an image only: no dialog, no element of its label); screenshots in Chromium and WebKit at 1200×800 and 390×844, dark and light (the toggle 44×44 on a touch screen; a dark theme's diagram drawn dark, again when the theme changes); AC-70 `web/test/e2e_switch.mjs` (docked Files closed in one session stays open in another and closed when back; "sub" carries the width the session's own Files leave, no other width after it) → pass.
+- [x] 0.5.0 (2026-10-22) — AC-70 `web/test/e2e_dock.mjs` (Chromium and WebKit at 1400×900: dragging the separator left widens Files and narrows the terminal at once; one size message once the drag rests, none during; kept across a reload; at least 260 px, at most 60% and 45 columns; ← → 16 px; a double click back to 380; a narrower window clamps, a wider one restores the chosen width) → pass.

@@ -33,6 +33,7 @@ import { webRows } from "./e2e_rows.mjs";
 import { webResize } from "./e2e_resize.mjs";
 import { webOpenEnd } from "./e2e_openend.mjs";
 import { webSwitch } from "./e2e_switch.mjs";
+import { webDock } from "./e2e_dock.mjs";
 
 const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webMarks, webTouch, webEdit, webBoxNav,
   webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch };
