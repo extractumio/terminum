@@ -110,6 +110,7 @@ changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch scree
 | Rhythm | Value |
 | --- | --- |
 | Sidebar and header side padding | 10px wide, 16px on the phone sheet |
+| The phone header | 8 px above, between and under its two rows and between its keys, 14 px at the sides (⋯ over the floating buttons' column); ☰, the title block, ✎ and ⋯ on the title row's middle, ✎ as large as ☰ and ⋯ in a column of its own |
 | Between groups in the list | `--sp-3` (14px on the phone) |
 | Sibling controls | 4px (footer list), 8px (forms, dialog actions, header tools) |
 | A form | padding 12 (16 on touch); field ↔ field 8; a hint under its field 4; the last field → its buttons 16 (20 on touch) |

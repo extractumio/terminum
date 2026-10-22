@@ -401,11 +401,14 @@ body.ctxtrace #fabs { display: flex; }
   .nav-foot { padding: 10px 16px max(16px, env(safe-area-inset-bottom)); }
   .footbtn { --key-h: 48px; font-size: 15px; }
   #toast { bottom: calc(68px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }   /* above the floating buttons */
-  #updchip { order: 2; align-self: flex-start; margin-top: 9px; }   /* before ⋯, not between ☰ and the title */
-  /* the header: title row, then the view switch across the width */
-  #bar { flex-wrap: wrap; gap: 4px 4px; padding: env(safe-area-inset-top) 14px 8px 8px; }   /* ⋯ over the floating buttons' column */
-  #current { order: 1; align-self: flex-start; padding-top: 11px; }   /* the title row centers on ☰ and ⋯ (44px) */
-  #navbtn, #menubtn { align-self: flex-start; }
+  #updchip { order: 2; }   /* before ⋯, not between ☰ and the title */
+  /* the header on an 8 px grid: the title row (☰, the title block, ✎, ⋯, every one on the row's
+     middle), then the view switch across the width; 14 px at the sides puts ⋯ over the floating
+     buttons' column (marks.js placeFab) */
+  #bar { flex-wrap: wrap; gap: var(--sp-2); padding: calc(env(safe-area-inset-top) + var(--sp-2)) 14px var(--sp-2); }
+  #current { order: 1; position: relative; }
+  #current #rename { --ik: var(--icon-key); position: absolute; right: 0; top: calc(50% - var(--ik) / 2); margin: 0; }   /* ✎ as large as ⋯, in a column of its own beside it */
+  #current:has(#rename:not([hidden])) .lines { padding-right: calc(var(--icon-key) + var(--sp-2)); }   /* its room: the title and details end before it */
   #renamebox { order: 1; }
   #navbtn { order: 0; }
   #tools { display: contents; }

@@ -94,6 +94,19 @@ export async function webLook(browser, name) {
       await page.keyboard.press("Escape");
       check("look: on a phone every button of the list, a form, the header and the menu is at least 40px tall (a segment 34)",
         !list.length && !form.length && !bar.length && !menu.length && !segs.length, JSON.stringify({ list, form, bar, menu, segs }));
+      // the header's title row: ☰, the title block, ✎ and ⋯ on one axis, ✎ as large as ☰ and ⋯; 8 px above it, between the rows and under the views
+      const row = await page.evaluate(() => {
+        document.getElementById("rename").hidden = false;
+        const r = (s) => document.querySelector(s).getBoundingClientRect(), mid = (b) => Math.round(b.top + b.height / 2);
+        const bar = r("#bar"), nav = r("#navbtn"), cur = r("#current"), ren = r("#rename"), menu = r("#menubtn"), views = r("#views");
+        return { mids: [nav, cur, ren, menu].map(mid), sizes: [nav, ren, menu].map((b) => Math.round(b.height)),
+          above: Math.round(nav.top - bar.top), between: Math.round(views.top - nav.bottom), under: Math.round(bar.bottom - views.bottom),
+          left: Math.round(nav.left - bar.left), aligned: Math.round(nav.left) === Math.round(views.left) && Math.round(menu.right) === Math.round(views.right),
+          clear: ren.right <= menu.left - 8 && ren.left >= cur.left };
+      });
+      check("look: on a phone the header's title row is on one axis, its keys one size, 8 px above, between and under its rows",
+        new Set(row.mids).size === 1 && new Set(row.sizes).size === 1 && row.above === 8 && row.between === 8 && row.under === 8 && row.aligned && row.clear,
+        JSON.stringify(row));
     }
 
     const toast = await page.evaluate(() => {
