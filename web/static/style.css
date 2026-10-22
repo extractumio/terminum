@@ -172,10 +172,17 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #curbar { flex: 0 0 auto; display: flex; height: 40px; margin-right: 6px; }
 #curbar:empty { display: none; }
 #curbar .pbar { margin: 0; }
-#cursub { display: block; height: 16px; line-height: 16px; text-overflow: ellipsis; padding-left: 48px; }   /* under the title: after the state and the mark */
-#cursub > span { display: inline; }
-#cursub > .sep { margin: 0 6px; }
+#cursub { display: flex; align-items: center; height: 16px; line-height: 16px; padding-left: 48px; overflow: clip visible; }   /* under the title: after the state and the mark (header.js); the Copy's target reaches over the line */
+#cursub > .dir { flex-shrink: 100; min-width: 6ch; }   /* the folder gives way after the titles */
+#cursub > .where { flex-shrink: .5; min-width: 4ch; }   /* session:window: gives way last */
+#cursub > .set { flex-shrink: 1000; min-width: 4ch; }   /* what runs there gives way first, down to a few letters */
+#cursub .set > .sep { margin: 0 6px; }
 #cursub:empty { display: none; }
+/* the folder's Copy: a 13px icon in the line, a finger's target round it (no line is taller) */
+#cursub .copydir { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 16px; margin-left: -2px; padding: 0; color: var(--muted); }
+#cursub .copydir::after { content: ""; position: absolute; inset: -4px -6px; }
+@media (max-width: 860px), (pointer: coarse) { #cursub .copydir { height: 40px; margin-block: -12px; } }   /* a finger's height, the line still 16 px */
+@media (hover: hover) { #cursub .copydir:hover { color: var(--t-fg); } }
 #term.onlink { cursor: pointer; }
 /* addresses and paths that open (linkmarks.js) */
 ::highlight(lnk) { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); }

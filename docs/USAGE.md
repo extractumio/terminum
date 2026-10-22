@@ -98,6 +98,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   Delete over text you selected deletes it, as in a text field.
 - **The list**: each row's Clone opens a window beside it in its folder; a right click or a long
   press on a row opens its menu (Clone, Add to Project, Close, moves). Projects are named groups
+- **The header** names the shown pane under its title: its folder (the copy button copies its full
+  path), tmux's `session:window`, then what runs there.
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser. A pale fuchsia blob marks a session whose agent finished while you were away.
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish).

@@ -115,7 +115,7 @@ function matches(item, q) {
   return [item.title, item.host ?? "", ...item.sub].join(" ").toLowerCase().includes(q);
 }
 
-function el(tag, cls, text) {
+export function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
   if (text !== undefined) e.textContent = textForm(String(text));

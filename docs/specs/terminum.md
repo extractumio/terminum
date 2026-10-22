@@ -160,6 +160,7 @@ Scenario: AC-01 happy path — sessions, windows and panes
   When the page opens
   Then the list shows group "main" with row "1 api", its second line "~/work/api" with "claude" at its right edge (host and folder first, then the titles; what runs there on the right), and, under it shifted in, "%4" as "~/work/api … zsh", then "2 docs"
   And group "notes" below it, each group with its count in words ("2 sessions": its rows, not the panes and quick shells under them), the counts of all groups in one column whatever buttons follow; each row with its Clone (AC-07)
+  And the header names the shown pane under its title in one line: its folder with a Copy button (the full path, "/Users/alex/work/api"; a toast says it), then tmux's target "main:1", then what runs there (a host first, "claude", the profile, its titles); the titles give way first, then the folder, down to a few letters each
   And a row's window number names, on hover, the host the window runs on: "This machine" here, the host's name on a host
   And each group has a copy button (its title the command) that copies how another terminal attaches to that session: "tmux -L terminum attach -t =main" (a host's group: its session's name "terminum" beside the host's, and "ssh -t <recipe> -- <destination> 'tmux attach -t =terminum'")
   And a window the user named (automatic-rename off) shows that name; one tmux names after its program shows the pane's title, else its program; status marks of coding agents (✳ ✻ ✶ ◐ ⏺) are stripped

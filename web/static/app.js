@@ -6,8 +6,8 @@ import { oneKeyboard } from "./onekbd.js";
 import "./press.js";                                // a pressed blob's pulse (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
-import { agentMark, findItem, folderBar, metaLine, renderNav, seeWaits, shownState, stateIcon } from "./nav.js";
-import { textForm } from "./render.js";
+import { findItem, renderNav, seeWaits } from "./nav.js";
+import { pageHeader } from "./header.js";
 import { sessionDrawer } from "./drawer.js";
 import { sentHistory } from "./sent.js";
 import { colorSchemes } from "./schemes.js";
@@ -350,27 +350,8 @@ function toggleGroup(key) {
   drawNav();
 }
 
-// The header: the profile's bar beside two lines: the agent's state, the title and the pencil;
-// then one line that only shortens at its end: host, program, folder, profile, where the tab is, titles.
-function showCurrent(found) {
-  $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
-  $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
-  view.setAgent(found?.item.agent ?? null);
-  if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); }
-  else {
-    const { group: g, item: it } = found;
-    const where = (g.session ? `${g.label} ${g.session}` : g.label) + (it.index ? `, window ${it.index}` : "");
-    // what runs there first (host, program, folder), then where the tab is, then its titles
-    const sub = [...(it.host ? [it.host] : []), ...it.sub], dir = sub.findIndex((p) => /^[~/]/.test(p));
-    const at = dir >= 0 ? dir + 1 : Math.min(sub.length, it.host ? 2 : 1);
-    const line = metaLine([...sub.slice(0, at), it.profile || "", where, ...sub.slice(at)].filter(Boolean), !!it.host);
-    $("cursub").replaceChildren(...line.childNodes);
-    $("curbar").replaceChildren(folderBar(it, true));   // still: the list's bar breathes while it works
-    $("curagent").replaceChildren(agentMark(it, 16));
-  }
-  document.title = found ? `${found.item.title} – terminum` : "terminum";
-  if (!tools.renaming()) $("rename").hidden = !found;
-}
+// The header (header.js): the title, then the folder with its Copy, the window, what runs there.
+const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => view.setAgent(a) });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;
