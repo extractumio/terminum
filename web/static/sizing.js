@@ -10,6 +10,7 @@
 // "Sized for another screen" until this page sizes it again, and one whose view changes width
 // keeps the chosen text size, clipped at the edge, until tmux has the new width (2 s at most after
 // the last change): the text never shrinks to the old width and grows back (AC-04).
+import { banner } from "./banners.js";
 
 const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
@@ -99,8 +100,7 @@ export function paneSizing({ view, send, sid, refit, notify }) {
   // said over a full-screen program, whose grid is drawn as it is, and for a refused resize
   // anywhere; the normal screen re-flows whatever the size (AC-04)
   function showSized() {
-    $("sized").hidden = !elsewhere || (!full && !elsewhere.error);
-    if (elsewhere) $("sized").textContent = `Sized for another screen (${elsewhere.cols}×${elsewhere.rows})` + (elsewhere.error ? `: ${elsewhere.error}` : "");
+    banner("sized", !elsewhere || (!full && !elsewhere.error) ? "" : `Sized for another screen (${elsewhere.cols}×${elsewhere.rows})` + (elsewhere.error ? `: ${elsewhere.error}` : ""));
   }
 
   // ---------- the mouse (AC-06) ----------

@@ -8,6 +8,7 @@ import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
 import { findItem, renderNav, seeWaits } from "./nav.js";
 import { pageHeader } from "./header.js";
+import { banner } from "./banners.js";
 import { sessionDrawer } from "./drawer.js";
 import { sentHistory } from "./sent.js";
 import { colorSchemes } from "./schemes.js";
@@ -80,7 +81,7 @@ function send(m) {
   trace.sent(m);
   if (!conn.send(m) && (m.t === "in" || m.t === "paste" || m.t === "mouse")) toast("Not connected");
 }
-function status(text) { $("status").hidden = !text; $("status").textContent = text; }
+function status(text) { banner("status", text); }
 
 // Pasted images, uploaded and dropped files: saved for the shown pane, their paths pasted.
 const files = uploads({ sid: () => st.sid, paste: (text) => input.paste(text), toast, hideToast: () => { $("toast").hidden = true; } });

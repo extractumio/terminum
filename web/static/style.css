@@ -191,9 +191,10 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #status { background: var(--danger-fill); color: #fff; padding: 6px 12px; }
 #restored { background: var(--ok-fill); color: #fff; padding: 4px 12px; }
 #stall, #sized { background: var(--warn-fill); color: #fff; padding: 6px 12px; }
-#restored { display: flex; align-items: center; gap: 8px; }
-#restored[hidden] { display: none; }
-#restored > span { flex: 1; }
+/* a banner: its line and an × (banners.js) */
+.banner { display: flex; align-items: center; gap: 8px; }
+.banner[hidden] { display: none; }
+.banner > span { flex: 1; min-width: 0; }
 /* other sessions waiting for an answer: cards at the terminal's top right; on a phone, slim
    lines across it under the header */
 #asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 74px;   /* left of the floating buttons' column and the marks */ z-index: 7; width: min(340px, calc(100% - 24px));

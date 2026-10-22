@@ -46,7 +46,6 @@
 
 /* the restore report's linked panes and its close button */
 #restored .link { padding: 0; color: inherit; text-decoration: underline; font-weight: 600; }
-#restored .x { font-size: 18px; }   /* an icon key (controls.css) */
 
 /* a question before something that cannot be undone (Close pane, Remove host) */
 #confirmbox p { margin: 0; line-height: var(--lh-prose); }

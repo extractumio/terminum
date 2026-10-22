@@ -165,7 +165,7 @@ export class Input {
     // Terminal text copies with its line ends (the page draws them with CSS, which never copies).
     document.addEventListener("copy", (e) => {
       const text = selectedText(this.term);
-      if (text === null) return;
+      if (!text) return;                                              // none of the terminal's: the browser's own copy, never an empty clipboard
       e.clipboardData.setData("text/plain", text);
       e.preventDefault();
     });
@@ -278,6 +278,7 @@ export class Input {
 
   paste(text) {
     const clean = text.replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/\n/g, "\r");
+    if (!clean) return this.options.status("Nothing to paste: the clipboard holds no text.");   // tmux makes no buffer of nothing
     this.type(this.options.bracketed() ? `\x1b[200~${clean}\x1b[201~` : clean, "paste");
   }
 
@@ -312,19 +313,23 @@ export class Input {
   }
 
   async pasteFromClipboard() {
-    // The clipboard API needs HTTPS (or localhost); elsewhere, paste into a field instead.
+    // The clipboard API needs HTTPS (or localhost); elsewhere, paste into a field instead. One read
+    // for an image or text: Safari asks the user to confirm each read (its own small Paste).
     if (window.isSecureContext && navigator.clipboard?.read) {
-      try {
-        for (const item of await navigator.clipboard.read()) {
+      let items;
+      try { items = await navigator.clipboard.read(); } catch { /* denied, or no read(): readText or the field */ }
+      if (items) {
+        for (const item of items) {
           const type = item.types.find((t) => t === "image/png") ?? item.types.find((t) => t.startsWith("image/"));
           if (type) return this.options.pasteImage(await item.getType(type));
         }
-      } catch { /* denied or no image: try text */ }
+        const item = items.find((i) => i.types.includes("text/plain"));
+        return this.paste(item ? await (await item.getType("text/plain")).text() : "");
+      }
     }
     if (window.isSecureContext && navigator.clipboard?.readText) {
       let text;
       try { text = await navigator.clipboard.readText(); } catch { /* denied: use the field */ }
-      if (text === "") return this.options.status("The clipboard is empty.");
       if (text !== undefined) return this.paste(text);
     }
     this.pasteDialog.showModal();

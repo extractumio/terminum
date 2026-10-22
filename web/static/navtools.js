@@ -6,6 +6,7 @@
 
 import { addTmux } from "./addtmux.js";
 import { placeModal } from "./fabpane.js";
+import { banner } from "./banners.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -199,12 +200,9 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
     if (m.ok) stalls.delete(key);
     else if (!stalls.has(key)) stalls.set(key, [what, performance.now() - (m.ms ?? 0)]);
     clearInterval(stallTimer);
-    $("stall").hidden = !stalls.size;
-    if (!stalls.size) return;
-    const say = () => {
-      $("stall").textContent = [...stalls.values()].map(([what, since]) =>
-        `${what} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". ");
-    };
+    if (!stalls.size) return banner("stall", "");
+    const say = () => banner("stall", [...stalls.values()].map(([what, since]) =>
+      `${what} is not responding (${Math.round((performance.now() - since) / 1000)} s)`).join(". "), [...stalls.keys()].join());   // the seconds are no news
     say();
     stallTimer = setInterval(say, 1000);
   }

@@ -4,6 +4,7 @@
 // banner over the terminal, and the chip of a newer release with its own menu.
 import { closeSession } from "./navtools.js";
 import { placeModal } from "./fabpane.js";
+import { closeButton } from "./banners.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -85,10 +86,7 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
       }
       for (const f of report?.failed ?? []) text.append(` Not restored: ${f}.`);
     }
-    const x = document.createElement("button");
-    x.type = "button"; x.className = "x"; x.textContent = "×"; x.setAttribute("aria-label", "Close the report");
-    x.onclick = () => { box.hidden = true; send({ t: "restoreseen" }); };   // closed on every page
-    box.replaceChildren(text, x);
+    box.replaceChildren(text, closeButton("Close the report", () => { box.hidden = true; send({ t: "restoreseen" }); }));   // closed on every page
     box.hidden = false;
     restoreTimer = setTimeout(() => { box.hidden = true; }, RESTORED_FOR);
   }

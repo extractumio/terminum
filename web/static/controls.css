@@ -32,17 +32,17 @@
 :where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
 
 /* ---- icon keys: every icon-only button is a key of its own, square ---- */
-:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, #restored .x, .stepper button) {
+:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, .banner .x, .stepper button) {
   flex: none; width: var(--ik, var(--icon-key)); height: var(--ik, var(--icon-key)); padding: 0; display: grid; place-items: center;
   border-radius: var(--key-r); color: var(--icon-ink); background-color: var(--key-fill); background-image: var(--m-matte);
   box-shadow: var(--m-edge-ctl); }
 @media (hover: hover) {
-  :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, #restored .x, .stepper button):not(:disabled):hover {
+  :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, .banner .x, .stepper button):not(:disabled):hover {
     color: var(--t-fg); background-color: var(--key-fill-hover); }
 }
 :is(.icon, .grp h2 .hostbtn)[aria-pressed="true"], :is(.icon, .grp h2 .hostbtn)[aria-expanded="true"] {
   color: var(--t-fg); background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
-:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, #restored .x, .stepper button):active:not(:disabled) {
+:is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, #asks .x, .banner .x, .stepper button):active:not(:disabled) {
   box-shadow: var(--m-well); }
 /* a thin bar's small ones (the quick shell's, a name's pencil, a bookmark row's), the session list's (--ik: its size,
    so no selector's weight decides it) */
