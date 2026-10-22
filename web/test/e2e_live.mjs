@@ -17,6 +17,7 @@ import { check, playwright, results, runningIn, within } from "./check.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
+import { liveView } from "./e2e_liveview.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -101,6 +102,7 @@ async function wide(browser, name) {
     await view.waitForSelector(`.tab.active .tname:text("fresh-${name}.txt")`, { timeout: 5000 });
     if (await files.$(".tab")) throw new Error("a tab opened in Files too");
   });
+  await liveView(page, { work: WORK });
   await page.click("#fileclose");
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");

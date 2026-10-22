@@ -8,6 +8,8 @@
 // wait hidden beside it with their tabs and unsaved edits (moving an iframe would reload it).
 // Docked Files is open or closed for each session, in this browser (AC-70).
 
+import { openZoom } from "./zoom.js";
+
 const $ = (id) => document.getElementById(id);
 const NAMES = ["term", "files", "file"];
 const WIDE = matchMedia("(min-width: 1400px)");
@@ -27,7 +29,7 @@ export class Views {
     this.fileHost = null;          // the host the File frame's files are on
     this.sid = null;               // the shown session, whose View is #file
     this.theme = null;             // the shown pane's, for both frames (fbd's is the focused pane's)
-    for (const f of ["files", "file"]) { const el = $(f); el.addEventListener("load", () => { if (el.id === f) this.tellTheme(el); }); }
+    for (const f of ["files", "file"]) { const el = $(f); el.addEventListener("load", () => { if (el.id === f) this.tellTheme(el); if (el.id === "file") this.tellRoot(); }); }
     // another session's Files show once its own folder is in (the last one asked for)
     $("files").addEventListener("load", () => { if ($("files").getAttribute("src") === this.filesSrc) $("files").classList.remove("moving"); });
     for (const b of document.querySelectorAll("button[data-view]")) b.addEventListener("click", () => this.show(b.dataset.view, true));
@@ -120,10 +122,11 @@ export class Views {
     if (!next) {
       next = Object.assign(document.createElement("iframe"), { title: "View" });
       $("backterm").before(next);
-      next.addEventListener("load", () => { if (next.id === "file") this.tellTheme(next); });
+      next.addEventListener("load", () => { if (next.id === "file") { this.tellTheme(next); this.tellRoot(); } });
     }
     next.id = "file";
     this.sid = sid;
+    this.tellRoot();
     this.docked = this.dockedBy[sid] ?? true;
     this.fileHost = next.dataset.host || null;
     const reopen = next.dataset.open === "true";
@@ -156,6 +159,13 @@ export class Views {
     for (const f of ["files", "file"]) this.tellTheme($(f));
   }
 
+  /** View: the folder Files shows and its host, where Reveal in tree can find a file (none: "");
+   *  View shows Reveal only for a file under it. */
+  tellRoot() {
+    const r = this.filesRoot;
+    if ($("file").getAttribute("src")) $("file").contentWindow?.postMessage({ type: "fb-root", path: r?.cwd ?? "", host: r?.host ?? null }, location.origin);
+  }
+
   tellTheme(frame) {
     if (this.theme && frame.getAttribute("src")) frame.contentWindow?.postMessage({ type: "fb-theme", theme: this.theme }, location.origin);
   }
@@ -180,6 +190,8 @@ export class Views {
   onFiles(m) {
     this.answered(m);
     this.filesError = m.error ?? null;
+    this.filesRoot = m.error || !m.cwd ? null : { cwd: m.cwd, host: m.host ?? null };
+    this.tellRoot();
     if (!m.error && this.filesShown) {         // the Files frame loads only while it is shown
       const q = new URLSearchParams({ key: m.key, cwd: m.cwd ?? "" });
       if (m.host) q.set("host", m.host);
@@ -205,7 +217,7 @@ export class Views {
   }
 
   /** Files asks to open a file; View asks to reveal one in Files, or says its last file was
-   *  closed. Nothing else is listened to. */
+   *  closed; either shows an image full screen. Nothing else is listened to. */
   onMessage(e) {
     if (e.origin !== location.origin || typeof e.data?.path !== "string") return;
     const parked = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.contentWindow === e.source);
@@ -218,6 +230,13 @@ export class Views {
       this.onBack();
     }
     if (e.source === $("files").contentWindow && e.data.type === "fb-open") this.open(e.data.path, e.data.host ?? null);
+    // an image tab's picture full screen: only a file's own URL from terminumd (/fb/api/raw), nothing else loads
+    const frame = [$("file"), $("files"), parked].find((f) => f && f.contentWindow === e.source);
+    if (frame && e.data.type === "fb-zoom") {
+      const url = new URL(e.data.path, location.href);
+      if (url.origin === location.origin && url.pathname === "/fb/api/raw")
+        openZoom(url.href, { caption: String(e.data.caption ?? ""), alt: String(e.data.caption ?? ""), vector: /\.svg$/i.test(url.searchParams.get("path") ?? ""), onClose: () => frame.focus() });
+    }
     if (e.source === $("file").contentWindow && e.data.type === "fb-reveal") {
       this.show("files");
       $("files").contentWindow?.postMessage({ type: "fb-reveal", path: e.data.path }, location.origin);

@@ -5,7 +5,7 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, proofRefusal, PROXIED, scope, setScope, toast,
+  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isUnder, proofRefusal, PROXIED, scope, setScope, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
 import { renderOffer } from "./host-offer";
@@ -112,6 +112,7 @@ async function applyWorkspace(pane: Pane) {
   if (sameTree) { tree.selected = new Set(pane.selected); tree.queue(); }
   else await tree.setRoot(pane.root, pane.expanded, pane.selected, pane.scroll);
   if (key !== paneKey || ws !== pane) return;
+  viewer.refreshTools();
   if (JSON.stringify(viewer.tabs) !== JSON.stringify(pane.tabs) || viewer.active !== pane.active_tab) viewer.setTabs(pane.tabs, pane.active_tab);
   renderHeader(term);
 }
@@ -282,11 +283,21 @@ const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
   changed: scheduleSave,
   layout: (has) => $("app").classList.toggle("has-tabs", has),
   reveal: (p) => { if (!revealOutside(p)) revealInTree(p); },
+  canReveal: (p) => { const root = VIEW ? (pageRoot?.host === scope ? pageRoot.path : null) : tree.root?.path; return !!root && isUnder(p, root) && p !== root; },
   active: (p) => pathBar?.show(p),
   emptied: () => { if (VIEW) emptiedOutside(); },
 });
 let pathBar: PathBar | null = null; // viewer window only
-function revealInTree(p: string) { tree.selected = new Set([p]); void tree.reveal(p); scheduleSave(); }
+let pageRoot: { path: string; host: string | null } | null = null; // View: the folder the page's Files shows (the page says)
+/** Reveal in tree: its folders expand, it is selected; a file outside the tree's folder (the pane's) says so. */
+function revealInTree(p: string) {
+  void tree.reveal(p, true).then((found) => {
+    if (!found) return toast(tree.root && !isUnder(p, tree.root.path) ? `Not in this tree: ${p} is outside ${tree.root.path}` : `Not found in the tree: ${p}`);
+    tree.selected = new Set([p]);
+    tree.queue();
+    scheduleSave();
+  });
+}
 
 const busy = () => viewer.hasDirty || !!document.querySelector(".modal, .inline-edit.on, dialog[open]");
 // The page reloads after an upgrade only while none of its frames is busy (AC-16).
@@ -369,7 +380,7 @@ function startViewer(path: string) {
   viewer.open(path, "auto");
 }
 
-acceptFromPage({ open: (p) => viewer.open(p), reveal: revealInTree, theme: (t) => { if (applyTheme(t)) { if (!VIEW) tree.themeChanged(); void redrawDiagrams(); } } });
+acceptFromPage({ open: (p) => viewer.open(p), reveal: revealInTree, root: (path, host) => { pageRoot = path ? { path, host } : null; viewer.refreshTools(); }, theme: (t) => { if (applyTheme(t)) { if (!VIEW) tree.themeChanged(); void redrawDiagrams(); } } });
 if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page.");
 
 (async () => {

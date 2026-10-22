@@ -438,8 +438,8 @@ body.wide #views button[aria-selected="true"] { color: var(--accent); background
 #main > iframe.view, #filewin > iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--t-bg); }
 #filewin { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 /* below 1400px View fills the page: a way back to the terminal where the thumb is */
-body.wide #backterm { display: none; }
 #backterm { position: absolute; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2; padding: 0 var(--key-px) 0 var(--sp-2); }   /* a key (controls.css) */
+body.wide #filewin #backterm { display: none; }   /* over the keys' display (controls.css): at WIDE View has its own × */
 #viewnote { flex: 1; margin: 0; padding: 24px 16px; color: var(--muted); }
 body:not([data-shown="term"]) .term-only, body:not([data-shown="term"]) #hotkeys,
 body:not([data-shown="term"]) #bottom, body:not([data-shown="term"]) #paused { display: none !important; }
@@ -467,7 +467,8 @@ body.docked #files, body.docked #viewnote { grid-column: 2; grid-row: 2 / -1; wi
 body.wide #filewin { position: absolute; grid-row: 6; z-index: 7; top: 12px; right: 16px; bottom: 16px;
   width: min(820px, calc(100% - 32px)); border-radius: var(--r-xl); overflow: hidden;
   background: var(--chrome); box-shadow: var(--shadow-far); }
-body.wide #filewin .winhead { display: flex; }
+body.wide #filewin .winhead { display: flex; padding: 6px 6px 6px 12px; }   /* on the grid of the rows inside (ui/src/style.css .vbar) */
+@media (pointer: fine) { #fileclose { --ik: var(--icon-key-sm); } }
 /* the build under the session list's buttons, small and quiet (app.js showBuild) */
 #buildinfo { margin: 4px 10px 0; font: var(--fs-micro)/1.3 var(--ui); color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #buildinfo:empty { display: none; }

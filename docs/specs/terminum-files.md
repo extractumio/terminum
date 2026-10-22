@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.4.1 |
+| Version | 0.5.2 |
 | Date | 2026-10-21 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.5.2 | 2026-10-22 | Owner: a click on an image tab's picture opens it full screen in the page's viewer (pinch, wheel, drag, a double click for 1:1; −, +, Fit, ×), alone (no page around) it toggles its own size; the checkerboard is behind the picture alone, so its transparent parts show within its edges (AC-64); Reveal in tree expands the file's folders and selects it, and is offered only for a file under the folder Files shows (AC-67); View's head, path bar and tab row stand on one grid, Reveal beside the tabs; at WIDE View has no Terminal key, its × closes it (AC-70). |
 | 0.5.1 | 2026-10-22 | Owner: View's Terminal button on a phone is a key as the others, not an accent pill (AC-70). |
 | 0.5.0 | 2026-10-22 | Owner: docked Files' width follows a drag of its border with the terminal, remembered in this browser (AC-70). |
 | 0.4.1 | 2026-10-21 | Owner: in Safari a quick switch to another session and back left docked Files blank (the emptied frame's about:blank loaded after the folder set meanwhile); Files is hidden, not emptied, until the shown session's folder is in (AC-70). |
@@ -371,6 +372,13 @@ Scenario: AC-64 happy path — png
   When the user clicks "docs/arch.png" (1920×1080, 240 K)
   Then a tab shows it fitted with "1920 × 1080 · 240 K"
 
+Scenario: AC-64 happy path — a closer look
+  Given a picture in its tab
+  Then it stands in the middle of the tab, a checkerboard behind it alone (its transparent parts show within its edges)
+  When the user clicks the picture
+  Then it opens full screen in the page's viewer, fitted: two fingers pinch, the wheel zooms around the pointer, a drag pans, a double click toggles fitted and 1:1; −, +, Fit and × (or Esc) in its corner
+  And in a View of its own (no page around) a click shows it at its own size, scrolled, and another fits it again
+
 Scenario: AC-64 edge — svg is inert
   Given "icon.svg" holds a <script>
   Then it shows as an image element and nothing runs
@@ -403,7 +411,7 @@ Scenario: AC-66 edge — remembered, across unloaded pages
 ```gherkin
 Scenario: AC-67 happy path — Markdown, HTML, anchors, web
   When the user clicks "[design](docs/design.md)" in a rendered file
-  Then "docs/design.md" opens in a new tab Rendered; "[the page](page.html#sec2)" opens page.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside page.html opens README.md at "#sandbox"; "Reveal in tree" selects the file
+  Then "docs/design.md" opens in a new tab Rendered; "[the page](page.html#sec2)" opens page.html rendered in a sandboxed frame scrolled to "#sec2" with its relative images; "<a href='../README.md#sandbox'>" inside page.html opens README.md at "#sandbox"; "Reveal in tree" expands the file's folders and selects it; it is offered only for a file under the folder Files shows (the pane's, which the page tells View)
   When the user clicks "[tmux](https://github.com/tmux/tmux)"
   Then the reader's default browser opens it (new tab, noopener) and the panel stays
 
@@ -468,6 +476,7 @@ Scenario: AC-70 happy path — a wide page
   And on a switch Files shows nothing of the session left until the shown session's folder is in, also after a quick switch away and back (half a second or less)
   When the user opens a file (a click in the tree, or a file just made with New File…: it never opens under the tree inside the page)
   Then View is a window over the terminal with its tabs and a bar showing the full path (selectable, with a copy button and a toast "Copied …"); × or closing its last file closes it; the terminal keeps its keys
+  And at WIDE it has no Terminal key (its × closes it); its head, the path bar and the tab row stand on one grid: their text 12 px from the left, their keys (×, copy, Reveal beside the tabs) 24 px with 6 px above, below and to the right
 
 Scenario: AC-70 happy path — a narrow page
   Given the page is narrower than 1400 px
@@ -732,3 +741,4 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] 0.4.0 (2026-10-21) — AC-54 `cd ui && node test/e2e_panel.mjs` (a ```mermaid fence drawn as an SVG image at its size, its source hidden; Source shows the fence's text, Diagram goes back; a fence Mermaid cannot draw keeps its source with Mermaid's message; a ```rust fence highlighted; a hostile fence (an HTML label with onerror, a click handler) drawn as an image only: no dialog, no element of its label); screenshots in Chromium and WebKit at 1200×800 and 390×844, dark and light (the toggle 44×44 on a touch screen; a dark theme's diagram drawn dark, again when the theme changes); AC-70 `web/test/e2e_switch.mjs` (docked Files closed in one session stays open in another and closed when back; "sub" carries the width the session's own Files leave, no other width after it) → pass.
 - [x] 0.5.0 (2026-10-22) — AC-70 `web/test/e2e_dock.mjs` (Chromium and WebKit at 1400×900: dragging the separator left widens Files and narrows the terminal at once; one size message once the drag rests, none during; kept across a reload; at least 260 px, at most 60% and 45 columns; ← → 16 px; a double click back to 380; a narrower window clamps, a wider one restores the chosen width) → pass.
 - [x] 0.5.1 (2026-10-22) — AC-70 `web/test/e2e_notes.mjs` (a phone: View's Terminal key has the header keys' fill, radius and matte, 44 px) → pass.
+- [x] 0.5.2 (2026-10-22) — AC-64, AC-67, AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux: View's head, path bar and tab row: text 12 px in, keys 24×24 px with 6 px above, below and right, Reveal on the tabs' row, no Terminal key at WIDE (before: the head 30 px with a 30 px × flush, the path bar 12/6 px, Reveal on a row of its own as `.vbar` had no style, and Terminal shown: controls.css's keys rule, of the same specificity, came later); the picture's margins equal (184/184 px), the checkerboard on the `img` alone, none on the view (before: on the whole view, so a PNG's transparent right part looked like the view and its picture off the middle); a click opens it in the page's full-screen viewer with its name, Esc closes it; Reveal of `sub/deep/note.txt` with its folders closed expands both and selects it (before: nothing); a file in another /tmp folder: no Reveal key, a file under the folder again one), `ui/test/e2e_panel.mjs` (alone, a click toggles the picture's own size) → pass; `node web/test/e2e_all.mjs` 1103, live 95, Panel 138, `make test` (cargo 444 + 1), `scripts/security_check.sh` pass.

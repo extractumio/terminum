@@ -9,6 +9,7 @@ import { editorExtensions } from "./viewer-editor";
 
 import { api, apiOrToast, ApiError, basename, esc, fmtSize, isUnder, PROXIED, rawUrl, rebase, toast, type FileView, type Stamp, type Tab } from "./api";
 import { ask } from "./dialogs";
+import { zoomOutside } from "./embed";
 import { fileIcon } from "./icons";
 import { languageForFile } from "./highlight";
 import { isRenderable, renderDoc, type LinkHost } from "./docview";
@@ -17,6 +18,7 @@ export interface ViewerCallbacks {
   changed(): void;                 // tabs / active / view mode changed → persist
   layout(hasTabs: boolean): void;  // show or hide the viewer area
   reveal(path: string): void;      // select the file in the tree
+  canReveal(path: string): boolean; // the file is in that tree (Reveal shows only then)
   active?(path: string | null): void; // the active tab changed (the viewer window's path bar)
   emptied?(): void;                // the user closed the last tab
 }
@@ -328,7 +330,7 @@ export class Viewer {
     const banner = this.banner(f, d);
     if (f.binary) {
       if (f.mime?.startsWith("image/")) {
-        this.body.innerHTML = `${banner}<div class="scroll imgview"><img src="${esc(rawUrl(f.path))}" alt=""><div class="imgmeta"></div></div>`;
+        this.body.innerHTML = `${banner}<div class="scroll imgview"><img src="${esc(rawUrl(f.path))}" alt="" title="Zoom"><div class="imgmeta"></div></div>`;
         const img = this.body.querySelector("img")!;
         img.onload = () => { this.body.querySelector(".imgmeta")!.textContent = `${img.naturalWidth} × ${img.naturalHeight} · ${fmtSize(f.size)}`; };
       } else {
@@ -448,6 +450,11 @@ export class Viewer {
     if (this.activePath() === path) this.reshow();
   }
 
+  /** The active tab's tools again (Reveal follows the tree's folder). */
+  refreshTools() {
+    if (this.active != null && this.shown) this.renderTools(this.tabs[this.active], this.doc(this.tabs[this.active].path));
+  }
+
   private renderTools(tab: Tab, d: Doc) {
     const f = d.file;
     const md = isRenderable(tab.path) && f && !f.binary;
@@ -456,7 +463,7 @@ export class Viewer {
       (d.dirty ? `<button class="btn sm primary" data-act="save" title="Save (⌘S)">Save</button>` : "") +
       (md ? `<div class="seg"><button data-act="rendered" class="${mode === "rendered" ? "on" : ""}" title="Rendered">Rendered</button>` +
         `<button data-act="source" class="${mode === "source" ? "on" : ""}" title="Source${f?.writable ? " (editable)" : ""}">Source</button></div>` : "") +
-      `<button class="icon" data-act="reveal" title="Reveal in tree"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/></svg></button>` +
+      (!this.cb.canReveal(tab.path) ? "" : `<button class="icon" data-act="reveal" title="Reveal in tree"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="2.5"/><path d="M8 1.5v3M8 11.5v3M1.5 8h3M11.5 8h3"/></svg></button>`) +
       (PROXIED ? "" : `<button class="icon" data-act="open-app" title="Open with default app"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 2.5h4.5V7M13.5 2.5 7 9M12 10v3.5H2.5V4H6"/></svg></button>`);
   }
 
@@ -468,6 +475,9 @@ export class Viewer {
     const path = this.activePath();
     if (!path) return;
     if (t.closest("[data-open-app]")) return void this.openWithApp(path);
+    // an image full screen in the page's viewer; alone (no page around) fitted ⇄ its own size here
+    const img = t.closest<HTMLImageElement>(".imgview img");
+    if (img) return void (zoomOutside(img.src, basename(path)) || img.parentElement!.classList.toggle("actual"));
     if (t.closest("[data-close-tab]") && this.active != null) return void this.close(this.active);
     if (t.closest("[data-retry]")) { this.docs.delete(path); return this.reshow(); }
     const disk = t.closest<HTMLElement>("[data-disk]");

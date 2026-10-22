@@ -172,6 +172,12 @@ try {
   // AC-64 image tab
   await page.click(row("docs")); await page.click(row("docs/logo.png"));
   await within("AC-64 image tab shows size", (ms) => page.waitForFunction(() => /1 × 1/.test(document.querySelector(".imgmeta")?.textContent ?? ""), null, { timeout: ms }));
+  // alone (no page around to show it full screen) a click toggles its own size and back
+  await page.click(".imgview img");
+  const actual = await page.$eval(".imgview", (v) => [v.classList.contains("actual"), getComputedStyle(v.querySelector("img")).maxWidth]);
+  await page.click(".imgview img");
+  check("AC-64 alone, a click on the picture shows it at its own size, another fits it again",
+    actual[0] && actual[1] === "none" && !(await page.$eval(".imgview", (v) => v.classList.contains("actual"))), JSON.stringify(actual));
 
   // AC-55 per-pane memory: the page shows another pane, then this one again, then reloads
   await page.waitForTimeout(600);                      // the workspace write is debounced

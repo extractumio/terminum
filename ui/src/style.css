@@ -125,7 +125,13 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 @media (hover: hover) { .tab:not(.active):hover { background: var(--bg-hover); color: var(--fg); } }
 .tab.active { background: var(--bg); color: var(--fg); }
 .tab.active::after { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--accent); }
-#tools { display: flex; align-items: center; gap: var(--icon-gap); padding: 0 var(--sp-1); flex: none; }
+/* the viewer's head rows on one grid (and View's own head, web/static/style.css): text from 12 px on
+   the left, keys 6 px from the right edge with 6 px above and below; the tabs sit on the body */
+.vbar { display: flex; align-items: center; gap: var(--icon-gap); flex: none; padding: 6px 6px 0 3px; }
+.vbar #tabs { align-self: flex-end; }
+.vbar > :not(#tabs) { margin-bottom: 6px; }
+#tools { display: flex; align-items: center; gap: var(--icon-gap); flex: none; }
+#tools:empty { display: none; }
 .seg { display: flex; padding: 1px; background: var(--bg-hover); border-radius: var(--r-sm); margin-right: 3px; }
 .seg button { border: 0; background: transparent; color: var(--fg-dim); padding: 2px 7px; font-size: .9em; cursor: pointer; }
 .seg button.on { background: var(--bg); color: var(--fg); }
@@ -140,9 +146,12 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .btn { border: 0; background-color: var(--bg-hover); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); color: var(--fg); border-radius: var(--r-sm); padding: 4px 10px; cursor: pointer; }   /* a key (shapes.css, §2.7) */
 .btn:hover { background-color: color-mix(in srgb, var(--fg) 16%, var(--bg)); }
 .btn:active:not(:disabled) { box-shadow: var(--m-well); }
-.imgview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px;
-  background: repeating-conic-gradient(var(--bg-2) 0 25%, var(--bg) 0 50%) 0 0 / 16px 16px; }
-.imgview img { max-width: 100%; max-height: calc(100% - 30px); object-fit: contain; }
+.imgview { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 12px; }
+/* the checkerboard behind the picture alone: its transparent parts show as such, inside its own edges */
+.imgview img { max-width: 100%; max-height: calc(100% - 30px); object-fit: contain; cursor: zoom-in;
+  background: repeating-conic-gradient(var(--bg-2) 0 25%, var(--bg-hover) 0 50%) 0 0 / 16px 16px; box-shadow: 0 0 0 1px var(--line); }
+.imgview.actual { display: block; text-align: center; }   /* alone: its own size, scrolled */
+.imgview.actual img { max-width: none; max-height: none; cursor: zoom-out; }
 .imgmeta { color: var(--fg-dim); font: .9em var(--mono); }
 
 /* ── syntax tokens (CodeMirror + Markdown code blocks) ───── */
@@ -258,7 +267,7 @@ html.viewer-mode #maximize { display: none !important; }
 html.viewer-mode #viewer { display: flex !important; }
 html.viewer-mode .md-body { font-size: 16px; max-width: 82ch; padding-top: 28px; }
 #pathbar { display: none; }
-html.viewer-mode #pathbar { display: flex; align-items: center; gap: 6px; flex: none; padding: 3px 6px 3px 12px;
+html.viewer-mode #pathbar { display: flex; align-items: center; gap: 6px; flex: none; padding: 6px 6px 6px 12px;
   background: var(--bg-2); color: var(--fg-dim); font: 12px var(--mono); }
 #pathbar .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl;
   text-align: left; user-select: text; -webkit-user-select: text; unicode-bidi: plaintext; }

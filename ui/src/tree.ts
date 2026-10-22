@@ -302,16 +302,24 @@ export class Tree {
     if (this.expanded.has(path)) this.collapse(path); else void this.expand(path);
   }
 
-  async reveal(path: string) {
-    const epoch = this.epoch;
+  /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first (Reveal in tree).
+   *  False when it is not under the root, not found or the tree moved meanwhile. */
+  async reveal(path: string, open = false): Promise<boolean> {
+    const epoch = this.epoch, root = this.root?.path;
+    if (open && root && isUnder(path, root) && path !== root) {
+      const chain: string[] = [];
+      for (let d = dirname(path); d !== root && isUnder(d, root); d = dirname(d)) chain.unshift(d);
+      for (const d of chain) if (!this.expanded.has(d) && epoch === this.epoch) await this.expand(d);
+    }
     const parent = this.nodes.get(dirname(path));
     const idx = parent ? await this.locate(parent, basename(path)) : null;
-    if (epoch !== this.epoch) return;
+    if (epoch !== this.epoch) return false;
     const at = parent && idx != null ? indexOf(parent, idx, this.rows) : -1;
-    if (at < 0) return;
+    if (at < 0) return false;
     this.cursor = this.anchor = at;
     this.scrollIntoView(at);
     this.queue();
+    return true;
   }
 
   private scrollIntoView(i: number) {
