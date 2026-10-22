@@ -99,7 +99,7 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   :is(#quick .qbar .icon, #rename, .mkdel) { --ik: 40px; }
   :is(#hostmenu, #updmenu) button { height: var(--key-h-touch); }
   .dhead { margin: -10px -12px -4px 0; }   /* the larger × keeps the title where it was */
-  :is(#findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { width: 44px; height: 44px; }   /* Ask stands beside Copy there, as large as it */
+  :is(#foldfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { width: 44px; height: 44px; }   /* a selection's three stand where the column does, as large */
   #menu .row { min-height: 44px; }
   .seg button { height: 34px; }   /* a segment in a full-width row */
 }

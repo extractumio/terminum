@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The [+] beside a selection in the terminal (AC-57), and Copy above it: they stand at the
 // terminal's right edge (a wide window: left of the floating buttons' column), the [+] level with
-// the selection's end, while text is selected; Ask (AC-37) shows then too, under the [+]. It lies outside the terminal's rows
+// the selection's end (a phone: in a column where its folded buttons stand), while text is selected; Ask (AC-37) shows then too, under the [+]. It lies outside the terminal's rows
 // (their taps, copying and line maths stay as they are). The selection is taken while it is
 // there: a tap on iOS clears it first, and the terminal then catches up and moves its lines.
 import { selectedText } from "./seltext.js";
+import { FLOATING } from "./fold.js";
 
 const KEEP_FOR = 600;          // ms the buttons stay after the selection went (a tap still lands)
 const AFTER_COPY = 5000;       // … after Copy: the [+] may still be wanted
-const FLOATING = "(hover: none), (max-width: 860px)";   // marks.js's: the column of floating buttons is not there
 const COLUMN = 58;             // px from the terminal's right edge to its floating buttons' column (marks.js placeFab)
 
 // The row a range starts on: in a widget's shadow root (AC-56), the row that holds the widget.
@@ -76,7 +76,12 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
     frame = 0;
     if (!kept) return;
     const t = term.getBoundingClientRect(), m = main.getBoundingClientRect(), r = kept.rect;
-    const h = button.offsetHeight || 32, gap = 8;
+    const h = button.offsetHeight || 32, gap = 8, fold = document.getElementById("foldfab");
+    if (floating.matches && fold) {                // a phone: a column where the folded buttons stand, Copy first (fold.js)
+      const x = fold.style.left, y = parseFloat(fold.style.top) || t.top - m.top + 14;
+      [copyButton, button, askButton].forEach((b, i) => Object.assign(b.style, { left: x, top: `${Math.round(y + i * (h + 12))}px` }));
+      return;
+    }
     // inside the terminal, the [+] level with the selection unless an edge is near (Copy above it, Ask under it)
     const ah = askButton.offsetHeight || h;
     const y = Math.min(Math.max(r.top + r.height / 2 - h / 2, t.top + 4 + h + gap), t.bottom - h - gap - ah - 4);

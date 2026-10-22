@@ -103,6 +103,11 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser. A pale fuchsia blob marks a session whose agent finished while you were away.
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish).
+- **On a phone**: the floating buttons but the keyboard's two fold into ⟨…⟩ at the top right; a tap
+  shows them for 3 s. They hide while your finger scrolls. A selection shows the page's Copy, [+]
+  and Ask there instead of iOS's menu. On the input: a finger held still half a second and lifted
+  opens Cut, Clear, Paste, Copy, Undo, Redo (what applies); a quick swipe right is →, left is Undo;
+  two taps select a word. Dialogs and menus open centered.
 - **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
   host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
 - **A file dropped** on the page (or picked with Upload) is uploaded as a screenshot is and its

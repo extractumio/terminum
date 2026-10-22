@@ -369,7 +369,8 @@ body.ctxtrace #fabs { display: flex; }
 
 /* Off-screen but focusable; 16px stops iOS from zooming on focus. */
 #kbd { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0; font-size: 16px; border: 0; padding: 0; resize: none;
-  z-index: 3; color: transparent; caret-color: transparent; background: transparent; }
+  z-index: 3; color: transparent; caret-color: transparent; background: transparent; touch-action: manipulation; -webkit-touch-callout: none; }   /* two taps select, never zoom; no callout over the page's menu */
+#kbd.yield { pointer-events: none; }   /* a selection under it takes the touches: its handles, a finger held on it (kbdtouch.js) */
 
 .narrow-only { display: none !important; }
 

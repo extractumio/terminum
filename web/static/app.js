@@ -28,7 +28,7 @@ import { bindReorder, ordered } from "./reorder.js";
 import { linkMarks } from "./linkmarks.js";
 import { paneFiles } from "./panefiles.js";
 import { bindLinks } from "./termlinks.js";
-import { copyButton } from "./touchcopy.js";
+import { copyButton, quietSelection } from "./touchcopy.js";
 import { TermView } from "./term.js";
 import { Views } from "./views.js";
 import { uploads } from "./upload.js";
@@ -107,6 +107,7 @@ const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term")
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
     wordDeletes: () => { const it = st.sid && findItem(st.groups, st.sid)?.item; return !!(it?.agent ? view.box : it?.shell && !st.ran); } } });
 copyButton($("copyfab"), $("term"), (text) => input.copySelection(text));
+quietSelection($("term"), touch);                   // no iOS menu over a selection: the page's Copy, [+], Ask (AC-37)
 
 // The files the output names, on the pane's host: a path is a link, an image gets a button, only
 // when its file is there (relative paths from the pane's folder, as a click takes them).

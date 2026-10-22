@@ -121,10 +121,17 @@ export async function webPhoneRow(browser, name) {
   await page.evaluate(() => document.querySelector('button[data-view="term"]').click());
   await page.waitForTimeout(250);
 
-  // a selection's Copy joins the right row: the left one steps aside
-  await page.evaluate(() => { document.getElementById("copyfab").hidden = false; });
-  const aside = await boxes(page);
-  check("AC-18 a phone: while a selection's Copy shows, the left row is out of sight (both rows do not fit)", row.every((id) => !aside[id].seen), JSON.stringify(aside));
+  // a selection in the terminal: its Copy, [+] and Ask stand where ⟨…⟩ stood, Copy first; ⟨…⟩ and the column out of sight (AC-37)
+  await page.evaluate(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector("#screen .ln")); getSelection().removeAllRanges(); getSelection().addRange(r); });
+  await page.waitForTimeout(250);
+  const sel = await page.evaluate(() => Object.fromEntries(["foldfab", "markcopy", "markadd", "askfab", "findfab"].map((id) => {
+    const e = document.getElementById(id), r = e.getBoundingClientRect();
+    return [id, { x: Math.round(r.left), y: Math.round(r.top), seen: !e.hidden && getComputedStyle(e).visibility === "visible" }];
+  })));
+  check("AC-18 AC-37 a phone: a selection's Copy, [+] and Ask stand in a column where ⟨…⟩ stood, Copy first; ⟨…⟩ and the folded column out of sight",
+    sel.markcopy.seen && sel.markadd.seen && sel.askfab.seen && !sel.foldfab.seen && !sel.findfab.seen && sel.markcopy.x === sel.foldfab.x && sel.markcopy.y === sel.foldfab.y
+    && sel.markadd.y > sel.markcopy.y && sel.askfab.y > sel.markadd.y && sel.markadd.x === sel.markcopy.x, JSON.stringify(sel));
+  await page.evaluate(() => getSelection().removeAllRanges());
   await f.close();
 
   runningIn(`${name} 1400×900`);

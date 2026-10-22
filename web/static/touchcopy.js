@@ -44,6 +44,33 @@ export function copyButton(button, term, copy) {
   });
 }
 
+/** On a touch screen a selection in `term` shows no menu of its own (Copy, Find Selection,
+ *  Translate over the text, AC-37): the page's Copy, [+] and Ask stand at the terminal's top right.
+ *  iOS shows none for a selection the page made, so when a finger leaves a selection (`lift` ms
+ *  after any touch ends: a long press, a tap on it; after a handle, which the page's touch events
+ *  do not see, `quiet` ms without a change, once for each range) the page clears it, which puts
+ *  iOS's menu away, and makes the same range again `gap` ms later (measured in the iPhone
+ *  simulator: a frame is too soon, the menu stays; 120 ms puts it away). The page's own changes
+ *  are not taken for the finger's. */
+export function quietSelection(term, touch, { lift = 60, quiet = 600, gap = 120 } = {}) {
+  let wait = 0, mineUntil = 0, fingers = 0, last = "";
+  const later = (ms, again) => { clearTimeout(wait); if (touch.matches) wait = setTimeout(() => remake(again), ms); };
+  function remake(again) {
+    if (fingers) return;                               // the lift calls again
+    const sel = getSelection(), range = termRange(term);
+    if (!range) return;
+    const r = range.cloneRange(), key = `${r.startOffset}:${r.endOffset}:${r.toString()}`;
+    if (key === last && !again) return;
+    last = key;
+    mineUntil = performance.now() + gap + 200;
+    sel.removeAllRanges();
+    setTimeout(() => { if (!getSelection().rangeCount && r.startContainer.isConnected) getSelection().addRange(r); }, gap);
+  }
+  document.addEventListener("selectionchange", () => { if (performance.now() >= mineUntil) later(quiet, false); });
+  const count = (e) => { fingers = e.touches.length; if (!fingers && e.type !== "touchstart") later(lift, true); };
+  for (const t of ["touchstart", "touchend", "touchcancel"]) document.addEventListener(t, count, { passive: true, capture: true });
+}
+
 /** The older copy command for text that is no longer selected: it selects a copy of it, then
  *  the user's selection again (Copy beside a selection keeps it for a bookmark, AC-57). */
 export function copyByCommand(text) {
