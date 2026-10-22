@@ -330,17 +330,24 @@ export async function webApp(browser) {
   const layoutNow = () => $eval(() => {
     const t = document.getElementById("term"), right = t.getBoundingClientRect().right, rows = [...document.querySelectorAll("#screen .ln")];
     const lh = parseFloat(getComputedStyle(t).lineHeight);
+    // a row's text inside the view (re-flowed, the spaces padding it hang past the edge unseen)
+    const textRight = (l) => { const r = document.createRange(); let max = 0;
+      for (const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT); w.nextNode();) {
+        const n = w.currentNode, i = n.data.trimEnd().length;
+        if (i) { r.setStart(n, i - 1); r.setEnd(n, i); max = Math.max(max, r.getBoundingClientRect().right); }
+      }
+      return max; };
     return { full: t.classList.contains("fullscreen"), oneRow: rows.every((l) => l.getBoundingClientRect().height < lh * 1.5),
-      inside: rows.every((l) => l.getBoundingClientRect().right <= right + 1) };
+      inside: rows.every((l) => textRight(l) <= right + 1) };
   });
   draw(true);
   await page.waitForTimeout(150);
   const full = await layoutNow();
   draw(false);
   await page.waitForTimeout(150);
-  const flowing = await layoutNow();
-  check("AC-04 web app: a full-screen program wider than the view keeps its rows, scaled to the width; so does a wide pane after it",
-    full.full && full.oneRow && full.inside && !flowing.full && flowing.oneRow && flowing.inside, JSON.stringify({ full, flowing }));
+  const flowing = { ...await layoutNow(), px: await $eval(() => document.getElementById("term").style.fontSize), reflow: await $eval(() => document.getElementById("term").classList.contains("reflow")) };
+  check("AC-04 web app: a full-screen program wider than the view keeps its rows, scaled to the width; the normal screen after it re-flows to the view at the chosen size",
+    full.full && full.oneRow && full.inside && !flowing.full && !flowing.oneRow && flowing.inside && flowing.px === "" && flowing.reflow, JSON.stringify({ full, flowing }));
   draw(true, 80);                                               // a pane that fits the view: its exact grid (AC-05)
   await page.waitForTimeout(150);
   const narrow = { ...await layoutNow(), px: await $eval(() => document.getElementById("term").style.fontSize) };

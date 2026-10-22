@@ -6,8 +6,9 @@
 const BOXED = /^[│┃║╎┆|]|[│┃║╎┆|]$/; // rows of a drawn box: never re-joined
 
 // Lines that start something new: a list item, an agent's mark (⏺ ⎿ ● ❯ ✻ · and other symbols
-// and emoji) or a numbered line of a listing or a diff ("151:", "12 +", "694-}").
-const STARTS_NEW = /^(?:[-*•+>]\s|\d+[.)]\s|[\u00b7\u2190-\u2bff\u{1f000}-\u{1faff}]|\d+(?::|\s*[-+]))/u;
+// and emoji) or a numbered line of a listing or a diff ("151:", "12 +", "694-}", "37   const": a
+// number and two spaces, as Claude Code numbers a file's lines).
+const STARTS_NEW = /^(?:[-*•+>]\s|\d+[.)]\s|[\u00b7\u2190-\u2bff\u{1f000}-\u{1faff}]|\d+(?::|\s*[-+]|\s{2}))/u;
 
 /** True when line a's hard end is a wrap of the text that goes on in line b; room: the most
  *  characters a row of it holds (a program's prose leaves a few cells free). */

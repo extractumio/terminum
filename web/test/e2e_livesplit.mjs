@@ -1,59 +1,66 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// AC-13 against a real private terminumd (e2e_live.mjs): a window split under the shown pane (as
-// Claude Code's teammates do) shows a banner with this pane's width; Full width zooms it in tmux
-// and the window takes the view's size; a new split unzooms it and nothing zooms it again;
-// Other pane shows the window's next pane, round; the banner goes with the last other pane; docked
-// Files follows the quick switches back to the pane's folder (AC-70).
+// AC-04 and AC-13 against a real private terminumd (e2e_live.mjs): a window split under the shown
+// pane (as Claude Code's teammates do) is not resized and nothing is drawn over the terminal; a
+// line tmux wrapped at the narrow pane's width re-flows to the view's width at the chosen text
+// size, with no sideways scrolling; docked Files follows quick switches back to the pane's
+// folder (AC-70).
 import { check, within } from "./check.mjs";
 
-const note = (page) => page.evaluate(() => { const b = document.getElementById("splitnote");
-  return { shown: !b.hidden, text: b.querySelector("span").textContent, zoom: document.getElementById("splitzoom").textContent }; });
+const LINE = Array.from({ length: 41 }, (_, i) => 1000 + i).join(" ");   // 204 characters: wider than any pane here
+
+/** How the page draws LINE: its rows (the screen's run of rows ending in a hard end), its widest drawn
+ *  line, the view's width, the text size, sideways scrolling, and the split banner of 0.16 gone. */
+const drawn = (page) => page.evaluate((line) => {
+  const term = document.getElementById("term"), cs = getComputedStyle(term), all = [...document.querySelectorAll("#screen .ln")];
+  // the run of rows up to a hard end that holds LINE (a line filling its last row ends on an empty one)
+  let rows = [];
+  for (let end = all.length - 1; end >= 0 && !rows.length; end--) {
+    if (!all[end].classList.contains("eol")) continue;
+    let start = end;
+    while (start > 0 && !all[start - 1].classList.contains("eol")) start--;
+    if (all.slice(start, end + 1).map((r) => r.textContent).join("").trim() === line) rows = all.slice(start, end + 1);
+  }
+  const lines = new Map(), range = document.createRange();
+  for (const r of rows) {
+    range.selectNodeContents(r);
+    for (const b of range.getClientRects()) {
+      const k = Math.round(b.top), l = lines.get(k) ?? { left: Infinity, right: -Infinity };
+      lines.set(k, { left: Math.min(l.left, b.left), right: Math.max(l.right, b.right) });
+    }
+  }
+  return { rows: rows.length, widest: Math.round(Math.max(0, ...[...lines.values()].map((l) => l.right - l.left))),
+    view: term.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight),
+    scrolls: term.scrollWidth > term.clientWidth + 1, size: cs.fontSize, chosen: cs.getPropertyValue("--size").trim(),
+    joined: rows.length > 1 && term.classList.contains("reflow"),
+    banner: !!document.getElementById("splitnote") };
+}, LINE);
 
 export async function liveSplit(page, { tmux, work }) {
   const panes = () => tmux("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_current_path}").split("\n").filter(Boolean).map((l) => l.split(" "));
   const [pane, win] = panes().find((p) => p[2] === work) ?? [];
   const of = (fmt) => tmux("display", "-p", "-t", pane, fmt);
-  const wait = async (what, ok, ms = 3000) => within(what, async () => {
-    for (let t = 0; t < ms; t += 100) { if (await ok()) return; await page.waitForTimeout(100); }
-    throw new Error(JSON.stringify({ note: await note(page), tmux: of("#{window_panes} #{window_zoomed_flag} #{pane_width} #{window_width}") }));
-  });
-  const before = of("#{pane_width}");
+  const before = of("#{window_width}");
   tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane);
   const mate = panes().find((p) => p[1] === win && p[0] !== pane)?.[0];
-  await wait("AC-13 a split under the shown pane: a banner says so and how wide the pane is", async () => {
-    const n = await note(page), [w, ww] = of("#{pane_width} #{window_width}").split(" ");
-    return n.shown && n.text === `This window is split: 2 panes, this one ${w} of ${ww} columns` && n.zoom === "Full width";
+  tmux("send-keys", "-t", pane, "clear; seq -s ' ' 1000 1040", "Enter");   // the command itself is short: only its output is LINE
+  let d = null;
+  await within("AC-04 a line tmux wrapped in the split's narrow pane is drawn re-flowed", async () => {
+    for (let t = 0; t < 5000; t += 100) { d = await drawn(page); if (d.joined) return; await page.waitForTimeout(100); }
+    throw new Error(JSON.stringify({ d, pane: of("#{pane_width}"), rows: await page.evaluate(() => [...document.querySelectorAll("#screen .ln")].slice(0, 14).map((r) => `${r.classList.contains("eol") ? "|" : " "}${r.textContent}`)) }));
   });
-  check("AC-13 the split window is not resized by the page (its layout is its maker's)", Number(of("#{window_width}")) === Number(before), `${before} → ${of("#{window_width}")}`);
-  tmux("resize-window", "-t", win, "-x", String(Number(before) + 30));   // another client's size: wider than the view
-  await page.waitForTimeout(300);
-  await page.click("#splitzoom");
-  await wait("AC-13 Full width: tmux zooms the pane, the banner says so, its window takes the view's size", async () => {
-    const n = await note(page), [z, w, ww] = of("#{window_zoomed_flag} #{pane_width} #{window_width}").split(" ");
-    return z === "1" && w === ww && ww === before && n.text === "This window is split: 2 panes, this one zoomed" && n.zoom === "Show split";
-  });
-  tmux("split-window", "-v", "-d", "-t", mate);          // an agent's next teammate: tmux unzooms the window
-  await wait("AC-13 a new split unzooms it: the banner shows the split again", async () => (await note(page)).text.includes("3 panes, this one "));
-  await page.waitForTimeout(1500);
-  check("AC-13 nothing zooms it again by itself", of("#{window_zoomed_flag}") === "0");
-  await page.click("#splitother");
-  await page.waitForTimeout(800);
-  await page.keyboard.type("echo other-$((5*9))");
-  await page.keyboard.press("Enter");
-  await wait("AC-13 Other pane shows the window's next pane, and the keys go there", () =>
-    tmux("capture-pane", "-p", "-t", mate).includes("other-45") && !tmux("capture-pane", "-p", "-t", pane).includes("other-45"));
-  for (let i = 0; i < 2; i++) { await page.click("#splitother"); await page.waitForTimeout(500); }   // round, back to the first pane
-  await page.keyboard.type("echo back-$((5*9))");
-  await page.keyboard.press("Enter");
-  await wait("AC-13 Other pane goes round the window's panes, back to the first", () => tmux("capture-pane", "-p", "-t", pane).includes("back-45"));
+  const cell = Number.parseFloat(d.size) * 0.6, paneW = Number(of("#{pane_width}"));
+  check("AC-04 it fills the view's width, not the pane's", d.widest > paneW * cell * 1.2 && d.widest <= d.view + 1, JSON.stringify({ ...d, paneW }));
+  check("AC-04 at the chosen text size, with no sideways scrolling", d.size === d.chosen && !d.scrolls, JSON.stringify(d));
+  check("AC-13 nothing is drawn over the terminal for the split", !d.banner);
+  check("AC-13 the split window is not resized by the page (its layout is its maker's)", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
   // a quick switch away and back: Files shows the pane's folder again (WebKit stayed blank)
+  for (const id of [mate, pane, mate, pane]) { await page.click(`#sessions .item[data-id$=":${id}"]`); await page.waitForTimeout(250); }
   const files = () => page.evaluate(() => { const f = document.getElementById("files");
     return { moving: f.classList.contains("moving"), href: f.contentWindow?.location.href, text: f.contentDocument?.body?.innerText.slice(0, 120) ?? null }; });
   await within("AC-70 Files follows the pane back to its folder after quick switches", async () => {
     for (let t = 0; t < 8000; t += 200) { const f = await files(); if (f.text?.includes("alpha.txt") && !f.moving) return; await page.waitForTimeout(200); }
     throw new Error(JSON.stringify(await files()));
   });
-  for (const [id, w] of panes()) if (w === win && id !== pane && id !== mate) tmux("kill-pane", "-t", id);
-  tmux("kill-pane", "-t", mate);
-  await wait("AC-13 the banner goes with the window's last other pane", async () => !(await note(page)).shown);
+  for (const [id, w] of panes()) if (w === win && id !== pane) tmux("kill-pane", "-t", id);
+  tmux("send-keys", "-t", pane, "clear", "Enter");
 }

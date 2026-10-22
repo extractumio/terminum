@@ -144,8 +144,10 @@ fn run(text: Value, fg: Value, bg: Value, flags: u16) -> Value {
 }
 
 /// A row as `{"r": runs, "e": hard_eol}`; a run is `[text-or-cells, fg, bg, flags]`. Runs
-/// group cells of equal style; trailing blank cells are dropped unless they draw something;
-/// the cursor cell gets its own run with the cursor flag, padded out past the text.
+/// group cells of equal style; a hard row's trailing blank cells are dropped unless they draw
+/// something (a row tmux wrapped keeps them: they are the line's own spaces, which the page needs
+/// when it joins the rows again, AC-04); the cursor cell gets its own run with the cursor flag,
+/// padded out past the text.
 pub fn encode(row: &Row, cursor: Option<usize>) -> Value {
     let cells = &row.cells;
     let key = |i: usize| {
@@ -153,7 +155,7 @@ pub fn encode(row: &Row, cursor: Option<usize>) -> Value {
         (st.fg, st.bg, st.flags | if cursor == Some(i) { CURSOR } else { 0 })
     };
     let mut n = cells.len();
-    while n > 0 {
+    while n > 0 && row.hard {
         let (_, bg, flags) = key(n - 1);
         if !(cells[n - 1].is_plain_blank() && bg == Color::Default && flags & VISIBLE_WHEN_BLANK == 0) {
             break;

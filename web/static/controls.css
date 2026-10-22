@@ -6,26 +6,27 @@
    control, a field at rest and in focus, a pane, a dialog. */
 
 /* ---- keys: a text button, matte and a little raised; a press sinks it (shapes.css: --m-*) ---- */
-:is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, #splitnote button,
+:is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
   #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #findbox .primary, #login button) {
   height: var(--key-h); padding: 0 var(--key-px); border-radius: var(--key-r); display: inline-flex; align-items: center;
-  gap: var(--sp-2); white-space: nowrap; font-weight: var(--key-weight); color: var(--key-ink);
-  background-color: var(--key-fill); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
+  gap: var(--sp-2); white-space: nowrap; font-weight: var(--key-weight); color: var(--kc, var(--key-ink));
+  background-color: var(--kf, var(--key-fill)); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 @media (hover: hover) {
-  :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, #splitnote button,
-    #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button):not(:disabled, .primary, #splitzoom):hover {
+  :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
+    #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button):not(:disabled, .primary):hover {
     background-color: var(--key-fill-hover); }
 }
 /* a press sinks a key into the panel */
-:is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn, #splitnote button,
+:is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
   #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #findbox .primary, #login button):active:not(:disabled) {
   box-shadow: var(--m-well); }
 /* the keys at a pane's foot (Insert into chat and its neighbours): one size in every pane */
 :is(.tochat, #sentpane .spacts button, .rmacts button, #markbar button:not(.icon)) { font-size: var(--fs-label); }
-/* the primary verb: its container's hue (--key-primary-fill: the accent, Ask's, the bookmark's, a reminder's, danger's) */
-:is(dialog.dlg, .footform, #findbox, #splitnote, .rmacts) :is(.primary, #splitzoom), #login button {
-  background-color: var(--key-primary-fill); color: var(--key-primary-ink); --focus: var(--key-primary-ink); }
-@media (hover: hover) { :is(dialog.dlg, .footform, #findbox, #splitnote, .rmacts) :is(.primary, #splitzoom):not(:disabled):hover { filter: brightness(1.08); } }
+/* the primary verb: its container's hue (--key-primary-fill: the accent, Ask's, the bookmark's, a reminder's, danger's);
+   through --kf and --kc, so no selector's weight decides it */
+:is(dialog.dlg, .footform, #findbox, .rmacts) .primary, #login button {
+  --kf: var(--key-primary-fill); --kc: var(--key-primary-ink); --focus: var(--key-primary-ink); }
+@media (hover: hover) { :is(dialog.dlg, .footform, #findbox, .rmacts) .primary:not(:disabled):hover { filter: brightness(1.08); } }
 /* disabled: faded, flat, never pressed */
 :where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
 :where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
@@ -65,7 +66,7 @@
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 
 /* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
-:is(#menu, #hostmenu, #rowmenu, #updmenu, #sentpane, #remindpane, #markpane, #findbox, #markbar, .footform, #splitnote, #asks .ask) {
+:is(#menu, #hostmenu, #rowmenu, #updmenu, #sentpane, #remindpane, #markpane, #findbox, #markbar, .footform, #asks .ask) {
   box-shadow: var(--pane-shadow); }
 dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
 dialog::backdrop, #panescrim { background: var(--scrim); }

@@ -107,7 +107,7 @@ export async function webCtxTrace(browser, name = "chromium") {
 
   // a coding agent's input box on a phone: iTerm2's two rows, the page's lines of them
   const phone = { viewport: { width: 390, height: 760 }, hasTouch: true, isMobile: true };
-  const ag = await openAgent(browser, { agent: true, device: phone, query: "?trace=2" });
+  const ag = await openAgent(browser, { agent: true, device: phone, query: "?trace=2", cols: COLS });   // sized to the view: rows as laid out
   await ag.page.evaluate(CATCH);
   ag.say({ t: "screen", sid: "S1", full: true, n: AGENT.length, cols: COLS, rows: 30, ch: AGENT.map((r, i) => [i, r]) });
   await ag.page.waitForSelector("#screen .blk.inbox");

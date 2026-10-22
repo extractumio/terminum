@@ -21,7 +21,7 @@ test("a short line, a blank line or a box row is never joined", () => {
 test("an agent's marks, list items and numbered lines start a new line", () => {
   const full = "⏺ Read(/private/tmp/claude-501/" + "x".repeat(97);
   for (const next of ["  ⎿  Read image (11.5KB)", "⏺ Done", "❯ ", "✻ Shimmying… (36s)", "· Thinking", "- item", "2. step",
-    "     153:#cursub > span { flex: 0 1 auto; }", "  12 + const a = 1;", "  12 - const a = 0;", "     694-}", "🔧 fix"]) {
+    "     153:#cursub > span { flex: 0 1 auto; }", "  12 + const a = 1;", "  12 - const a = 0;", "     694-}", "  37   const next = lag;", "🔧 fix"]) {
     assert.equal(wrapsInto(full, next, COLS), false, next);
   }
 });

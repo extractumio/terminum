@@ -196,15 +196,6 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #restored { display: flex; align-items: center; gap: 8px; }
 #restored[hidden] { display: none; }
 #restored > span { flex: 1; }
-/* a split window (splitnote.js): a box over the terminal's top left, clear of the marks' strip and
-   the floating buttons; over the text, never moving it (a banner would re-size the pane's grid) */
-#splitnote { position: absolute; z-index: 6;   /* top and left: splitnote.js, under the header whatever its height */
-  max-width: calc(100% - 120px); display: flex; flex-wrap: wrap;
-  align-items: center; gap: 6px 8px; padding: 6px 6px 6px 12px; border-radius: var(--r-lg); --fill: var(--chrome-2); color: var(--t-fg);
-  font: var(--fs-body)/1.35 var(--ui); box-shadow: var(--shadow-far); }   /* a .box */
-#splitnote[hidden] { display: none; }
-#splitnote > span { flex: 1 1 auto; min-width: 0; }
-#splitnote button { flex: none; }   /* keys, Full width the primary (controls.css) */
 /* other sessions waiting for an answer: cards at the terminal's top right; on a phone, slim
    lines across it under the header */
 #asks { position: absolute; top: calc(64px + env(safe-area-inset-top)); right: 74px;   /* left of the floating buttons' column and the marks */ z-index: 7; width: min(340px, calc(100% - 24px));
@@ -232,10 +223,30 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
   font-variant-ligatures: none; overscroll-behavior: contain; -webkit-text-size-adjust: none;
   -webkit-user-select: text; user-select: text; -webkit-tap-highlight-color: transparent; }
 #hist, #screen { display: contents; }
-/* The pane's rows as tmux has them (AC-04): one row a line, at its own width */
+/* A full-screen program's grid as tmux has it (AC-04): one row a line, at its own width */
 #term { white-space: pre; }
 #term.holding { overflow-x: hidden; }   /* the view's new width on its way to tmux: clipped, not scrolled (AC-04) */
 #term .ln { display: block; min-height: 1.25em; width: max-content; }
+/* The normal screen (AC-04): never scaled, never scrolled sideways; a row wider than the view
+   wraps at its edge. A pane whose width is not the view's (a split's pane, another screen's size,
+   a refused resize, a view's new width on its way: sizing.js) re-flows (Wrap): its lines flow
+   inline and only a hard line end breaks; prose a program wrapped at the pane's width is re-joined
+   (term.js), the padding it added up to that width hidden, a separator cut to one row. The
+   zero-width space keeps a blank line one row high; each paragraph is a block of its own
+   (term.js), as iOS Safari selects nothing in a long run of inline lines. At the view's width the
+   rows stay as the program laid them out (its hanging indents). */
+#term:not(.fullscreen) { overflow-x: hidden; }
+#term:not(.fullscreen) .ln { width: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+#term.reflow :where(.ln) { display: inline; }   /* no weight: a hidden row (.spare, .wg-hid) and the blocks below stay as they are */
+#term.reflow .ln.eol:where(:not(.rule, .boxedge, .wg-host))::before { content: "\200B"; }
+#term.reflow .ln.eol:where(:not(.rule, .boxedge, .wg-host))::after { content: "\A"; }
+#term.reflow .ln.eol.join:where(:not(.rule, .boxedge, .wg-host))::after { content: " "; }
+#term.reflow .ln.eol.join.glue::after { content: none; }   /* a word the program broke at the row's edge */
+#term.reflow .ln.eol.join.curend::after { content: none; }   /* the cursor's cell is the space (term.js cursorLast) */
+#term.reflow .ln.cont .lead { display: none; }
+#term.reflow .tail { display: none; }
+#term.reflow .ln.rule { display: block; white-space: pre; overflow: hidden; height: 1.25em; }
+#term.reflow .ln.rule.labelled { white-space: pre-wrap; height: auto; }   /* a long title wraps rather than being cut */
 /* a long separator: its characters hidden (copied as they are), a line across the view instead */
 #term .ln.rule.full { display: block; width: auto; height: 1.25em; overflow: hidden; white-space: pre; -webkit-text-fill-color: transparent;
   background: linear-gradient(var(--rule-color), var(--rule-color)) center / 100% var(--rule-width) no-repeat; }
@@ -434,7 +445,7 @@ body.wide #sized { grid-row: 5; }
 body.wide #term { grid-row: 6; }
 body.wide #hotkeys { grid-row: 7; }
 /* Positioned children are placed in the terminal's column, not over the docked Files. */
-body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs, body.wide #splitnote { grid-row: 1 / -1; }
+body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs { grid-row: 1 / -1; }
 body.wide #asks { grid-row: 6 / -1; top: 48px; }   /* under the banners and the find button, never over them */
 /* docked Files is set apart by a band of the chrome (a splitter by background), not a line */
 body.docked #sidehead { display: flex; grid-column: 2; grid-row: 1; min-height: var(--h-bar); border-left: 6px solid var(--chrome); }

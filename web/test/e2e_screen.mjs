@@ -143,18 +143,22 @@ export async function webScreen(browser, name) {
     await pause(page);
     check("AC-06 mouse: a program that did not ask for the mouse gets no events", mice().length === n2);
 
-    // a pane wider than the view (one this page does not size, AC-89): scaled to the view's
-    // width down to 7 px, past that at the chosen size, scrolling sideways
-    const wide = (cols) => frame({ alt: false, mouse: false, cols, ch: ROWS.map((_, i) => [i, line(`${i}`.padEnd(cols, "x"))]) });
+    // a pane wider than the view (one this page does not size, AC-89): on the normal screen
+    // re-flowed at the chosen size; a full-screen program scaled to the view's width down to 7 px,
+    // past that at the chosen size, scrolling sideways
+    const wide = (cols, alt = true) => frame({ alt, mouse: false, cols, ch: ROWS.map((_, i) => [i, line(`${i}`.padEnd(cols, "x"))]) });
     const shown = () => page.evaluate(() => {
       const t = document.getElementById("term"), cs = getComputedStyle(t);
       return { px: parseFloat(cs.fontSize), size: parseFloat(cs.getPropertyValue("--size")), sideways: t.scrollWidth > t.clientWidth + 1 };
     });
-    const look = async (cols) => { wide(cols); await pause(page, 200); return shown(); };
+    const look = async (cols, alt) => { wide(cols, alt); await pause(page, 200); return shown(); };
     f.say({ t: "layout", groups: [{ ...LAYOUT[0], attached: "default" }, ...LAYOUT.slice(1)] });
     await pause(page);
+    const flowed = await look(phone ? 60 : 160, false), flowedHuge = await look(600, false);
+    check("AC-04 a pane wider than the view on the normal screen re-flows to it at the chosen size, never scrolled sideways",
+      [flowed, flowedHuge].every((s) => s.px === s.size && !s.sideways), JSON.stringify({ flowed, flowedHuge }));
     const scaled = await look(phone ? 60 : 160), huge = await look(600);
-    check("AC-04 a pane wider than the view is scaled to its width (7 px at least); wider still, the chosen size with sideways scrolling",
+    check("AC-04 a full-screen program wider than the view is scaled to its width (7 px at least); wider still, the chosen size with sideways scrolling",
       scaled.px < scaled.size && scaled.px >= 7 && !scaled.sideways && huge.px === huge.size && huge.sideways, JSON.stringify({ scaled, huge }));
     f.say({ t: "layout", groups: LAYOUT });
     frame({ alt: true, mouse: false });

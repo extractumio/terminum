@@ -19,11 +19,11 @@ configuration. The overview is in the [README](../README.md).
   their text), create, rename, Trash, live refresh; on a wide window it is docked beside the
   terminal, open or closed for each session, on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
-  types there sizes it to its view (45×14 to 240×70 cells); a window of several panes keeps its
-  layout and is drawn scaled. A note over such a pane says the window is split (Claude Code's
-  teammates do that) and how wide the pane is: Full width zooms it in tmux to your view's size,
-  Show split gives the window back, Other pane shows the next one. Switching sessions shows the
-  new one at once at your text size.
+  types there sizes it to its view (45×14 to 240×70 cells); a window of several panes (Claude
+  Code's teammates split it) keeps its layout. Text is never scaled: a pane narrower or wider than
+  your view re-flows to it, lines tmux or the program wrapped joined again (a full-screen program
+  such as mc is drawn as its grid, scaled when wider). Switching sessions shows the new one at once
+  at your text size.
 - **Sessions outlive everything**: terminals live in tmux; terminumd runs as a launchd agent
   and comes back after a crash; after a reboot, or when a tmux server was killed, the sessions,
   windows, splits and folders are restored: terminum's own, each host's and the sessions of your
@@ -88,9 +88,9 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   made outside projects, only in their own session. Once their project is gone (deleted, or its
   last session closed), or a session outside projects closes, they wait under Bookmarks /
   Reminders below the sessions (Open all).
-- **The view** is the pane as tmux has it, sized to the browser window you use (in front, or
-  the phone in your hand), from 45×14 (an iPhone in portrait) to 240×70 cells; a wider one is
-  scaled to fit. The menu has 20 color schemes (one for every browser, kept in settings.json),
+- **The view** is the pane sized to the browser window you use (in front, or the phone in your
+  hand), from 45×14 (an iPhone in portrait) to 240×70 cells; a pane of another width re-flows to
+  the window (a full-screen program is scaled to fit). The menu has 20 color schemes (one for every browser, kept in settings.json),
   the Markdown text size and the history lines of new terminals. Option or ⌘ with ↑/↓ pages.
 - **Keys of an IDE**: ⌘[ and ⌘] go back and forward through the last 20 sessions you showed,
   ⌘F searches the history, ⌘B opens or closes Files. In a coding agent's input, Backspace or

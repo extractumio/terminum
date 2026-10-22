@@ -71,7 +71,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "find" => super::find::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => files(app, page).await,
-        "size" | "zoom" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
+        "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
         "new" | "newsession" | "split" | "clone" | "rename" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,

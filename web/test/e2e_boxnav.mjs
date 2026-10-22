@@ -83,7 +83,7 @@ export async function webBoxNav(browser, name = "chromium") {
     }
     setTimeout(() => (cc.draw ?? draw)(), cc.delay);                    // the echo comes a moment later, as from iTerm2
   };
-  const page0 = await open(browser, { agent: true, screen: ["…"], hook, device: { viewport: { width: 1100, height: 700 } } });
+  const page0 = await open(browser, { agent: true, screen: ["…"], hook, device: { viewport: { width: 1100, height: 700 } }, cols: COLS });
   const { page, sent } = page0;
   say = page0.say;
   const set = async (text, pos) => { cc.text = text; cc.at = pos; cc.history = 0; draw(); await page.waitForTimeout(250); };

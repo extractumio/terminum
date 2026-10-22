@@ -35,7 +35,7 @@ const FILES = { "/tmp/shots": ["shot.png", "b.png", "notes.txt"] };     // what 
  *  history's first line sent on opening (older ones are there to load); hook(msg, say): every
  *  message the page sends, to answer more. */
 export async function open(browser, { renderers = true, agent = false, history = HISTORY, screen = SCREEN, cwd = "/tmp/shots", files = FILES, image = PNG, folds = [],
-  device = { viewport: { width: 1200, height: 800 } }, first = 0, hook = null, layout = LAYOUT, query = "" } = {}) {
+  device = { viewport: { width: 1200, height: 800 } }, first = 0, hook = null, layout = LAYOUT, query = "", cols = null } = {}) {
   const opts = { renderers };
   const page = await browser.newPage(device);
   const errors = [], sent = [];
@@ -47,6 +47,8 @@ export async function open(browser, { renderers = true, agent = false, history =
   await page.route(`${ORIGIN}/**`, (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === "/auth/check") return route.fulfill({ status: 204, body: "" });
+    // cols: the view holds that many columns, as when the page sized the pane to it (AC-13): rows drawn as laid out, not re-flowed (AC-04)
+    if (p === "/custom.css" && cols) return route.fulfill({ contentType: "text/css", body: `#term { flex: none; box-sizing: content-box; width: ${cols + 0.5}ch; }` });
     if (p.startsWith("/fb/api/raw")) return route.fulfill({ contentType: "image/png", body: image });
     if (p === "/fb/api/ls") {
       const q = new URL(route.request().url()).searchParams;

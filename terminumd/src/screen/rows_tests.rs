@@ -212,3 +212,11 @@ fn real_tmux_capture() {
     );
     assert_eq!(rows.len(), 10);
 }
+
+/// AC-04: a row tmux wrapped right after a space keeps it, so the page joins "a b" and not "ab".
+#[test]
+fn a_wrapped_row_keeps_its_trailing_space() {
+    let rows = capture_rows("abcd efgh\n", 5);
+    assert_eq!(encode(&rows[0], None), json!({"r": [["abcd ", null, null, 0]], "e": false}));
+    assert_eq!(encode(&rows[1], None), json!({"r": [["efgh", null, null, 0]], "e": true}));
+}

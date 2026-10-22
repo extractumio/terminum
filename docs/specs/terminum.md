@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.16.1 |
-| Date | 2026-10-21 |
+| Version | 0.17.0 |
+| Date | 2026-10-22 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.17.0 | 2026-10-22 | Owner, on a phone where Claude Code's teammates split the window (the pane 31 of 45 columns, its lines broken at 31): the split banner covered the terminal and did not help; it is gone, with Full width and Other pane. The normal screen is never scaled or scrolled sideways: a row wider than the view wraps at its edge, and a pane whose width is not the view's (a split window's pane, another screen's size, a refused resize, a view's new width on its way) re-flows to it again (Wrap, gone in 0.12.0): lines tmux wrapped join, prose a program wrapped at the pane's width re-joins; at the view's width the rows stay as laid out (pragmatic review: re-flowing those lost Claude Code's hanging indents). A full-screen program keeps the exact grid, scaled when wider, and only it, or a refused resize, says "Sized for another screen" (AC-04, AC-05, AC-13). |
 | 0.16.1 | 2026-10-21 | Owner: the look from todobem's design code (docs/UI-GUIDELINES.md §2.7, §2.8): an instrument panel's material (corners 2/3/4 px, edges as light and shade, matte keys that sink when pressed, recessed fields, a seam under the bars, a raster grain on the chrome, never on the terminal), no bowed outlines, no ripple; the palette, the blobs and the wavy bookmark and reminder marks stay; the system font stays (no Fira). Pragmatic review: Page, Panel and look tests changed together; todobem's colors not ported. |
 | 0.16.0 | 2026-10-21 | Owner: Claude Code's teammates split a session's window (its pane 35 of 117 columns) and the page showed a narrow terminal with no word why: a banner says the window is split and how wide this pane is, with Full width (tmux zooms the pane, and a zoomed pane's window is sized as a window of one pane) and Other pane (AC-13). Pragmatic review: rejected drawing the panes side by side and resizing a split window (see the scenario). |
 | 0.15.1 | 2026-10-21 | Owner, on what 0.15.0 left: at tmux's history-limit the rows read while the pane printed are numbered by the last frame's screen rows found where they moved, not dropped for a new history (AC-02); a project's pane closed in the 5 s after it joined leaves when they end, without another change (AC-92). |
@@ -126,7 +127,7 @@ Open questions:
 | AC-01 | [MUST / P0] | The user sees every tmux session, window and pane of the local server (and of attached hosts) in the session list within 2 s of a change, grouped by session, with the titles, program, folder and host iterm-enhancer shows, and can filter them. |
 | AC-02 | [MUST / P0] | The user opens a pane and sees tmux's screen in the session's theme within 1 s with the last 1000 lines of history, loads older lines up to 10,000, and sees output as it arrives, at most 30 frames a second, each frame only the rows that changed. |
 | AC-03 | [MUST / P0] | The user types, pastes and presses hot keys and the bytes reach the pane as a terminal would send them: a key echoes within 100 ms on the Mac's network, held keys repeat, special keys go by tmux's names so a full-screen program gets its own encoding. |
-| AC-04 | [SHOULD / P1] | The page draws the pane as tmux has it, sized to the active browser window; a pane wider than the view is scaled to its width (7 px at least). |
+| AC-04 | [SHOULD / P1] | The page draws the pane sized to the active browser window; on the normal screen its lines re-flow to the view whatever tmux's width, a full-screen program's grid is drawn as it is, scaled to the view when wider (7 px at least). |
 | AC-05 | [SHOULD / P1] | A full-screen program (vim, mc, htop, a plain tmux inside) is drawn as its grid without history or widgets, and keys reach it as tmux key names. |
 | AC-06 | [SHOULD / P1] | A click, a tap, a drag and the wheel reach a full-screen program that asked for mouse events as the mouse events a terminal would report; a coding agent gets the wheel only. |
 | AC-07 | [MUST / P0] | The user creates a window, a session or a split next to the shown pane in its folder, renames a window or pane, reorders windows, moves a window to another session and closes a pane after a confirmation, and the list shows it within 2 s. |
@@ -276,21 +277,23 @@ Scenario: AC-03 failure — the pane is gone or the server stalls
 ### AC-04 — The pane as tmux has it [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-04 happy path — one view, the tmux window's grid
+Scenario: AC-04 happy path — one view, re-flowed to the browser
   Given the Mac's browser shows %3
-  Then the page draws the pane's rows exactly as tmux has them, at the chosen text size, its history above (AC-02); the pane is sized to this view's grid (AC-13), so its rows fill the view; there is no view mode to pick
-Scenario: AC-04 edge — a pane wider than the view
-  Given the pane is wider than the view at the chosen text size: a window of several panes (never resized, AC-13), another page's size, a refused resize
-  Then the rows are scaled down to the view's width, and when that would make the text smaller than 7 px (the smallest size − and + allow) they are drawn at the chosen size with the rest by scrolling sideways; "Sized for another screen (W×H)" says so when another page sized it
+  Then the page draws the pane's lines at the chosen text size, its history above (AC-02); the pane is sized to this view's grid (AC-13), so its rows fill the view; there is no view mode to pick
+  And on the normal screen nothing is scaled or scrolled sideways: a row wider than the view wraps at its edge; while the pane has the view's width its rows stay as the program laid them out (its hanging indents too)
+Scenario: AC-04 edge — a pane wider or narrower than the view
+  Given the pane's width is not the view's: a window of several panes (never resized, AC-13), another page's size, a refused resize, the 45-column floor, a view whose new width is on its way to tmux
+  Then on the normal screen its lines re-flow to the view's width (Wrap), at the chosen text size: a line tmux wrapped is one line again, prose a program wrapped at the pane's width re-joins (a word broken at the edge without a space), list items, agent marks and numbered lines start lines, separator lines span the view, a line wider than the view wraps at its edge; never scaled, never scrolled sideways, and a narrow pane's lines fill the view; once the pane has the view's width again its rows are drawn as laid out
+  And a full-screen program (AC-05) is drawn as its grid: scaled down to the view's width, at the chosen size with the rest by scrolling sideways when that would make the text smaller than 7 px (the smallest size − and + allow); "Sized for another screen (W×H)" says so when another page sized it
 Scenario: AC-04 edge — the view changes width
   Given this page sized the pane to its view (its columns are the ones it sent)
   When the view's width or the text size changes (docked Files opened or closed, a dragged window, a phone turned, − and +)
-  Then the text stays at the chosen size and rows wider than the view are clipped at its edge, with no sideways scrolling, until tmux's pane has the view's new width; then the pane is drawn re-wrapped, so the text size changes once at most and never shrinks to the old width first
-  And when the pane does not take the width within 2 s of the last change (a window of several panes, another page's size, a refused resize, the 45-column floor) it is drawn as a pane wider than the view
+  Then the lines re-flow to the new width at once, at the chosen size, and once tmux has the new width the rows are drawn as the program lays them out again
+  And a full-screen program stays at the chosen text size, clipped at the view's edge with no sideways scrolling, until tmux's pane has the view's new width, so the text size changes once at most and never shrinks to the old width first; when the pane does not take the width within 2 s of the last change it is drawn as a wider grid
 Scenario: AC-04 edge — another pane opened
   When the user opens another pane (the list, ⌘[ ⌘], a bookmark, a new window) whose window has another size than this view's grid
   Then the page lays the new pane's session out first (its own docked Files, AC-70 of terminum-files.md) and sends "sub" with the grid that leaves; terminumd sizes the window to it before the pane's first frame (AC-13), so that frame comes at this view's grid
-  And the view keeps showing the pane shown before, still (never blank), until that first frame, 1.5 s at most, then draws the new pane at once, at the chosen text size: no frame at the window's old size, scaled, is drawn first, so the text size never jumps; a window of several panes (never resized) comes at its own size, scaled as before
+  And the view keeps showing the pane shown before, still (never blank), until that first frame, 1.5 s at most, then draws the new pane at once, at the chosen text size: no frame at the window's old size is drawn first, so the text size never jumps; a window of several panes (never resized) comes at its own size, re-flowed to the view
   And a second window resized within a second of the first is not held back: the once-a-second limit is a window's
 Scenario: AC-04 edge — settings of earlier versions
   Given settings.json still has "size", "page.lines" or "page.screenMode"
@@ -518,33 +521,28 @@ Scenario: AC-13 happy path — the active page sizes the pane
   When the Mac's browser opens %3 in a window that holds 180×50 cells
   Then terminumd runs "resize-window -t @2 -x 180 -y 50" (window-size manual) and the program lays itself out for 180 columns
   When the iPhone opens %3 (its page in sight) or types there
-  Then the window is resized to the phone's 48×30; the Mac's view draws the 48-column grid as it is until the Mac's page is the active one again
+  Then the window is resized to the phone's 48×30; the Mac's view re-flows the 48-column lines to its width (a full-screen program: the 48×30 grid) until the Mac's page is the active one again
   When the Mac's browser window comes to the front (focus) or its page types
   Then the window is 180×50 again; a page sizes on opening the pane, on becoming the active page (in sight and, on a computer, focused), and on typing; a change of its view's size (a split, a dragged edge, the keyboard, the phone's toolbar) resizes only a window this page already sizes or nobody does, so a phone's toolbar never takes the window from the Mac being typed on; a window is resized at most once a second per client (another window at once: switching panes waits for none), and a size held back for that second is dropped when a later one comes (a dragged window reaches tmux at its first and its last size: each narrowing re-wraps the pane, and a program that redraws, such as Claude Code, leaves its old top lines in the history, as it does on each switch between pages of different sizes)
 Scenario: AC-13 edge — the smallest and the largest grid
   When a page's view holds fewer than 45×14 cells (a phone's split, a narrow window, big text) or more than 240×70 (a large display)
-  Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is drawn scaled to it (7 px at least), rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
+  Then terminumd sizes the window to 45 to 240 columns and 14 to 70 rows: an iPhone in portrait at 13 px holds the smallest, about a 1920×1200 window the largest; a pane wider than the view is re-flowed to it (a full-screen program: scaled, 7 px at least), rows the view does not hold scroll, and a view larger than the grid leaves the rest blank; a view under 20×5 (an animation, a dragged edge, a hidden part) sends no size and the pane keeps its own
 Scenario: AC-13 edge — the page that sized it is put away
   Given the iPhone sized %3 (the window is 103×21) and the Mac's browser shows %3 too
   When the iPhone's page is hidden (the phone locked, Safari in the background, another tab)
   Then the window goes to the Mac's view at once, without a key, and a hidden page's new size takes nothing
 Scenario: AC-13 edge — a window of several panes
-  Given %3's window holds two panes (split by the user's own tmux, an agent such as Claude Code's teammates, or restored, AC-15)
-  Then no page resizes it: each pane is drawn at its own size, scaled to the view when wider (AC-04)
-  And a banner over the terminal says "This window is split: 2 panes, this one 35 of 117 columns" with Full width and Other pane, on a computer and a phone, within a frame of the split and gone within 2 s of the last other pane's end
-  When the user presses Full width
-  Then terminumd zooms %3 in tmux ("resize-pane -Z"): it fills its window, which is sized as a window of one pane (the active page's grid); the banner says "This window is split: 2 panes, this one zoomed" with Show split, which unzooms it
-  When a program splits the window again (tmux unzooms it then) or the user's own tmux unzooms it
-  Then the banner shows the split again within 2 s; nothing zooms by itself
-  When the user presses Other pane
-  Then the page shows the window's next pane, as its row in the list does
-  And rejected (pragmatic review, 2026-10-21): drawing the panes side by side as tmux does (a page per pane is scaled apart and splits keys and focus across pages; one page of several panes is a large change, kept until watching several panes at once is wanted) and resizing a split window (each resize re-wraps every pane, Claude Code leaves its old lines in each one's history, and the layout drifts from what its maker chose)
+  Given %3's window holds three panes (split by the user's own tmux, an agent such as Claude Code's teammates, or restored, AC-15) and %3 is 31 of its 45 columns
+  Then no page resizes it, and nothing is drawn over the terminal: %3's lines re-flow to the view's width (AC-04), a full-screen program in it is drawn scaled
+  And prose Claude Code wrapped at 31 columns re-joins and fills the view; a line it laid out for 31 columns (a table, a box) stays as it was drawn
+  And a window whose shown pane the user's own tmux zoomed ("resize-pane -Z") is sized as a window of one pane
+  And rejected (pragmatic review, 2026-10-21): drawing the panes side by side as tmux does (a page per pane is scaled apart and splits keys and focus across pages; one page of several panes is a large change, kept until watching several panes at once is wanted) and resizing a split window (each resize re-wraps every pane, Claude Code leaves its old lines in each one's history, and the layout drifts from what its maker chose); a banner with Full width and Other pane (0.16.0) was removed in 0.17.0: it covered the terminal and zooming did not stay (each new teammate's split unzooms)
 Scenario: AC-13 edge — another tmux client is attached
   Given the user ran "tmux -L terminum attach -t main" in Terminal.app, or iTerm2's "tmux -CC -L terminum attach"
   Then terminumd's control client is attached with "-f ignore-size" (AS-02) and "window-size manual" on the windows it sizes: both clients see the size terminumd set; a window no page shows keeps tmux's own policy (latest) for that client
 Scenario: AC-13 failure — the resize is refused
   When "resize-window" answers %error
-  Then the view draws the pane as a wider one (AC-04) with "Sized for another screen (<cols>×<rows>)" and the log has the error; nothing is retried faster than once a second
+  Then the view draws the pane as one of another width (AC-04) with "Sized for another screen (<cols>×<rows>): <error>" (another page's size is said only over a full-screen program), and the log has the error; nothing is retried faster than once a second
 ```
 
 ### AC-14 — Lifecycle [MUST / P0]
@@ -1222,3 +1220,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.15.0 (2026-10-21) — AC-89 `scripts/e2e_attach.py` (opening a session of the user's tmux sizes it without a key, `window-size manual`; its view's new size follows; given back on detach) and `scripts/e2e_hostattach.py` (on a host: sized on opening, marked `@tm-sized`; the page hidden with no other page: tmux's own size back; back in sight: sized again; another pane opened while only a hidden page shows it: its own size back; the removed host's windows given back), `cargo test`, `scripts/e2e_sizing.py`, `scripts/e2e_core.py`, `web/test/e2e_all.mjs` → pass. AC-04 switching: `scripts/e2e_sizing.py` (a pane opened with the page's grid comes at it from its first frame, the window 90×25 before: (132, 40)), `scripts/e2e_core.py` (a page that sends its size after "sub" still sizes it, "sized" may come before the frame), `web/test/e2e_switch.mjs` (Chromium and WebKit: the pane shown before stays, not blank, until the new one's first frame 500 ms later, then the new one at once, the text size the same; "sub" carries the grid), `node --test web/test/switchgate.test.mjs` (the queue goes in order after one reset; another pane's messages never wait; an empty error waits, a pane's error ends it; 1.5 s at most; a pane opened meanwhile replaces the one waiting) → pass.
 - [x] 0.15.0 history (2026-10-21) — AC-02 `cargo test page::hist` against a private tmux server: 60 rows scroll off between the frame and the capture, the capture returns the rows asked for (L0081…L0084; the old way L0141…L0144, shown), a width tmux re-wrapped and a history near its limit are errors; AC-32 `cargo test page::folds` (a running tool's command folds alike with its dot on and blinked off, also with a blank row before its result; indented text that looks like a call does not); `term.js` refill only into its own number → pass.
 - [x] 0.15.1 (2026-10-21) — AC-02 `cargo test page::hist` (a private tmux at history-limit 100, 20 rows on while tmux trimmed: the 5 rows above the frame's screen come back as they were; the count alone says fewer moved; output that repeats itself (`yes`): an error, not a guess); AC-92 `cargo test page::projects` (a fresh member the list lost asks one read when it stops being fresh; none for a listed one, none twice), `scripts/e2e_core.py` twice (a pane closed leaves its project within 8 s) → pass.
+- [x] 0.17.0 (2026-10-22) — AC-04, AC-13 `web/test/e2e_live.mjs` (Chromium and WebKit, a private tmux: a window split under the shown pane is not resized and has no banner; a 204-character line tmux wrapped in the 34-column pane is one line again, 663 of the view's 686 px wide, at the chosen 13 px, no sideways scrolling; Files follows quick switches, AC-70); `web/test/e2e_resize.mjs` (wide and phone: the normal screen re-flows at once when the view narrows or the text grows and is drawn as laid out when tmux's width comes, never scaled; a full-screen program keeps the clip-until-resized hold and is scaled after 2 s); `web/test/e2e_screen.mjs`, `web/test/e2e_app.mjs` (a wider pane re-flows on the normal screen, a full-screen one is scaled, 7 px floor, then sideways); `cargo test screen::rows` (a wrapped row keeps its trailing space); `web/test/rejoin.test.mjs` ("37   const" starts a line); `node web/test/e2e_all.mjs` 944 checks, `scripts/e2e_sizing.py` 13/13, `scripts/e2e_core.py` 42/42, `make test`, `ui/test/e2e_panel.mjs` 137 → pass.

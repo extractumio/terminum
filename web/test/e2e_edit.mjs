@@ -18,7 +18,7 @@ const FULL = "❯ " + Array(7).fill("abcdefghi").join(" ") + " abcdef";       //
 
 export async function webEdit(browser) {
   const at = "AC-52 web app, editing in a coding agent's input box:";
-  const { page, sent, say } = await open(browser, { agent: true, screen: ["…"] });
+  const { page, sent, say } = await open(browser, { agent: true, screen: ["…"], cols: 80 });
   const show = async (box) => {
     const rows = [line("⏺ Done."), line(""), line(RULE), ...box, line(RULE), line("  ~/app main"), line("  ⏵⏵ accept edits on")];
     say({ t: "screen", sid: "S1", full: true, n: rows.length, cols: 80, rows: 30, ch: rows.map((r, i) => [i, r]) });

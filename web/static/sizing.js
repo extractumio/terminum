@@ -3,13 +3,13 @@
 // page tells terminumd the grid that fits its terminal at the chosen text size: after opening
 // a pane, after the view or the text size changed (300 ms after the last change), and with the
 // first key typed after a pause (at most once a second); terminumd decides whether it sizes the
-// window (the active page does) and keeps it within 45×14 and 240×70. A pane another page
-// sized is drawn as it is (app.js scales a wider one) with "Sized for another screen" until
-// this page sizes it again. A pane this page sized whose view changes width keeps the chosen
-// text size, clipped at the edge, until tmux has the new width (2 s at most after the last
-// change): the text never shrinks to the old width and grows back when the pane re-wraps (AC-04).
-// A full-screen program (tmux's alternate screen, not a coding agent's) hides the history and
-// the widgets, and gets the mouse when it asked for it.
+// window (the active page does) and keeps it within 45×14 and 240×70. The normal screen is never
+// scaled: a pane whose width is not the view's re-flows to it (`reflow`, style.css). A full-screen program (tmux's alternate screen,
+// not a coding agent's) is its grid: it hides the history and the widgets and gets the mouse when
+// it asked for it; one another page sized is drawn as it is (app.js scales a wider one) with
+// "Sized for another screen" until this page sizes it again, and one whose view changes width
+// keeps the chosen text size, clipped at the edge, until tmux has the new width (2 s at most after
+// the last change): the text never shrinks to the old width and grows back (AC-04).
 
 const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
@@ -48,14 +48,17 @@ export function paneSizing({ view, send, sid, refit, notify }) {
     if (now === full) return;
     full = now;
     term.classList.toggle("fullscreen", full);
+    reflow();
+    showSized();
     refit();
   }
 
   /** True while the pane waits for this view's new width: drawn at the chosen size, clipped,
-   *  not scaled (AC-04). It starts when a pane at the width this page sent no longer has the
-   *  view's width, and ends when tmux's width is the view's, another screen sized it, or HOLD. */
+   *  not scaled (AC-04): a full-screen program's grid only. It starts when a pane at the width this
+   *  page sent no longer has the view's width, and ends when tmux's width is the view's, another
+   *  screen sized it, or HOLD. */
   function holding() {
-    if (elsewhere || !last || !view.cols) return false;
+    if (elsewhere || !last || !view.cols || !full) return false;
     const fits = view.cols === bounded(grid().cols);
     if (holdUntil > performance.now()) return !fits;
     if (fits || view.cols !== bounded(last.cols) || heldFor === last) return false;
@@ -70,8 +73,15 @@ export function paneSizing({ view, send, sid, refit, notify }) {
     holdTimer = setTimeout(() => { holdUntil = 0; refit(); }, HOLD);
   }
 
+  /** The normal screen of a pane whose width is not the view's re-flows to the view (AC-04). */
+  function reflow() {
+    const on = !full && !!view.cols && view.cols !== grid().cols;
+    if (on !== term.classList.contains("reflow")) view.keepBottom(() => term.classList.toggle("reflow", on));
+  }
+
   // the view's size: the window, the session list, docked Files, the keyboard, the hot keys
   const changed = () => {
+    reflow();
     clearTimeout(settle); settle = setTimeout(() => sendSize(false), SETTLE);
     if (holdUntil > performance.now()) extend();   // a dragged edge: the hold lasts while it moves
   };
@@ -86,8 +96,10 @@ export function paneSizing({ view, send, sid, refit, notify }) {
     notify('This Codex runs on the alternate screen, where tmux keeps no scrollback. Start it with "codex --no-alt-screen", or set alternate_screen = "never" under [tui] in ~/.codex/config.toml.');
   }, { passive: true });
 
+  // said over a full-screen program, whose grid is drawn as it is, and for a refused resize
+  // anywhere; the normal screen re-flows whatever the size (AC-04)
   function showSized() {
-    $("sized").hidden = !elsewhere;
+    $("sized").hidden = !elsewhere || (!full && !elsewhere.error);
     if (elsewhere) $("sized").textContent = `Sized for another screen (${elsewhere.cols}×${elsewhere.rows})` + (elsewhere.error ? `: ${elsewhere.error}` : "");
   }
 
@@ -195,7 +207,7 @@ export function paneSizing({ view, send, sid, refit, notify }) {
   });
 
   return {
-    fullscreen, mouseOn, sync, holding,
+    fullscreen, mouseOn, sync, holding, reflow,
     /** The grid that fits the terminal at the chosen text size, to send with "sub" ({} for none:
      *  hidden, or a sliver). */
     grid: () => { const g = grid(); return !term.hidden && term.clientWidth && g.cols >= SLIVER.cols && g.rows >= SLIVER.rows ? g : {}; },

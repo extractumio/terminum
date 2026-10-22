@@ -20,7 +20,6 @@ import { selectionCut } from "./selcut.js";
 import { switchGate } from "./switchgate.js";
 import { askConfirm, navTools } from "./navtools.js";
 import { embedded, quickShell } from "./quick.js";
-import { nextPane, splitNote } from "./splitnote.js";
 import { paneMenu } from "./menu.js";
 import { paneSizing } from "./sizing.js";
 import { pageSettings } from "./settings.js";
@@ -177,7 +176,7 @@ const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.g
 const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes, projects: () => st.projects,
   openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); rail?.draw(); }, copy: (text) => input.copySelection(text, true),
   toChat: (text) => { input.paste(text); focusTerminal(); } });
-trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (view.tooWide() ? "scaled" : "tmux"), copy: (text) => input.copySelection(text) });
+trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (!sizing.fullscreen() ? ($("term").classList.contains("reflow") ? "wrap" : "rows") : view.tooWide() ? "scaled" : "grid"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
 $("term").addEventListener("scroll", () => { if (!kbdFrame) kbdFrame = requestAnimationFrame(() => { kbdFrame = 0; placeKbd(); }); }, { passive: true });
 
@@ -275,7 +274,7 @@ function onMessage(m) {
     case "lines":
       if (m.error) { widgets.folds.failed(m.first); toast(m.error, 5000); break; }
       view.refill(m.first, m.lines); widgets.keepPlace(() => widgets.folds.filled(m.first, m.lines.length)); break;
-    case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); split.seen(m); break;
+    case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); break;
     case "sized": sizing.onSized(m); break;
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
@@ -317,7 +316,6 @@ function pick(id) {
   if (of) quick.focus(); else focusTerminal();
 }
 const reminders = waitingCards($("asks"), pick);
-const split = splitNote({ send, other: () => { const id = nextPane(st.groups, st.sid); if (id) pick(id); } });
 const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast, toChat: (text) => bookmarks.toChat(text),
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });
@@ -429,14 +427,16 @@ function setSize(px, save = true) {
   sizing.changed();                                // the grid this view holds changed (AC-13)
 }
 
-// ---------- the pane as tmux has it (AC-04) ----------
-// The pane's rows as they are at the chosen text size; the active page sizes the pane to its
-// view (AC-13). A pane wider than the view (another page sized it, the user's own tmux not
-// typed in yet, a window of several panes) is scaled to the view's width, down to SIZE_MIN px;
-// smaller than that, it stays at the chosen size and scrolls sideways. While the view's new
-// width is on its way to tmux, the pane stays at the chosen size, clipped (sizing.js).
+// ---------- the pane in the view (AC-04) ----------
+// The active page sizes the pane to its view (AC-13). The normal screen is drawn at the chosen
+// text size whatever tmux's width, re-flowed when it is not the view's (sizing.js). A full-screen program's grid wider than
+// the view (another page sized it, the user's own tmux not typed in yet, a window of several
+// panes) is scaled to the view's width, down to SIZE_MIN px; smaller than that, it stays at the
+// chosen size and scrolls sideways. While the view's new width is on its way to tmux, it stays
+// at the chosen size, clipped (sizing.js).
 function applyFit() {
-  const hold = sizing.holding(), px = view.cols && !hold && view.tooWide() ? view.fitPx() : 0;
+  sizing.reflow();
+  const hold = sizing.holding(), px = view.cols && !hold && sizing.fullscreen() && view.tooWide() ? view.fitPx() : 0;
   $("term").classList.toggle("holding", hold);
   $("term").style.fontSize = px >= SIZE_MIN ? `${px}px` : "";
 }

@@ -3,8 +3,8 @@
 //! window on opening the pane (before its first frame, at the grid sent with `sub`: AC-04), on
 //! becoming active (in sight and focused: `resume`) and on typing; a change of its view resizes only a window it sizes or nobody does; a hidden page
 //! sizes nothing and hands its windows over. The user's own tmux too (AC-89), marked. A
-//! window of one pane, or whose shown pane tmux zoomed, is resized with `window-size manual` +
-//! `resize-window`; a window of several panes in sight never (Full width zooms the pane, AC-13).
+//! window of one pane, or whose shown pane the user's own tmux zoomed, is resized with
+//! `window-size manual` + `resize-window`; a window of several panes in sight never (AC-13).
 //! A window no page shows goes back to tmux's own policy. At most one resize a second a page.
 
 use std::collections::HashMap;
@@ -22,7 +22,7 @@ use crate::tmux::{mouse, Server};
 
 const EVERY: Duration = Duration::from_secs(1);
 /// The grids a pane is sized to, whatever the screen (AC-13): the smallest fits an iPhone in
-/// portrait at the default 13 px (a smaller view draws the pane scaled down), the largest a
+/// portrait at the default 13 px (a smaller view re-flows it, AC-04), the largest a
 /// big desktop window, about 1920×1200 (a larger view leaves the rest blank).
 const MIN: (u16, u16) = (45, 14);
 const MAX: (u16, u16) = (240, 70);
@@ -108,7 +108,7 @@ async fn resize(app: &Shared, page: &Arc<Page>, opening: bool) -> bool {
     let (cols, rows) = (grid.0 as usize, grid.1 as usize);
     let key = (server.id(), f.window.clone());
     if !f.whole() {
-        return false; // a window of several panes keeps its layout; the page draws its pane scaled (AC-04, AC-13)
+        return false; // a window of several panes keeps its layout; the page re-flows its pane (AC-04, AC-13)
     }
     let mut cmds = Vec::new();
     let mut win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
@@ -272,7 +272,7 @@ fn own_size(window: &str) -> Vec<String> {
     vec![format!("set-option -w -u -t {window} window-size"), format!("set-option -w -u -t {window} {SIZED}")]
 }
 
-/// `size`, `zoom` and `mouse` from the page.
+/// `size` and `mouse` from the page.
 pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     match t {
         "size" => {
@@ -280,36 +280,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
                 later(app, page, if msg["typing"].as_bool().unwrap_or(false) { Why::Typed } else { Why::View });
             }
         }
-        "zoom" => zoom(app, page, msg["on"].as_bool().unwrap_or(true)).await,
         _ => mouse_event(app, page, msg),
-    }
-}
-
-/// Full width (`on`) or Show split for the shown pane of a split window (AC-13): tmux zooms it
-/// (`resize-pane -Z` toggles the window's zoom: another pane zoomed is unzoomed first), and a
-/// zoomed pane's window is then sized as a window of one pane, as a key typed would.
-async fn zoom(app: &Shared, page: &Arc<Page>, on: bool) {
-    let Some((server, pane, f)) = shown_window(page) else { return };
-    if f.panes <= 1 || f.whole() == on {
-        return;
-    }
-    let toggle = format!("resize-pane -Z -t {pane}");
-    let cmds = if on && f.zoomed { vec![toggle.clone(), toggle] } else { vec![toggle] };
-    for a in server.run_all_on(&pane, cmds).await {
-        if let Err(e) = a {
-            tracing::warn!(event = "tmux.error", cmd = "resize-pane", msg = e);
-            super::client::error(page, format!("Could not {} the pane: {e}", if on { "zoom" } else { "unzoom" }), Some(&shown_key(page)));
-            return;
-        }
-    }
-    if let Some(s) = page.state.lock().shown.as_ref() {
-        if let Some(f) = s.ctl.fields.lock().as_mut() {
-            (f.zoomed, f.active) = (on, true);                // as tmux has it now; the next frame reads it
-        }
-        s.ctl.wake.notify_one();
-    }
-    if on {
-        later(app, page, Why::Typed);
     }
 }
 
