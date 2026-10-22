@@ -23,4 +23,3 @@
 
 /* round and pill-shaped buttons with a shadow: an uneven radius keeps the border and the shadow */
 #bottom { border-radius: var(--blob-a); }
-#backterm { border-radius: 22px 17px 21px 18px / 19px 22px 17px 21px; }

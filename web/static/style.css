@@ -427,10 +427,8 @@ body.wide #views button[aria-selected="true"] { color: var(--accent); background
 #main > iframe.view, #filewin > iframe { flex: 1; width: 100%; min-height: 0; border: 0; background: var(--t-bg); }
 #filewin { flex: 1; min-height: 0; display: flex; flex-direction: column; position: relative; }
 /* below 1400px View fills the page: a way back to the terminal where the thumb is */
-#backterm { position: absolute; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2; height: 40px;
-  display: flex; align-items: center; gap: 4px; padding: 0 14px 0 8px; border-radius: 20px; font-weight: 600; font-size: 13px;
-  background: var(--accent); color: var(--t-bg); box-shadow: 0 6px 18px color-mix(in srgb, #000 45%, transparent); }
 body.wide #backterm { display: none; }
+#backterm { position: absolute; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom)); z-index: 2; padding: 0 var(--key-px) 0 var(--sp-2); }   /* a key (controls.css) */
 #viewnote { flex: 1; margin: 0; padding: 24px 16px; color: var(--muted); }
 body:not([data-shown="term"]) .term-only, body:not([data-shown="term"]) #hotkeys,
 body:not([data-shown="term"]) #bottom, body:not([data-shown="term"]) #paused { display: none !important; }
