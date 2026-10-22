@@ -3,17 +3,15 @@
 // selects nothing on a long press, so input.js selects the word itself; these keep that word
 // in sight while the keyboard closes and offer Copy, as iOS shows no menu for a selection the
 // page made.
-import { selectedText } from "./seltext.js";
+import { selectedText, termRange } from "./seltext.js";
 
 /** Keeps the selection at viewport height y for `ms` while the page settles: the keyboard
  *  closing grows the page, which then scrolls to its end (app.js fitViewport runs first). At
  *  the end of the output there is no room to scroll, and the word only stays in sight. */
 export function keepSelectionAt(term, y, ms = 1000) {
   const fix = () => {
-    const sel = getSelection();
-    if (!sel?.rangeCount || sel.isCollapsed || !term.contains(sel.anchorNode)) return;
-    const r = sel.getRangeAt(0).getBoundingClientRect();
-    if (r.height) term.scrollTop += r.top - y;
+    const r = termRange(term)?.getBoundingClientRect();
+    if (r?.height) term.scrollTop += r.top - y;
   };
   const on = [[window.visualViewport, "resize"], [window.visualViewport, "scroll"], [window, "resize"]].filter(([t]) => t);
   for (const [t, e] of on) t.addEventListener(e, fix);
@@ -27,8 +25,7 @@ export function keepSelectionAt(term, y, ms = 1000) {
 export function copyButton(button, term, copy) {
   let kept = "", hide = 0;
   document.addEventListener("selectionchange", () => {
-    const sel = getSelection();
-    if (sel?.rangeCount && !sel.isCollapsed && term.contains(sel.anchorNode)) {
+    if (termRange(term)) {
       kept = selectedText(term) ?? "";
       clearTimeout(hide); hide = 0;
       button.hidden = false;

@@ -17,12 +17,18 @@ export function joinLines(parts) {
   return out;
 }
 
-/** The selection's text when it lies in `term`; null otherwise (the browser's own text). */
-export function selectedText(term) {
+/** The selection's range when text is selected in `term`, else null. */
+export function termRange(term) {
   const sel = getSelection();
   if (!sel?.rangeCount || sel.isCollapsed) return null;
   const range = sel.getRangeAt(0);
-  if (!term.contains(range.commonAncestorContainer)) return null;
+  return term.contains(range.commonAncestorContainer) ? range : null;
+}
+
+/** The selection's text when it lies in `term`; null otherwise (the browser's own text). */
+export function selectedText(term) {
+  const range = termRange(term);
+  if (!range) return null;
   const parts = [];
   for (const ln of term.querySelectorAll(".ln")) {
     if (!range.intersectsNode(ln)) continue;
