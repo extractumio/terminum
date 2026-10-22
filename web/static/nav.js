@@ -152,13 +152,10 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   if (item.host || item.sub?.length) txt.append(rowLine(item));
   const st = el("span", "st");
   const clone = opts.onClone && !child;
-  let unread = null;
-  if (item.unread) {                               // its agent finished a turn nobody has looked at (AC-93)
-    unread = el("span", "unread");
-    unread.title = "Unread: its agent finished";
-    unread.setAttribute("role", "img");
-    unread.setAttribute("aria-label", unread.title);
-    if (!clone) st.append(unread);                 // where Clone would be (projects.css), else with its state
+  if (item.unread) {                               // its agent finished a turn nobody has looked at (AC-93): the row hatched (projects.css)
+    b.classList.add("unread");
+    b.title = "Unread: its agent finished";
+    b.setAttribute("aria-description", b.title);
   }
   const mark = stateIcon(shownState(item));
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
@@ -188,7 +185,6 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   li.append(b);
   // a new window beside it, in its folder (AC-07)
   if (clone) li.append(iconButton("clone", "copy-plus", `Clone ${item.title}`, "Clone: a new window in its folder", () => opts.onClone(item)));
-  if (clone && unread) li.append(unread);
   return li;
 }
 

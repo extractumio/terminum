@@ -28,12 +28,11 @@ export async function webProjects(browser, name) {
     return { news: document.querySelectorAll("#sessions h2 .new").length, clones: document.querySelectorAll("#sessions li > .clone").length,
       first: s.firstElementChild?.textContent, prog: s.querySelector(".progs")?.textContent,
       right: Math.round(s.getBoundingClientRect().right - s.querySelector(".progs").getBoundingClientRect().right),
-      unread: !!document.querySelector('#sessions li:has(> .item[data-id$="%4"]) .unread'), plain: !!document.querySelector('#sessions li:has(> .item[data-id$="%2"]) .unread') };
+      unread: !!document.querySelector('#sessions .item.unread[data-id$="%4"]'), plain: !!document.querySelector('#sessions .item.unread[data-id$="%2"]') };
   });
   check("AC-07 every row has Clone, no group header has [+]", look.news === 0 && look.clones === 4, JSON.stringify(look));
   check("AC-01 a row's second line: its folder first, its program at the right edge", look.first === "~/work/docs" && look.prog === "zsh" && look.right <= 1, JSON.stringify(look));
-  check("AC-93 a row whose agent finished unseen has the unread mark, others none", look.unread && !look.plain, JSON.stringify(look));
-  // where the unread mark is: x its middle from Clone's (left of it < 0), y from the middle of the row's second line (its program's)
+  check("AC-93 a row whose agent finished unseen is unread, others not", look.unread && !look.plain, JSON.stringify(look));
   const mark = (pg = page) => pg.evaluate(() => {
     const li = document.querySelector('#sessions li:has(> .item[data-id$="%4"])'), u = li.querySelector(".unread"), c = li.querySelector(":scope > .clone"), t = li.querySelector(".t"), s = li.querySelector(".s");
     const mid = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
@@ -105,7 +104,7 @@ export async function webProjects(browser, name) {
   f.say({ t: "projects", items: [{ ...P1, members: [ID(1), ID(3), ID(4)] }, P2] });
   await pause(page, 200);
   const m2 = await mark();
-  check("AC-93 in a project too the unread mark takes the session name's color, level with the second line, under Clone's middle", m2.bg === m2.name && Math.abs(m2.x) <= 1 && Math.abs(m2.y) <= 1, JSON.stringify(m2));
+  check("AC-93 in a project the hatching takes the project's name color", m2.hatched && m2.ink !== m1.ink, JSON.stringify({ m1, m2 }));
   f.say({ t: "projects", items: [P1, P2] });
   await pause(page, 200);
   await page.click('#sessions section[data-pid="p1"] h2 .new');
