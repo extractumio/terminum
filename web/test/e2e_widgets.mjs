@@ -313,6 +313,19 @@ export async function webWidgets(browser, name = "") {
   const appended = await fo.page.evaluate(() => [...document.querySelectorAll("#hist .ln.wg-fold")].map((h) => h.shadowRoot.querySelector('[data-act="fold"]').textContent));
   check(`${at} … lines that scrolled off fold when the bridge says so, without asking for them`,
     appended.at(-1) === "⋯ 17 more lines of output" && fo.sent.filter((m) => m.t === "unfold").length === askedBefore, JSON.stringify(appended));
+  // rendered output is never folded: a fold the bridge tells over a drawn table's lines (the page has
+  // them) gives way, the table stays drawn (it turned back into plain text)
+  const at2 = foldHist.length + 28;
+  fo.say({ t: "hist", mode: "append", sid: "S1", first: at2, oldest: 0, truncated: false,
+    lines: ["⏺ Bash(cat t.md)", "  ⎿  the table:", "     | Field | Value |", "     |---|---|", ...Array.from({ length: 8 }, (_, k) => `     | f${k} | ${k} |`), ""].map((t) => line(t)) });
+  await fo.page.waitForFunction(() => [...document.querySelectorAll("#hist .ln.wg-host")].some((h) => h.shadowRoot.querySelector('.wg[data-kind="table"]')), null, { timeout: 5000 }).catch(() => {});
+  const prior = await fo.page.evaluate(() => [...document.querySelectorAll("#hist .ln.wg-host")].map((h) => h.shadowRoot.querySelector(".wg")?.dataset.kind ?? "fold").join());
+  fo.say({ t: "folds", sid: "S1", items: [{ n: at2 + 4, to: at2 + 10, label: "⋯ 7 more lines of output" }] });
+  await fo.page.waitForTimeout(400);
+  const kept = await fo.page.evaluate(() => ({
+    drawn: [...document.querySelectorAll("#hist .ln.wg-host")].some((h) => h.shadowRoot.querySelector('.wg[data-kind="table"] table')),
+    folded: [...document.querySelectorAll("#hist .ln.wg-fold")].map((h) => h.shadowRoot.querySelector('[data-act="fold"]').textContent).includes("⋯ 7 more lines of output") }));
+  check(`${at} … a fold over rendered output (a table whose lines the page has) gives way: the table stays drawn`, kept.drawn && !kept.folded, JSON.stringify({ kept, prior }));
   check(`${at} … no page errors with folds`, !fo.errors.length, JSON.stringify(fo.errors));
   await fo.page.close();
 

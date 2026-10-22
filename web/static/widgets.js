@@ -185,7 +185,10 @@ export class Widgets {
       anchor.classList.remove("wg-host", "wg-raw");
       anchor.shadowRoot?.replaceChildren(document.createElement("slot"));
     };
-    // a part the bridge folded is the fold's, not a widget's
+    // rendered output is never folded: a fold over a widget's rows gives way (folds.js giveWay); a
+    // part the bridge folded and did not send stays the fold's (no text to draw it from)
+    const drawn = new Set(list.flatMap(({ rows }) => (rows.every(Boolean) ? rows.map((r) => r.el) : [])));
+    if (this.folds.giveWay(drawn)) this.folds.apply();
     list = list.filter(({ rows }) => rows.length && !rows.some((r) => !r || this.folds.has(r.el)));
     // positions first, then changes: a read after a change would lay out the whole history again
     const away = new Set(list.filter((l) => !l.live && !this.hosts.has(l.rows[0].el) && !near(l.rows.map((r) => r.el))));

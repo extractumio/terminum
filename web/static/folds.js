@@ -27,6 +27,7 @@ export class Folds {
     this.rows = new WeakSet();   // rows of a fold (no widget, no image button there)
     this.waiting = new Map();    // first line -> "show" | "again" | {resolve, reject}: its lines are asked for
     this.onScreen = [];          // the screen's: [from row, to row, label]
+    this.yielded = new Set();    // folds given way to rendered output over their lines (giveWay)
   }
 
   /** The screen's folds, as the last screen message told. */
@@ -55,6 +56,7 @@ export class Folds {
     const hist = this.view.hist, base = hist.length ? hist[0].n : 0, drawn = new Map();
     for (const f of this.items.values()) {
       if (hist.length && f.to < base) { this.items.delete(f.n); this.open.delete(f.n); continue; }
+      if (this.yielded.has(f.n)) continue;
       const a = Math.max(0, f.n - base), b = Math.min(hist.length - 1, f.to - base);
       if (a > b) continue;
       const open = this.open.has(f.n), was = this.hosts.get(hist[a].el);
@@ -75,6 +77,7 @@ export class Folds {
       const kind = `screen|${label.replace(/[\d.,]+/g, "#")}|${rows[0].textContent}`, k = (seen.get(kind) ?? 0) + 1;
       seen.set(kind, k);
       const n = `${kind}|${k}`, open = this.open.has(n), was = this.hosts.get(rows[0]);
+      if (this.yielded.has(n)) continue;
       if (was?.f.n === n && was.open === open && was.rows.at(-1) === rows.at(-1)) { drawn.set(rows[0], was); continue; }
       const f = { n, label, screen: rows };
       drawn.set(rows[0], { f, rows, open });
@@ -84,6 +87,18 @@ export class Folds {
     this.hosts = drawn;
   }
 
+  /** Rendered output (a table, a diff, a diagram: widgets.js) is never folded: a fold over the
+   *  rows `els` of one gives way when its lines are all here (one of lines not sent stays, as
+   *  there is no text to draw). True when one did: apply() again. */
+  giveWay(els) {
+    let gave = false;
+    for (const { f, rows } of this.hosts.values()) {
+      if (this.yielded.has(f.n) || !rows.some((el) => els.has(el)) || this.records(f).some((r) => r.gone)) continue;
+      this.yielded.add(f.n);
+      gave = true;
+    }
+    return gave;
+  }
   draw(anchor, f, rows, open) {
     for (const el of rows) this.rows.add(el);
     const root = hostOf(anchor, this.click);
