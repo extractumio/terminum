@@ -39,6 +39,7 @@ import { Widgets } from "./widgets.js";
 import { Marks } from "./marks.js";
 import { fabFold } from "./fold.js";
 import { promptRail } from "./promptrail.js";
+import { askedMarks } from "./asked.js";
 import { askBox } from "./ask.js";
 import { recentSessions } from "./recent.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
@@ -116,6 +117,7 @@ quietSelection($("term"), touch);                   // no iOS menu over a select
 const shownFiles = paneFiles(() => views.paneInfo(), undefined, signedUrl);
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
+const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });
 const views = new Views({ send, store, onShow: () => { view.keepBottom(applyFit); marks(); }, onBack: () => focusTerminal() });
 // the sessions shown last, ⌘[ and ⌘] through them; ⌘F the history's search, ⌘B Files (AC-07)
 const recent = recentSessions({ store, exists: (id) => !!findItem(st.groups, id), show: (id) => pick(id) });
@@ -165,7 +167,7 @@ function tapMove(x, y) {
 
 // On a touch screen the invisible keyboard field lies over the cursor's row (kbdplace.js).
 const placeKbd = kbdPlacer({ touch, mouseOn: () => sizing.mouseOn() });
-view.onDrawn = () => { placeKbd(); marks(); trace.drawn(); };
+view.onDrawn = () => { placeKbd(); marks(); asked.redraw(); trace.drawn(); };
 new ResizeObserver(() => placeKbd()).observe($("term"));   // a banner above it moved the terminal: the field follows, never over the banner
 
 // Code, Markdown and diagrams in the output as widgets, images named in it behind a button
@@ -274,6 +276,7 @@ function onMessage(m) {
   bookmarks.seen(m);
   rail?.seen(m);
   ask.seen(m);
+  asked.seen(m);
   switch (m.t) {
     case "layout": st.groups = m.groups; seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
@@ -331,8 +334,8 @@ const reminders = waitingCards($("asks"), pick);
 const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast, toChat: (text) => bookmarks.toChat(text),
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });
-const ask = askBox({ send, toChat: (text) => bookmarks.toChat(text), keys: (data) => input.type(data, "ask"), agent: () => !!itemOf(st.sid)?.agent });
-bookmarks.onAsk = (text) => ask.open(text);
+const ask = askBox({ send, toChat: (text) => bookmarks.toChat(text), keys: (data) => input.type(data, "ask"), agent: () => !!itemOf(st.sid)?.agent, asked: asked.asked });
+bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks, send });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };

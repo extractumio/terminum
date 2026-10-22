@@ -65,7 +65,7 @@ export function selection(term, view) {
 }
 
 /** Shows `button` beside the selection in `term` (within `main`), `copyButton` above it and
- *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text) (the text
+ *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text, n) (the text
  *  as taken while it was selected). */
 export function markPicker({ term, main, button, copyButton, askButton, view, onPick, onCopy, onAsk }) {
   let kept = null, hide = 0, frame = 0, copied = false;
@@ -121,9 +121,9 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
   for (const b of [button, copyButton, askButton]) b.addEventListener("mousedown", (e) => e.preventDefault());   // the selection stays
   askButton.addEventListener("click", () => {
     if (!kept) return;
-    const text = kept.raw;
+    const { raw: text, n } = kept;
     gone();
-    onAsk(text);
+    onAsk(text, n);
   });
   button.addEventListener("click", () => {
     if (!kept) return;

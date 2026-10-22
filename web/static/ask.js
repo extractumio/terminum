@@ -32,10 +32,11 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
 }
 
 /** send(msg) to terminumd; toChat(text): pasted into the shown pane's input; keys(data): typed
- *  there; agent(): the shown pane runs a coding agent. {open(text), seen(m)}. */
-export function askBox({ send, toChat, keys, agent }) {
+ *  there; agent(): the shown pane runs a coding agent; asked(n, quote, line): one was asked about
+ *  (asked.js keeps it marked). {open(text, line), seen(m)}. */
+export function askBox({ send, toChat, keys, agent, asked }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
-  let quote = "", waiting = null;
+  let quote = "", line = null, waiting = null;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
   const ready = (on) => { add.disabled = now.disabled = !on; };
   q.addEventListener("input", () => ready(q.value.trim()));
@@ -66,14 +67,16 @@ export function askBox({ send, toChat, keys, agent }) {
     if (!m || !box.open) return;                                   // closed meanwhile
     if (m.error || !Number.isInteger(m.n)) return fail(m.error ?? "No number came back.");
     box.close();
+    asked?.(m.n, quote, line);                                      // the quote stays marked where it was selected
     for (const [kind, data] of askSends(askText(m.n, quote, q.value), agent(), how === "send")) {
       if (kind === "enter") setTimeout(() => keys(data), ENTER_AFTER);
       else (kind === "keys" ? keys : toChat)(data);
     }
   });
   return {
-    open(text) {
+    open(text, at = null) {
       quote = text;
+      line = at;
       $("asktext").textContent = text;
       q.value = "";
       ready(false);

@@ -72,6 +72,9 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         };
         return;
     }
+    if t == "asked" || t == "askedmarks" {
+        return asked(app, page, &msg, &key, &host, &path).await;
+    }
     if t == "sent" {
         let text = msg["text"].as_str().unwrap_or("");
         return keep(app, &host, &path, &key, text, json!({"agent": agent, "via": "page", "line": line})).await;
@@ -81,6 +84,29 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     let (h, p) = (host.clone(), path.clone());
     let (total, item) = tokio::task::spawn_blocking(move || a.sent.get(&h, &p, n)).await.unwrap_or((0, None));
     page.send_json(&json!({"t": "sentone", "sid": key, "n": n, "total": total, "item": item, "host": host, "path": path}));
+}
+
+/// `asked {n, text, line}` keeps a quote the shown pane was asked about (AC-37) and tells
+/// every page `askednew {key}`; both it and `askedmarks` answer `askedmarks {sid, items: [{n,
+/// text, line}]}`, the pane's quotes, which the page underlines where they stand.
+async fn asked(app: &Shared, page: &Arc<Page>, msg: &Value, key: &str, host: &str, path: &str) {
+    let (a, h, p, k) = (app.clone(), host.to_string(), path.to_string(), key.to_string());
+    let keep = msg["t"] == "asked";
+    let (n, text, line) = (msg["n"].as_u64(), msg["text"].as_str().unwrap_or("").to_string(), msg["line"].as_i64());
+    let (kept, items) = tokio::task::spawn_blocking(move || {
+        let kept = match (keep, n, line) {
+            (false, ..) => Ok(false),
+            (true, Some(n), Some(line)) if !text.trim().is_empty() => a.sent.keep_asked(&h, &p, &k, n, &text, line).map(|_| true),
+            (true, ..) => Err("a quote needs its number, text and line".to_string()),
+        };
+        (kept, a.sent.asked_of(&h, &p, &k))
+    }).await.unwrap_or_else(|e| (Err(e.to_string()), Vec::new()));
+    match kept {
+        Ok(true) => app.pages.tell(&json!({"t": "askednew", "key": key}).to_string()),
+        Ok(false) => {}
+        Err(e) => tracing::warn!(event = "asked.unsaved", error = %e),
+    }
+    page.send_json(&json!({"t": "askedmarks", "sid": key, "items": items}));
 }
 
 /// The newest messages of the shown pane's own placed on the sent history's strip (AC-90).

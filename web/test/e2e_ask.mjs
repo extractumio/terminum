@@ -29,6 +29,26 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
     dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.noSend && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
     && quoted.startsWith("\x1b[200~Quote #0007:\r - Quote Start ----\r«out 2500 lorem ipsum") && quoted.endsWith("»\r- Quote End ----\rwhy does it never reset?\r----\r\r\x1b[201~"),
     JSON.stringify({ dialog, quoted }));
+  // the quote stays marked: terminumd keeps it with its number and the line its selection began on,
+  // and its answer puts a light blue wavy line (the Ask button's) down the quote's rows' left, as a
+  // reminder's quote has; no underline
+  const keep = asked.find((x) => x.t === "asked");
+  say({ t: "askedmarks", sid: "S1", items: keep ? [{ n: keep.n, text: keep.text, line: keep.line }] : [] });
+  // the paste brought the view to the input: the quote is marked once it is in sight again
+  await page.evaluate(() => [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("out 2500 lorem"))?.scrollIntoView({ block: "center" }));
+  await page.waitForFunction(() => [...document.querySelectorAll("#term .askline")].some((l) => !l.hidden), null, { timeout: 3000 }).catch(() => {});
+  const marked = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll("#term .askline")].filter((l) => !l.hidden);
+    const row = [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("out 2500 lorem"))?.getBoundingClientRect();
+    const term = document.getElementById("term").getBoundingClientRect(), text = document.querySelector("#term .ln span")?.getBoundingClientRect();
+    const l = lines[0]?.getBoundingClientRect(), cs = lines[0] && getComputedStyle(lines[0]);
+    const ask = getComputedStyle(document.getElementById("askfab")).backgroundColor;
+    return l && { shown: lines.length, covers: Math.abs(l.top - row.top) <= 1 && Math.abs(l.bottom - row.bottom) <= 1, gutter: l.left >= term.left && l.right <= (text?.left ?? Infinity),
+      color: cs.backgroundColor === ask, wavy: /url\(/.test(cs.maskImage || cs.webkitMaskImage), under: !!globalThis.CSS?.highlights?.get("asked") };
+  });
+  check(`${at} Ask: the quote is kept with its number and line, and keeps a light blue wavy line down its left where it was selected`,
+    keep?.n === 7 && Number.isInteger(keep.line) && keep.text.includes("out 2500 lorem ipsum") && marked?.shown === 1 && marked.covers && marked.gutter && marked.color && marked.wavy && !marked.under,
+    JSON.stringify({ keep, marked }));
   // in a coding agent's box the blank line after it is typed (Ctrl+J), none before
   say({ t: "layout", groups: [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }, layout[0].items[1]] }] });
   await page.waitForTimeout(150);

@@ -80,7 +80,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat pastes the
   selection quoted as "Quote #0007", your question and a rule into the input, without Enter.
-  The number counts up per session.
+  The number counts up per session. The text you asked about keeps a light blue wavy line down its left in
+  the terminal, as a reminder's quote, on every page of that session.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
   of its project ends a turn, its count filled. Close puts it down until the next turn ends,
   Resolve ends it. Insert into chat, on a reminder, a bookmark's bar or a sent message, pastes it

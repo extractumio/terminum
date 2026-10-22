@@ -130,6 +130,9 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 #markdocbody { flex: 1; overflow: auto; padding: 4px 22px 40px; font: var(--md-size, 14px)/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
 #markdocbody blockquote { margin: 0 0 6px; padding-left: 10px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); white-space: pre-wrap; }
 
+/* a quote asked about (asked.js): a light blue wavy line down its rows' left, in the gutter, as a reminder's quote */
+.askline { position: absolute; width: 4px; pointer-events: none; z-index: 1; background: var(--ask);
+  -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
 /* the bookmark brought into view: its text as it is, a wavy line on its left (markjump.js) */
 #term { position: relative; }
 #markline { position: absolute; width: 6px; pointer-events: none; z-index: 1; opacity: .6;

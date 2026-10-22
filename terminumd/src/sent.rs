@@ -27,6 +27,9 @@ pub const TEXT: usize = 20000;
 const AGAIN: Duration = Duration::from_secs(10);
 /// Lines the page told for a hooked pane's Enter, kept per pane for its hook's prompt.
 const HINTS: usize = 4;
+/// Quotes asked about kept per pane (AC-37), and the most of one's text kept.
+const ASKED: usize = 100;
+const ASKED_TEXT: usize = 4000;
 
 pub struct Sent {
     root: PathBuf,
@@ -214,12 +217,34 @@ impl Sent {
             .max().unwrap_or(0);
         let _w = self.write.lock();
         let file = self.file(host, path).with_file_name("quotes.json");
-        let mut given: Value = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str(&t).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}));
+        let mut given = read_object(&file);
         let n = sent.max(given[key].as_u64().unwrap_or(0)) + 1;
         given[key] = json!(n);
         self.project_dir(&file, host, path)?;
         crate::config::write_private(&file, given.to_string().as_bytes()).map_err(|e| format!("{}: {e}", file.display()))?;
         Ok(n)
+    }
+
+    /// Keeps a quote pane `key` asked about (AC-37: its number, text and the history line its
+    /// selection began on) in the project's asked.json, the newest ASKED of each pane, its text
+    /// cut at ASKED_TEXT characters. Blocking.
+    pub fn keep_asked(&self, host: &str, path: &str, key: &str, n: u64, text: &str, line: i64) -> Result<(), String> {
+        let _w = self.write.lock();
+        let file = self.file(host, path).with_file_name("asked.json");
+        let mut all = read_object(&file);
+        let mut list = all[key].as_array().cloned().unwrap_or_default();
+        list.retain(|q| q["n"].as_u64() != Some(n));
+        list.push(json!({"n": n, "text": text.chars().take(ASKED_TEXT).collect::<String>(), "line": line}));
+        let extra = list.len().saturating_sub(ASKED);
+        list.drain(..extra);
+        all[key] = json!(list);
+        self.project_dir(&file, host, path)?;
+        crate::config::write_private(&file, all.to_string().as_bytes()).map_err(|e| format!("{}: {e}", file.display()))
+    }
+
+    /// Pane `key`'s quotes asked about, oldest first: [{n, text, line}]. Blocking.
+    pub fn asked_of(&self, host: &str, path: &str, key: &str) -> Vec<Value> {
+        read_object(&self.file(host, path).with_file_name("asked.json"))[key].as_array().cloned().unwrap_or_default()
     }
 
     /// The `n`-th newest entry of a project (0: the last) and how many there are. Blocking.
@@ -229,6 +254,11 @@ impl Sent {
         let item = lines.len().checked_sub(n + 1).and_then(|i| serde_json::from_str(lines[i]).ok());
         (lines.len(), item)
     }
+}
+
+/// A JSON object kept in `file`, or {} when there is none (or not an object).
+fn read_object(file: &Path) -> Value {
+    std::fs::read_to_string(file).ok().and_then(|t| serde_json::from_str(&t).ok()).filter(Value::is_object).unwrap_or_else(|| json!({}))
 }
 
 /// The `most` newest entries of `text` (a .jsonl file's) of pane `key` with a line: (text, line,
@@ -387,6 +417,23 @@ mod tests {
         assert_eq!(next(&s, "k2"), 42, "another pane counts its own");
         assert_eq!(next(&s, "k1"), 4);
         assert_eq!(quote_numbers("Quote #0007: Quote # 9 Quote #x Question #8"), [7]);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    /// Quotes asked about (AC-37) are kept per pane, across a restart: one number once (the
+    /// last text), the newest ASKED, a long text cut.
+    #[test]
+    fn asked_quotes_kept_per_pane() {
+        let (s, dir) = store();
+        s.keep_asked("local", "/p", "k1", 1, "first", 10).unwrap();
+        s.keep_asked("local", "/p", "k2", 1, "other pane", 3).unwrap();
+        s.keep_asked("local", "/p", "k1", 1, "first, again", 12).unwrap();
+        let again = Sent::new(dir.clone());
+        assert_eq!(again.asked_of("local", "/p", "k1"), [json!({"n": 1, "text": "first, again", "line": 12})]);
+        for n in 2..=(ASKED as u64 + 1) { s.keep_asked("local", "/p", "k1", n, &"x".repeat(ASKED_TEXT + 5), n as i64).unwrap(); }
+        let kept = s.asked_of("local", "/p", "k1");
+        assert_eq!((kept.len(), kept[0]["n"].as_u64(), kept[0]["text"].as_str().map(str::len)), (ASKED, Some(2), Some(ASKED_TEXT)));
+        assert_eq!(s.asked_of("local", "/p", "k2").len(), 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 
