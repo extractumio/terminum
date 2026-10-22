@@ -7,13 +7,13 @@
 // frame on a phone; Files and View take the terminal's place whole. Alone: node web/test/e2e_all.mjs webPhoneRow.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, line, openPage, PHONE, WIDE } from "./fake.mjs";
+import { drawn, group, item, line, openPage, PHONE, WIDE, pressFab } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1", DIR = "/Users/alex/api";
 const RULE = "─".repeat(60);
 const MARKS = [{ id: "R1", sid: SID, key: SID, n: 1, text: "x", note: "check it", title: "api", host: null, dir: DIR, at: 1792000000, remind: true },
   { id: "M1", sid: SID, key: SID, n: 2, text: "y", note: "here", title: "api", host: null, dir: DIR, at: 1792000000 }];
-const IDS = ["attachfab", "marksfab", "remindfab", "splitfab", "findfab", "sentfab", "fabs", "kbdbtn"];
+const IDS = ["foldfab", "findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab", "fabs", "kbdbtn"];
 
 async function opened(browser, device) {
   const f = await openPage(browser, { device, layout: [group("main", [item(SID, "api", { agent: "claude", shell: false, sub: ["2.1", "~/api"], dir: DIR })])] });
@@ -33,27 +33,33 @@ export async function webPhoneRow(browser, name) {
   runningIn(`${name} 390×844`);
   const f = await opened(browser, PHONE);
   const { page } = f;
+  // folded: ⟨…⟩ at the top right where find stood, the keyboard's buttons at the bottom right; the rest out of sight
+  const column = ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"];
   const b = await boxes(page);
-  const row = ["attachfab", "marksfab", "remindfab", "splitfab"];
-  check("AC-18 a phone: Attach, the bookmarks, the reminders and the split stand in that order in a row at the bottom left, at the keyboard buttons' height, clear of them",
-    row.every((id) => b[id].seen && Math.abs(b[id].mid - b.fabs.mid) <= 1) && row.every((id, i) => !i || b[id].x > b[row[i - 1]].x + b[row[i - 1]].w)
-    && b.attachfab.x <= 16 && b.splitfab.x + b.splitfab.w < b.fabs.x, JSON.stringify(b));
-  check("AC-58 a phone: find and the sent history stay at the top right",
-    b.findfab.seen && b.sentfab.seen && b.findfab.y < 200 && b.sentfab.y > b.findfab.y && b.findfab.x > 300, JSON.stringify([b.findfab, b.sentfab]));
+  check("AC-18 a phone: every floating button but the keyboard's folds under ⟨…⟩ at the terminal's top right",
+    b.foldfab.seen && b.foldfab.x > 300 && b.foldfab.y < 200 && column.every((id) => !b[id].seen) && b.fabs.seen && b.kbdbtn.seen, JSON.stringify(b));
+  await page.tap("#foldfab");
+  await page.waitForTimeout(150);
+  const u = await boxes(page);
+  check("AC-18 AC-58 a phone: a tap on ⟨…⟩ shows find, the split, the sent history, Attach, the bookmarks and the reminders in a column under it",
+    column.every((id, i) => u[id].seen && u[id].x === u.foldfab.x && u[id].y > (i ? u[column[i - 1]].y : u.foldfab.y)), JSON.stringify(u));
+  await page.tap("#foldfab");                       // folds again
+  await page.waitForTimeout(150);
   const frame = await page.evaluate(() => getComputedStyle(document.querySelector("#screen .blk.inbox")).borderTopWidth);
   check("AC-18 a phone: the agent's input box is a tint, no frame", frame === "0px", frame);
 
-  // the panes open above their buttons
+  // the panes open as sheets centered on the screen (AC-18); a press on their shade closes them
   for (const [fab, pane] of [["marksfab", "markpane"], ["remindfab", "remindpane"]]) {
-    await page.tap(`#${fab}`);
+    await pressFab(page, `#${fab}`, "tap");
     await page.waitForTimeout(250);
-    const at = await page.evaluate(([fab, pane]) => {
-      const a = document.getElementById(fab).getBoundingClientRect(), p = document.getElementById(pane).getBoundingClientRect();
-      return { open: !document.getElementById(pane).hidden, above: p.bottom <= a.top, inside: p.left >= 0 && p.right <= innerWidth && p.top >= 0 };
-    }, [fab, pane]);
-    check(`AC-57 a phone: ${fab}'s pane opens above it, on the screen`, at.open && at.above && at.inside, JSON.stringify(at));
-    await page.tap(`#${fab}`);
+    const at = await page.evaluate(([pane]) => {
+      const p = document.getElementById(pane).getBoundingClientRect();
+      return { open: !document.getElementById(pane).hidden, mid: Math.round(p.left - (innerWidth - p.right)), inside: p.left >= 0 && p.right <= innerWidth && p.top >= 0 };
+    }, [pane]);
+    check(`AC-57 AC-18 a phone: ${fab}'s pane opens centered, on the screen`, at.open && Math.abs(at.mid) <= 1 && at.inside, JSON.stringify(at));
+    await page.touchscreen.tap(4, 400);
     await page.waitForTimeout(150);
+    check(`AC-18 a phone: a press on the shade closes ${fab}'s pane`, await page.evaluate((pane) => document.getElementById(pane).hidden, pane));
   }
 
   // Attach: two files uploaded, both paths typed at the cursor, no Enter
@@ -64,7 +70,7 @@ export async function webPhoneRow(browser, name) {
     return route.fulfill({ contentType: "application/json", body: JSON.stringify({ path: `/Users/alex/api/${name}` }) });
   });
   const before = f.sent.length;
-  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.tap("#attachfab")]);
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), pressFab(page, "#attachfab", "tap")]);
   await chooser.setFiles([{ name: "a.png", mimeType: "image/png", buffer: Buffer.from("png") }, { name: "notes b.txt", mimeType: "text/plain", buffer: Buffer.from("hi") }]);
   await page.waitForFunction(() => document.getElementById("toast").hidden, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(200);

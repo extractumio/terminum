@@ -6,7 +6,7 @@
 // text is the theme's size, − and + a step on it, also when an older page kept a size of its own.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, openPage, pause, PHONE, THEME, WIDE } from "./fake.mjs";
+import { drawn, group, item, openPage, pause, PHONE, THEME, WIDE, pressFab } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1", QUICK = "tmux:local:terminum:%9";
 const LAYOUT = [group("main", [item(SID, "api", { agent: "claude", shell: false, state: "working", sub: ["claude", "~/work/api"] }),
@@ -83,7 +83,7 @@ export async function webSplit(browser, name) {
   await pause(p.page, 300);
   const fab = await p.page.evaluate(() => { const b = document.getElementById("splitfab"), r = b.getBoundingClientRect(); return { shown: !b.hidden && r.height >= 44, label: b.getAttribute("aria-label") }; });
   const from = p.sent.length;
-  await p.page.click("#splitfab");
+  await pressFab(p.page, "#splitfab");
   await pause(p.page, 200);
   const opened = p.sent.slice(from).filter((m) => m.t === "quick").map((m) => m.id);
   check("split on a phone: the button under the magnifier (finger-sized) opens the pane's quick shell, shown alone",
@@ -91,7 +91,7 @@ export async function webSplit(browser, name) {
   p.say({ t: "quickmade", id: QUICK });                                   // terminumd made it (or found it): the phone shows it
   await p.page.waitForFunction((id) => document.querySelector(`#sessions .item.on[data-id="${id}"]`), QUICK, { timeout: 3000 }).catch(() => {});
   const onQuick = await p.page.evaluate(() => document.getElementById("splitfab").getAttribute("aria-label"));
-  await p.page.click("#splitfab");
+  await pressFab(p.page, "#splitfab");
   await p.page.waitForFunction((id) => document.querySelector(`#sessions .item.on[data-id="${id}"]`), SID, { timeout: 3000 }).catch(() => {});
   const back = await p.page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id);
   check("split on a phone: on the quick shell the button leads back to its pane", onQuick === "Back to its pane" && back === SID, JSON.stringify({ onQuick, back }));

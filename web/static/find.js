@@ -76,7 +76,8 @@ export class Find {
   }
 
   place() {
-    if (!$("findfab").hidden) placeBeside($("findfab"), $("findbox"));
+    const at = document.body.classList.contains("folding") ? $("foldfab") : $("findfab");   // a phone: beside ⟨…⟩ (fold.js)
+    if (!at.hidden) placeBeside(at, $("findbox"));
   }
 
   say(text) { $("findn").textContent = text; }

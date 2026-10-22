@@ -1,0 +1,20 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A phone's floating buttons folded into one (AC-18, fold.js), hidden while a finger scrolls; a
+   selection's Copy, [+] and Ask in their place (AC-37, markpick.js). Its look is the column's
+   (find.css), its size a finger's (controls.css). */
+@media (hover: none), (max-width: 860px) {
+  /* folded: the column out of sight until ⟨…⟩ unfolds it */
+  body.folding:not(.unfolded) :is(#findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
+  /* a selection's three stand there: ⟨…⟩ and its column make way (a wide window: they stand left of the column) */
+  body:has(#markcopy:not([hidden])) :is(#foldfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
+}
+#foldfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
+/* folded, it says what the column holds: the bookmarks' count, the reminders' pink (its ring filled when due, no blink) */
+#foldfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
+  font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
+#foldfabn:empty { display: none; }
+#foldfab.remind { color: var(--remind-bell); }
+#foldfab.due { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
+/* a finger scrolling the terminal: every floating button out of sight, taking no tap, until it lifts and the scroll stops */
+#fabs { transition: opacity var(--dur-hover); }   /* the blobs fade by motion.css */
+body.scrolling :is(#foldfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab, #fabs, #bottom) { opacity: 0; pointer-events: none; }

@@ -19,6 +19,7 @@
 <link rel="stylesheet" href="projects.css">
 <link rel="stylesheet" href="listdrag.css">
 <link rel="stylesheet" href="dock.css">
+<link rel="stylesheet" href="fold.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="grain.css">
@@ -164,6 +165,8 @@
     <button id="marksfab" type="button" hidden title="Bookmarks of this session" aria-label="Bookmarks of this session" aria-expanded="false" aria-controls="markpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/></svg><span id="marksfabn"></span></button>
     <div id="markpane" class="box scrolls" role="region" aria-label="Bookmarks of this session" hidden></div>
     <!-- Search of the session's history (AC-58): the magnifier, its field, its matches' marks. -->
+    <!-- A phone's floating buttons folded into one (AC-18, fold.js): a tap shows them for 3 s. -->
+    <button id="foldfab" type="button" hidden title="More buttons" aria-label="More buttons" aria-expanded="false"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="m7 7-5 5 5 5"/><path d="m17 7 5 5-5 5"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/></svg><span id="foldfabn"></span></button>
     <button id="findfab" type="button" hidden title="Find in this session" aria-label="Find in this session" aria-expanded="false" aria-controls="findbox"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg></button>
     <!-- The view split: the pane's quick shell below (AC-88), under the magnifier; ⌘D on the right, ⌘⇧D below. -->
     <button id="splitfab" type="button" hidden title="Split: a terminal below (⌘⇧D; on the right: ⌘D)" aria-label="Split the view: a terminal below"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M5 8V5c0-1 1-2 2-2h10c1 0 2 1 2 2v3"/><path d="M19 16v3c0 1-1 2-2 2H7c-1 0-2-1-2-2v-3"/><path d="M4 12h16"/></svg></button>

@@ -10,16 +10,8 @@
 #askfab { background: var(--ask); color: var(--ask-ink); animation-delay: -1.75s; }   /* Ask (AC-37), under the [+] */
 :root { --ask: color-mix(in srgb, cornflowerblue 55%, #fff); --ask-ink: #0f1a33; }
 #marksfab { animation-delay: 0s; }   /* in phase with the column's other buttons */
-/* where the keyboard's buttons float: these and the split in a row at the bottom left, at their height (marks.js) */
-@media (hover: none), (max-width: 860px) {
-  :is(#attachfab, #marksfab, #remindfab, #splitfab) { bottom: calc(12px + max(var(--keys-h, 0px), env(safe-area-inset-bottom))); }
-  /* a selection's Copy joins the row on the right: both rows do not fit a phone */
-  body:has(#copyfab:not([hidden]), #markcopy:not([hidden])) :is(#attachfab, #marksfab, #remindfab, #splitfab) { visibility: hidden; }
-}
 @media (hover: hover) and (min-width: 861px) { #attachfab { display: none !important; } }   /* a computer: Upload on the hot keys, or a drop */
 body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* find's field under its magnifier stands there */
-/* a selection's Copy and + stand at the column's place where the buttons float (a wide window: left of it) */
-@media (hover: none), (max-width: 860px) { body:has(#markcopy:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; } }
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
@@ -34,7 +26,7 @@ body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibi
 }
 @media (prefers-reduced-motion: reduce) { #markadd, #markcopy, #askfab, #marksfab, #remindfab { animation: none; } }
 /* only the tab's own page shows the floating buttons: a split's embedded page shows its shell alone */
-body.embed :is(#findfab, #splitfab, #attachfab, #sentfab, #askfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
+body.embed :is(#foldfab, #findfab, #splitfab, #attachfab, #sentfab, #askfab, #marksfab, #remindfab, #findbox, #sentpane, #remindpane, #markpane) { display: none !important; }
 /* one Copy beside a selection: the floating one of a touch screen waits while this one shows */
 body:has(#markcopy:not([hidden])) #fabs #copyfab { display: none !important; }
 #markrail { position: absolute; z-index: 4; width: 16px; pointer-events: none; }

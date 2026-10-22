@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, line, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, group, item, line, openPage, pause, SIZES, pressFab } from "./fake.mjs";
 
 const DIST = path.join(import.meta.dirname, "../../ui/dist");   // the renderers, as terminumd serves them at /fb/
 const SID = "tmux:local:terminum:%1";
@@ -50,7 +50,7 @@ export async function webSent(browser, name) {
     check("sent: its button stands under find (a phone's split is in the row at the bottom left)", at.shown && at.below && at.aligned, JSON.stringify(at));
     const menu = await page.evaluate(() => { const c = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return r.left + r.width / 2; }; return Math.round(c("menubtn") - c("findfab")); });
     check("the header's ⋯ stands right over the floating buttons' column (its middle on the magnifier's)", Math.abs(menu) <= 1, String(menu));
-    await page.click("#sentfab");
+    await pressFab(page, "#sentfab");
     await page.waitForFunction(() => document.querySelector("#spbody strong")?.textContent === "tests", null, { timeout: 5000 }).catch(() => {});
     const shown = await page.evaluate(() => ({ pos: document.getElementById("sppos").textContent, where: document.getElementById("spwhere").textContent,
       md: document.querySelector("#spbody strong")?.textContent, newer: document.getElementById("spnewer").disabled, inView: (() => { const r = document.getElementById("sentpane").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })() }));
@@ -67,7 +67,7 @@ export async function webSent(browser, name) {
     const asked = sent.slice(k).find((m) => m.t === "locate");
     check("sent: Jump to message asks terminumd for its text (no line: kept without one); found, the pane closes",
       asked?.text === "ls -la" && asked.n === undefined && await page.evaluate(() => document.getElementById("sentpane").hidden), JSON.stringify(asked));
-    await page.click("#sentfab");
+    await pressFab(page, "#sentfab");
     await page.waitForFunction(() => document.querySelector("#spbody strong")?.textContent === "tests", null, { timeout: 5000 }).catch(() => {});
     k = sent.length;
     await page.click("#spjump");
@@ -141,7 +141,7 @@ export async function webSent(browser, name) {
       check("Settings' Side marks: on by default; off hides the right edge's marks, is kept in this browser and asks terminumd no more; on brings them back",
         onAtFirst && off.rail === "none" && off.kept === "false" && !asked && back !== "none", JSON.stringify({ onAtFirst, off, asked, back }));
     } else check("the right edge's message marks: none on a phone (the bookmarks' own marks there)", !strip.shown, JSON.stringify(strip));
-    await page.click("#remindfab");
+    await pressFab(page, "#remindfab");
     await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
     const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
       acts: [...document.querySelectorAll(".rmacts button")].map((b) => b.textContent), due: document.getElementById("remindfab").classList.contains("due") }));
@@ -189,7 +189,7 @@ export async function webSent(browser, name) {
         b("Q1", "tmux:local:terminum:%2", "Q", "of the docs project"), b("H1", "tmux:devbox:default:%1", undefined, "host one", { host: "devbox" }),
         b("O1", "tmux:local:terminum:%9", "P", "orphan one", { orphaned: 1792000100 }), b("R2", "tmux:local:terminum:%9", undefined, "orphan reminder", { remind: true, orphaned: 1792000100 })] });
       await pause(page, 300);
-      await page.click("#marksfab");
+      await pressFab(page, "#marksfab");
       await pause(page, 200);
       const pane = await page.evaluate(() => [...document.querySelectorAll("#markpane .mkitem")].map((i) => `${i.querySelector(".note").textContent}${i.querySelector(".closed") ? ":" + i.querySelector(".closed").textContent : ""}`));
       const head = await page.textContent("#markpane h2");
@@ -213,19 +213,19 @@ export async function webSent(browser, name) {
       // the bell's pane is the shown session's: another session shown, it closes (it stayed, over the other session, at the window's corner)
       f.say({ t: "marks", items: [REMINDER] });
       await pause(page, 300);
-      await page.click("#remindfab");
+      await pressFab(page, "#remindfab");
       await page.waitForSelector("#remindpane:not([hidden])", { timeout: 3000 }).catch(() => {});
       const before = await page.isVisible("#remindpane");
       const shaded = await page.evaluate(() => !document.getElementById("panescrim")?.hidden);
       await page.mouse.click(5, 5);                                   // outside the pane: on its shade
       await pause(page, 200);
       const closed = await page.evaluate(() => document.getElementById("remindpane").hidden && document.getElementById("panescrim").hidden);
-      await page.click("#remindfab");
+      await pressFab(page, "#remindfab");
       await page.waitForSelector("#remindpane:not([hidden])", { timeout: 3000 }).catch(() => {});
       await page.keyboard.press("Escape");                           // the keys are the pane's while it is open
       await pause(page, 200);
       const esc = await page.evaluate(() => document.getElementById("remindpane").hidden);
-      await page.click("#remindfab");
+      await pressFab(page, "#remindfab");
       await page.waitForSelector("#remindpane:not([hidden])", { timeout: 3000 }).catch(() => {});
       f.say({ t: "marks", items: [] });                               // its reminders gone (another session's shown): it closes
       await pause(page, 400);

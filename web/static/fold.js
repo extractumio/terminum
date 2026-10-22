@@ -1,0 +1,97 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// A phone's floating buttons (AC-18): on a touch screen or a narrow window every floating button
+// but the keyboard's (#fabs) folds into one ⟨…⟩ at the terminal's top right, where find stood
+// (marks.js placeFab puts the others in a column under it). A tap unfolds them; 3 s later they
+// fold again, at once when one is pressed, the page is touched elsewhere or the terminal scrolls;
+// a finger or the focus on the column holds them. A press on ⟨…⟩ or one of them first puts the
+// on-screen keyboard and the hot keys away (away()), so the terminal is seen whole. Folded, it carries the bookmarks' count and the
+// reminders' pink. While text is selected the selection's Copy, [+] and Ask stand there instead
+// (markpick.js). From a finger's first move scrolling the terminal to its lift, every floating
+// button is out of sight (body.scrolling, fold.css), so the text under them can be read.
+
+const $ = (id) => document.getElementById(id);
+export const FLOATING = "(hover: none), (max-width: 860px)";   // where the buttons float: the page's one query of it (style.css's #fabs)
+let floatsQuery = null;
+/** Whether the buttons float now (one MediaQueryList, made when first asked: the per-frame paths ask). */
+export const floats = () => (floatsQuery ??= matchMedia(FLOATING)).matches;
+// the folded buttons in their column's order: the plain ones, then set apart the colored ones (marks.js placeFab)
+export const FOLDED = ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"];
+const FOR = 3000;              // ms the column stays unfolded
+const SCROLL = 10;             // px a finger moves before it scrolls
+const SETTLE = 250;            // ms without a scroll after the lift before they come back
+
+/** away(): the on-screen keyboard and the hot keys panel put away. */
+export function fabFold({ away }) {
+  const fold = $("foldfab"), body = document.body;
+  let timer = 0, holding = false;
+  const inColumn = (el) => FOLDED.some((id) => $(id).contains(el));
+  const unfolded = () => body.classList.contains("unfolded");
+  const close = () => {
+    clearTimeout(timer); timer = 0;
+    body.classList.remove("unfolded");
+    fold.setAttribute("aria-expanded", "false");
+  };
+  const arm = () => {
+    clearTimeout(timer);
+    timer = setTimeout(() => (holding || inColumn(document.activeElement) ? arm() : close()), FOR);
+  };
+  fold.addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
+  fold.addEventListener("click", () => {
+    away();
+    if (unfolded()) return close();
+    body.classList.add("unfolded");
+    fold.setAttribute("aria-expanded", "true");
+    arm();
+  });
+  // a press elsewhere folds them; one on the column holds them until it lifts
+  document.addEventListener("pointerdown", (e) => {
+    if (!unfolded()) return;
+    if (inColumn(e.target)) holding = true;
+    else if (!fold.contains(e.target)) close();
+  }, true);
+  const letGo = () => { if (holding) { holding = false; if (unfolded()) arm(); } };
+  document.addEventListener("pointerup", letGo, true);
+  document.addEventListener("pointercancel", letGo, true);
+  for (const id of FOLDED) {
+    $(id).addEventListener("pointerdown", () => { if (floats()) away(); });   // before its own click: find's field may take the keys
+    $(id).addEventListener("click", () => { if (unfolded()) setTimeout(close); });   // its pane or field opens
+  }
+
+  // a finger scrolling the terminal (or swiping over the input, kbdtouch.js) hides them all until it
+  // lifts and the terminal stops (its momentum after the lift: SETTLE ms without a scroll)
+  let startY = null, settle = 0;
+  const mine = (e) => !!e.target.closest?.("#termrow, #kbd, #bottom");
+  const settled = () => { clearTimeout(settle); settle = setTimeout(() => body.classList.remove("scrolling"), SETTLE); };
+  $("term").addEventListener("scroll", () => { if (startY === null && body.classList.contains("scrolling")) settled(); }, { passive: true });
+  document.addEventListener("touchstart", (e) => { startY = mine(e) && e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true, capture: true });
+  document.addEventListener("touchmove", (e) => {
+    if (startY === null || body.classList.contains("scrolling") || !floats()) return;
+    if (Math.abs(e.touches[0].clientY - startY) > SCROLL) { clearTimeout(settle); body.classList.add("scrolling"); close(); }
+  }, { passive: true, capture: true });
+  const lift = () => { startY = null; if (body.classList.contains("scrolling")) settled(); };
+  document.addEventListener("touchend", lift, { passive: true, capture: true });
+  document.addEventListener("touchcancel", lift, { passive: true, capture: true });
+
+  // Esc folds them, the keys back on ⟨…⟩
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !unfolded()) return;
+    const inside = inColumn(document.activeElement);
+    close();
+    if (inside) fold.focus();
+  });
+
+  /** The fold where the buttons float and the column shows, with what they say: after placeFab
+   *  (it sets the buttons and the count), and when a reminder falls due (reminders.js sets the bell's class). */
+  function sync() {
+    const on = floats() && !$("findfab").hidden, remind = $("remindfab");
+    body.classList.toggle("folding", on);
+    if (fold.hidden !== !on) fold.hidden = !on;
+    if (!on) close();
+    const n = on && !$("marksfab").hidden ? $("marksfabn").textContent : "";
+    if ($("foldfabn").textContent !== n) $("foldfabn").textContent = n;
+    fold.classList.toggle("remind", on && !remind.hidden);
+    fold.classList.toggle("due", on && !remind.hidden && remind.classList.contains("due"));
+  }
+  new MutationObserver(sync).observe($("remindfab"), { attributes: true, attributeFilter: ["class"] });
+  return { sync };
+}

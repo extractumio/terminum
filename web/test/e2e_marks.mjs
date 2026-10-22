@@ -7,6 +7,7 @@
 // Alone: node web/test/e2e_marks.mjs [chromium|webkit].
 
 import { fileURLToPath } from "node:url";
+import { pressFab } from "./fake.mjs";
 import { check, cleanup, playwright, results } from "./check.mjs";
 import { askChecks } from "./e2e_ask.mjs";
 import { open } from "./e2e_widgets.mjs";
@@ -114,7 +115,7 @@ const inView = (m) => m && m.top >= 0 && m.top < m.h;
 
 /** Brings the shown session's bookmark noted `text` into view from its pane (the top right button). */
 async function fromPane(page, text) {
-  if (await page.evaluate(() => document.getElementById("markpane").hidden)) await page.click("#marksfab");
+  if (await page.evaluate(() => document.getElementById("markpane").hidden)) await pressFab(page, "#marksfab");
   await page.click(`#markpane .mkitem:has-text("${text}")`);
 }
 
@@ -199,12 +200,12 @@ export async function webMarks(browser, name = "") {
   // renaming the session (the pencil) keeps its bookmarks: they belong to the pane, which keeps its id
   say({ t: "layout", groups: [{ ...LAYOUT[0], items: [{ ...LAYOUT[0].items[0], title: "Renamed one" }, LAYOUT[0].items[1]] }] });
   await page.waitForFunction(() => document.querySelector('#sessions .item[data-id="S1"] .t')?.textContent === "Renamed one");
-  await page.click("#marksfab");
+  await pressFab(page, "#marksfab");
   const renamed = await page.evaluate(() => ({
     rail: document.querySelectorAll("#msgrail .dot.mark").length, strip: !!document.querySelector('#sessions .item[data-id="S1"] .wave.mark'),
     fab: document.getElementById("marksfabn").textContent, listed: document.querySelectorAll("#markpane .mkitem").length,
     head: document.querySelector("#markpane h2")?.textContent }));
-  await page.click("#marksfab");
+  await pressFab(page, "#marksfab");
   check(`${at} a renamed session keeps its bookmarks (marks, strip, count); outside projects its pane lists its own`,
     renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.listed) && renamed.listed >= 6 && renamed.head === "Bookmarks of this session", JSON.stringify(renamed));
 
@@ -226,14 +227,14 @@ export async function webMarks(browser, name = "") {
     && await page.evaluate(() => !CSS.highlights?.has("bookmark") && getComputedStyle(document.getElementById("markline")).backgroundImage.includes("svg")), JSON.stringify(m));
 
   // this session's bookmarks from the button at the terminal's top right: a toggle
-  await page.click("#marksfab");
+  await pressFab(page, "#marksfab");
   const pane = await page.evaluate(() => ({ open: !document.getElementById("markpane").hidden,
     items: [...document.querySelectorAll("#markpane .mkitem .note")].map((n) => n.textContent),
     count: document.getElementById("marksfabn").textContent }));
   await page.mouse.click(30, 300);                                 // a press elsewhere closes it
   const outside = await page.evaluate(() => document.getElementById("markpane").hidden);
-  await page.click("#marksfab");
-  await page.click("#marksfab");
+  await pressFab(page, "#marksfab");
+  await pressFab(page, "#marksfab");
   const paneClosed = await page.evaluate(() => document.getElementById("markpane").hidden) && outside;
   check(`${at} the button at the top right opens this session's bookmarks, top to bottom; pressed again it closes them`,
     pane.open && paneClosed && pane.items[0] === "gone" && pane.items.includes("look again") && !pane.items.includes("closed one") && pane.count === String(pane.items.length) && pane.count !== "0",
@@ -282,7 +283,7 @@ export async function webMarks(browser, name = "") {
   const at58 = at.replace("AC-57", "AC-58");
   const fabs = await page.evaluate(() => ["findfab", "splitfab", "sentfab", "marksfab"].map((id) => document.getElementById(id)).filter((b) => b.offsetHeight)
     .map((b) => !b.hidden && { left: Math.round(b.getBoundingClientRect().left), top: Math.round(b.getBoundingClientRect().top), h: Math.round(b.getBoundingClientRect().height) }));
-  await page.click("#findfab");
+  await pressFab(page, "#findfab");
   const focused = await page.evaluate(() => document.activeElement?.id);
   await page.fill("#findq", "alpha");
   await page.click('#findbox button[type="submit"]');
@@ -366,7 +367,7 @@ export async function webMarks(browser, name = "") {
   say({ t: "projects", items: [{ id: "P", name: "Work", color: 0, host: null, dir: "~/p", members: ["S1", "S2"] }] });
   say({ t: "mark", item: { ...ITEMS[0], project: "P" } });
   await page.waitForFunction(() => !document.getElementById("marksfab").hidden);
-  await page.click("#marksfab");
+  await pressFab(page, "#marksfab");
   const head = await page.textContent("#markpane h2");
   await page.click('#markpane .mkitem:has-text("ask about the retry loop")');
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});

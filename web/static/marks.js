@@ -10,14 +10,14 @@ import { placeBeside } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, railBox, railSlots } from "./marktext.js";
+import { floats, FOLDED } from "./fold.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
 const ARMED = 3000;            // ms a Delete pressed once waits for the second press
 // the floating buttons at the terminal's top right, top down: the plain ones, then the colored ones together;
-// where the keyboard's buttons float (a phone, a narrow window), LOW stand in a row at the bottom left
-const PLAIN = ["findfab", "splitfab", "sentfab", "attachfab"], COLORED = ["marksfab", "remindfab"], LOW = ["attachfab", "marksfab", "remindfab", "splitfab"];
-const FLOATING = "(hover: none), (max-width: 860px)";   // style.css's #fabs
+// where the keyboard's buttons float (a phone, a narrow window) they fold under ⟨…⟩ (fold.js)
+const PLAIN = FOLDED.slice(0, 4), COLORED = FOLDED.slice(4);
 
 export const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -246,7 +246,7 @@ export class Marks {
     const rail = $("markrail"), term = this.term, v = this.view, mine = this.mine();
     const box = railBox(term);
     // a wide window has them on the strip at the left (promptrail.js)
-    if (!mine.length || !box || !v.theme || !matchMedia(FLOATING).matches) { rail.hidden = true; this.railKey = ""; return; }
+    if (!mine.length || !box || !v.theme || !floats()) { rail.hidden = true; this.railKey = ""; return; }
     const { css, h } = box;
     const slots = railSlots(mine, v.oldest, v.top + v.screen.length, h - 14);
     const key = css + JSON.stringify(slots);       // the screen changes often; the marks seldom
@@ -343,8 +343,8 @@ export class Marks {
   /** The floating buttons stand in one column at the terminal's top right, left of the marks:
    *  find, the split and the sent history; then, set apart, the colored ones: this session's
    *  bookmarks (with their number, while it has one) and the reminders (while one is open). Where
-   *  the keyboard's buttons float, Attach (only there), the bookmarks, the reminders and the split
-   *  stand in a row at the bottom left instead, under the input, at the height of those (marks.css). */
+   *  the keyboard's buttons float, ⟨…⟩ stands first and the column, Attach in it (only there), under
+   *  it, shown while it is unfolded (fold.js). */
   placeFab() {
     const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
@@ -357,17 +357,16 @@ export class Marks {
     if ($("marksfab").hidden) this.togglePane(false);
     if (!shown) return;
     const left = `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
-    const low = matchMedia(FLOATING).matches ? LOW : [], shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
+    const shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
     let y = term.offsetTop + 14;
+    if (floats()) { Object.assign($("foldfab").style, { top: `${y}px`, left }); y += ($("foldfab").offsetHeight || 44) + 12; }
     for (const group of [PLAIN, COLORED]) {
-      for (const b of shownOf(group.filter((id) => !low.includes(id)))) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 12; }
+      for (const b of shownOf(group)) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 12; }
       y += 8;                                      // the colored ones set apart
     }
-    let x = term.offsetLeft + term.clientLeft + 12;
-    for (const b of shownOf(low)) { Object.assign(b.style, { top: "", left: `${x}px` }); x += b.offsetWidth + 10; }
+    this.onPlaced?.();                             // first: ⟨…⟩ folds or not (fold.js), which find's field stands by
     this.search.place();
     if (!$("markpane").hidden) this.placePane();
-    this.onPlaced?.();
   }
   placePane() { placeBeside($("marksfab"), $("markpane")); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */

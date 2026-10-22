@@ -97,6 +97,14 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
   return { page, context, sent, requests, sockets, errors, say: (m) => say(m), close: () => context.close() };
 }
 
+/** Presses a floating button; on a phone a folded one once ⟨…⟩ unfolds the column (fold.js, AC-18). */
+export async function pressFab(page, sel, how = "click") {
+  const folded = await page.evaluate((s) => document.body.classList.contains("folding") && !document.body.classList.contains("unfolded")
+    && getComputedStyle(document.querySelector(s)).visibility === "hidden", sel);
+  if (folded) { await page[how]("#foldfab"); await page.waitForTimeout(60); }
+  await page[how](sel);
+}
+
 /** Waits until the page drew the shown pane's screen. */
 export const drawn = (page) => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 0, null, { timeout: 10000 });
 export const pause = (page, ms = 150) => page.waitForTimeout(ms);

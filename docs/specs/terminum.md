@@ -641,8 +641,12 @@ Scenario: AC-17 security — untrusted text
 ```gherkin
 Scenario: AC-18 happy path — the panel
   Given a touch screen or a window narrower than 861 px
-  Then two floating buttons at the bottom right open and close the keyboard and the hot keys panel (hidden until asked, remembered per browser), with the copy button beside them while terminal text is selected and the ⓘ button for an agent's status lines
-  And at the bottom left, across from them and under the input, a row of Attach (several files uploaded where the pane's shell runs, their paths typed at the cursor as Upload does, without Enter), the bookmarks' button, the reminders' bell and the split (AC-57, AC-91, AC-88), each while it applies; the magnifier and the sent history stay at the top right; while a selection's Copy shows, the row is out of sight (both rows do not fit a phone); a pane opened from the row opens above it; a computer has no Attach (Upload, a drop)
+  Then two floating buttons at the bottom right open and close the keyboard and the hot keys panel (hidden until asked, remembered per browser), with the ⓘ button for an agent's status lines
+  And every other floating button (find, the sent history, Attach: several files uploaded where the pane's shell runs, their paths typed at the cursor as Upload does, without Enter; the bookmarks, the reminders' bell, the split: AC-57, AC-91, AC-88; each while it applies) folds into one button ⟨…⟩ at the terminal's top right, where find stood; it carries the bookmarks' count and the reminders' pink (a ring while one is up, no blink) while they have them; a tap unfolds them in a column under it, and 3 s later (a finger on the column holds them; a press on one, a tap elsewhere or a scroll sooner) they fold again; find's field opens at the top right where the fold stands, a pane opened from one opens centered (below); a computer keeps its column and has no Attach (Upload, a drop)
+  And while terminal text is selected, Copy, [+] and Ask stand in that place instead (AC-37, AC-57)
+  And while a finger scrolls the terminal, from its first move until it lifted and the terminal stopped scrolling, every floating button ("To the bottom" too) is out of sight (the text under them can be read) and takes no tap
+  And every dialog, pane and menu (the ⋯ menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside), modal: the page shaded behind it, a press outside or Esc closes it
+  And a press on ⟨…⟩ or a button of its column first puts the on-screen keyboard and the hot keys panel away
   And a coding agent's input box is a tint of the terminal's colors with no frame
   And Files and View, shown in the terminal's place, fill the whole space under the tabs
   And the panel is four rows of six as iterm-enhancer's: Copy, Paste, Upload, ⇧↩, Tab, Enter; Esc, ^C, ^D, ^Z, ^R, Fn; Ctrl, Alt, arrows; Home, End, PgUp, PgDn, ⇧←, ⇧Tab; Fn swaps the last two rows for F1–F12
@@ -699,14 +703,14 @@ Scenario: AC-20 failure — a budget is missed
 
 ```gherkin
 Scenario: AC-88 edge — the split's buttons
-  Then a computer splits with the header's button (and ⌘D, ⌘⇧D, the menu's Split below, right, left), a phone with the button in the row at the bottom left (AC-18); a split's page shows none of the terminal's floating buttons
+  Then a computer splits with the header's button (and ⌘D, ⌘⇧D, the menu's Split below, right, left), a phone with the split among the folded floating buttons (AC-18); a split's page shows none of the terminal's floating buttons
 Scenario: AC-88 happy path — open, use, close
   Given the page on a computer shows pane %3 (claude) in /Users/alex/work/api
   When the user presses the quick shell button in the header (or "Quick shell below" / "Quick shell on the left" in the menu)
   Then terminumd runs "new-window -d -a -t @2 -c '/Users/alex/work/api'" and marks the new window with "@tm-quick %3", and the page shows its shell under the terminal (or on its left) in a third of the view, its keys going there while it has the focus; its row in the list sits under %3's, as "quick shell"
   When the user drags the edge between the two
   Then both terminals resize when the drag ends (6 rows or 20 columns at least, 80 % at most), and this browser remembers the share for that side
-  When the user presses ⌘D, or ⌘⇧D or the split button (under the magnifier at the terminal's top right; a phone's at the bottom left) (as iTerm2's splits)
+  When the user presses ⌘D, or ⌘⇧D or the split button (under the magnifier at the terminal's top right; a phone's among the folded floating buttons) (as iTerm2's splits)
   Then the pane's quick shell opens on the right (⌘D) or below, or the one it has moves there; the browser's own ⌘D (bookmark) does not come
   When the user presses ⇄ on its bar
   Then it moves to the other side

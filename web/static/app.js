@@ -35,6 +35,7 @@ import { uploads } from "./upload.js";
 import { waitingCards } from "./waiting.js";
 import { Widgets } from "./widgets.js";
 import { Marks } from "./marks.js";
+import { fabFold } from "./fold.js";
 import { promptRail } from "./promptrail.js";
 import { askBox } from "./ask.js";
 import { recentSessions } from "./recent.js";
@@ -324,7 +325,8 @@ const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: ()
 const ask = askBox({ send, toChat: (text) => bookmarks.toChat(text), keys: (data) => input.type(data, "ask"), agent: () => !!itemOf(st.sid)?.agent });
 bookmarks.onAsk = (text) => ask.open(text);
 const reminded = reminderBox({ marks: bookmarks, send });
-bookmarks.onPlaced = () => { sent.place(); reminded.place(); };
+const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
+bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
 function drawNav() {
   if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);
   reminders.show(st.sid);
