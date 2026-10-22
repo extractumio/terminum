@@ -2,7 +2,7 @@
 // Sent history (AC-90) and reminders (AC-91) against a fake terminumd (fake.mjs), at a wide and
 // a phone size: Enter at a shell prompt tells what it sends before the key; the button under the
 // split opens the last one as Markdown, ↑ asks for the one before; a reminder up makes the pale
-// fuchsia button blink until it is pressed, its pane shows it as Markdown with Resolve; the
+// fuchsia button stand, its count filled, until it is pressed, its pane shows it as Markdown with Resolve; the
 // dialog makes a reminder; the session list's strip is fuchsia for a session with one.
 
 import fs from "node:fs";
@@ -82,23 +82,21 @@ export async function webSent(browser, name) {
     check("sent: Insert into chat pastes the message as it was sent, no Enter; the pane closes; its button looks as a reminder's",
       inserted.includes("fix the **tests**") && !inserted.replace(/\x1b\[201~$/, "").endsWith("\r") && await page.evaluate(() => document.getElementById("sentpane").hidden), JSON.stringify(inserted));
 
-    // a reminder up: the button blinks until pressed; its pane: Markdown, Resolve
+    // a reminder up: the button stands with its count filled until pressed, never blinking (the owner); its pane: Markdown, Resolve
     f.say({ t: "marks", items: [REMINDER, { ...REMINDER, id: "B1", remind: false, due: false, note: "a bookmark" }] });
     await pause(page, 300);
     await page.emulateMedia({ reducedMotion: "no-preference" });       // the others run with reduced motion: no blink anywhere
     const up = await page.evaluate(() => { const b = document.getElementById("remindfab"), n = document.getElementById("remindfabn");
       return { shown: !b.hidden, due: b.classList.contains("due"), n: n.textContent, touch: matchMedia("(hover: none)").matches,
-        blinks: getComputedStyle(b).animationName.includes("remind"), filled: getComputedStyle(n).backgroundColor !== getComputedStyle(document.body).backgroundColor }; });
+        blinks: /remind/.test(getComputedStyle(b).animationName), filled: getComputedStyle(n).backgroundColor !== getComputedStyle(document.body).backgroundColor }; });
     await page.emulateMedia({ reducedMotion: "reduce" });
-    check("reminders: one up shows the button with its count (reminders only), blinking on a touch screen, still with its count filled on a computer",
-      up.shown && up.due && up.n === "1" && up.blinks === up.touch && (up.touch || up.filled), JSON.stringify(up));
+    check("reminders: one up shows the button with its count (reminders only) filled, blinking nowhere",
+      up.shown && up.due && up.n === "1" && !up.blinks && up.filled, JSON.stringify(up));
     const look = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect(), cs = (id) => getComputedStyle(g(id));
-      const row = matchMedia("(hover: none), (max-width: 860px)").matches;   // a phone's: beside it in the row at the bottom left
-      return { marks: !g("marksfab").hidden, under: row ? r("remindfab").left > r("marksfab").right && Math.abs(r("remindfab").top - r("marksfab").top) < 1
-        : r("remindfab").top > r("marksfab").bottom && Math.abs(r("remindfab").left - r("marksfab").left) < 1,
+      return { marks: !g("marksfab").hidden, under: r("remindfab").top > r("marksfab").bottom && Math.abs(r("remindfab").left - r("marksfab").left) < 1,   // a phone's too, in the folded column
         size: r("remindfab").width === r("marksfab").width, shadow: cs("remindfab").boxShadow === cs("marksfab").boxShadow,
         fill: cs("remindfab").backgroundColor === cs("findfab").backgroundColor, pink: cs("remindfab").color !== cs("findfab").color }; });
-    check("reminders: the bell stands under the bookmarks' button (a phone's: right of it), as large, the same shadow, no glow; the plain buttons' fill, the bell itself pink",
+    check("reminders: the bell stands under the bookmarks' button (a phone's in the folded column too), as large, the same shadow, no glow; the plain buttons' fill, the bell itself pink",
       look.marks && look.under && look.size && look.shadow && look.fill && look.pink, JSON.stringify(look));
     // the marks on the right edge (a wide window): the message sent (white) and, on one line, the bookmark and the reminder (pink over orange)
     await page.waitForFunction(() => document.querySelectorAll("#msgrail .dot").length >= 2, null, { timeout: 3000 }).catch(() => {});
@@ -145,7 +143,7 @@ export async function webSent(browser, name) {
     await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
     const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
       acts: [...document.querySelectorAll(".rmacts button")].map((b) => b.textContent), due: document.getElementById("remindfab").classList.contains("due") }));
-    check("reminders: pressed, it blinks no more; its note as Markdown, its text quoted, Open, Insert into chat, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
+    check("reminders: pressed, it is marked no more; its note as Markdown, its text quoted, Open, Insert into chat, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
       && pane.acts.join() === "Open,Insert into chat,Close,Delete,Resolve" && !pane.due, JSON.stringify(pane));
     await page.click(".rmacts .primary");
     await pause(page, 100);

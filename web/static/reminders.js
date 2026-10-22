@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Reminders (AC-91): bookmarks of the Reminder kind, of a project or a session (projects.js).
 // terminumd puts one up each time an agent there ends a turn; then the pale fuchsia button under the
-// bookmarks' blinks while a session of the project is shown, until it is pressed (one seen there
-// blinks again only once up anew). It opens the project's open reminders as Markdown, those up
+// bookmarks' shows its count filled while a session of the project is shown, until it is pressed (one
+// seen there is marked again only once up anew). It opens the project's open reminders as Markdown, those up
 // first: Open shows its session at its text, Insert into chat pastes its note and text into the shown
 // pane's input, Close puts it down until the next turn ends,
 // Resolve ends it, Delete (twice) removes it. The session list marks a session with open reminders
@@ -22,7 +22,7 @@ export function openReminders(items) {
 /** marks: marks.js's Marks (its items, alive, jump; it shows and places this button with the
  *  bookmarks'); send(msg) to terminumd. */
 export function reminders({ marks, send }) {
-  const seen = new Set();          // reminders up that the user saw in the pane: they blink no more
+  const seen = new Set();          // reminders up that the user saw in the pane: no longer marked
   let drawn = "", of = null;       // what the pane shows, as its key: drawn again only when it changes; the session it opened over
   const fab = $("remindfab");
   const pane = fabPane({ fab, pane: $("remindpane"), close: $("remindclose"), onToggle: (on) => { of = on ? marks.sid() : null; drawn = ""; draw(); } });
@@ -31,7 +31,7 @@ export function reminders({ marks, send }) {
 
   function draw() {
     const all = openReminders(marks.here()), up = all.filter((i) => i.due).length;   // the shown pane's project's
-    for (const id of seen) if (!all.some((i) => i.id === id && i.due)) seen.delete(id);   // put down: blinks when up again
+    for (const id of seen) if (!all.some((i) => i.id === id && i.due)) seen.delete(id);   // put down: marked when up again
     if (pane.open()) for (const i of all) if (i.due) seen.add(i.id);
     fab.classList.toggle("due", all.some((i) => i.due && !seen.has(i.id)));
     $("remindfabn").textContent = all.length ? String(all.length) : "";

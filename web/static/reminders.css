@@ -1,21 +1,19 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* Reminders (AC-91): the button with a pale fuchsia bell beside the bookmarks' (blinking while
-   one is up and unseen), its pane of reminders as Markdown, the strip in the session list, the dialog's
+/* Reminders (AC-91): the button with a pale fuchsia bell beside the bookmarks' (its count filled
+   while one is up and unseen), its pane of reminders as Markdown, the strip in the session list, the dialog's
    primary when the kind is Reminder. Fuchsia on every profile: it says "reminder". */
 :root { --remind: #e8a3dc; --remind-ink: #2a0f25; --remind-text: color-mix(in srgb, var(--remind) 55%, var(--t-fg)); }   /* text: readable on a light theme too */
-/* the bell: the plain buttons' fill (find.css), the bell itself fuchsia; up and unseen, it blinks, no glow */
-#remindfab { background: var(--surface-3); color: var(--remind); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation-delay: 0s; }
-:root.light #remindfab { color: oklch(.56 .15 340); }   /* the pale one is too faint on a light fill: the same hue, deeper */
-/* up and unseen: it blinks on a touch screen; on a computer it stands still, its count filled */
+/* the bell: the plain buttons' fill (find.css), the bell itself fuchsia; up and unseen, its count filled: no blink, no glow */
+/* the bell's ink: the pale one is too faint on a light fill, there the same hue deeper */
+:root { --remind-bell: var(--remind); }
+:root.light { --remind-bell: oklch(.56 .15 340); }
+#remindfab { background: var(--surface-3); color: var(--remind-bell); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation-delay: 0s; }
+/* up and unseen: it stands still, its count filled (the owner: nothing blinks) */
 #remindfab.due #remindfabn { background: var(--remind-ink); color: var(--remind); border-color: var(--remind-ink); }
-@media (hover: none) { #remindfab.due { animation: blob 7s ease-in-out infinite, remind 1s steps(2, jump-none) infinite; } }
 #remindfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--remind); }
 #remindfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--remind-text); border: 1px solid var(--remind); }
 #remindfabn:empty { display: none; }
-@keyframes remind { 50% { opacity: .3; } }
-/* up with Reduce Motion: no blink there either */
-@media (prefers-reduced-motion: reduce) { #remindfab.due { animation: none; } }
 body:not([data-shown="term"]) :is(#remindfab, #remindpane) { display: none !important; }
 body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
 

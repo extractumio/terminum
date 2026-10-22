@@ -82,7 +82,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   selection quoted as "Quote #0007", your question and a rule into the input, without Enter.
   The number counts up per session.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
-  of its project ends a turn (on a phone it blinks). Close puts it down until the next turn ends,
+  of its project ends a turn, its count filled. Close puts it down until the next turn ends,
   Resolve ends it. Insert into chat, on a reminder, a bookmark's bar or a sent message, pastes it
   (a bookmark's note and its text) into the session's input, without Enter.
   Bookmarks and reminders made in a project's session show in every session of that project;

@@ -16,6 +16,7 @@ Change log:
 | Version | Date | Change |
 |---|---|---|
 | 0.4.2 | 2026-10-22 | Owner: iOS's menu still came over a finger's selection: the page now clears the selection when the finger leaves it and makes it again 120 ms later (measured in the iPhone simulator: a frame later the menu stays; 120 ms puts it away, the handles kept), after every lift, a tap on the selection too (AC-37). |
+| 0.4.1 | 2026-10-22 | Owner: the reminders' bell blinks nowhere: up, it stands still with its count filled (AC-91). |
 | 0.4.0 | 2026-10-22 | Owner: on a phone a selection in the terminal shows no iOS menu (Copy, Find Selection, Translate): the page's Copy, [+] and Ask stand at the terminal's top right in a column, where the folded floating buttons stand (AC-37, AC-33; terminum.md AC-18); a double tap on a word in an agent's input box selects it, and Cut or Clear on that selection deletes it as Backspace does (AC-40; terminum.md AC-03). |
 | 0.3.29 | 2026-10-21 | Owner: the sent history's pane and the reminders' are modal: the page shaded behind them, a press outside closes them as × and Esc do, they take the keys while open and give them back (AC-90, AC-91). |
 | 0.3.28 | 2026-10-21 | Owner: a drawn table the page first saw half-drawn (its last row cut, or blank rows under it: an agent's frame caught midway over ssh) stayed text for good; it waits for the rest (AC-31). |
@@ -112,7 +113,7 @@ Open questions:
 | AC-38 | [SHOULD / P1] | With `?trace=1` terminumd and the page record each key's stages and session opens for 15 minutes into a log a script sums up; with `?trace=2` the page keeps a ring of events and input-box snapshots a button copies for a coding agent. |
 | AC-39 | [MUST / P0] | A pane running a coding agent shows its state (working, waiting, failed; done shows no mark) in the list and the header, breathes while it works, and a reminder over the terminal names an agent that waits for an answer in a pane not shown. |
 | AC-90 | [SHOULD / P1] | Every message or command the user sends in a pane is kept per project (its host and folder) and read back as Markdown from a button under the magnifier: the last first, older and newer. |
-| AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia button blinks over every session when its session's coding agent ends a turn, until pressed; its pane shows the open reminders as Markdown; Close puts one down until the next turn's end, Resolve ends it. |
+| AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia button comes up, its count filled, over every session when its session's coding agent ends a turn, until pressed; its pane shows the open reminders as Markdown; Close puts one down until the next turn's end, Resolve ends it. |
 | AC-40 | [MUST / P0] | In a coding agent's input box on a phone, a tap puts the cursor on the character under it, ↑ and ↓ move by the page's lines, a slide moves the cursor, held delete deletes words, the box is a panel above the keyboard with its status lines behind ⓘ, and the cursor is drawn in the box when the agent left it below the footer. |
 
 ## 5. BDD scenarios
@@ -468,9 +469,9 @@ Scenario: AC-91 happy path — a reminder
 
 Scenario: AC-91 happy path — up when the turn ends
   When the coding agent of its pane ends a turn: its hooks say it stopped, failed or was interrupted (also a turn too quick for the list to show it working), or the pane worked or waited and now is done, failed or shows no agent
-  Then terminumd puts that pane's open reminders up, keeps that, and tells every page; the bell blinks once a second over whichever session is shown on a touch screen, and on a computer (or with Reduce Motion) stands still with its count filled, until pressed
+  Then terminumd puts that pane's open reminders up, keeps that, and tells every page; the bell stands over whichever session is shown, still (nothing blinks, on any screen), its count filled, until pressed
   When the user presses it
-  Then its pane lists every open reminder, those up first ("up now"), each its session, its note as Markdown and its text quoted, with Open (its session at its text, AC-33), Insert into chat (as a bookmark's, AC-33; the pane closes), Close (put down: up again at its pane's next turn's end) and Resolve (it comes up no more and stays in Bookmarks); a reminder seen there blinks again only once put down and up anew
+  Then its pane lists every open reminder, those up first ("up now"), each its session, its note as Markdown and its text quoted, with Open (its session at its text, AC-33), Insert into chat (as a bookmark's, AC-33; the pane closes), Close (put down: up again at its pane's next turn's end) and Resolve (it comes up no more and stays in Bookmarks); a reminder seen there is marked again only once put down and up anew
 
 Scenario: AC-91 happy path — by project or session
   Then a reminder belongs to its project, or its session, as a bookmark does (AC-33): it comes up when an agent of any session of the project ends a turn (outside projects: its own session's), the bell shows the reminders the shown session shows, the session list marks those sessions with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions; Delete (twice) in the bell's pane removes one
