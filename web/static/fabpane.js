@@ -5,7 +5,74 @@
 // bookmarks' pane and find's field: left of their button, the first row centered on it, or under
 // it where the view is too narrow (then `data-under` is set: the buttons below make way).
 
+import { floats } from "./fold.js";   // a phone or a narrow window
+
 const GAP = 14;                // px between a button and its pane
+
+/** On a phone or a narrow window `el` is a centered modal sheet (sheets.css, AC-18): its inline
+ *  place is cleared and `data-sheet` set, true returned; elsewhere false and the caller places it.
+ *  With `close`, a shade (#sheetscrim) lies under it until it is hidden: a press there takes the
+ *  whole press (nothing under it gets it) and calls `close`. A <dialog> has its ::backdrop. */
+export function placeModal(el, close) {
+  if (!floats()) { delete el.dataset.sheet; return false; }
+  if ("sheet" in el.dataset && sheets.some((x) => x.el === el)) return true;   // open as one: placed again each frame, nothing to do
+  for (const p of ["top", "left", "right", "bottom"]) el.style.removeProperty(p);
+  delete el.dataset.under;
+  el.dataset.sheet = "";
+  if (close && !el.hidden) shadeUnder(el, close);
+  return true;
+}
+const LINGER = 400;            // ms the closed shade still takes the presses (the click after a tap)
+const sheets = [];             // the open sheets with a shade, the top one last: {el, close}
+function shade() {
+  let s = document.getElementById("sheetscrim");
+  if (s) return s;
+  s = document.createElement("div");
+  s.id = "sheetscrim";
+  // the press is the shade's alone: no outside-press handler, no focus change; it closes the top
+  // sheet on the finger's lift and the shade, clear, stays a moment for the click a phone sends after it
+  for (const t of ["pointerdown", "pointerup", "mousedown", "mouseup", "touchstart", "touchend", "click"]) s.addEventListener(t, (e) => {
+    e.stopPropagation();
+    if (t === "mousedown" || (t === "pointerdown" && e.pointerType === "mouse")) e.preventDefault();
+    if (t === "pointerup" && !s.style.opacity && sheets.length) { s.style.opacity = "0"; sheets.at(-1).close(); }
+  });
+  return s;
+}
+/** The shade under the top sheet, or gone (after LINGER when a press on it closed the last). */
+function restack() {
+  const s = shade(), top = sheets.at(-1);
+  clearTimeout(s.later);
+  if (top) {                                       // the sheet's stacking context, just under it
+    if (s.nextElementSibling !== top.el) top.el.before(s);
+    s.hidden = false; s.style.opacity = "";
+    return;
+  }
+  if (s.style.opacity) s.later = setTimeout(() => { s.hidden = true; }, LINGER); else s.hidden = true;
+}
+let escapes = false;
+function shadeUnder(el, close) {
+  if (!escapes) {                                  // Esc closes the top sheet (a <dialog> over it closes itself first)
+    escapes = true;
+    document.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !sheets.length || document.querySelector("dialog[open]")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      sheets.at(-1).close();
+    }, true);
+  }
+  if (!sheets.some((x) => x.el === el)) {
+    sheets.push({ el, close });
+    const watch = new MutationObserver(() => {
+      if (!el.hidden && "sheet" in el.dataset) return;
+      watch.disconnect();
+      sheets.splice(sheets.findIndex((x) => x.el === el), 1);
+      restack();
+    });
+    watch.observe(el, { attributes: true, attributeFilter: ["hidden", "data-sheet"] });
+  }
+  restack();
+  if (!el.contains(document.activeElement)) el.querySelector("button:not(:disabled), input, textarea, [tabindex]")?.focus({ preventScroll: true });
+}
 
 /** Places `pane` beside `fab` (nothing while it is hidden). */
 export function placeBeside(fab, pane) {
@@ -53,7 +120,7 @@ export function fabPane({ fab, pane, close, onToggle }) {
     onToggle(on);
     place();
   }
-  const place = () => placeBeside(fab, pane);
+  const place = () => { if (!pane.hidden && !placeModal(pane)) placeBeside(fab, pane); };
   fab.addEventListener("click", () => toggle());
   fab.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   close.addEventListener("click", () => toggle(false));

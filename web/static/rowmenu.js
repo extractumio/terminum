@@ -7,6 +7,7 @@
 // nothing else; Esc closes it.
 import { askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
+import { placeModal } from "./fabpane.js";
 import { projectColor } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
@@ -68,8 +69,10 @@ export function rowMenus({ list, send, item, projects, clone }) {
     if (!box.open) { back = document.activeElement; box.showModal(); }
     openedAt = byFinger ? performance.now() : -Infinity;
     const w = box.offsetWidth, h = box.offsetHeight;
-    box.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
-    box.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+    if (!placeModal(box)) {          // a computer's: at the pointer
+      box.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
+      box.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+    }
     box.querySelector("button:not(:disabled):not([data-action=x])")?.focus({ preventScroll: true });
   }
 

@@ -1,0 +1,15 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* On a phone or a narrow window every dialog, pane and menu is a centered modal sheet (AC-18); after controls.css. */
+/* placeModal (fabpane.js) clears a placer's inline top/left and sets [data-sheet]; the ids' own rules
+   (#menu's top/right, a dialog's --x/--y) weigh more than an attribute, hence !important. The middle
+   is the visible screen's: --app-h follows the visual viewport (app.js fitViewport), so a sheet sits
+   above the on-screen keyboard. Its shade, #sheetscrim (or a dialog's ::backdrop, or a fab pane's
+   #panescrim), takes a press and closes it. */
+@media (hover: none), (max-width: 860px) {         /* where a sheet is set (fold.js FLOATING); a <dialog> by CSS alone */
+  :is([data-sheet], dialog.dlg, #marksdlg) {
+    position: fixed !important; inset: auto !important; top: calc(var(--app-h, 100dvh) / 2) !important; left: 50% !important;
+    translate: -50% -50% !important; margin: 0 !important; z-index: 40 !important;
+    width: calc(100vw - 32px) !important; max-width: none !important; max-height: calc(var(--app-h, 100dvh) - 32px) !important;
+    overflow: auto; box-sizing: border-box; box-shadow: var(--dialog-shadow) !important; }
+}
+#sheetscrim { position: fixed; inset: 0; z-index: 39; background: var(--scrim); }

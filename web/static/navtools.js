@@ -5,6 +5,7 @@
 // answer, the pencil that names the shown pane, and the page's confirmation dialog.
 
 import { addTmux } from "./addtmux.js";
+import { placeModal } from "./fabpane.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -96,7 +97,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
       const on = f === id && $(f).hidden;
       $(f).hidden = !on;
       $(b).setAttribute("aria-expanded", String(on));
-      if (on) { $(`${f}err`).textContent = ""; $(f).querySelector("input").focus(); }
+      if (on) { placeModal($(f), () => closeForm(f)); $(`${f}err`).textContent = ""; $(f).querySelector("input").focus(); }
     }
     if (button && $(id).hidden) pending = null;
   }
@@ -178,9 +179,8 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
       ...(g.state === "attached" ? [item("Attach tmux sessions…", "import", () => tmux.open(`${g.host}:default`))] : []),
       act("Remove", "remove", `Remove ${g.host}? Its tmux sessions on the host keep running; terminum stops showing them.`));
     const r = button.getBoundingClientRect();
-    box.style.top = `${r.bottom + 4}px`;
-    box.style.left = `${Math.max(8, r.right - 180)}px`;
     box.hidden = false;
+    if (!placeModal(box, hideHostMenu)) { box.style.top = `${r.bottom + 4}px`; box.style.left = `${Math.max(8, r.right - 180)}px`; }
     button.setAttribute("aria-expanded", "true");
   }
   function hideHostMenu() {

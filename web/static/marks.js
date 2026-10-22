@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { markPicker } from "./markpick.js";
-import { placeBeside } from "./fabpane.js";
+import { placeBeside, placeModal } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, railBox, railSlots } from "./marktext.js";
@@ -368,7 +368,7 @@ export class Marks {
     this.search.place();
     if (!$("markpane").hidden) this.placePane();
   }
-  placePane() { placeBeside($("marksfab"), $("markpane")); }
+  placePane() { if (!placeModal($("markpane"), () => this.togglePane(false))) placeBeside($("marksfab"), $("markpane")); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {
     $("markpane").hidden = !open;

@@ -19,6 +19,7 @@ import { webMove } from "./e2e_move.mjs";
 import { webScreen } from "./e2e_screen.mjs";
 import { webSignin } from "./e2e_signin.mjs";
 import { webSent } from "./e2e_sent.mjs";
+import { webSheets } from "./e2e_sheets.mjs";
 import { webFold } from "./e2e_fold.mjs";
 import { webHeader } from "./e2e_header.mjs";
 import { webSplit } from "./e2e_split.mjs";

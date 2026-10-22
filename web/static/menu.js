@@ -3,6 +3,7 @@
 // to session…, Close pane (asked first), Restore again after a restore report, the report's
 // banner over the terminal, and the chip of a newer release with its own menu.
 import { closeSession } from "./navtools.js";
+import { placeModal } from "./fabpane.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -11,7 +12,7 @@ const $ = (id) => document.getElementById(id);
 const RESTORED_FOR = 30000;     // ms the restore report stays when nobody closes it
 
 export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) {
-  function open() { syncItems(); $("menu").hidden = false; $("menubtn").setAttribute("aria-expanded", "true"); }
+  function open() { syncItems(); $("menu").hidden = false; placeModal($("menu"), close); $("menubtn").setAttribute("aria-expanded", "true"); }
   function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); hideMoves(); }
   $("menubtn").onclick = (e) => { e.stopPropagation(); $("menu").hidden ? open() : close(); };
   document.addEventListener("click", (e) => { if (!$("menu").hidden && !e.target.closest("#menu")) close(); });
@@ -108,9 +109,11 @@ export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) 
     e.stopPropagation();
     if (!$("updmenu").hidden) return hideUpdate();
     const r = $("updchip").getBoundingClientRect();
-    $("updmenu").style.top = `${r.bottom + 6}px`;
-    $("updmenu").style.right = `${Math.max(8, innerWidth - r.right)}px`;
     $("updmenu").hidden = false;
+    if (!placeModal($("updmenu"), hideUpdate)) {
+      $("updmenu").style.top = `${r.bottom + 6}px`;
+      $("updmenu").style.right = `${Math.max(8, innerWidth - r.right)}px`;
+    }
     $("updchip").setAttribute("aria-expanded", "true");
   };
   $("updcopy").onclick = () => { hideUpdate(); copy("terminum upgrade"); };

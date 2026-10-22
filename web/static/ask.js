@@ -7,6 +7,8 @@
 // (a shell, where Ctrl+J would run the line) inside the paste. Send to Agent (a coding agent's
 // pane only) pastes the same and presses Enter.
 
+import { placeModal } from "./fabpane.js";
+
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
 const ENTER_AFTER = 200;       // ms: an Enter in the same read as a paste is a new line to Claude Code
@@ -40,7 +42,7 @@ export function askBox({ send, toChat, keys, agent }) {
   // centered on the terminal, not on the window (the list and Files beside it); the window's middle without one
   const place = () => {
     const r = $("term").getBoundingClientRect();
-    if (!box.open || !r.width || !r.height) return box.classList.remove("placed");
+    if (!box.open || placeModal(box) || !r.width || !r.height) return box.classList.remove("placed");
     const { x, y } = centerOn(r, box.offsetWidth, box.offsetHeight, innerWidth, innerHeight);
     box.style.setProperty("--x", `${x}px`);
     box.style.setProperty("--y", `${y}px`);
