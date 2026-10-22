@@ -310,7 +310,7 @@ function onMessage(m) {
 // Rows reorder tmux's windows in their session; groups reorder this browser's list only.
 // Clone (AC-07): a new window right after the row's, in its folder; in its project when it has one (AC-92)
 function cloneRow(item) { send({ t: "clone", id: item.id }); }
-const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow });
+const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderGroups: (ids) => { store.set("groupOrder", ids); drawNav(); } });
 
 // a finger resting on the keyboard button or held on the input offers Paste, Undo and Redo (AC-03)
 const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo, paste: () => input.pasteFromClipboard(), can: editChoices({ term: $("term"), item: () => itemOf(st.sid), undone: () => !!st.undone,
@@ -342,7 +342,7 @@ function drawNav() {
   if (reorder.dragging()) return;                  // the next layout redraws it
   renderNav($("sessions"), ordered(st.groups, store.get("groupOrder", [])), st.sid, $("filter").value, pick, st.collapsed, toggleGroup,
     bookmarks.sids(), tools.hostMenu, (text) => input.copySelection(text, true), tools.importTmux,
-    { projects: st.projects, onClone: cloneRow, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename });
+    { projects: st.projects, onClone: cloneRow, onProjectNew: (p, last) => send({ t: "clone", id: last.id, project: p.id }), onProjectMenu: rowMenu.headMenu, onProjectRename: rowMenu.rename, onGroupMenu: rowMenu.groupMenu });
   const found = st.sid && findItem(st.groups, st.sid);
   if (!found) {
     const first = st.groups.flatMap((g) => g.items)[0];

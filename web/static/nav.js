@@ -204,7 +204,7 @@ export function hostState(g) {
 // Projects (AC-92) come first, each its sessions with their panes and quick shells, which
 // their tmux groups then leave out; every row has its Clone button (onClone(item)).
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
-  { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null, onProjectRename = null } = {}) {
+  { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null } = {}) {
   const q = query.trim().toLowerCase();
   const frag = document.createDocumentFragment();
   // a session of the user's tmux on a host that is down waits for that host: the same state, the same look
@@ -252,7 +252,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     h.append(t, acts);
     if (onProjectNew) acts.append(iconButton("new", "plus", `New session in ${p.name}`, `A new window in ${p.dir || "its folder"}`, () => onProjectNew(p, tops.at(-1))));
     if (onProjectMenu) {
-      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: rename, ungroup`, (b) => onProjectMenu(p, b));
+      const m = iconButton("hostbtn", "ellipsis", `Project ${p.name}`, `${p.name}: new session, rename, move, ungroup, close`, (b) => onProjectMenu(p, b));
       m.setAttribute("aria-haspopup", "true");
       acts.append(m);
     }
@@ -328,6 +328,10 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
       m.setAttribute("aria-haspopup", "true");
       m.append(icon("ellipsis", 14));
       m.addEventListener("click", (e) => { e.stopPropagation(); onHost(g, m); });
+      acts.append(m);
+    } else if (g.wid && onGroupMenu) {             // a tmux session's group: its menu (as a right click on its header)
+      const m = iconButton("hostbtn", "ellipsis", `Session group ${g.label}`, `${g.label}: new session, move, close`, (b) => onGroupMenu(g.wid, b));
+      m.setAttribute("aria-haspopup", "true");
       acts.append(m);
     }
     sec.append(h);

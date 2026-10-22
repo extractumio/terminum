@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's menus: a row's on a right click or a long press (Clone, Add to Project,
 // Remove from Project, Close Session, Move to the Top, to the Bottom, Up, Down; AC-07, AC-92), and a
-// project's ⋯ (Rename, Ungroup). A move reorders the row among its group's: a project's
-// sessions in the project, a tmux session's windows in tmux. Each is modal (a <dialog>): the
+// project's, on its ⋯ or a right click on its header (New Session, Rename, the same moves among the
+// projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Session,
+// moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
+// sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
 // page is shaded and takes no press while it is open; a press outside it closes it and does
 // nothing else; Esc closes it.
-import { askName, closeSession } from "./navtools.js";
+import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { placeModal } from "./fabpane.js";
 import { projectColor } from "./nav.js";
@@ -36,7 +38,7 @@ export function saveOrder(send, ul, ids) {
 }
 
 /** list: #sessions; item(id): the row's layout item; projects(): terminumd's; clone(item). */
-export function rowMenus({ list, send, item, projects, clone }) {
+export function rowMenus({ list, send, item, projects, clone, orderGroups }) {
   const box = $("rowmenu");
   const hide = () => {
     if (!box.open) return;
@@ -138,20 +140,80 @@ export function rowMenus({ list, send, item, projects, clone }) {
     if (name && name !== p.name) send({ t: "project", action: "rename", project: p.id, name });
   }
 
-  /** A project's ⋯: Rename, Ungroup. */
-  function headMenu(p, b) {
-    if (box.open && box.dataset.for === p.id) return hide();
+  /** A project's menu, under its ⋯ `b` or at x, y (a right click on its header): a new session in
+   *  its folder, Rename, moves among the projects as the list shows them, Ungroup (its sessions
+   *  stay, back in their tmux groups), Close Project (its sessions end, after asking). */
+  function headMenu(p, b, x, y) {
+    if (b && box.open && box.dataset.for === p.id) return hide();
+    const here = p.members.filter((k) => item(k));
+    const ids = [...list.querySelectorAll(".projects > section[data-pid]")].map((s) => s.dataset.pid), i = ids.indexOf(p.id), last = ids.length - 1;
+    const move = (to) => { hide(); const o = ids.filter((k) => k !== p.id); o.splice(to, 0, p.id); send({ t: "project", action: "order", ids: o }); };
+    const closeAll = async () => {
+      hide();
+      const n = here.length, them = n === 1 ? "its session" : `its ${n} sessions`;
+      if (await askConfirm(`Close the project ${p.name} and ${them}? The programs running in them end.`, "Close Project")) for (const id of here) send({ t: "kill", id });
+    };
     fill(p.name,
+      button("New Session", "new", () => { hide(); send({ t: "clone", id: here.at(-1), project: p.id }); }, here.length > 0),
       button("Rename…", "rename", () => { hide(); rename(p); }),
-      button("Ungroup", "ungroup", () => { hide(); send({ t: "project", action: "delete", project: p.id }); }));
+      document.createElement("hr"),
+      button("Move to the Top", "top", () => move(0), i > 0),
+      button("Move Up", "up", () => move(i - 1), i > 0),
+      button("Move Down", "down", () => move(i + 1), i >= 0 && i < last),
+      button("Move to the Bottom", "bottom", () => move(last), i >= 0 && i < last),
+      document.createElement("hr"),
+      button("Ungroup", "ungroup", () => { hide(); send({ t: "project", action: "delete", project: p.id }); }),
+      button("Close Project…", "close", closeAll, here.length > 0));
     box.dataset.for = p.id;
-    const r = b.getBoundingClientRect();
-    open(r.right - 210, r.bottom + 4);
+    const r = b?.getBoundingClientRect();
+    open(r ? r.right - 210 : x, r ? r.bottom + 4 : y);
+  }
+
+  /** A tmux session's group's menu, under its ⋯ `b` or at x, y: a new window after its last row,
+   *  moves among the groups (kept in this browser, as a drag), Close Group (its windows end, after
+   *  asking). */
+  function groupMenu(wid, b, x, y) {
+    if (b && box.open && box.dataset.for === wid) return hide();
+    const sec = [...list.querySelectorAll("section.grp[data-wid]")].find((s) => s.dataset.wid === wid);
+    if (!sec) return;
+    const label = sec.querySelector("h2 .label")?.textContent ?? wid;
+    const rows = [...sec.querySelectorAll(":scope > ul > li > .item")].map((r) => r.dataset.id).filter((id) => item(id));
+    const ids = [...list.querySelectorAll("section.grp[data-wid]")].map((s) => s.dataset.wid), i = ids.indexOf(wid), last = ids.length - 1;
+    const move = (to) => { hide(); const o = ids.filter((k) => k !== wid); o.splice(to, 0, wid); orderGroups(o); };
+    const closeAll = async () => {
+      hide();
+      const n = rows.length, them = n === 1 ? "its session" : `its ${n} sessions`;
+      if (await askConfirm(`Close the group ${label} and ${them}? The programs running in them end.`, "Close Group")) for (const id of rows) send({ t: "kill", id });
+    };
+    fill(label,
+      button("New Session", "new", () => { hide(); clone(item(rows.at(-1))); }, rows.length > 0 && !!sec.querySelector("li > .clone")),
+      document.createElement("hr"),
+      button("Move to the Top", "top", () => move(0), i > 0),
+      button("Move Up", "up", () => move(i - 1), i > 0),
+      button("Move Down", "down", () => move(i + 1), i < last),
+      button("Move to the Bottom", "bottom", () => move(last), i < last),
+      document.createElement("hr"),
+      button("Close Group…", "close", closeAll, rows.length > 0));
+    box.dataset.for = wid;
+    const r = b?.getBoundingClientRect();
+    open(r ? r.right - 210 : x, r ? r.bottom + 4 : y);
   }
 
   // a right click, the keyboard's menu key or ⇧F10 on a row (at the row), or a finger resting
   // on it (below the finger; its click that follows is dropped)
   list.addEventListener("contextmenu", (e) => {
+    const head = e.target.closest(".projects > section[data-pid] > h2"), p = head && projects().find((x) => x.id === head.parentElement.dataset.pid);
+    if (p) {                                       // a project's header: its menu
+      e.preventDefault();
+      const r = head.getBoundingClientRect(), keys = !e.clientX && !e.clientY;
+      return headMenu(p, null, keys ? r.left + 24 : e.clientX, keys ? r.bottom : e.clientY);
+    }
+    const gh = e.target.closest("section.grp[data-wid] > h2");
+    if (gh) {                                      // a tmux session's group's header: its menu
+      e.preventDefault();
+      const r = gh.getBoundingClientRect(), keys = !e.clientX && !e.clientY;
+      return groupMenu(gh.parentElement.dataset.wid, null, keys ? r.left + 24 : e.clientX, keys ? r.bottom : e.clientY);
+    }
     const li = e.target.closest(".item:not(.child)")?.closest("li");
     if (!li) return;
     e.preventDefault();
@@ -184,5 +246,5 @@ export function rowMenus({ list, send, item, projects, clone }) {
     box.dataset.for = "";
     open(x, y, byFinger);
   }
-  return { headMenu, hide, show, rename };
+  return { headMenu, groupMenu, hide, show, rename, held };
 }

@@ -33,22 +33,77 @@ export async function webProjects(browser, name) {
   check("AC-07 every row has Clone, no group header has [+]", look.news === 0 && look.clones === 4, JSON.stringify(look));
   check("AC-01 a row's second line: its folder first, its program at the right edge", look.first === "~/work/docs" && look.prog === "zsh" && look.right <= 1, JSON.stringify(look));
   check("AC-93 a row whose agent finished unseen is unread, others not", look.unread && !look.plain, JSON.stringify(look));
+  // a tmux session's group: its menu on a right click on its header or its ⋯ (New Session, moves among
+  // the groups, Close Group, which asks first)
+  const groupAt = (wid) => page.click(`#sessions section[data-wid="${wid}"] h2 .label`, { button: "right" });
+  const order = () => page.evaluate(() => [...document.querySelectorAll("#sessions section.grp[data-wid]")].map((s) => s.dataset.wid).join());
+  await groupAt("local/main");
+  const gmenu = await menuItems(page);
+  await page.click('#rowmenu button[data-action="down"]');
+  await pause(page, 150);
+  const downed = await order();
+  await groupAt("local/main");
+  await page.click('#rowmenu button[data-action="top"]');          // back, for the checks after
+  await pause(page, 150);
+  await page.hover('#sessions section[data-wid="local/main"] h2 .label');
+  await page.click('#sessions section[data-wid="local/main"] h2 .hostbtn');
+  const byDots = await menuItems(page);
+  await page.click('#rowmenu button[data-action="new"]');
+  const gnew = last(sent, "clone");
+  const gkills = sent.filter((m) => m.t === "kill").length;
+  await groupAt("local/notes");
+  await page.click('#rowmenu button[data-action="close"]');
+  await page.waitForSelector("#confirmbox[open]", { timeout: 3000 }).catch(() => {});
+  const gasks = await page.evaluate(() => document.getElementById("confirmtitle").textContent);
+  await page.click("#confirmok");
+  await pause(page, 100);
+  const gkilled = sent.filter((m) => m.t === "kill").slice(gkills).map((m) => m.id);
+  check("AC-07 a session group's menu (a right click on its header, or its ⋯): New Session, moves among the groups, Close Group (asked first)",
+    JSON.stringify(gmenu) === JSON.stringify(["New Session", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Close Group…"]) && downed === "local/notes,local/main"
+    && await order() === "local/main,local/notes" && JSON.stringify(byDots) === JSON.stringify(gmenu) && JSON.stringify(gnew) === JSON.stringify({ t: "clone", id: ID(4) })
+    && gasks === "Close the group notes and its session?" && JSON.stringify(gkilled) === JSON.stringify([ID(3)]), JSON.stringify({ gmenu, downed, byDots, gnew, gasks, gkilled }));
+  // the unread row's hatching: pale lines over its whole box (its background), the blob gone; `ink` the lines' color
   const mark = (pg = page) => pg.evaluate(() => {
-    const li = document.querySelector('#sessions li:has(> .item[data-id$="%4"])'), u = li.querySelector(".unread"), c = li.querySelector(":scope > .clone"), t = li.querySelector(".t"), s = li.querySelector(".s");
-    const mid = (el) => { const r = el.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
-    return { w: u.offsetWidth, x: Math.round(mid(u)[0] - mid(c)[0]), y: Math.round(mid(u)[1] - mid(s)[1]), clear: Math.round(c.getBoundingClientRect().left - u.getBoundingClientRect().right),
-      bg: getComputedStyle(u).backgroundColor, name: getComputedStyle(t).color, seen: getComputedStyle(u).visibility === "visible",
-      round: getComputedStyle(u).borderTopLeftRadius !== getComputedStyle(u).borderTopRightRadius };
+    const b = document.querySelector('#sessions .item[data-id$="%4"]'), img = getComputedStyle(b).backgroundImage;
+    return { hatched: img.startsWith("repeating-linear-gradient("), ink: img.replace(/\s+/g, " "), said: b.getAttribute("aria-description"), blob: !!document.querySelector("#sessions .unread:not(.item)") };
   });
+  const clone = (pg, n) => pg.evaluate((n) => getComputedStyle(document.querySelector(`#sessions li:has(> .item[data-id$="%${n}"]) > .clone`)).opacity, n);
   const m1 = await mark();
+  const clone0 = await clone(page, 2);
   await page.hover('#sessions .item[data-id$="%4"]');
-  const covered = await mark();
+  const hovered = await mark();
   await page.mouse.move(700, 700);
-  check("AC-93 the unread mark: 6 px, not round, in the session name's color, level with the row's second line (its program), under Clone's middle; hidden while Clone shows",
-    m1.w === 6 && m1.round && m1.bg === m1.name && Math.abs(m1.y) <= 1 && Math.abs(m1.x) <= 1 && m1.seen && !covered.seen, JSON.stringify({ m1, covered }));
+  check("AC-93 an unread row is hatched over its whole box, hover or not, and says so to a screen reader; no blob",
+    m1.hatched && hovered.ink === m1.ink && m1.said === "Unread: its agent finished" && !m1.blob, JSON.stringify({ m1, hovered }));
+  await page.hover('#sessions .item[data-id$="%2"]');
+  const clone1 = await clone(page, 2), other = await clone(page, 1);
+  check("AC-07 Clone shows only while the pointer is over its row", clone0 === "0" && clone1 === "0.8" && other === "0", JSON.stringify({ clone0, clone1, other }));
+  // a header: its count ends where the rows' programs end; its buttons show while the pointer is over it, in the count's place
+  const head = (pg = page) => pg.evaluate(() => {
+    const h = document.querySelector('#sessions section[data-wid="local/main"] h2'), c = h.querySelector(".count"), a = h.querySelector(".acts");
+    const right = (e) => Math.round(e.getBoundingClientRect().right);
+    return { count: c.offsetParent ? right(c) : null, progs: [...document.querySelectorAll("#sessions .progs")].map(right), acts: getComputedStyle(a).opacity,
+      under: getComputedStyle(a).pointerEvents === "none" };
+  });
+  await page.mouse.move(700, 700);
+  const rest = await head();
+  await page.hover('#sessions section[data-wid="local/main"] h2 .label');
+  const over = await head();
+  await page.mouse.move(700, 700);
+  check("AC-01 a group's count ends where its rows' programs end; its buttons out of sight and out of reach",
+    rest.count !== null && rest.progs.every((r) => r === rest.count) && rest.acts === "0" && rest.under, JSON.stringify(rest));
+  check("AC-01 the pointer over a header shows its buttons in the count's place", over.count === null && over.acts === "1" && !over.under, JSON.stringify(over));
   await page.hover('#sessions .item[data-id$="%2"]');
   await page.click('#sessions li:has(> .item[data-id$="%2"]) > .clone');
   check("AC-07 Clone asks for a window beside it", last(sent, "clone")?.id === ID(2), JSON.stringify(last(sent, "clone")));
+  if (name === "chromium") {                          // WebKit's Tab skips buttons (macOS's default), and a script's focus after a click is no keyboard's
+    await page.mouse.move(700, 700);
+    await page.focus('#sessions .item[data-id$="%1"]');
+    await page.keyboard.press("Tab");                // the keyboard's focus on its Clone
+    const keyed = await clone(page, 1);
+    await page.evaluate(() => document.activeElement.blur());
+    check("AC-07 Clone shows with the keyboard's focus on it, no pointer over its row", keyed === "1", keyed);
+  }
 
   await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
   const items = await menuItems(page);
@@ -125,6 +180,38 @@ export async function webProjects(browser, name) {
   await pause(page, 100);
   const byDouble = last(sent, "project");
   check("AC-92 a double click on a project's name renames it too", byDouble?.action === "rename" && byDouble.project === "p2" && byDouble.name === "Docs", JSON.stringify(byDouble));
+  // a right click on a project's header: its menu as a row's (New Session, Rename, moves among the
+  // projects, Ungroup, Close Project, which asks first and closes every session of it)
+  const headAt = (pid) => page.click(`#sessions section[data-pid="${pid}"] h2 .label`, { button: "right" });
+  await headAt("p1");
+  const pmenu = await menuItems(page);
+  await page.click('#rowmenu button[data-action="down"]');
+  const moved = last(sent, "project");
+  await headAt("p2");
+  const second = await menuItems(page);
+  await page.keyboard.press("Escape");
+  await headAt("p1");
+  await page.click('#rowmenu button[data-action="new"]');
+  const made = last(sent, "clone");
+  check("AC-92 a right click on a project's header opens its menu: New Session, Rename, moves among the projects, Ungroup, Close Project",
+    JSON.stringify(pmenu) === JSON.stringify(["New Session", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Ungroup", "Close Project…"])
+    && JSON.stringify(moved) === JSON.stringify({ t: "project", action: "order", ids: ["p2", "p1"] }) && second.includes("Move Up") && second.includes("Move Down-")
+    && JSON.stringify(made) === JSON.stringify({ t: "clone", id: ID(3), project: "p1" }), JSON.stringify({ pmenu, moved, second, made }));
+  const kills = sent.filter((m) => m.t === "kill").length;
+  await headAt("p1");
+  await page.click('#rowmenu button[data-action="close"]');
+  await page.waitForSelector("#confirmbox[open]", { timeout: 3000 }).catch(() => {});
+  const asks = await page.evaluate(() => `${document.getElementById("confirmtitle").textContent} ${document.getElementById("confirmtext").textContent}`);
+  await page.click('#confirmbox button[value="cancel"]');
+  const kept = sent.filter((m) => m.t === "kill").length === kills;
+  await headAt("p1");
+  await page.click('#rowmenu button[data-action="close"]');
+  await page.waitForSelector("#confirmbox[open]", { timeout: 3000 }).catch(() => {});
+  await page.click("#confirmok");
+  await pause(page, 100);
+  const killed = sent.filter((m) => m.t === "kill").slice(kills).map((m) => m.id);
+  check("AC-92 Close Project asks first (Cancel closes nothing), then closes each of its sessions",
+    /^Close the project .+ and its 2 sessions\? The programs running in them end\.$/.test(asks) && kept && JSON.stringify(killed) === JSON.stringify([ID(1), ID(3)]), JSON.stringify({ asks, kept, killed }));
   await page.click('#sessions .item[data-id$="%3"]', { button: "right" });
   const inProject = await menuItems(page);
   await page.click('#rowmenu button[data-action="up"]');
