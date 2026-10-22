@@ -28,7 +28,7 @@ const THEME = { bg: "#1e1e1e", fg: "#d4d4d4", cursor: "#ffffff", cursorText: "#0
   ansi: Array.from({ length: 16 }, () => "#808080"), font: null, size: null, dark: true };
 
 export async function webApp(browser) {
-  const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
+  const page = await browser.newPage({ viewport: { width: 1400, height: 800 }, reducedMotion: "reduce" });   // windows at their place (e2e_motion checks the motion)
   const sent = [];
   let bridge = null;
   await page.addInitScript(() => { window.opened = []; window.open = (u) => { window.opened.push(u); return null; }; });

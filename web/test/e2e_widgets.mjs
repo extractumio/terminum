@@ -37,7 +37,7 @@ const FILES = { "/tmp/shots": ["shot.png", "b.png", "notes.txt"] };     // what 
 export async function open(browser, { renderers = true, agent = false, history = HISTORY, screen = SCREEN, cwd = "/tmp/shots", files = FILES, image = PNG, folds = [],
   device = { viewport: { width: 1200, height: 800 } }, first = 0, hook = null, layout = LAYOUT, query = "", cols = null } = {}) {
   const opts = { renderers };
-  const page = await browser.newPage(device);
+  const page = await browser.newPage({ reducedMotion: "reduce", ...device });   // windows at their place (e2e_motion checks the motion)
   const errors = [], sent = [];
   page.on("pageerror", (e) => errors.push(String(e)));
   await page.addInitScript(() => {

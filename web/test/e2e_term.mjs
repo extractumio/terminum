@@ -79,7 +79,7 @@ window.ready = true;
 </script>`;
 
 export async function webTerm(browser) {
-  const page = await browser.newPage();
+  const page = await browser.newPage({ reducedMotion: "reduce" });
   await page.route(`${ORIGIN}/**`, (route) => {
     const p = new URL(route.request().url()).pathname;
     if (p === "/") return route.fulfill({ contentType: "text/html", body: PAGE });

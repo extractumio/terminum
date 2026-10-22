@@ -101,13 +101,26 @@
   --dur-out: 160ms;     /* hover out */
   --dur-enter: 200ms;   /* a popover, form, dialog or toast appears */
   --dur-settle: 320ms;  /* a blob's pulse, a row's settle: after the action, never delaying it */
+  --dur-pop: 350ms;     /* a window's size, flying out of its button: past it and back, on a spring */
+  --dur-focus: 80ms;    /* a window comes into focus (its blur and fade), early in its pop */
+  --dur-leave: 160ms;   /* a window goes back into its button */
+  --dur-row: 200ms;     /* a menu's row comes up */
+  --row-lead: 50ms;     /* a menu's first row, after the menu */
+  --row-step: 25ms;     /* each next row */
+  --pop-from: .3;       /* a window's size when it starts and ends */
+  --pop-blur: 10px;     /* its blur then */
   --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in: cubic-bezier(.4, 0, 1, 1);
+  --ease-pop: cubic-bezier(.3, 1.5, .55, 1);
   --ease-press: cubic-bezier(.3, 0, .5, 1);
   --ease-spring: cubic-bezier(.34, 1.36, .64, 1);
 }
 @supports (transition-timing-function: linear(0, 1)) {
   :root {
     --ease-spring: linear(0, .32 8%, .7 18%, .95 30%, 1.04 42%, 1.02 55%, .997 70%, 1);   /* ~4% over, settled by 70% */
+    /* a damped spring (stiffness 620, damping 26, mass 1) sampled 24 times: from .3, ~10% past its size by 40%, back by 70% */
+    --ease-pop: linear(0, .058, .199, .383, .576, .754, .903, 1.015, 1.09, 1.132, 1.146, 1.14, 1.12, 1.094, 1.066, 1.039, 1.017, 1,
+      .988, .981, .979, .979, .982, .986, 1);
   }
 }
 /* a light theme (app.js sets .light): shadows lift rather than stain, folder hues darken; the

@@ -13,9 +13,10 @@ const ASKING = group("asks", [item("tmux:local:terminum:%7", "claude", { agent: 
 const AGENTS = group("agents", [item("tmux:local:terminum:%8", "Claude Code", { agent: "claude", shell: false }),
   item("tmux:local:terminum:%9", "Codex", { agent: "codex", shell: false, index: "2" })]);
 
-/** Every visible button under `sel` smaller than `least` px tall: "id-or-class:height". */
+/** Every visible button under `sel` smaller than `least` px tall: "id-or-class:height" (a closed
+ *  dialog in Safari stays laid out, out of sight: motion.css). */
 const small = (page, sel, least) => page.evaluate(([sel, least]) => [...document.querySelectorAll(sel)]
-  .filter((b) => b.offsetParent && b.getClientRects().length)
+  .filter((b) => b.offsetParent && b.getClientRects().length && getComputedStyle(b).visibility === "visible")
   .map((b) => [b.id || b.className || b.textContent.trim().slice(0, 20), Math.round(b.getBoundingClientRect().height)])
   .filter(([, h]) => h < least).map(([n, h]) => `${n}:${h}`), [sel, least]);
 

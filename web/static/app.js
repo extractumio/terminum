@@ -4,6 +4,7 @@ import { connection } from "./conn.js";
 import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
 import "./press.js";                                // a pressed blob's pulse (motion.css)
+import "./pop.js";                                  // where a window flies out of (motion.css)
 import { Input } from "./input.js";
 import { kbdPlacer } from "./kbdplace.js";
 import { findItem, renderNav, seeWaits } from "./nav.js";

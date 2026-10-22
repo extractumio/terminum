@@ -19,7 +19,7 @@ const THEME = { bg: "#1e1e1e", fg: "#d4d4d4", cursor: "#ffffff", cursorText: "#0
 
 /** The whole page against a fake bridge that echoes what is typed. */
 export async function open(browser, query, device = { viewport: { width: 1400, height: 800 } }) {
-  const page = await browser.newPage(device);
+  const page = await browser.newPage({ reducedMotion: "reduce", ...device });   // windows at their place (e2e_motion checks the motion)
   const sent = [], errors = [];
   let typed = "", tell = null;
   page.on("pageerror", (e) => errors.push(String(e)));

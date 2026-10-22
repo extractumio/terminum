@@ -18,7 +18,7 @@ is next changed. CLAUDE.md and the specs win over this file.
 | Surfaces, not lines | Elements are set apart by space or by a step of background (§2.1); a 1px line only for a tree guide or rendered content. |
 | No edge stripes | Never a colored line along a box's side (a `border-left`, a colored inset `box-shadow`): the material's edges are light and shade only (§2.7). A group is tinted; a mark beside a row or a quote is the list's wavy line (`--wave-line`). |
 | A worn instrument panel | After todobem: matte surfaces with almost square corners, edges as a light catch on top and a shade below, recessed fields, keys that are matte and slightly raised, a fine grain on the chrome; never on terminal text. Round things stay blobs, never circles (§2.7). |
-| Calm motion | Feedback ≤ 120 ms, a box comes in ≤ 200 ms; a key only changes color and sinks into the panel when pressed (no ripple, no swing); blobs keep their drift and pulse; nothing moves in the terminal; one `prefers-reduced-motion: reduce` off-switch (§2.8). |
+| Calm motion | Feedback ≤ 120 ms, a window pops in ≤ 280 ms and goes in 180 ms; a key only changes color and sinks into the panel when pressed (no ripple, no swing); blobs keep their drift and pulse; nothing moves in the terminal; one `prefers-reduced-motion: reduce` off-switch (§2.8). |
 
 ## 2. Tokens
 
@@ -194,7 +194,7 @@ bottom one. Tokens (tokens.css; their strengths change on a light theme under `:
 The black and white alphas of these tokens are the material's own and the one exception to "no
 raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, §2.2).
 
-### 2.8 Motion (`web/static/motion.css`, `press.js`)
+### 2.8 Motion (`web/static/motion.css`, `press.js`, `pop.js`)
 
 | Token | Value | Use |
 | --- | --- | --- |
@@ -202,15 +202,20 @@ raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, 
 | `--dur-hover` / `--dur-out` | 120 / 160ms | Hover in / out, color, ring. |
 | `--dur-enter` | 200ms | A box or dialog comes in. |
 | `--dur-settle` | 320ms | A blob's pulse, the selected row's settle: after the action. |
+| `--dur-pop` / `--dur-focus` / `--dur-leave` | 350 / 80 / 160ms | A window's size on its spring / its blur and fade coming in / its way out. |
+| `--dur-row`, `--row-lead`, `--row-step` | 200 / 50 / 25ms | A menu's rows: each comes up, the first after the menu, each next later (five steps at most). |
+| `--pop-from`, `--pop-blur` | .3, 10px | A window's size and blur where it starts. |
 | `--ease-out`, `--ease-press` | cubic-bezier | Most motion; a press. |
 | `--ease-spring` | `linear()` (cubic fallback) | A blob's small overshoot. |
+| `--ease-pop`, `--ease-in` | `linear()` (cubic fallback) / cubic-bezier | A window's spring (stiffness 620, damping 26: ~10% past its size, back by 70%); its way out. |
 
 | Moment | What moves |
 | --- | --- |
+| Any color change | Over `--dur-hover` on every element of the page but the terminal and an icon's insides (they follow their parent). |
 | Hover (`(hover: hover) and (pointer: fine)` only) | Color: one surface step. Never the outline or the size (a sweep across a toolbar must stay calm). Rows: fill and their folder bar brighten. Blobs lift 1px and grow 6%. |
 | Press | A key sinks: `--m-well` for the press, no scale. Blobs squash to .9. |
 | Release | Color back. Blobs pulse in their own outline. |
-| A box opens | Fades in and rises 6px (a popover falls 4px), from .98 (a dialog from .96) with its backdrop; it closes at once. |
+| A window opens or closes (a `.box`: pane, menu, form, toast, dialog; a phone's sheet) | Flies out of what opened it: its origin the press or the focused key (`pop.js`), held to 40 px outside it, so a menu grows out of its button and a dialog in the middle from its side towards it; opened by nothing (a toast), from its middle. From .3 and a 10px blur, in focus within 80ms, ~10% past its size and back on a spring (`--ease-pop`, 350ms); a menu's rows come up one after another, 25ms apart. Out: back the same way, to .3, blurred and faded in 160ms, still in sight while it goes; its backdrop or shade fades with it. Safari has no `overlay`: a closed dialog stays laid out there, out of sight (`visibility`), so it can go the same way. |
 | The shown session changes | Its row's fill settles from the accent, its bar grows in (`.fresh`, once). |
 | A session works | Its bar pulses, in the list and the header (its color glows and fades, 1.4 s); no hourglass. A state, not motion: nothing moves, so it stays with Reduce Motion. |
 | Never | Anything in `#term`, the key bar, what is typed; width, height, position or layout; banners and error text (they show at once); a new loop. |
@@ -340,7 +345,7 @@ primary fill differs from Cancel's; a group header's buttons share size, radius 
 phone every button of the list, a form, the header and the menu ≥ 40px, a segment ≥ 34px; a long
 toast stays on the screen; a waiting card covers neither banners nor the find button) and
 `web/test/e2e_tmux.mjs` (footer buttons share computed look, a phone's blobs differ and none is
-round; form font sizes follow `--size`; keys carry the material's edges, fields a well, no wave clip), `web/test/e2e_motion.mjs` (a popover comes in and goes
-at once, a pressed key sinks, a blob pulses, the selected row settles, nothing moves in the terminal or with
+round; form font sizes follow `--size`; keys carry the material's edges, fields a well, no wave clip), `web/test/e2e_motion.mjs` (a popover and a dialog pop in
+and out, a color changes over frames, a pressed key sinks, a blob pulses, the selected row settles, nothing moves in the terminal or with
 reduced motion). A new kind of control adds its check there. The other e2e checks test
 behavior, not look.

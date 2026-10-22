@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Motion (docs/UI-GUIDELINES.md §2.8) against a fake terminumd (fake.mjs), with motion on: a
-// popover comes in and is in place within 300 ms, and goes at once; a pressed key sinks, a blob pulses; the
+// window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses; the
 // selected row settles once; nothing moves in the terminal; with reduced motion nothing moves.
 // The other checks run with reduced motion, so they measure boxes at their place.
 
@@ -18,20 +18,58 @@ export async function webMotion(browser, name) {
   const { page } = f;
   await drawn(page);
 
+  // a window flies out of the button that opened it: from .3 and a blur, ~10% past its size and back on a
+  // spring, its rows coming up one after another; it goes back into the button, fast. `trace` samples
+  // each frame for `ms`: its scale, opacity, blur, whether it is in sight (a closed dialog in Safari stays
+  // laid out, out of sight: motion.css), and its first and last row's opacity
+  const trace = (sel, ms) => page.evaluate(([sel, ms]) => new Promise((done) => {
+    const el = document.querySelector(sel), out = [], t0 = performance.now(), rows = [el.firstElementChild, el.lastElementChild];
+    const step = () => { const s = getComputedStyle(el), op = (r) => parseFloat(getComputedStyle(r).opacity);
+      out.push([parseFloat(s.scale === "none" ? "1" : s.scale), parseFloat(s.opacity), parseFloat(/blur\(([\d.]+)px/.exec(s.filter)?.[1] ?? "0"),
+        s.display === "none" || s.visibility === "hidden" ? "gone" : "shown", Math.round(performance.now() - t0), op(rows[0]), op(rows[1])]);
+      if (performance.now() - t0 < ms) requestAnimationFrame(step); else done(out); };
+    step();
+  }), [sel, ms]);
+  /** Where `sel`'s origin is on the screen, at rest: [x, y]. */
+  const origin = (sel) => page.evaluate((sel) => { const el = document.querySelector(sel), r = el.getBoundingClientRect(), [x, y] = getComputedStyle(el).transformOrigin.split(" ").map(parseFloat);
+    return [Math.round(r.left + x), Math.round(r.top + y), Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2)]; }, sel);
+  const pop = (t) => ({ first: t[0], peak: Math.max(...t.map(([s]) => s)), low: Math.min(...t.map(([s]) => s)), last: t.at(-1),
+    gone: t.find(([, , , g]) => g === "gone")?.[4] ?? null, lag: t.some(([, , , , , a, b]) => a - b > 0.2), frames: t.length });
   await page.click("#menubtn");
-  const opening = await page.evaluate(() => getComputedStyle(document.getElementById("menu")).opacity);
-  // its transition is the token's 200 ms; a slow browser's frames may take longer to show the end
-  const lasts = await page.evaluate(() => getComputedStyle(document.getElementById("menu")).transitionDuration);
-  const atRest = () => { const m = getComputedStyle(document.getElementById("menu")); const y = Math.abs(parseFloat(m.translate.split(" ")[1] ?? "0") || 0);
-    return m.opacity === "1" && ["1", "none"].includes(m.scale) && y < 0.5; };
-  await page.waitForFunction(atRest, null, { timeout: 2000 }).catch(() => {});
-  const settled = await page.evaluate(atRest);
-  const opened = await page.evaluate(() => { const s = getComputedStyle(document.getElementById("menu")); return [s.opacity, s.scale, s.translate]; });
+  const inn = await trace("#menu", 600);
+  const [ox, oy] = await origin("#menu"), btn = await page.$("#menubtn").then((b) => b.boundingBox()), menu = await page.$("#menu").then((b) => b.boundingBox());
   await page.keyboard.press("Escape");
-  const closed = await page.evaluate(() => getComputedStyle(document.getElementById("menu")).display);
-  check("motion: a popover comes in (it starts faded, over 200 ms) and comes to its place; it goes at once",
-    Number(opening) < 1 && lasts.split(", ").every((d) => d === "0.2s") && settled && closed === "none",
-    JSON.stringify({ opening, lasts, opened, closed }));
+  const out = await trace("#menu", 500);
+  const [pin, pout] = [pop(inn), pop(out)];
+  check("motion: a menu flies out of its button: from small, blurred and faded, ~10% past its size, then at rest in focus",
+    pin.first[0] < 0.5 && pin.first[1] < 1 && pin.first[2] > 0 && pin.peak > 1.04 && pin.peak < 1.15 && pin.last[0] === 1 && pin.last[1] === 1 && pin.last[2] === 0,
+    JSON.stringify(pin));
+  const [mx0, my0] = [btn.x + btn.width / 2, btn.y + btn.height / 2];
+  check("motion: it grows from its button's side: its origin the press, held to 40 px outside it",
+    Math.abs(ox - Math.max(menu.x - 40, Math.min(menu.x + menu.width + 40, mx0))) <= 1 && Math.abs(oy - Math.max(menu.y - 40, Math.min(menu.y + menu.height + 40, my0))) <= 1,
+    JSON.stringify({ origin: [ox, oy], btn, menu }));
+  check("motion: its rows come up one after another", pin.lag && pin.last[5] === 1 && pin.last[6] === 1, JSON.stringify(inn.map((f) => f.slice(4))));
+  check("motion: it goes back fast: shown while it goes, shrunk, blurred and faded, gone within 250 ms",
+    out[0][3] === "shown" && pout.low < 0.6 && out.some(([, , b]) => b > 0) && pout.gone !== null && pout.gone < 250 && pout.last[3] === "gone", JSON.stringify(pout));
+  // a dialog no press opened (a second on) grows from its middle, the same way; its shade fades with it
+  await pause(page, 1000);
+  await page.evaluate(() => document.getElementById("confirmbox").showModal());
+  const din = await trace("#confirmbox", 500);
+  const [cx, cy, mx, my] = await origin("#confirmbox");
+  await page.evaluate(() => document.getElementById("confirmbox").close());
+  const dout = await trace("#confirmbox", 400);
+  const [qin, qout] = [pop(din), pop(dout)];
+  check("motion: a dialog pops in and out as a window does, from its middle when nothing pressed it open",
+    qin.first[0] < 0.5 && qin.peak > 1.04 && qin.last[0] === 1 && Math.abs(cx - mx) <= 1 && Math.abs(cy - my) <= 1 && dout[0][3] === "shown" && qout.low < 0.6 && qout.last[3] === "gone",
+    JSON.stringify({ qin, qout, origin: [cx, cy, mx, my] }));
+  // a color changes over a moment: a header's count turning the accent
+  const shift = await page.evaluate(() => new Promise((done) => {
+    const c = document.querySelector("#sessions h2 .count");
+    c.classList.add("on");
+    const at = [getComputedStyle(c).color];
+    requestAnimationFrame(() => requestAnimationFrame(() => { at.push(getComputedStyle(c).color); setTimeout(() => { at.push(getComputedStyle(c).color); c.classList.remove("on"); done(at); }, 400); }));
+  }));
+  check("motion: a color changes over a moment, not at once", shift[0] !== shift[2] && shift[1] !== shift[2], JSON.stringify(shift));
 
   // a key sinks into the panel while pressed (its well), nothing scales or ripples; a blob pulses
   const box = await page.$("#newsessbtn").then((b) => b.boundingBox());
@@ -69,6 +107,7 @@ export async function webMotion(browser, name) {
   await calm.page.click("#menubtn");
   await calm.page.keyboard.press("Escape");
   await calm.page.click("#newsessbtn");
+  await calm.page.click("#newsesscancel");
   const still = await moving(calm.page, "body");
   check("motion: with reduced motion nothing moves: no fade, no ripple, no settle", !still.length, JSON.stringify(still));
   check("motion: no page errors", !f.errors.length && !calm.errors.length, [...f.errors, ...calm.errors].join(" | "));
