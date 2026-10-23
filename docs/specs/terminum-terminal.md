@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.5 |
-| Date | 2026-10-21 |
+| Version | 0.4.6 |
+| Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.6 | 2026-10-23 | Owner: the wavy line stood on the quote as sent (the message after it, Ask's `Quote Start ---- «`) instead of the text asked about: the agent had reprinted its answer and the original moved 130 lines away, so the sent copy was the nearest occurrence. That copy is never marked now (AC-37; `e2e_ask.mjs`, red before the fix). |
 | 0.4.5 | 2026-10-22 | Owner: a quote asked about (Ask's Add to Chat or Send to Agent) keeps a light blue wavy line down its left in the terminal, as a reminder's quote (first drawn as an underline; the owner asked for the side), kept by terminumd per pane so every page shows it (AC-37). |
 | 0.4.4 | 2026-10-22 | Owner: rendered output (a table, a diff's table, Markdown, a diagram) is never folded: a fold the history's look found over lines the page has and draws as a widget gives way, so a table no longer turns back into plain text a second after it was drawn; a fold of lines not sent (no text to draw) stays (AC-32, AC-56). |
 | 0.4.3 | 2026-10-22 | Owner: a tool's output that scrolled into the history whole folds at once, while the agent's next line is still on the screen (the history's look reads the screen after it); before, it stayed open until that line scrolled off too, so the block just above the screen often stood unfolded while the agent thought (AC-32). |
@@ -348,7 +349,7 @@ Scenario: AC-37 happy path — Ask about a selection
 
 Scenario: AC-37 happy path — an asked quote stays marked
   Given the user asked about a selection (Add to Chat or Send to Agent; terminumd gave it its number)
-  Then the quoted text in the terminal keeps a light blue wavy line (the Ask button's blue) down its rows' left, in the terminal's gutter, as a reminder's quote has (no underline), where it was selected: the occurrence nearest the line the selection began on (within 30 lines)
+  Then the quoted text in the terminal keeps a light blue wavy line (the Ask button's blue) down its rows' left, in the terminal's gutter, as a reminder's quote has (no underline), where it was selected: the occurrence nearest the line the selection began on (within 30 lines), never its copy in the message sent (after Ask's `Quote Start ---- «`)
   And terminumd keeps the quote (its number, text and that line) per pane in the project's asked.json, the newest 100 of each pane, so the line shows on every page of that pane, after a reload and after terminumd's restart
   And the line stands beside the rows, which stay as they are (copying, iOS's selection), for the rows within a screen of the visible ones; text in a fold or scrolled out of tmux's history has none
 

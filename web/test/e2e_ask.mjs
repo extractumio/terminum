@@ -49,6 +49,17 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   check(`${at} Ask: the quote is kept with its number and line, and keeps a light blue wavy line down its left where it was selected`,
     keep?.n === 7 && Number.isInteger(keep.line) && keep.text.includes("out 2500 lorem ipsum") && marked?.shown === 1 && marked.covers && marked.gutter && marked.color && marked.wavy && !marked.under,
     JSON.stringify({ keep, marked }));
+  // the quote as sent (Claude Code shows the message after it) is never marked, even where it stands
+  // nearest the line kept: the agent reprinted its answer and the original moved away
+  const row = (text) => ({ r: [[text, null, null, 0]], e: true });
+  say({ t: "screen", sid: "S1", full: false, n: 2, cols: 80, rows: 2, ch: [[0, row(`❯ Quote #0008: «${keep?.text}»`)], [1, row("  and why?")]] });
+  say({ t: "askedmarks", sid: "S1", items: [{ n: 8, text: keep?.text, line: 3000 }] });
+  await page.click("#bottom").catch(() => {});
+  await page.waitForTimeout(400);
+  const copy = await page.evaluate(() => ({ shown: [...document.querySelectorAll("#term .askline")].filter((l) => !l.hidden).length,
+    there: [...document.querySelectorAll("#screen .ln")].some((el) => el.textContent.includes("«out 2500 lorem")) }));
+  check(`${at} Ask: the quote as sent, in the message after it, never gets the wavy line`, copy.there && copy.shown === 0, JSON.stringify(copy));
+  say({ t: "askedmarks", sid: "S1", items: [] });
   // in a coding agent's box the blank line after it is typed (Ctrl+J), none before
   say({ t: "layout", groups: [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }, layout[0].items[1]] }] });
   await page.waitForTimeout(150);

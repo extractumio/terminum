@@ -18,6 +18,11 @@ export function askText(n, quote, question) {
   return `Quote #${String(n).padStart(4, "0")}:\n - Quote Start ----\n«${quote.replace(/\n+$/, "")}»\n- Quote End ----\n${question.trim()}\n----`;
 }
 
+/** Whether the text just before a quote's occurrence (white space as one space) is askText's
+ *  opening (or a shorter `Quote #N: «`): that occurrence is the copy sent to the agent, never
+ *  what was asked about. */
+export const sentCopy = (before) => /(Quote #\d+:|Quote Start -+) ?«$/.test(before);
+
 /** What goes to the pane for `text`, in order: [kind, data], kind "keys" (typed), "paste" or
  *  "enter" (typed a moment after); `now`: sent to the agent (Send to Agent). */
 export function askSends(text, agent, now = false) {

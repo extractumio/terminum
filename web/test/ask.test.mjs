@@ -2,7 +2,8 @@
 // What Ask pastes (ask.js, AC-37): the selection quoted and numbered, the question, a rule.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { askSends, askText, centerOn } from "../static/ask.js";
+import { askSends, askText, centerOn, sentCopy } from "../static/ask.js";
+import { squeeze } from "../static/asked.js";
 
 test("the quote numbered with four digits, in guillemets, the question under it, a rule", () => {
   assert.equal(askText(7, "retry loop\nnever resets\n", "  why?  "),
@@ -24,4 +25,15 @@ test("the dialog centered on the terminal, kept 8 px inside the window", () => {
   assert.deepEqual(centerOn(term, 600, 300, 1400, 900), { x: 450, y: 240 });
   assert.deepEqual(centerOn({ left: 0, top: 0, width: 400, height: 300 }, 600, 400, 420, 900), { x: 8, y: 8 }, "larger than the terminal: from the window's edge");
   assert.deepEqual(centerOn({ left: 1000, top: 0, width: 400, height: 900 }, 600, 300, 1400, 900), { x: 792, y: 300 }, "never past the window's right edge");
+});
+
+test("the quote as sent is told from the text asked about (asked.js marks the original only)", () => {
+  // Claude Code shows the message as sent, indented and wrapped; the original stands in the agent's answer
+  const sent = squeeze("❯ Quote #0002:\n  - Quote Start ----\n    «Daily runs failed\n  twice.»").out;
+  const original = squeeze("  What is wrong\n\n  - Daily runs failed\n    twice.").out;
+  const before = (s) => s.slice(Math.max(0, s.indexOf("Daily") - 40), s.indexOf("Daily"));
+  assert.equal(sentCopy(before(sent)), true);
+  assert.equal(sentCopy(before(original)), false);
+  assert.equal(sentCopy(before(squeeze(askText(3, "Daily runs failed", "why?")).out)), true, "askText's own form");
+  assert.equal(sentCopy(before(squeeze("❯ Quote #0003: «Daily runs failed\n  twice.»").out)), true, "as Claude Code shows it");
 });

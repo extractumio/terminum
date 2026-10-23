@@ -3,9 +3,11 @@
 // to Agent) stays marked in the terminal with a light blue wavy line down its left, beside its
 // rows (as a reminder's quote is: reminders.css), where it was selected. terminumd keeps them per
 // pane (`asked`, `askedmarks`), so every page of the pane shows them. Each is found by its text,
-// spaces counted as one, at the occurrence nearest the line its selection began on, among the
+// spaces counted as one, at the occurrence nearest the line its selection began on (never its copy
+// in the message sent: Ask's own quote), among the
 // rows within a screen of the visible ones (linkmarks.js); its line stands in the terminal's
 // left gutter (as a bookmark brought into view: markjump.js), the rows' DOM left as it is.
+import { sentCopy } from "./ask.js";
 import { nearRows } from "./linkmarks.js";
 import { continues, joinedText } from "./rowtext.js";
 
@@ -65,6 +67,7 @@ export function askedMarks({ term, boxes, view, send, sid }) {
       if (!want) continue;
       let best = null;
       for (let i = out.indexOf(want); i >= 0; i = out.indexOf(want, i + 1)) {
+        if (sentCopy(out.slice(Math.max(0, i - 40), i))) continue;   // the quote as sent, in the user's message
         const a = point(at[i], false), line = a && view.lineOf(a.node.parentElement?.closest(".ln"));
         const far = line === null || line === undefined ? Infinity : Math.abs(line - item.line);
         if (far <= NEAR_LINE && (!best || far < best.far)) best = { i, a, far };
