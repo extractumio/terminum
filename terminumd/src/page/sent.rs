@@ -73,7 +73,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         return;
     }
     if t == "asked" || t == "askedmarks" {
-        return asked(app, page, &msg, &key, &host, &path).await;
+        return asked(app, page, msg, &key, &host, &path).await;
     }
     if t == "sent" {
         let text = msg["text"].as_str().unwrap_or("");
