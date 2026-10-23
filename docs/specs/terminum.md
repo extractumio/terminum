@@ -4,8 +4,8 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.18.7 |
-| Date | 2026-10-22 |
+| Version | 0.18.8 |
+| Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.18.8 | 2026-10-23 | Owner: an agent's answer showed twice in a pane at tmux's history-limit. Where tmux drops a tenth at once the count leaves a few candidates (2 rows scrolled off, or 1202); the screen's rows confirm one only when they all moved, and a coding agent's spinner below never does, so the first candidate past the screen was taken and the screen's rows were appended as if they had scrolled off. The top half of the rows that moved (six at most) confirms a candidate now (AC-02; `e2e_livelimit.mjs`, red before the fix: 202 rows drawn twice). |
 | 0.18.7 | 2026-10-22 | Owner: a tmux session's group (one session or more) has the same kind of menu, on a right click on its header and on a ⋯ of its own: New Session, moves among the groups, Close Group (AC-07). |
 | 0.18.6 | 2026-10-22 | Owner: a project has a menu as a row's, on its ⋯ and on a right click on its header: New Session, Rename, Move to the Top, Up, Down, to the Bottom, Ungroup, Close Project (asks, then closes all its sessions) (AC-92). |
 | 0.18.5 | 2026-10-22 | Owner: a pane listed under its window has no Clone: the pointer over it showed the window's Clone among the panes (the window's row and its panes are one list item, and its Clone stood on the item's middle); now it shows only over the window's own row, at that row's middle (AC-07). |
@@ -220,6 +221,7 @@ Scenario: AC-02 edge — the pane prints while its history is read
   Given a frame said tmux's history holds h rows, and before the rows that scrolled off are read the pane prints 60 more (a coding agent's long result, over a host's ssh)
   Then terminumd's capture reaches 64 rows above the range (further once more when more scrolled) and comes with #{history_size} and #{pane_width} read before and after it, and the rows asked for are taken from where the rows that scrolled meanwhile moved them: the page gets the rows it numbered, never those 60 rows on shown in their place (a paragraph doubled, text out of its place); rows tmux no longer has are empty, never others
   And where the count cannot say how far rows moved (a history that shrank, or 90% of history-limit or more: tmux drops a tenth at once) one capture from 512 rows above the range down to the screen's end finds the last frame's top screen rows (six, two at least not blank) where they moved, and they number the rows (further once more when tmux still has rows above its reach); a width that changed meanwhile, those rows found nowhere or at two moves (output that repeats itself), sends no rows and the next frame starts the page's history anew
+  And at history-limit, where tmux's count leaves several numbers of rows that scrolled off, the screen's top rows (half of those that moved, six at most) say which: the bottom rows are a coding agent's to redraw (its spinner, its input) and never decide it, so the screen's rows are never appended as rows that scrolled off (an answer drawn twice)
   And the page fills a folded line only into the record of its own number
 Scenario: AC-02 edge — the scrollback is cleared
   When the user runs "clear && tmux clear-history" (or Claude Code's /clear)
