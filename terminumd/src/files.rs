@@ -187,19 +187,26 @@ mod tests {
         assert_eq!(read_view(t.parent().unwrap(), 1 << 20, &roots).unwrap_err(), OpError::BadName("Is a directory".into()));
     }
 
+    /// A pipe without a writer and an endless device are refused, never waited on: the checks run
+    /// on a thread of their own, so one that blocks fails the test (after 10 s) instead of hanging it.
     #[test]
     fn only_regular_files_are_read() {
-        let roots = Roots::parse("/nonexistent");
-        let started = std::time::Instant::now();
         let fifo = tmp("pipe");
         let _ = fs::remove_file(&fifo);
         let c = std::ffi::CString::new(fifo.as_os_str().as_encoded_bytes()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c.as_ptr(), 0o600) }, 0);
-        for p in [Path::new("/dev/zero"), Path::new("/dev/random"), fifo.as_path()] {
-            assert_eq!(read_view(p, 1 << 20, &roots).unwrap_err(), OpError::BadName("Not a regular file".into()), "{p:?}");
-            assert!(open_regular(p).is_err());
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let roots = Roots::parse("/nonexistent");
+            let got: Vec<_> = [Path::new("/dev/zero"), Path::new("/dev/random"), fifo.as_path()].iter()
+                .map(|p| (p.to_path_buf(), read_view(p, 1 << 20, &roots).err(), open_regular(p).is_err())).collect();
+            let _ = tx.send(got);
+        });
+        let got = rx.recv_timeout(std::time::Duration::from_secs(10)).expect("nothing blocked or read forever");
+        for (p, err, refused) in got {
+            assert_eq!(err, Some(OpError::BadName("Not a regular file".into())), "{p:?}");
+            assert!(refused, "{p:?}");
         }
-        assert!(started.elapsed() < std::time::Duration::from_secs(1), "nothing blocked or read forever");
     }
 
     #[test]
