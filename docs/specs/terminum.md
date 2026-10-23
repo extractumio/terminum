@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.18.8 |
+| Version | 0.18.9 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.18.9 | 2026-10-23 | Owner, a security audit: the sign-in never stands in an address: an image's `?t=` held the 30-day secret, which reads every file the user can, and Copy Image Address or Open Image in New Tab carried it away; the page and the panel fetch a file with the header and show it from a `blob:` address, terminumd no longer takes `?t=` (AC-09). |
 | 0.18.8 | 2026-10-23 | Owner: an agent's answer showed twice in a pane at tmux's history-limit. Where tmux drops a tenth at once the count leaves a few candidates (2 rows scrolled off, or 1202); the screen's rows confirm one only when they all moved, and a coding agent's spinner below never does, so the first candidate past the screen was taken and the screen's rows were appended as if they had scrolled off. The top half of the rows that moved (six at most) confirms a candidate now (AC-02; `e2e_livelimit.mjs`, red before the fix: 202 rows drawn twice). |
 | 0.18.7 | 2026-10-22 | Owner: a tmux session's group (one session or more) has the same kind of menu, on a right click on its header and on a ⋯ of its own: New Session, moves among the groups, Close Group (AC-07). |
 | 0.18.6 | 2026-10-22 | Owner: a project has a menu as a row's, on its ⋯ and on a right click on its header: New Session, Rename, Move to the Top, Up, Down, to the Bottom, Ungroup, Close Project (asks, then closes all its sessions) (AC-92). |
@@ -453,7 +454,7 @@ Scenario: AC-09 happy path — every browser signs in with the password
   Given the user ran "terminum password" and typed a password of at least 8 characters twice
   Then web.json (0600) holds it as a salted PBKDF2-SHA256 hash (200,000 iterations), every sign-in made before is revoked and every open page closes
   When a browser opens the page (the Mac's at "http://127.0.0.1:48080/", another device's through "tailscale serve") and sends the password in its form
-  Then terminumd answers {"secret"}: a 256-bit sign-in (kept as its SHA-256 and proof key in state/signins.json, 0600, at most 20, 30 days), which the page keeps in its own origin's storage (not a cookie: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol; images carry it as "?t=" on the same origin only; the page's address never holds it
+  Then terminumd answers {"secret"}: a 256-bit sign-in (kept as its SHA-256 and proof key in state/signins.json, 0600, at most 20, 30 days), which the page keeps in its own origin's storage (not a cookie: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol, never in an address: an image, a video, a document's stylesheet or a download is fetched with the header and shown from a "blob:" address (one copied from the page, as Copy Image Address does, signs nothing in); the page's address never holds it
 Scenario: AC-09 happy path — no password yet
   Given no password is set (a new install)
   Then the page's form says "No password is set yet. On the Mac, run: terminum password" and cannot be sent, and asks again every 5 s; "POST /auth/login" answers 503 no_password; "terminum status" says "password: not set — no browser signs in: terminum password"; "terminum open" says to set it first
@@ -468,6 +469,7 @@ Scenario Outline: AC-09 error — requests without a sign-in or from elsewhere a
     | POST /fb/api/fs/mkdir with a sign-in, Content-Type: text/plain         | 415    | bad_content_type |
     | POST /fb/api/os/reveal with X-Forwarded-Host (through a proxy)         | 403    | not_here         |
     | any request with Tailscale-Funnel-Request (the public internet)        | 403    | funnel           |
+    | GET /fb/api/raw?path=/etc/hosts&t=<a valid sign-in> (no header)        | 401    | bad_session      |
 Scenario: AC-09 failure — wrong passwords
   When a wrong password is sent
   Then it answers 401 "Wrong password."; passwords are checked one at a time, a wrong one holds the next for 1 s, after 5 from one address that address waits 15 s doubling to 5 min, after 20 from all addresses every address waits (429, "Too many wrong passwords. Try again in <n> s."), all counted apart for this Mac's own requests and for forwarded ones, so guesses from the tailnet never hold the Mac's browser; behind "tailscale serve" the address is X-Forwarded-For's last entry, believed only from loopback (so a program on this Mac can name any address: for it only the "all" count holds)
@@ -488,7 +490,7 @@ Scenario: AC-09 security — the page proves the server before it sends its secr
 Scenario: AC-09 security — private files and the socket
   Then "~/.terminum" is 0700 and everything terminumd and the installer create in it is 0600 (files) or 0700 (folders); the CLI talks to terminumd through the Unix socket "~/.terminum/state/terminumd.sock" (health, the password, sign-out), never with a sign-in over TCP; "/internal/*" and the socket's routes over TCP answer 404
 Scenario: AC-09 security — the page runs no content
-  Then the page's CSP is "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'", terminal output reaches only the panel's Markdown rules and Mermaid strict, and a link never navigates the page
+  Then the page's CSP is "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'", terminal output reaches only the panel's Markdown rules and Mermaid strict, and a link never navigates the page
 ```
 
 ### AC-10 — Other devices through tailscale serve [SHOULD / P1]
@@ -976,7 +978,7 @@ Today is iterm-enhancer 0.42 (`../iterm-enhancer`); the page and panel are inher
 
 ### Interfaces
 
-Sign-in: `POST /auth/login {"password"}` → `{"secret"}` (401 `wrong`, 429 `locked` with `retry`, 503 `no_password`); the page keeps the secret in its origin's storage. Every request needs `X-TM-Session: <secret>` (images `?t=`), the WebSocket the secret as its subprotocol. Errors are `{"error": "<code>", "message": "<text>"}`.
+Sign-in: `POST /auth/login {"password"}` → `{"secret"}` (401 `wrong`, 429 `locked` with `retry`, 503 `no_password`); the page keeps the secret in its origin's storage. Every request needs `X-TM-Session: <secret>` (never in the query: images are fetched with it and shown from `blob:`), the WebSocket the secret as its subprotocol. Errors are `{"error": "<code>", "message": "<text>"}`.
 
 What each request may do (forwarded: it carries Forwarded, X-Forwarded-* or Tailscale-*, as through `tailscale serve`):
 

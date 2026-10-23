@@ -32,7 +32,7 @@ page.on("pageerror", (e) => errors.push(e.message));
 page.on("dialog", (d) => { errors.push("dialog: " + d.message()); void d.dismiss(); });
 const toastText = () => page.textContent("#toast");
 const outside = [], blocked = [];
-const external = (u) => !u.startsWith(`http://127.0.0.1:${PORT}`) && !/^(data|about):/.test(u);
+const external = (u) => !u.startsWith(`http://127.0.0.1:${PORT}`) && !u.startsWith(`blob:http://127.0.0.1:${PORT}/`) && !/^(data|about):/.test(u);
 // a CSP-blocked load still emits "request" and then fails with "csp": only finished ones left the machine
 page.on("requestfinished", (r) => { if (external(r.url())) outside.push(r.url()); });
 page.on("requestfailed", (r) => { if (external(r.url()) && r.failure()?.errorText === "csp") blocked.push(r.url()); });
@@ -141,8 +141,11 @@ try {
   await page.waitForSelector(".md-body a");
   const inert = await page.$eval(".md-body", (el) => !el.querySelector("img[src='x']") && el.textContent.includes("<img src=x"));
   check("AC-54 raw HTML shown as text", inert);
+  // fetched with the sign-in's header and shown from a blob: (AC 09): no address on the page carries it
+  await page.waitForFunction(() => document.querySelector(".md-body img")?.src.startsWith("blob:"), null, { timeout: 5000 }).catch(() => {});
   const width = await page.$eval(".md-body img", (i) => new Promise((r) => (i.complete ? r(i.naturalWidth) : ((i.onload = () => r(i.naturalWidth)), (i.onerror = () => r(-1))))));
-  check("AC-54 relative image loads", width === 1, `width ${width}`);
+  const mdSrc = await page.$eval(".md-body img", (i) => i.getAttribute("src"));
+  check("AC-54 relative image loads, from a blob: address without the sign-in", width === 1 && mdSrc.startsWith("blob:"), `width ${width} ${mdSrc}`);
   const url = page.url();
   await page.click('.md-body a:text("guide")');
   await within("AC-67 local .md link opens a tab", (ms) => page.waitForSelector('.tab.active .tname:text("guide.md")', { timeout: ms }));
@@ -156,9 +159,12 @@ try {
   await within("AC-67 md link opens an HTML document rendered", (ms) => page.waitForSelector(".tab.active .tname:text('page.html')", { timeout: ms }).then(() => page.waitForSelector("iframe.html-doc", { timeout: ms })));
   const frame = page.frameLocator("iframe.html-doc");
   await within("AC-67 HTML content shown", (ms) => frame.locator("h1:text('HTML page')").waitFor({ timeout: ms }));
+  await frame.locator('img[src^="blob:"]').first().waitFor({ timeout: 5000 }).catch(() => {});
   const imgW = await frame.locator("img").first().evaluate((i) => new Promise((r) => (i.complete ? r(i.naturalWidth) : ((i.onload = () => r(i.naturalWidth)), (i.onerror = () => r(-1))))));
-  check("AC-67 relative image inside HTML loads", imgW === 1, `width ${imgW}`);
+  check("AC-67 relative image inside HTML loads (blob:, no sign-in in the document)", imgW === 1 && !(await frame.locator("html").evaluate((h, s) => h.outerHTML.includes(s), SECRET)), `width ${imgW}`);
   check("AC-67 scripts in HTML do not run", (await page.title()) !== "PWNED");
+  const planted = await frame.locator("html").evaluate((h) => ({ img: h.querySelector("#planted")?.getAttribute("src") ?? null, css: [...h.querySelectorAll("style")].some((s) => s.textContent.includes("localhost")) }));
+  check("AC-67 an HTML file's own data-raw reads nothing with the sign-in (only its local src and href are fetched)", planted.img === null && !planted.css, JSON.stringify(planted));
   await page.waitForTimeout(500);
   check("AC-67 HTML loads nothing from outside terminumd", outside.length === 0, outside.join(" "));
   check("AC-67 CSP blocked the external image and CSS url()", blocked.length >= 2, `${blocked.length} blocked`);
@@ -346,7 +352,9 @@ try {
 
   // AC-53 only regular files are read; AC-56 a large text file saves, a body over the limit is 413
   const t0 = Date.now();
-  const zero = await fetch(`${base}/fb/api/raw?path=/dev/zero&t=${SECRET}`);
+  const zero = await fetch(`${base}/fb/api/raw?path=/dev/zero`, { headers: H() });
+  const query = await fetch(`${base}/fb/api/raw?path=${encodeURIComponent(`${SB}/README.md`)}&t=${SECRET}`);
+  check("AC 09 the sign-in in an address signs nothing in", query.status === 401, String(query.status));
   check("AC-53 /dev/zero is refused at once", zero.status === 400 && Date.now() - t0 < 1000 && (await zero.json()).message === "Not a regular file");
   fs.writeFileSync(`${SB}/big.txt`, "x".repeat(9 << 20));
   const big = await (await fetch(`${base}/fb/api/file?path=${encodeURIComponent(`${SB}/big.txt`)}`, { headers: H() })).json();

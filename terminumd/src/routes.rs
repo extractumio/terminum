@@ -78,7 +78,7 @@ pub fn agent(app: Shared) -> Router {
 fn signed_in(app: &Shared, req: &Request) -> bool {
     let h = req.headers();
     let header = |n: &str| h.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    checks::signin_secret(req.method().as_str(), req.uri().query(), header).is_some_and(|s| app.signins.check(&s))
+    checks::signin_secret(header).is_some_and(|s| app.signins.check(&s))
 }
 
 async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Response {

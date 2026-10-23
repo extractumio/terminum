@@ -153,7 +153,7 @@ fn current(app: &Shared, auth: &Arc<WebAuth>) -> bool {
 /// `POST /auth/logout`: this browser's sign-in ends (the one it presents, if any).
 pub async fn logout(State(app): State<Shared>, headers: HeaderMap) -> Response {
     let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    if let Some(secret) = crate::auth::checks::signin_secret("POST", None, header) {
+    if let Some(secret) = crate::auth::checks::signin_secret(header) {
         let a = app.clone();
         if let Ok(Err(e)) = crate::http::blocking(move || a.signins.revoke(&secret)).await {
             tracing::warn!(event = "signout.unsaved", error = %e);

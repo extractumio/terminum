@@ -291,13 +291,20 @@ export class Widgets {
     if (act === "img") return this.openImage(root.host, b.dataset.path);
     if (act === "unimg") {
       const fig = b.closest("figure");
-      this.images.delete(this.imageKey(root.host, fig.dataset.path));
+      this.dropImage(this.imageKey(root.host, fig.dataset.path));
       this.keepPlace(() => fig.remove(), root.host);
     }
   }
 
 
   imageKey(row, path) { return `${hash(row.textContent)}:${path}`; }
+
+  /** An open image closed: its blob: address goes with it (panefiles.js resolve). */
+  dropImage(key) {
+    const url = this.images.get(key)?.url;
+    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+    this.images.delete(key);
+  }
 
   async openImage(row, path) {
     const k = this.imageKey(row, path);
@@ -306,7 +313,7 @@ export class Widgets {
     let got;
     try { got = await loadImage(await this.files.resolve(path)); } catch (e) { got = { error: e.message || String(e) }; }
     this.images.set(k, got);
-    for (const key of [...this.images.keys()].slice(0, Math.max(0, this.images.size - IMAGES_OPEN))) this.images.delete(key);
+    for (const key of [...this.images.keys()].slice(0, Math.max(0, this.images.size - IMAGES_OPEN))) this.dropImage(key);
     this.keepPlace(() => this.markImages(true), row);           // the line clicked stays where it is
     // ... unless the image would open out of sight: then just enough to show it
     const fig = row.isConnected && [...(row.shadowRoot?.querySelectorAll("figure") ?? [])].find((f) => f.dataset.path === path);

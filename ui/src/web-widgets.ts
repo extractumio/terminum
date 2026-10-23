@@ -8,7 +8,7 @@ import { highlightInto } from "./highlight";
 
 /** Markdown → HTML, as the panel renders a document; images show as their alt text (the page
  *  loads no image a terminal's text names, local or remote). Links are the page's to handle. */
-export const markdownHtml = (text: string): string => renderMd(text, { dir: "/", imageUrl: () => "" });
+export const markdownHtml = (text: string): string => renderMd(text, { dir: "/", imagePath: () => "" });
 
 /** Highlights `code` into `into` (tok-* spans); false when the language is not known. `lang`
  *  is a fence's word ("py") or a file's name ("tool.py"). */

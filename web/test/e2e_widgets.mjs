@@ -13,7 +13,7 @@ import { check, cleanup, playwright, results } from "./check.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.resolve(HERE, "../static");
 const DIST = path.resolve(HERE, "../../ui/dist");
-export const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'";   // AC-09
+export const CSP = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'";   // AC-09
 const ORIGIN = "http://web.test";
 const TYPES = { html: "text/html", css: "text/css", svg: "image/svg+xml", js: "text/javascript", png: "image/png" };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -178,8 +178,8 @@ export async function webWidgets(browser, name = "") {
     return { src: img.getAttribute("src"), cap: f.querySelector("figcaption").textContent, w: img.getBoundingClientRect().width,
       h: img.getBoundingClientRect().height, tw: t.clientWidth, th: t.clientHeight };
   });
-  check(`${at} the image button shows the file below its row, read through the Files proxy, named in full`,
-    fig.src === "/fb/api/raw?path=%2Ftmp%2Fshots%2Fshot.png" && fig.cap === "/tmp/shots/shot.png", JSON.stringify(fig));
+  check(`${at} the image button shows the file below its row, read through the Files proxy (shown from a blob:, the sign-in never in an address), named in full`,
+    fig.src.startsWith("blob:") && fig.cap === "/tmp/shots/shot.png", JSON.stringify(fig));
   check(`${at} … fitted to half the terminal's width and height at most`, fig.w <= fig.tw / 2 + 1 && fig.h <= fig.th / 2 + 1 && fig.w > 0, JSON.stringify(fig));
   check(`${at} … asking the pane's folder (a relative path is taken from it)`, sent.some((m) => m.t === "files"));
   const layout = await page.evaluate(() => {

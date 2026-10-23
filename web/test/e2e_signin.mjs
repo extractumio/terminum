@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-09 checks of the page's sign-in against a fake terminumd (fake.mjs): the password form
 // gets a sign-in that goes into the origin's storage; every request carries it as
-// X-TM-Session and an image's URL as ?t=, the WebSocket as its subprotocol, but only after the
+// X-TM-Session (an image too: fetched, shown from a blob:), the WebSocket as its subprotocol, but only after the
 // server proved it knows it; a server that cannot prove it never sees it; a signed-out page
 // drops its sign-in and shows the form; while no password is set the form says how to set one.
 
@@ -35,7 +35,8 @@ export async function webSignin(browser) {
   const state = await f.page.evaluate(() => ({ stored: localStorage.getItem("tm.session"), path: location.pathname + location.search,
     form: !document.getElementById("login").hidden, typed: document.getElementById("password").value }));
   await f.page.evaluate(() => fetch("/fb/api/state").catch(() => null));
-  const img = await f.page.evaluate(() => import("/signin.js").then((m) => m.signedUrl("/fb/api/raw?path=%2Ftmp%2Fa.png")));
+  await f.page.evaluate(() => import("/signin.js").then((m) => m.blobUrl("/fb/api/raw?path=%2Ftmp%2Fa.png")));
+  const img = f.requests.find((r) => r.path === "/fb/api/raw");
   const hello = f.requests.find((r) => r.path === "/api/hello"), first = f.requests.findIndex(carries);
   const q = new URLSearchParams(hello?.query ?? "");
   check("AC-09 sign-in: a new browser gets the password form and holds nothing (no proof, no header, no subprotocol)",
@@ -46,9 +47,10 @@ export async function webSignin(browser) {
   check("AC-09 sign-in: the server proves itself first (/api/hello with a 32-hex nonce and the sign-in's id)",
     !!hello && /^[0-9a-f]{32}$/.test(q.get("n")) && q.get("id") === crypto.createHash("sha256").update(SECRET).digest("hex").slice(0, 16)
       && f.requests.indexOf(hello) < first, JSON.stringify({ hello, first }));
-  check("AC-09 sign-in: requests carry X-TM-Session, the WebSocket the subprotocols tm and the secret, an image ?t=",
+  check("AC-09 sign-in: requests carry X-TM-Session, the WebSocket the subprotocols tm and the secret, an image the header (never ?t=)",
     f.requests.some((r) => r.path === "/fb/api/state" && r.headers["x-tm-session"] === SECRET)
-      && JSON.stringify(f.sockets.at(-1)?.protocols) === JSON.stringify(["tm", SECRET]) && img === `/fb/api/raw?path=%2Ftmp%2Fa.png&t=${SECRET}`,
+      && JSON.stringify(f.sockets.at(-1)?.protocols) === JSON.stringify(["tm", SECRET])
+      && img?.headers["x-tm-session"] === SECRET && img.query === "?path=%2Ftmp%2Fa.png" && !f.requests.some((r) => r.query.includes(SECRET)),
     JSON.stringify({ protocols: f.sockets.at(-1)?.protocols, img }));
 
   // Sign out in the menu: this browser's sign-in ends, at terminumd and here
@@ -87,9 +89,9 @@ export async function webSignin(browser) {
   await evil.page.waitForFunction(() => document.getElementById("status").textContent.length > 0, null, { timeout: 5000 }).catch(() => {});
   await pause(evil.page, 2500);                    // a retry or two
   const why = await evil.page.evaluate(() => document.getElementById("status").textContent);
-  const evilImg = await evil.page.evaluate(() => import("/signin.js").then((m) => m.signedUrl("/fb/api/raw?path=%2Ftmp%2Fa.png")));
-  check("AC-09 sign-in: a server that cannot prove itself never sees the secret: no header, no image URL with it, no WebSocket; the page says why",
-    !evil.requests.some(carries) && evil.sockets.length === 0 && evilImg === null && why === "terminum's server could not prove itself"
+  const evilImg = await evil.page.evaluate(() => import("/signin.js").then((m) => m.blobUrl("/fb/api/raw?path=%2Ftmp%2Fa.png")));
+  check("AC-09 sign-in: a server that cannot prove itself never sees the secret: no header, no image fetched with it, no WebSocket; the page says why",
+    !evil.requests.some(carries) && !evil.requests.some((r) => r.query.includes(SECRET)) && evil.sockets.length === 0 && !evilImg.url && !!evilImg.error && why === "terminum's server could not prove itself"
       && evil.requests.filter((r) => r.path === "/api/hello").length >= 2, JSON.stringify({ why, sockets: evil.sockets.length, asked: evil.requests.map((r) => r.path) }));
   await evil.close();
 

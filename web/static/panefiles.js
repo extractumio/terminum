@@ -16,9 +16,9 @@ const KEPT = 3000;           // answers kept, the oldest go first
 const SAY_EVERY = 250;       // ms between two "files turned up" (the page marks links again)
 
 /** paneInfo(): the shown pane's {cwd, home, host} or {error}, null when the Mac does not answer.
- *  fetchJson(url): the answer's JSON, null when it failed (tests give their own); sign(url): an
- *  image's URL with the sign-in. */
-export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null), sign = (url) => url) {
+ *  fetchJson(url): the answer's JSON, null when it failed (tests give their own); load(url):
+ *  an image's {url} to show (a blob: address, fetched with the sign-in) or {error}. */
+export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null), load = async (url) => ({ url })) {
   let pane = null, paneAt = -Infinity, asking = null;
   let found = new Map();     // host\npath -> {ok, at, tries, pending}
   const queue = [[], []];    // [images, text paths]: folders to list, {host, dir, names: Set}
@@ -129,10 +129,10 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
       if (!pane) return { error: "terminum's server does not answer" };
       if (pane.error) return { error: pane.error };
       const place = placeOf(value);
-      // an <img> sends no header: its URL carries the sign-in (signin.js signedUrl)
       if (!place) return { error: "this session's folder is not known" };
-      const url = await sign(`/fb/api/raw?${query({ path: place.path }, place.host)}`);
-      return url ? { url, path: place.path } : { error: "terminum's server could not prove itself" };
+      // an <img> sends no header: the file is fetched with it and shown from a blob: (signin.js blobUrl)
+      const got = await load(`/fb/api/raw?${query({ path: place.path }, place.host)}`);
+      return got.url ? { url: got.url, path: place.path } : { error: got.error ?? "not loaded" };
     },
     /** fn() when files turned out to be there or the pane's folder changed (at most every 250 ms). */
     listen(fn) { listeners.add(fn); },

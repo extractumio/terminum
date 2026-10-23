@@ -96,15 +96,14 @@ window.fetch = async (input, init = {}) => {
   return r;
 };
 
-/** A same-origin URL for an <img>, which sends no header: the sign-in as ?t= (AC-09), once the
- *  server proved itself; null when it did not (the image is not loaded). */
-export async function signedUrl(url) {
-  if (!secret) return url;
-  const u = new URL(url, location.href);
-  if (u.origin !== location.origin) return url;
-  if ((await prove()) !== "ok" || !secret) return null;
-  u.searchParams.set("t", secret);
-  return u.pathname + u.search + u.hash;
+/** A same-origin file for an <img>, which sends no header: fetched with the sign-in and shown
+ *  from a blob: address, so no address on the page carries it (Copy Image Address, AC-09).
+ *  {url} (the caller revokes it) or {error}: terminumd's message. */
+export async function blobUrl(url) {
+  let r;
+  try { r = await fetch(url); } catch (e) { return { error: e.message || String(e) }; }
+  if (!r.ok) return { error: (await r.json().catch(() => ({}))).message ?? `HTTP ${r.status}` };
+  return { url: URL.createObjectURL(await r.blob()) };
 }
 
 /** The WebSocket's subprotocols: ["tm", secret] when the page holds one. */

@@ -10,7 +10,8 @@ import { decodePath, hasScheme, resolvePath } from "./paths";
 
 /** env: the folder relative links and images resolve against, and the URL of a local image
  *  ("" when it is not loaded: its alt text shows instead). */
-export type MdEnv = { dir: string; imageUrl: (path: string) => string };
+/** imagePath(path): the path a local image is filled from (api.ts hydrateRaw), "" for none. */
+export type MdEnv = { dir: string; imagePath: (path: string) => string };
 
 const md = new MarkdownIt({ html: false, linkify: true, typographer: true, breaks: false })
   .use(taskLists, { enabled: false, label: true })
@@ -23,11 +24,12 @@ md.renderer.rules.image = (tokens, idx, _opts, e) => {
   const env = e as MdEnv;
   const t = tokens[idx];
   const src = String(t.attrGet("src") ?? "");
-  const url = hasScheme(src) || src.startsWith("data:") ? "" : env.imageUrl(resolvePath(env.dir, decodePath(src.split(/[?#]/)[0])));
+  const file = hasScheme(src) || src.startsWith("data:") ? "" : env.imagePath(resolvePath(env.dir, decodePath(src.split(/[?#]/)[0])));
   const alt = md.utils.escapeHtml(t.content);
-  // remote images are not loaded (CSP img-src 'self'); show the alt text as a link instead
-  return url
-    ? `<img src="${md.utils.escapeHtml(url)}" alt="${alt}" loading="lazy">`
+  // remote images are not loaded (CSP img-src 'self'); show the alt text as a link instead; a
+  // local one is fetched with the sign-in and shown from a blob: (api.ts hydrateRaw)
+  return file
+    ? `<img data-raw="${md.utils.escapeHtml(file)}" alt="${alt}">`
     : `<a href="${md.utils.escapeHtml(src)}" class="remote-img">🖼 ${alt || md.utils.escapeHtml(src)}</a>`;
 };
 

@@ -30,7 +30,7 @@ pub async fn socket(State(app): State<Shared>, headers: HeaderMap, ws: WebSocket
     let offered = headers.get("sec-websocket-protocol").and_then(|v| v.to_str().ok()).unwrap_or("");
     let ws = if offered.split(',').any(|p| p.trim() == "tm") { ws.protocols(["tm"]) } else { ws };
     let header = |n: &str| headers.get(n).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let secret = crate::auth::checks::signin_secret("GET", None, header).unwrap_or_default();
+    let secret = crate::auth::checks::signin_secret(header).unwrap_or_default();
     ws.max_message_size(MAX_MESSAGE).on_upgrade(move |s| serve(app, secret, rx, s))
 }
 

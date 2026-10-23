@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-import { signedUrl } from "./signin.js";              // first: it signs every request the page makes
+import { blobUrl } from "./signin.js";                // first: it signs every request the page makes
 import { connection } from "./conn.js";
 import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
@@ -114,7 +114,7 @@ quietSelection($("term"), touch);                   // no iOS menu over a select
 
 // The files the output names, on the pane's host: a path is a link, an image gets a button, only
 // when its file is there (relative paths from the pane's folder, as a click takes them).
-const shownFiles = paneFiles(() => views.paneInfo(), undefined, signedUrl);
+const shownFiles = paneFiles(() => views.paneInfo(), undefined, blobUrl);
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });

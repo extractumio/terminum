@@ -122,7 +122,7 @@ def main():
         st, body, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", ts)
         check("AC-09 the same sign-in works through tailscale serve's name", st == 200, st)
         st, body, _ = raw(PORT, "GET", "/fb/api/raw?path=/etc/hosts&t=" + secret, {"Host": host})
-        check("AC-09 an image's GET may carry the sign-in as ?t=", st == 200, st)
+        check("AC-09 the sign-in in an address signs nothing in (images are fetched with the header)", st == 401, st)
         st, body, _ = raw(PORT, "GET", "/auth/check", sess)
         check("AC-09 /auth/check says signed in", st == 204, st)
         n = "0123456789abcdef0123456789abcdef"

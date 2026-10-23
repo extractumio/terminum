@@ -3,7 +3,7 @@
 // the panel: anchors scroll, web links go to the default browser (in the web app: the reader's browser), files open as tabs
 // (`guide.md#install` opens guide.md and scrolls to "install").
 
-import { api, apiOrToast, basename, dirname, decodePath, hasScheme, PROXIED, rawUrl, resolvePath, toast, type FileView } from "./api";
+import { api, apiOrToast, basename, dirname, decodePath, hasScheme, hydrateRaw, PROXIED, resolvePath, toast, type FileView } from "./api";
 import { isMarkdown, renderMarkdown } from "./markdown";
 
 export const isHtml = (path: string) => /\.x?html?$/i.test(path);
@@ -68,29 +68,32 @@ export function renderDoc(box: HTMLElement, text: string, path: string, host: Li
   frame.addEventListener("load", () => {
     const doc = frame.contentDocument;
     if (!doc) return;
+    hydrateRaw(doc);
     doc.addEventListener("click", onClick(doc));
     if (anchor) scrollToAnchor(doc, anchor, false); // opening at a section: jump, do not animate
   });
   box.replaceChildren(frame);
 }
 
-/** Make an HTML file safe and self-contained: no scripts or frames, local resources through
- *  /api/raw, and the panel's colors as a fallback for unstyled pages. */
+/** Make an HTML file safe and self-contained: no scripts or frames, local resources fetched
+ *  from /api/raw with the sign-in once it is shown (hydrateRaw: `data-raw`, no address with a
+ *  secret in the document), and the panel's colors as a fallback for unstyled pages. */
 function prepareHtml(text: string, path: string): string {
   const doc = new DOMParser().parseFromString(text, "text/html");
   doc.querySelectorAll("script, iframe, frame, object, embed, base, meta").forEach((el) => el.remove());
   for (const el of doc.querySelectorAll("*")) {
-    for (const attr of [...el.attributes]) if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+    // handlers, and the file's own data-raw: only the paths below are fetched with the sign-in
+    for (const attr of [...el.attributes]) if (/^on|^data-raw$/i.test(attr.name)) el.removeAttribute(attr.name);
   }
   const local = (url: string | null) => !!url && !hasScheme(url) && !/^(#|\/\/)/.test(url);
-  const raw = (url: string) => rawUrl(resolvePath(dirname(path), decodePath(url.split(/[?#]/)[0])));
+  const file = (url: string) => resolvePath(dirname(path), decodePath(url.split(/[?#]/)[0]));
   for (const el of doc.querySelectorAll<HTMLElement>("img[src], source[src], video[src], audio[src], input[src]")) {
     const src = el.getAttribute("src");
-    if (local(src)) el.setAttribute("src", raw(src!));
+    if (local(src)) { el.dataset.raw = file(src!); el.removeAttribute("src"); }
   }
-  for (const el of doc.querySelectorAll('link[rel~="stylesheet"][href]')) {
+  for (const el of doc.querySelectorAll<HTMLElement>('link[rel~="stylesheet"][href]')) {
     const href = el.getAttribute("href");
-    if (local(href)) el.setAttribute("href", raw(href!)); else el.remove();
+    if (local(href)) { el.dataset.raw = file(href!); el.removeAttribute("href"); } else el.remove();
   }
   const cs = getComputedStyle(document.documentElement);
   const base = doc.createElement("style");
@@ -101,7 +104,7 @@ function prepareHtml(text: string, path: string): string {
   // the document's own policy: nothing may load from outside fbd, whatever the parent passes down
   const csp = doc.createElement("meta");
   csp.httpEquiv = "Content-Security-Policy";
-  csp.content = "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:";
+  csp.content = "default-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:";
   const referrer = Object.assign(doc.createElement("meta"), { name: "referrer", content: "no-referrer" });
   doc.head.prepend(csp, referrer);
   return "<!doctype html>" + doc.documentElement.outerHTML;
