@@ -70,6 +70,7 @@ pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String>
     let hash = PasswordHash::new(password)?;
     let a = app.clone();
     crate::http::blocking(move || {
+        let _one = WRITING.lock();
         let mut cfg = WebConfig::load(&a.cfg.dir)?;
         cfg.password = Some(hash);
         cfg.save(&a.cfg.dir).map_err(|e| format!("web.json not saved: {e}"))
@@ -86,6 +87,27 @@ pub async fn set_password(app: &Shared, password: &str) -> Result<Value, String>
         .map_err(|e| format!("the old sign-ins could not be removed: {e}"))?;
     app.pages.close_all();
     Ok(status(app))
+}
+
+/// One writer of web.json at a time: a password set while a sign-in strengthens the old one's
+/// hash is never written over.
+static WRITING: Mutex<()> = Mutex::new(());
+
+/// A hash of fewer iterations than today's, made again from the password just found right
+/// (`WebConfig::strengthen`), off the async workers; the check in memory stays until web.json
+/// is read again (a restart, `terminum signout`).
+fn strengthen(app: &Shared, old: PasswordHash, password: String) {
+    let a = app.clone();
+    tokio::task::spawn_blocking(move || {
+        let _one = WRITING.lock();
+        let Ok(mut cfg) = WebConfig::load(&a.cfg.dir) else { return };
+        if cfg.strengthen(&old, &password) {
+            match cfg.save(&a.cfg.dir) {
+                Ok(()) => tracing::info!(event = "web.password_strengthened", iterations = crate::auth::web::ITERATIONS),
+                Err(e) => tracing::warn!(event = "web.password_not_strengthened", error = %e),
+            }
+        }
+    });
 }
 
 /// `terminum signout`: every browser signs in again, and the brakes start over.
@@ -121,6 +143,7 @@ pub async fn login(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<Soc
         let message = app.web.error.lock().clone().unwrap_or_else(|| NO_PASSWORD.into());
         return (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"reason": "no_password", "message": message}))).into_response();
     };
+    let password = b.password.clone();
     match auth.login(b.password, address(&headers, peer)).await {
         Login::Right => {
             let a = app.clone();
@@ -133,6 +156,7 @@ pub async fn login(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<Soc
                 }
                 Ok(Ok(secret)) => {
                     tracing::info!(event = "signin.created", signins = app.signins.count());
+                    strengthen(&app, auth.hash().clone(), password);
                     Json(json!({"secret": secret})).into_response()
                 }
                 Ok(Err(e)) => (StatusCode::SERVICE_UNAVAILABLE, Json(json!({"reason": "failed", "message": format!("The sign-in could not be saved: {e}")}))).into_response(),

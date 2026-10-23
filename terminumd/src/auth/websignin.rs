@@ -104,6 +104,11 @@ impl WebAuth {
         WebAuth { hash, brakes: tokio::sync::Mutex::new(Brakes::default()), hold: WRONG_HOLD }
     }
 
+    /// The hash passwords are checked against.
+    pub fn hash(&self) -> &PasswordHash {
+        &self.hash
+    }
+
     /// `POST /auth/login {"password"}` from `address` (`client_address`). The check runs as a task
     /// of its own: a client that hangs up mid-check (its request's future dropped) neither
     /// escapes the brakes nor the hold, nor lets the next guess start before them.

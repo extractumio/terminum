@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.18.10 |
+| Version | 0.18.11 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.18.11 | 2026-10-23 | Owner, a security audit: PBKDF2 600,000 iterations (OWASP's count for PBKDF2-HMAC-SHA256); a hash of fewer is made again from the next right password, never over a password set meanwhile (one writer of web.json at a time) (AC-09). |
 | 0.18.10 | 2026-10-23 | Owner, a security audit: every answer, a refusal too, carries `nosniff`, `no-referrer`, `no-store` (unless it has its own), `Permissions-Policy`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` (a refusal had none of them); `/custom.css` needs the sign-in (any page could load the user's stylesheet): the page fetches it into a `<style>` (AC-09, AC-19). |
 | 0.18.9 | 2026-10-23 | Owner, a security audit: the sign-in never stands in an address: an image's `?t=` held the 30-day secret, which reads every file the user can, and Copy Image Address or Open Image in New Tab carried it away; the page and the panel fetch a file with the header and show it from a `blob:` address, terminumd no longer takes `?t=` (AC-09). |
 | 0.18.8 | 2026-10-23 | Owner: an agent's answer showed twice in a pane at tmux's history-limit. Where tmux drops a tenth at once the count leaves a few candidates (2 rows scrolled off, or 1202); the screen's rows confirm one only when they all moved, and a coding agent's spinner below never does, so the first candidate past the screen was taken and the screen's rows were appended as if they had scrolled off. The top half of the rows that moved (six at most) confirms a candidate now (AC-02; `e2e_livelimit.mjs`, red before the fix: 202 rows drawn twice). |
@@ -453,7 +454,7 @@ Scenario: AC-08 failure — launchd could not bind the port at a bootstrap (inst
 ```gherkin
 Scenario: AC-09 happy path — every browser signs in with the password
   Given the user ran "terminum password" and typed a password of at least 8 characters twice
-  Then web.json (0600) holds it as a salted PBKDF2-SHA256 hash (200,000 iterations), every sign-in made before is revoked and every open page closes
+  Then web.json (0600) holds it as a salted PBKDF2-SHA256 hash (600,000 iterations; a hash of fewer, as before 0.18.9, is made again with 600,000 at the next right password), every sign-in made before is revoked and every open page closes
   When a browser opens the page (the Mac's at "http://127.0.0.1:48080/", another device's through "tailscale serve") and sends the password in its form
   Then terminumd answers {"secret"}: a 256-bit sign-in (kept as its SHA-256 and proof key in state/signins.json, 0600, at most 20, 30 days), which the page keeps in its own origin's storage (not a cookie: a cookie on 127.0.0.1 would reach every local port) and sends as the header "X-TM-Session" on requests and as the WebSocket's subprotocol, never in an address: an image, a video, a document's stylesheet or a download is fetched with the header and shown from a "blob:" address (one copied from the page, as Copy Image Address does, signs nothing in); the page's address never holds it
 Scenario: AC-09 happy path — no password yet
