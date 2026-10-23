@@ -29,6 +29,8 @@ pub struct Numbering {
 
 /// Rows are matched by their text; a shift needs this many equal rows that are not blank.
 const MIN_MATCH: usize = 2;
+/// The screen's top rows that confirm one of tmux's counts at its limit.
+const TOP_ROWS: usize = 6;
 
 impl Numbering {
     pub fn top(&self) -> Option<i64> {
@@ -156,10 +158,13 @@ fn scrolled(from: i64, to: i64, limit: i64) -> Vec<i64> {
     out
 }
 
-/// Whether the old rows from `k` on are the new rows from 0 on, with enough non-blank ones.
+/// Whether the old rows from `k` on are the new rows from 0 on, judged by the top half of them
+/// (`TOP_ROWS` at most) with enough non-blank ones: one of tmux's few counts is only confirmed, and the screen's
+/// bottom is a coding agent's to redraw (its spinner, its input) while rows scroll off.
 fn shift_is(old: &[u64], new: &[u64], text: &[String], k: usize) -> bool {
     let n = old.len().min(new.len());
-    k < n && (0..n - k).all(|i| old[k + i] == new[i]) && (0..n - k).filter(|&i| !text[i].trim().is_empty()).count() >= MIN_MATCH.min(n - k)
+    let m = n.saturating_sub(k).div_ceil(2).min(TOP_ROWS);
+    k < n && (0..m).all(|i| old[k + i] == new[i]) && (0..m).filter(|&i| !text[i].trim().is_empty()).count() >= MIN_MATCH.min(m)
 }
 
 /// A row's plain text as the numbering knows it (its end's spaces aside).
@@ -229,6 +234,15 @@ mod tests {
         let mut n = Numbering::default();
         n.step(99, 80, &rows(&["l1", "l2", "l3", "l4", "l5", "l6"]), false, 100);
         assert_eq!(n.step(93, 80, &rows(&["l5", "l6", "l7", "l8", "l9", "l10"]), false, 100), Step::Append { from: 99, to: 103 }, "4 rows: 99, 100, trim to 90, 91, 92, 93");
+    }
+
+    #[test]
+    fn at_the_limit_a_scroll_under_a_redrawn_bottom_is_its_rows() {
+        // a coding agent: two rows scroll off while its spinner below redraws; tmux drops a
+        // tenth on the way, so 2 or 202 rows lead to 1801: the screen's top rows say 2
+        let mut n = Numbering::default();
+        n.step(1999, 80, &rows(&["a", "b", "c", "d", "e", "f", "g", "spin 1s"]), false, 2000);
+        assert_eq!(n.step(1801, 80, &rows(&["c", "d", "e", "f", "g", "h", "i", "spin 2s"]), false, 2000), Step::Append { from: 1999, to: 2001 });
     }
 
     #[test]
