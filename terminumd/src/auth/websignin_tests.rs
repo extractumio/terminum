@@ -75,13 +75,14 @@ fn many_addresses_do_not_grow_the_brakes_forever() {
 fn a_proxy_on_this_mac_names_the_browser_others_cannot() {
     let ip = |s: &str| s.parse::<IpAddr>().unwrap();
     // the proxy appends the address it saw; what the client sent before it is not believed
-    assert_eq!(client_address(ip("127.0.0.1"), Some("6.6.6.6, 100.64.0.7")), "100.64.0.7");
-    assert_eq!(client_address(ip("::1"), Some("100.64.0.7")), "100.64.0.7");
-    assert_eq!(client_address(ip("::ffff:127.0.0.1"), Some("100.64.0.7")), "100.64.0.7");
-    assert_eq!(client_address(ip("10.0.0.9"), Some("1.2.3.4")), "10.0.0.9");
-    assert_eq!(client_address(ip("::ffff:10.0.0.9"), None), "10.0.0.9");
-    assert_eq!(client_address(ip("127.0.0.1"), Some("1.2.3.4, ")), "127.0.0.1", "an empty last entry");
-    assert_eq!(client_address(ip("127.0.0.1"), None), "127.0.0.1");
+    assert_eq!(client_address(ip("127.0.0.1"), Some("6.6.6.6, 100.64.0.7"), true), "100.64.0.7");
+    assert_eq!(client_address(ip("::1"), Some("100.64.0.7"), true), "100.64.0.7");
+    assert_eq!(client_address(ip("::ffff:127.0.0.1"), Some("100.64.0.7"), true), "100.64.0.7");
+    assert_eq!(client_address(ip("10.0.0.9"), Some("1.2.3.4"), true), "10.0.0.9");
+    assert_eq!(client_address(ip("::ffff:10.0.0.9"), None, true), "10.0.0.9");
+    assert_eq!(client_address(ip("127.0.0.1"), Some("1.2.3.4, "), true), "127.0.0.1", "an empty last entry");
+    assert_eq!(client_address(ip("127.0.0.1"), None, true), "127.0.0.1");
+    assert_eq!(client_address(ip("127.0.0.1"), Some("100.64.0.7"), false), "127.0.0.1", "to 127.0.0.1: this Mac's own, whatever it names");
 }
 
 fn auth(hold: Duration) -> Arc<WebAuth> {

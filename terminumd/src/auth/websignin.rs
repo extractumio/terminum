@@ -20,13 +20,14 @@ pub const MAX_LOCK_S: u64 = 300;
 pub const WRONG_HOLD: Duration = Duration::from_secs(1);
 
 /// The browser's address. Behind a proxy on this Mac (`tailscale serve`) every request comes
-/// from loopback; only then is X-Forwarded-For believed, and only its last entry, which that
-/// proxy added (earlier ones are whatever the client sent).
-pub fn client_address(peer: IpAddr, forwarded_for: Option<&str>) -> String {
+/// from loopback with the proxy's name as Host (`proxied`); only then is X-Forwarded-For
+/// believed, and only its last entry, which that proxy added (earlier ones are whatever the
+/// client sent). A request to 127.0.0.1 is this Mac's own whatever it names.
+pub fn client_address(peer: IpAddr, forwarded_for: Option<&str>, proxied: bool) -> String {
     let peer = peer.to_canonical();
     let forwarded = forwarded_for.and_then(|f| f.rsplit(',').next()).map(str::trim).filter(|a| !a.is_empty());
     match forwarded {
-        Some(last) if peer.is_loopback() => last.to_string(),
+        Some(last) if peer.is_loopback() && proxied => last.to_string(),
         _ => peer.to_string(),
     }
 }

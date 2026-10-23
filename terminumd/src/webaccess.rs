@@ -129,9 +129,11 @@ pub struct LoginBody {
 }
 
 /// The address a sign-in counts against: the peer, or behind `tailscale serve` (a loopback
-/// peer) X-Forwarded-For's last entry.
+/// peer, the proxy's name as Host) X-Forwarded-For's last entry.
 fn address(headers: &HeaderMap, peer: SocketAddr) -> String {
-    websignin::client_address(peer.ip(), headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()))
+    let host = headers.get(axum::http::header::HOST).and_then(|v| v.to_str().ok()).map(crate::auth::checks::host_name).unwrap_or_default();
+    let proxied = !matches!(host.as_str(), "" | "127.0.0.1" | "localhost" | "::1");
+    websignin::client_address(peer.ip(), headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()), proxied)
 }
 
 /// How to set the password, said where it is missing.
