@@ -98,8 +98,9 @@ fn a_long_run_of_one_letter_is_quick() {
     let t = Instant::now();
     assert_eq!(find(&rows, &"0".repeat(300), 5000).unwrap().n, 5000);
     assert_eq!(find(&rows, &"abc".repeat(30), 5000), None);
-    // a quadratic search takes minutes; 1 s leaves room for a debug build beside 370 tests
-    assert!(t.elapsed().as_secs_f64() < 1.0, "{:?}", t.elapsed());
+    // a quadratic search takes minutes; 10 s leaves room for a debug build beside 450 tests on a
+    // busy machine (1.5 s seen under load, so 1 s failed now and then)
+    assert!(t.elapsed().as_secs_f64() < 10.0, "{:?}", t.elapsed());
 }
 
 #[test]
