@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Ask about a selection (AC-37): Ask (markpick.js) opens a dialog with the selected text and a
 // field for the question; Add to Chat asks terminumd for the pane's next quote number (it
-// counts up across devices: `askno`) and pastes the quote, the question and a rule at the
-// input's cursor, a blank line after it, without Enter: in a coding agent's box by two Ctrl+J
-// (a new line there; the edges of a paste are trimmed or folded into "[Pasted text]"), elsewhere
-// (a shell, where Ctrl+J would run the line) inside the paste. Send to Agent (a coding agent's
+// counts up across devices: `askno`) and pastes the quote and the question at the input's cursor,
+// compact (an agent's box taller than the pane's screen breaks its redraw: Claude Code draws over
+// its answer), a new line after it, without Enter: in a coding agent's box by a Ctrl+J (a new line
+// there; the edges of a paste are trimmed or folded into "[Pasted text]"), elsewhere (a shell,
+// where Ctrl+J would run the line) inside the paste. Send to Agent (a coding agent's
 // pane only) pastes the same and presses Enter.
 
 import { placeModal } from "./fabpane.js";
@@ -13,13 +14,15 @@ const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
 const ENTER_AFTER = 200;       // ms: an Enter in the same read as a paste is a new line to Claude Code
 
-/** What Add to Chat pastes: the selection quoted, numbered, the question under it. */
+/** What Add to Chat pastes: the selection numbered and quoted on its first line, its blank lines
+ *  and line ends' spaces left out, the question under it. */
 export function askText(n, quote, question) {
-  return `Quote #${String(n).padStart(4, "0")}:\n - Quote Start ----\n«${quote.replace(/\n+$/, "")}»\n- Quote End ----\n${question.trim()}\n----`;
+  const text = quote.replace(/[ \t]+$/gm, "").replace(/\n{2,}/g, "\n").replace(/^\n+|\n+$/g, "");
+  return `Quote #${String(n).padStart(4, "0")}: «${text}»\n${question.trim()}`;
 }
 
 /** Whether the text just before a quote's occurrence (white space as one space) is askText's
- *  opening (or a shorter `Quote #N: «`): that occurrence is the copy sent to the agent, never
+ *  opening (or the longer one before 0.4.7): that occurrence is the copy sent to the agent, never
  *  what was asked about. */
 export const sentCopy = (before) => /(Quote #\d+:|Quote Start -+) ?«$/.test(before);
 
@@ -27,7 +30,7 @@ export const sentCopy = (before) => /(Quote #\d+:|Quote Start -+) ?«$/.test(bef
  *  "enter" (typed a moment after); `now`: sent to the agent (Send to Agent). */
 export function askSends(text, agent, now = false) {
   if (now) return [["paste", text], ["enter", "\r"]];
-  return agent ? [["paste", text], ["keys", "\n\n"]] : [["paste", `${text}\n\n`]];
+  return agent ? [["paste", text], ["keys", "\n"]] : [["paste", `${text}\n`]];
 }
 
 /** Where a box w×h stands centered on `area` (a rect), kept `gap` inside a vw×vh window. */

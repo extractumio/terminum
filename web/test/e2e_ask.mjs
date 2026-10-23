@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Ask's dialog (AC-37), run by e2e_marks.mjs on its page: Add to Chat's numbered quote in a shell
+// Ask's dialog (AC-37), run by e2e_marks.mjs on its page: Add to Chat's numbered, compact quote in a shell
 // and in a coding agent's box, Send to Agent, Esc, a narrow window.
 
 import { check } from "./check.mjs";
@@ -8,7 +8,7 @@ import { check } from "./check.mjs";
  *  list; selectRow(page, text): selects a row's text. */
 export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   // Ask (AC-37): the dialog shows the selection; Add to Chat is off until a question is typed; the
-  // quote numbered by terminumd, the question and a rule pasted at the cursor, no Enter; Esc pastes nothing
+  // quote numbered by terminumd and the question pasted at the cursor, compact, no Enter; Esc pastes nothing
   await page.click("#bottom").catch(() => {});
   await selectRow(page, "out 2500 lorem");
   await page.waitForSelector("#askfab:not([hidden])", { timeout: 3000 }).catch(() => {});
@@ -25,9 +25,9 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.click('#askbox button[value="add"]');
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   const asked = sent.slice(k), quoted = asked.filter((x) => x.t === "in").map((x) => x.data).join("");
-  check(`${at} Ask: a dialog with the selection, Add to Chat off until a question, no Send to Agent in a shell; the quote numbered by terminumd, the question and a rule pasted, no Enter`,
+  check(`${at} Ask: a dialog with the selection, Add to Chat off until a question, no Send to Agent in a shell; the quote numbered by terminumd on its first line and the question pasted, no Enter`,
     dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.noSend && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
-    && quoted.startsWith("\x1b[200~Quote #0007:\r - Quote Start ----\r«out 2500 lorem ipsum") && quoted.endsWith("»\r- Quote End ----\rwhy does it never reset?\r----\r\r\x1b[201~"),
+    && quoted.startsWith("\x1b[200~Quote #0007: «out 2500 lorem ipsum") && quoted.endsWith("»\rwhy does it never reset?\r\x1b[201~"),
     JSON.stringify({ dialog, quoted }));
   // the quote stays marked: terminumd keeps it with its number and the line its selection began on,
   // and its answer puts a light blue wavy line (the Ask button's) down the quote's rows' left, as a
@@ -60,7 +60,7 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
     there: [...document.querySelectorAll("#screen .ln")].some((el) => el.textContent.includes("«out 2500 lorem")) }));
   check(`${at} Ask: the quote as sent, in the message after it, never gets the wavy line`, copy.there && copy.shown === 0, JSON.stringify(copy));
   say({ t: "askedmarks", sid: "S1", items: [] });
-  // in a coding agent's box the blank line after it is typed (Ctrl+J), none before
+  // in a coding agent's box the new line after it is typed (Ctrl+J), none before
   say({ t: "layout", groups: [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }, layout[0].items[1]] }] });
   await page.waitForTimeout(150);
   await selectRow(page, "out 2500 lorem");
@@ -70,8 +70,8 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.click('#askbox button[value="add"]');
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
   const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data);
-  check(`${at} Ask in a coding agent's box: the paste, then two Ctrl+J (a blank line after it, none before; nothing sent)`,
-    typed.length === 2 && typed[1] === "\n\n" && typed[0].startsWith("\x1b[200~Quote #0007:\r") && typed[0].endsWith("and now?\r----\x1b[201~"), JSON.stringify(typed));
+  check(`${at} Ask in a coding agent's box: the paste, then a Ctrl+J (a new line after it, none before; nothing sent)`,
+    typed.length === 2 && typed[1] === "\n" && typed[0].startsWith("\x1b[200~Quote #0007: «") && typed[0].endsWith("»\rand now?\x1b[201~"), JSON.stringify(typed));
   // Send to Agent (a coding agent's pane only): the same paste, then Enter a moment after
   await selectRow(page, "out 2500 lorem");
   await page.click("#askfab");
@@ -82,7 +82,7 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.waitForTimeout(400);
   const now = sent.slice(k).filter((x) => x.t === "in");
   check(`${at} Ask's Send to Agent in a coding agent's pane: the paste, then Enter`,
-    now.length === 2 && now[0].data.startsWith("\x1b[200~Quote #0007:\r") && now[0].data.endsWith("send it\r----\x1b[201~") && now[1].data === "\r", JSON.stringify(now.map((x) => x.data)));
+    now.length === 2 && now[0].data.startsWith("\x1b[200~Quote #0007: «") && now[0].data.endsWith("»\rsend it\x1b[201~") && now[1].data === "\r", JSON.stringify(now.map((x) => x.data)));
   say({ t: "layout", groups: layout });
   await page.waitForTimeout(150);
   await selectRow(page, "out 2500 lorem");
