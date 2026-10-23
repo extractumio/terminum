@@ -388,6 +388,14 @@ export async function webWidgets(browser, name = "") {
     files: { [dir]: ["drill-results.png"] } });
   await broken.page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.shadowRoot?.querySelector(".wgi button")), null, { timeout: 8000 }).catch(() => {});
   await broken.page.waitForFunction(() => CSS.highlights?.get("lnk")?.size, null, { timeout: 8000 }).catch(() => {});   // links after image buttons
+  // measured while the terminal is in sight: the file opened below takes its place (View), and the
+  // underlines of a hidden terminal are dropped as soon as they are looked at again
+  const glue = await broken.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#screen .ln")];
+    const btn = rows.map((el) => el.shadowRoot?.querySelector(".wgi button")).find(Boolean);
+    const lnk = [...(CSS.highlights?.get("lnk") ?? [])].map((r) => [rows.indexOf(r.startContainer.parentElement.closest(".ln")), rows.indexOf(r.endContainer.parentElement.closest(".ln"))]);
+    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk };
+  });
   const second = await broken.page.evaluate(() => {
     const row = [...document.querySelectorAll("#screen .ln")][2], walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
     let t = walk.nextNode();
@@ -403,21 +411,11 @@ export async function webWidgets(browser, name = "") {
   await broken.page.keyboard.up(mod);
   await broken.page.waitForFunction(() => document.getElementById("file").getAttribute("src"), null, { timeout: 5000 }).catch(() => {});
   const openedLong = await broken.page.evaluate(() => new URLSearchParams(new URL(document.getElementById("file").src || "http://x/").search).get("view"));
-  // opening the file redraws the rows: their links are underlined again and the image button drawn again a moment
-  // later (WebKit's button may come after the underline): wait for both
-  await broken.page.waitForFunction(() => {
-    const rows = [...document.querySelectorAll("#screen .ln")], at = (n) => rows.indexOf(n.parentElement?.closest(".ln"));
-    return [...(CSS.highlights?.get("lnk") ?? [])].some((r) => at(r.startContainer) === 1 && at(r.endContainer) === 2)
-      && rows.some((el) => el.shadowRoot?.querySelector(".wgi button"));
-  }, null, { timeout: 5000 }).catch(() => {});
-  const glue = await broken.page.evaluate(() => {
-    const rows = [...document.querySelectorAll("#screen .ln")];
-    const btn = rows.map((el) => el.shadowRoot?.querySelector(".wgi button")).find(Boolean);
-    const lnk = [...(CSS.highlights?.get("lnk") ?? [])].map((r) => [rows.indexOf(r.startContainer.parentElement.closest(".ln")), rows.indexOf(r.endContainer.parentElement.closest(".ln"))]);
-    const sel = getSelection(), r = document.createRange();
+  // the two rows selected and copied as one path
+  await broken.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#screen .ln")], sel = getSelection(), r = document.createRange();
     r.setStart(rows[1], 0); r.setEnd(rows[2], rows[2].childNodes.length);
     sel.removeAllRanges(); sel.addRange(r);
-    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk };
   });
   await broken.page.evaluate(() => { window.copied = []; document.addEventListener("copy", (e) => window.copied.push(e.clipboardData?.getData("text/plain"))); });
   await broken.page.keyboard.press(process.platform === "darwin" ? "Meta+C" : "Control+C");
