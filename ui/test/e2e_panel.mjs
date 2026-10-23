@@ -388,12 +388,15 @@ console.log(failed ? `FAIL (${failed} of ${results.length})` : `PASS (${results.
 process.exit(failed ? 1 : 0);
 
 /** A PUT whose answer may come before the body is sent (a 413): the answer counts, not the
- *  reset of the rest of the upload (fetch reports only the reset). */
+ *  reset of the rest of the upload (fetch reports only the reset). Its own socket, never pooled:
+ *  the reset can come after the answer ended, when the request no longer listens to the socket,
+ *  and an error nobody listens to ends the run. */
 function putRaw(p, body) {
   return new Promise((resolve, reject) => {
-    const req = http.request(`${base}${p}`, { method: "PUT", headers: H({ "Content-Type": "application/json", "If-Match": "*" }) }, (res) => {
+    const req = http.request(`${base}${p}`, { method: "PUT", agent: false, headers: H({ "Content-Type": "application/json", "If-Match": "*" }) }, (res) => {
       let text = ""; res.on("data", (d) => (text += d)); res.on("end", () => resolve({ status: res.statusCode, text }));
     });
+    req.on("socket", (s) => s.on("error", () => {}));            // the request's own handler says what failed
     req.on("error", (e) => setTimeout(() => reject(e), 1000));   // a reset after the answer is ignored
     req.end(body);
   });
