@@ -126,7 +126,7 @@ fn under(path: &str, prefix: &str) -> bool {
 /// files, `/api/hello` and the sign-in (`/auth/*`).
 pub fn needs_signin(path: &str) -> bool {
     let p = tidy(path);
-    p == "/ws" || p == "/paste" || p == "/upload" || (under(&p, "/api") && p != "/api/hello") || under(&p, "/fb/api")
+    p == "/ws" || p == "/paste" || p == "/upload" || p == "/custom.css" || (under(&p, "/api") && p != "/api/hello") || under(&p, "/fb/api")
 }
 
 /// What only the Mac's own browser may do: Finder and default apps, typing a path into a
@@ -205,10 +205,10 @@ fn clip(s: &str) -> String {
     s.chars().take(200).collect()
 }
 
-/// The sign-in a request presents: the `X-TM-Session` header; on a GET (an `<img>`) the
-/// query's `t=`; on a WebSocket the second of the subprotocols `tm, <secret>` (the answer
-/// selects `tm`).
-pub fn signin_secret(method: &str, query: Option<&str>, header: impl Fn(&str) -> Option<String>) -> Option<String> {
+/// The sign-in a request presents: the `X-TM-Session` header; on a WebSocket the second of
+/// the subprotocols `tm, <secret>` (the answer selects `tm`). Never the query: an address
+/// is copied and kept (an image's, in history), so files are fetched with the header.
+pub fn signin_secret(header: impl Fn(&str) -> Option<String>) -> Option<String> {
     if let Some(s) = header("x-tm-session").filter(|s| !s.is_empty()) {
         return Some(s);
     }
@@ -219,9 +219,6 @@ pub fn signin_secret(method: &str, query: Option<&str>, header: impl Fn(&str) ->
         {
             return Some(s.to_string());
         }
-    }
-    if method == "GET" {
-        return query?.split('&').find_map(|kv| kv.strip_prefix("t=")).filter(|s| !s.is_empty()).map(str::to_string);
     }
     None
 }

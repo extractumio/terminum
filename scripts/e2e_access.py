@@ -122,7 +122,15 @@ def main():
         st, body, _ = raw(PORT, "GET", "/fb/api/ls?path=/tmp", ts)
         check("AC-09 the same sign-in works through tailscale serve's name", st == 200, st)
         st, body, _ = raw(PORT, "GET", "/fb/api/raw?path=/etc/hosts&t=" + secret, {"Host": host})
-        check("AC-09 an image's GET may carry the sign-in as ?t=", st == 200, st)
+        check("AC-09 the sign-in in an address signs nothing in (images are fetched with the header)", st == 401, st)
+        st, body, _ = raw(PORT, "GET", "/custom.css", {"Host": host})
+        check("AC-09 /custom.css needs the sign-in", st == 401, st)
+        st, body, _ = raw(PORT, "GET", "/custom.css", sess)
+        check("AC-09 /custom.css is the page's with it", st == 200, st)
+        st, body, head = raw(PORT, "GET", "/fb/api/ls?path=/tmp", {"Host": host})
+        hardened = [h for h in ("x-content-type-options: nosniff", "referrer-policy: no-referrer", "cache-control: no-store", "permissions-policy: camera=()",
+                                "cross-origin-opener-policy: same-origin", "cross-origin-resource-policy: same-origin") if h not in head.lower()]
+        check("AC-09 a refusal carries the security headers too", st == 401 and not hardened, hardened)
         st, body, _ = raw(PORT, "GET", "/auth/check", sess)
         check("AC-09 /auth/check says signed in", st == 204, st)
         n = "0123456789abcdef0123456789abcdef"

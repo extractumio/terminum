@@ -96,7 +96,7 @@ fn internal_paths_are_not_on_tcp_at_all() {
 
 #[test]
 fn the_page_the_hello_and_the_sign_in_need_no_sign_in() {
-    for path in ["/", "/index.html", "/app.js", "/fb/", "/fb/renderers.js", "/api/hello", "/custom.css", "/auth/check"] {
+    for path in ["/", "/index.html", "/app.js", "/fb/", "/fb/renderers.js", "/api/hello", "/auth/check"] {
         assert_eq!(ask(&L, "GET", path, &local(&[]), false), Ok(true), "{path}");
         assert_eq!(ask(&L, "GET", path, &tailnet(&[]), false), Ok(false), "{path}");
     }
@@ -210,17 +210,15 @@ fn host_names_lose_their_port_and_brackets() {
 }
 
 #[test]
-fn the_sign_in_comes_from_the_header_the_subprotocol_or_an_images_query() {
-    let none = |_: &str| None;
+fn the_sign_in_comes_from_the_header_or_the_subprotocol_never_the_query() {
     let header = |v: &'static str| move |n: &str| (n == "x-tm-session").then(|| v.to_string());
-    assert_eq!(signin_secret("POST", None, header("abc")), Some("abc".into()));
-    assert_eq!(signin_secret("GET", Some("x=1&t=abc"), none), Some("abc".into()));
-    assert_eq!(signin_secret("POST", Some("t=abc"), none), None, "only a GET carries it in the query");
-    assert_eq!(signin_secret("GET", Some("t="), none), None);
+    assert_eq!(signin_secret(header("abc")), Some("abc".into()));
+    assert_eq!(signin_secret(header("")), None);
     let proto = |v: &'static str| move |n: &str| (n == "sec-websocket-protocol").then(|| v.to_string());
-    assert_eq!(signin_secret("GET", None, proto("tm, abc")), Some("abc".into()));
-    assert_eq!(signin_secret("GET", None, proto("chat, abc")), None);
-    assert_eq!(signin_secret("GET", None, proto("tm")), None);
+    assert_eq!(signin_secret(proto("tm, abc")), Some("abc".into()));
+    assert_eq!(signin_secret(proto("chat, abc")), None);
+    assert_eq!(signin_secret(proto("tm")), None);
+    assert!(needs_signin("/custom.css") && needs_signin("//custom.css"), "the user's stylesheet is theirs");
 }
 
 #[test]

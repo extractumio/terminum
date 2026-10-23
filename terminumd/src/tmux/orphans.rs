@@ -226,7 +226,7 @@ mod tests {
     #[cfg(not(target_os = "linux"))]
     #[test]
     fn a_ps_that_cannot_say_ends_nothing_without_proc() {
-        let list = vec![format!("   11     1 tmux -u -C new-session -A -f ignore-size -s terminum")];
+        let list = vec!["   11     1 tmux -u -C new-session -A -f ignore-size -s terminum".to_string()];
         let out = run(10, &[], &list, "11 tmux: client\n", "", "", true);
         assert!(!out.contains("KILL") && out.contains("ANSWER done"), "{out}");
     }

@@ -22,20 +22,23 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
     placed.width === 600 && Math.abs(placed.dx) <= 1 && Math.abs(placed.dy) <= 1 && placed.termLeft > 0, JSON.stringify(placed));
   await page.fill("#askq", "why does it never reset?");
   let k = sent.length;
+  const top = () => page.evaluate(() => Math.round(document.getElementById("term").scrollTop));
+  let was = await top();
   await page.click('#askbox button[value="add"]');
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  let stayed = await top();
   const asked = sent.slice(k), quoted = asked.filter((x) => x.t === "in").map((x) => x.data).join("");
-  check(`${at} Ask: a dialog with the selection, Add to Chat off until a question, no Send to Agent in a shell; the quote numbered by terminumd on its first line and the question pasted, no Enter`,
+  check(`${at} Ask: a dialog with the selection, Add to Chat off until a question, no Send to Agent in a shell; the quote numbered by terminumd on its first line and the question pasted, no Enter; the view stays where it was`,
     dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.noSend && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
-    && quoted.startsWith("\x1b[200~Quote #0007: «out 2500 lorem ipsum") && quoted.endsWith("»\rwhy does it never reset?\r\x1b[201~"),
-    JSON.stringify({ dialog, quoted }));
+    && quoted.startsWith("\x1b[200~Quote #0007: «out 2500 lorem ipsum") && quoted.endsWith("»\rwhy does it never reset?\r\x1b[201~") && was > 0 && stayed === was,
+    JSON.stringify({ dialog, quoted, was, stayed }));
   // the quote stays marked: terminumd keeps it with its number and the line its selection began on,
   // and its answer puts a light blue wavy line (the Ask button's) down the quote's rows' left, as a
   // reminder's quote has; no underline
   const keep = asked.find((x) => x.t === "asked");
   say({ t: "askedmarks", sid: "S1", items: keep ? [{ n: keep.n, text: keep.text, line: keep.line }] : [] });
-  // the paste brought the view to the input: the quote is marked once it is in sight again
-  await page.evaluate(() => [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("out 2500 lorem"))?.scrollIntoView({ block: "center" }));
+  // the view stayed on the quote: it is marked there
   await page.waitForFunction(() => [...document.querySelectorAll("#term .askline")].some((l) => !l.hidden), null, { timeout: 3000 }).catch(() => {});
   const marked = await page.evaluate(() => {
     const lines = [...document.querySelectorAll("#term .askline")].filter((l) => !l.hidden);
@@ -67,11 +70,14 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.click("#askfab");
   await page.fill("#askq", "and now?");
   k = sent.length;
+  was = await top();
   await page.click('#askbox button[value="add"]');
   await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForTimeout(300);
+  stayed = await top();
   const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data);
-  check(`${at} Ask in a coding agent's box: the paste, then a Ctrl+J (a new line after it, none before; nothing sent)`,
-    typed.length === 2 && typed[1] === "\n" && typed[0].startsWith("\x1b[200~Quote #0007: «") && typed[0].endsWith("»\rand now?\x1b[201~"), JSON.stringify(typed));
+  check(`${at} Ask in a coding agent's box: the paste, then a Ctrl+J (a new line after it, none before; nothing sent); the view stays where it was`,
+    typed.length === 2 && typed[1] === "\n" && typed[0].startsWith("\x1b[200~Quote #0007: «") && typed[0].endsWith("»\rand now?\x1b[201~") && was > 0 && stayed === was, JSON.stringify({ typed, was, stayed }));
   // Send to Agent (a coding agent's pane only): the same paste, then Enter a moment after
   await selectRow(page, "out 2500 lorem");
   await page.click("#askfab");

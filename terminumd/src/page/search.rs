@@ -137,15 +137,23 @@ mod tests {
         assert_eq!((hits.len(), total), (MAX_HITS, MAX_HITS + 5));
     }
 
+    /// The same text as one wrapped line and as short lines takes about as long: a line joined
+    /// again per row would take thousands of times longer. Timed against the short lines, side by
+    /// side, the best of three, so a busy machine (the other tests) slows both alike.
     #[test]
     fn a_long_wrapped_line_is_quick() {
         let a = "a".repeat(200);
-        let mut rows: Vec<(i64, &str, bool)> = (0..11000).map(|n| (n, a.as_str(), false)).collect();
-        rows.push((11000, "a", true));
-        let t = Instant::now();
-        let (hits, total) = find(&rows, "a");
+        let rows = |eol| -> Vec<(i64, &str, bool)> { (0..=11000).map(|n| (n, if n < 11000 { a.as_str() } else { "a" }, eol || n == 11000)).collect() };
+        let (wrapped, short) = (rows(false), rows(true));
+        let best = |rows: &[(i64, &str, bool)]| (0..3).map(|_| {
+            let t = Instant::now();
+            assert_eq!(find(rows, "a").1, 11000 * 200 + 1);
+            t.elapsed()
+        }).min().unwrap();
+        let (hits, total) = find(&wrapped, "a");
         assert_eq!((hits.len(), total), (MAX_HITS, 11000 * 200 + 1));
-        assert!(t.elapsed().as_secs_f64() < 0.5, "{:?}", t.elapsed());
+        let (w, s) = (best(&wrapped), best(&short));
+        assert!(w < s * 4, "wrapped {w:?}, short lines {s:?}");
     }
 
     #[test]

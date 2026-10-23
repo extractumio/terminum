@@ -59,9 +59,10 @@ struct PanelFiles;
 
 /// The CSP of the page and the panel: no script but their own, no content from elsewhere,
 /// framed only by the page itself. The socket by name: WebKit's 'self' may not cover ws:.
+/// `blob:`: files are fetched with the sign-in's header and shown from blob addresses.
 fn csp(host: &str) -> String {
     format!(
-        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; \
+        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; \
          connect-src 'self' ws://{host} wss://{host}; frame-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"
     )
 }

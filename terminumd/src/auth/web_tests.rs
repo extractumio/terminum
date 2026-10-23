@@ -35,7 +35,7 @@ fn a_hash_iterm_enhancer_wrote_verifies() {
             "hash": "5201b39cf5575440e5063f6e00d88ad09423ed67a885b6161f1693c88b4fd429"}"#).unwrap();
     assert!(python.verify("correct horse"));
     assert!(!python.verify("correct horsf"));
-    assert_eq!(PasswordHash::with_salt("correct horse", &(0..16).collect::<Vec<u8>>(), ITERATIONS), python);
+    assert_eq!(PasswordHash::with_salt("correct horse", &(0..16).collect::<Vec<u8>>(), 200_000), python);
 }
 
 #[test]
@@ -101,4 +101,20 @@ fn browsers_sign_in_only_with_a_usable_password() {
     let set = PasswordHash::with_salt("password1", b"s", 1);
     let on = WebConfig { password: Some(set.clone()), ..WebConfig::default() };
     assert_eq!(on.usable_password(), Ok(Some(set)));
+}
+
+#[test]
+fn a_weaker_hash_is_made_again_from_the_right_password_unless_another_was_set() {
+    let old = PasswordHash::with_salt("correct horse", b"0123456789abcdef", 200_000);
+    let mut cfg = WebConfig { password: Some(old.clone()), ..WebConfig::default() };
+    assert!(cfg.strengthen(&old, "correct horse"));
+    let new = cfg.password.clone().unwrap();
+    assert_eq!(new.iterations, ITERATIONS);
+    assert_ne!(new.salt, old.salt, "a fresh salt");
+    assert!(new.verify("correct horse") && !new.verify("correct hors"));
+    assert!(!cfg.strengthen(&new, "correct horse"), "as strong already: left");
+    let mut other = WebConfig { password: Some(PasswordHash::new("another one").unwrap()), ..WebConfig::default() };
+    let before = other.clone();
+    assert!(!other.strengthen(&old, "correct horse"), "a password set meanwhile is not written over");
+    assert_eq!(other, before);
 }

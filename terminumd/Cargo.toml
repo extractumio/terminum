@@ -36,6 +36,10 @@ unicode-width = "0.2"  # cells of wide characters in tmux's captures (DEP-01)
 name = "frame"
 harness = false
 
+# PBKDF2's 600,000 rounds of the web password take seconds unoptimized, and the tests sign in often
+[profile.dev.package.sha2]
+opt-level = 3
+
 [profile.release]
 lto = "thin"
 codegen-units = 4

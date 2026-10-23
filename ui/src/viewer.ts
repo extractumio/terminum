@@ -7,7 +7,7 @@ import { EditorState, Compartment, type Text } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { editorExtensions } from "./viewer-editor";
 
-import { api, apiOrToast, ApiError, basename, esc, fmtSize, isUnder, PROXIED, rawUrl, rebase, toast, type FileView, type Stamp, type Tab } from "./api";
+import { api, apiOrToast, ApiError, basename, downloadRaw, esc, fmtSize, hydrateRaw, isUnder, PROXIED, rawUrl, rebase, toast, type FileView, type Stamp, type Tab } from "./api";
 import { ask } from "./dialogs";
 import { zoomOutside } from "./embed";
 import { fileIcon } from "./icons";
@@ -330,11 +330,12 @@ export class Viewer {
     const banner = this.banner(f, d);
     if (f.binary) {
       if (f.mime?.startsWith("image/")) {
-        this.body.innerHTML = `${banner}<div class="scroll imgview"><img src="${esc(rawUrl(f.path))}" alt="" title="Zoom"><div class="imgmeta"></div></div>`;
+        this.body.innerHTML = `${banner}<div class="scroll imgview"><img data-raw="${esc(f.path)}" alt="" title="Zoom"><div class="imgmeta"></div></div>`;
         const img = this.body.querySelector("img")!;
         img.onload = () => { this.body.querySelector(".imgmeta")!.textContent = `${img.naturalWidth} × ${img.naturalHeight} · ${fmtSize(f.size)}`; };
+        hydrateRaw(this.body);
       } else {
-        const action = PROXIED ? `<a class="btn" href="${esc(rawUrl(f.path))}" download="${esc(basename(f.path))}">Download</a>` // web app (AC-53)
+        const action = PROXIED ? `<button class="btn" data-download>Download</button>` // web app (AC-53)
           : `<button class="btn" data-open-app>Open with default app</button>`;
         this.body.innerHTML = `${banner}<div class="pinfo"><div class="big">Binary file</div>${esc(f.mime ?? "unknown type")} · ${fmtSize(f.size)}<div>${action}</div></div>`;
       }
@@ -475,9 +476,11 @@ export class Viewer {
     const path = this.activePath();
     if (!path) return;
     if (t.closest("[data-open-app]")) return void this.openWithApp(path);
-    // an image full screen in the page's viewer; alone (no page around) fitted ⇄ its own size here
+    if (t.closest("[data-download]")) return void downloadRaw(path);
+    // an image full screen in the page's viewer (which fetches it itself); alone (no page around)
+    // fitted ⇄ its own size here
     const img = t.closest<HTMLImageElement>(".imgview img");
-    if (img) return void (zoomOutside(img.src, basename(path)) || img.parentElement!.classList.toggle("actual"));
+    if (img) return void (zoomOutside(rawUrl(path), basename(path)) || img.parentElement!.classList.toggle("actual"));
     if (t.closest("[data-close-tab]") && this.active != null) return void this.close(this.active);
     if (t.closest("[data-retry]")) { this.docs.delete(path); return this.reshow(); }
     const disk = t.closest<HTMLElement>("[data-disk]");

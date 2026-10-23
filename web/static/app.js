@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-import { signedUrl } from "./signin.js";              // first: it signs every request the page makes
+import { blobUrl } from "./signin.js";                // first: it signs every request the page makes
 import { connection } from "./conn.js";
 import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
@@ -104,7 +104,7 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
-  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line) => { view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
+  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line, path) => { if (path !== "asked") view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
     tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), holdMenu: (x, y) => editMenu(x, y), undo: () => undoRedo(false, true), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
@@ -114,7 +114,7 @@ quietSelection($("term"), touch);                   // no iOS menu over a select
 
 // The files the output names, on the pane's host: a path is a link, an image gets a button, only
 // when its file is there (relative paths from the pane's folder, as a click takes them).
-const shownFiles = paneFiles(() => views.paneInfo(), undefined, signedUrl);
+const shownFiles = paneFiles(() => views.paneInfo(), undefined, blobUrl);
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });
@@ -334,7 +334,8 @@ const reminders = waitingCards($("asks"), pick);
 const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) => input.copySelection(text, true), toast, toChat: (text) => bookmarks.toChat(text),
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });
-const ask = askBox({ send, toChat: (text) => bookmarks.toChat(text), keys: (data) => input.type(data, "ask"), agent: () => !!itemOf(st.sid)?.agent, asked: asked.asked });
+// Add to Chat's paste ("asked") leaves the view where it was: the user reads on, the cursor out of sight (AC-37)
+const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "asked" : "paste"); focusTerminal(); }, keys: (data, stay) => input.type(data, stay ? "asked" : "ask"), agent: () => !!itemOf(st.sid)?.agent, asked: asked.asked });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks, send });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)

@@ -3,6 +3,8 @@
 // page's sign-in comes from this origin's storage, where the page put it (AC 09); the web
 // listener's page holds none: its HttpOnly cookie goes by itself.
 
+import { basename } from "./paths";
+
 /** This tab's storage, which survives in-page reloads; private mode may refuse it. */
 export const session = {
   get: (k: string) => { try { return sessionStorage.getItem(k); } catch { return null; } },
@@ -35,10 +37,9 @@ const proof = async (secret: string, n: string) => hex(await hmac(await hmac(utf
  *  then does the secret go out. While terminumd is not running another program may hold its
  *  port; it cannot answer the proof, so it never sees the secret (AC 09). */
 let proven: Promise<void> | null = null;
-let isProven = false;
 let refusal = "";  // why the last proof failed, as the user is told
 export function proveServer(): Promise<void> {
-  if (!SECRET) { isProven = true; return Promise.resolve(); }
+  if (!SECRET) return Promise.resolve();
   if (!proven) {
     const secret = SECRET;
     const n = hex(crypto.getRandomValues(new Uint8Array(16)));
@@ -50,7 +51,6 @@ export function proveServer(): Promise<void> {
       if (!res.ok || body?.proof !== await proof(secret, n)) {
         throw new ApiError(401, "unproven", "terminumd does not prove it knows this page's sign-in, or another program holds its port", body);
       }
-      if (proven === mine) isProven = true;  // not a proof that was forgotten while it ran
     });
     mine.catch((e) => { if (e instanceof ApiError) refusal = e.message; if (proven === mine) forgetProof(); });
     proven = mine;
@@ -58,7 +58,7 @@ export function proveServer(): Promise<void> {
   return proven;
 }
 /** terminumd went out of reach: prove it again before the secret goes out. */
-export function forgetProof() { proven = null; isProven = false; }
+export function forgetProof() { proven = null; }
 /** Why the last proof failed, as the user is told. */
 export const proofRefusal = () => refusal;
 /** Names this panel in workspace events, so it can ignore the echo of its own writes. */
@@ -141,8 +141,57 @@ export let scope: string | null = null;
 export const setScope = (host: string | null) => { scope = host || null; };
 
 /** An image's URL carries the sign-in (an <img> sends no header): none until terminumd proved itself. */
-export const rawUrl = (path: string) => !isProven ? "data:," :
-  `${BASE}/api/raw?path=${encodeURIComponent(path)}${SECRET ? `&t=${encodeURIComponent(SECRET)}` : ""}${scope ? `&host=${encodeURIComponent(scope)}` : ""}`;
+/** A file's raw address (no sign-in in it: the page checks it before it fetches, fb-zoom). */
+export const rawUrl = (path: string) => `${BASE}/api/raw?path=${encodeURIComponent(path)}${scope ? `&host=${encodeURIComponent(scope)}` : ""}`;
+
+/** A file's bytes behind a blob: address, fetched with the sign-in in its header: an <img>, a
+ *  <video> or a download sends none, and an address with it would be copied away (Copy Image
+ *  Address) and keep the 30-day secret (AC-09). The caller revokes it. */
+export async function rawBlob(path: string): Promise<string> {
+  return URL.createObjectURL(await (await raw(path)).blob());
+}
+
+/** Download in the web app (AC-53): fetched with the sign-in, saved from a blob: address. */
+export async function downloadRaw(path: string) {
+  try {
+    const url = await rawBlob(path);
+    Object.assign(document.createElement("a"), { href: url, download: basename(path) }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  } catch (e: any) { toast(`${basename(path)}: ${e.message}`); }
+}
+
+/** A file's raw answer, fetched with the sign-in; an error as terminumd says it. */
+async function raw(path: string): Promise<Response> {
+  const url = rawUrl(path);            // the host shown now, not after the proof (a pane switched meanwhile)
+  await proveServer();
+  const res = await fetch(url, { headers: SECRET ? { "X-TM-Session": SECRET } : {} });
+  if (res.ok) return res;
+  const body = await res.json().catch(() => null);
+  throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
+}
+
+/** Fills the elements under `root` that name a file in `data-raw` (rendered Markdown, an HTML
+ *  document, an image tab): `src` from rawBlob, a stylesheet's text into a <style>. An image's
+ *  address is revoked once it is drawn; a video's or a sound's stays while its document lives. */
+export function hydrateRaw(root: ParentNode) {
+  for (const el of root.querySelectorAll<HTMLElement>("[data-raw]")) {
+    const path = el.dataset.raw!;
+    delete el.dataset.raw;
+    if (el.tagName === "LINK") {
+      void raw(path).then((r) => r.text()).then((css) => {
+        const style = el.ownerDocument.createElement("style");
+        style.textContent = css;
+        el.replaceWith(style);
+      }, () => el.remove());
+      continue;
+    }
+    void rawBlob(path).then((url) => {
+      // tagName, not instanceof: an HTML document's elements are of its frame's own classes
+      if (el.tagName === "IMG") { const done = () => URL.revokeObjectURL(url); el.addEventListener("load", done, { once: true }); el.addEventListener("error", done, { once: true }); }
+      el.setAttribute("src", url);
+    }, (e: Error) => { el.title = `${path}: ${e.message}`; });
+  }
+}
 export const socketUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}${BASE}/api/ws`;
 /** The event socket's subprotocols carry the sign-in: ["tm", secret] (none with a cookie). */
 export const socketProtocols = () => (SECRET ? ["tm", SECRET] : undefined);

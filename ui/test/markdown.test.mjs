@@ -11,8 +11,9 @@ globalThis.localStorage = { getItem: (k) => (k === "tm.session" ? "tok123" : nul
 const { mdToHtml, proveServer } = await load("test/markdown-entry.mjs");
 const IMG = "![arch](docs/arch.png)";
 
-test("no image URL carries the sign-in before terminumd proved itself (AC 09)", async () => {
-  assert.match(mdToHtml(IMG, "/Users/alex/work/api/README.md"), /src="data:,"/);
+test("no image address carries the sign-in, before or after terminumd proved itself (AC 09)", async () => {
+  const before = mdToHtml(IMG, "/Users/alex/work/api/README.md");
+  assert.ok(!before.includes("tok123") && !before.includes(" src="), before);
   // terminumd answers the proof for the panel's nonce and sign-in id (as auth/signin.rs does)
   const asked = [];
   globalThis.fetch = async (url) => {
@@ -24,6 +25,8 @@ test("no image URL carries the sign-in before terminumd proved itself (AC 09)", 
   };
   await proveServer();
   assert.deepEqual(asked, [createHash("sha256").update("tok123").digest("hex").slice(0, 16)]);
+  const after = mdToHtml(IMG, "/Users/alex/work/api/README.md");
+  assert.ok(!after.includes("tok123") && !after.includes(" src="), "fetched with the header once shown (hydrateRaw), never an address with it");
 });
 
 const P = "/Users/alex/work/api/README.md";
@@ -47,9 +50,9 @@ test("javascript: links are dropped", () => {
   assert.ok(!/href="javascript:/i.test(h), h);
 });
 
-test("relative images go through /api/raw with an absolute path", () => {
+test("relative images name their absolute path, filled from /api/raw once shown", () => {
   const h = mdToHtml("![arch](docs/arch.png)", P);
-  assert.match(h, /src="\/api\/raw\?path=%2FUsers%2Falex%2Fwork%2Fapi%2Fdocs%2Farch\.png&amp;t=tok123"/);
+  assert.match(h, /<img data-raw="\/Users\/alex\/work\/api\/docs\/arch\.png" alt="arch">/);
 });
 
 test("remote images are not loaded", () => {
@@ -60,7 +63,7 @@ test("remote images are not loaded", () => {
 
 test("encoded hash and question mark belong to the local image filename", () => {
   const h = mdToHtml("![arch](docs/a%23b%3Fc.png)", P);
-  assert.match(h, /docs%2Fa%23b%3Fc\.png&amp;t=tok123/);
+  assert.match(h, /data-raw="\/Users\/alex\/work\/api\/docs\/a#b\?c\.png"/);
 });
 
 test("headings get anchors", () => {

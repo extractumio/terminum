@@ -13,7 +13,7 @@ import { check, cleanup, playwright, results } from "./check.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.resolve(HERE, "../static");
 const DIST = path.resolve(HERE, "../../ui/dist");
-export const CSP = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'";   // AC-09
+export const CSP = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'";   // AC-09
 const ORIGIN = "http://web.test";
 const TYPES = { html: "text/html", css: "text/css", svg: "image/svg+xml", js: "text/javascript", png: "image/png" };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -84,6 +84,7 @@ export async function open(browser, { renderers = true, agent = false, history =
       hook?.(msg, say);
     });
     say({ t: "build", id: "test" });
+    say({ t: "settings", page: {}, css: 1 });                    // as terminumd greets a page (looks.rs hello): custom.css is fetched then
     say({ t: "layout", groups: agent ? [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }] }] : layout });
   });
   await page.goto(`${ORIGIN}/${query}`);
@@ -178,8 +179,8 @@ export async function webWidgets(browser, name = "") {
     return { src: img.getAttribute("src"), cap: f.querySelector("figcaption").textContent, w: img.getBoundingClientRect().width,
       h: img.getBoundingClientRect().height, tw: t.clientWidth, th: t.clientHeight };
   });
-  check(`${at} the image button shows the file below its row, read through the Files proxy, named in full`,
-    fig.src === "/fb/api/raw?path=%2Ftmp%2Fshots%2Fshot.png" && fig.cap === "/tmp/shots/shot.png", JSON.stringify(fig));
+  check(`${at} the image button shows the file below its row, read through the Files proxy (shown from a blob:, the sign-in never in an address), named in full`,
+    fig.src.startsWith("blob:") && fig.cap === "/tmp/shots/shot.png", JSON.stringify(fig));
   check(`${at} … fitted to half the terminal's width and height at most`, fig.w <= fig.tw / 2 + 1 && fig.h <= fig.th / 2 + 1 && fig.w > 0, JSON.stringify(fig));
   check(`${at} … asking the pane's folder (a relative path is taken from it)`, sent.some((m) => m.t === "files"));
   const layout = await page.evaluate(() => {
@@ -388,6 +389,14 @@ export async function webWidgets(browser, name = "") {
     files: { [dir]: ["drill-results.png"] } });
   await broken.page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.shadowRoot?.querySelector(".wgi button")), null, { timeout: 8000 }).catch(() => {});
   await broken.page.waitForFunction(() => CSS.highlights?.get("lnk")?.size, null, { timeout: 8000 }).catch(() => {});   // links after image buttons
+  // measured while the terminal is in sight: the file opened below takes its place (View), and the
+  // underlines of a hidden terminal are dropped as soon as they are looked at again
+  const glue = await broken.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#screen .ln")];
+    const btn = rows.map((el) => el.shadowRoot?.querySelector(".wgi button")).find(Boolean);
+    const lnk = [...(CSS.highlights?.get("lnk") ?? [])].map((r) => [rows.indexOf(r.startContainer.parentElement.closest(".ln")), rows.indexOf(r.endContainer.parentElement.closest(".ln"))]);
+    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk };
+  });
   const second = await broken.page.evaluate(() => {
     const row = [...document.querySelectorAll("#screen .ln")][2], walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
     let t = walk.nextNode();
@@ -403,21 +412,11 @@ export async function webWidgets(browser, name = "") {
   await broken.page.keyboard.up(mod);
   await broken.page.waitForFunction(() => document.getElementById("file").getAttribute("src"), null, { timeout: 5000 }).catch(() => {});
   const openedLong = await broken.page.evaluate(() => new URLSearchParams(new URL(document.getElementById("file").src || "http://x/").search).get("view"));
-  // opening the file redraws the rows: their links are underlined again and the image button drawn again a moment
-  // later (WebKit's button may come after the underline): wait for both
-  await broken.page.waitForFunction(() => {
-    const rows = [...document.querySelectorAll("#screen .ln")], at = (n) => rows.indexOf(n.parentElement?.closest(".ln"));
-    return [...(CSS.highlights?.get("lnk") ?? [])].some((r) => at(r.startContainer) === 1 && at(r.endContainer) === 2)
-      && rows.some((el) => el.shadowRoot?.querySelector(".wgi button"));
-  }, null, { timeout: 5000 }).catch(() => {});
-  const glue = await broken.page.evaluate(() => {
-    const rows = [...document.querySelectorAll("#screen .ln")];
-    const btn = rows.map((el) => el.shadowRoot?.querySelector(".wgi button")).find(Boolean);
-    const lnk = [...(CSS.highlights?.get("lnk") ?? [])].map((r) => [rows.indexOf(r.startContainer.parentElement.closest(".ln")), rows.indexOf(r.endContainer.parentElement.closest(".ln"))]);
-    const sel = getSelection(), r = document.createRange();
+  // the two rows selected and copied as one path
+  await broken.page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#screen .ln")], sel = getSelection(), r = document.createRange();
     r.setStart(rows[1], 0); r.setEnd(rows[2], rows[2].childNodes.length);
     sel.removeAllRanges(); sel.addRange(r);
-    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk };
   });
   await broken.page.evaluate(() => { window.copied = []; document.addEventListener("copy", (e) => window.copied.push(e.clipboardData?.getData("text/plain"))); });
   await broken.page.keyboard.press(process.platform === "darwin" ? "Meta+C" : "Control+C");

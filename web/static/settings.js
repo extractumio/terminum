@@ -2,14 +2,15 @@
 // The user's customization from terminumd (AC-18, AC-19): settings.json's page defaults (text
 // size, widgets, folds) for a browser with no choice of its own, its messages
 // (a wrong setting) as toasts, each once, the hot keys layout, and ~/.terminum/custom.css,
-// loaded after the page's own stylesheets and loaded again when terminumd says it changed.
+// after the page's own stylesheets, fetched with the sign-in (signin.js: it is the user's,
+// never served without one) and again when terminumd says it changed.
 import { hotRows } from "./hotkeys.js";
 
 const SAY_FOR = 4000;        // ms a message stays
 
 /** toast(text, ms); setLayout(rows | null): the hot keys panel; onPage(page): the defaults changed. */
 export function pageSettings({ toast, setLayout, onPage }) {
-  let page = {}, css;
+  let page = {}, css, loaded = false;
   const said = new Set(), queue = [];
   let saying = false;
 
@@ -37,11 +38,18 @@ export function pageSettings({ toast, setLayout, onPage }) {
       if (got.error) say(String(got.error));
       setLayout(got.error ? null : got.rows);                       // a wrong file: the default panel stays
     }
-    if (m.css !== undefined && m.css !== css) {
+    if (!loaded || (m.css !== undefined && m.css !== css)) {
       css = m.css;
-      const link = document.getElementById("customcss");
-      link.href = `/custom.css?v=${encodeURIComponent(String(css))}`;   // a new address: loaded again
+      loaded = true;
+      loadCss();
     }
+  }
+  let loads = 0;
+  async function loadCss() {
+    const mine = ++loads;
+    const r = await fetch("/custom.css", { cache: "no-store" }).catch(() => null);
+    const text = r?.ok ? await r.text() : null;
+    if (text !== null && mine === loads) document.getElementById("customcss").textContent = text;   // the newest only
   }
   return { apply, page: () => page };
 }

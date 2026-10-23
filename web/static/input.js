@@ -52,7 +52,7 @@ export class Input {
   type(text, path = "other", e = null) {
     if (!text) return;
     if (path !== "input" && path !== "compose") this.forget?.();   // a key, a paste, a move: what the field kept is not before the cursor now
-    this.send(text, path, e); this.options.onTyped(path === "line");
+    this.send(text, path, e); this.options.onTyped(path === "line", path);
   }
 
   withMods(text) {
@@ -276,10 +276,10 @@ export class Input {
    *  shell's prompt), or "" between two words. */
   backspace(repeat) { return this.held.next(repeat, !!this.options.wordDeletes?.()); }
 
-  paste(text) {
+  paste(text, path = "paste") {
     const clean = text.replace(/\r\n?/g, "\n").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").replace(/\n/g, "\r");
     if (!clean) return this.options.status("Nothing to paste: the clipboard holds no text.");   // tmux makes no buffer of nothing
-    this.type(this.options.bracketed() ? `\x1b[200~${clean}\x1b[201~` : clean, "paste");
+    this.type(this.options.bracketed() ? `\x1b[200~${clean}\x1b[201~` : clean, path);
   }
 
   // After a copy from the terminal on a touch screen the keyboard field takes the keys back when a

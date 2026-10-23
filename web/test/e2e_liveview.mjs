@@ -63,6 +63,11 @@ export async function liveView(page, { work }) {
     await view.click(".imgview img");
     const zoom = await page.waitForFunction(() => { const z = document.getElementById("zoom"); return z && !z.hidden && z.querySelector("img")?.naturalWidth > 0 && z.querySelector(".zcap").textContent; }, null, { timeout: 3000 })
       .then((h) => h.jsonValue(), () => null);
+    // the sign-in goes only in a header: both pictures stand at blob: addresses, none holds it (AC-09)
+    const secret = await page.evaluate(() => localStorage.getItem("tm.session"));
+    const srcs = [await view.evaluate(() => document.querySelector(".imgview img").getAttribute("src")), await page.evaluate(() => document.querySelector("#zoom img")?.getAttribute("src"))];
+    check("AC-09 a picture's address holds no sign-in: the tab's and the full screen's are blob: addresses",
+      srcs.every((s) => s?.startsWith("blob:") && !s.includes(secret)), JSON.stringify(srcs));
     await page.keyboard.press("Escape");
     const closed = await page.evaluate(() => document.getElementById("zoom").hidden);
     check("AC-64 a click on the picture opens it full screen in the page's viewer (zoom, pan); Esc closes it", zoom === "pic.png" && closed, JSON.stringify({ zoom, closed }));

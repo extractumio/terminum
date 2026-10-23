@@ -8,6 +8,7 @@
 // wait hidden beside it with their tabs and unsaved edits (moving an iframe would reload it).
 // Docked Files is open or closed for each session, in this browser (AC-70).
 
+import { blobUrl } from "./signin.js";
 import { openZoom } from "./zoom.js";
 
 const $ = (id) => document.getElementById(id);
@@ -234,8 +235,11 @@ export class Views {
     const frame = [$("file"), $("files"), parked].find((f) => f && f.contentWindow === e.source);
     if (frame && e.data.type === "fb-zoom") {
       const url = new URL(e.data.path, location.href);
-      if (url.origin === location.origin && url.pathname === "/fb/api/raw")
-        openZoom(url.href, { caption: String(e.data.caption ?? ""), alt: String(e.data.caption ?? ""), vector: /\.svg$/i.test(url.searchParams.get("path") ?? ""), onClose: () => frame.focus() });
+      if (url.origin === location.origin && url.pathname === "/fb/api/raw") {
+        // fetched with the sign-in, shown from a blob: (no address carries it), gone when it closes
+        void blobUrl(url.href).then((got) => got.url && openZoom(got.url, { caption: String(e.data.caption ?? ""), alt: String(e.data.caption ?? ""),
+          vector: /\.svg$/i.test(url.searchParams.get("path") ?? ""), onClose: () => { URL.revokeObjectURL(got.url); frame.focus(); } }));
+      }
     }
     if (e.source === $("file").contentWindow && e.data.type === "fb-reveal") {
       this.show("files");

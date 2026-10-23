@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.5.2 |
-| Date | 2026-10-21 |
+| Version | 0.5.3 |
+| Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.5.3 | 2026-10-23 | Owner, a security audit: an image tab, a Markdown or HTML document's local images, videos and stylesheets and Download (the web app) fetch the file with the sign-in's header and show it from a `blob:` address; the address with `?t=` (the 30-day sign-in) is gone; a picture full screen gets the file's address without it, which the page fetches itself; an HTML file's own `data-raw` attributes are dropped with its handlers, so only its local `src` and `href` are fetched (found in review: a planted `<link data-raw="/etc/hosts">` was read into a `<style>`) (AC-64, AC-67, AC-53; terminum.md AC-09). |
 | 0.5.2 | 2026-10-22 | Owner: a click on an image tab's picture opens it full screen in the page's viewer (pinch, wheel, drag, a double click for 1:1; −, +, Fit, ×), alone (no page around) it toggles its own size; the checkerboard is behind the picture alone, so its transparent parts show within its edges (AC-64); Reveal in tree expands the file's folders and selects it, and is offered only for a file under the folder Files shows (AC-67); View's head, path bar and tab row stand on one grid, Reveal beside the tabs; at WIDE View has no Terminal key, its × closes it (AC-70). |
 | 0.5.1 | 2026-10-22 | Owner: View's Terminal button on a phone is a key as the others, not an accent pill (AC-70). |
 | 0.5.0 | 2026-10-22 | Owner: docked Files' width follows a drag of its border with the terminal, remembered in this browser (AC-70). |
@@ -631,7 +632,7 @@ All `/fb/api/*` need the sign-in header (`terminum.md` AC 09); a remote host's r
 |---|---|---|
 | `GET /fb/api/ls?path&offset&limit&filter&hidden&locate` (every path below under `/fb/api/`) | a page of a folder, `writable`, `located` | AC-52, AC-63, AC-65 |
 | `GET /api/file?path` (`If-None-Match`) | text and meta; 304 when unchanged | AC-53, AC-54, AC-61 |
-| `GET /api/raw?path` | bytes with MIME | AC-64, AC-67 |
+| `GET /api/raw?path` | bytes with MIME (the sign-in in the header only: shown from `blob:`) | AC-64, AC-67 |
 | `PUT /api/file?path` (`If-Match`) | save | AC-56 |
 | `POST /api/fs/{mkdir,touch,rename,trash}` | operations | AC-57–AC-59, AC-66 |
 | `POST /api/os/{reveal,open}` | Finder, default app (loopback page only) | AC-60 |
@@ -695,7 +696,7 @@ The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memor
 
 ### Security
 
-Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'`; terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
+Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'`; files are fetched with the sign-in's header, never an address with it; terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
 
 Denied request:
 
