@@ -3,7 +3,7 @@
 // field for the question; Add to Chat asks terminumd for the pane's next quote number (it
 // counts up across devices: `askno`) and pastes the quote and the question at the input's cursor,
 // compact (an agent's box taller than the pane's screen breaks its redraw: Claude Code draws over
-// its answer), a new line after it, without Enter: in a coding agent's box by a Ctrl+J (a new line
+// its answer), a new line after it, without Enter, the view left where it was: in a coding agent's box by a Ctrl+J (a new line
 // there; the edges of a paste are trimmed or folded into "[Pasted text]"), elsewhere (a shell,
 // where Ctrl+J would run the line) inside the paste. Send to Agent (a coding agent's
 // pane only) pastes the same and presses Enter.
@@ -39,8 +39,8 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
   return { x: at(area.left, area.width, w, vw), y: at(area.top, area.height, h, vh) };
 }
 
-/** send(msg) to terminumd; toChat(text): pasted into the shown pane's input; keys(data): typed
- *  there; agent(): the shown pane runs a coding agent; asked(n, quote, line): one was asked about
+/** send(msg) to terminumd; toChat(text, stay): pasted into the shown pane's input; keys(data, stay): typed
+ *  there (stay: Add to Chat's, the view left where it was); agent(): the shown pane runs a coding agent; asked(n, quote, line): one was asked about
  *  (asked.js keeps it marked). {open(text, line), seen(m)}. */
 export function askBox({ send, toChat, keys, agent, asked }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
@@ -76,9 +76,10 @@ export function askBox({ send, toChat, keys, agent, asked }) {
     if (m.error || !Number.isInteger(m.n)) return fail(m.error ?? "No number came back.");
     box.close();
     asked?.(m.n, quote, line);                                      // the quote stays marked where it was selected
-    for (const [kind, data] of askSends(askText(m.n, quote, q.value), agent(), how === "send")) {
+    const stay = how === "add";                                   // Send to Agent goes to the input: the answer comes there
+    for (const [kind, data] of askSends(askText(m.n, quote, q.value), agent(), !stay)) {
       if (kind === "enter") setTimeout(() => keys(data), ENTER_AFTER);
-      else (kind === "keys" ? keys : toChat)(data);
+      else (kind === "keys" ? keys : toChat)(data, stay);
     }
   });
   return {

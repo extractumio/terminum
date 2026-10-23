@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.7 |
+| Version | 0.4.8 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.8 | 2026-10-23 | Owner: Add to Chat leaves the view where it was (the paste, as typing, brought it to the input's cursor for 3 s, away from the text the user was reading); Send to Agent still goes to the input, where the answer comes (AC-37). |
 | 0.4.7 | 2026-10-23 | Owner: Ask's quote is compact: `Quote #0007: «…»` on its first line, the question under it, no Quote Start/End or rule, the quote's blank lines and line ends' spaces left out, a new line after it (not a blank one). Three quotes at a phone's 45 columns made Claude Code's box taller than the pane's 32 rows, and its redraw then wrote over the answer on the screen (an item of it gone, rows jumbled, the answer reprinted); each quote now takes 4–5 rows fewer (AC-37). |
 | 0.4.6 | 2026-10-23 | Owner: the wavy line stood on the quote as sent (the message after it, Ask's `Quote Start ---- «`) instead of the text asked about: the agent had reprinted its answer and the original moved 130 lines away, so the sent copy was the nearest occurrence. That copy is never marked now (AC-37; `e2e_ask.mjs`, red before the fix). |
 | 0.4.5 | 2026-10-22 | Owner: a quote asked about (Ask's Add to Chat or Send to Agent) keeps a light blue wavy line down its left in the terminal, as a reminder's quote (first drawn as an underline; the owner asked for the side), kept by terminumd per pane so every page shows it (AC-37). |
@@ -344,9 +345,10 @@ Scenario: AC-37 happy path — Ask about a selection
   Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts; Claude Code's folded paste reaches the sent history only through its hooks), and the page puts at the input's cursor, no Enter, a new line after it (none before), compact (a coding agent's box taller than the pane's screen breaks its redraw, which then writes over the answer):
     "Quote #0007: «<the selected text>»\n<the question>"
   And the selected text's blank lines and line ends' spaces are left out
+  And the view stays where it was (typing elsewhere brings it to the cursor): the user reads on from the text asked about
   And in a coding agent's box the new line is typed as a Ctrl+J after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) it is inside the paste
   When the shown pane runs a coding agent and the user presses Send to Agent (left of Add to Chat) instead
-  Then the same text is pasted into the agent's box and Enter follows 0.2 s later (an Enter in the same read as a paste is a new line to Claude Code), so the agent gets it at once; in a shell the button is not shown
+  Then the same text is pasted into the agent's box and Enter follows 0.2 s later (an Enter in the same read as a paste is a new line to Claude Code), so the agent gets it at once, and the view goes to the input, where the answer comes; in a shell the button is not shown
   And Cancel or Esc closes the dialog and pastes nothing; Add to Chat and Send to Agent are off while the question is empty
 
 Scenario: AC-37 happy path — an asked quote stays marked

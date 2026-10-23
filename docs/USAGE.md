@@ -80,7 +80,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat pastes the
   selection quoted on one line as `Quote #0007: «…»` (its blank lines left out) and your question
-  under it into the input, without Enter.
+  under it into the input, without Enter; the view stays where you were reading.
   The number counts up per session. The text you asked about keeps a light blue wavy line down its left in
   the terminal, as a reminder's quote, on every page of that session.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
