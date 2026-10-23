@@ -94,6 +94,7 @@ if [ -n "${TM_PORT:-}" ] && [ -n "${TM_APP_DIR:-}" ]; then
   check "bad content type"          415 "$(code -X POST -H 'Content-Type: text/plain' -H "X-TM-Session: $secret" -d '{}' "$b/fb/api/fs/mkdir")"
   check "sign-in in query on write" 401 "$(code -X PUT -H 'Content-Type: application/json' -d '{}' "$b/fb/api/prefs?t=$secret")"
   check "sign-in in query on read"  401 "$(code "$b/fb/api/raw?path=/etc/hosts&t=$secret")"
+  check "no sign-in: custom.css"    401 "$(code "$b/custom.css")"
   check "internal over TCP"         404 "$(code -H "X-TM-Session: $secret" "$b/internal/state")"
   check "socket routes over TCP"    404 "$(code -X POST -H 'Content-Type: application/json' -H "X-TM-Session: $secret" -d '{"password":"x"}' "$b/password")"
   sid=$(printf %s "$secret" | shasum -a 256 | cut -c1-16)

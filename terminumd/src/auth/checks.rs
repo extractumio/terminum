@@ -126,7 +126,7 @@ fn under(path: &str, prefix: &str) -> bool {
 /// files, `/api/hello` and the sign-in (`/auth/*`).
 pub fn needs_signin(path: &str) -> bool {
     let p = tidy(path);
-    p == "/ws" || p == "/paste" || p == "/upload" || (under(&p, "/api") && p != "/api/hello") || under(&p, "/fb/api")
+    p == "/ws" || p == "/paste" || p == "/upload" || p == "/custom.css" || (under(&p, "/api") && p != "/api/hello") || under(&p, "/fb/api")
 }
 
 /// What only the Mac's own browser may do: Finder and default apps, typing a path into a

@@ -34,8 +34,8 @@ export async function webTmux(browser, name) {
       toast: document.getElementById("toast").textContent,
       keys: [...document.querySelectorAll("#hotkeys .keyrow")].map((r) => [...r.children].map((b) => b.textContent)),
       probe: getComputedStyle(document.body).getPropertyValue("--custom-probe").trim(),
-      link: document.getElementById("customcss").getAttribute("href"),
-      after: [...document.querySelectorAll('link[rel="stylesheet"]')].at(-1)?.id }));
+      inline: document.getElementById("customcss").tagName === "STYLE" && !document.querySelector('link[href*="custom.css"]'),
+      after: [...document.querySelectorAll('link[rel="stylesheet"], style#customcss')].at(-1)?.id }));
     check("AC-19 settings: page defaults apply to a browser with no choice of its own (text size), its message is a toast",
       got.size === (phone ? "14" : "15") && got.toast === settings.messages[0], JSON.stringify(got));
     check("AC-18 settings: the hot keys panel shows hotkeys.json's rows", JSON.stringify(got.keys) ===
@@ -43,7 +43,7 @@ export async function webTmux(browser, name) {
     const typed = async (label) => { const n = sent.length; await page.click(`#hotkeys button.key:text-is("${label}")`); await pause(page, 100); return sent.slice(n).filter((m) => m.t === "in").map((m) => m.data).join(""); };
     const keys = [await typed("F5"), await typed("^R"), await typed("git status"), await typed("⇧↩"), await typed("⌥x")];
     check("AC-18 settings: its keys type what a terminal sends", JSON.stringify(keys) === JSON.stringify(["\x1b[15~", "\x12", "git status", "\x1b[13;2u", "\x1bx"]), JSON.stringify(keys));
-    check("AC-19 custom.css: linked after the page's stylesheets, and applied", got.after === "customcss" && got.link === "/custom.css?v=1" && got.probe === "one", JSON.stringify(got));
+    check("AC-19 custom.css: fetched (with the sign-in) into a style after the page's stylesheets, and applied", got.after === "customcss" && got.inline && got.probe === "one", JSON.stringify(got));
     css = "body { --custom-probe: two; }";
     const toasts = [];
     await page.exposeFunction("toastSeen", (t) => toasts.push(t));

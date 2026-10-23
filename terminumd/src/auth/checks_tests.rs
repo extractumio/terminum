@@ -96,7 +96,7 @@ fn internal_paths_are_not_on_tcp_at_all() {
 
 #[test]
 fn the_page_the_hello_and_the_sign_in_need_no_sign_in() {
-    for path in ["/", "/index.html", "/app.js", "/fb/", "/fb/renderers.js", "/api/hello", "/custom.css", "/auth/check"] {
+    for path in ["/", "/index.html", "/app.js", "/fb/", "/fb/renderers.js", "/api/hello", "/auth/check"] {
         assert_eq!(ask(&L, "GET", path, &local(&[]), false), Ok(true), "{path}");
         assert_eq!(ask(&L, "GET", path, &tailnet(&[]), false), Ok(false), "{path}");
     }
@@ -218,6 +218,7 @@ fn the_sign_in_comes_from_the_header_or_the_subprotocol_never_the_query() {
     assert_eq!(signin_secret(proto("tm, abc")), Some("abc".into()));
     assert_eq!(signin_secret(proto("chat, abc")), None);
     assert_eq!(signin_secret(proto("tm")), None);
+    assert!(needs_signin("/custom.css") && needs_signin("//custom.css"), "the user's stylesheet is theirs");
 }
 
 #[test]

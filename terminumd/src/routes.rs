@@ -94,14 +94,23 @@ async fn guard(State(app): State<Shared>, mut req: Request, next: Next) -> Respo
             app.denied.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             tracing::warn!(event = "auth.denied", reason = d.code, path = %req.uri().path());
             let status = StatusCode::from_u16(d.status).unwrap_or(StatusCode::FORBIDDEN);
-            return (status, Json(d.body())).into_response();
+            return hardened((status, Json(d.body())).into_response());
         }
     };
     req.extensions_mut().insert(FromWeb(!local));
-    let mut res = next.run(req).await;
+    hardened(next.run(req).await)
+}
+
+/// Every answer's headers, a refusal's too: no sniffing, no referrer, not kept (unless the
+/// answer says how), no camera, microphone or the like, no window of another site holding
+/// this one, no other site embedding its answers (AC-09).
+fn hardened(mut res: Response) -> Response {
     let hs = res.headers_mut();
     hs.insert("referrer-policy", HeaderValue::from_static("no-referrer"));
     hs.insert("x-content-type-options", HeaderValue::from_static("nosniff"));
+    hs.insert("permissions-policy", HeaderValue::from_static("camera=(), microphone=(), geolocation=(), payment=(), usb=()"));
+    hs.insert("cross-origin-opener-policy", HeaderValue::from_static("same-origin"));
+    hs.insert("cross-origin-resource-policy", HeaderValue::from_static("same-origin"));
     hs.entry(header::CACHE_CONTROL).or_insert(HeaderValue::from_static("no-store"));
     res
 }

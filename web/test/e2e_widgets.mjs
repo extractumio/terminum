@@ -84,6 +84,7 @@ export async function open(browser, { renderers = true, agent = false, history =
       hook?.(msg, say);
     });
     say({ t: "build", id: "test" });
+    say({ t: "settings", page: {}, css: 1 });                    // as terminumd greets a page (looks.rs hello): custom.css is fetched then
     say({ t: "layout", groups: agent ? [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }] }] : layout });
   });
   await page.goto(`${ORIGIN}/${query}`);
