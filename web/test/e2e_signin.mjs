@@ -22,7 +22,7 @@ export async function webSignin(browser) {
     auth = 204;
     return [200, { secret: SECRET }];
   };
-  const f = await openPage(browser, { secret: SECRET, auth: () => auth, login });
+  const f = await openPage(browser, { secret: SECRET, auth: () => auth, login, css: "body { --custom-probe: kept; }", settings: { page: {}, css: "1" } });
   await f.page.waitForSelector("#login:not([hidden])", { timeout: 5000 });
   const before = { hello: f.requests.some((r) => r.path === "/api/hello"), protocols: f.sockets[0]?.protocols ?? [] };
   await f.page.fill("#password", "wrong guess");
@@ -53,13 +53,23 @@ export async function webSignin(browser) {
       && img?.headers["x-tm-session"] === SECRET && img.query === "?path=%2Ftmp%2Fa.png" && !f.requests.some((r) => r.query.includes(SECRET)),
     JSON.stringify({ protocols: f.sockets.at(-1)?.protocols, img }));
 
+  // custom.css as last fetched is applied at once at the next load (it came after the connection), and goes with the sign-in (AC-19)
+  await f.page.waitForFunction(() => localStorage.getItem("tm.customcss")?.includes("kept"), null, { timeout: 3000 }).catch(() => {});
+  let held = 0;
+  await f.page.route("**/custom.css", () => { held++; });               // never answered: what shows is the copy kept
+  await f.page.reload();
+  await drawn(f.page);
+  const early = await f.page.evaluate(() => getComputedStyle(document.body).getPropertyValue("--custom-probe").trim());
+  check("AC-19 custom.css: the copy last fetched applies at once at load, while the new fetch is still on its way", early === "kept" && held > 0, JSON.stringify({ early, held }));
+  await f.page.unroute("**/custom.css");
+
   // Sign out in the menu: this browser's sign-in ends, at terminumd and here
   await f.page.evaluate(() => document.getElementById("signout").click());
   await f.page.waitForSelector("#login:not([hidden])", { timeout: 3000 }).catch(() => {});
   const out = f.requests.find((r) => r.path === "/auth/logout");
-  const left = await f.page.evaluate(() => localStorage.getItem("tm.session"));
-  check("AC-09 sign-in: Sign out tells terminumd which sign-in ends, forgets it and shows the form",
-    out?.headers["x-tm-session"] === SECRET && left === null && await f.page.isVisible("#login"), JSON.stringify({ out: !!out, left }));
+  const left = await f.page.evaluate(() => [localStorage.getItem("tm.session"), localStorage.getItem("tm.customcss")]);
+  check("AC-09 sign-in: Sign out tells terminumd which sign-in ends, forgets it (custom.css's copy with it) and shows the form",
+    out?.headers["x-tm-session"] === SECRET && left[0] === null && left[1] === null && await f.page.isVisible("#login"), JSON.stringify({ out: !!out, left }));
   check("AC-09 sign-in: no page errors", !f.errors.length, f.errors.join(" | "));
   await f.close();
 

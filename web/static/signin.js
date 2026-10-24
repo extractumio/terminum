@@ -9,6 +9,9 @@
 import { shownUrl } from "./shown.js";
 
 const KEY = "tm.session";
+/** The user's custom.css as last fetched (settings.js): shown at the next load before it is
+ *  fetched again; it needs the sign-in, so it goes with it. */
+export const CSS_KEY = "tm.customcss";
 const enc = new TextEncoder();
 let secret = null;
 try { secret = localStorage.getItem(KEY); } catch { secret = null; }
@@ -27,7 +30,7 @@ export const held = () => secret !== null;
 export function forget() {
   secret = null;
   proof = null;
-  try { localStorage.removeItem(KEY); } catch { /* nothing kept */ }
+  try { localStorage.removeItem(KEY); localStorage.removeItem(CSS_KEY); } catch { /* nothing kept */ }
 }
 
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
