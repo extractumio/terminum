@@ -40,6 +40,9 @@ struct Rec {
     command: Option<String>,
     /// its turn ended (a Stop, a failure, its last background subagent): not told yet
     ended: bool,
+    /// the folder the agent itself works in, as its own (not a subagent's) last event said:
+    /// the paths it prints are relative to it, not to the pane's (AC-35)
+    cwd: String,
 }
 
 /// What the list shows of a pane's hooks.
@@ -95,7 +98,12 @@ impl Hooks {
             return false;
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
-            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false });
+            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, cwd: String::new() });
+        let cwd = s(ev, "cwd");
+        let moved = cwd.starts_with('/') && s(ev, "sub").is_empty() && r.cwd != cwd;
+        if moved {
+            r.cwd = cwd;                                  // the list shows it (its folder, AC-51)
+        }
         let before = (r.state, r.tool.clone(), r.why.clone(), r.subs.len());
         let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
         let working = |r: &mut Rec| { r.state = Some(State::Working); r.why.clear(); };
@@ -132,10 +140,10 @@ impl Hooks {
             }
             // a background subagent's tools: it still works
             "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" if !r.subs.is_empty() => {}
-            _ => return false,
+            _ => return moved,
         }
         r.at = now;
-        before != (r.state, r.tool.clone(), r.why.clone(), r.subs.len())
+        moved || before != (r.state, r.tool.clone(), r.why.clone(), r.subs.len())
     }
 
     /// The pane's hooks, while they hold: None when it has none, its lease ran out, or its
@@ -163,6 +171,11 @@ impl Hooks {
     /// Whether pane `key`'s turn ended since this was last asked (its reminders, unread).
     pub fn take_ended(&self, key: &str) -> bool {
         self.recs.lock().get_mut(key).is_some_and(|r| std::mem::take(&mut r.ended))
+    }
+
+    /// The folder pane `key`'s agent works in, as its hooks last said (None: no hooks spoke).
+    pub fn cwd(&self, key: &str) -> Option<String> {
+        self.recs.lock().get(key).map(|r| r.cwd.clone()).filter(|c| !c.is_empty())
     }
 
     /// Whether pane `key`'s agent has hooks that spoke (its prompts come from them).

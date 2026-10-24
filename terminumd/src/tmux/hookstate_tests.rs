@@ -115,3 +115,19 @@ fn codex_done_is_the_screens_and_unknown_events_change_nothing() {
     h.retain("tmux:local:terminum:", &[]);
     assert!(!h.has(K), "a pane that is gone is forgotten");
 }
+
+#[test]
+fn the_agents_own_folder_is_its_last_own_events_not_a_subagents() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    assert_eq!(h.cwd(K), None, "no hooks: not known");
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1", "cwd": "/Users/alex/api"})), t);
+    assert_eq!(h.cwd(K).as_deref(), Some("/Users/alex/api"));
+    assert!(h.apply(K, &ev("claude", "PostToolUse", json!({"turn": "p1", "cwd": "/Users/alex/api/worktrees/fix"})), t), "a move changes what the list shows");
+    assert_eq!(h.cwd(K).as_deref(), Some("/Users/alex/api/worktrees/fix"), "a cd in the turn moves it");
+    assert!(!h.apply(K, &ev("claude", "PostToolUse", json!({"turn": "p1", "cwd": "/Users/alex/api/worktrees/fix"})), t), "the same folder again: nothing changed");
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "sub": "a1", "cwd": "/Users/alex/elsewhere"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1", "cwd": "relative/not/a/folder"})), t);
+    assert_eq!(h.cwd(K).as_deref(), Some("/Users/alex/api/worktrees/fix"), "a subagent's folder and a relative one are not the agent's");
+    h.apply(K, &ev("claude", "SessionEnd", json!({})), t);
+    assert_eq!(h.cwd(K), None, "the session ended");
+}

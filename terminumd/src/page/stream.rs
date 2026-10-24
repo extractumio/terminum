@@ -157,7 +157,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
         let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path).map(|_| f.path.clone());
         *ctl.fields.lock() = Some(f);
         if let Some(cwd) = moved_to {
-            page.send_json(&super::client::files_message(&server, &key, &cwd).await);
+            page.send_json(&super::client::files_message(&app, &server, &key, &cwd).await);
         }
         if opened {
             super::sizing::activated(&app, &page);       // its grid came after "sub" (or not yet): sized as it comes

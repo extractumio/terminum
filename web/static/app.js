@@ -134,7 +134,7 @@ function undoRedo(redo, said = false) {
 // Addresses open in a new tab here, paths in File (on the pane's host).
 // (a quick shell's page has no View: its pane's page opens it)
 const openFile = (p, host) => (embedded ? parent.postMessage({ type: "tm-open", path: p, host }, location.origin) : views.open(p, host));
-const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile, toast, state: shownFiles.state });
+const openAt = bindLinks($("term"), { paneInfo: () => views.paneInfo(), openFile, toast, state: shownFiles.state, pathOf: shownFiles.pathOf });
 // Where a tap moves the cursor (a shell or a coding agent), on the cursor's row it does so, also
 // over a path typed there; elsewhere a tap there opens a link.
 function tapLink(x, y) {
