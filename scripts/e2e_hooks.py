@@ -83,6 +83,23 @@ def main():
         hook("claude", {"hook_event_name": "SubagentStop", "session_id": "s1", "prompt_id": "p3", "agent_id": "bg1"})
         done = seen(pane, lambda r: r["state"] == "done")
         check("AC-39 a stop with a subagent in the background stays working until it stops", r is None and held is not None and done is not None, (r, held, done))
+        # the folder the agent itself works in (AC-51): its own events move it, a subagent's do not; its
+        # row says it (the header) and "files" does (Files' root, printed paths)
+        wt = os.path.join(tmux("display", "-p", "-t", pane, "#{pane_current_path}").strip(), "worktrees", "fix")
+        hook("claude", {"hook_event_name": "PostToolUse", "session_id": "s1", "prompt_id": "p3", "cwd": wt, "tool_name": "Bash"})
+        moved = seen(pane, lambda r: r.get("agentDir") == wt)
+        hook("claude", {"hook_event_name": "PreToolUse", "session_id": "s1", "prompt_id": "p3", "agent_id": "sub1", "cwd": "/tmp", "tool_name": "Bash"})
+        ws.send({"t": "sub", "id": f"tmux:local:{SOCKET}:{pane}"})
+        ws.send({"t": "files"})
+        files = ws.until(lambda m: m["t"] == "files" and "agent" in m, 5)
+        check("AC-51 the agent's own event moves its folder: its row and \"files\" say it; a subagent's does not",
+              moved is not None and moved.get("agentFolder") and files and files["agent"] == wt and files["cwd"] != wt, (moved, files))
+        # Mark as Unread from a row's menu (AC-93): the row is unread on every page; Mark as Read takes it away
+        ws.send({"t": "unread", "id": f"tmux:local:{SOCKET}:{pane}", "on": True})
+        marked = seen(pane, lambda r: r.get("unread") is True)
+        ws.send({"t": "unread", "id": f"tmux:local:{SOCKET}:{pane}", "on": False})
+        cleared = seen(pane, lambda r: "unread" not in r)
+        check("AC-93 Mark as Unread marks the row in the list sent to every page; Mark as Read takes it away", marked is not None and cleared is not None, (marked, cleared))
         p = hook("claude", {"hook_event_name": "Stop"}, {"TMUX_PANE": "%999"})
         p2 = hook("claude", {"hook_event_name": "Stop"}, {"TMUX": "/private/tmp/tmux-1/other,1,0"})
         check("AC-39 a pane of no known server is ignored, quietly", p.returncode == 0 == p2.returncode and "panicked" not in t.log(), t.log()[-300:])

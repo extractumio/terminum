@@ -114,7 +114,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   in the place of its count; each row's Clone (shown while the pointer is over the row; on a phone always)
   opens a window beside it in its folder; a row hatched with pale lines is unread (its agent finished
   a turn nobody saw); a right click, or a finger
-  rested on a row and lifted, opens its menu (Clone, Add to Project, Close, moves). Drag a row, a
+  rested on a row and lifted, opens its menu (Clone, Add to Project, Mark as Unread or Read, Close, moves). Drag a row, a
   group's or a project's header to reorder: a dashed outline shows where it lands (a finger rests
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same

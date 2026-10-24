@@ -33,6 +33,17 @@ fn relist(app: &Shared) {
     app.pages.tell(&told);
 }
 
+/// The user's Mark as Unread (`on`) or Mark as Read in a row's menu, for a pane the list has.
+pub fn set(app: &Shared, key: &str, on: bool) {
+    if app.tmux.resolve(key).is_none() {
+        return;
+    }
+    let changed = if on { app.unread.lock().insert(key.to_string()) } else { app.unread.lock().remove(key) };
+    if changed {
+        relist(app);
+    }
+}
+
 /// A page in sight shows pane `key`: it is read.
 pub fn read(app: &Shared, key: &str) {
     if app.unread.lock().remove(key) {
