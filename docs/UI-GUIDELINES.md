@@ -243,7 +243,7 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 | Disabled | any `button:disabled` | `--key-disabled` opacity; flat, never pressed |
 | Icon key | `.icon` (header, dialogs' ×, panes, find, quick shell), a group header's +, ⋯, copy, import, clone, the name's pencil, a bookmark row's ×, a waiting card's ×, the steppers | `--icon-key` (30; touch 44), `--icon-key-sm` (24: a thin bar's), `--icon-key-list` (the session list's: 24; touch 40) with `--row-inset` round it on every side (4; touch 8: a group header is the key and its inset, Clone on its row's middle), `--icon-gap` between them, `--icon-ink`; a rule sizes one through `--ik`, never `width` (the kinds' selectors weigh an id); pressed or expanded: `--m-well` |
 | Segmented control | `.seg` | the track `--field-fill` with `--m-groove`; the chosen segment a key |
-| Field | `.field`, `.search`, `.filter`, `#findq`, the Panel's `.filter`; a quote (`#asktext`, `#marktext`) as its recess | `--field-fill`, `--field-px`, `--field-edge` at rest; `--field-focus-fill` (lit from the top in the accent) and `--field-focus-edge` in focus |
+| Field | `.field`, `.search`, `.filter`, `#findq`, the Panel's `.filter`; a quote (`#asktext`, `#marktext`) as its recess | `--field-fill`, `--field-px`, `--field-edge` at rest; `--field-focus-edge` in focus (an accent edge over the same fill: no gradient) |
 | Pane | menus, the sent and reminders panes, the bookmarks pane, the find box, the bookmark bar, footer forms, the note, waiting cards | `--pane-shadow` |
 | Dialog | `dialog.dlg`, the bookmarks window | `--dialog-shadow` (a halo that shades the text around it), `--scrim` behind it; the sent and reminders panes are modal over `#panescrim` |
 

@@ -76,6 +76,58 @@ impl Hmac {
     }
 }
 
+/// SHA-256's first state.
+const IV: [u32; 8] = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+
+/// PBKDF2's rounds after the first, each the HMAC of the last 32 bytes: one compression from the
+/// key's inner pad, one from its outer, both absorbed once. On sha2's compression function, which
+/// Cargo.toml compiles optimized in a debug build too; the generic hasher is compiled with this
+/// crate, and 600,000 rounds of it took 3 s unoptimized (the tests sign in often).
+struct Rounds {
+    inner: [u32; 8],
+    outer: [u32; 8],
+}
+
+impl Rounds {
+    fn new(key: &[u8]) -> Rounds {
+        let mut k = [0u8; BLOCK];
+        if key.len() > BLOCK {
+            k[..32].copy_from_slice(&sha256(key));
+        } else {
+            k[..key.len()].copy_from_slice(key);
+        }
+        let absorbed = |pad: u8| {
+            let mut s = IV;
+            sha2::block_api::compress256(&mut s, &[k.map(|b| b ^ pad)]);
+            s
+        };
+        Rounds { inner: absorbed(0x36), outer: absorbed(0x5c) }
+    }
+
+    /// HMAC of 32 bytes: each hash's one more block holds them, its padding and the length
+    /// (a pad's 64 bytes and these 32, in bits: 768).
+    fn mac32(&self, msg: &[u8; 32]) -> [u8; 32] {
+        let mut block = [0u8; BLOCK];
+        (block[32], block[62]) = (0x80, 0x03);
+        block[..32].copy_from_slice(msg);
+        let mut s = self.inner;
+        sha2::block_api::compress256(&mut s, &[block]);
+        Self::put(&mut block, &s);
+        let mut s = self.outer;
+        sha2::block_api::compress256(&mut s, &[block]);
+        let mut out = [0u8; 32];
+        Self::put(&mut out, &s);
+        out
+    }
+
+    /// A state's eight words, big-endian, at the start of `to`.
+    fn put(to: &mut [u8], s: &[u32; 8]) {
+        for (i, w) in s.iter().enumerate() {
+            to[i * 4..i * 4 + 4].copy_from_slice(&w.to_be_bytes());
+        }
+    }
+}
+
 pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
     Hmac::new(key).mac(&[msg])
 }
@@ -83,13 +135,13 @@ pub fn hmac_sha256(key: &[u8], msg: &[u8]) -> [u8; 32] {
 /// PBKDF2-HMAC-SHA256 (RFC 8018 §5.2): `len` bytes from `rounds` iterations; what Python's
 /// `hashlib.pbkdf2_hmac("sha256", …)` gives, so iterm-enhancer's web.json hashes verify.
 pub fn pbkdf2_sha256(password: &[u8], salt: &[u8], rounds: u32, len: usize) -> Vec<u8> {
-    let prf = Hmac::new(password);
+    let (prf, fast) = (Hmac::new(password), Rounds::new(password));
     let mut out = Vec::with_capacity(len);
     for block in 1..=len.div_ceil(32) as u32 {
         let mut u = prf.mac(&[salt, &block.to_be_bytes()]);
         let mut t = u;
         for _ in 1..rounds {
-            u = prf.mac(&[&u]);
+            u = fast.mac32(&u);
             t.iter_mut().zip(u).for_each(|(t, u)| *t ^= u);
         }
         out.extend_from_slice(&t[..(len - out.len()).min(32)]);

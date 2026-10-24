@@ -72,7 +72,7 @@ button.icon.on { color: var(--accent); }
 .note:empty { display: none; }
 .filter { --field-fill: var(--bg); margin-top: 6px; width: 100%; padding: 4px var(--field-px); border-radius: var(--key-r); border: 0;
   background-color: var(--field-fill); box-shadow: var(--field-edge); color: var(--fg); font: inherit; outline: none; }
-.filter:focus { background-image: var(--field-focus-fill); box-shadow: var(--field-focus-edge); }
+.filter:focus { box-shadow: var(--field-focus-edge); }
 
 /* ── tree ───────────────────────────────────────────────── */
 #tree { flex: 1 1 auto; overflow: auto; position: relative; outline: none; min-height: 60px; }

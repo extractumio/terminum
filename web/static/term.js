@@ -406,6 +406,7 @@ export class TermView {
     if (!this.pending || m.full) this.pending = { full: m.full, n: m.n, ch: new Map() };
     this.pending.n = m.n;
     if (m.cols !== this.cols) { this.cols = m.cols; this.onCols?.(); }
+    if (m.rows) this.rows = m.rows;                 // the pane's rows (ask.js: what an agent's box may take)
     if ("mouse" in m) this.mouse = !!m.mouse;     // the program asked for mouse events (AC-06)
     if (!!m.alt !== !!this.alt) { this.alt = !!m.alt; this.onAlt?.(); }   // a full-screen program (mc, vim) began or ended
     for (const [i, data] of m.ch) this.pending.ch.set(i, data);
