@@ -6,6 +6,7 @@
 // number and title, then host · program · folder · titles, and a coding agent's state in a
 // column of its own.
 import { folderHues, folderKey } from "./dircolors.js";
+import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 
@@ -80,7 +81,7 @@ export const projectColor = (p) => `oklch(var(--proj-l) var(--proj-c) ${PROJECT_
 /** A row's second line (AC-01): host and folder first, then its titles; what runs there (the
  *  program, a quick shell's mark) at the right edge. */
 function rowLine(item) {
-  const sub = item.sub ?? [], dir = sub.findIndex((p) => /^[~/]/.test(p));
+  const sub = subOf(item), dir = sub.findIndex((p) => /^[~/]/.test(p));
   const progs = dir > 0 ? sub.slice(0, dir) : dir < 0 ? sub.slice(0, 1) : [];
   const rest = dir >= 0 ? sub.slice(dir) : sub.slice(1);
   const s = metaLine([...(item.host ? [item.host] : []), ...rest], !!item.host);
@@ -112,7 +113,7 @@ const groupKey = (g) => `${g.kind}\n${g.label}${g.session ? " " + g.session : ""
 
 function matches(item, q) {
   if (!q) return true;
-  return [item.title, item.host ?? "", ...item.sub].join(" ").toLowerCase().includes(q);
+  return [item.title, item.host ?? "", ...subOf(item)].join(" ").toLowerCase().includes(q);
 }
 
 export function el(tag, cls, text) {

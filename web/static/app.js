@@ -390,7 +390,7 @@ const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focu
 // ---------- theme ----------
 
 let shownTheme = "", shownFont = "", themeSent = null;
-const prefs = menuPrefs({ store, send, toast });       // Markdown size, history lines (AC-19)
+const prefs = menuPrefs({ store, send, toast, redraw: drawNav });       // Markdown size, history lines (AC-19)
 // a color scheme picked in the menu goes over the session's theme at once (AC-12)
 const schemes = colorSchemes({ box: $("schemes"), send, onPick: () => { if (themeSent) applyTheme(schemes.over(themeSent)); } });
 function applyTheme(theme) {

@@ -2,7 +2,7 @@
 // The header's second line (AC-01, header.js) against a fake terminumd (fake.mjs), at both sizes:
 // the folder with its Copy, tmux's session:window, then what runs there; Copy copies the full path;
 // the folder its coding agent works in when it moved (a worktree), and Files' root, unless the menu's
-// "Follow the agent's folder" is off (AC-51).
+// "Follow the agent's folder" is off (AC-51); so does its row in the list.
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
 
@@ -47,14 +47,24 @@ export async function webHeader(browser, name) {
     await pause(g.page, 300);
     const wide = !size.startsWith("390");
     const seen = () => g.page.evaluate(() => ({ dir: document.querySelector("#cursub .dir")?.textContent, copy: document.querySelector("#cursub .copydir")?.title,
+      row: document.querySelector("#sessions .item .s .last")?.textContent, bar: document.querySelector("#sessions .item .pbar")?.title,
       root: new URLSearchParams(new URL(document.getElementById("files").getAttribute("src") ?? "", location.href).search).get("cwd") }));
     const on = await seen();
+    const filter = (q) => g.page.evaluate((q) => { const f = document.getElementById("filter"); f.value = q; f.dispatchEvent(new Event("input")); }, q);
+    await filter("worktrees");
+    await pause(g.page, 200);
+    const found = await g.page.evaluate(() => document.querySelectorAll("#sessions .item").length);
+    await filter("");
+    await pause(g.page, 200);
     await g.page.evaluate(() => { const b = document.getElementById("followagent"); b.checked = false; b.dispatchEvent(new Event("change")); });
     await pause(g.page, 300);
     const off = await seen();
     check("AC-51 following the agent (the default): the header's folder and Files' root are where the agent works; off in the menu, the pane's",
       on.dir === "~/work/api/worktrees/fix" && on.copy === `Copy ${AGENT}` && (!wide || on.root === AGENT)
         && off.dir === "~/work/api" && off.copy === "Copy /Users/alex/work/api" && (!wide || off.root === "/Users/alex/work/api"), JSON.stringify({ on, off }));
+    check("AC-01 following the agent: the row names the agent's folder, its bar that folder's, the filter finds it by it; off, the pane's",
+      on.row === "~/work/api/worktrees/fix" && on.bar === "Folder ~/work/api/worktrees/fix" && found === 1
+        && off.row === "~/work/api" && off.bar === "Folder ~/work/api", JSON.stringify({ on, off, found }));
     check("AC-51 no page errors (following the agent)", !g.errors.length, g.errors.join(" | "));
     await g.close();
   }
