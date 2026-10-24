@@ -59,6 +59,8 @@ pub struct Settings {
     pub hosts: Map<String, Value>,
     /// Sessions of the user's own tmux servers on this Mac, by socket (AC-89).
     pub attach: BTreeMap<String, Vec<String>>,
+    /// The General MIDI SoundFont MIDI files are rendered with (AC-64); None: ~/.terminum/soundfont.sf2.
+    pub midi_soundfont: Option<String>,
     /// The messages of the last parse, for the page (`page_json`).
     pub messages: Vec<String>,
 }
@@ -78,6 +80,7 @@ impl Default for Settings {
             page: PageSettings { text_size: 13, markdown_size: 14, widgets: true, folds: true, color_scheme: None, follow_agent: true },
             hosts: Map::new(),
             attach: BTreeMap::new(),
+            midi_soundfont: None,
             messages: Vec::new(),
         }
     }
@@ -190,6 +193,17 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
             Some(p @ 1..=65535) => s.port = p as u16,
             _ => m.bad("port must be 1–65535"),
         },
+        "midi" => {
+            for (k, v) in members(v, "midi", m) {
+                match k {
+                    "soundfont" => match v.as_str().filter(|p| p.starts_with('/') || p.starts_with("~/")) {
+                        Some(p) => s.midi_soundfont = Some(p.to_string()),
+                        None => m.bad("midi.soundfont must be a file's path (/… or ~/…)"),
+                    },
+                    _ => m.bad(format!("unknown key midi.{k}")),
+                }
+            }
+        }
         "tmux" => {
             for (k, v) in members(v, "tmux", m) {
                 match k {

@@ -13,6 +13,7 @@ import { zoomOutside } from "./embed";
 import { fileIcon } from "./icons";
 import { languageForFile } from "./highlight";
 import { isRenderable, renderDoc, type LinkHost } from "./docview";
+import { mediaOf, renderBinary } from "./viewer-media";
 
 export interface ViewerCallbacks {
   changed(): void;                 // tabs / active / view mode changed → persist
@@ -328,19 +329,8 @@ export class Viewer {
     }
     const f = d.file;
     const banner = this.banner(f, d);
-    if (f.binary) {
-      if (f.mime?.startsWith("image/")) {
-        this.body.innerHTML = `${banner}<div class="scroll imgview"><img data-raw="${esc(f.path)}" alt="" title="Zoom"><div class="imgmeta"></div></div>`;
-        const img = this.body.querySelector("img")!;
-        img.onload = () => { this.body.querySelector(".imgmeta")!.textContent = `${img.naturalWidth} × ${img.naturalHeight} · ${fmtSize(f.size)}`; };
-        hydrateRaw(this.body);
-      } else {
-        const action = PROXIED ? `<button class="btn" data-download>Download</button>` // web app (AC-53)
-          : `<button class="btn" data-open-app>Open with default app</button>`;
-        this.body.innerHTML = `${banner}<div class="pinfo"><div class="big">Binary file</div>${esc(f.mime ?? "unknown type")} · ${fmtSize(f.size)}<div>${action}</div></div>`;
-      }
-      return;
-    }
+    // a picture, a PDF, a video, a sound (viewer-media.ts), by the file's type: a PDF may be all text
+    if (f.binary || mediaOf(f)) return renderBinary(this.body, f, banner);
     if (mode === "rendered") {
       this.body.innerHTML = `${banner}<div class="scroll doc"></div>`;
       const box = this.body.querySelector<HTMLElement>(".scroll")!;

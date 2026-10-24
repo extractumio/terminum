@@ -162,6 +162,18 @@ export async function downloadRaw(path: string) {
   } catch (e: any) { toast(`${basename(path)}: ${e.message}`); }
 }
 
+/** A file's bytes, fetched with the sign-in (a sound decoded here, a MIDI file read here). */
+export const rawBytes = async (path: string) => (await raw(path)).arrayBuffer();
+
+/** A MIDI file's bytes rendered by terminumd with the user's SoundFont (AC-64): a WAV's blob:
+ *  address (the caller revokes it) and the bank's name; an error as terminumd says it. */
+export async function midiWav(bytes: ArrayBuffer): Promise<{ url: string; font: string }> {
+  await proveServer();
+  const res = await fetch("/api/midi", { method: "POST", body: bytes, headers: { "Content-Type": "audio/midi", ...(SECRET ? { "X-TM-Session": SECRET } : {}) } });
+  if (!res.ok) { const body = await res.json().catch(() => null); throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body); }
+  return { url: URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/wav" })), font: res.headers.get("x-tm-soundfont") ?? "" };
+}
+
 /** A file's raw answer, fetched with the sign-in; an error as terminumd says it. */
 async function raw(path: string): Promise<Response> {
   const url = rawUrl(path);            // the host shown now, not after the proof (a pane switched meanwhile)

@@ -25,6 +25,7 @@ mod http;
 mod listing;
 mod looks;
 mod manager;
+mod midi;
 mod ops;
 mod page;
 mod release;
