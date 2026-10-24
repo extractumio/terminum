@@ -247,6 +247,22 @@ export async function webApp(browser) {
   const typed = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
   check("AC-52 web app: a file dropped on the terminal is uploaded and its quoted path pasted, without Enter",
     typed.includes("'/tmp/up/a b.txt'") && !typed.includes("\r") && page.url() === `${ORIGIN}/`, JSON.stringify(typed));
+  // rows dragged from Files: their paths put at the input, nothing uploaded; another host's refused (AC-36)
+  const dropRows = (data) => $eval((data) => {
+    const dt = new DataTransfer();
+    dt.setData("application/x-terminum-paths", data);
+    for (const t of ["dragover", "drop"]) document.getElementById("term").dispatchEvent(new DragEvent(t, { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, data);
+  let mark = sent.length;
+  await dropRows(JSON.stringify({ host: null, paths: ["/Users/alex/p/src", "/Users/alex/p/a b.md"] }));
+  await page.waitForTimeout(300);
+  const put = sent.slice(mark).filter((m) => m.t === "in").map((m) => m.data).join("");
+  mark = sent.length;
+  await dropRows(JSON.stringify({ host: "devbox", paths: ["/srv/x.md"] }));
+  await page.waitForTimeout(300);
+  const refusedDrop = { typed: sent.slice(mark).filter((m) => m.t === "in").length, toast: await $eval(() => document.getElementById("toast").textContent) };
+  check("AC-36 web app: a folder and a file dragged from Files put their quoted paths at the input, no Enter; another host's are refused with a toast",
+    put.includes("/Users/alex/p/src '/Users/alex/p/a b.md'") && !put.includes("\r") && refusedDrop.typed === 0 && refusedDrop.toast.includes("devbox"), JSON.stringify({ put, refusedDrop }));
 
   // a coding agent's input box as a panel; its footer behind a button on a phone
   const note = "✔ Update installed · Restart to update";

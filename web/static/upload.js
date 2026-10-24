@@ -27,7 +27,19 @@ export async function asTaken(blob) {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 
-export function uploads({ sid, paste, toast, hideToast }) {
+// Rows dragged from the Files panel (ui/src/tree-drag.ts): {host, paths}, put as paths, nothing uploaded.
+const PATHS = "application/x-terminum-paths";
+
+/** The paths a drag from Files carries, or null: absolute, no control characters (each would be a key). */
+export function draggedPaths(raw) {
+  let m;
+  try { m = JSON.parse(raw); } catch { return null; }
+  const paths = Array.isArray(m?.paths) ? m.paths.filter((p) => typeof p === "string" && p.startsWith("/") && !/[\x00-\x1f\x7f]/.test(p)) : [];
+  return paths.length ? { host: typeof m.host === "string" ? m.host : null, paths } : null;
+}
+
+/** sid(): the shown pane; host(): its host (null: this Mac); paste(text) at its input. */
+export function uploads({ sid, host = () => null, paste, toast, hideToast }) {
   /** Saves one file: {path} or {error}. */
   async function save(blob, what, url, from) {
     const r = await fetch(url + encodeURIComponent(from), { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob })
@@ -58,6 +70,14 @@ export function uploads({ sid, paste, toast, hideToast }) {
     toast(list.length > 1 ? `${paths.length} of ${list.length} uploaded (their paths pasted); ${list[paths.length][0].name}: ${error} The rest were not sent.` : error, 8000);
   }
 
+  function putPaths(got) {
+    if (!got) return;
+    if (!sid()) return toast("Open a session first.");
+    const on = host() ?? null;
+    if (got.host !== on) return toast(`These files are on ${got.host ?? "this Mac"}; the session runs on ${on ?? "this Mac"}: nothing was put.`, 6000);
+    paste(got.paths.map(shellWord).join(" "));
+  }
+
   const fileUrl = (f) => `/upload?name=${encodeURIComponent(f.name)}&sid=`;
   return {
     async pasteImage(blob) {
@@ -67,20 +87,23 @@ export function uploads({ sid, paste, toast, hideToast }) {
     },
     uploadFiles: (list) => send(list.map((f) => [f, fileUrl(f)]), "file"),
     /** Files dropped anywhere on the page (a drop the page did not take would open the file in
-     *  the browser and leave the page, with any unsaved edits in View). */
+     *  the browser and leave the page, with any unsaved edits in View); rows dragged from Files
+     *  put their paths (AC-36). */
     bindDrop(target) {
-      const hasFiles = (e) => [...(e.dataTransfer?.types ?? [])].includes("Files");
+      const kind = (e) => { const t = [...(e.dataTransfer?.types ?? [])]; return t.includes(PATHS) ? "paths" : t.includes("Files") ? "files" : null; };
       document.addEventListener("dragover", (e) => {
-        if (!hasFiles(e)) return;
+        if (!kind(e)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
         target.classList.add("dropping");
       });
       document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) target.classList.remove("dropping"); });
       document.addEventListener("drop", (e) => {
-        if (!hasFiles(e)) return;
+        const k = kind(e);
+        if (!k) return;
         e.preventDefault();
         target.classList.remove("dropping");
+        if (k === "paths") return putPaths(draggedPaths(e.dataTransfer.getData(PATHS)));
         const items = [...e.dataTransfer.items].filter((it) => it.kind === "file");
         if (items.some((it) => it.webkitGetAsEntry?.()?.isDirectory)) return toast("A folder cannot be uploaded: drop its files.", 6000);
         const files = items.map((it) => it.getAsFile()).filter(Boolean);

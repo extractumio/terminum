@@ -124,6 +124,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **A file dropped** on the page (or picked with Upload) is uploaded as a screenshot is and its
   path pasted, up to 100 MB; give a larger file by its path (a browser never tells a page where a
   dropped file is).
+- **Files and folders dragged from Files** onto the terminal put their paths at the input, quoted,
+  without Enter; nothing is uploaded. Drag a selected row to put every selected row's path.
 
 ## Your own tmux sessions
 

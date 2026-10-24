@@ -14,6 +14,7 @@ import { acceptFromPage, emptiedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pi
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { Tree, type EditMode } from "./tree";
+import { bindDrag } from "./tree-drag";
 import { Viewer } from "./viewer";
 import { PathBar } from "./viewer-path";
 import { Stream } from "./stream";
@@ -278,6 +279,8 @@ const tree = new Tree($("tree"), {
   commit,
   notify: toast,
 });
+// a row dragged onto the page's terminal puts its path at the input; a selected one, the selection's (AC-36)
+bindDrag($("tree"), (p) => (tree.selected.has(p) ? [p, ...[...tree.selected].filter((q) => q !== p)] : [p]), () => scope);
 
 const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
   changed: scheduleSave,
