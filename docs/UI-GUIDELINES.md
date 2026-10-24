@@ -212,7 +212,7 @@ raw colors" besides shadows (§2.2); colors themselves stay the theme's (§2.1, 
 | Moment | What moves |
 | --- | --- |
 | Any color change | Over `--dur-hover` on every element of the page but the terminal and an icon's insides (they follow their parent). |
-| Hover (`(hover: hover) and (pointer: fine)` only) | Color: one surface step. Never the outline or the size (a sweep across a toolbar must stay calm). Rows: fill and their folder bar brighten. Blobs lift 1px and grow 6%. |
+| Hover (`(hover: hover) and (pointer: fine)` only) | Color: one surface step. Never the outline or the size (a sweep across a toolbar must stay calm). Rows: fill and their folder bar brighten. Blobs lift 2px and grow 12% on a spring (`--ease-spring`), their icon nods once (a small turn back and forth, `--dur-pop`). |
 | Press | A key sinks: `--m-well` for the press, no scale. Blobs squash to .9. |
 | Release | Color back. Blobs pulse in their own outline. |
 | A window opens or closes (a `.box`: pane, menu, form, toast, dialog; a phone's sheet) | Flies out of what opened it: its origin the press or the focused key (`pop.js`), held to 40 px outside it, so a menu grows out of its button and a dialog in the middle from its side towards it; opened by nothing (a toast), from its middle. From .3 and a 10px blur, in focus within 80ms, ~10% past its size and back on a spring (`--ease-pop`, 350ms); a menu's rows come up one after another, 25ms apart. Out: back the same way, to .3, blurred and faded in 160ms, still in sight while it goes; its backdrop or shade fades with it. Safari has no `overlay`: a closed dialog stays laid out there, out of sight (`visibility`), so it can go the same way. |

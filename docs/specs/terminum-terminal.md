@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.12 |
+| Version | 0.4.13 |
 | Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.13 | 2026-10-24 | Owner: on a computer a selection's Copy, [+] and Ask stand in the floating buttons' column, in one line with find and the sent history, Copy level with the selection's first line (kept inside the terminal), and the column's other buttons are hidden while they show (they stood left of the column, level with the selection's end, beside the column) (AC-33, AC-37). The floating buttons answer the pointer: they lift 2 px and grow 12% on a spring, and their icon nods once (docs/UI-GUIDELINES.md §2.8). |
 | 0.4.12 | 2026-10-24 | Owner: files and folders dragged from the Files panel onto the terminal put their paths at the input's cursor (shell-quoted, separated by spaces, no Enter), nothing uploaded: they are already where the pane runs; several selected rows go together; a file of another host than the pane's is refused with a toast (AC-36; terminum-files.md AC-52). |
 | 0.4.11 | 2026-10-24 | Owner: "artifacts/screenshots/…/row.png" and other paths a coding agent printed were no links: Claude Code worked in a worktree three folders below where it was started, and the pane's folder (tmux's, its process's) stayed there. A relative path is looked for from the folder the agent's hooks last said it works in (its own events, not a subagent's: `cwd`), then from the pane's, and opens where it is (AC-35). |
 | 0.4.10 | 2026-10-23 | Owner: Ask's field has no "Question" label (it holds a comment or a task as often as a question) and says "Your comment or task about it"; a field in focus keeps its fill, edged in the accent, without the accent gradient (every field: the page's and the Files panel's filter) (AC-37; UI-GUIDELINES.md §6). |
@@ -225,7 +226,7 @@ Scenario: AC-32 failure — lines terminumd cannot send
 ```gherkin
 Scenario: AC-33 happy path — a selection becomes a bookmark
   When the user selects text in the history, the screen or a widget's rendered text
-  Then an orange [+] stands at the terminal's right edge level with the selection's end and a gray Copy above it while the selection lasts (and 600 ms after); both follow the view; on a phone or a narrow window they stand instead at the terminal's top right, Copy first, in place of the folded floating buttons (terminum.md AC-18); not for a selection in an agent's input box or status lines
+  Then a gray Copy and an orange [+] under it stand in the floating buttons' column (in one line with find and the sent history), Copy level with the selection's first line (kept inside the terminal, following the view), the column's other buttons hidden meanwhile, while the selection lasts (and 600 ms after); on a phone or a narrow window they stand instead at the terminal's top right, Copy first, in place of the folded floating buttons (terminum.md AC-18); not for a selection in an agent's input box or status lines
   When the user presses [+], types a note and saves
   Then the bookmark holds the text (up to 2000 characters), the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" (0600) on the Mac, seen by every signed-in client at once
 
@@ -347,7 +348,7 @@ Scenario: AC-37 happy path — a phone
 
 Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
-  Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (on a wide window the three stand left of the floating column; on a phone at the terminal's top right); it is hidden otherwise
+  Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (on a computer the three stand in the floating column from the selection's first line down; on a phone at the terminal's top right); it is hidden otherwise
   When the user presses Ask
   Then its dialog opens centered on the terminal (not on the whole window, which also holds the session list and Files), kept inside the window, a quarter larger than other dialogs: 600 px wide, the quote up to 37.5% of the window's height, a 4-line question
   When the user types a question and presses Add to Chat
@@ -774,5 +775,6 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.4.4 (2026-10-22) — AC-32, AC-56 `web/test/e2e_widgets.mjs` (Chromium and WebKit: a pipe table appended to the history is drawn as a table; then the bridge tells "⋯ 7 more lines of output" over its rows: the table stays drawn, no fold; with the fold's give-way off the same check fails: drawn false, folded true, as the owner saw) → pass.
 - [x] 0.4.3 (2026-10-22) — AC-32 `cargo test page::folds` (an output in the history with the next ⏺ on the screen folds at the first look, "⋯ 10 more lines of output"; without the screen, or with rows missing between them, it waits; one going on onto the screen gives no fold, not a part); `web/test/e2e_livefolds.mjs` in `e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux: such an output printed in a pane folds in the page's history while the next ⏺ heads the screen; with the screen not read (the scan's rows emptied for the run) it does not: label null) → pass; found on the owner's own pane (read with `capture-pane`, nothing typed): the block above the screen had all its rows in the history and the next `⏺ Bash(…)` on the screen's first rows; `node web/test/e2e_all.mjs` 1103, live 97, `make test` (cargo 445 + 1), `scripts/security_check.sh` pass.
 - [x] 0.4.9, 0.4.10 (2026-10-23) — AC-37 `node --test web/test/ask.test.mjs` (the Markdown quote, tabs and control characters, the @-word's space, typed or pasted by the pane's rows) and `web/test/e2e_ask.mjs` (Chromium and WebKit: pasted in a shell, typed in an agent's box of 40 rows, Send to Agent, no label, an aria-label, no gradient in focus) → pass. Not covered: typing into a real Claude Code.
+- [x] 0.4.13 (2026-10-24) — AC-33, AC-37 `web/test/e2e_marks.mjs` (Chromium and WebKit: a selection's Copy and [+] in the floating column, same left as find and the sent history, 20 px under it; Ask under the [+], the bookmarks' button under them), `e2e_ask.mjs`, `e2e_phonerow.mjs` (a phone: the three where ⟨…⟩ stands, as before); UI-GUIDELINES §2.8 `web/test/e2e_motion.mjs` (a blob under the pointer: scale 1.12, lifted 2 px, its icon's "nod" played once; with reduced motion nothing moves) → pass.
 - [x] 0.4.11 (2026-10-24) — AC-35 `cargo test tmux::hookstate` (the agent's own last cwd, not a subagent's or a relative one, gone at its end); `node --test web/test/panefiles.test.mjs` (a path under the agent's folder found there, one under the pane's there, none neither; red without the agent's folder); `web/test/e2e_app.mjs` (Chromium and WebKit: "shots/row.png" under the agent's worktree underlined and opened in View from there) → pass.
 - [x] 0.4.12 (2026-10-24) — AC-36 `node --test web/test/upload.test.mjs` (absolute paths with their host; relative ones, control characters, not text dropped); `web/test/e2e_app.mjs` (Chromium and WebKit: a folder and a file dropped as Files' rows put their quoted paths, no Enter, nothing uploaded; another host's refused with a toast); `cd ui && node test/e2e_panel.mjs` (a row is draggable, carries its host and path, a selected row the selection itself first, plain text one path a line) → pass. Not covered: a real mouse drag between the frames (synthetic events on each side).
