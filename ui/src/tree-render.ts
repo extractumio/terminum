@@ -29,7 +29,7 @@ export function rowHtml(d: RowView, i: number, s: RowState): string {
   const open = isDir && s.expanded.has(p);
   const renaming = s.renaming(p);
   const cls = ["row", s.selected.has(p) ? "sel" : "", i === s.cursor ? "cursor" : "", renaming ? "editing" : ""].join(" ");
-  return `<div class="${cls}" data-i="${i}" data-p="${esc(p)}" data-d="${isDir ? 1 : 0}" title="${esc(r.n)}">${guides}` +
+  return `<div class="${cls}" data-i="${i}" data-p="${esc(p)}" data-d="${isDir ? 1 : 0}" title="${esc(r.n)}"${renaming ? "" : ' draggable="true"'}>${guides}` +
     `<span class="chev${open ? " open" : ""}">${isDir ? chevron : ""}</span>` +
     (isDir ? folderIcon(open) : fileIcon(r.n)) +
     (renaming ? "" : `<span class="name${isDir ? " dir" : ""}${r.n.startsWith(".") ? " hidden" : ""}">${highlight(r.n, s.filter)}</span>` +

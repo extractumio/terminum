@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The files a pane's output names (AC-52, AC-56): where a printed path is (from the pane's folder
-// and home, on its host), whether a file is there, and an image's URL through the Files proxy.
+// The files a pane's output names (AC-35, AC-52, AC-56): where a printed path is (a relative one from
+// the folder its coding agent works in, as its hooks said, then from the pane's; "~" from its home;
+// on its host), whether a file is there, and an image's URL through the Files proxy.
 // Only a file that is there gets an underline, a click or an image button. A file is looked up by
 // listing its folder through the proxy (nothing is read): one page answers every name of a
 // folder of up to 500 entries; a larger one is asked by name.
@@ -15,7 +16,7 @@ const QUEUED = 200;          // folders waiting, at most: the newest asked first
 const KEPT = 3000;           // answers kept, the oldest go first
 const SAY_EVERY = 250;       // ms between two "files turned up" (the page marks links again)
 
-/** paneInfo(): the shown pane's {cwd, home, host} or {error}, null when the Mac does not answer.
+/** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
  *  fetchJson(url): the answer's JSON, null when it failed (tests give their own); load(url):
  *  an image's {url} to show (a blob: address, fetched with the sign-in) or {error}. */
 export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null), load = async (url) => ({ url })) {
@@ -34,18 +35,23 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
       asking = null;
       if (mine !== gen) return;
       paneAt = performance.now();
-      const moved = JSON.stringify([pane?.cwd, pane?.home, pane?.host, pane?.error]) !== JSON.stringify([info?.cwd, info?.home, info?.host, info?.error]);
+      const moved = JSON.stringify([pane?.cwd, pane?.agent, pane?.home, pane?.host, pane?.error]) !== JSON.stringify([info?.cwd, info?.agent, info?.home, info?.host, info?.error]);
       pane = info;
       if (moved) say();
     }, () => { asking = null; });
     return asking;
   }
   const query = (params, host) => { const q = new URLSearchParams(params); if (host) q.set("host", host); return q; };
-  const placeOf = (value, p = pane) => {
-    const path = p && !p.error ? absolutePath(value, p.cwd, p.home) : null;
-    return path && { host: p.host ?? null, path, dir: path.slice(0, path.lastIndexOf("/")) || "/", name: path.slice(path.lastIndexOf("/") + 1) };
+  // where a printed path may be, the likelier first: from the agent's folder, then from the pane's
+  const placesOf = (value, p = pane) => {
+    if (!p || p.error) return [];
+    const paths = [...new Set([p.agent, p.cwd].filter(Boolean).map((base) => absolutePath(value, base, p.home)).filter(Boolean))];
+    return paths.map((path) => ({ host: p.host ?? null, path, dir: path.slice(0, path.lastIndexOf("/")) || "/", name: path.slice(path.lastIndexOf("/") + 1) }));
   };
   const keyOf = (host, path) => `${host ?? ""}\n${path}`;
+  const known = (place) => found.get(keyOf(place.host, place.path));
+  /** The first of `value`'s places whose file is there, as far as known now. */
+  const foundAt = (value) => placesOf(value).find((place) => known(place)?.ok) ?? null;
 
   function remember(host, dir, name, ok) {
     const k = keyOf(host, dir === "/" ? `/${name}` : `${dir}/${name}`), was = found.get(k);
@@ -110,17 +116,21 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     refresh();
     if (!pane) return "no";
     if (pane.error) return { error: pane.error };
-    const place = placeOf(value);
-    if (!place) return { error: `Cannot tell where ${value} is: this session's folder is not known.` };
-    const k = found.get(keyOf(place.host, place.path));
-    const stale = !k || (!k.pending && performance.now() - k.at > (k.ok ? KEEP_FOUND : AGAIN[Math.min(AGAIN.length, k.tries) - 1]));
-    if (stale) enqueue(place, urgent);
-    return k?.ok ? "yes" : "no";
+    const places = placesOf(value);
+    if (!places.length) return { error: `Cannot tell where ${value} is: this session's folder is not known.` };
+    for (const place of places) {
+      const k = known(place);
+      const stale = !k || (!k.pending && performance.now() - k.at > (k.ok ? KEEP_FOUND : AGAIN[Math.min(AGAIN.length, k.tries) - 1]));
+      if (stale) enqueue(place, urgent);
+    }
+    return foundAt(value) ? "yes" : "no";
   }
   return {
     state,
     /** Whether the file a printed path names is there, as far as known now. */
     there: (value, urgent = false) => state(value, urgent) === "yes",
+    /** The absolute path of the file a printed path names, where it is there; null when none is known. */
+    pathOf: (value) => foundAt(value)?.path ?? null,
     /** Another pane is shown: its folder and files are asked again. */
     forget() { gen++; pane = null; paneAt = -Infinity; asking = null; found = new Map(); queue[0].length = queue[1].length = 0; },
     /** {url, path} of the image a printed path names, or {error}. */
@@ -128,7 +138,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
       if (!pane || performance.now() - paneAt > PANE_FOR) { paneAt = -Infinity; await refresh(); }
       if (!pane) return { error: "terminum's server does not answer" };
       if (pane.error) return { error: pane.error };
-      const place = placeOf(value);
+      const place = foundAt(value) ?? placesOf(value)[0];
       if (!place) return { error: "this session's folder is not known" };
       // an <img> sends no header: the file is fetched with it and shown from a blob: (signin.js blobUrl)
       const got = await load(`/fb/api/raw?${query({ path: place.path }, place.host)}`);

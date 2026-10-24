@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux se
 
 | Field | Value |
 |---|---|
-| Version | 0.7.1 |
-| Date | 2026-10-21 |
+| Version | 0.7.2 |
+| Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.7.2 | 2026-10-24 | Owner, asked whether a host's picture could be a way in: terminumd passed a host's Content-Type and Content-Security-Policy on as they came, so a host not to be trusted (or a helper replaced there) could have a picture's answer be HTML without the `sandbox` policy; a raw answer now carries terminumd's type, by the file's name, and its `sandbox` policy, every other forwarded answer (an error too) is JSON; `scripts/e2e_remote.py` reads a host's PNG and SVG through the header (AC-82; terminum.md 0.18.15, AC-09). |
 | 0.7.1 | 2026-10-21 | Owner, on what 0.7.0 left: a host with busybox's ps (no -U, no -p) is swept, through /proc; where tmux rewrites a client's command line (FreeBSD, OpenBSD) one of this server's socket with no terminal counts. Pragmatic review applied: no terminal read from /proc where ps cannot say (else none: kept), only this server's socket (AC-81). |
 | 0.7.0 | 2026-10-21 | Owner: a Linux host (tmux 3.4) held 12 control clients of terminum's, up to 4 days old, each left by a dropped link: once ssh's end goes, tmux keeps the client's pipes and unsent output and the client never exits (`detach-client` cannot end it, a signal does). Now, once each connection of a host, terminumd ends those of its control clients there that are orphaned: their parent is init, or a shell whose parent is init. Pragmatic review applied: orphaned proved by the parent, never by the absence of sshd (Tailscale SSH, dropbear, a test's fake ssh are live without one); the shape matched by its arguments (`tmux … -C … -f ignore-size …`), not a prefix; quiet and in the background (`run-shell -b`), every failing `ps` skipping its client, a ppid that is not one number too. Owner, then: those stuck before tmux listed them are found by `ps` too (Linux names a client `tmux: client`), those whose command line tmux rewrote (FreeBSD, OpenBSD) by tmux's list (control clients with `ignore-size`); the script answers the pids it ended in a user option of the server (`@tm-orphans-<terminumd's pid>`, read and removed), so the log names exactly those; checked over real sshd and tmux 3.4, where it showed that a server started by terminum's command keeps that command line: the server's pid is never a candidate and `ps` takes only a process named `tmux: client`. Pragmatic review applied: `read -r` and a pid that is not a number skipped (a backslash ended line joined the next), a listed pid still a tmux process, shells by name (`ssh` is none), `ps -ww`, the answer option named per connection and removed before and after; the script itself run under dash, busybox ash and macOS sh against a stand-in `ps` (AC-81). |
 | 0.6.0 | 2026-10-16 | Owner: OQ-81 amended: the host's other tmux sessions stay hidden unless the user attaches them by name (AC 89, `hosts.<name>.attach`); each attached session is a further ssh connection. |
@@ -134,7 +135,7 @@ Scenario: AC-82 failure — the agent stalls or answers badly
   Then a request that gets no bytes for 30 s, or no end within 120 s, fails and frees its connection; bodies are capped at 64 MB; a lagged event stream reconnects with a host-scoped rescan; a dialog answered after the page switched hosts does nothing ("The panel switched to another pane — nothing changed"); a document saves to the host it came from
 
 Scenario: AC-82 security — the agent
-  Then the agent listens only on a Unix socket with a random name in a 0700 folder on the host (removed on exit), takes its token on stdin (never a command line), exits on stdin EOF or SIGHUP, writes only under $HOME and /tmp on the host; on the Mac the forwarded socket is in the app folder (0700) and only terminumd connects to it; answers are untrusted (capped, streamed, Origin not forwarded)
+  Then the agent listens only on a Unix socket with a random name in a 0700 folder on the host (removed on exit), takes its token on stdin (never a command line), exits on stdin EOF or SIGHUP, writes only under $HOME and /tmp on the host; on the Mac the forwarded socket is in the app folder (0700) and only terminumd connects to it; answers are untrusted (capped, streamed, Origin not forwarded; their type and policy terminumd's: a raw file's by its name with the `sandbox` policy, every other answer JSON)
 ```
 
 ### AC-83 — Enable a host's files [SHOULD / P1]
@@ -367,3 +368,4 @@ Evidence of 2026-10-15: `scripts/e2e_remote.py` runs a private terminumd whose s
 - [ ] AC-86 — `make package` builds macOS arm64 and x86_64; the Linux pair builds with the pinned toolchain (`scripts/agents.py build linux-aarch64 linux-x86_64`, static musl ELF); `scripts/tests/test_release.py` covers the refusals.
 - [x] AC-87 — `cargo test hosts::` (allowlist, names) and `scripts/e2e_remote.py` (refusal, record, removal) → pass.
 - [x] AC-81 orphans 0.7.1 (2026-10-21) — `scripts/e2e_remote_sshd.py` with procps and with `TM_SSHD_BUSYBOX=1` (busybox's ps only): the planted orphan is ended and logged, the server keeps its pid, 13/13 each; the script run in an Alpine container with busybox against a real orphan: `KILL` of exactly it; `cargo test tmux::orphans` (a BSD client of no terminal ended, one with a terminal left; a ps that fails gives way to /proc and, with none, ends nothing) → pass. A FreeBSD or OpenBSD host itself was not tried: its ps is a stand-in in the test.
+- [x] 0.7.2 (2026-10-24) — AC-82 `cargo test remote` (a hostile agent: terminumd's type and sandbox policy, JSON for a listing and an error) and `scripts/e2e_remote.py` 31/31 (a host's PNG and SVG through the header: typed by name, the sandbox policy, the same bytes; `?t=` refused) → pass.

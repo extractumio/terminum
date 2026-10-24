@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's menus: a row's on a right click or a long press (Clone, Add to Project,
-// Remove from Project, Close Session, Move to the Top, to the Bottom, Up, Down; AC-07, AC-92), and a
-// project's, on its ⋯ or a right click on its header (New Session, Rename, the same moves among the
+// Remove from Project, Mark as Unread or Read, Close Session, Move to the Top, to the Bottom, Up,
+// Down; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Session, Rename, the same moves among the
 // projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Session,
 // moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
 // sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
@@ -96,6 +96,8 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups }) {
       button("Clone", "clone", () => { hide(); clone(it); }),
       button("Add to Project…", "project", () => projectMenu(it, mine, x, y)),
       ...(mine ? [button(`Remove from ${mine.name}`, "unproject", () => { hide(); send({ t: "project", action: "remove", id }); })] : []),
+      // as if nobody had opened it since its agent finished, on every page, until it is shown again (AC-93)
+      button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }),
       document.createElement("hr"),
       button("Move to the Top", "top", () => move(0), movable && i > 0),
       button("Move Up", "up", () => move(i - 1), movable && i > 0),

@@ -108,7 +108,19 @@ export async function webProjects(browser, name) {
   await page.click('#sessions .item[data-id$="%2"]', { button: "right" });
   const items = await menuItems(page);
   check("AC-07 a right click opens the row's menu; the moves its place allows",
-    items.join() === "Clone,Add to Project…,Move to the Top,Move Up,Move Down,Move to the Bottom,Close Session", items.join());
+    items.join() === "Clone,Add to Project…,Mark as Unread,Move to the Top,Move Up,Move Down,Move to the Bottom,Close Session", items.join());
+  // Mark as Unread: terminumd marks it on every page; an unread row's menu has Mark as Read (AC-93)
+  let k0 = sent.length;
+  await page.click('#rowmenu button[data-action="unread"]');
+  const markedUnread = sent.slice(k0).find((m) => m.t === "unread");
+  await page.click('#sessions .item[data-id$="%4"]', { button: "right" });
+  const readItem = await page.$eval('#rowmenu button[data-action="unread"]', (b) => b.textContent);
+  k0 = sent.length;
+  await page.click('#rowmenu button[data-action="unread"]');
+  const back = sent.slice(k0).find((m) => m.t === "unread");
+  check("AC-93 Mark as Unread asks terminumd to mark the row; an unread row's menu has Mark as Read, which takes it away",
+    markedUnread?.id?.endsWith("%2") && markedUnread.on === true && readItem === "Mark as Read" && back?.id?.endsWith("%4") && back.on === false && await page.isHidden("#rowmenu"), JSON.stringify({ markedUnread, readItem, back }));
+  await page.click('#sessions .item[data-id$="%2"]', { button: "right" });   // its menu again, for the checks below
   check("AC-07 the menu names its session and has × to close it", await page.evaluate(() => document.querySelector("#rowmenu .mhead span")?.textContent === "docs"));
   await page.click('#rowmenu button[data-action="x"]');
   check("AC-07 × closes the menu", await page.isHidden("#rowmenu"));
@@ -272,7 +284,7 @@ export async function webProjects(browser, name) {
   });
   await pause(p.page, 100);
   const held = await menuItems(p.page);
-  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Clone" && held.length === 7, held.join());
+  check("AC-07 a finger resting on a row and lifted without moving opens its menu", held[0] === "Clone" && held.length === 8, held.join());
   const pm = await mark(p.page);
   check("AC-93 on a phone too an unread row is hatched", pm.hatched && !pm.blob, JSON.stringify(pm));
   check("AC-07 on a phone (no hover) Clone is always there", await clone(p.page, 2) === "0.8");

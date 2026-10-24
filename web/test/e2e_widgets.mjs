@@ -13,7 +13,7 @@ import { check, cleanup, playwright, results } from "./check.mjs";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const STATIC = path.resolve(HERE, "../static");
 const DIST = path.resolve(HERE, "../../ui/dist");
-export const CSP = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'";   // AC-09
+export const CSP = "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'";   // AC-09
 const ORIGIN = "http://web.test";
 const TYPES = { html: "text/html", css: "text/css", svg: "image/svg+xml", js: "text/javascript", png: "image/png" };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");

@@ -122,9 +122,13 @@ fn finite_body(incoming: hyper::body::Incoming, connection: Connection, wait: Du
 }
 
 /// The same request to the agent: its token and Host, no Origin, no local token in the
-/// query, the body capped; the answer streams back capped.
+/// query, the body capped; the answer streams back capped. Its type and policy are terminumd's,
+/// never the host's: a raw file's by its name with RAW_CSP, everything else (an error too) JSON.
 async fn forward(host: &str, agent: &Agent, req: Request) -> Result<Response, String> {
     let (parts, body) = req.into_parts();
+    let raw_of = (parts.uri.path() == "/api/raw").then(|| {
+        axum::extract::Query::<crate::api_fs::PathQuery>::try_from_uri(&parts.uri).map(|q| q.0.path).unwrap_or_default()
+    });
     let query: Vec<&str> = parts.uri.query().unwrap_or("").split('&').filter(|kv| !kv.is_empty() && !kv.starts_with("t=") && !kv.starts_with("host=")).collect();
     let uri = if query.is_empty() { parts.uri.path().to_string() } else { format!("{}?{}", parts.uri.path(), query.join("&")) };
     let body = Limited::new(body, BODY_MAX).collect().await.map_err(|e| e.to_string())?.to_bytes();
@@ -144,10 +148,16 @@ async fn forward(host: &str, agent: &Agent, req: Request) -> Result<Response, St
     let (parts, incoming) = res.into_parts();
     let mut response = Response::new(Body::new(Limited::new(finite_body(incoming, connection, BODY_WAIT), BODY_MAX).map_err(axum::Error::new)));
     *response.status_mut() = parts.status;
-    for name in [header::CONTENT_TYPE, header::ETAG, header::CONTENT_SECURITY_POLICY] {
-        if let Some(v) = parts.headers.get(&name) {
-            response.headers_mut().insert(name, v.clone());
+    if let Some(v) = parts.headers.get(header::ETAG) {
+        response.headers_mut().insert(header::ETAG, v.clone());
+    }
+    let h = response.headers_mut();
+    match raw_of.filter(|_| parts.status.is_success()) {
+        Some(path) => {
+            h.insert(header::CONTENT_TYPE, crate::api_fs::raw_type(&path));
+            h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(crate::api_fs::RAW_CSP));
         }
+        None => { h.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json")); }
     }
     Ok(response)
 }

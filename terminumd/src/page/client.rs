@@ -85,6 +85,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "history" => crate::looks::set_history(app, page, &msg),
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
+        "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             pause(page, true);
@@ -142,10 +143,9 @@ fn resume(app: &Shared, page: &Arc<Page>) {
 /// The shown pane's folder, home and host, for the Files view and printed paths (AC-51).
 async fn files(app: &Shared, page: &Arc<Page>) {
     match shown_cwd(page).await {
-        Ok((key, server, cwd)) => page.send_json(&files_message(&server, &key, &cwd).await),
+        Ok((key, server, cwd)) => page.send_json(&files_message(app, &server, &key, &cwd).await),
         Err((key, e)) => page.send_json(&json!({"t": "files", "sid": key, "error": e})),
     };
-    let _ = app;
 }
 
 /// The shown pane's key, server and folder; Err(its key if any, why).
@@ -161,9 +161,11 @@ pub async fn shown_cwd(page: &Page) -> Result<(String, Arc<Server>, String), (Op
     }
 }
 
-/// The `files` message: the shown pane's key, folder, home and host (for the Files panel).
-pub async fn files_message(server: &crate::tmux::Server, key: &str, cwd: &str) -> Value {
+/// The `files` message: the shown pane's key, folder, home and host (for the Files panel), and
+/// the folder its coding agent works in when its hooks said one (printed paths, AC-35).
+pub async fn files_message(app: &Shared, server: &crate::tmux::Server, key: &str, cwd: &str) -> Value {
     let host = (!server.is_local()).then(|| server.name.clone());
     let home = if server.is_local() { crate::config::home().display().to_string() } else { server.home().await.unwrap_or_default() };
-    json!({"t": "files", "sid": key, "key": key, "cwd": cwd, "home": home, "host": host})
+    let agent = app.hooks.cwd(key).filter(|a| a != cwd);
+    json!({"t": "files", "sid": key, "key": key, "cwd": cwd, "home": home, "host": host, "agent": agent})
 }

@@ -58,6 +58,7 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
     // the last frame's rows, cursor columns and encodings: an unchanged row is not encoded again
     let mut encodings: Vec<(rows::Row, Option<usize>, String)> = Vec::new();
     let mut last_folds: Option<(Vec<String>, Option<usize>, bool, serde_json::Value)> = None;
+    let mut agent_dir = app.hooks.cwd(&key);   // the folder its coding agent works in, as last told (AC-51)
     let mut generation = u64::MAX;
     let mut said_lost = false;
     let mut server_pid: Option<u32> = None;
@@ -153,11 +154,14 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             && !page.send(msg) {
                 return;
             }
-        // the pane's folder changed (a cd, by Enter, a hot key or a script): Files follows it
-        let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path).map(|_| f.path.clone());
+        // the pane's folder changed (a cd, by Enter, a hot key or a script), or its agent's: Files follows it
+        let agent_now = app.hooks.cwd(&key);
+        let agent_moved = agent_now != agent_dir;
+        agent_dir = agent_now;
+        let moved_to = ctl.fields.lock().as_ref().filter(|old| old.path != f.path || agent_moved).map(|_| f.path.clone());
         *ctl.fields.lock() = Some(f);
         if let Some(cwd) = moved_to {
-            page.send_json(&super::client::files_message(&server, &key, &cwd).await);
+            page.send_json(&super::client::files_message(&app, &server, &key, &cwd).await);
         }
         if opened {
             super::sizing::activated(&app, &page);       // its grid came after "sub" (or not yet): sized as it comes

@@ -79,3 +79,19 @@ test("a pane whose folder is not known says why; another pane's answers are drop
   await tick();
   assert.equal(files.there("a.md"), false);
 });
+
+test("a relative path is found from the folder the coding agent works in, then from the pane's (AC-35)", async () => {
+  const { files, pane } = fake({
+    "/Users/alex/p/worktrees/fix/shots": ["row.png"],                 // under the agent's folder only
+    "/Users/alex/p/docs": ["guide.md"],                               // under the pane's only
+  });
+  pane.agent = "/Users/alex/p/worktrees/fix";
+  for (let i = 0; i < 2; i++) { files.there("shots/row.png"); files.there("docs/guide.md"); files.there("shots/none.png"); await tick(); }
+  assert.equal(files.there("shots/row.png"), true, "under the agent's folder");
+  assert.equal(files.pathOf("shots/row.png"), "/Users/alex/p/worktrees/fix/shots/row.png");
+  assert.equal(files.there("docs/guide.md"), true, "under the pane's folder");
+  assert.equal(files.pathOf("docs/guide.md"), "/Users/alex/p/docs/guide.md");
+  assert.equal(files.there("shots/none.png"), false);
+  assert.equal(files.pathOf("shots/none.png"), null);
+  assert.equal((await files.resolve("shots/row.png")).path, "/Users/alex/p/worktrees/fix/shots/row.png", "an image from where it is");
+});

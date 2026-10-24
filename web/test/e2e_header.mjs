@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The header's second line (AC-01, header.js) against a fake terminumd (fake.mjs), at both sizes:
-// the folder with its Copy, tmux's session:window, then what runs there; Copy copies the full path.
+// the folder with its Copy, tmux's session:window, then what runs there; Copy copies the full path;
+// the folder its coding agent works in when it moved (a worktree), and Files' root, unless the menu's
+// "Follow the agent's folder" is off (AC-51).
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
 
@@ -34,6 +36,27 @@ export async function webHeader(browser, name) {
       got.copied === "/Users/alex/work/api" && got.app === drawer, JSON.stringify({ ...got, drawer }));
     check("AC-01 no page errors (header)", !f.errors.length, f.errors.join(" | "));
     await f.close();
+
+    // its Claude Code works in a worktree below the pane's folder (its hooks said so)
+    const AGENT = "/Users/alex/work/api/worktrees/fix";
+    const moved = [group("main", [item(SID, "api", { sub: ["claude", "~/work/api"], index: "3", dir: "/Users/alex/work/api", agentDir: AGENT, agentFolder: "~/work/api/worktrees/fix" })])];
+    const g = await openPage(browser, { device, layout: moved, hook: (m, say) => {
+      if (m.t === "files") say({ t: "files", sid: SID, key: SID, cwd: "/Users/alex/work/api", home: "/Users/alex", host: null, agent: AGENT });
+    } });
+    await drawn(g.page);
+    await pause(g.page, 300);
+    const wide = !size.startsWith("390");
+    const seen = () => g.page.evaluate(() => ({ dir: document.querySelector("#cursub .dir")?.textContent, copy: document.querySelector("#cursub .copydir")?.title,
+      root: new URLSearchParams(new URL(document.getElementById("files").getAttribute("src") ?? "", location.href).search).get("cwd") }));
+    const on = await seen();
+    await g.page.evaluate(() => { const b = document.getElementById("followagent"); b.checked = false; b.dispatchEvent(new Event("change")); });
+    await pause(g.page, 300);
+    const off = await seen();
+    check("AC-51 following the agent (the default): the header's folder and Files' root are where the agent works; off in the menu, the pane's",
+      on.dir === "~/work/api/worktrees/fix" && on.copy === `Copy ${AGENT}` && (!wide || on.root === AGENT)
+        && off.dir === "~/work/api" && off.copy === "Copy /Users/alex/work/api" && (!wide || off.root === "/Users/alex/work/api"), JSON.stringify({ on, off }));
+    check("AC-51 no page errors (following the agent)", !g.errors.length, g.errors.join(" | "));
+    await g.close();
   }
   runningIn(name);
 }

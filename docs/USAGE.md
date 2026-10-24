@@ -16,7 +16,11 @@ configuration. The overview is in the [README](../README.md).
   phones, paste and upload of files.
 - **The Files panel** (`ui/`): the tree of the shown pane's folder, a viewer and editor with
   highlighting and rendered Markdown (its ```mermaid fences drawn as diagrams, "Source" shows
-  their text), create, rename, Trash, live refresh; on a wide window it is docked beside the
+  their text), JSON and YAML as a tree, CSV and TSV as a table (Source shows the text),
+  pictures, PDFs in the browser's own viewer, videos and sounds in its player (AU and AIFF
+  decoded where the browser does not play them; MIDI rendered by terminumd with your General
+  MIDI SoundFont: `~/.terminum/soundfont.sf2` or `midi.soundfont` in settings.json, none
+  shipped), create, rename, Trash, live refresh; Esc in View hides it and goes back to the terminal; on a wide window it is docked beside the
   terminal, open or closed for each session, its width set by dragging its border with the
   terminal; on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
@@ -77,6 +81,10 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   wide window small bars on the terminal's right edge mark where your messages (white), the
   agent's answers ended (pale blue), bookmarks (orange) and reminders (pink) stand in the
   history: press one to go there. Settings' Side marks turns them off.
+- **The agent's folder**: when Claude Code works in another folder than where it started (a
+  worktree), the header's folder and the Files tree follow it, and paths it prints open from
+  there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`
+  in settings.json for every browser that did not choose).
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat puts the selection as a Markdown
   quote (`> Quote #0007`, then `> ` and each of its lines), a blank line, your question and a blank
@@ -106,7 +114,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   in the place of its count; each row's Clone (shown while the pointer is over the row; on a phone always)
   opens a window beside it in its folder; a row hatched with pale lines is unread (its agent finished
   a turn nobody saw); a right click, or a finger
-  rested on a row and lifted, opens its menu (Clone, Add to Project, Close, moves). Drag a row, a
+  rested on a row and lifted, opens its menu (Clone, Add to Project, Mark as Unread or Read, Close, moves). Drag a row, a
   group's or a project's header to reorder: a dashed outline shows where it lands (a finger rests
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
@@ -124,6 +132,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 - **A file dropped** on the page (or picked with Upload) is uploaded as a screenshot is and its
   path pasted, up to 100 MB; give a larger file by its path (a browser never tells a page where a
   dropped file is).
+- **Files and folders dragged from Files** onto the terminal put their paths at the input, quoted,
+  without Enter; nothing is uploaded. Drag a selected row to put every selected row's path.
 
 ## Your own tmux sessions
 
@@ -251,7 +261,7 @@ Everything is in `~/.terminum/` and is read again within a second of a change:
 
 | File | What |
 |---|---|
-| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `themes` rules (by host and session), `page` defaults (`textSize`, `lines`, `screenMode`, `widgets`, `folds`), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
+| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
 | `themes/*.json` | colors, ANSI palette, font; `local.json` and `remote.json` ship as defaults |
 | `hotkeys.json` | the hot keys panel's rows (`"F5"`, `"C-r"`, `"text:git status"`, `"Paste"`) |
 | `custom.css` | your stylesheet, loaded after the page's own |

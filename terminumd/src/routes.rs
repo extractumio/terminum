@@ -56,6 +56,7 @@ pub fn pages(app: Shared) -> Router {
         .route("/auth/logout", post(crate::webaccess::logout))
         .route("/paste", post(crate::page::upload::paste).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
         .route("/upload", post(crate::page::upload::upload).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
+        .route("/api/midi", post(crate::midi::post).layer(DefaultBodyLimit::max(crate::midi::MAX_BYTES)))
         .route("/fb", get(|| async { axum::response::Redirect::permanent("/fb/") }))
         .route("/view", get(view))
         .route("/fb/", get(panel))

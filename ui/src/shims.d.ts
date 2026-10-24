@@ -5,3 +5,5 @@ declare module "*.css";
 declare module "*.svg" { const markup: string; export default markup; }
 /** The build this bundle belongs to (esbuild `define`, AC-34). */
 declare const __BUILD__: string;
+/** The page's rule for the address a fetched file is shown from (web/static/shown.js, AC-09). */
+declare module "*/shown.js" { export function shownAs(type: string | null | undefined): string; export function shownUrl(blob: Blob): Promise<string>; }

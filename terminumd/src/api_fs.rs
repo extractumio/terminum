@@ -45,7 +45,7 @@ pub async fn ls(State(app): State<Shared>, Query(q): Query<LsQuery>) -> ApiResul
 
 #[derive(Deserialize)]
 pub struct PathQuery {
-    path: String,
+    pub path: String,
 }
 
 /// Text and metadata of a file; `If-None-Match: <etag>` answers 304 when unchanged.
@@ -62,6 +62,13 @@ pub async fn file(State(app): State<Shared>, Query(q): Query<PathQuery>, headers
 }
 
 const RAW_MAX: u64 = 64 << 20;
+/// A raw answer's policy: opened as a page (an SVG, an HTML file), it runs nothing.
+pub const RAW_CSP: &str = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox";
+
+/// The type a raw answer for `path` carries: by its name, the same for a remote host's file.
+pub fn raw_type(path: &str) -> HeaderValue {
+    HeaderValue::from_str(mime_guess::from_path(path).first_or_octet_stream().as_ref()).unwrap_or(HeaderValue::from_static("application/octet-stream"))
+}
 
 /// Raw bytes for images; an SVG opened directly never runs script.
 pub async fn raw(Query(q): Query<PathQuery>) -> ApiResult {
@@ -79,11 +86,10 @@ pub async fn raw(Query(q): Query<PathQuery>) -> ApiResult {
     if bytes.len() as u64 > RAW_MAX {
         return Err(err(StatusCode::BAD_REQUEST, "too_large", "Larger than 64 MB"));
     }
-    let mime = mime_guess::from_path(&path).first_or_octet_stream();
     let mut res = Response::new(Body::from(bytes));
     let h = res.headers_mut();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_str(mime.as_ref()).unwrap());
-    h.insert("content-security-policy", HeaderValue::from_static("default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"));
+    h.insert(header::CONTENT_TYPE, raw_type(&path.to_string_lossy()));
+    h.insert(header::CONTENT_SECURITY_POLICY, HeaderValue::from_static(RAW_CSP));
     Ok(res)
 }
 

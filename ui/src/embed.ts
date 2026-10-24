@@ -39,6 +39,8 @@ export const revealOutside = (path: string) => tell({ type: "fb-reveal", path })
 export const zoomOutside = (src: string, caption: string) => tell({ type: "fb-zoom", path: src, caption });
 /** The last file of the File view was closed: the page goes back to the terminal. */
 export const emptiedOutside = () => tell({ type: "fb-empty", path: "" });
+/** Esc in View: the page hides it and shows the terminal (AC-70); false without a page around. */
+export const escapedOutside = () => tell({ type: "fb-esc", path: "" });
 
 /** Take what the page around sends (files to open or reveal, its theme, Files' folder), and nothing from anywhere else. */
 export function acceptFromPage(handlers: { open: (path: string) => void; reveal: (path: string) => void; theme: (t: Theme) => void; root: (path: string, host: string | null) => void }) {

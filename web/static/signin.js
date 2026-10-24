@@ -2,12 +2,16 @@
 // The page's sign-in (AC-09). The password (POST /auth/login, the form in conn.js) gets a
 // secret that this page keeps in its origin's storage (that origin only: 127.0.0.1:48080, or
 // the tailnet name), never in its address or a cookie. Every same-origin request then
-// carries it as X-TM-Session, an image's URL as ?t=, the WebSocket as its subprotocol; but
+// carries it as X-TM-Session (an image is fetched with it: blobUrl), the WebSocket as its subprotocol; but
 // only after the server proved it knows it (/api/hello), so another program on the port
 // while terminumd is down never sees it.
 // Imported first by app.js, before anything fetches.
+import { shownUrl } from "./shown.js";
 
 const KEY = "tm.session";
+/** The user's custom.css as last fetched (settings.js): shown at the next load before it is
+ *  fetched again; it needs the sign-in, so it goes with it. */
+export const CSS_KEY = "tm.customcss";
 const enc = new TextEncoder();
 let secret = null;
 try { secret = localStorage.getItem(KEY); } catch { secret = null; }
@@ -26,7 +30,7 @@ export const held = () => secret !== null;
 export function forget() {
   secret = null;
   proof = null;
-  try { localStorage.removeItem(KEY); } catch { /* nothing kept */ }
+  try { localStorage.removeItem(KEY); localStorage.removeItem(CSS_KEY); } catch { /* nothing kept */ }
 }
 
 const hex = (bytes) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -97,13 +101,13 @@ window.fetch = async (input, init = {}) => {
 };
 
 /** A same-origin file for an <img>, which sends no header: fetched with the sign-in and shown
- *  from a blob: address, so no address on the page carries it (Copy Image Address, AC-09).
- *  {url} (the caller revokes it) or {error}: terminumd's message. */
+ *  from a blob: address (an SVG's a data:, shown.js), so no address on the page carries it
+ *  (Copy Image Address, AC-09). {url} (the caller revokes it) or {error}: terminumd's message. */
 export async function blobUrl(url) {
   let r;
   try { r = await fetch(url); } catch (e) { return { error: e.message || String(e) }; }
   if (!r.ok) return { error: (await r.json().catch(() => ({}))).message ?? `HTTP ${r.status}` };
-  return { url: URL.createObjectURL(await r.blob()) };
+  return { url: await shownUrl(await r.blob()) };
 }
 
 /** The WebSocket's subprotocols: ["tm", secret] when the page holds one. */

@@ -9,6 +9,7 @@
 // Docked Files is open or closed for each session, in this browser (AC-70).
 
 import { blobUrl } from "./signin.js";
+import { following, onFollow } from "./follow.js";
 import { openZoom } from "./zoom.js";
 
 const $ = (id) => document.getElementById(id);
@@ -20,6 +21,7 @@ export class Views {
     Object.assign(this, { send, store });
     this.onShow = onShow;          // the terminal was shown or changed width: it may need a redraw
     this.onBack = onBack;          // View closed its last file: the terminal may take the keys
+    onFollow(() => this.send({ t: "files" }));   // the menu's switch: Files' root asked again (onFiles)
     this.current = "term";         // the view in the main column below WIDE
     this.dockedBy = store.get("filesDockedBy", {}) ?? {};   // the sessions whose docked Files are closed (the others': open)
     this.docked = true;            // Files is open on the right at WIDE, for the shown session
@@ -37,6 +39,7 @@ export class Views {
     $("sideclose").addEventListener("click", () => this.setDocked(false));
     $("fileclose").addEventListener("click", () => this.show("term"));
     $("backterm").addEventListener("click", () => this.show("term"));
+    $("filewin").addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) this.escape(); });   // its head, its keys
     WIDE.addEventListener("change", () => {
       // The open view moves between the main column and its wide place.
       if (WIDE.matches && this.current === "file") this.floating = true;
@@ -57,6 +60,13 @@ export class Views {
     else if (name === "file") this.floating = clicked ? !this.floating : true;
     else this.floating = false;
     this.layout();
+  }
+
+  /** Esc in View (its frame tells, fb-esc, or its head): hidden as its × hides it, the terminal shown with the keys (AC-70). */
+  escape() {
+    if (document.activeElement === $("file")) $("file").blur();
+    this.show("term");
+    this.onBack();
   }
 
   /** ⌘B: Files open or closed (docked at WIDE, else in the terminal's place). */
@@ -187,14 +197,16 @@ export class Views {
     for (const w of this.waiters?.splice(0) ?? []) w(m);
   }
 
-  /** The server's answer to "files": the pane's key, folder and host, or why there are none. */
+  /** The server's answer to "files": the pane's key, folder and host, or why there are none. The
+   *  root is the folder its coding agent works in when it has one and Files follows it (AC-51). */
   onFiles(m) {
     this.answered(m);
     this.filesError = m.error ?? null;
-    this.filesRoot = m.error || !m.cwd ? null : { cwd: m.cwd, host: m.host ?? null };
+    const cwd = following() && m.agent ? m.agent : m.cwd;
+    this.filesRoot = m.error || !cwd ? null : { cwd, host: m.host ?? null };
     this.tellRoot();
     if (!m.error && this.filesShown) {         // the Files frame loads only while it is shown
-      const q = new URLSearchParams({ key: m.key, cwd: m.cwd ?? "" });
+      const q = new URLSearchParams({ key: m.key, cwd: cwd ?? "" });
       if (m.host) q.set("host", m.host);
       const src = `/fb/?${q}`;
       if (src !== this.filesSrc) $("files").src = this.filesSrc = src;   // reloaded only when it moved
@@ -223,6 +235,7 @@ export class Views {
     if (e.origin !== location.origin || typeof e.data?.path !== "string") return;
     const parked = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.contentWindow === e.source);
     if (parked && e.data.type === "fb-empty") return void parked.remove();   // a waiting View closed its last file
+    if (e.source === $("file").contentWindow && e.data.type === "fb-esc") return this.escape();
     if (e.source === $("file").contentWindow && e.data.type === "fb-empty") {
       document.querySelector('button[data-view="file"]').disabled = true;
       if (!this.floating && this.current !== "file") return;

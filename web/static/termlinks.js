@@ -20,8 +20,9 @@ export function linkAt(x, y) {
   return at0 < 0 ? null : tokenAt(text, Math.max(0, at0 - p.before));
 }
 
-/** Opens a token: an address in a new tab of this browser, a path in File. */
-export async function openLink(tok, { paneInfo, openFile, toast }) {
+/** Opens a token: an address in a new tab of this browser, a path in File: where its file was
+ *  found (pathOf: from the agent's folder or the pane's), else from the pane's folder. */
+export async function openLink(tok, { paneInfo, openFile, toast, pathOf = () => null }) {
   if (tok.kind === "url") {
     window.open(tok.value, "_blank", "noopener,noreferrer");
     return;
@@ -29,7 +30,7 @@ export async function openLink(tok, { paneInfo, openFile, toast }) {
   const pane = await paneInfo();
   if (!pane) return toast("The Mac does not answer.");
   if (pane.error) return toast(pane.error, 6000);
-  const path = absolutePath(tok.value, pane.cwd, pane.home);
+  const path = pathOf(tok.value) ?? absolutePath(tok.value, pane.cwd, pane.home);
   if (!path) return toast(`Cannot tell where ${tok.value} is: this session's folder is not known.`, 6000);
   openFile(path, pane.host ?? null);
 }

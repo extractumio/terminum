@@ -19,7 +19,7 @@ const layout = (asking, also = "done") => [{ kind: "window", label: "Window 1", 
   items: [item("S1", "Shown", "working"), item("S2", "Asking", asking), item("S3", "Also asking", also, "Work")] }];
 const run = (text, flags = 0) => [text, null, null, flags];
 const SCREEN = [
-  { r: [run("See https://devbox.example/docs and src/mod.rs:42 or ~/notes.md")], e: true },
+  { r: [run("See https://devbox.example/docs and src/mod.rs:42 or ~/notes.md shots/row.png")], e: true },
   { r: [run("─".repeat(80))], e: true },
   { r: [run("─".repeat(10))], e: true },
   { r: [run("❯ "), run(" ", 256)], e: true },
@@ -37,9 +37,9 @@ export async function webApp(browser) {
     if (p === "/auth/check") return route.fulfill({ status: 204, body: "" });
     if (p === "/upload") return route.fulfill({ contentType: "application/json", body: JSON.stringify({ path: "/tmp/up/a b.txt" }) });
     if (p === "/blank.html") return route.fulfill({ contentType: "text/html", body: "<!doctype html><title>blank</title>" });
-    if (p === "/fb/api/ls") {                    // the pane's files: src/mod.rs is there, ~/notes.md is not
+    if (p === "/fb/api/ls") {                    // the pane's files: src/mod.rs is there, ~/notes.md is not; shots/row.png under the agent's folder
       const q = new URL(route.request().url()).searchParams;
-      const there = { "/Users/alex/p/src": ["mod.rs"] }[q.get("path")] ?? [];
+      const there = { "/Users/alex/p/src": ["mod.rs"], "/Users/alex/p/wt/shots": ["row.png"] }[q.get("path")] ?? [];
       const entries = there.filter((n) => !q.get("filter") || n.includes(q.get("filter"))).map((n) => ({ n, k: "f" }));
       return route.fulfill({ contentType: "application/json", body: JSON.stringify({ status: "ready", total: entries.length, writable: true, gen: 1, entries }) });
     }
@@ -59,7 +59,8 @@ export async function webApp(browser) {
         ws.send(JSON.stringify({ t: "hist", mode: "reset", sid: msg.id, first: 0, oldest: 0, truncated: false, lines: [] }));
         ws.send(JSON.stringify({ t: "screen", sid: msg.id, full: true, n: SCREEN.length, cols: 80, rows: SCREEN.length, ch: SCREEN.map((l, i) => [i, l]) }));
       }
-      if (msg.t === "files") ws.send(JSON.stringify({ t: "files", sid: "S1", key: "S1", cwd: "/Users/alex/p", home: "/Users/alex", host: null }));
+      // the coding agent works in a worktree under the pane's folder (its hooks said so)
+      if (msg.t === "files") ws.send(JSON.stringify({ t: "files", sid: "S1", key: "S1", cwd: "/Users/alex/p", home: "/Users/alex", host: null, agent: "/Users/alex/p/wt" }));
     });
     ws.send(JSON.stringify({ t: "build", id: "test" }));
     ws.send(JSON.stringify({ t: "layout", groups: layout("working") }));
@@ -141,13 +142,13 @@ export async function webApp(browser) {
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length === 4);
 
   // links: a faint dotted underline; with a mouse they open with ⌘ (Ctrl elsewhere) only
-  await page.waitForFunction(() => CSS.highlights?.get("lnk")?.size === 2, null, { timeout: 5000 }).catch(() => {});
+  await page.waitForFunction(() => CSS.highlights?.get("lnk")?.size === 3, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(300);
   const marks = await $eval(() => [...(CSS.highlights?.get("lnk") ?? [])].map((r) => {
     const x = new Range(); x.setStart(r.startContainer, r.startOffset); x.setEnd(r.endContainer, r.endOffset); return x.toString();
   }));
-  check("AC-52 web app: the addresses and the paths of files that are there are underlined, without changing the lines; a path not there is not",
-    JSON.stringify(marks) === JSON.stringify(["https://devbox.example/docs", "src/mod.rs:42"]), JSON.stringify(marks));
+  check("AC-52 web app: the addresses and the paths of files that are there are underlined, without changing the lines; a path not there is not; one under the coding agent's folder is (AC-35)",
+    JSON.stringify(marks) === JSON.stringify(["https://devbox.example/docs", "src/mod.rs:42", "shots/row.png"]), JSON.stringify(marks));
   const at = await $eval(() => {
     const t = document.querySelector("#screen .ln span").firstChild, r = new Range();
     r.setStart(t, t.data.indexOf("devbox")); r.setEnd(t, t.data.indexOf("devbox") + 6);
@@ -176,6 +177,20 @@ export async function webApp(browser) {
   await page.waitForTimeout(300);
   check("AC-52 web app: a path whose file is not there opens nothing", await $eval(() => document.getElementById("file").getAttribute("src")) === fileSrc
     && await $eval(() => document.body.dataset.shown) === "term");
+  // a path relative to the folder the coding agent works in (a worktree), not the pane's, opens from there (AC-35)
+  const shot = await $eval(() => {
+    const t = document.querySelector("#screen .ln span").firstChild, r = new Range(), i = t.data.indexOf("row.png");
+    r.setStart(t, i); r.setEnd(t, i + 3);
+    const b = r.getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.top + b.height / 2 };
+  });
+  await page.keyboard.down(mod);
+  await page.mouse.click(shot.x, shot.y);
+  await page.keyboard.up(mod);
+  const shotSrc = await page.waitForFunction(() => decodeURIComponent(document.getElementById("file").getAttribute("src") ?? "").includes("row.png") && document.getElementById("file").getAttribute("src"), null, { timeout: 3000 })
+    .then((h) => h.jsonValue().then(decodeURIComponent), () => "not opened");
+  check("AC-35 web app: a printed path under the coding agent's folder opens that file in View", shotSrc.includes("/Users/alex/p/wt/shots/row.png"), shotSrc);
+  await page.click("#fileclose").catch(() => {});
 
   const rules = await $eval(() => [...document.querySelectorAll("#screen .ln.rule")].map((l) => [l.classList.contains("full"), Math.round(l.getBoundingClientRect().width)]));
   const termWidth = await $eval(() => { const t = document.getElementById("term"), cs = getComputedStyle(t);   // its text's width, inside the padding
@@ -232,6 +247,22 @@ export async function webApp(browser) {
   const typed = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
   check("AC-52 web app: a file dropped on the terminal is uploaded and its quoted path pasted, without Enter",
     typed.includes("'/tmp/up/a b.txt'") && !typed.includes("\r") && page.url() === `${ORIGIN}/`, JSON.stringify(typed));
+  // rows dragged from Files: their paths put at the input, nothing uploaded; another host's refused (AC-36)
+  const dropRows = (data) => $eval((data) => {
+    const dt = new DataTransfer();
+    dt.setData("application/x-terminum-paths", data);
+    for (const t of ["dragover", "drop"]) document.getElementById("term").dispatchEvent(new DragEvent(t, { dataTransfer: dt, bubbles: true, cancelable: true }));
+  }, data);
+  let mark = sent.length;
+  await dropRows(JSON.stringify({ host: null, paths: ["/Users/alex/p/src", "/Users/alex/p/a b.md"] }));
+  await page.waitForTimeout(300);
+  const put = sent.slice(mark).filter((m) => m.t === "in").map((m) => m.data).join("");
+  mark = sent.length;
+  await dropRows(JSON.stringify({ host: "devbox", paths: ["/srv/x.md"] }));
+  await page.waitForTimeout(300);
+  const refusedDrop = { typed: sent.slice(mark).filter((m) => m.t === "in").length, toast: await $eval(() => document.getElementById("toast").textContent) };
+  check("AC-36 web app: a folder and a file dragged from Files put their quoted paths at the input, no Enter; another host's are refused with a toast",
+    put.includes("/Users/alex/p/src '/Users/alex/p/a b.md'") && !put.includes("\r") && refusedDrop.typed === 0 && refusedDrop.toast.includes("devbox"), JSON.stringify({ put, refusedDrop }));
 
   // a coding agent's input box as a panel; its footer behind a button on a phone
   const note = "✔ Update installed · Restart to update";

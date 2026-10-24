@@ -4,6 +4,7 @@
 // listener's page holds none: its HttpOnly cookie goes by itself.
 
 import { basename } from "./paths";
+import { shownUrl } from "../../web/static/shown.js";
 
 /** This tab's storage, which survives in-page reloads; private mode may refuse it. */
 export const session = {
@@ -140,24 +141,37 @@ export async function api<T>(method: string, path: string, opts: { query?: Query
 export let scope: string | null = null;
 export const setScope = (host: string | null) => { scope = host || null; };
 
-/** An image's URL carries the sign-in (an <img> sends no header): none until terminumd proved itself. */
 /** A file's raw address (no sign-in in it: the page checks it before it fetches, fb-zoom). */
 export const rawUrl = (path: string) => `${BASE}/api/raw?path=${encodeURIComponent(path)}${scope ? `&host=${encodeURIComponent(scope)}` : ""}`;
 
-/** A file's bytes behind a blob: address, fetched with the sign-in in its header: an <img>, a
- *  <video> or a download sends none, and an address with it would be copied away (Copy Image
- *  Address) and keep the 30-day secret (AC-09). The caller revokes it. */
+/** A file's bytes behind a blob: (an SVG's a data:) address, fetched with the sign-in in its
+ *  header: an <img>, a <video> or a download sends none, and an address with it would be copied
+ *  away (Copy Image Address) and keep the 30-day secret (AC-09). Only a picture, a video or a
+ *  sound keeps its type (shown.js: opened as a page, anything else would run in this origin).
+ *  The caller revokes it. */
 export async function rawBlob(path: string): Promise<string> {
-  return URL.createObjectURL(await (await raw(path)).blob());
+  return shownUrl(await (await raw(path)).blob());
 }
 
-/** Download in the web app (AC-53): fetched with the sign-in, saved from a blob: address. */
+/** Download in the web app (AC-53): fetched with the sign-in, saved from a blob: of bytes. */
 export async function downloadRaw(path: string) {
   try {
-    const url = await rawBlob(path);
+    const url = URL.createObjectURL(new Blob([await (await raw(path)).blob()], { type: "application/octet-stream" }));
     Object.assign(document.createElement("a"), { href: url, download: basename(path) }).click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (e: any) { toast(`${basename(path)}: ${e.message}`); }
+}
+
+/** A file's bytes, fetched with the sign-in (a sound decoded here, a MIDI file read here). */
+export const rawBytes = async (path: string) => (await raw(path)).arrayBuffer();
+
+/** A MIDI file's bytes rendered by terminumd with the user's SoundFont (AC-64): a WAV's blob:
+ *  address (the caller revokes it) and the bank's name; an error as terminumd says it. */
+export async function midiWav(bytes: ArrayBuffer): Promise<{ url: string; font: string }> {
+  await proveServer();
+  const res = await fetch("/api/midi", { method: "POST", body: bytes, headers: { "Content-Type": "audio/midi", ...(SECRET ? { "X-TM-Session": SECRET } : {}) } });
+  if (!res.ok) { const body = await res.json().catch(() => null); throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body); }
+  return { url: URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/wav" })), font: res.headers.get("x-tm-soundfont") ?? "" };
 }
 
 /** A file's raw answer, fetched with the sign-in; an error as terminumd says it. */
@@ -170,9 +184,29 @@ async function raw(path: string): Promise<Response> {
   throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
 }
 
+// A video's, a sound's or a PDF's address, kept while it plays from it: revoked once its element
+// left the page or its document's frame closed (looked at every SWEEP ms while there is one); a
+// player of the panel's own (MIDI) is stopped then.
+const playing = new Map<string, [HTMLElement, () => void]>();
+const SWEEP = 5000;
+let sweeping = 0;
+function sweep() {
+  for (const [url, [el, gone]] of playing) {
+    if (el.isConnected && el.ownerDocument.defaultView) continue;
+    gone();
+    playing.delete(url);
+  }
+  if (!playing.size) { clearInterval(sweeping); sweeping = 0; }
+}
+/** `gone()` once `el` left the page (its address revoked, its player stopped); `id` names it. */
+export function whileShown(id: string, el: HTMLElement, gone: () => void) {
+  playing.set(id, [el, gone]);
+  sweeping ||= window.setInterval(sweep, SWEEP);
+}
+
 /** Fills the elements under `root` that name a file in `data-raw` (rendered Markdown, an HTML
  *  document, an image tab): `src` from rawBlob, a stylesheet's text into a <style>. An image's
- *  address is revoked once it is drawn; a video's or a sound's stays while its document lives. */
+ *  address is revoked once it is drawn; a video's or a sound's once it is gone (sweep). */
 export function hydrateRaw(root: ParentNode) {
   for (const el of root.querySelectorAll<HTMLElement>("[data-raw]")) {
     const path = el.dataset.raw!;
@@ -188,6 +222,7 @@ export function hydrateRaw(root: ParentNode) {
     void rawBlob(path).then((url) => {
       // tagName, not instanceof: an HTML document's elements are of its frame's own classes
       if (el.tagName === "IMG") { const done = () => URL.revokeObjectURL(url); el.addEventListener("load", done, { once: true }); el.addEventListener("error", done, { once: true }); }
+      else whileShown(url, el, () => URL.revokeObjectURL(url));
       el.setAttribute("src", url);
     }, (e: Error) => { el.title = `${path}: ${e.message}`; });
   }

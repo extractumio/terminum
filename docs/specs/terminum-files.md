@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.5.3 |
-| Date | 2026-10-23 |
+| Version | 0.6.0 |
+| Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,12 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.0 | 2026-10-24 | Owner: a player for every sound, MIDI too, and JSON, YAML, CSV and TSV rendered. A sound the browser plays (MP3, AAC/M4A, WAV, FLAC, Ogg; AIFF and AU in Safari) plays in its player; AU (.au, .snd) and AIFF (.aif, .aiff), which Chrome does not play, are decoded in the panel into WAV; MIDI (.mid, .midi), which no browser plays, is rendered on the Mac by terminumd with a General MIDI SoundFont of the user's (settings.json's midi.soundfont, else ~/.terminum/soundfont.sf2; none is shipped: a bank is tens of MB) into a WAV the same player plays, so it seeks, pauses and sets its volume as any sound; no synthesis of the panel's own; a type nothing here plays says so with Download (AC-64). JSON, YAML, CSV and TSV open Rendered with a Source toggle: JSON and YAML as a tree that folds, CSV and TSV as a table (AC-94). |
+| 0.5.8 | 2026-10-24 | Owner: a PDF opens in its tab in the browser's own PDF viewer (scroll, zoom, find, print), a video and a sound in the browser's player, instead of "Binary file"; each fetched with the sign-in's header and shown from a `blob:` address of its own type (a PDF keeps `application/pdf`: the viewer runs none of the file's script in the page's origin); the page's policy lets a frame show a `blob:` (`frame-src 'self' blob:`) (AC-64; terminum.md 0.18.18). |
+| 0.5.7 | 2026-10-24 | Owner: Esc in an open View hides it and gives the terminal its keys, as its × does (its tabs stay); an Esc that the editor takes first (its search panel, a completion list, a dialog) does only that (AC-70). |
+| 0.5.6 | 2026-10-24 | Owner: when the pane's coding agent works in another folder than the pane's (a worktree it moved to), the tree follows the agent: its root is the folder the agent's hooks last said, and it moves when that changes (within a frame of the pane's output); "Follow the agent's folder" off (the menu's Settings) keeps the pane's folder (AC-51; terminum.md 0.18.17). |
+| 0.5.5 | 2026-10-24 | Owner: a row of the tree (a file or a folder) can be dragged; it carries its host and path, the selection's when the row is selected, and a drop on the terminal puts their paths at the input (terminum-terminal.md AC-36); elsewhere it is plain text, one path a line (AC-52). |
+| 0.5.4 | 2026-10-24 | Owner: a video's or a sound's `blob:` address in an HTML document lived as long as the panel (a closed document's video held its bytes); it is revoked once its element left the page or its document's frame closed (looked at every 5 s). A document's SVG picture is shown from a `data:` address and a file named in a `src` of another type as bytes, so none opened as a page runs in the panel's origin (terminum.md 0.18.15) (AC-67; terminum.md AC-09). |
 | 0.5.3 | 2026-10-23 | Owner, a security audit: an image tab, a Markdown or HTML document's local images, videos and stylesheets and Download (the web app) fetch the file with the sign-in's header and show it from a `blob:` address; the address with `?t=` (the 30-day sign-in) is gone; a picture full screen gets the file's address without it, which the page fetches itself; an HTML file's own `data-raw` attributes are dropped with its handlers, so only its local `src` and `href` are fetched (found in review: a planted `<link data-raw="/etc/hosts">` was read into a `<style>`) (AC-64, AC-67, AC-53; terminum.md AC-09). |
 | 0.5.2 | 2026-10-22 | Owner: a click on an image tab's picture opens it full screen in the page's viewer (pinch, wheel, drag, a double click for 1:1; −, +, Fit, ×), alone (no page around) it toggles its own size; the checkerboard is behind the picture alone, so its transparent parts show within its edges (AC-64); Reveal in tree expands the file's folders and selects it, and is offered only for a file under the folder Files shows (AC-67); View's head, path bar and tab row stand on one grid, Reveal beside the tabs; at WIDE View has no Terminal key, its × closes it (AC-70). |
 | 0.5.1 | 2026-10-22 | Owner: View's Terminal button on a phone is a key as the others, not an accent pill (AC-70). |
@@ -89,7 +95,7 @@ Open questions:
 | AC-61 | [SHOULD / P1] | Changes made by other programs (create, delete, rename, edit) show in expanded folders and open tabs within 1 s, locally and on a host. |
 | AC-62 | [SHOULD / P1] | Every tree and tab action works from the keyboard with IDE-standard shortcuts that never reach the terminal. |
 | AC-63 | [SHOULD / P1] | The user filters the tree by name, including inside a 500K-entry folder. |
-| AC-64 | [SHOULD / P1] | Images (png, jpg, gif, webp, svg) preview in a tab; SVG scripts never run. |
+| AC-64 | [SHOULD / P1] | Images (png, jpg, gif, webp, svg), PDFs, videos and sounds preview in a tab; SVG scripts never run. |
 | AC-65 | [SHOULD / P1] | Hidden (dot) files toggle on or off; the choice is remembered. |
 | AC-66 | [SHOULD / P1] | Several items select with ⌘-click and ⇧-click, trashed or copied in one action, also across unloaded pages. |
 | AC-67 | [SHOULD / P1] | Links in rendered Markdown and HTML open local documents in tabs at their `#anchor`, web links in the reader's browser, and the panel never navigates away; HTML renders sandboxed. |
@@ -99,6 +105,7 @@ Open questions:
 | AC-71 | [SHOULD / P1] | Per-pane state survives terminumd restarts with the scroll position; state of panes gone for 14 days is removed continuously; a corrupt state file is set aside. |
 | AC-72 | [NICE TO HAVE / later] | Git status colors (modified, added, ignored) show in the tree. |
 | AC-73 | [NICE TO HAVE / later] | Files move between folders by drag and drop. |
+| AC-94 | [SHOULD / P1] | JSON, YAML, CSV and TSV open rendered (a tree that folds, a table), with a Source toggle. |
 
 ## 5. BDD scenarios
 
@@ -110,6 +117,11 @@ Scenario: AC-51 happy path — cd re-roots the tree
   When the user runs "cd /Users/alex/work/api" in %3
   Then within 1 s (every frame of the shown pane reads #{pane_current_path}; a change is sent to the page as `files`, whatever made it: Enter, a hot key, a script) the panel header shows the pane's title, the badge "TMUX" and "~/work/api", and the tree lists that folder
   And a remote pane shows "REMOTE devbox" and the host's folder once its helper is enabled (AC 82)
+
+Scenario: AC-51 happy path — the coding agent's folder
+  Given the pane's Claude Code works in "/Users/alex/work/api/worktrees/fix" (it moved there; the pane's folder is still "/Users/alex/work/api")
+  Then with "Follow the agent's folder" on (the default) the tree's root and the header's folder are "~/work/api/worktrees/fix", the folder its hooks last said (its own events, not a subagent's), and they move when it moves (within a frame of the pane's output)
+  And with it off they are the pane's folder; a pane with no agent's hooks shows the pane's folder either way
 
 Scenario: AC-51 happy path — another pane
   When the user opens pane %4 in "/tmp"
@@ -366,7 +378,7 @@ Scenario: AC-63 edge — no match
   Then "No items match "zzz"" and Esc clears the filter
 ```
 
-### AC-64 — Images [SHOULD / P1]
+### AC-64 — Images, PDFs, videos and sounds [SHOULD / P1]
 
 ```gherkin
 Scenario: AC-64 happy path — png
@@ -379,6 +391,19 @@ Scenario: AC-64 happy path — a closer look
   When the user clicks the picture
   Then it opens full screen in the page's viewer, fitted: two fingers pinch, the wheel zooms around the pointer, a drag pans, a double click toggles fitted and 1:1; −, +, Fit and × (or Esc) in its corner
   And in a View of its own (no page around) a click shows it at its own size, scrolled, and another fits it again
+
+Scenario: AC-64 happy path — a PDF, a video, a sound
+  When the user opens "docs/spec.pdf", "demo.mp4" or "note.mp3"
+  Then its tab shows the PDF in the browser's own viewer, filling the tab (its pages, zoom, find, print, its own download), or the video or the sound in the browser's player with its controls, not started, Download (Open with default app on this Mac's own page) under it
+  And the file is fetched with the sign-in's header and shown from a blob: address of its own type, revoked once its tab closed; at most 64 MB, as an image
+
+Scenario: AC-64 happy path — every sound
+  When the user opens a sound
+  Then one the browser plays (MP3, AAC and M4A, WAV, FLAC, Ogg, Opus; AIFF and AU in Safari) plays in the browser's player
+  And an AU (.au, .snd: μ-law, A-law, 8-, 16-, 24-, 32-bit and float PCM) or an AIFF (.aif, .aiff: 8-, 16-, 24- and 32-bit PCM) the browser does not play is decoded in the panel into a WAV and plays in the same player; one it cannot decode says why
+  And a MIDI file (.mid, .midi, .kar; formats 0 and 1) is sent to terminumd (POST /api/midi, at most 4 MB, also from a remote host's file: the page has its bytes), which renders it with the SoundFont named in settings.json's midi.soundfont (else ~/.terminum/soundfont.sf2; read once and kept while its file is unchanged; at most 10 minutes, 44.1 kHz stereo, rendered a block at a time) into a WAV the same player plays: it seeks, pauses and sets its volume as any sound; the bank's name shows under it
+  But with no SoundFont there the tab says "No SoundFont for MIDI: put a General MIDI .sf2 at ~/.terminum/soundfont.sf2 or name one in settings.json (midi.soundfont)"; a file it cannot read says why
+  And a sound nothing here plays says "This browser cannot play <type>" with Download (Open with default app on this Mac's own page)
 
 Scenario: AC-64 edge — svg is inert
   Given "icon.svg" holds a <script>
@@ -417,10 +442,28 @@ Scenario: AC-67 happy path — Markdown, HTML, anchors, web
   Then the reader's default browser opens it (new tab, noopener) and the panel stays
 
 Scenario: AC-67 edge — scripts, frames, odd names
-  Then page.html's scripts and handlers never run; a local image name with "#", "?" or "%" is addressed exactly through its percent-encoded path; a resource URL with an invalid escape leaves the document visible and marks the resource broken
+  Then page.html's scripts and handlers never run, nor do those of a picture or video it names opened as a page (an SVG is shown from a data: address, a file of another type than a picture, a video or a sound as bytes); a video's or a sound's address is let go once its document closed; a local image name with "#", "?" or "%" is addressed exactly through its percent-encoded path; a resource URL with an invalid escape leaves the document visible and marks the resource broken
 
 Scenario: AC-67 error — broken link
   Then "gone.md: No such file or directory" as a toast
+```
+
+### AC-94 — JSON, YAML, CSV and TSV [SHOULD / P1]
+
+```gherkin
+Scenario: AC-94 happy path — JSON and YAML as a tree
+  When the user opens "package.json" or "config.yaml"
+  Then its tab is Rendered (the Source toggle shows the text, to edit, as for Markdown): a tree of its objects (mappings) and arrays (sequences), each key before its value, a folded one with its count ("{12}", "[3]"), keys, strings, numbers, true, false and null in the editor's syntax colors; open as far as 2000 rows allow (level by level: a level that would pass them stays folded), a click on a row folds or unfolds it, Expand all (as far as 20,000 rows) and Collapse all at the top; a YAML file of several documents shows each
+  And a row's value copies with its button (a JSON text of its subtree); a long string wraps
+  And a folder of more than 1000 children shows the first 1000 and "… 2,300 more" (a press shows the next 1000)
+
+Scenario: AC-94 happy path — CSV and TSV as a table
+  When the user opens "data.csv" or "data.tsv"
+  Then its tab is Rendered: a table whose first row is the head (sticky), its rows numbered, quoted fields (RFC 4180: commas, quotes and new lines inside) read as one cell, numbers right-aligned; at most 5000 rows shown with "… 12,000 more rows" (a press shows the next 5000)
+
+Scenario: AC-94 failure — a file that does not parse
+  When the JSON or YAML is not valid, or the CSV has an unclosed quote
+  Then Rendered says why and where ("Line 12, column 4: …") over the Source, which still edits it; a file over the text limit shows as the others do
 ```
 
 ### AC-68 — Expand and collapse all [SHOULD / P1]
@@ -477,6 +520,8 @@ Scenario: AC-70 happy path — a wide page
   And on a switch Files shows nothing of the session left until the shown session's folder is in, also after a quick switch away and back (half a second or less)
   When the user opens a file (a click in the tree, or a file just made with New File…: it never opens under the tree inside the page)
   Then View is a window over the terminal with its tabs and a bar showing the full path (selectable, with a copy button and a toast "Copied …"); × or closing its last file closes it; the terminal keeps its keys
+  When the user presses Esc in View (its file, its tabs or its head; at any width)
+  Then View hides as its × hides it (its tabs stay) and the terminal is shown with the keys; an Esc the editor takes first (its search panel, a completion list, a dialog, a rename) does only that
   And at WIDE it has no Terminal key (its × closes it); its head, the path bar and the tab row stand on one grid: their text 12 px from the left, their keys (×, copy, Reveal beside the tabs) 24 px with 6 px above, below and to the right
 
 Scenario: AC-70 happy path — a narrow page
@@ -696,7 +741,7 @@ The etag is `<mtime ns>-<inode>-<size>`. Unsaved edits live in the panel's memor
 
 ### Security
 
-Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'`; files are fetched with the sign-in's header, never an address with it; terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
+Writes only under Roots after `realpath` (a symlink cannot escape; a symlink itself is judged where it lives for rename and trash); `..` refused; delete moves to the Trash; only regular files read; HTML in a sandboxed frame without scripts; Markdown raw HTML off; SVG only through an image element; `Referrer-Policy: no-referrer`; CSP `default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'`; files are fetched with the sign-in's header, never an address with it, and shown from `blob:` only as a picture, a video, a sound or a PDF (an SVG from `data:`, anything else as bytes: a blob: has the page's origin); terminal actions need an idle shell and never Enter; Finder actions only on the loopback listener.
 
 Denied request:
 
@@ -743,3 +788,8 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] 0.5.0 (2026-10-22) — AC-70 `web/test/e2e_dock.mjs` (Chromium and WebKit at 1400×900: dragging the separator left widens Files and narrows the terminal at once; one size message once the drag rests, none during; kept across a reload; at least 260 px, at most 60% and 45 columns; ← → 16 px; a double click back to 380; a narrower window clamps, a wider one restores the chosen width) → pass.
 - [x] 0.5.1 (2026-10-22) — AC-70 `web/test/e2e_notes.mjs` (a phone: View's Terminal key has the header keys' fill, radius and matte, 44 px) → pass.
 - [x] 0.5.2 (2026-10-22) — AC-64, AC-67, AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux: View's head, path bar and tab row: text 12 px in, keys 24×24 px with 6 px above, below and right, Reveal on the tabs' row, no Terminal key at WIDE (before: the head 30 px with a 30 px × flush, the path bar 12/6 px, Reveal on a row of its own as `.vbar` had no style, and Terminal shown: controls.css's keys rule, of the same specificity, came later); the picture's margins equal (184/184 px), the checkerboard on the `img` alone, none on the view (before: on the whole view, so a PNG's transparent right part looked like the view and its picture off the middle); a click opens it in the page's full-screen viewer with its name, Esc closes it; Reveal of `sub/deep/note.txt` with its folders closed expands both and selects it (before: nothing); a file in another /tmp folder: no Reveal key, a file under the folder again one), `ui/test/e2e_panel.mjs` (alone, a click toggles the picture's own size) → pass; `node web/test/e2e_all.mjs` 1103, live 95, Panel 138, `make test` (cargo 444 + 1), `scripts/security_check.sh` pass.
+- [x] 0.5.4 (2026-10-24) — AC-67, AC-09 `cd ui && node test/e2e_panel.mjs` 144/144 (the video's blob: revoked 5.6 s after its document's tab closed, red without the sweep; the HTML-named video bytes, the SVG data:, neither runs opened as a page) → pass.
+- [x] 0.5.5 (2026-10-24) — AC-52 `cd ui && node test/e2e_panel.mjs` (a row's dragstart carries {host, paths} and plain text; a selected row the selection) → pass.
+- [x] 0.5.6 (2026-10-24) — AC-51 `web/test/e2e_header.mjs` (Files' root the agent's folder, the pane's with the switch off) and `scripts/e2e_hooks.py` ("files" says the agent's folder) → pass; see terminum.md 0.18.17.
+- [x] 0.5.7 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit: Esc in the editor's search panel closes only the panel; another Esc hides View, the terminal has the keys, the tabs stay) → pass.
+- [x] 0.5.8, 0.6.0 (2026-10-24) — AC-64, AC-94 `cd ui && node test/e2e_panel.mjs` 148/148 (`e2e_panel_media.mjs`: a PDF in a frame filling its tab and a video in the player, both from blob:, no CSP refusal; an AU decoded into the player; a MIDI file says where to put a SoundFont, and with `TM_TEST_SOUNDFONT` (GeneralUser GS 2.0.3) plays rendered by terminumd; JSON open as a tree in the editor's colors that folds; YAML's two documents; CSV as a table, its quoted comma one cell, numbers right; a bad JSON's line 3, column 8; Source shows the text); `node --test ui/test/dataparse.test.mjs` (JSON's error place, YAML's mappings, flow, quotes, block scalars, anchors and documents, the core schema's scalars, CSV and TSV by RFC 4180) and `pcm.test.mjs` (AU μ-law, PCM and A-law, AIFF, the WAV); `cargo test midi::` (the SoundFont's path, no SoundFont said, the WAV, a song rendered with a real bank, not MIDI said) → pass.

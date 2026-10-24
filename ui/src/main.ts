@@ -10,10 +10,11 @@ import {
 } from "./api";
 import { renderOffer } from "./host-offer";
 import { contextMenu } from "./context-menu";
-import { acceptFromPage, emptiedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
+import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { Tree, type EditMode } from "./tree";
+import { bindDrag } from "./tree-drag";
 import { Viewer } from "./viewer";
 import { PathBar } from "./viewer-path";
 import { Stream } from "./stream";
@@ -278,6 +279,8 @@ const tree = new Tree($("tree"), {
   commit,
   notify: toast,
 });
+// a row dragged onto the page's terminal puts its path at the input; a selected one, the selection's (AC-36)
+bindDrag($("tree"), (p) => (tree.selected.has(p) ? [p, ...[...tree.selected].filter((q) => q !== p)] : [p]), () => scope);
 
 const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
   changed: scheduleSave,
@@ -342,6 +345,8 @@ document.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement;
   const inField = t.matches("input, textarea") || !!t.closest(".cm-editor");
   if (e.key === "/" && !inField) { e.preventDefault(); filterEl.focus(); return; }
+  // in View an Esc nothing took first (the editor's search panel, a completion list) hides it (AC-70)
+  if (e.key === "Escape" && VIEW && !e.defaultPrevented && !t.closest(".cm-panels, .cm-tooltip") && escapedOutside()) { e.preventDefault(); return; }
   if (e.key === "Escape" && t.closest("#viewer") && !t.closest(".cm-panels")) { tree.focus(); return; }
   if (inField) return;
   const inTree = !!t.closest("#tree");
