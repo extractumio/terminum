@@ -64,7 +64,8 @@ const signIn = async (page) => {
   await page.waitForSelector("#login:not([hidden])", { timeout: 10000 });
   await page.fill("#password", PASSWORD);
   await page.press("#password", "Enter");
-  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
+  // a debug build checks the password at PBKDF2's 600,000 rounds in about a second, longer on a busy Mac
+  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
 };
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 

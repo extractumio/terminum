@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.18.13 |
+| Version | 0.18.14 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.18.14 | 2026-10-23 | PBKDF2's rounds hash on sha2's compression function (compiled optimized in a debug build too): at 600,000 iterations a debug build's sign-in took 3 s, and the live tests' sign-in timed out under a full run's load; now 1 s; the same bytes (RFC 6070 and 7914 vectors) (AC-09). |
 | 0.18.13 | 2026-10-23 | Owner: "[D" and "[C" stood in a coding agent's message after moving by lines in a long input (the page moves by ← and →, a line's worth each): held, the moves went to tmux as one run of more than 1 KB, which the terminal hands on in parts of 1022 bytes, so a part ended inside "ESC [ D" and a busy agent took the ESC alone for Escape and the rest for text (measured in a private tmux: 2 of 3 parts of a 1000-key run cut). A run of more than 100 keys now goes in parts of 100, each after the pane printed something since the last (the program read it) or 250 ms (AC-03). |
 | 0.18.12 | 2026-10-23 | Owner, a security audit: X-Forwarded-For is believed only from loopback with a forwarded name as Host: a request to 127.0.0.1 counts as this Mac's own whatever it names, so a program here can no longer spend the forwarded brakes by naming addresses on the loopback name (with a forwarded Host it still can: documented) (AC-09). |
 | 0.18.11 | 2026-10-23 | Owner, a security audit: PBKDF2 600,000 iterations (OWASP's count for PBKDF2-HMAC-SHA256); a hash of fewer is made again from the next right password, never over a password set meanwhile (one writer of web.json at a time) (AC-09). |
