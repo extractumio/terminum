@@ -16,7 +16,11 @@ configuration. The overview is in the [README](../README.md).
   phones, paste and upload of files.
 - **The Files panel** (`ui/`): the tree of the shown pane's folder, a viewer and editor with
   highlighting and rendered Markdown (its ```mermaid fences drawn as diagrams, "Source" shows
-  their text), create, rename, Trash, live refresh; on a wide window it is docked beside the
+  their text), JSON and YAML as a tree, CSV and TSV as a table (Source shows the text),
+  pictures, PDFs in the browser's own viewer, videos and sounds in its player (AU and AIFF
+  decoded where the browser does not play them; MIDI rendered by terminumd with your General
+  MIDI SoundFont: `~/.terminum/soundfont.sf2` or `midi.soundfont` in settings.json, none
+  shipped), create, rename, Trash, live refresh; Esc in View hides it and goes back to the terminal; on a wide window it is docked beside the
   terminal, open or closed for each session, its width set by dragging its border with the
   terminal; on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or

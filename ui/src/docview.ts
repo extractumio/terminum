@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Rendered documents (Markdown and HTML) and the links inside them. A link never navigates
+// Rendered documents (Markdown and HTML; JSON, YAML, CSV and TSV: dataview.ts) and the links inside them. A link never navigates
 // the panel: anchors scroll, web links go to the default browser (in the web app: the reader's browser), files open as tabs
 // (`guide.md#install` opens guide.md and scrolls to "install").
 
 import { api, apiOrToast, basename, dirname, decodePath, hasScheme, hydrateRaw, PROXIED, resolvePath, toast, type FileView } from "./api";
 import { isMarkdown, renderMarkdown } from "./markdown";
+import { dataKind } from "./dataparse";
+import { renderData } from "./dataview";
 
 export const isHtml = (path: string) => /\.x?html?$/i.test(path);
-export const isRenderable = (path: string) => isMarkdown(path) || isHtml(path);
+export const isRenderable = (path: string) => isMarkdown(path) || isHtml(path) || dataKind(path) !== null;
 
 export interface LinkHost {
   host: string | null;
@@ -52,6 +54,7 @@ export function renderDoc(box: HTMLElement, text: string, path: string, host: Li
     e.preventDefault();
     void followLink(a.getAttribute("href")!, path, scope, host);
   };
+  if (dataKind(path)) return renderData(box, text, path);
   if (isMarkdown(path)) {
     box.innerHTML = '<article class="md-body"></article>';
     const article = box.firstElementChild as HTMLElement;

@@ -297,3 +297,25 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   .mbtns .btn { height: var(--key-h-touch); }
   .mhead { margin: -10px -12px 2px 0; }
 }
+
+/* JSON and YAML as a tree, CSV and TSV as a table (AC-94, dataview.ts) */
+.dataview { font: calc(var(--fs) * .95) / 1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 6px 0 24px; }
+.dataview .dbar { display: flex; gap: 6px; padding: 0 12px 6px; }
+.dataview .dr { display: flex; align-items: baseline; gap: 0; padding: 0 12px 0 calc(12px + var(--d) * 16px); cursor: default; border-radius: 3px; }
+.dataview .dr:hover { background: var(--bg-hover); }
+.dataview .dr[aria-expanded] { cursor: pointer; }
+.dataview .tw { flex: none; width: 14px; color: var(--fg-dim); }
+.dataview .sv { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.dataview .cnt { margin-left: 2px; }
+.dataview .dcopy { margin-left: auto; padding: 0 6px; font: inherit; font-size: .85em; color: var(--fg-dim); background: none; border: 0; opacity: 0; cursor: pointer; }
+.dataview .dr:hover .dcopy, .dataview .dcopy:focus-visible { opacity: 1; }
+.dataview .ddoc { padding: 8px 12px 2px; color: var(--fg-dim); border-top: 1px solid var(--line); }
+.dataview .ddoc:first-child { border-top: 0; padding-top: 0; }
+.dataview .dmore { margin: 4px 12px 4px calc(26px + var(--d, 0) * 16px); padding: 2px 8px; font: inherit; color: var(--link); background: none; border: 0; cursor: pointer; }
+.dataview .dataerr { margin: 12px; padding: 8px 12px; border-left: 3px solid var(--tk-tag); background: var(--bg-2); }
+.dtab { border-collapse: collapse; margin: 0 12px; min-width: calc(100% - 24px); }
+.dtab th, .dtab td { padding: 2px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; white-space: pre-wrap; }
+.dtab thead th { position: sticky; top: 0; background: var(--bg-2); color: var(--tk-prop); font-weight: 600; z-index: 1; }
+.dtab td.num { text-align: right; color: var(--tk-num); font-variant-numeric: tabular-nums; }
+.dtab .rn { color: var(--fg-faint); text-align: right; }
+.dtab tbody tr:hover { background: var(--bg-hover); }
