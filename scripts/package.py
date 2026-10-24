@@ -8,6 +8,8 @@ in it needs an interpreter: the Mac's terminumd is the installer, the server and
     agents/<platform>/terminumd       terminumd (the page embedded) for macOS arm64/x86_64 and
                                       Linux x86_64/arm64, the Linux pair for remote hosts' files
     release-signers, LICENSE files    the release key upgrades check; the licenses, NOTICE (marks)
+    soundfonts/                       the General MIDI SoundFont MIDI files play with (AC-64,
+                                      DEP-06) and its license: fetched once into .toolchain/
 
 The Mac's own terminumd is the one of its architecture (chosen at install). `--stage`
 leaves the folder for `make install`; without it a tarball and SHA256SUMS are written too,
@@ -26,6 +28,7 @@ import subprocess
 import time
 import sys
 import tarfile
+import urllib.request
 from pathlib import Path
 
 import agents
@@ -35,6 +38,13 @@ OUT = REPO / "dist/package"
 NAME = "terminum"
 TARBALL = "terminum-macos.tar.gz"
 COPY = ["release-signers", "LICENSE", "LICENSE-COMMERCIAL.md", "NOTICE", "README.md"]
+# GeneralUser GS 2.0.3 (S. Christian Collins, License v2.0: free use in software), pinned by its
+# commit and checked by SHA-256 (DEP-06): {name in the package: (path in its repository, sha256)}
+SOUNDFONT_URL = "https://raw.githubusercontent.com/mrbumpy409/GeneralUser-GS/97049183643d5fc5a9322a69c5b09efb667c6c3a/"
+SOUNDFONT = {
+    "GeneralUser-GS.sf2": ("GeneralUser-GS.sf2", "9575028c7a1f589f5770fccc8cff2734566af40cd26ed836944e9a5152688cfe"),
+    "GeneralUser-GS-LICENSE.txt": ("documentation/LICENSE.txt", "7b32efefdf95ce38a043799f0659853ddc00fbaa14d8c50f0aca16b9b8b405be"),
+}
 # every source that goes into a build (its id); build output never counts
 SOURCES = ["terminumd/src", "terminumd/assets", "terminumd/Cargo.toml", "terminumd/Cargo.lock",
            "ui/src", "ui/public", "ui/build.mjs", "ui/package.json", "ui/package-lock.json", "web/static",
@@ -85,6 +95,21 @@ def binaries(build, given, stage):
     return found
 
 
+def soundfont():
+    """The SoundFont's files in .toolchain/soundfonts, fetched once and each checked by its SHA-256."""
+    folder = REPO / ".toolchain/soundfonts"
+    folder.mkdir(parents=True, exist_ok=True)
+    for name, (path, sha) in SOUNDFONT.items():
+        f = folder / name
+        if not f.is_file() or hashlib.sha256(f.read_bytes()).hexdigest() != sha:
+            print(f"fetching {name}", file=sys.stderr)
+            data = urllib.request.urlopen(SOUNDFONT_URL + urllib.request.quote(path), timeout=300).read()
+            if hashlib.sha256(data).hexdigest() != sha:
+                raise SystemExit(f"{name}: its SHA-256 is not the pinned one: not packed")
+            f.write_bytes(data)
+    return folder
+
+
 def stage(build, out, given=None, only_stage=False):
     pkg = out / NAME
     shutil.rmtree(pkg, ignore_errors=True)
@@ -95,6 +120,9 @@ def stage(build, out, given=None, only_stage=False):
         (pkg / "agents" / platform).mkdir(parents=True)
         shutil.copy2(path, pkg / "agents" / platform / "terminumd")
         os.chmod(pkg / "agents" / platform / "terminumd", 0o755)
+    (pkg / "soundfonts").mkdir()
+    for name in SOUNDFONT:
+        shutil.copy2(soundfont() / name, pkg / "soundfonts" / name)
     (pkg / "BUILD").write_text(build + "\n")
     (pkg / "AGENT_ID").write_text(agents.agent_id() + "\n")
     return pkg
