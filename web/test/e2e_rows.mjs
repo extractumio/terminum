@@ -3,7 +3,8 @@
 // sizes: every row's folder bar at one place, the bookmarks' and reminders' waves beside it
 // (thin, gentle); each group's count in words ("3 sessions": its rows, not the quick shells under
 // them), the counts in one column whatever buttons follow; a terminal's icon white on a dark gray
-// tile; the shown session's row see-through (a project's tint under it); no hourglass.
+// tile; the shown session's row see-through (a project's tint under it); no hourglass; every
+// group tinted, a hue apart from its neighbor's.
 // Alone: node web/test/e2e_all.mjs webRows.
 
 import { check, runningIn } from "./check.mjs";
@@ -44,7 +45,8 @@ export async function webRows(browser, name) {
       return { bars: tops.map((t) => left(t.querySelector(".pbar"))), waves: waves.map((w) => [Math.round(w.getBoundingClientRect().width), left(w) >= bar.getBoundingClientRect().right, w.getBoundingClientRect().right <= text.getBoundingClientRect().left]),
         counts, tile: [cs.backgroundColor, getComputedStyle(tile.querySelector("svg")).color, parseFloat(cs.borderTopLeftRadius) > 0],
         hourglass: !!document.querySelector("#sessions .state.working, #curstate .state"), busy: !!document.querySelector('#sessions .item[data-id$="%6"] .pbar.busy'),
-        on: [on.classList.contains("on"), getComputedStyle(on).backgroundColor] };
+        on: [on.classList.contains("on"), getComputedStyle(on).backgroundColor],
+        groups: [...document.querySelectorAll("#sessions section.grp")].map((s) => [Number(/(\d+)\)$/.exec(s.style.getPropertyValue("--proj"))?.[1]), getComputedStyle(s).backgroundColor]) };
     });
     check("AC-01 every row's folder bar stands at one place, with or without the waves beside it", new Set(got.bars).size === 1, JSON.stringify(got.bars));
     check("AC-57 the bookmarks' and reminders' waves: 4 px, right of the bar, clear of the text", got.waves.length === 2 && got.waves.every(([w, r, c]) => w === 4 && r && c), JSON.stringify(got.waves));
@@ -54,6 +56,10 @@ export async function webRows(browser, name) {
     check("AC-39 a working agent has no hourglass: its bar pulses", !got.hourglass && got.busy, JSON.stringify(got));
     check("AC-92 the shown session's row in a project is see-through (the project's tint), not a box of its own",
       got.on[0] && /\/ 0\.1|, 0\.1/.test(got.on[1]), JSON.stringify(got.on));
+    const apart = got.groups.slice(1).map(([h], i) => Math.abs(((h - got.groups[i][0] + 540) % 360) - 180));
+    check("AC-92 every group is tinted (a project in its color), each in a hue at least 60° from the group above it",
+      got.groups.length === 3 && got.groups.every(([h, bg]) => Number.isFinite(h) && !/^rgba\(0, 0, 0, 0\)$|transparent/.test(bg)) && apart.every((d) => d >= 60),
+      JSON.stringify({ groups: got.groups, apart }));
     await f.close();
   }
 }
