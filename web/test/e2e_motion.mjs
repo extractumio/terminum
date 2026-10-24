@@ -5,11 +5,12 @@
 // The other checks run with reduced motion, so they measure boxes at their place.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, openPage, pause, WIDE } from "./fake.mjs";
+import { drawn, openPage, pause, WIDE, pressFoot } from "./fake.mjs";
 
 /** The running animations whose target is under `sel`, as "tag#id.class:name". */
+// what moves: running, of some length (one of no length only waits, as the list's foot before it folds), not a loop
 const moving = (page, sel) => page.evaluate((sel) => document.getAnimations()
-  .filter((a) => a.playState === "running" && a.effect?.target?.closest?.(sel) && a.effect.getTiming().iterations !== Infinity)
+  .filter((a) => a.playState === "running" && a.effect?.target?.closest?.(sel) && a.effect.getTiming().iterations !== Infinity && Number(a.effect.getTiming().duration) > 0)
   .map((a) => { const t = a.effect.target; return `${t.tagName}#${t.id}.${t.className}:${a.animationName ?? a.transitionProperty}`; }), sel);
 
 export async function webMotion(browser, name) {
@@ -76,6 +77,8 @@ export async function webMotion(browser, name) {
   check("motion: a color changes over a moment, not at once", shift[0] !== shift[2] && shift[1] !== shift[2], JSON.stringify(shift));
 
   // a key sinks into the panel while pressed (its well), nothing scales or ripples; a blob pulses
+  await page.hover(".footpeek");                    // the list's foot unfolds first (foot.css)
+  await pause(page, 500);
   const box = await page.$("#newsessbtn").then((b) => b.boundingBox());
   await page.mouse.move(box.x + 20, box.y + 10);
   await page.mouse.down();
@@ -120,7 +123,7 @@ export async function webMotion(browser, name) {
   await drawn(calm.page);
   await calm.page.click("#menubtn");
   await calm.page.keyboard.press("Escape");
-  await calm.page.click("#newsessbtn");
+  await pressFoot(calm.page, "#newsessbtn");
   await calm.page.click("#newsesscancel");
   const still = await moving(calm.page, "body");
   check("motion: with reduced motion nothing moves: no fade, no ripple, no settle", !still.length, JSON.stringify(still));

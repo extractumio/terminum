@@ -105,6 +105,15 @@ export async function pressFab(page, sel, how = "click") {
   await page[how](sel);
 }
 
+/** Presses a button of the list's foot; on a computer once the pointer unfolded it (foot.css, AC-07). */
+export async function pressFoot(page, sel) {
+  if (await page.isVisible(".footpeek")) {
+    await page.hover(".footpeek");
+    await page.waitForFunction(() => document.querySelector(".footpeek").getBoundingClientRect().height === 0, null, { timeout: 2000 });
+  }
+  await page.click(sel);
+}
+
 /** Waits until the page drew the shown pane's screen. */
 export const drawn = (page) => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 0, null, { timeout: 10000 });
 export const pause = (page, ms = 150) => page.waitForTimeout(ms);

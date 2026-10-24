@@ -8,7 +8,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, line, openPage, pause, SIZES, pressFab } from "./fake.mjs";
+import { drawn, group, item, line, openPage, pause, SIZES, pressFab, pressFoot } from "./fake.mjs";
 
 const DIST = path.join(import.meta.dirname, "../../ui/dist");   // the renderers, as terminumd serves them at /fb/
 const SID = "tmux:local:terminum:%1";
@@ -192,7 +192,7 @@ export async function webSent(browser, name) {
       const pane = await page.evaluate(() => [...document.querySelectorAll("#markpane .mkitem")].map((i) => `${i.querySelector(".note").textContent}${i.querySelector(".closed") ? ":" + i.querySelector(".closed").textContent : ""}`));
       const head = await page.textContent("#markpane h2");
       await page.keyboard.press("Escape");
-      await page.click("#marksbtn");
+      await pressFoot(page, "#marksbtn");
       await pause(page, 200);
       const list = await page.evaluate(() => [...document.querySelectorAll("#marklist .mkitem")].map((i) => `${i.querySelector(".note").textContent}${i.querySelector(".closed") ? ":" + i.querySelector(".closed").textContent : ""}`));
       await page.click('#marklist .mkkind button:text-is("Reminders")');

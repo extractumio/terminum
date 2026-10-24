@@ -125,33 +125,6 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .empty { color: var(--muted); padding: 16px 10px; margin: 0; }
 #scrim { display: none; }
 
-/* foot: New session, Bookmarks, Add host, Attach tmux sessions, and their forms above them (tmux.css) */
-.nav-foot { padding: var(--sp-1) 10px 10px; display: flex; flex-direction: column; gap: var(--sp-1); }
-.footbtn { width: 100%; --key-h: var(--key-h-lg); justify-content: flex-start; font-weight: 500; }   /* a key (controls.css), the list's own size */
-.footbtn[aria-expanded="true"] { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
-/* a touch screen or a narrow window: one row of blobs, the label's first words under each (the
-   rest stays in the name: "New session"), the title says it all */
-@media (max-width: 860px), (pointer: coarse) {
-  .nav-foot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-2); padding: var(--sp-2) var(--gutter) max(var(--sp-3), env(safe-area-inset-bottom)); }
-  #nav .nav-foot .footbtn { position: relative; height: auto; flex-direction: column; gap: var(--sp-1); padding: 0; background: none; box-shadow: none;
-    font-size: var(--fs-micro); font-weight: 500; color: var(--muted); }
-  #nav .nav-foot .footbtn:active { box-shadow: none; }   /* #nav: a blob, not the key of controls.css (its rule weighs an id) */
-  .nav-foot .footbtn::after { content: none; }
-  .nav-foot .footbtn > svg { width: 20px; height: 20px; box-sizing: content-box; padding: 14px; border-radius: var(--blob-a); background: var(--surface-3); }
-  .nav-foot .footbtn:nth-child(2) > svg { border-radius: var(--blob-b); }
-  .nav-foot .footbtn > svg.two { width: 40px; }
-  .nav-foot .footbtn:nth-child(3) > svg { border-radius: var(--blob-c); }
-  .nav-foot .footbtn:nth-child(4) > svg { border-radius: var(--blob-d); }
-  .nav-foot .footbtn:focus-visible { outline: none; }
-  .nav-foot .footbtn:focus-visible > svg { outline: 2px solid var(--ring); outline-offset: 2px; }
-  .nav-foot .footbtn[aria-expanded="true"] { color: var(--t-fg); }
-  .nav-foot .footbtn[aria-expanded="true"] > svg { background: var(--surface-4); box-shadow: 0 0 0 2px var(--accent); }
-  .nav-foot .footbtn .more { display: none; }
-  .nav-foot .footbtn > span:not(.count) { white-space: nowrap; }
-  .nav-foot .footbtn .count { position: absolute; top: -2px; left: calc(50% + 12px); margin: 0; min-width: 18px; height: 18px; padding: 0 4px;
-    border-radius: var(--blob-b); background: var(--mark); color: #1b1200; font: 600 10px/18px var(--ui); text-align: center; }
-  .nav-foot .footbtn .count:empty { display: none; }
-}
 .nav-title { display: none; }
 
 /* ---------- main column ---------- */

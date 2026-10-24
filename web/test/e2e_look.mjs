@@ -5,7 +5,7 @@
 // the banners. They check computed styles and boxes, which behavior checks never look at.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, LAYOUT, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, group, item, LAYOUT, openPage, pause, SIZES, pressFoot } from "./fake.mjs";
 
 const HOST = group("devbox", [item("tmux:devbox:default:%1", "build", { host: "devbox" })],
   { host: "devbox", session: "terminum", state: "attached", others: 2, server: "devbox:default", attach: "ssh -t -- devbox 'tmux attach -t =terminum'" });
@@ -83,7 +83,7 @@ export async function webLook(browser, name) {
       head.length === 3 && new Set(head.map(([, l]) => l)).size === 1, JSON.stringify(head));
     if (phone) {
       const list = await small(page, "#nav button:not(.item)", 40);
-      await page.click("#addhostbtn");
+      await pressFoot(page, "#addhostbtn");
       const form = await small(page, "#addhost button", 40);
       await page.click("#addhostcancel");
       await page.click("#drawerclose");

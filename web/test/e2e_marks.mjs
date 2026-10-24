@@ -7,7 +7,7 @@
 // Alone: node web/test/e2e_marks.mjs [chromium|webkit].
 
 import { fileURLToPath } from "node:url";
-import { pressFab } from "./fake.mjs";
+import { pressFab, pressFoot } from "./fake.mjs";
 import { check, cleanup, playwright, results } from "./check.mjs";
 import { askChecks } from "./e2e_ask.mjs";
 import { open } from "./e2e_widgets.mjs";
@@ -262,7 +262,7 @@ export async function webMarks(browser, name = "") {
   check(`${at} from the list: a bookmark in a fold asks for its lines, opens it and marks the text`,
     sent.some((x) => x.t === "unfold" && x.n === 500) && m?.text === "folded secret line 515" && inView(m), JSON.stringify(m));
   // the list below the sessions has only those no session shows
-  await page.click("#marksbtn");
+  await pressFoot(page, "#marksbtn");
   const left = await page.evaluate(() => {
     const b = document.getElementById("marksbtn"), shown = [...b.querySelectorAll("svg")].filter((s) => s.getBoundingClientRect().width > 0);
     const color = (s) => getComputedStyle(s).color, more = b.querySelector(".more");
@@ -392,7 +392,7 @@ export async function webMarks(browser, name = "") {
   await page.waitForFunction(() => !document.getElementById("mbwhy").hidden, null, { timeout: 5000 }).catch(() => {});
   check(`${at} lines no longer in the history: the bar says so and shows the text and the note`,
     (await page.textContent("#mbwhy")).startsWith(GONE) && (await page.textContent("#mbtext")) === "never printed anywhere" && (await page.textContent("#mbnote")) === "gone");
-  await page.click("#marksbtn");
+  await pressFoot(page, "#marksbtn");
   const closed = await page.evaluate(() => [...document.querySelectorAll("#marklist .mkitem")].find((b) => b.textContent.includes("closed one"))?.querySelector(".closed")?.textContent);
   await page.click('#marklist .mkitem:has-text("closed one")');
   check(`${at} an orphaned bookmark (its session closed) is listed as orphaned; picked, the window closes and its text shows`,
