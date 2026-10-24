@@ -36,8 +36,6 @@
 .footform .tick.ends span { flex-basis: 100%; padding-left: 22px; color: var(--danger-text); }   /* a session that can be lost */
 
 /* the menu's list of sessions a window can move to */
-#movelist { display: flex; flex-direction: column; padding-left: 16px; }
-#movelist[hidden] { display: none; }
 #menu button.row:disabled { opacity: .4; cursor: default; }
 
 /* a full-screen program (AC-05): its grid alone, blank rows included; no history above it */

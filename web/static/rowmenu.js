@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's menus: a row's on a right click or a long press (Clone, Add to Project,
-// Remove from Project, Mark as Unread or Read, Close Session, Move to the Top, to the Bottom, Up,
-// Down; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Session, Rename, the same moves among the
+// Remove from Project, Mark as Unread or Read, Split Below, Right and Left (its quick shell, AC-88),
+// Move to the Top, to the Bottom, Up, Down, Move to Session…, Close Session; AC-07, AC-92, AC-93), and a project's, on its ⋯ or a right click on its header (New Session, Rename, the same moves among the
 // projects, Ungroup, Close Project; AC-92), and a tmux session's group's, the same way (New Session,
 // moves among the groups, Close Group; AC-07). A move reorders the row among its group's: a project's
 // sessions in the project, a tmux session's windows in tmux; a project among the projects. Each is modal (a <dialog>): the
@@ -37,8 +37,9 @@ export function saveOrder(send, ul, ids) {
   else if (ul.dataset.wid) send({ t: "reorder", group: ul.dataset.wid, ids });
 }
 
-/** list: #sessions; item(id): the row's layout item; projects(): terminumd's; clone(item). */
-export function rowMenus({ list, send, item, projects, clone, orderGroups }) {
+/** list: #sessions; item(id): the row's layout item; projects(): terminumd's; clone(item);
+ *  groups(): the layout's; split(item, side): its quick shell below, right or left. */
+export function rowMenus({ list, send, item, projects, clone, orderGroups, groups, split }) {
   const box = $("rowmenu");
   const hide = () => {
     if (!box.open) return;
@@ -99,10 +100,18 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups }) {
       // as if nobody had opened it since its agent finished, on every page, until it is shown again (AC-93)
       button(it.unread ? "Mark as Read" : "Mark as Unread", "unread", () => { hide(); send({ t: "unread", id, on: !it.unread }); }),
       document.createElement("hr"),
+      // the view's splits are the session's quick shell (AC-88): it is shown, its shell beside it
+      ...[["Split Below", "bottom"], ["Split Right", "right"], ["Split Left", "left"]].map(([label, side]) => {
+        const b = button(label, `split-${side}`, () => { hide(); split(it, side); });
+        if (side !== "bottom") b.classList.add("wide-only");
+        return b;
+      }),
+      document.createElement("hr"),
       button("Move to the Top", "top", () => move(0), movable && i > 0),
       button("Move Up", "up", () => move(i - 1), movable && i > 0),
       button("Move Down", "down", () => move(i + 1), movable && i < last),
       button("Move to the Bottom", "bottom", () => move(last), movable && i < last),
+      ...(sessionsFor(it).length ? [button("Move to Session…", "movewin", () => moveMenu(it, x, y))] : []),
       document.createElement("hr"),
       button("Close Session", "close", () => {
         hide();
@@ -110,6 +119,24 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups }) {
       }));
     box.dataset.for = id;
     open(x, y, byFinger);
+  }
+
+  /** The other sessions of the tmux server `it`'s window is in: where it may move (AC-07). */
+  function sessionsFor(it) {
+    const own = groups().find((g) => g.items.some((x) => x.id === it.id));
+    if (!own || own.kind !== "tmux" || !own.wid) return [];
+    return groups().filter((g) => g.kind === "tmux" && g.wid && g.wid !== own.wid && (g.host ?? null) === (own.host ?? null) && g.server === own.server);
+  }
+
+  function moveMenu(it, x, y) {
+    const again = () => { const li = list.querySelector(`.item[data-id="${CSS.escape(it.id)}"]`)?.closest("li"); if (li) rowMenu(li, x, y); else hide(); };
+    fill("Move to Session", button("‹ Back", "back", again), document.createElement("hr"),
+      ...sessionsFor(it).map((g) => {
+        const b = button(g.label, "session", () => { hide(); send({ t: "move", id: it.id, session: g.wid }); });
+        b.dataset.session = g.wid;
+        return b;
+      }));
+    open(x, y);
   }
 
   function projectMenu(it, mine, x, y) {

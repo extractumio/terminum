@@ -223,8 +223,7 @@ files.bindDrop($("term"));
 const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
 dockGrip({ store, cellWidth: () => view.charRatio() * view.chosenSize(), onResize: () => view.keepBottom(applyFit) });   // docked Files' width (AC-70)
-const menu = paneMenu({ send, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
-  pick: (id) => pick(id), signOut: () => conn.signOut(), copy: (text) => input.copySelection(text), quick: (side) => quick.open(side) });
+const menu = paneMenu({ send, pick: (id) => pick(id), signOut: () => conn.signOut(), copy: (text) => input.copySelection(text) });
 const quick = quickShell({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, item: (id) => findItem(st.groups, id)?.item,
   pick: (id) => pick(id), askConfirm, narrow });
 
@@ -313,7 +312,8 @@ function onMessage(m) {
 // Rows reorder tmux's windows in their session; groups reorder this browser's list only.
 // Clone (AC-07): a new window right after the row's, in its folder; in its project when it has one (AC-92)
 function cloneRow(item) { send({ t: "clone", id: item.id }); }
-const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderGroups: (ids) => { store.set("groupOrder", ids); drawNav(); } });
+const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderGroups: (ids) => { store.set("groupOrder", ids); drawNav(); },
+  groups: () => st.groups, split: (it, side) => { pick(it.id); quick.open(side); } });
 
 // a finger resting on the keyboard button or held on the input offers Paste, Undo and Redo (AC-03)
 const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo, paste: () => input.pasteFromClipboard(), can: editChoices({ term: $("term"), item: () => itemOf(st.sid), undone: () => !!st.undone,
