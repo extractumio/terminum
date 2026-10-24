@@ -4,6 +4,7 @@
 // listener's page holds none: its HttpOnly cookie goes by itself.
 
 import { basename } from "./paths";
+import { shownUrl } from "../../web/static/shown.js";
 
 /** This tab's storage, which survives in-page reloads; private mode may refuse it. */
 export const session = {
@@ -140,21 +141,22 @@ export async function api<T>(method: string, path: string, opts: { query?: Query
 export let scope: string | null = null;
 export const setScope = (host: string | null) => { scope = host || null; };
 
-/** An image's URL carries the sign-in (an <img> sends no header): none until terminumd proved itself. */
 /** A file's raw address (no sign-in in it: the page checks it before it fetches, fb-zoom). */
 export const rawUrl = (path: string) => `${BASE}/api/raw?path=${encodeURIComponent(path)}${scope ? `&host=${encodeURIComponent(scope)}` : ""}`;
 
-/** A file's bytes behind a blob: address, fetched with the sign-in in its header: an <img>, a
- *  <video> or a download sends none, and an address with it would be copied away (Copy Image
- *  Address) and keep the 30-day secret (AC-09). The caller revokes it. */
+/** A file's bytes behind a blob: (an SVG's a data:) address, fetched with the sign-in in its
+ *  header: an <img>, a <video> or a download sends none, and an address with it would be copied
+ *  away (Copy Image Address) and keep the 30-day secret (AC-09). Only a picture, a video or a
+ *  sound keeps its type (shown.js: opened as a page, anything else would run in this origin).
+ *  The caller revokes it. */
 export async function rawBlob(path: string): Promise<string> {
-  return URL.createObjectURL(await (await raw(path)).blob());
+  return shownUrl(await (await raw(path)).blob());
 }
 
-/** Download in the web app (AC-53): fetched with the sign-in, saved from a blob: address. */
+/** Download in the web app (AC-53): fetched with the sign-in, saved from a blob: of bytes. */
 export async function downloadRaw(path: string) {
   try {
-    const url = await rawBlob(path);
+    const url = URL.createObjectURL(new Blob([await (await raw(path)).blob()], { type: "application/octet-stream" }));
     Object.assign(document.createElement("a"), { href: url, download: basename(path) }).click();
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
   } catch (e: any) { toast(`${basename(path)}: ${e.message}`); }

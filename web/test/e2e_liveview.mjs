@@ -25,6 +25,8 @@ export async function liveView(page, { work }) {
   fs.mkdirSync(path.join(work, "sub/deep"), { recursive: true });
   fs.writeFileSync(path.join(work, "sub/deep/note.txt"), "deep\n");
   fs.writeFileSync(path.join(work, "pic.png"), png(320, 200));
+  // a picture that holds script: run in the page's origin (opened as a page) it would reach the sign-in
+  fs.writeFileSync(path.join(work, "mark.svg"), '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"><script>localStorage.setItem("pwned","svg")</script><rect width="40" height="40"/></svg>');
   const away = fs.realpathSync(fs.mkdtempSync("/tmp/tmlo-")), outside = path.join(away, "outside.txt");
   fs.writeFileSync(outside, "x\n");
   try {
@@ -71,6 +73,18 @@ export async function liveView(page, { work }) {
     await page.keyboard.press("Escape");
     const closed = await page.evaluate(() => document.getElementById("zoom").hidden);
     check("AC-64 a click on the picture opens it full screen in the page's viewer (zoom, pan); Esc closes it", zoom === "pic.png" && closed, JSON.stringify({ zoom, closed }));
+    // an SVG (a picture full screen, a terminal's image button: signin.js blobUrl) is shown from a data:
+    // address, an origin of its own; opened as a page (Open Image in New Tab) it runs nothing in the page's (AC-09)
+    const svg = await page.evaluate((p) => import("/signin.js").then((m) => m.blobUrl(`/fb/api/raw?path=${encodeURIComponent(p)}`)), path.join(work, "mark.svg"));
+    if (svg?.url) {
+      const tab = await page.context().newPage();
+      await tab.goto(svg.url).catch(() => {});
+      await tab.waitForTimeout(300);
+      await tab.close();
+    }
+    const pwned = await page.evaluate(() => localStorage.getItem("pwned"));
+    check("AC-09 an SVG picture stands at a data: address, and opened as a page runs nothing in the page's origin",
+      !!svg?.url?.startsWith("data:image/svg+xml") && !pwned, JSON.stringify({ svg: svg?.url?.slice(0, 30) ?? svg, pwned }));
 
     await open(path.join(work, "sub/deep/note.txt"));
     await view.click('#tools [data-act="reveal"]');

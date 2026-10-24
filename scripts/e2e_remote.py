@@ -42,11 +42,28 @@ def api(t, secret, path, host=None, method="GET", body=None, headers=None):
         return e.code, json.loads(e.read() or b"null")
 
 
+def raw(t, secret, path, host=None):
+    """(status, Content-Type, Content-Security-Policy, bytes) of a raw file's answer."""
+    h = {"X-TM-Session": secret} if secret else {}
+    if host:
+        h["X-TM-Host"] = host
+    req = urllib.request.Request(f"http://127.0.0.1:{t.port}{path}", headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status, r.headers.get("Content-Type"), r.headers.get("Content-Security-Policy") or "", r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get("Content-Type"), e.headers.get("Content-Security-Policy") or "", e.read()
+
+
 def main():
     t = Terminumd(PORT, LOCAL_SOCKET)
     remote_home = os.path.join(t.root, "remote-home")
     os.makedirs(remote_home)
     open(os.path.join(remote_home, "notes.md"), "w").write("# on the host\n")
+    # a host's pictures: a PNG, and an SVG that holds script (AC-09: it must never run in terminum's origin)
+    png = b"\x89PNG\r\n\x1a\n" + bytes(range(64))          # its bytes come back as they are
+    open(os.path.join(remote_home, "shot.png"), "wb").write(png)
+    open(os.path.join(remote_home, "mark.svg"), "w").write('<svg xmlns="http://www.w3.org/2000/svg"><script>steal()</script></svg>')
     pids = os.path.join(t.root, "ssh-pids")
     t.env.update(TM_SSH=os.path.join(HERE, "fake_ssh.py"), FAKE_SSH_HOME=remote_home, FAKE_SSH_TMUX_SOCKET=REMOTE_SOCKET,
                  FAKE_SSH_PIDS=pids, FAKE_SSH_FAIL="Permission denied (publickey).", FAKE_SSH_FAIL_DEST="refused")
@@ -231,6 +248,12 @@ def main():
         check("AC-82 a host's folder is listed through its agent", st == 200 and "notes.md" in names, names)
         st, body = api(t, secret, f"/fb/api/file?path={remote_home}/notes.md", host="devbox")
         check("AC-82 a host's file is read through its agent", st == 200 and body.get("text") == "# on the host\n", body)
+        for name, want in (("shot.png", "image/png"), ("mark.svg", "image/svg+xml")):
+            got = raw(t, secret, f"/fb/api/raw?path={remote_home}/{name}", host="devbox")
+            check(f"AC-82 a host's picture {name} is read through its agent with the sign-in in the header, typed by terminumd from its name under the sandbox policy",
+                  got[0] == 200 and got[1] == want and "sandbox" in got[2] and got[3] == open(os.path.join(remote_home, name), "rb").read(), got[:3])
+        got = raw(t, None, f"/fb/api/raw?path={remote_home}/shot.png&host=devbox&t={secret}")
+        check("AC-09 a host's picture is not read with the sign-in in its address", got[0] == 401, got[:3])
         st, body = api(t, secret, "/fb/api/os/reveal", host="devbox", method="POST", body=json.dumps({"path": remote_home}).encode(),
                        headers={"Content-Type": "application/json"})
         check("AC-82 Finder actions are refused for remote files", st == 400 and "remote" in json.dumps(body).lower(), body)

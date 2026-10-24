@@ -92,3 +92,41 @@ async fn long_lived_streams_outlive_the_header_deadline_and_close_on_drop() {
     peer.await.unwrap();
     std::fs::remove_file(agent.socket).unwrap();
 }
+
+/// An agent answering every request with `status`, HTML with a script and no policy, as a host
+/// not to be trusted would.
+fn hostile(tag: &str, status: &'static str) -> Agent {
+    let socket = std::env::temp_dir().join(format!("fbd-peer-{tag}-{}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&socket);
+    let listener = tokio::net::UnixListener::bind(&socket).unwrap();
+    tokio::spawn(async move {
+        while let Ok((mut stream, _)) = listener.accept().await {
+            let mut bytes = [0; 4096];
+            let _ = stream.read(&mut bytes).await;
+            let body = "<script>steal()</script>";
+            let head = format!("HTTP/1.1 {status}\r\nContent-Type: text/html\r\nETag: \"e1\"\r\nContent-Length: {}\r\n\r\n", body.len());
+            let _ = stream.write_all(format!("{head}{body}").as_bytes()).await;
+        }
+    });
+    Agent { socket, token: "synthetic-token".into(), generation: 1 }
+}
+
+#[tokio::test]
+async fn a_hosts_answer_carries_terminumds_type_and_policy() {
+    let get = |uri: &str| axum::http::Request::builder().uri(uri).body(Body::empty()).unwrap();
+    let agent = hostile("typed", "200 OK");
+    let res = forward("devbox.example", &agent, get("/api/raw?path=%2Fsrv%2Fshot.svg")).await.unwrap();
+    assert_eq!(res.headers()[header::CONTENT_TYPE], "image/svg+xml", "by the file's name, not the host's text/html");
+    assert_eq!(res.headers()[header::CONTENT_SECURITY_POLICY], crate::api_fs::RAW_CSP);
+    assert_eq!(res.headers()[header::ETAG], "\"e1\"");
+    let res = forward("devbox.example", &agent, get("/api/raw?path=%2Fsrv%2Fpage.html")).await.unwrap();
+    assert_eq!(res.headers()[header::CONTENT_TYPE], "text/html", "an HTML file stays one, under the sandbox policy");
+    assert_eq!(res.headers()[header::CONTENT_SECURITY_POLICY], crate::api_fs::RAW_CSP);
+    let res = forward("devbox.example", &agent, get("/api/ls?path=%2Fsrv")).await.unwrap();
+    assert_eq!(res.headers()[header::CONTENT_TYPE], "application/json", "a listing is JSON whatever the host says");
+    std::fs::remove_file(agent.socket).unwrap();
+    let agent = hostile("typed-404", "404 Not Found");
+    let res = forward("devbox.example", &agent, get("/api/raw?path=%2Fsrv%2Fshot.png")).await.unwrap();
+    assert_eq!(res.headers()[header::CONTENT_TYPE], "application/json", "an error is JSON, not a picture");
+    std::fs::remove_file(agent.socket).unwrap();
+}
