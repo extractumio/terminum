@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.10 |
-| Date | 2026-10-23 |
+| Version | 0.4.12 |
+| Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,8 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.12 | 2026-10-24 | Owner: files and folders dragged from the Files panel onto the terminal put their paths at the input's cursor (shell-quoted, separated by spaces, no Enter), nothing uploaded: they are already where the pane runs; several selected rows go together; a file of another host than the pane's is refused with a toast (AC-36; terminum-files.md AC-52). |
+| 0.4.11 | 2026-10-24 | Owner: "artifacts/screenshots/…/row.png" and other paths a coding agent printed were no links: Claude Code worked in a worktree three folders below where it was started, and the pane's folder (tmux's, its process's) stayed there. A relative path is looked for from the folder the agent's hooks last said it works in (its own events, not a subagent's: `cwd`), then from the pane's, and opens where it is (AC-35). |
 | 0.4.10 | 2026-10-23 | Owner: Ask's field has no "Question" label (it holds a comment or a task as often as a question) and says "Your comment or task about it"; a field in focus keeps its fill, edged in the accent, without the accent gradient (every field: the page's and the Files panel's filter) (AC-37; UI-GUIDELINES.md §6). |
 | 0.4.9 | 2026-10-23 | Owner: the quotes ran together in the agent's box (no blank line after a quote or its question) and were folded into "[Pasted text #2 +5 lines]". The quote is a Markdown quote ("> Quote #0007", then each of its lines after "> "), a blank line after it and after the question; in a coding agent's box it is typed (its new lines Ctrl+J), so the agent shows it whole, unless it would fill more than half the pane's rows (a box taller than the pane breaks the agent's redraw, 0.4.7): then it is pasted and folded, as is any quote in a shell (AC-37). |
 | 0.4.8 | 2026-10-23 | Owner: Add to Chat leaves the view where it was (the paste, as typing, brought it to the input's cursor for 3 s, away from the text the user was reading); Send to Agent still goes to the input, where the answer comes (AC-37). |
@@ -292,7 +294,7 @@ Scenario: AC-35 happy path — addresses and paths
   When the user clicks (⌘-click with a mouse; Ctrl on other systems) or taps a web address in the screen or history
   Then it opens in a new tab of the reader's browser (noopener), never on the Mac; an address wrapped over rows is taken whole
   When the user clicks or taps a file path or name the pane printed (absolute, "~/…", "./…", "../…", a path with a slash, or a name with a known extension, with ":line" or ":line:col")
-  Then the page opens it in View as a tab on the pane's host; a relative one from the pane's folder; "~" is the home on the pane's machine
+  Then the page opens it in View as a tab on the pane's host; a relative one from the folder the pane's coding agent works in, as its hooks last said (its own events, not a subagent's: Claude Code may work in a worktree below the folder it started in, which stays the pane's), then from the pane's folder, where its file is; "~" is the home on the pane's machine
   But only a file that is there is a link: its folder is listed on the pane's host through the Files API (one page answers every name of a folder up to 500 entries; at most 4 listings at once, newest first; a file not there is looked for again after 10, 30 and 60 s, a found one after a minute); "and/or", dates and version numbers are not paths
 
 Scenario: AC-35 edge — underlines and clicks
@@ -315,6 +317,11 @@ Scenario: AC-36 happy path — paste an image
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
   Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together separated by spaces; the terminal is outlined while files are held over it; a folder is refused; a drop never makes the browser open the file
+
+Scenario: AC-36 happy path — drag from Files
+  When the user drags a file or a folder from the Files panel (docked, in its window or its own tab) onto the terminal
+  Then its absolute path is pasted at the input's cursor shell-quoted, as an upload's path is (nothing uploaded: it is where the pane runs), no Enter; a row of the selection drags every selected row, its own path first, the others as they were selected, separated by spaces; the terminal is outlined while they are held over it
+  But a file of another host than the shown pane's is refused with a toast ("These files are on devbox; the session runs on this Mac: nothing was put."); a path that is not absolute or holds a control character is not put (each would be a key)
 
 Scenario: AC-36 failure — refused or failed
   When the image is of another type, its bytes do not match, it is over 100 MB, or a third upload starts
@@ -766,3 +773,6 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.4.5 (2026-10-22) — AC-37 `cargo test asked_quotes_kept_per_pane` (per pane, one number once with its last text, across a restart, the newest 100, a long text cut at 4000), `web/test/e2e_ask.mjs` in `e2e_marks.mjs` (Chromium and WebKit: Add to Chat sends `asked {n: 7, text, line: 2500}`; terminumd's `askedmarks` puts one `.askline` beside "out 2500 lorem ipsum" once it is back in sight: its top and bottom the row's (±1 px), in the gutter left of the text, the Ask button's color, the wave mask; no underline) → pass; a WebKit screenshot: the wave left of the row; reviewed in-session (the pragmatic agent, sent twice, wrote no report in 5 minutes and was stopped); `node web/test/e2e_all.mjs` 1109, live 97, `make test` (cargo 446 + 1), `scripts/security_check.sh` pass.
 - [x] 0.4.4 (2026-10-22) — AC-32, AC-56 `web/test/e2e_widgets.mjs` (Chromium and WebKit: a pipe table appended to the history is drawn as a table; then the bridge tells "⋯ 7 more lines of output" over its rows: the table stays drawn, no fold; with the fold's give-way off the same check fails: drawn false, folded true, as the owner saw) → pass.
 - [x] 0.4.3 (2026-10-22) — AC-32 `cargo test page::folds` (an output in the history with the next ⏺ on the screen folds at the first look, "⋯ 10 more lines of output"; without the screen, or with rows missing between them, it waits; one going on onto the screen gives no fold, not a part); `web/test/e2e_livefolds.mjs` in `e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux: such an output printed in a pane folds in the page's history while the next ⏺ heads the screen; with the screen not read (the scan's rows emptied for the run) it does not: label null) → pass; found on the owner's own pane (read with `capture-pane`, nothing typed): the block above the screen had all its rows in the history and the next `⏺ Bash(…)` on the screen's first rows; `node web/test/e2e_all.mjs` 1103, live 97, `make test` (cargo 445 + 1), `scripts/security_check.sh` pass.
+- [x] 0.4.9, 0.4.10 (2026-10-23) — AC-37 `node --test web/test/ask.test.mjs` (the Markdown quote, tabs and control characters, the @-word's space, typed or pasted by the pane's rows) and `web/test/e2e_ask.mjs` (Chromium and WebKit: pasted in a shell, typed in an agent's box of 40 rows, Send to Agent, no label, an aria-label, no gradient in focus) → pass. Not covered: typing into a real Claude Code.
+- [x] 0.4.11 (2026-10-24) — AC-35 `cargo test tmux::hookstate` (the agent's own last cwd, not a subagent's or a relative one, gone at its end); `node --test web/test/panefiles.test.mjs` (a path under the agent's folder found there, one under the pane's there, none neither; red without the agent's folder); `web/test/e2e_app.mjs` (Chromium and WebKit: "shots/row.png" under the agent's worktree underlined and opened in View from there) → pass.
+- [x] 0.4.12 (2026-10-24) — AC-36 `node --test web/test/upload.test.mjs` (absolute paths with their host; relative ones, control characters, not text dropped); `web/test/e2e_app.mjs` (Chromium and WebKit: a folder and a file dropped as Files' rows put their quoted paths, no Enter, nothing uploaded; another host's refused with a toast); `cd ui && node test/e2e_panel.mjs` (a row is draggable, carries its host and path, a selected row the selection itself first, plain text one path a line) → pass. Not covered: a real mouse drag between the frames (synthetic events on each side).
