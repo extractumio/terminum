@@ -18,6 +18,7 @@ import { diagrams, embedTools, hostOffer, viewerTools } from "./e2e_panel_more.m
 import {
   base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, within, wsKey,
 } from "./e2e_harness.mjs";
+import { panelMedia } from "./e2e_panel_media.mjs";
 
 // playwright-core is a devDependency; PLAYWRIGHT_CORE may point at another copy
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
@@ -172,8 +173,43 @@ try {
   const sec2Top = await frame.locator("#sec2").evaluate((el) => el.getBoundingClientRect().top);
   check("AC-67 '#sec2' anchor scrolled into view", sec2Top < 800, `top ${Math.round(sec2Top)}`);
   check("AC-67 HTML has a Source toggle", !!(await page.$('#tools button[data-act="source"]')));
+  // a blob: has the panel's origin: opened as a page (Open Video in New Tab) an HTML or SVG one would
+  // run there with the sign-in in reach, so only a picture, a video or a sound keeps its type (AC-09);
+  // the panel's policy fetches no blob:, so each is opened as a page, as the menu would
+  await frame.locator('#clip[src^="blob:"]').waitFor({ timeout: 5000 }).catch(() => {});
+  const shown = await frame.locator("html").evaluate((h) => ({ clip: h.querySelector("#clip")?.getAttribute("src") ?? "", vec: h.querySelector("#vec")?.getAttribute("src") ?? "" }));
+  const opened = async (u) => {
+    const tab = await page.context().newPage();
+    const how = await tab.goto(u).then(() => "page", (e) => (/Download is starting/.test(e.message) ? "download" : /ERR_FILE_NOT_FOUND/.test(e.message) ? "gone" : e.message.split("\n")[0]));
+    await tab.waitForTimeout(300);
+    await tab.close();
+    return how;
+  };
+  const asPages = { clip: await opened(shown.clip), vec: await opened(shown.vec) };
+  check("AC-09 an HTML document's video named after an HTML file is bytes (opened, it downloads), its SVG picture a data: address",
+    shown.clip.startsWith("blob:") && asPages.clip === "download" && shown.vec.startsWith("data:image/svg+xml"), JSON.stringify({ asPages, vec: shown.vec.slice(0, 30) }));
+  check("AC-09 opened as pages, they ran nothing in the panel's origin", !(await page.evaluate(() => localStorage.getItem("pwned"))));
   await frame.locator("a:text('to readme')").click();
   await within("AC-67 link inside HTML opens the Markdown document", (ms) => page.waitForSelector('.tab.active .tname:text("README.md")', { timeout: ms }));
+
+  // the video's address is let go once its document closed (it lived as long as the panel did)
+  await page.locator(".tab", { has: page.locator('.tname:text("page.html")') }).locator(".close").click();
+  await page.waitForTimeout(5600);
+  const revoked = (await opened(shown.clip)) === "gone";
+  check("AC-67 a video's blob: address is revoked once its HTML document's tab closed", revoked, shown.clip);
+
+  // AC-36 a row dragged out carries its host and path (the page's terminal puts it at the input); a selected one, the selection
+  const dragOf = (sel) => page.$eval(sel, (el) => {
+    const dt = new DataTransfer();
+    el.querySelector(".name").dispatchEvent(new DragEvent("dragstart", { dataTransfer: dt, bubbles: true, cancelable: true }));
+    return { draggable: el.getAttribute("draggable"), paths: dt.getData("application/x-terminum-paths"), text: dt.getData("text/plain") };
+  });
+  const one = await dragOf(row("app.py"));
+  await page.click(row("src")); await page.click(row("app.py"), { modifiers: ["Alt"] });   // ⌥ adds to the selection (⌘ on a file opens a window)
+  const both = await dragOf(row("src"));
+  check("AC-36 a tree row is draggable and carries its host and path; a selected row carries the selection, itself first; other places get plain text",
+    one.draggable === "true" && one.paths === JSON.stringify({ host: null, paths: [`${SB}/app.py`] }) && one.text === `${SB}/app.py`
+      && both.paths === JSON.stringify({ host: null, paths: [`${SB}/src`, `${SB}/app.py`] }) && both.text === `${SB}/src\n${SB}/app.py`, JSON.stringify({ one, both }));
 
   // AC-64 image tab
   await page.click(row("docs")); await page.click(row("docs/logo.png"));
@@ -184,6 +220,8 @@ try {
   await page.click(".imgview img");
   check("AC-64 alone, a click on the picture shows it at its own size, another fits it again",
     actual[0] && actual[1] === "none" && !(await page.$eval(".imgview", (v) => v.classList.contains("actual"))), JSON.stringify(actual));
+
+  await panelMedia(page, { row });   // AC-64 PDFs, videos, sounds; AC-94 data files
 
   // AC-55 per-pane memory: the page shows another pane, then this one again, then reloads
   await page.waitForTimeout(600);                      // the workspace write is debounced
@@ -305,7 +343,9 @@ try {
   await page.waitForTimeout(500);
   const openAfter = await page.$$eval("#tree .chev.open", (c) => c.length);
   check("AC-71 … and the expanded folders", openAfter === openBefore && openBefore > 0, `${openAfter} of ${openBefore}`);
-  // a save while terminumd is away fails loud and keeps the edit
+  // a save while terminumd is away fails loud and keeps the edit (the tree, all open, scrolled to its row: it draws what shows)
+  const reach = async (p) => { for (let i = 0; i < 40 && !(await page.$(row(p))); i++) await page.$eval("#tree", (t) => { t.scrollTop += t.clientHeight * 0.8; }); };
+  await reach("greet.py");
   await page.click(row("greet.py"));
   await page.waitForSelector(".cm-content");
   await page.click(".cm-content"); await page.keyboard.type("# gap\n");
@@ -330,6 +370,7 @@ try {
 
   // AC 09 another program on the port while terminumd is away: it never sees the sign-in,
   // whether it answers nothing useful or forges the proof; the panel comes back with its edits
+  await reach("greet.py");
   await page.click(row("greet.py")); await page.waitForSelector(".cm-content");
   await page.click(".cm-content"); await page.keyboard.type("# kept through a squatter\n");
   for (const forge of [false, true]) {

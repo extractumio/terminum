@@ -33,7 +33,29 @@ export const onSocket = (method, p, body) => new Promise((resolve, reject) => {
 fs.mkdirSync(`${SB}/src`); fs.mkdirSync(`${SB}/docs`);
 fs.writeFileSync(`${SB}/README.md`, "# Sandbox\n\nSee [guide](docs/guide.md) and [web](https://example.com).\n\n![logo](docs/logo.png)\n\n<img src=x onerror=alert(1)>\n");
 fs.writeFileSync(`${SB}/docs/guide.md`, "# Guide\n\nBack to [readme](../README.md#sandbox) or [the page](page.html#sec2).\n");
-fs.writeFileSync(`${SB}/docs/page.html`, '<!doctype html><title>Page</title><h1>HTML page</h1><p><a href="../README.md#sandbox">to readme</a> <a href="guide.md">to guide</a></p><img src="logo.png"><img src="http://leak.example.invalid/x.png"><img id="planted" data-raw="/etc/hosts"><link rel="stylesheet" data-raw="/etc/hosts"><meta name="referrer" content="unsafe-url"><style>img{background:url(http://leak.example.invalid/css)}</style><script>parent.document.title="PWNED"</script><div style="height:3000px"></div><p id="sec2">Section two</p>');
+fs.writeFileSync(`${SB}/docs/page.html`, '<!doctype html><title>Page</title><h1>HTML page</h1><p><a href="../README.md#sandbox">to readme</a> <a href="guide.md">to guide</a></p><img src="logo.png"><img id="vec" src="mark.svg"><video id="clip" src="clip.html"></video><img src="http://leak.example.invalid/x.png"><img id="planted" data-raw="/etc/hosts"><link rel="stylesheet" data-raw="/etc/hosts"><meta name="referrer" content="unsafe-url"><style>img{background:url(http://leak.example.invalid/css)}</style><script>parent.document.title="PWNED"</script><div style="height:3000px"></div><p id="sec2">Section two</p>');
+// what an HTML document may name to run script in the panel's origin, were it opened as a page (AC-09)
+fs.writeFileSync(`${SB}/docs/mark.svg`, '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><script>localStorage.setItem("pwned","svg")</script><rect width="4" height="4"/></svg>');
+fs.writeFileSync(`${SB}/docs/clip.html`, '<!doctype html><script>localStorage.setItem("pwned","html")</script>');
+// data files rendered (AC-94): a tree, a table, an error said
+fs.mkdirSync(`${SB}/data`);
+fs.writeFileSync(`${SB}/data/pkg.json`, JSON.stringify({ name: "demo", version: 2, private: true, none: null, deps: { a: "1.0", b: { c: [1, 2, 3] } }, list: ["x", "y"] }, null, 2));
+fs.writeFileSync(`${SB}/data/conf.yaml`, "server:\n  port: 8080\n  hosts: [a, b]\n---\nsecond: yes\n");
+fs.writeFileSync(`${SB}/data/table.csv`, 'name,count,note\nalpha,12,"with, comma"\nbeta,3.5,plain\n');
+fs.writeFileSync(`${SB}/data/bad.json`, '{\n  "a": 1,\n  "b": }\n');
+// sounds (AC-64): an AU Chrome does not play (decoded in the panel), a MIDI file terminumd renders with
+// the SoundFont TM_TEST_SOUNDFONT names (linked into this TM_HOME), else none there
+const au = Buffer.alloc(24 + 800, 0xff);
+au.write(".snd", 0); au.writeUInt32BE(24, 4); au.writeUInt32BE(800, 8); au.writeUInt32BE(1, 12); au.writeUInt32BE(8000, 16); au.writeUInt32BE(1, 20);
+for (let i = 0; i < 800; i++) au[24 + i] = i % 16 < 8 ? 0x20 : 0xa0;     // μ-law: a buzz, loud enough
+fs.writeFileSync(`${SB}/docs/beep.au`, au);
+const track = [0x00, 0xff, 0x51, 0x03, 0x07, 0xa1, 0x20, 0x00, 0x99, 36, 100, 0x60, 0x89, 36, 0, 0x00, 0x90, 60, 90, 0x83, 0x00, 0x80, 60, 0, 0x00, 0xff, 0x2f, 0x00];
+fs.writeFileSync(`${SB}/docs/groove.mid`, Buffer.concat([Buffer.from("MThd\0\0\0\x06\0\0\0\x01\x01\xe0MTrk", "latin1"), Buffer.from([0, 0, 0, track.length]), Buffer.from(track)]));
+export const SOUNDFONT = process.env.TM_TEST_SOUNDFONT ?? null;
+if (SOUNDFONT) fs.symlinkSync(SOUNDFONT, `${HOME}/soundfont.sf2`);
+// a PDF and a video for their tabs (AC-64): the browser's viewer and player
+fs.writeFileSync(`${SB}/docs/spec.pdf`, "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj 2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj 3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+fs.writeFileSync(`${SB}/docs/demo.mp4`, Buffer.alloc(64));
 fs.writeFileSync(`${SB}/docs/diagram.md`, "# Diagrams\n\n```mermaid\nflowchart LR\n  A[\"terminumd\"] --> B[\"tmux\"]\n```\n\n```mermaid\nflowchart LR\n  A --> \n```\n\n```rust\nfn main() {}\n```\n\n```mermaid\nflowchart LR\n  H[\"<img src=x onerror=alert(1)>\"] --> J\n  click H call alert(2)\n```\n");
 fs.writeFileSync(`${SB}/src/main.rs`, 'fn main() {\n    println!("hi");\n}\n');
 fs.writeFileSync(`${SB}/app.py`, "print(1)\n");
