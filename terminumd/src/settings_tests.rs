@@ -14,7 +14,7 @@ fn missing_or_empty_gives_every_default_and_no_message() {
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (48080, "terminum", 12000, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
-    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "widgets": true, "folds": true, "colorScheme": null, "messages": []}));
+    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "messages": []}));
     let (s, m) = load(Path::new("/nonexistent/terminum/settings.json"));
     assert_eq!((s, m), (Settings::default(), vec![]));
 }
@@ -31,8 +31,12 @@ fn the_spec_example_is_read_whole() {
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (47901, "tm-test", 20000, false));
     assert_eq!(s.themes.hosts.get("devbox").map(String::as_str), Some("work"));
     assert_eq!(s.themes.sessions.get("notes").map(String::as_str), Some("paper"));
-    assert_eq!(s.page, PageSettings { text_size: 15, markdown_size: 16, widgets: false, folds: false, color_scheme: Some("Rosé Pine".into()) });
+    assert_eq!(s.page, PageSettings { text_size: 15, markdown_size: 16, widgets: false, folds: false, color_scheme: Some("Rosé Pine".into()), follow_agent: true });
     assert_eq!(s.hosts["devbox"]["files"], "enabled");
+    let (s, m) = parse(r#"{"page": {"followAgent": false}}"#);
+    assert!(m.is_empty() && !s.page.follow_agent, "{m:?}");
+    let (s, m) = parse(r#"{"page": {"followAgent": "no"}}"#);
+    assert!(s.page.follow_agent && m.iter().any(|t| t.contains("page.followAgent")), "a wrong value keeps the default and is said: {m:?}");
 }
 
 #[test]

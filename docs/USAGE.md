@@ -77,6 +77,10 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   wide window small bars on the terminal's right edge mark where your messages (white), the
   agent's answers ended (pale blue), bookmarks (orange) and reminders (pink) stand in the
   history: press one to go there. Settings' Side marks turns them off.
+- **The agent's folder**: when Claude Code works in another folder than where it started (a
+  worktree), the header's folder and the Files tree follow it, and paths it prints open from
+  there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`
+  in settings.json for every browser that did not choose).
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat puts the selection as a Markdown
   quote (`> Quote #0007`, then `> ` and each of its lines), a blank line, your question and a blank

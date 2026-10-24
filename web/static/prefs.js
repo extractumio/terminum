@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Three of the menu's settings (AC-19): rendered Markdown's text size (this browser's step on
+// Four of the menu's settings (AC-19): rendered Markdown's text size (this browser's step on
 // settings.json's page.markdownSize: widgets, sent history, reminders, and Files and View in
 // their frames), the terminal's history lines (settings.json's tmux.history, which tmux
 // keeps for the panes made from then on) and the side marks on the terminal's right edge (on
-// unless this browser turned them off: body.nomarks, and a "sidemarks" event for the rail).
+// unless this browser turned them off: body.nomarks, and a "sidemarks" event for the rail), and
+// Follow the agent's folder (follow.js).
+import { followSwitch } from "./follow.js";
+
 const $ = (id) => document.getElementById(id);
 const MD_MIN = 10, MD_MAX = 32;
 
@@ -19,6 +22,7 @@ export function menuPrefs({ store, send, toast }) {
   // a frame loaded later (Files, View) gets it too
   document.addEventListener("load", (e) => { if (e.target.tagName === "IFRAME") setIn(e.target.contentDocument); }, true);
   const by = (d) => { step = Math.max(MD_MIN, Math.min(MD_MAX, base + step + d)) - base; store.set("mdStep", step); show(); };
+  const follow = followSwitch(store, $("followagent"));
   const marks = (on) => { document.body.classList.toggle("nomarks", !on); $("sidemarks").checked = on; };
   marks(store.get("sideMarks", true) !== false);
   $("sidemarks").addEventListener("change", () => {
@@ -37,6 +41,7 @@ export function menuPrefs({ store, send, toast }) {
   return {
     /** settings.json's page part (settings.js). */
     page(p) {
+      follow.page(p);
       base = Number.isInteger(p.markdownSize) ? p.markdownSize : 14;
       if (Number.isInteger(p.history) && document.activeElement !== $("histlines")) $("histlines").value = String(p.history);
       show();

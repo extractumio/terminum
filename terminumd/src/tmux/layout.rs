@@ -76,6 +76,11 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
                     "profile": profile, "agent": agent, "shell": it.shell && !p.alternate_on,
                     "state": state.map(|s| s.as_str()), "window": p.window_id, "alt": p.alternate_on,
                 });
+                // the folder its coding agent works in when not the pane's (a worktree it moved to, AC-51)
+                if let Some(d) = hooks.cwd(&key).filter(|d| *d != p.path) {
+                    row["agentFolder"] = json!(titles::tilde(&d, home));
+                    row["agentDir"] = json!(d);
+                }
                 if let Some(h) = hook.filter(|h| h.state != agentstate::State::Done) {
                     for (k, v) in [("tool", &h.tool), ("why", &h.why)] {
                         if !v.is_empty() { row[k] = json!(v); }
