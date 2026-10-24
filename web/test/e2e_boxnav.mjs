@@ -337,6 +337,23 @@ export async function webBoxNav(browser, name = "chromium") {
   await press("Backspace");
   check(`${at} a selection reaching out of the input deletes nothing`, outSelected && cc.text === TEXT && sent.slice(outFrom).every((m) => m.t !== "in" || !m.data),
     JSON.stringify({ text: cc.text.length, sent: sent.slice(outFrom).map((m) => [m.t, m.data]) }));
+  // ⌘X over a selection in the input: copied, then deleted as Backspace does (AC-40); elsewhere nothing
+  await page.waitForTimeout(1600);
+  await set(TEXT, TEXT.length);
+  await page.evaluate(() => { window.copied = []; if (navigator.clipboard) navigator.clipboard.writeText = async (t) => { window.copied.push(t); };
+    document.addEventListener("copy", () => window.copied.push(String(getSelection())), true); });
+  const xSel = await select("wrapping", "differs"), xFrom = sent.length;
+  await page.keyboard.press("Meta+KeyX");
+  await page.waitForTimeout(300);
+  const xCopied = await page.evaluate(() => window.copied.join("|"));
+  const xOk = xSel && cc.text === want && sent.slice(xFrom).filter((m) => m.t === "in").length === 1 && xCopied.includes("wrapping");
+  await set(TEXT, TEXT.length);
+  const xOutFrom = sent.length;
+  await select("Done.", "wrapping");
+  await page.keyboard.press("Meta+KeyX");
+  await page.waitForTimeout(200);
+  check(`${at} ⌘X over a selection in the input copies and deletes exactly it; one reaching out of the input deletes nothing`,
+    xOk && cc.text === TEXT && sent.slice(xOutFrom).every((m) => m.t !== "in" || !m.data), JSON.stringify({ xSel, text: cc.text.slice(0, 40), xCopied: xCopied.slice(0, 40) }));
   await page.evaluate(() => { getSelection().removeAllRanges(); document.getElementById("kbd").focus(); });
 
   // Claude Code's questions between rules, as drawn in iTerm2 (the hidden cursor at the chosen

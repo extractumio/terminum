@@ -121,7 +121,7 @@ const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], vie
 const views = new Views({ send, store, onShow: () => { view.keepBottom(applyFit); marks(); }, onBack: () => focusTerminal() });
 // the sessions shown last, ⌘[ and ⌘] through them; ⌘F the history's search, ⌘B Files (AC-07)
 const recent = recentSessions({ store, exists: (id) => !!findItem(st.groups, id), show: (id) => pick(id) });
-if (!embedded) ideKeys({ back: recent.back, forward: recent.forward, files: () => views.toggleFiles(), undo: undoRedo,
+if (!embedded) ideKeys({ back: recent.back, forward: recent.forward, files: () => views.toggleFiles(), undo: undoRedo, cut: () => editMenu.cut() && (input.focus(), true),
   find: () => document.body.dataset.shown === "term" && !!st.sid && (bookmarks.search.toggle(true), true) });
 /** Undo or redo in the shown pane (AC-03): its program's key, or why it has none. */
 // said: a toast says it went (a swipe has no other sign); an Undo makes Redo apply, typing ends that
