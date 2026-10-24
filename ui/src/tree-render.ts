@@ -3,6 +3,7 @@
 
 import { esc, fmtSize, isDirKind, join, type Row } from "./api";
 import { chevron, fileIcon, folderIcon } from "./icons";
+import { isUnder } from "./paths";
 
 export type RowView =
   | { kind: "entry"; dir: string; depth: number; row?: Row }
@@ -15,6 +16,8 @@ export interface RowState {
   cursor: number;
   filter: string;
   renaming(path: string): boolean;
+  /** The folder files dragged over the tree would upload to (AC-95): its rows are marked. */
+  drop: string | null;
 }
 
 export function rowHtml(d: RowView, i: number, s: RowState): string {
@@ -28,7 +31,7 @@ export function rowHtml(d: RowView, i: number, s: RowState): string {
   const r = d.row, p = join(d.dir, r.n), isDir = isDirKind(r.k);
   const open = isDir && s.expanded.has(p);
   const renaming = s.renaming(p);
-  const cls = ["row", s.selected.has(p) ? "sel" : "", i === s.cursor ? "cursor" : "", renaming ? "editing" : ""].join(" ");
+  const cls = ["row", s.selected.has(p) ? "sel" : "", i === s.cursor ? "cursor" : "", renaming ? "editing" : "", s.drop && isUnder(p, s.drop) ? "drop" : ""].join(" ");
   return `<div class="${cls}" data-i="${i}" data-p="${esc(p)}" data-d="${isDir ? 1 : 0}" title="${esc(r.n)}"${renaming ? "" : ' draggable="true"'}>${guides}` +
     `<span class="chev${open ? " open" : ""}">${isDir ? chevron : ""}</span>` +
     (isDir ? folderIcon(open) : fileIcon(r.n)) +

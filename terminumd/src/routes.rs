@@ -30,6 +30,7 @@ fn files_api(app: &Shared) -> Router<Shared> {
         .route("/api/raw", get(raw))
         .route("/api/fs/mkdir", post(fs_mkdir))
         .route("/api/fs/touch", post(fs_touch))
+        .route("/api/fs/upload", post(fs_upload).layer(DefaultBodyLimit::max(crate::page::upload::MAX_BYTES)))
         .route("/api/fs/rename", post(fs_rename))
         .route("/api/fs/trash", post(fs_trash))
         .route("/api/os/open", post(os_open))

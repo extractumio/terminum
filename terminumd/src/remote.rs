@@ -28,7 +28,7 @@ const BODY_MAX: usize = 64 << 20;
 const RESPONSE_WAIT: Duration = Duration::from_secs(30);
 const BODY_WAIT: Duration = Duration::from_secs(120);
 /// Endpoints a remote host serves; everything else stays on the Mac.
-const FORWARDED: [&str; 7] = ["/api/ls", "/api/file", "/api/raw", "/api/fs/mkdir", "/api/fs/touch", "/api/fs/rename", "/api/fs/trash"];
+const FORWARDED: [&str; 8] = ["/api/ls", "/api/file", "/api/raw", "/api/fs/mkdir", "/api/fs/touch", "/api/fs/upload", "/api/fs/rename", "/api/fs/trash"];
 
 #[derive(Clone)]
 struct Agent {
@@ -78,6 +78,14 @@ pub async fn route(State(app): State<Shared>, req: Request, next: Next) -> Respo
     }
     let Some(agent) = app.remotes.get(&host) else {
         return err(StatusCode::NOT_FOUND, "no_agent", format!("{host} is not connected"));
+    };
+    // an upload holds its body in memory: one of the few slots first (page::upload::Slot)
+    let _slot = match path {
+        "/api/fs/upload" => match crate::page::upload::Slot::take() {
+            Some(s) => Some(s),
+            None => return err(StatusCode::TOO_MANY_REQUESTS, "busy", "Two uploads are running already"),
+        },
+        _ => None,
     };
     forward(&host, &agent, req).await.unwrap_or_else(|e| {
         tracing::warn!(event = "remote.error", host, error = %e);
@@ -131,7 +139,15 @@ async fn forward(host: &str, agent: &Agent, req: Request) -> Result<Response, St
     });
     let query: Vec<&str> = parts.uri.query().unwrap_or("").split('&').filter(|kv| !kv.is_empty() && !kv.starts_with("t=") && !kv.starts_with("host=")).collect();
     let uri = if query.is_empty() { parts.uri.path().to_string() } else { format!("{}?{}", parts.uri.path(), query.join("&")) };
-    let body = Limited::new(body, BODY_MAX).collect().await.map_err(|e| e.to_string())?.to_bytes();
+    // a file dropped on the tree (AC-95) may be as large as an upload (its slot taken in `route`) and takes its time over ssh
+    let upload = parts.uri.path() == "/api/fs/upload";
+    let limit = if upload { crate::page::upload::MAX_BYTES } else { BODY_MAX };
+    let body = match Limited::new(body, limit).collect().await {
+        Ok(b) => b.to_bytes(),
+        Err(_) if upload => return Ok(err(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Larger than the 100 MB an upload may be")),
+        Err(e) => return Err(e.to_string()),
+    };
+    let wait = RESPONSE_WAIT + Duration::from_secs(body.len() as u64 / (256 << 10));
     let mut out = hyper::Request::builder().method(parts.method.clone()).uri(uri);
     for name in [header::CONTENT_TYPE, header::IF_MATCH, header::IF_NONE_MATCH] {
         if let Some(v) = parts.headers.get(&name) {
@@ -143,7 +159,7 @@ async fn forward(host: &str, agent: &Agent, req: Request) -> Result<Response, St
         .header("x-tm-token", &agent.token)
         .body(Body::from(body))
         .map_err(|e| e.to_string())?;
-    let (res, connection) = send(agent, out).await?;
+    let (res, connection) = send_with_deadline(agent, out, wait).await?;
     tracing::debug!(event = "remote.forward", host, status = res.status().as_u16());
     let (parts, incoming) = res.into_parts();
     let mut response = Response::new(Body::new(Limited::new(finite_body(incoming, connection, BODY_WAIT), BODY_MAX).map_err(axum::Error::new)));
