@@ -63,6 +63,7 @@ pub struct Server {
     pub link: Link,
     inner: Mutex<Inner>,
     wakes: Mutex<HashMap<String, Arc<Notify>>>,
+    printed: Mutex<HashMap<String, u64>>,
     /// the list must be read again (a window, pane, session or layout changed)
     pub dirty: Arc<Notify>,
     /// a control client ended (the manager reconnects or reports)
@@ -95,6 +96,7 @@ impl Server {
             link,
             inner: Mutex::default(),
             wakes: Mutex::default(),
+            printed: Mutex::default(),
             dirty,
             ended: Arc::new(Notify::new()),
             status: Mutex::new(Status::Connecting),
@@ -214,9 +216,15 @@ impl Server {
         self.wakes.lock().entry(pane.to_string()).or_insert_with(|| Arc::new(Notify::new())).clone()
     }
 
+    /// `%output`s of the pane `%N` so far: a long run of keys goes on once it printed (typing.rs).
+    pub fn printed(&self, pane: &str) -> u64 {
+        self.printed.lock().get(pane).copied().unwrap_or(0)
+    }
+
     /// Forgets wake-ups nobody holds any more.
     pub fn prune_wakes(&self) {
         self.wakes.lock().retain(|_, n| Arc::strong_count(n) > 1);
+        self.printed.lock().retain(|p, _| self.wakes.lock().contains_key(p));
     }
 
     /// Whether any control client is alive.
@@ -453,6 +461,7 @@ async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceive
         let Some(s) = server.upgrade() else { return };
         match n {
             Notice::Output(pane) => {
+                *s.printed.lock().entry(pane.clone()).or_insert(0) += 1;
                 let wake = s.wakes.lock().get(&pane).cloned();
                 if let Some(w) = wake {
                     w.notify_one();

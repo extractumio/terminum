@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.18.12 |
+| Version | 0.18.13 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.18.13 | 2026-10-23 | Owner: "[D" and "[C" stood in a coding agent's message after moving by lines in a long input (the page moves by ← and →, a line's worth each): held, the moves went to tmux as one run of more than 1 KB, which the terminal hands on in parts of 1022 bytes, so a part ended inside "ESC [ D" and a busy agent took the ESC alone for Escape and the rest for text (measured in a private tmux: 2 of 3 parts of a 1000-key run cut). A run of more than 100 keys now goes in parts of 100, each after the pane printed something since the last (the program read it) or 250 ms (AC-03). |
 | 0.18.12 | 2026-10-23 | Owner, a security audit: X-Forwarded-For is believed only from loopback with a forwarded name as Host: a request to 127.0.0.1 counts as this Mac's own whatever it names, so a program here can no longer spend the forwarded brakes by naming addresses on the loopback name (with a forwarded Host it still can: documented) (AC-09). |
 | 0.18.11 | 2026-10-23 | Owner, a security audit: PBKDF2 600,000 iterations (OWASP's count for PBKDF2-HMAC-SHA256); a hash of fewer is made again from the next right password, never over a password set meanwhile (one writer of web.json at a time) (AC-09). |
 | 0.18.10 | 2026-10-23 | Owner, a security audit: every answer, a refusal too, carries `nosniff`, `no-referrer`, `no-store` (unless it has its own), `Permissions-Policy`, `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy` (a refusal had none of them); `/custom.css` needs the sign-in (any page could load the user's stylesheet): the page fetches it into a `<style>` (AC-09, AC-19). |
@@ -248,6 +249,7 @@ Scenario: AC-03 happy path — text and keys
 Scenario: AC-03 happy path — keys that arrive while one is on its way go together
   When the user holds → for a second
   Then the keys go as one "send-keys … Right Right Right…" per round trip, in order, at the keyboard's repeat rate, never one round trip a key
+  And a run of more than 100 keys (a line's worth of ← and → each, held) goes in parts of 100: each after the pane printed something since the last (the program read the keys before) or after 250 ms, so the terminal never holds more than its buffer (1 KB) and never hands a program a key's bytes in two parts ("[D" typed into a busy coding agent's input, its ESC taken for Escape)
 Scenario: AC-03 happy path — paste
   When the user pastes 20 KB of text
   Then terminumd loads it into a tmux buffer ("set-buffer -b tm-<n>" from the control channel, 64 KB a command, more in parts) and pastes it with "paste-buffer -p -d -b tm-<n> -t %3", so a program that asked for bracketed paste gets its markers (the menu's "Bracketed paste" switch turns -p off)

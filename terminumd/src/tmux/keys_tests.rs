@@ -179,3 +179,14 @@ fn shift_enter_is_csi_u_only_for_programs_that_ask() {
         assert_eq!(got.map(|b| String::from_utf8_lossy(&b).into_owned()).as_deref(), Some(want), "asked: {ask}, extended-keys: {on}");
     }
 }
+
+#[test]
+fn a_long_run_of_keys_goes_in_parts_of_key_part() {
+    let left = parts(&"\x1b[D".repeat(250));
+    assert_eq!(key_count(&left), 250);
+    let cmds = commands("%3", &left, true);
+    let sizes: Vec<usize> = cmds.iter().map(|c| c.matches(" Left").count()).collect();
+    assert_eq!(sizes, [KEY_PART, KEY_PART, 50], "each part's bytes fit the terminal's buffer with room");
+    assert!(KEY_PART * "\x1b[1;2D".len() < 1022, "even with a modifier a part is under the 1 KB a terminal hands on at once");
+    assert_eq!(commands("%3", &parts("\x1b[D\x1b[D"), true), ["send-keys -t %3 Left Left"], "a short run stays one command");
+}

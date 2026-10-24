@@ -24,6 +24,17 @@ pub enum Part {
 }
 
 const MODS: [&str; 7] = ["S-", "M-", "M-S-", "C-", "C-S-", "C-M-", "C-M-S-"];
+/// Keys in one `send-keys` at most. The terminal hands a program its input in parts of its
+/// buffer (1 KB on macOS), which may end inside a key's bytes; a program busy drawing then
+/// takes a lone ESC for Escape and the rest for text ("[D" in a coding agent's input), so a
+/// longer run goes in parts, each once the program read the last (typing.rs).
+pub const KEY_PART: usize = 100;
+
+/// Keys (not text) in `parts`.
+pub fn key_count(parts: &[Part]) -> usize {
+    parts.iter().map(|p| if let Part::Keys(k) = p { k.len() } else { 0 }).sum()
+}
+
 /// The bracketed-paste markers the page wraps a paste in when the menu's switch is on.
 pub const PASTE_START: &str = "\x1b[200~";
 pub const PASTE_END: &str = "\x1b[201~";
@@ -209,6 +220,10 @@ pub fn commands(target: &str, parts: &[Part], extended: bool) -> Vec<String> {
                             out.push(format!("send-keys -t {t} -H {}", bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")));
                         }
                         None => run.push(n),
+                    }
+                    if run.len() == KEY_PART {
+                        out.push(names(&run));
+                        run.clear();
                     }
                 }
                 if !run.is_empty() {

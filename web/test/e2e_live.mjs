@@ -20,6 +20,7 @@ import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
 import { liveFolds } from "./e2e_livefolds.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
+import { liveKeys } from "./e2e_livekeys.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -108,6 +109,7 @@ async function wide(browser, name) {
   await page.click("#fileclose");
   await liveFolds(page, { tmux, work: WORK });
   await liveLimit(page, { tmux, work: WORK });
+  await liveKeys(page, { tmux, work: WORK });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");
   await page.keyboard.press("Enter");

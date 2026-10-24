@@ -20,6 +20,8 @@ use crate::tmux::{args, keys, Server};
 const PASTE_MAX: usize = 1 << 20;
 /// Most bytes of one set-buffer command (a host's paste).
 const BUFFER_PART: usize = 64 << 10;
+/// How long the part of a long run of keys waits for the pane to print before the next goes.
+const PART_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
 
 /// Typed data not yet handed to tmux.
 pub struct Typed {
@@ -168,8 +170,22 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
             let parts = keys::parts(before);
             let extended = !keys::needs_extended(&parts) || server.extended_keys(client).await;
             let cmds = keys::commands(pane, &parts, extended);
-            for a in client.run_all(cmds).await {
-                a.map_err(|e| format!("tmux did not take the keys: {e}"))?;
+            if keys::key_count(&parts) <= keys::KEY_PART {
+                for a in client.run_all(cmds).await {
+                    a.map_err(|e| format!("tmux did not take the keys: {e}"))?;
+                }
+            } else {
+                // a long run (moves by lines, held): a part once the pane printed since the last
+                // (the program read it), or PART_WAIT: never more than the terminal's buffer
+                let n = cmds.len();
+                for (i, cmd) in cmds.into_iter().enumerate() {
+                    let seen = server.printed(pane);
+                    client.run(cmd).await.map_err(|e| format!("tmux did not take the keys: {e}"))?;
+                    let until = tokio::time::Instant::now() + PART_WAIT;
+                    while i + 1 < n && server.printed(pane) == seen && tokio::time::Instant::now() < until {
+                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                    }
+                }
             }
         }
         if let Some(text) = pasted {
