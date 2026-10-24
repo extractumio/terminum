@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.8 |
+| Version | 0.4.9 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.9 | 2026-10-23 | Owner: the quotes ran together in the agent's box (no blank line after a quote or its question) and were folded into "[Pasted text #2 +5 lines]". The quote is a Markdown quote ("> Quote #0007", then each of its lines after "> "), a blank line after it and after the question; in a coding agent's box it is typed (its new lines Ctrl+J), so the agent shows it whole, unless it would fill more than half the pane's rows (a box taller than the pane breaks the agent's redraw, 0.4.7): then it is pasted and folded, as is any quote in a shell (AC-37). |
 | 0.4.8 | 2026-10-23 | Owner: Add to Chat leaves the view where it was (the paste, as typing, brought it to the input's cursor for 3 s, away from the text the user was reading); Send to Agent still goes to the input, where the answer comes (AC-37). |
 | 0.4.7 | 2026-10-23 | Owner: Ask's quote is compact: `Quote #0007: «…»` on its first line, the question under it, no Quote Start/End or rule, the quote's blank lines and line ends' spaces left out, a new line after it (not a blank one). Three quotes at a phone's 45 columns made Claude Code's box taller than the pane's 32 rows, and its redraw then wrote over the answer on the screen (an item of it gone, rows jumbled, the answer reprinted); each quote now takes 4–5 rows fewer (AC-37). |
 | 0.4.6 | 2026-10-23 | Owner: the wavy line stood on the quote as sent (the message after it, Ask's `Quote Start ---- «`) instead of the text asked about: the agent had reprinted its answer and the original moved 130 lines away, so the sent copy was the nearest occurrence. That copy is never marked now (AC-37; `e2e_ask.mjs`, red before the fix). |
@@ -342,18 +343,20 @@ Scenario: AC-37 happy path — Ask about a selection
   When the user presses Ask
   Then its dialog opens centered on the terminal (not on the whole window, which also holds the session list and Files), kept inside the window, a quarter larger than other dialogs: 600 px wide, the quote up to 37.5% of the window's height, a 4-line question
   When the user types a question and presses Add to Chat
-  Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts; Claude Code's folded paste reaches the sent history only through its hooks), and the page puts at the input's cursor, no Enter, a new line after it (none before), compact (a coding agent's box taller than the pane's screen breaks its redraw, which then writes over the answer):
-    "Quote #0007: «<the selected text>»\n<the question>"
-  And the selected text's blank lines and line ends' spaces are left out
+  Then terminumd gives the pane's next question number (one more than the highest "Quote #N" in the pane's sent history or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts; Claude Code's folded paste reaches the sent history only through its hooks), and the page puts at the input's cursor, no Enter, a Markdown quote, a blank line after it and after the question (none before), compact:
+    "> Quote #0007\n> <the selected text's first line>\n> <its next line>\n\n<the question>\n\n"
+  And the selected text's blank lines, line ends' spaces and control characters are left out and its tabs are spaces (each would be a key typed); a line ending in an @-word ends in a space (the agent's file list it opened closes before the new line)
   And the view stays where it was (typing elsewhere brings it to the cursor): the user reads on from the text asked about
-  And in a coding agent's box the new line is typed as a Ctrl+J after the paste (a new line there; Claude Code folds a paste into "[Pasted text #1 +5 lines]", so newlines inside it set nothing off); elsewhere (a shell, where Ctrl+J would run the line) it is inside the paste
+  And in a coding agent's box it is typed, its new lines as Ctrl+J (a new line there), so the agent shows it whole: Claude Code folds a paste into "[Pasted text #1 +5 lines]"
+  But when it would fill more than half the pane's rows it is pasted there (folded) and the blank line typed after it: a coding agent's box taller than the pane breaks its redraw, which then writes over the answer
+  And in a shell, where Ctrl+J would run the line, it is pasted with the blank line inside the paste
   When the shown pane runs a coding agent and the user presses Send to Agent (left of Add to Chat) instead
-  Then the same text is pasted into the agent's box and Enter follows 0.2 s later (an Enter in the same read as a paste is a new line to Claude Code), so the agent gets it at once, and the view goes to the input, where the answer comes; in a shell the button is not shown
+  Then the same text, without the blank line after the question, is typed (or pasted, by the same rule) into the agent's box and Enter follows 0.2 s later (an Enter in the same read as a paste is a new line to Claude Code), so the agent gets it at once, and the view goes to the input, where the answer comes; in a shell the button is not shown
   And Cancel or Esc closes the dialog and pastes nothing; Add to Chat and Send to Agent are off while the question is empty
 
 Scenario: AC-37 happy path — an asked quote stays marked
   Given the user asked about a selection (Add to Chat or Send to Agent; terminumd gave it its number)
-  Then the quoted text in the terminal keeps a light blue wavy line (the Ask button's blue) down its rows' left, in the terminal's gutter, as a reminder's quote has (no underline), where it was selected: the occurrence nearest the line the selection began on (within 30 lines), never its copy in the message sent (after Ask's `Quote #0007: «`, or the longer `Quote Start ---- «` of before)
+  Then the quoted text in the terminal keeps a light blue wavy line (the Ask button's blue) down its rows' left, in the terminal's gutter, as a reminder's quote has (no underline), where it was selected: the occurrence nearest the line the selection began on (within 30 lines), never its copy in the message sent (after Ask's `> Quote #0007 >`, or `Quote #0007: «` and `Quote Start ---- «` of before)
   And terminumd keeps the quote (its number, text and that line) per pane in the project's asked.json, the newest 100 of each pane, so the line shows on every page of that pane, after a reload and after terminumd's restart
   And the line stands beside the rows, which stay as they are (copying, iOS's selection), for the rows within a screen of the visible ones; text in a fold or scrolled out of tmux's history has none
 

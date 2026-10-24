@@ -335,7 +335,8 @@ const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) 
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });
 // Add to Chat's paste ("asked") leaves the view where it was: the user reads on, the cursor out of sight (AC-37)
-const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "asked" : "paste"); focusTerminal(); }, keys: (data, stay) => input.type(data, stay ? "asked" : "ask"), agent: () => !!itemOf(st.sid)?.agent, asked: asked.asked });
+const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "asked" : "paste"); focusTerminal(); }, keys: (data, stay) => input.type(data, stay ? "asked" : "ask"), agent: () => !!itemOf(st.sid)?.agent,
+  pane: () => ({ cols: view.cols, rows: view.rows }), asked: asked.asked });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks, send });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)

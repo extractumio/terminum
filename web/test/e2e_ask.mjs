@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Ask's dialog (AC-37), run by e2e_marks.mjs on its page: Add to Chat's numbered, compact quote in a shell
-// and in a coding agent's box, Send to Agent, Esc, a narrow window.
+// Ask's dialog (AC-37), run by e2e_marks.mjs on its page: Add to Chat's numbered Markdown quote pasted in
+// a shell and typed in a coding agent's box, Send to Agent, Esc, a narrow window.
 
 import { check } from "./check.mjs";
 
@@ -31,7 +31,7 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   const asked = sent.slice(k), quoted = asked.filter((x) => x.t === "in").map((x) => x.data).join("");
   check(`${at} Ask: a dialog with the selection, Add to Chat off until a question, no Send to Agent in a shell; the quote numbered by terminumd on its first line and the question pasted, no Enter; the view stays where it was`,
     dialog.text.includes("out 2500 lorem ipsum") && dialog.off && dialog.noSend && dialog.focused === "askq" && dialog.gone && asked.some((x) => x.t === "askno")
-    && quoted.startsWith("\x1b[200~Quote #0007: «out 2500 lorem ipsum") && quoted.endsWith("»\rwhy does it never reset?\r\x1b[201~") && was > 0 && stayed === was,
+    && quoted.startsWith("\x1b[200~> Quote #0007\r> out 2500 lorem ipsum") && quoted.endsWith("\r\rwhy does it never reset?\r\r\x1b[201~") && was > 0 && stayed === was,
     JSON.stringify({ dialog, quoted, was, stayed }));
   // the quote stays marked: terminumd keeps it with its number and the line its selection began on,
   // and its answer puts a light blue wavy line (the Ask button's) down the quote's rows' left, as a
@@ -55,14 +55,15 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   // the quote as sent (Claude Code shows the message after it) is never marked, even where it stands
   // nearest the line kept: the agent reprinted its answer and the original moved away
   const row = (text) => ({ r: [[text, null, null, 0]], e: true });
-  say({ t: "screen", sid: "S1", full: false, n: 2, cols: 80, rows: 2, ch: [[0, row(`❯ Quote #0008: «${keep?.text}»`)], [1, row("  and why?")]] });
+  say({ t: "screen", sid: "S1", full: false, n: 3, cols: 80, rows: 3, ch: [[0, row("❯ > Quote #0008")], [1, row(`  > ${keep?.text}`)], [2, row("  and why?")]] });
   say({ t: "askedmarks", sid: "S1", items: [{ n: 8, text: keep?.text, line: 3000 }] });
   await page.click("#bottom").catch(() => {});
   await page.waitForTimeout(400);
   const copy = await page.evaluate(() => ({ shown: [...document.querySelectorAll("#term .askline")].filter((l) => !l.hidden).length,
-    there: [...document.querySelectorAll("#screen .ln")].some((el) => el.textContent.includes("«out 2500 lorem")) }));
+    there: [...document.querySelectorAll("#screen .ln")].some((el) => el.textContent.includes("> out 2500 lorem")) }));
   check(`${at} Ask: the quote as sent, in the message after it, never gets the wavy line`, copy.there && copy.shown === 0, JSON.stringify(copy));
   say({ t: "askedmarks", sid: "S1", items: [] });
+  say({ t: "screen", sid: "S1", full: false, n: 3, cols: 80, rows: 40, ch: [] });   // a pane of 40 rows: a short quote fits typed
   // in a coding agent's box the new line after it is typed (Ctrl+J), none before
   say({ t: "layout", groups: [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }, layout[0].items[1]] }] });
   await page.waitForTimeout(150);
@@ -76,8 +77,8 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.waitForTimeout(300);
   stayed = await top();
   const typed = sent.slice(k).filter((x) => x.t === "in").map((x) => x.data);
-  check(`${at} Ask in a coding agent's box: the paste, then a Ctrl+J (a new line after it, none before; nothing sent); the view stays where it was`,
-    typed.length === 2 && typed[1] === "\n" && typed[0].startsWith("\x1b[200~Quote #0007: «") && typed[0].endsWith("»\rand now?\x1b[201~") && was > 0 && stayed === was, JSON.stringify({ typed, was, stayed }));
+  check(`${at} Ask in a coding agent's box: typed, not pasted (shown whole, not folded), new lines as Ctrl+J, a blank line after the quote and after the question; nothing sent; the view stays where it was`,
+    typed.length === 1 && typed[0].startsWith("> Quote #0007\n> out 2500 lorem") && typed[0].endsWith("\n\nand now?\n\n") && !typed[0].includes("\x1b[200~") && was > 0 && stayed === was, JSON.stringify({ typed, was, stayed }));
   // Send to Agent (a coding agent's pane only): the same paste, then Enter a moment after
   await selectRow(page, "out 2500 lorem");
   await page.click("#askfab");
@@ -88,7 +89,7 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.waitForTimeout(400);
   const now = sent.slice(k).filter((x) => x.t === "in");
   check(`${at} Ask's Send to Agent in a coding agent's pane: the paste, then Enter`,
-    now.length === 2 && now[0].data.startsWith("\x1b[200~Quote #0007: «") && now[0].data.endsWith("»\rsend it\x1b[201~") && now[1].data === "\r", JSON.stringify(now.map((x) => x.data)));
+    now.length === 2 && now[0].data.startsWith("> Quote #0007\n> out 2500 lorem") && now[0].data.endsWith("\n\nsend it") && now[1].data === "\r", JSON.stringify(now.map((x) => x.data)));
   say({ t: "layout", groups: layout });
   await page.waitForTimeout(150);
   await selectRow(page, "out 2500 lorem");

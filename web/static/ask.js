@@ -1,36 +1,46 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Ask about a selection (AC-37): Ask (markpick.js) opens a dialog with the selected text and a
 // field for the question; Add to Chat asks terminumd for the pane's next quote number (it
-// counts up across devices: `askno`) and pastes the quote and the question at the input's cursor,
-// compact (an agent's box taller than the pane's screen breaks its redraw: Claude Code draws over
-// its answer), a new line after it, without Enter, the view left where it was: in a coding agent's box by a Ctrl+J (a new line
-// there; the edges of a paste are trimmed or folded into "[Pasted text]"), elsewhere (a shell,
-// where Ctrl+J would run the line) inside the paste. Send to Agent (a coding agent's
-// pane only) pastes the same and presses Enter.
+// counts up across devices: `askno`) and puts the quote, as a Markdown quote, and the question at
+// the input's cursor, a blank line after each, without Enter, the view left where it was. In a
+// coding agent's box it is typed (its new lines as Ctrl+J), so the agent shows it whole rather than
+// folded into "[Pasted text]", unless it would fill more than half the pane's rows: an agent's box
+// taller than the pane breaks its redraw (Claude Code draws over its answer), so a long quote is
+// pasted and folded. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
+// coding agent's pane only) puts the same and presses Enter.
 
 import { placeModal } from "./fabpane.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
 const ENTER_AFTER = 200;       // ms: an Enter in the same read as a paste is a new line to Claude Code
+const TYPED_SHARE = 0.5;       // of the pane's rows a typed quote may fill in an agent's box
 
-/** What Add to Chat pastes: the selection numbered and quoted on its first line, its blank lines
- *  and line ends' spaces left out, the question under it. */
+/** What Add to Chat puts: a Markdown quote numbered on its first line ("> Quote #0007"), the
+ *  selection's lines under it (blank lines, line ends' spaces, tabs and control characters left
+ *  out: each would be a key when typed), a blank line, the question. */
 export function askText(n, quote, question) {
-  const text = quote.replace(/[ \t]+$/gm, "").replace(/\n{2,}/g, "\n").replace(/^\n+|\n+$/g, "");
-  return `Quote #${String(n).padStart(4, "0")}: «${text}»\n${question.trim()}`;
+  const lines = quote.replace(/\t/g, "    ").replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "").split("\n").map((l) => l.trimEnd()).filter(Boolean);
+  // a line ending in an @-word ends in a space: the file list the agent opened for it closes before the new line
+  const body = lines.map((l) => `> ${l}`.replace(/(^|\s)@\S*$/, "$& "));
+  return [`> Quote #${String(n).padStart(4, "0")}`, ...body, "", question.trim()].join("\n");
 }
 
+/** Rows `text` takes in an agent's box `cols` wide (its border and prompt take 4). */
+export const boxRows = (text, cols) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / Math.max(1, cols - 4))), 0);
+
 /** Whether the text just before a quote's occurrence (white space as one space) is askText's
- *  opening (or the longer one before 0.4.7): that occurrence is the copy sent to the agent, never
- *  what was asked about. */
-export const sentCopy = (before) => /(Quote #\d+:|Quote Start -+) ?«$/.test(before);
+ *  opening, or one of before 0.4.9 (`Quote #N: «`, before 0.4.7 `Quote Start ---- «`): that
+ *  occurrence is the copy sent to the agent, never what was asked about. */
+export const sentCopy = (before) => /((Quote #\d+:|Quote Start -+) ?«|Quote #\d+ ?>) ?$/.test(before);
 
 /** What goes to the pane for `text`, in order: [kind, data], kind "keys" (typed), "paste" or
- *  "enter" (typed a moment after); `now`: sent to the agent (Send to Agent). */
-export function askSends(text, agent, now = false) {
+ *  "enter" (typed a moment after); `now`: sent to the agent (Send to Agent); `typed`: an agent's
+ *  box takes it as keys (it fits: TYPED_SHARE). */
+export function askSends(text, { agent, now = false, typed = false }) {
+  if (agent && typed) return now ? [["keys", text], ["enter", "\r"]] : [["keys", `${text}\n\n`]];
   if (now) return [["paste", text], ["enter", "\r"]];
-  return agent ? [["paste", text], ["keys", "\n"]] : [["paste", `${text}\n`]];
+  return agent ? [["paste", text], ["keys", "\n\n"]] : [["paste", `${text}\n\n`]];
 }
 
 /** Where a box w×h stands centered on `area` (a rect), kept `gap` inside a vw×vh window. */
@@ -40,9 +50,10 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
 }
 
 /** send(msg) to terminumd; toChat(text, stay): pasted into the shown pane's input; keys(data, stay): typed
- *  there (stay: Add to Chat's, the view left where it was); agent(): the shown pane runs a coding agent; asked(n, quote, line): one was asked about
- *  (asked.js keeps it marked). {open(text, line), seen(m)}. */
-export function askBox({ send, toChat, keys, agent, asked }) {
+ *  there (stay: Add to Chat's, the view left where it was); agent(): the shown pane runs a coding agent;
+ *  pane(): its {cols, rows}; asked(n, quote, line): one was asked about (asked.js keeps it marked).
+ *  {open(text, line), seen(m)}. */
+export function askBox({ send, toChat, keys, agent, pane, asked }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
   let quote = "", line = null, waiting = null;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
@@ -77,7 +88,9 @@ export function askBox({ send, toChat, keys, agent, asked }) {
     box.close();
     asked?.(m.n, quote, line);                                      // the quote stays marked where it was selected
     const stay = how === "add";                                   // Send to Agent goes to the input: the answer comes there
-    for (const [kind, data] of askSends(askText(m.n, quote, q.value), agent(), !stay)) {
+    const text = askText(m.n, quote, q.value), { cols, rows } = pane();
+    const typed = !!cols && !!rows && boxRows(text, cols) <= rows * TYPED_SHARE;
+    for (const [kind, data] of askSends(text, { agent: agent(), now: !stay, typed })) {
       if (kind === "enter") setTimeout(() => keys(data), ENTER_AFTER);
       else (kind === "keys" ? keys : toChat)(data, stay);
     }
