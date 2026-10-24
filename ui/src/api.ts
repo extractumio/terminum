@@ -172,9 +172,29 @@ async function raw(path: string): Promise<Response> {
   throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
 }
 
+// A video's, a sound's or a PDF's address, kept while it plays from it: revoked once its element
+// left the page or its document's frame closed (looked at every SWEEP ms while there is one); a
+// player of the panel's own (MIDI) is stopped then.
+const playing = new Map<string, [HTMLElement, () => void]>();
+const SWEEP = 5000;
+let sweeping = 0;
+function sweep() {
+  for (const [url, [el, gone]] of playing) {
+    if (el.isConnected && el.ownerDocument.defaultView) continue;
+    gone();
+    playing.delete(url);
+  }
+  if (!playing.size) { clearInterval(sweeping); sweeping = 0; }
+}
+/** `gone()` once `el` left the page (its address revoked, its player stopped); `id` names it. */
+export function whileShown(id: string, el: HTMLElement, gone: () => void) {
+  playing.set(id, [el, gone]);
+  sweeping ||= window.setInterval(sweep, SWEEP);
+}
+
 /** Fills the elements under `root` that name a file in `data-raw` (rendered Markdown, an HTML
  *  document, an image tab): `src` from rawBlob, a stylesheet's text into a <style>. An image's
- *  address is revoked once it is drawn; a video's or a sound's stays while its document lives. */
+ *  address is revoked once it is drawn; a video's or a sound's once it is gone (sweep). */
 export function hydrateRaw(root: ParentNode) {
   for (const el of root.querySelectorAll<HTMLElement>("[data-raw]")) {
     const path = el.dataset.raw!;
@@ -190,6 +210,7 @@ export function hydrateRaw(root: ParentNode) {
     void rawBlob(path).then((url) => {
       // tagName, not instanceof: an HTML document's elements are of its frame's own classes
       if (el.tagName === "IMG") { const done = () => URL.revokeObjectURL(url); el.addEventListener("load", done, { once: true }); el.addEventListener("error", done, { once: true }); }
+      else whileShown(url, el, () => URL.revokeObjectURL(url));
       el.setAttribute("src", url);
     }, (e: Error) => { el.title = `${path}: ${e.message}`; });
   }
