@@ -262,6 +262,17 @@ def main():
                        headers={"Content-Type": "image/png", "Origin": f"http://127.0.0.1:{PORT}"})
         path = (body or {}).get("path", "")
         check("AC-85 a pasted image is saved on the host", st == 200 and path.startswith(remote_home + "/.terminum/tmp/") and os.path.exists(path), body)
+        # a file dropped on a host's tree (AC-95): its bytes saved there through the agent, never over a file
+        blob, drop = bytes(range(256)) * 64, "/fb/api/fs/upload?dir=" + urllib.request.quote(remote_home) + "&name=dropped.bin"
+        hdr = {"Content-Type": "application/octet-stream", "Origin": f"http://127.0.0.1:{PORT}"}
+        first = api(t, secret, drop, host="devbox", method="POST", body=blob, headers=hdr)
+        again = api(t, secret, drop, host="devbox", method="POST", body=b"other", headers=hdr)
+        both = api(t, secret, drop + "&both=true", host="devbox", method="POST", body=b"other", headers=hdr)
+        on_host = lambda n: open(os.path.join(remote_home, n), "rb").read() if os.path.exists(os.path.join(remote_home, n)) else None
+        check("AC-95 a file dropped on a host's tree is saved there through its agent; its name taken is refused, Keep Both saves \"dropped 2.bin\"",
+              first[0] == 201 and (first[1] or {}).get("path") == f"{remote_home}/dropped.bin" and on_host("dropped.bin") == blob
+              and again[0] == 409 and (again[1] or {}).get("error") == "exists"
+              and both[0] == 201 and (both[1] or {}).get("path") == f"{remote_home}/dropped 2.bin" and on_host("dropped 2.bin") == b"other", (first, again, both))
 
         # a host set up before the server was named terminumd has only terminusd-agent: it is
         # started, answers with its old build, and is replaced by this build's helper (AC-84)

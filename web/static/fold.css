@@ -5,9 +5,9 @@
 @media (hover: none), (max-width: 860px) {
   /* folded: the column out of sight until ⟨…⟩ unfolds it */
   body.folding:not(.unfolded) :is(#findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
-  /* a selection's three stand there: ⟨…⟩ and its column make way (a wide window: they stand left of the column) */
-  body:has(#markcopy:not([hidden])) :is(#foldfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
 }
+/* a selection's three stand in the column (markpick.js): ⟨…⟩ and the column's other buttons make way */
+body:has(#markcopy:not([hidden])) :is(#foldfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab) { visibility: hidden; }
 #foldfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
 /* folded, it says what the column holds: the bookmarks' count, the reminders' pink (its ring filled when due, no blink) */
 #foldfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);

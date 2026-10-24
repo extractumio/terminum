@@ -148,7 +148,18 @@ pub fn local_dir() -> PathBuf {
     std::env::var_os("TM_PASTE_DIR").map(PathBuf::from).unwrap_or_else(|| crate::config::tm_home().join("tmp"))
 }
 
-struct Slot;
+/// One of the AT_ONCE uploads that may run at once (pastes, uploads, files dropped on the tree):
+/// taken before a body is read, so no more than that many are held in memory.
+pub struct Slot;
+impl Slot {
+    pub fn take() -> Option<Slot> {
+        if RUNNING.fetch_add(1, Ordering::Relaxed) >= AT_ONCE {
+            RUNNING.fetch_sub(1, Ordering::Relaxed);
+            return None;
+        }
+        Some(Slot)
+    }
+}
 impl Drop for Slot {
     fn drop(&mut self) {
         RUNNING.fetch_sub(1, Ordering::Relaxed);
@@ -157,11 +168,9 @@ impl Drop for Slot {
 
 /// `POST /paste` and `POST /upload` (the route says which).
 pub async fn save(app: &Shared, upload: bool, q: PasteQuery, headers: &HeaderMap, body: Bytes) -> Response {
-    if RUNNING.fetch_add(1, Ordering::Relaxed) >= AT_ONCE {
-        RUNNING.fetch_sub(1, Ordering::Relaxed);
+    let Some(_slot) = Slot::take() else {
         return refuse(StatusCode::TOO_MANY_REQUESTS, "Two uploads are running already");
-    }
-    let _slot = Slot;
+    };
     let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
     let name = if upload { upload_name(q.name.as_deref().unwrap_or(""), &body) } else { image_name(content_type, &body) };
     let name = match name {
@@ -205,6 +214,14 @@ mod tests {
         assert!(image_name("image/jpeg", png).unwrap_err().contains("not a JPG"));
         assert!(image_name("text/plain", b"x").unwrap_err().contains("Only PNG"));
         assert!(image_name("image/png", &vec![0; MAX_BYTES + 1]).is_err());
+    }
+
+    #[test]
+    fn no_more_than_two_uploads_at_once() {
+        let (a, b) = (Slot::take(), Slot::take());
+        assert!(a.is_some() && b.is_some() && Slot::take().is_none());
+        drop(a);
+        assert!(Slot::take().is_some(), "a slot given back is taken again");
     }
 
     #[test]

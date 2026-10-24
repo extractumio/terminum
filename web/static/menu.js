@@ -1,60 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The header's menu (AC-07, AC-15, AC-17): its pane actions, the splits (the quick shell), Move window
-// to session…, Close pane (asked first), Restore again after a restore report, the report's
-// banner over the terminal, and the chip of a newer release with its own menu.
-import { closeSession } from "./navtools.js";
+// The header's menu (AC-07, AC-15, AC-17): the settings (a pane's actions are its row's menu,
+// rowmenu.js), Restore again after a restore report, the report's banner over the terminal, and
+// the chip of a newer release with its own menu.
 import { placeModal } from "./fabpane.js";
 import { closeButton } from "./banners.js";
 
 const $ = (id) => document.getElementById(id);
 
-/** current(): the shown pane's {group, item} or null; groups(): the layout's; pick(id) opens a
- *  pane; signOut() for Sign out (this browser's sign-in ends); copy(text) to the clipboard. */
+/** pick(id) opens a pane; signOut() for Sign out (this browser's sign-in ends); copy(text) to the clipboard. */
 const RESTORED_FOR = 30000;     // ms the restore report stays when nobody closes it
 
-export function paneMenu({ send, current, groups, pick, signOut, copy, quick }) {
-  function open() { syncItems(); $("menu").hidden = false; placeModal($("menu"), close); $("menubtn").setAttribute("aria-expanded", "true"); }
-  function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); hideMoves(); }
+export function paneMenu({ send, pick, signOut, copy }) {
+  function open() { $("menu").hidden = false; placeModal($("menu"), close); $("menubtn").setAttribute("aria-expanded", "true"); }
+  function close() { $("menu").hidden = true; $("menubtn").setAttribute("aria-expanded", "false"); }
   $("menubtn").onclick = (e) => { e.stopPropagation(); $("menu").hidden ? open() : close(); };
   document.addEventListener("click", (e) => { if (!$("menu").hidden && !e.target.closest("#menu")) close(); });
-
-  // The pane's actions need a pane; a window moves only to another session of its tmux server.
-  const targets = () => {
-    const found = current();
-    if (!found) return [];
-    return groups().filter((g) => g.kind === "tmux" && g.wid && g.wid !== found.group.wid && (g.host ?? null) === (found.group.host ?? null) && g.server === found.group.server);
-  };
-  function syncItems() {
-    const found = current();
-    for (const id of ["quickbelow", "quickright", "quickleft", "closepane"]) $(id).disabled = !found;
-    $("movewin").hidden = !targets().length;
-  }
-
-  const paneSend = (m) => { const found = current(); close(); if (found) send({ ...m, id: found.item.id }); };
-  // the view's splits are the pane's quick shell (AC-88): a tmux window of its own beside it
-  $("quickbelow").onclick = () => { close(); quick("bottom"); };
-  $("quickright").onclick = () => { close(); quick("right"); };
-  $("quickleft").onclick = () => { close(); quick("left"); };
-  $("closepane").onclick = async () => {
-    const found = current();
-    close();
-    if (!found) return;
-    closeSession(found.item, send);
-  };
-
-  function hideMoves() { $("movelist").hidden = true; $("movewin").setAttribute("aria-expanded", "false"); }
-  $("movewin").onclick = (e) => {
-    e.stopPropagation();
-    if (!$("movelist").hidden) return hideMoves();
-    $("movelist").replaceChildren(...targets().map((g) => {
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "row"; b.textContent = g.label; b.dataset.session = g.wid;
-      b.onclick = () => paneSend({ t: "move", session: g.wid });
-      return b;
-    }));
-    $("movelist").hidden = false;
-    $("movewin").setAttribute("aria-expanded", "true");
-  };
 
   $("restoreagain").onclick = () => { close(); send({ t: "restore" }); };
   $("signout").onclick = () => { close(); signOut(); };

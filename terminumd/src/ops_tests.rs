@@ -96,3 +96,37 @@ fn exclusive_rename_preserves_a_target_created_after_preflight() {
     assert!(to.symlink_metadata().unwrap().file_type().is_symlink());
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn an_upload_is_a_new_file_never_written_over_another() {
+    let (roots, dir) = setup("upload");
+    let p = upload(&roots, &dir, "notes.txt", b"one", false).unwrap();
+    assert_eq!((p.clone(), fs::read(&p).unwrap()), (dir.join("notes.txt"), b"one".to_vec()));
+    // taken: refused, the file as it was; with both: the next free number
+    assert_eq!(upload(&roots, &dir, "notes.txt", b"two", false).unwrap_err().code(), "exists");
+    assert_eq!(fs::read(&p).unwrap(), b"one");
+    assert_eq!(upload(&roots, &dir, "notes.txt", b"two", true).unwrap(), dir.join("notes 2.txt"));
+    assert_eq!(upload(&roots, &dir, "notes.txt", b"three", true).unwrap(), dir.join("notes 3.txt"));
+    assert_eq!(fs::read(dir.join("notes 3.txt")).unwrap(), b"three");
+    // a symlink in the name's place is taken, never followed
+    std::os::unix::fs::symlink(dir.join("elsewhere"), dir.join("link")).unwrap();
+    assert_eq!(upload(&roots, &dir, "link", b"x", false).unwrap_err().code(), "exists");
+    assert!(!dir.join("elsewhere").exists());
+    // no part files left behind
+    assert!(fs::read_dir(&dir).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".part")));
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn an_upload_keeps_to_the_roots_and_plain_names() {
+    let (roots, dir) = setup("upload-roots");
+    assert_eq!(upload(&roots, Path::new("/tmp"), "x", b"x", false).unwrap_err().code(), "outside_writable_roots");
+    for bad in ["", "..", "a/b", "a\0b"] {
+        assert_eq!(upload(&roots, &dir, bad, b"x", false).unwrap_err().code(), "bad_name", "{bad:?}");
+    }
+    assert_eq!(upload(&roots, &dir.join("gone"), "x", b"x", false).unwrap_err().code(), "not_found");
+    assert_eq!(numbered(".bashrc", 2), ".bashrc 2");
+    assert_eq!(numbered("a.tar.gz", 2), "a.tar 2.gz");
+    assert_eq!(numbered("README", 4), "README 4");
+    fs::remove_dir_all(dir).unwrap();
+}

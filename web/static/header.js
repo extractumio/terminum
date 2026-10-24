@@ -6,7 +6,7 @@
 import { agentMark, el, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
-import { following, onFollow } from "./follow.js";
+import { following } from "./follow.js";
 
 const $ = (id) => document.getElementById(id);
 const span = (cls, text) => el("span", cls, text);
@@ -25,9 +25,7 @@ export function headerParts(group, item, follow = following()) {
 
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
 export function pageHeader({ copy, renaming, setAgent }) {
-  let last = null;
   function show(found) {
-    last = found;
     $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
     $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
     setAgent(found?.item.agent ?? null);
@@ -56,6 +54,5 @@ export function pageHeader({ copy, renaming, setAgent }) {
     document.title = found ? `${found.item.title} – terminum` : "terminum";
     if (!renaming()) $("rename").hidden = !found;
   }
-  onFollow(() => show(last));                        // the menu's switch: the folder shown changes at once
   return show;
 }

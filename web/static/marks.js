@@ -283,7 +283,7 @@ export class Marks {
   drawList() {
     const panes = this.panes(), of = projectsOf(this.projects());
     const left = [...this.items.values()].filter((b) => nowhere(b, panes, of));
-    $("markcount").textContent = left.length ? String(left.length) : "";
+    $("markcount").textContent = $("markpeek").textContent = left.length ? String(left.length) : "";   // the button's, the folded foot's
     if (!$("marksdlg").open) return;
     const reminders = this.listKind === "reminder";
     const all = left.filter((b) => !!b.remind === reminders).sort((a, b) => b.at - a.at);

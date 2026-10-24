@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Motion (docs/UI-GUIDELINES.md §2.8) against a fake terminumd (fake.mjs), with motion on: a
-// window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses; the
+// window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses, one under the pointer lifts and nods; the
 // selected row settles once; nothing moves in the terminal; with reduced motion nothing moves.
 // The other checks run with reduced motion, so they measure boxes at their place.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, openPage, pause, WIDE } from "./fake.mjs";
+import { drawn, openPage, pause, WIDE, pressFoot } from "./fake.mjs";
 
 /** The running animations whose target is under `sel`, as "tag#id.class:name". */
+// what moves: running, of some length (one of no length only waits, as the list's foot before it folds), not a loop
 const moving = (page, sel) => page.evaluate((sel) => document.getAnimations()
-  .filter((a) => a.playState === "running" && a.effect?.target?.closest?.(sel) && a.effect.getTiming().iterations !== Infinity)
+  .filter((a) => a.playState === "running" && a.effect?.target?.closest?.(sel) && a.effect.getTiming().iterations !== Infinity && Number(a.effect.getTiming().duration) > 0)
   .map((a) => { const t = a.effect.target; return `${t.tagName}#${t.id}.${t.className}:${a.animationName ?? a.transitionProperty}`; }), sel);
 
 export async function webMotion(browser, name) {
@@ -76,6 +77,8 @@ export async function webMotion(browser, name) {
   check("motion: a color changes over a moment, not at once", shift[0] !== shift[2] && shift[1] !== shift[2], JSON.stringify(shift));
 
   // a key sinks into the panel while pressed (its well), nothing scales or ripples; a blob pulses
+  await page.hover(".footpeek");                    // the list's foot unfolds first (foot.css)
+  await pause(page, 500);
   const box = await page.$("#newsessbtn").then((b) => b.boundingBox());
   await page.mouse.move(box.x + 20, box.y + 10);
   await page.mouse.down();
@@ -90,6 +93,16 @@ export async function webMotion(browser, name) {
   const pulse = await page.evaluate(() => ({ mark: document.getElementById("findfab").dataset.press,
     running: document.getAnimations().filter((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "findfab").length }));
   await page.keyboard.press("Escape");
+  await page.mouse.move(fab.x - 200, fab.y + 200);
+  await pause(page, 400);
+  await page.mouse.move(fab.x + fab.width / 2, fab.y + fab.height / 2);
+  const nod = await page.evaluate(() => new Promise((done) => requestAnimationFrame(() =>
+    done(document.getAnimations().filter((a) => a.animationName === "nod" && a.effect?.target?.closest("#findfab")).length))));
+  await pause(page, 500);
+  const lifted = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById("findfab")); return { scale: cs.scale, translate: cs.translate }; });
+  await page.mouse.move(fab.x - 200, fab.y + 200);
+  check("motion: a blob under the pointer lifts 2 px and grows 12%, its icon nods once",
+    nod === 1 && lifted.scale === "1.12" && lifted.translate === "0px -2px", JSON.stringify({ nod, lifted }));
   check("motion: a pressed key sinks into the panel (its well), nothing scales or ripples; a pressed blob pulses",
     /0px 1px 3px 0px/.test(press.shadow) && /inset/.test(press.shadow) && press.scale === "none" && press.mark === null && press.before === "none" && ["a", "b"].includes(pulse.mark) && pulse.running === 1,
     JSON.stringify({ press, pulse }));
@@ -110,7 +123,7 @@ export async function webMotion(browser, name) {
   await drawn(calm.page);
   await calm.page.click("#menubtn");
   await calm.page.keyboard.press("Escape");
-  await calm.page.click("#newsessbtn");
+  await pressFoot(calm.page, "#newsessbtn");
   await calm.page.click("#newsesscancel");
   const still = await moving(calm.page, "body");
   check("motion: with reduced motion nothing moves: no fade, no ripple, no settle", !still.length, JSON.stringify(still));

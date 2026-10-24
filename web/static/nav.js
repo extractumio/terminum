@@ -6,6 +6,7 @@
 // number and title, then host · program · folder · titles, and a coding agent's state in a
 // column of its own.
 import { folderHues, folderKey } from "./dircolors.js";
+import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 
@@ -75,12 +76,22 @@ export function folderBar(item, shown = false, busy = false, project = null) {
 
 // Projects' colors (AC-92): ten hues far apart, in pastel (projects.css), so two projects never read as one
 const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
-export const projectColor = (p) => `oklch(var(--proj-l) var(--proj-c) ${PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length]})`;
+const hueColor = (h) => `oklch(var(--proj-l) var(--proj-c) ${h})`;
+const projectHue = (p) => PROJECT_HUES[(p.color ?? 0) % PROJECT_HUES.length];
+export const projectColor = (p) => hueColor(projectHue(p));
+
+/** The hue of the `n`th group after the projects (AC-92): the palette's from its turn on, the first
+ *  at least 60° from `above`'s (the group over it; null: none). */
+export function groupHue(n, above) {
+  const far = (h) => above === null || Math.abs(((h - above + 540) % 360) - 180) >= 60;
+  const turn = PROJECT_HUES.map((_, i) => PROJECT_HUES[(n + i) % PROJECT_HUES.length]);
+  return turn.find(far) ?? turn[0];
+}
 
 /** A row's second line (AC-01): host and folder first, then its titles; what runs there (the
  *  program, a quick shell's mark) at the right edge. */
 function rowLine(item) {
-  const sub = item.sub ?? [], dir = sub.findIndex((p) => /^[~/]/.test(p));
+  const sub = subOf(item), dir = sub.findIndex((p) => /^[~/]/.test(p));
   const progs = dir > 0 ? sub.slice(0, dir) : dir < 0 ? sub.slice(0, 1) : [];
   const rest = dir >= 0 ? sub.slice(dir) : sub.slice(1);
   const s = metaLine([...(item.host ? [item.host] : []), ...rest], !!item.host);
@@ -112,7 +123,7 @@ const groupKey = (g) => `${g.kind}\n${g.label}${g.session ? " " + g.session : ""
 
 function matches(item, q) {
   if (!q) return true;
-  return [item.title, item.host ?? "", ...item.sub].join(" ").toLowerCase().includes(q);
+  return [item.title, item.host ?? "", ...subOf(item)].join(" ").toLowerCase().includes(q);
 }
 
 export function el(tag, cls, text) {
@@ -224,6 +235,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   const kids = (top) => under.get(top.id) ?? [];
   const taken = new Set([...projectOf.keys()].flatMap((k) => [k, ...(byId.has(k) ? kids(byId.get(k)).map((it) => it.id) : [])]));
   const box = el("div", "projects");
+  let above = null, tinted = 0;                    // the hue of the group drawn last; the other groups tinted so far
   for (const p of projects) {
     const tops = p.members.map((k) => byId.get(k)).filter(Boolean);
     if (!tops.length) continue;                    // its sessions closed: terminumd forgets it at its next read
@@ -234,6 +246,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     const sec = el("section", "grp project");
     sec.dataset.pid = p.id;
     sec.style.setProperty("--proj", projectColor(p));
+    above = projectHue(p);
     const h = el("h2");
     if (!q) h.dataset.drag = "project";
     const t = el("button", "toggle");
@@ -283,7 +296,9 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     const key = groupKey(g);
     const closed = !q && collapsed.has(key);
     const gs = g.state === "absent" && g.host && down.has(g.host) ? down.get(g.host) : g.state;
-    const sec = el("section", `grp ${g.kind}` + (g.host ? " hostgrp" : "") + (gs && gs !== "attached" ? ` ${gs}` : ""));
+    const sec = el("section", `grp tinted ${g.kind}` + (g.host ? " hostgrp" : "") + (gs && gs !== "attached" ? ` ${gs}` : ""));
+    above = groupHue(tinted++, above);
+    sec.style.setProperty("--proj", hueColor(above));
     if (g.wid) sec.dataset.wid = g.wid;
     const h = el("h2");
     if (g.wid && !q) h.dataset.drag = "group";

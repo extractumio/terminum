@@ -15,6 +15,7 @@ import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { Tree, type EditMode } from "./tree";
 import { bindDrag } from "./tree-drag";
+import { bindDrop } from "./tree-drop";
 import { Viewer } from "./viewer";
 import { PathBar } from "./viewer-path";
 import { Stream } from "./stream";
@@ -281,6 +282,8 @@ const tree = new Tree($("tree"), {
 });
 // a row dragged onto the page's terminal puts its path at the input; a selected one, the selection's (AC-36)
 bindDrag($("tree"), (p) => (tree.selected.has(p) ? [p, ...[...tree.selected].filter((q) => q !== p)] : [p]), () => scope);
+// files dragged from Finder upload into the folder under the pointer, by the tree's host (AC-95)
+bindDrop($("tree"), { root: () => tree.root?.path ?? null, host: () => scope, readOnly: (d) => tree.readOnly(d), mark: (d) => tree.setDrop(d), toast });
 
 const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
   changed: scheduleSave,

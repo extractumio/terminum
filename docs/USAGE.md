@@ -69,6 +69,8 @@ page says how. The page asks terminumd to prove it knows the page's sign-in befo
 and keeps the sign-in in its own origin's storage, never in its address or a cookie (see
 [SECURITY.md](../SECURITY.md)). `tmux -L terminum attach` from any terminal shows the same sessions.
 
+- **Under the list**: New session, Bookmarks / Reminders, Add host and Attach tmux sessions
+  fold into one row of their icons on a computer; move the pointer there and they unfold.
 - **Quick shell**: the button in the header (or "Quick shell below" / "on the left" in the menu)
   opens a shell of its own under the shown pane, in its folder, for quick commands; drag its edge
   to size it, ⇄ moves it, × closes it. It is a tmux window marked with its pane, listed under it.
@@ -84,8 +86,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   agent's answers ended (pale blue), bookmarks (orange) and reminders (pink) stand in the
   history: press one to go there. Settings' Side marks turns them off.
 - **The agent's folder**: when Claude Code works in another folder than where it started (a
-  worktree), the header's folder and the Files tree follow it, and paths it prints open from
-  there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`
+  worktree), its row in the list, the header's folder and the Files tree follow it, and paths
+  it prints open from there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`
   in settings.json for every browser that did not choose).
 - **Ask**: select text in the terminal and press the blue speech bubble with a question mark (under
   the selection's orange [+]); type a question and Add to Chat puts the selection as a Markdown
@@ -116,7 +118,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   in the place of its count; each row's Clone (shown while the pointer is over the row; on a phone always)
   opens a window beside it in its folder; a row hatched with pale lines is unread (its agent finished
   a turn nobody saw); a right click, or a finger
-  rested on a row and lifted, opens its menu (Clone, Add to Project, Mark as Unread or Read, Close, moves). Drag a row, a
+  rested on a row and lifted, opens its menu (Clone, Add to Project, Mark as Unread or Read, Split Below, Right, Left,
+  moves, Move to Session, Close); the header's ⋯ holds the settings. Drag a row, a
   group's or a project's header to reorder: a dashed outline shows where it lands (a finger rests
   a moment first; moving at once scrolls). Projects are named groups
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
@@ -137,6 +140,9 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   dropped file is).
 - **Files and folders dragged from Files** onto the terminal put their paths at the input, quoted,
   without Enter; nothing is uploaded. Drag a selected row to put every selected row's path.
+- **Files dragged from Finder onto the Files tree** upload into the folder under the pointer (a
+  file's row: its folder; below the rows: the root), on this Mac or the pane's host; the folder
+  shows while you drag. A name already there asks Keep Both or Skip: nothing is written over.
 
 ## Your own tmux sessions
 

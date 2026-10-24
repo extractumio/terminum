@@ -149,7 +149,7 @@ fn each_kind_of_name_has_its_scheme() {
 
 #[test]
 fn uploads_take_any_type_but_only_from_the_page() {
-    for path in ["/paste", "/upload"] {
+    for path in ["/paste", "/upload", "/fb/api/fs/upload"] {
         assert_eq!(ask(&L, "POST", path, &local(&[("origin", PAGE), ("content-type", "image/png")]), true), Ok(true));
         assert_eq!(ask(&L, "POST", path, &local(&[("content-type", "image/png")]), true), Err((403, "bad_origin")), "{path}");
         assert_eq!(ask(&L, "POST", path, &local(&[("origin", "http://evil.example")]), true), Err((403, "bad_origin")));

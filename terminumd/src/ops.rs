@@ -195,6 +195,47 @@ pub fn touch(roots: &Roots, parent: &Path, name: &str) -> Result<PathBuf, OpErro
     }
 }
 
+/// Save `data` as a new file `name` in `dir` (a drop on the tree, AC-95), never over an entry
+/// there: written to a hidden part file first, then renamed in under its name, which fails when
+/// the name is taken (rename_exclusive); with `both` it takes the next free "name 2.ext"… instead.
+pub fn upload(roots: &Roots, dir: &Path, name: &str, data: &[u8], both: bool) -> Result<PathBuf, OpError> {
+    use std::os::unix::fs::OpenOptionsExt;
+    check_component(name)?;
+    let first = dir.join(name);
+    check_writable(roots, &first)?;
+    if !dir.is_dir() {
+        return Err(OpError::Missing(format!("{}: No such folder", name_of(dir))));
+    }
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let part = dir.join(format!(".tm-upload-{}-{seq}.part", std::process::id()));
+    let mut f = fs::OpenOptions::new().write(true).create_new(true).custom_flags(libc::O_NOFOLLOW).open(&part).map_err(|e| io(e, &first))?;
+    let result = f.write_all(data).and_then(|()| f.sync_all()).map_err(|e| io(e, &first)).and_then(|()| {
+        for n in 1..=999 {
+            let target = if n == 1 { first.clone() } else { dir.join(numbered(name, n)) };
+            match rename_exclusive(&part, &target) {
+                Ok(()) => return Ok(target),
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && both => continue,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Err(exists_in(name, dir)),
+                Err(e) => return Err(io(e, &target)),
+            }
+        }
+        Err(exists_in(name, dir))
+    });
+    if result.is_err() {
+        let _ = fs::remove_file(&part);
+    }
+    result
+}
+
+/// "notes.txt" as its `n`th: "notes 2.txt"; a name with no extension (or only a leading dot) "name 2".
+fn numbered(name: &str, n: u32) -> String {
+    match name.rfind('.').filter(|&i| i > 0) {
+        Some(i) => format!("{} {n}{}", &name[..i], &name[i..]),
+        None => format!("{name} {n}"),
+    }
+}
+
 /// Rename `path` to `name` in the same folder. A case-only rename is allowed.
 pub fn rename(roots: &Roots, path: &Path, name: &str) -> Result<PathBuf, OpError> {
     let _mutating = MUTATING.lock();

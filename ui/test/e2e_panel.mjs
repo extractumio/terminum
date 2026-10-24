@@ -19,6 +19,7 @@ import {
   base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, within, wsKey,
 } from "./e2e_harness.mjs";
 import { panelMedia } from "./e2e_panel_media.mjs";
+import { panelDrop } from "./e2e_panel_drop.mjs";
 
 // playwright-core is a devDependency; PLAYWRIGHT_CORE may point at another copy
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
@@ -222,6 +223,7 @@ try {
     actual[0] && actual[1] === "none" && !(await page.$eval(".imgview", (v) => v.classList.contains("actual"))), JSON.stringify(actual));
 
   await panelMedia(page, { row });   // AC-64 PDFs, videos, sounds; AC-94 data files
+  await panelDrop(page, { row });    // AC-95 files dropped from Finder on the tree
 
   // AC-55 per-pane memory: the page shows another pane, then this one again, then reloads
   await page.waitForTimeout(600);                      // the workspace write is debounced
@@ -344,7 +346,10 @@ try {
   const openAfter = await page.$$eval("#tree .chev.open", (c) => c.length);
   check("AC-71 … and the expanded folders", openAfter === openBefore && openBefore > 0, `${openAfter} of ${openBefore}`);
   // a save while terminumd is away fails loud and keeps the edit (the tree, all open, scrolled to its row: it draws what shows)
-  const reach = async (p) => { for (let i = 0; i < 40 && !(await page.$(row(p))); i++) await page.$eval("#tree", (t) => { t.scrollTop += t.clientHeight * 0.8; }); };
+  const reach = async (p) => {                     // the tree is virtual: from its top down until the row is drawn
+    if (!(await page.$(row(p)))) { await page.$eval("#tree", (t) => { t.scrollTop = 0; }); await page.waitForTimeout(50); }
+    for (let i = 0; i < 40 && !(await page.$(row(p))); i++) await page.$eval("#tree", (t) => { t.scrollTop += t.clientHeight * 0.8; });
+  };
   await reach("greet.py");
   await page.click(row("greet.py"));
   await page.waitForSelector(".cm-content");

@@ -175,6 +175,12 @@ export class Tree {
   get cursorPath(): string | null { return this.descAt(this.cursor)?.p ?? [...this.selected][0] ?? null; }
   /** May the panel write in folder `dir` (as last reported by the backend). */
   isWritable(dir: string) { return this.nodes.get(dir)?.writable ?? false; }
+  /** Folder `dir` was read and is not writable (a folder not read yet: terminumd decides). */
+  readOnly(dir: string) { const n = this.nodes.get(dir); return !!n?.loaded && !n.writable; }
+
+  /** The folder files dragged over the tree would upload to (AC-95), its rows marked; null: none. */
+  dropAt: string | null = null;
+  setDrop(dir: string | null) { if (dir !== this.dropAt) { this.dropAt = dir; this.touch(); } }
 
   /** Row height follows the theme's font size; read it only when layout may have changed. */
   themeChanged() {
@@ -360,7 +366,7 @@ export class Tree {
     const view: RowView = d.kind === "entry" ? { kind: "entry", dir: d.dir.path, depth: d.depth, row: d.row }
       : d.kind === "note" ? d
       : { kind: "edit", depth: d.depth, folder: this.edit.edit?.mode === "folder", name: this.edit.value };
-    return rowHtml(view, i, { expanded: this.expanded, selected: this.selected, cursor: this.cursor, filter: this.filter, renaming: (p) => this.edit.renaming(p) });
+    return rowHtml(view, i, { expanded: this.expanded, selected: this.selected, cursor: this.cursor, filter: this.filter, renaming: (p) => this.edit.renaming(p), drop: this.dropAt });
   }
 
   private isHiddenPath(p: string) {

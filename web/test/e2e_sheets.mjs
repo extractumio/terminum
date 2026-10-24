@@ -4,7 +4,7 @@
 // it, above its shade (its own rows take the press); a press on the shade or Esc closes it. On a computer a row's menu stays at the pointer.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, openPage, pause, PHONE, pressFab, WIDE } from "./fake.mjs";
+import { drawn, openPage, pause, PHONE, pressFab, WIDE, pressFoot } from "./fake.mjs";
 
 // where `sel` stands against the visible screen, and whether something shades the page
 const geo = (page, sel) => page.evaluate((sel) => {
@@ -55,7 +55,7 @@ export async function webSheets(browser, name) {
   const navOpen = () => page.evaluate(() => document.getElementById("app").classList.contains("nav-open"));
   if (!(await navOpen())) await page.click("#navbtn");
   await pause(page, 300);
-  await page.click("#newsessbtn");
+  await pressFoot(page, "#newsessbtn");
   await pause(page, 200);
   g = await geo(page, "#newsess");
   check("AC-18 phone: a list form (New session) is a centered sheet over its shade", centered(g), JSON.stringify(g));

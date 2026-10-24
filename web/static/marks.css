@@ -79,8 +79,8 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 #askbox #asktext { max-height: 37.5vh; }
 
 /* the list's foot button: the bookmark orange, the bell pink (reminders.css), before "Reminders" on a computer; a phone's blob holds both */
-#marksbtn svg { color: var(--mark); }
-#marksbtn .bell { color: var(--remind-bell); }
+#marksbtn svg, .footpeek svg.two { color: var(--mark); }
+#marksbtn .bell, .footpeek .bell { color: var(--remind-bell); }
 #marksbtn .more svg { margin: 0 4px 0 2px; vertical-align: -2px; }
 #marksbtn > svg.two { display: none; }
 @media (max-width: 860px), (pointer: coarse) { #marksbtn > svg.two { display: block; } #marksbtn > svg.one { display: none; } }

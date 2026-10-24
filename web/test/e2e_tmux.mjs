@@ -5,7 +5,7 @@
 // defaults, messages and hot keys, and custom.css (AC-18, AC-19), and the page's words.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, LAYOUT, openPage, pause, SIZES } from "./fake.mjs";
+import { drawn, group, item, LAYOUT, openPage, pause, SIZES, pressFoot } from "./fake.mjs";
 
 /** Clicks a button of a group's header: the pointer over the header first, where its buttons show. */
 const headClick = async (page, grp, btn) => { await page.hover(`${grp} h2 .label`); await page.click(`${grp} h2 ${btn}`); };
@@ -63,7 +63,7 @@ export async function webTmux(browser, name) {
     // New session: an inline name; terminumd's refusal shows in the form; done, the form goes
     await drawer();
     // a phone's footer is a row of blobs: alike but for the blob's outline, each its own and no circle
-    const foot = await page.evaluate((phone) => [...document.querySelectorAll(".nav-foot > button")].map((b) => {
+    const foot = await page.evaluate((phone) => [...document.querySelectorAll(".nav-foot .footin > button")].map((b) => {
       const s = getComputedStyle(b), i = getComputedStyle(b.querySelector("svg"));
       // the icon's height: Bookmarks / Reminders has two icons side by side
       return [b.id, [s.height, s.width, s.backgroundColor, s.paddingLeft, s.fontWeight, s.justifyContent, i.height, i.backgroundColor].join(" "),
@@ -73,7 +73,7 @@ export async function webTmux(browser, name) {
     check("the session list's footer buttons look alike (a shared class, not one rule per id); on a phone their blobs differ and none is round",
       foot.length === 4 && new Set(foot.map(([, look]) => look)).size === 1
       && (phone ? new Set(radii).size === 4 && !radii.some((r) => /^50%( 50%)*$/.test(r)) : new Set(radii).size === 1), JSON.stringify(foot));
-    await page.click("#newsessbtn");
+    await pressFoot(page, "#newsessbtn");
     await page.fill("#newsessname", "bad:name");
     await page.keyboard.press("Enter");
     await pause(page);
@@ -94,7 +94,7 @@ export async function webTmux(browser, name) {
 
     // Add host
     if (await page.isHidden("#addhostbtn")) await drawer();
-    await page.click("#addhostbtn");
+    await pressFoot(page, "#addhostbtn");
     const first = await page.evaluate(() => document.activeElement?.id);
     await page.keyboard.type("alex@devbox.example -p 2222");
     await page.check("#addhostfiles");
@@ -149,7 +149,7 @@ export async function webTmux(browser, name) {
     // Attach tmux sessions (AC-89): "On" this Mac or a host, the running sessions as ticks, a name for one
     // that does not run yet; a late answer for another place is ignored; a group that waits; detach
     if (await page.isHidden("#addtmuxbtn")) await drawer();
-    await page.click("#addtmuxbtn");
+    await pressFoot(page, "#addtmuxbtn");
     const asked = last("tmuxsessions");
     f.say({ t: "tmuxsessions", server: "devbox:default", names: ["late"] });
     f.say({ t: "tmuxsessions", server: "local:default", names: ["work", "notes"], ends: ["notes"] });
@@ -183,7 +183,7 @@ export async function webTmux(browser, name) {
         && JSON.stringify(last("detachtmux")) === JSON.stringify({ t: "detachtmux", server: "local:default", session: "later" }), JSON.stringify({ absent, detach }));
 
     // a host's other sessions (AC-89): offered once a host just added is attached; later by its icon and menu
-    await page.click("#addhostbtn");
+    await pressFoot(page, "#addhostbtn");
     await page.fill("#addhostssh", "alex@box.example");
     await page.keyboard.press("Enter");
     await pause(page);

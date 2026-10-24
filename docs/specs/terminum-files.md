@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.6.1 |
+| Version | 0.7.0 |
 | Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.7.0 | 2026-10-24 | Owner: files dragged from Finder (or another app) onto the tree upload into the folder under the pointer, on this Mac or the pane's host (AC-95): the folder a row is in (a folder's own row: that folder; below the rows: the root) shows as the target while the drag lasts, and moving up or down picks another among those shown. New route `POST /api/fs/upload?dir=&name=[&both=1]` (the file's bytes, at most 100 MB; under Roots; never over an existing file: refused, or with both=1 saved as "name 2.ext"), forwarded to a host's agent as the other file operations are (terminum.md AC-09). |
 | 0.6.1 | 2026-10-24 | Owner: Esc in the Files tree hides View, the keys staying in the tree, so files are looked at one after another (Enter or a click shows one, Esc hides it); MIDI plays on a fresh install with the SoundFont in the package (terminum.md 0.19.2) (AC-70, AC-64). |
 | 0.6.0 | 2026-10-24 | Owner: a player for every sound, MIDI too, and JSON, YAML, CSV and TSV rendered. A sound the browser plays (MP3, AAC/M4A, WAV, FLAC, Ogg; AIFF and AU in Safari) plays in its player; AU (.au, .snd) and AIFF (.aif, .aiff), which Chrome does not play, are decoded in the panel into WAV; MIDI (.mid, .midi), which no browser plays, is rendered on the Mac by terminumd with a General MIDI SoundFont of the user's (settings.json's midi.soundfont, else ~/.terminum/soundfont.sf2; none is shipped: a bank is tens of MB) into a WAV the same player plays, so it seeks, pauses and sets its volume as any sound; no synthesis of the panel's own; a type nothing here plays says so with Download (AC-64). JSON, YAML, CSV and TSV open Rendered with a Source toggle: JSON and YAML as a tree that folds, CSV and TSV as a table (AC-94). |
 | 0.5.8 | 2026-10-24 | Owner: a PDF opens in its tab in the browser's own PDF viewer (scroll, zoom, find, print), a video and a sound in the browser's player, instead of "Binary file"; each fetched with the sign-in's header and shown from a `blob:` address of its own type (a PDF keeps `application/pdf`: the viewer runs none of the file's script in the page's origin); the page's policy lets a frame show a `blob:` (`frame-src 'self' blob:`) (AC-64; terminum.md 0.18.18). |
@@ -467,6 +468,26 @@ Scenario: AC-94 failure — a file that does not parse
   Then Rendered says why and where ("Line 12, column 4: …") over the Source, which still edits it; a file over the text limit shows as the others do
 ```
 
+### AC-95 — Upload by dropping files on the tree [SHOULD / P1]
+
+```gherkin
+Scenario: AC-95 happy path — the folder under the pointer
+  Given the tree shows "src" expanded (its files "a.ts", "b.ts"), "docs" collapsed and "README.md" at the root
+  When the user drags "photo.png" and "notes.txt" from Finder over "b.ts"
+  Then "src" is the target while the pointer is there: its row and its rows under it marked in the accent, a line at the top of the tree says "Upload 2 files to src"; over "docs" (a folder's own row) "docs"; over "README.md" or below the last row the root
+  When the user drops them over "b.ts"
+  Then each is saved in "src" under its own name (one after another, the bytes as they are, by the tree's host: this Mac or the pane's host, AC-37), the tree shows them, a toast says "Uploaded 2 files to src"
+
+Scenario: AC-95 edge — a name taken, a folder, a read-only place
+  When "notes.txt" exists in "src"
+  Then the panel asks "“notes.txt” is in src already" with Keep Both (saved as "notes 2.txt", the next free number) and Skip; nothing is ever written over
+  And a folder dropped is not uploaded (said in the toast with the others' outcome); a folder outside the writable roots is no target (the drag shows "Read-only: outside writable folders" and drops nothing)
+
+Scenario: AC-95 failure — too large, refused, gone
+  When a file is over 100 MB, the host does not answer or terminumd refuses it
+  Then the toast names the file and terminumd's reason; the files before it stay, those after it are not sent
+```
+
 ### AC-68 — Expand and collapse all [SHOULD / P1]
 
 ```gherkin
@@ -793,6 +814,7 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] 0.5.2 (2026-10-22) — AC-64, AC-67, AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux: View's head, path bar and tab row: text 12 px in, keys 24×24 px with 6 px above, below and right, Reveal on the tabs' row, no Terminal key at WIDE (before: the head 30 px with a 30 px × flush, the path bar 12/6 px, Reveal on a row of its own as `.vbar` had no style, and Terminal shown: controls.css's keys rule, of the same specificity, came later); the picture's margins equal (184/184 px), the checkerboard on the `img` alone, none on the view (before: on the whole view, so a PNG's transparent right part looked like the view and its picture off the middle); a click opens it in the page's full-screen viewer with its name, Esc closes it; Reveal of `sub/deep/note.txt` with its folders closed expands both and selects it (before: nothing); a file in another /tmp folder: no Reveal key, a file under the folder again one), `ui/test/e2e_panel.mjs` (alone, a click toggles the picture's own size) → pass; `node web/test/e2e_all.mjs` 1103, live 95, Panel 138, `make test` (cargo 444 + 1), `scripts/security_check.sh` pass.
 - [x] 0.5.4 (2026-10-24) — AC-67, AC-09 `cd ui && node test/e2e_panel.mjs` 144/144 (the video's blob: revoked 5.6 s after its document's tab closed, red without the sweep; the HTML-named video bytes, the SVG data:, neither runs opened as a page) → pass.
 - [x] 0.5.5 (2026-10-24) — AC-52 `cd ui && node test/e2e_panel.mjs` (a row's dragstart carries {host, paths} and plain text; a selected row the selection) → pass.
+- [x] 0.7.0 (2026-10-24) — AC-95 `cargo test ops::` (a new file with its bytes; a name taken refused, the file kept; both: "notes 2.txt", "notes 3.txt"; a symlink in the name's place taken, never followed; no part file left; outside the roots, a bad name, a folder that is not: refused), `page::upload` (no more than two uploads at once, a slot given back taken again), `auth::checks` (the route takes any type, only with the page's Origin and a sign-in); `cd ui && node test/e2e_panel.mjs` 151 (Chromium: files over a file's row mark its folder and its rows, over a folder's row that folder, below the rows the root, the line says "Upload 2 files to data"; dropped, both saved with their bytes, shown, "Uploaded 2 files to data"; a name taken asks, Keep Both saves "note 2.txt", the file there unchanged); `scripts/e2e_remote.py` 32/32 (through a host's agent: saved, a taken name 409 exists, both=true "dropped 2.bin"). Reviewed: the pragmatic reviewer was started twice and wrote no report in 5 minutes either time (stopped); the main thread's review found that each upload held up to 100 MB with no bound on how many: now one of two upload slots is taken before the body is read, on the Mac and before a forward to a host (429 when busy, 413 over the limit, not "unreachable"). Not done: a collapsed folder does not open while files hover over it; a folder dropped is not uploaded (said); a part file stays if terminumd dies mid-write.
 - [x] 0.5.6 (2026-10-24) — AC-51 `web/test/e2e_header.mjs` (Files' root the agent's folder, the pane's with the switch off) and `scripts/e2e_hooks.py` ("files" says the agent's folder) → pass; see terminum.md 0.18.17.
 - [x] 0.5.7 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit: Esc in the editor's search panel closes only the panel; another Esc hides View, the terminal has the keys, the tabs stay) → pass.
 - [x] 0.5.8, 0.6.0 (2026-10-24) — AC-64, AC-94 `cd ui && node test/e2e_panel.mjs` 148/148 (`e2e_panel_media.mjs`: a PDF in a frame filling its tab and a video in the player, both from blob:, no CSP refusal; an AU decoded into the player; a MIDI file says where to put a SoundFont, and with `TM_TEST_SOUNDFONT` (GeneralUser GS 2.0.3) plays rendered by terminumd; JSON open as a tree in the editor's colors that folds; YAML's two documents; CSV as a table, its quoted comma one cell, numbers right; a bad JSON's line 3, column 8; Source shows the text); `node --test ui/test/dataparse.test.mjs` (JSON's error place, YAML's mappings, flow, quotes, block scalars, anchors and documents, the core schema's scalars, CSV and TSV by RFC 4180) and `pcm.test.mjs` (AU μ-law, PCM and A-law, AIFF, the WAV); `cargo test midi::` (the SoundFont's path, no SoundFont said, the WAV, a song rendered with a real bank, not MIDI said) → pass.

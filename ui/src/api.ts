@@ -174,6 +174,23 @@ export async function midiWav(bytes: ArrayBuffer): Promise<{ url: string; font: 
   return { url: URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/wav" })), font: res.headers.get("x-tm-soundfont") ?? "" };
 }
 
+/** The most a file dropped on the tree may be (terminumd's page::upload::MAX_BYTES). */
+export const UPLOAD_MAX = 100 << 20;
+
+/** A file dropped on the tree saved as a new file `name` in `dir` (AC-95) by `host` (the tree's);
+ *  `both`: under the next free number when the name is taken (else refused: "exists"). */
+export async function uploadFile(dir: string, name: string, file: Blob, both: boolean, host: string | null): Promise<{ path: string }> {
+  const qs = new URLSearchParams({ dir, name, ...(both ? { both: "true" } : {}) });
+  await proveServer();
+  const headers = { "Content-Type": file.type || "application/octet-stream", "X-TM-Client": CLIENT, ...(SECRET ? { "X-TM-Session": SECRET } : {}), ...(host ? { "X-TM-Host": host } : {}) };
+  const res = await fetch(`${BASE}/api/fs/upload?${qs}`, { method: "POST", body: file, headers }).catch(() => null);
+  if (!res) throw new ApiError(0, "network", "terminumd not reachable (restarting?)", null);
+  if (res.status === 413) throw new ApiError(413, "too_large", "Larger than the 100 MB an upload may be", null);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
+  return body;
+}
+
 /** A file's raw answer, fetched with the sign-in; an error as terminumd says it. */
 async function raw(path: string): Promise<Response> {
   const url = rawUrl(path);            // the host shown now, not after the proof (a pane switched meanwhile)

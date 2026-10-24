@@ -7,7 +7,7 @@
 // Alone: node web/test/e2e_marks.mjs [chromium|webkit].
 
 import { fileURLToPath } from "node:url";
-import { pressFab } from "./fake.mjs";
+import { pressFab, pressFoot } from "./fake.mjs";
 import { check, cleanup, playwright, results } from "./check.mjs";
 import { askChecks } from "./e2e_ask.mjs";
 import { open } from "./e2e_widgets.mjs";
@@ -137,14 +137,18 @@ export async function webMarks(browser, name = "") {
   const { page, errors, sent, say } = await open(browser, { history: HISTORY, first: 2000, folds: FOLDS, screen: ["done"], hook: bridge(items), layout: LAYOUT });
   say({ t: "marks", items: ITEMS, error: null });
 
-  // a selection: [+] at the terminal's right edge (a wide window: left of the floating buttons' column), level with it
+  // a selection (a computer): Copy and [+] in the floating buttons' column (in one line with find and the sent history),
+  // Copy level with the selection's first line; the column's other buttons hidden meanwhile
   await selectRow(page, "out 2500 lorem");
   const plus = await page.evaluate(() => {
-    const b = document.getElementById("markadd").getBoundingClientRect(), t = document.getElementById("term");
-    const tr = t.getBoundingClientRect(), s = getSelection().getRangeAt(0).getBoundingClientRect();
-    return { visible: !document.getElementById("markadd").hidden, right: Math.round(tr.left + t.clientWidth - b.right), dy: Math.round(b.top + b.height / 2 - (s.top + s.height / 2)) };
+    const r = (id) => document.getElementById(id).getBoundingClientRect(), add = r("markadd"), copy = r("markcopy");
+    const s = [...getSelection().getRangeAt(0).getClientRects()].find((x) => x.height > 0);
+    return { visible: !document.getElementById("markadd").hidden, lefts: ["findfab", "sentfab", "markcopy", "markadd"].map((id) => Math.round(r(id).left)),
+      dy: Math.round(copy.top + copy.height / 2 - (s.top + s.height / 2)), order: copy.top < add.top,
+      others: ["findfab", "sentfab", "marksfab"].map((id) => getComputedStyle(document.getElementById(id)).visibility) };
   });
-  check(`${at} a selection gets [+] at the terminal's right edge, left of the floating buttons' column, level with it`, plus.visible && plus.right >= 60 && plus.right < 80 && Math.abs(plus.dy) < 12, JSON.stringify(plus));
+  check(`${at} a selection gets Copy and [+] in the floating buttons' column, Copy level with its first line; the column's other buttons hidden`,
+    plus.visible && new Set(plus.lefts).size === 1 && Math.abs(plus.dy) < 12 && plus.order && plus.others.every((v) => v === "hidden"), JSON.stringify(plus));
   const pair = await page.evaluate(() => {
     const c = document.getElementById("markcopy"), a = document.getElementById("markadd");
     const cr = c.getBoundingClientRect(), ar = a.getBoundingClientRect(), cs = getComputedStyle(c);
@@ -158,10 +162,10 @@ export async function webMarks(browser, name = "") {
   const asking = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect();
     return { shown: !g("askfab").hidden, under: r("askfab").top > r("markadd").bottom && r("askfab").top - r("markadd").bottom < 16 && Math.abs(r("askfab").left - r("markadd").left) < 1,
       icon: !!g("askfab").querySelector("svg") && !g("askfab").textContent.trim(), fill: getComputedStyle(g("askfab")).backgroundColor,
-      marks: getComputedStyle(g("marksfab")).visibility, apart: r("markcopy").right < r("sentfab").left };
+      marks: getComputedStyle(g("marksfab")).visibility };
   });
-  check(`${at} Ask shows while text is selected: an icon just under the [+], a pastel cornflower blue; the column stays in sight beside them`,
-    asking.shown && asking.under && asking.icon && /^(rgb\(1[6-8]\d, 1[89]\d, 2[34]\d\)|color\(srgb 0\.[67]\d* 0\.7\d* 0\.9\d*\))$/.test(asking.fill) && asking.marks === "visible" && asking.apart, JSON.stringify(asking));
+  check(`${at} Ask shows while text is selected: an icon just under the [+], a pastel cornflower blue; the column's other buttons hidden`,
+    asking.shown && asking.under && asking.icon && /^(rgb\(1[6-8]\d, 1[89]\d, 2[34]\d\)|color\(srgb 0\.[67]\d* 0\.7\d* 0\.9\d*\))$/.test(asking.fill) && asking.marks === "hidden", JSON.stringify(asking));
   await page.click("#markcopy");
   await page.waitForTimeout(800);                                  // past the buttons' grace after a selection goes
   check(`${at} Copy copies the selected text and keeps the selection for a bookmark`,
@@ -177,6 +181,8 @@ export async function webMarks(browser, name = "") {
   const mark = sent.find((m) => m.t === "mark" && !m.id);
   check(`${at} Save sends the line, the text and the note; the dialog closes`,
     mark?.sid === "S1" && mark.n === 2500 && mark.text.startsWith("out 2500 lorem ipsum") && mark.note === "look again" && !await page.evaluate(() => document.getElementById("markbox").open), JSON.stringify(mark));
+  const back = await page.evaluate(() => ({ add: document.getElementById("markadd").hidden, others: ["findfab", "sentfab"].map((id) => getComputedStyle(document.getElementById(id)).visibility) }));
+  check(`${at} the selection gone, its buttons go and the column's own are back`, back.add && back.others.every((v) => v === "visible"), JSON.stringify(back));
   // its wavy line at once, where it stands, apart from the terminal's edge and the text
   const just = await page.evaluate(() => { const l = document.getElementById("markline"), t = document.getElementById("term"), r = l?.getBoundingClientRect(), tr = t.getBoundingClientRect();
     const row = [...document.querySelectorAll("#term .ln")].find((el) => el.textContent.includes("out 2500 lorem")), txt = row && document.createRange();
@@ -256,7 +262,7 @@ export async function webMarks(browser, name = "") {
   check(`${at} from the list: a bookmark in a fold asks for its lines, opens it and marks the text`,
     sent.some((x) => x.t === "unfold" && x.n === 500) && m?.text === "folded secret line 515" && inView(m), JSON.stringify(m));
   // the list below the sessions has only those no session shows
-  await page.click("#marksbtn");
+  await pressFoot(page, "#marksbtn");
   const left = await page.evaluate(() => {
     const b = document.getElementById("marksbtn"), shown = [...b.querySelectorAll("svg")].filter((s) => s.getBoundingClientRect().width > 0);
     const color = (s) => getComputedStyle(s).color, more = b.querySelector(".more");
@@ -386,7 +392,7 @@ export async function webMarks(browser, name = "") {
   await page.waitForFunction(() => !document.getElementById("mbwhy").hidden, null, { timeout: 5000 }).catch(() => {});
   check(`${at} lines no longer in the history: the bar says so and shows the text and the note`,
     (await page.textContent("#mbwhy")).startsWith(GONE) && (await page.textContent("#mbtext")) === "never printed anywhere" && (await page.textContent("#mbnote")) === "gone");
-  await page.click("#marksbtn");
+  await pressFoot(page, "#marksbtn");
   const closed = await page.evaluate(() => [...document.querySelectorAll("#marklist .mkitem")].find((b) => b.textContent.includes("closed one"))?.querySelector(".closed")?.textContent);
   await page.click('#marklist .mkitem:has-text("closed one")');
   check(`${at} an orphaned bookmark (its session closed) is listed as orphaned; picked, the window closes and its text shows`,

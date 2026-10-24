@@ -5,12 +5,13 @@
 // keeps for the panes made from then on) and the side marks on the terminal's right edge (on
 // unless this browser turned them off: body.nomarks, and a "sidemarks" event for the rail), and
 // Follow the agent's folder (follow.js).
-import { followSwitch } from "./follow.js";
+import { followSwitch, onFollow } from "./follow.js";
 
 const $ = (id) => document.getElementById(id);
 const MD_MIN = 10, MD_MAX = 32;
 
-export function menuPrefs({ store, send, toast }) {
+/** redraw(): the list and the header, again (the switch changes their folders at once). */
+export function menuPrefs({ store, send, toast, redraw }) {
   let base = 14, step = store.get("mdStep", 0), px = base;
   const setIn = (doc) => { try { doc?.documentElement.style.setProperty("--md-size", `${px}px`); } catch { /* another origin */ } };
   function show() {
@@ -23,6 +24,7 @@ export function menuPrefs({ store, send, toast }) {
   document.addEventListener("load", (e) => { if (e.target.tagName === "IFRAME") setIn(e.target.contentDocument); }, true);
   const by = (d) => { step = Math.max(MD_MIN, Math.min(MD_MAX, base + step + d)) - base; store.set("mdStep", step); show(); };
   const follow = followSwitch(store, $("followagent"));
+  onFollow(redraw);
   const marks = (on) => { document.body.classList.toggle("nomarks", !on); $("sidemarks").checked = on; };
   marks(store.get("sideMarks", true) !== false);
   $("sidemarks").addEventListener("change", () => {

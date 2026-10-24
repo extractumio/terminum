@@ -5,12 +5,14 @@
 // deeper it lies, between its siblings'. "~" and "/" are nobody's parent: everything is in them.
 // The lightness and chroma are the page's (--dir-l, --dir-c: style.css), the hue is the folder's.
 
+import { subOf } from "./follow.js";
+
 const START = 250;                   // the first hue: a calm blue
 const NO_PARENT = new Set(["~", "/"]);
 
-/** A row's folder: the first part of its meta line that is a path; keyed with its host. */
+/** A row's folder: the first part of its meta line that is a path (its agent's: follow.js); keyed with its host. */
 export function folderKey(item) {
-  const dir = item.sub?.find((p) => /^[~/]/.test(p));
+  const dir = subOf(item).find((p) => /^[~/]/.test(p));
   return dir ? `${item.host ?? ""}\n${dir.length > 1 ? dir.replace(/\/+$/, "") : dir}` : null;
 }
 

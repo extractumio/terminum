@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Color schemes (AC-12): 20 well-known terminal palettes as swatches in the menu. A press shows
+// Color schemes (AC-12): 19 well-known terminal palettes and a light one of terminum's own (Paper) as swatches in the menu. A press shows
 // the scheme at once over the session's theme (its font and size stay) and keeps it in
 // settings.json (page.colorScheme): one scheme for every browser, each told when it changes;
 // "Theme" goes back to the theme terminumd sends for the session. Each scheme: its
@@ -27,7 +27,8 @@ export const SCHEMES = [
   S("Everforest Dark", "#2d353b", "#d3c6aa", "#d3c6aa", "#543a48", true, "#475258 #e67e80 #a7c080 #dbbc7f #7fbbb3 #d699b6 #83c092 #d3c6aa #475258 #e67e80 #a7c080 #dbbc7f #7fbbb3 #d699b6 #83c092 #d3c6aa"),
   S("Rosé Pine", "#191724", "#e0def4", "#524f67", "#403d52", true, "#26233a #eb6f92 #31748f #f6c177 #9ccfd8 #c4a7e7 #ebbcba #e0def4 #6e6a86 #eb6f92 #31748f #f6c177 #9ccfd8 #c4a7e7 #ebbcba #e0def4"),
   S("Kanagawa", "#1f1f28", "#dcd7ba", "#c8c093", "#2d4f67", true, "#16161d #c34043 #76946a #c0a36e #7e9cd8 #957fb8 #6a9589 #c8c093 #727169 #e82424 #98bb6c #e6c384 #7fb4ca #938aa9 #7aa89f #dcd7ba"),
-  S("Cobalt2", "#193549", "#ffffff", "#f0cc09", "#185588", true, "#000000 #ff0000 #38de21 #ffe50a #1460d2 #ff005d #00bbbb #bbbbbb #555555 #f40e17 #3bd01d #edc809 #5555ff #ff55ff #6ae3fa #ffffff"),
+  // terminum's own light scheme: warm paper, soft pastel hues dark enough to read (4.5:1 for the eight plain ones)
+  S("Paper", "#faf9f5", "#2b2925", "#c4625a", "#e6e3d8", false, "#3d3a35 #b8524a #477a51 #946b1f #4a6fa8 #8f5a9c #36787d #8a8780 #6b675f #c4625a #5a8f64 #a37a2c #5a7fb8 #9d68aa #488b90 #b3afa5"),
 ];
 
 /** The theme with scheme `name`'s colors over it (its font and size kept); the theme itself for none. */

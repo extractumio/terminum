@@ -163,6 +163,29 @@ pub async fn fs_touch(State(app): State<Shared>, Json(b): Json<CreateBody>) -> A
 }
 
 #[derive(Deserialize)]
+pub struct UploadQuery {
+    dir: String,
+    name: String,
+    #[serde(default)]
+    both: bool,
+}
+
+/// `POST /api/fs/upload?dir=&name=[&both=1]`: a file dropped on the tree (AC-95), its bytes as
+/// the body (at most page::upload::MAX_BYTES, read once an upload slot is free), saved as a new file in `dir`.
+pub async fn fs_upload(State(app): State<Shared>, Query(q): Query<UploadQuery>, body: Body) -> ApiResult {
+    let dir = abs(&q.dir)?;
+    let _slot = crate::page::upload::Slot::take()
+        .ok_or_else(|| err(StatusCode::TOO_MANY_REQUESTS, "busy", "Two uploads are running already"))?;
+    let body = axum::body::to_bytes(body, crate::page::upload::MAX_BYTES).await
+        .map_err(|_| err(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Larger than the 100 MB an upload may be"))?;
+    let (app2, at) = (app.clone(), dir.clone());
+    let p = blocking(move || ops::upload(&app2.roots, &at, &q.name, &body, q.both)).await?.map_err(op_err)?;
+    tracing::info!(event = "upload", path = %p.display());
+    app.changed(&[dir], std::slice::from_ref(&p), &[]);
+    Ok((StatusCode::CREATED, Json(json!({"path": p.display().to_string()}))).into_response())
+}
+
+#[derive(Deserialize)]
 pub struct RenameBody {
     path: String,
     name: String,

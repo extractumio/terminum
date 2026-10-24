@@ -82,6 +82,12 @@ button.icon.on { color: var(--accent); }
 .row { height: var(--row); display: flex; align-items: center; gap: 5px; padding-right: 10px; white-space: nowrap; cursor: default; }
 .row:hover { background: var(--bg-hover); }
 .row.sel { background: var(--bg-sel); color: var(--sel-fg); }
+/* files dragged from Finder (AC-95): the folder they would upload to, and where, over the tree's top */
+.row.drop { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.dropnote { position: fixed; z-index: 30; padding: 4px 10px; border-radius: 6px; pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: var(--accent); color: var(--bg); font-size: 12px; font-weight: 600; box-shadow: 0 2px 8px rgb(0 0 0 / .25); }
+.dropnote.ro { background: var(--bad); }
+.dropnote[hidden] { display: none; }
 .row.sel .size, .row.sel .link { color: inherit; opacity: .7; }
 #tree:focus .row.cursor { box-shadow: inset 0 0 0 1px var(--accent); }
 .guides { display: flex; align-self: stretch; flex: none; padding-left: 6px; }
