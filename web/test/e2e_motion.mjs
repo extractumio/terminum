@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Motion (docs/UI-GUIDELINES.md §2.8) against a fake terminumd (fake.mjs), with motion on: a
-// window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses; the
+// window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses, one under the pointer lifts and nods; the
 // selected row settles once; nothing moves in the terminal; with reduced motion nothing moves.
 // The other checks run with reduced motion, so they measure boxes at their place.
 
@@ -90,6 +90,16 @@ export async function webMotion(browser, name) {
   const pulse = await page.evaluate(() => ({ mark: document.getElementById("findfab").dataset.press,
     running: document.getAnimations().filter((a) => a.effect?.pseudoElement === "::before" && a.effect.target?.id === "findfab").length }));
   await page.keyboard.press("Escape");
+  await page.mouse.move(fab.x - 200, fab.y + 200);
+  await pause(page, 400);
+  await page.mouse.move(fab.x + fab.width / 2, fab.y + fab.height / 2);
+  const nod = await page.evaluate(() => new Promise((done) => requestAnimationFrame(() =>
+    done(document.getAnimations().filter((a) => a.animationName === "nod" && a.effect?.target?.closest("#findfab")).length))));
+  await pause(page, 500);
+  const lifted = await page.evaluate(() => { const cs = getComputedStyle(document.getElementById("findfab")); return { scale: cs.scale, translate: cs.translate }; });
+  await page.mouse.move(fab.x - 200, fab.y + 200);
+  check("motion: a blob under the pointer lifts 2 px and grows 12%, its icon nods once",
+    nod === 1 && lifted.scale === "1.12" && lifted.translate === "0px -2px", JSON.stringify({ nod, lifted }));
   check("motion: a pressed key sinks into the panel (its well), nothing scales or ripples; a pressed blob pulses",
     /0px 1px 3px 0px/.test(press.shadow) && /inset/.test(press.shadow) && press.scale === "none" && press.mark === null && press.before === "none" && ["a", "b"].includes(pulse.mark) && pulse.running === 1,
     JSON.stringify({ press, pulse }));

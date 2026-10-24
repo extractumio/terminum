@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The [+] beside a selection in the terminal (AC-57), and Copy above it: they stand at the
-// terminal's right edge (a wide window: left of the floating buttons' column), the [+] level with
-// the selection's end (a phone: in a column where its folded buttons stand), while text is selected; Ask (AC-37) shows then too, under the [+]. It lies outside the terminal's rows
+// The [+] for a selection in the terminal (AC-57), and Copy above it: on a computer in the floating
+// buttons' column, Copy level with the selection's first line, the column's other buttons hidden
+// meanwhile (fold.css); on a phone where its folded buttons stand; while text is selected; Ask
+// (AC-37) shows then too, under the [+]. It lies outside the terminal's rows
 // (their taps, copying and line maths stay as they are). The selection is taken while it is
 // there: a tap on iOS clears it first, and the terminal then catches up and moves its lines.
 import { selectedText } from "./seltext.js";
@@ -9,7 +10,6 @@ import { FLOATING } from "./fold.js";
 
 const KEEP_FOR = 600;          // ms the buttons stay after the selection went (a tap still lands)
 const AFTER_COPY = 5000;       // … after Copy: the [+] may still be wanted
-const COLUMN = 58;             // px from the terminal's right edge to its floating buttons' column (marks.js placeFab)
 
 // The row a range starts on: in a widget's shadow root (AC-56), the row that holds the widget.
 function startRow(range) {
@@ -60,11 +60,13 @@ export function selection(term, view) {
   const inWidget = range.startContainer.getRootNode() instanceof ShadowRoot;
   const raw = (!inWidget && selectedText(term)) || sel.toString(), text = raw.trim();
   if (n === null || !text) return null;
-  const rects = [...range.getClientRects()].filter((r) => r.height > 0);
-  return { n, text, raw, rect: rects.at(-1) ?? range.getBoundingClientRect() };
+  return { n, text, raw, rect: firstRect(range) };
 }
 
-/** Shows `button` beside the selection in `term` (within `main`), `copyButton` above it and
+/** The range's first line on the screen (where the selection starts). */
+const firstRect = (range) => [...range.getClientRects()].find((r) => r.height > 0) ?? range.getBoundingClientRect();
+
+/** Shows `button` while text in `term` (within `main`) is selected, `copyButton` above it and
  *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text, n) (the text
  *  as taken while it was selected). */
 export function markPicker({ term, main, button, copyButton, askButton, view, onPick, onCopy, onAsk }) {
@@ -72,25 +74,17 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
   const floating = matchMedia(FLOATING);
   const show = (on) => { button.hidden = copyButton.hidden = askButton.hidden = !on; };
   const gone = () => { clearTimeout(hide); hide = 0; kept = null; copied = false; show(false); };
+  // Copy, [+], Ask top down in the floating buttons' column (its left: marks.js placeFab): a phone's
+  // where its folded buttons stand (fold.js); a computer's from the selection's first line, kept in the terminal
   const place = () => {
     frame = 0;
-    if (!kept) return;
-    const t = term.getBoundingClientRect(), m = main.getBoundingClientRect(), r = kept.rect;
-    const h = button.offsetHeight || 32, gap = 8, fold = document.getElementById("foldfab");
-    if (floating.matches && fold) {                // a phone: a column where the folded buttons stand, Copy first (fold.js)
-      const x = fold.style.left, y = parseFloat(fold.style.top) || t.top - m.top + 14;
-      [copyButton, button, askButton].forEach((b, i) => Object.assign(b.style, { left: x, top: `${Math.round(y + i * (h + 12))}px` }));
-      return;
-    }
-    // inside the terminal, the [+] level with the selection unless an edge is near (Copy above it, Ask under it)
-    const ah = askButton.offsetHeight || h;
-    const y = Math.min(Math.max(r.top + r.height / 2 - h / 2, t.top + 4 + h + gap), t.bottom - h - gap - ah - 4);
-    const w = button.offsetWidth || 32;              // left of a scroll bar (clientWidth ends there), or of the column
-    const x = `${Math.round(t.left - m.left + term.clientLeft + term.clientWidth - w - (floating.matches ? 6 : COLUMN + 10))}px`;
-    button.style.top = `${Math.round(y - m.top)}px`;
-    copyButton.style.top = `${Math.round(y - h - gap - m.top)}px`;
-    button.style.left = copyButton.style.left = x;
-    Object.assign(askButton.style, { top: `${Math.round(y + h + gap - m.top)}px`, left: x });
+    const lead = document.getElementById(floating.matches ? "foldfab" : "findfab");
+    if (!kept || !lead) return;
+    const h = button.offsetHeight || 32, step = h + 12, x = lead.style.left;
+    const t = term.getBoundingClientRect(), m = main.getBoundingClientRect();
+    const y = floating.matches ? parseFloat(lead.style.top) || t.top - m.top + 14
+      : Math.min(Math.max(kept.rect.top + kept.rect.height / 2 - h / 2, t.top + 4), t.bottom - 2 * step - h - 4) - m.top;
+    [copyButton, button, askButton].forEach((b, i) => Object.assign(b.style, { left: x, top: `${Math.round(y + i * step)}px` }));
   };
   const later = () => { if (!frame) frame = requestAnimationFrame(place); };
   let pending = 0;                                 // a drag changes the selection on every move: once a frame
@@ -109,13 +103,10 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
       hide = setTimeout(gone, copied ? AFTER_COPY : KEEP_FOR);
     }
   };
-  // the selection moves with the view: where it is now
+  // the selection moves with the view: its first line where it is now
   term.addEventListener("scroll", () => {
     const sel = getSelection(), range = kept && sel?.rangeCount ? selectedRange(sel, term) : null;
-    if (range) {
-      const rects = [...range.getClientRects()].filter((r) => r.height > 0);
-      if (rects.length) kept.rect = rects.at(-1);
-    }
+    if (range) kept.rect = firstRect(range);
     later();
   }, { passive: true });
   for (const b of [button, copyButton, askButton]) b.addEventListener("mousedown", (e) => e.preventDefault());   // the selection stays
