@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.6.0 |
+| Version | 0.6.1 |
 | Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.1 | 2026-10-24 | Owner: Esc in the Files tree hides View, the keys staying in the tree, so files are looked at one after another (Enter or a click shows one, Esc hides it); MIDI plays on a fresh install with the SoundFont in the package (terminum.md 0.19.2) (AC-70, AC-64). |
 | 0.6.0 | 2026-10-24 | Owner: a player for every sound, MIDI too, and JSON, YAML, CSV and TSV rendered. A sound the browser plays (MP3, AAC/M4A, WAV, FLAC, Ogg; AIFF and AU in Safari) plays in its player; AU (.au, .snd) and AIFF (.aif, .aiff), which Chrome does not play, are decoded in the panel into WAV; MIDI (.mid, .midi), which no browser plays, is rendered on the Mac by terminumd with a General MIDI SoundFont of the user's (settings.json's midi.soundfont, else ~/.terminum/soundfont.sf2; none is shipped: a bank is tens of MB) into a WAV the same player plays, so it seeks, pauses and sets its volume as any sound; no synthesis of the panel's own; a type nothing here plays says so with Download (AC-64). JSON, YAML, CSV and TSV open Rendered with a Source toggle: JSON and YAML as a tree that folds, CSV and TSV as a table (AC-94). |
 | 0.5.8 | 2026-10-24 | Owner: a PDF opens in its tab in the browser's own PDF viewer (scroll, zoom, find, print), a video and a sound in the browser's player, instead of "Binary file"; each fetched with the sign-in's header and shown from a `blob:` address of its own type (a PDF keeps `application/pdf`: the viewer runs none of the file's script in the page's origin); the page's policy lets a frame show a `blob:` (`frame-src 'self' blob:`) (AC-64; terminum.md 0.18.18). |
 | 0.5.7 | 2026-10-24 | Owner: Esc in an open View hides it and gives the terminal its keys, as its × does (its tabs stay); an Esc that the editor takes first (its search panel, a completion list, a dialog) does only that (AC-70). |
@@ -401,8 +402,8 @@ Scenario: AC-64 happy path — every sound
   When the user opens a sound
   Then one the browser plays (MP3, AAC and M4A, WAV, FLAC, Ogg, Opus; AIFF and AU in Safari) plays in the browser's player
   And an AU (.au, .snd: μ-law, A-law, 8-, 16-, 24-, 32-bit and float PCM) or an AIFF (.aif, .aiff: 8-, 16-, 24- and 32-bit PCM) the browser does not play is decoded in the panel into a WAV and plays in the same player; one it cannot decode says why
-  And a MIDI file (.mid, .midi, .kar; formats 0 and 1) is sent to terminumd (POST /api/midi, at most 4 MB, also from a remote host's file: the page has its bytes), which renders it with the SoundFont named in settings.json's midi.soundfont (else ~/.terminum/soundfont.sf2; read once and kept while its file is unchanged; at most 10 minutes, 44.1 kHz stereo, rendered a block at a time) into a WAV the same player plays: it seeks, pauses and sets its volume as any sound; the bank's name shows under it
-  But with no SoundFont there the tab says "No SoundFont for MIDI: put a General MIDI .sf2 at ~/.terminum/soundfont.sf2 or name one in settings.json (midi.soundfont)"; a file it cannot read says why
+  And a MIDI file (.mid, .midi, .kar; formats 0 and 1) is sent to terminumd (POST /api/midi, at most 4 MB, also from a remote host's file: the page has its bytes), which renders it with the SoundFont named in settings.json's midi.soundfont (else ~/.terminum/soundfont.sf2, else the package's GeneralUser GS 2.0.3; read once and kept while its file is unchanged; at most 10 minutes, 44.1 kHz stereo, rendered a block at a time) into a WAV the same player plays: it seeks, pauses and sets its volume as any sound; the bank's name shows under it
+  But with none of them readable the tab says "No SoundFont for MIDI: put a General MIDI .sf2 at ~/.terminum/soundfont.sf2 or name one in settings.json (midi.soundfont)"; a file it cannot read says why
   And a sound nothing here plays says "This browser cannot play <type>" with Download (Open with default app on this Mac's own page)
 
 Scenario: AC-64 edge — svg is inert
@@ -522,6 +523,8 @@ Scenario: AC-70 happy path — a wide page
   Then View is a window over the terminal with its tabs and a bar showing the full path (selectable, with a copy button and a toast "Copied …"); × or closing its last file closes it; the terminal keeps its keys
   When the user presses Esc in View (its file, its tabs or its head; at any width)
   Then View hides as its × hides it (its tabs stay) and the terminal is shown with the keys; an Esc the editor takes first (its search panel, a completion list, a dialog, a rename) does only that
+  When the user opened a file from the tree (Enter or a click: the tree keeps the keys) and presses Esc in the tree
+  Then View hides and the keys stay in the tree, so the next file is a ↓ and Enter away; an Esc in the filter clears it, in a rename cancels it, as before
   And at WIDE it has no Terminal key (its × closes it); its head, the path bar and the tab row stand on one grid: their text 12 px from the left, their keys (×, copy, Reveal beside the tabs) 24 px with 6 px above, below and to the right
 
 Scenario: AC-70 happy path — a narrow page
@@ -793,3 +796,4 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] 0.5.6 (2026-10-24) — AC-51 `web/test/e2e_header.mjs` (Files' root the agent's folder, the pane's with the switch off) and `scripts/e2e_hooks.py` ("files" says the agent's folder) → pass; see terminum.md 0.18.17.
 - [x] 0.5.7 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit: Esc in the editor's search panel closes only the panel; another Esc hides View, the terminal has the keys, the tabs stay) → pass.
 - [x] 0.5.8, 0.6.0 (2026-10-24) — AC-64, AC-94 `cd ui && node test/e2e_panel.mjs` 148/148 (`e2e_panel_media.mjs`: a PDF in a frame filling its tab and a video in the player, both from blob:, no CSP refusal; an AU decoded into the player; a MIDI file says where to put a SoundFont, and with `TM_TEST_SOUNDFONT` (GeneralUser GS 2.0.3) plays rendered by terminumd; JSON open as a tree in the editor's colors that folds; YAML's two documents; CSV as a table, its quoted comma one cell, numbers right; a bad JSON's line 3, column 8; Source shows the text); `node --test ui/test/dataparse.test.mjs` (JSON's error place, YAML's mappings, flow, quotes, block scalars, anchors and documents, the core schema's scalars, CSV and TSV by RFC 4180) and `pcm.test.mjs` (AU μ-law, PCM and A-law, AIFF, the WAV); `cargo test midi::` (the SoundFont's path, no SoundFont said, the WAV, a song rendered with a real bank, not MIDI said) → pass.
+- [x] 0.6.1 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` 111/111 (Chromium and WebKit: a file opened from the tree, Esc in the tree hides View, the page's keys on Files and Files' on the tree) → pass.

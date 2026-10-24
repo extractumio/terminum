@@ -18,9 +18,11 @@ configuration. The overview is in the [README](../README.md).
   highlighting and rendered Markdown (its ```mermaid fences drawn as diagrams, "Source" shows
   their text), JSON and YAML as a tree, CSV and TSV as a table (Source shows the text),
   pictures, PDFs in the browser's own viewer, videos and sounds in its player (AU and AIFF
-  decoded where the browser does not play them; MIDI rendered by terminumd with your General
-  MIDI SoundFont: `~/.terminum/soundfont.sf2` or `midi.soundfont` in settings.json, none
-  shipped), create, rename, Trash, live refresh; Esc in View hides it and goes back to the terminal; on a wide window it is docked beside the
+  decoded where the browser does not play them; MIDI rendered by terminumd with the General
+  MIDI SoundFont that comes with terminum, GeneralUser GS, or yours: `~/.terminum/soundfont.sf2`
+  or `midi.soundfont` in settings.json), create, rename, Trash, live refresh; Esc in View hides
+  it and goes back to the terminal, Esc in the tree hides it and leaves the keys there (Enter,
+  Esc, ↓, Enter… looks at one file after another); on a wide window it is docked beside the
   terminal, open or closed for each session, its width set by dragging its border with the
   terminal; on a phone it is a view in its place.
 - **Sizing**: the pane follows the page you use: the one that opens it, comes to the front or
@@ -121,7 +123,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   on every browser; a right click on a project's header, or its ⋯, opens its menu (New Session,
   Rename, moves among the projects, Ungroup, Close Project, which asks first); a tmux session's group
   has the same kind of menu (New Session, moves, Close Group).
-  ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish).
+  ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish);
+  ⌘X cuts the text selected in a coding agent's input box.
 - **On a phone**: the floating buttons but the keyboard's two fold into ⟨…⟩ at the top right; a tap
   shows them for 3 s. They hide while your finger scrolls. A selection shows the page's Copy, [+]
   and Ask there instead of iOS's menu. On the input: a finger held still half a second and lifted
