@@ -69,6 +69,7 @@ chmod 755 "$tmp/e2e-c"
 stage e2e-c "$tmp/e2e-c"
 check "the package's terminumd says its build" [ "$("$tmp/pkg-e2e-a/terminum/agents/$plat/terminumd" --version)" = e2e-a ]
 check "the package holds no script" [ -z "$(find "$tmp/pkg-e2e-a/terminum" -name '*.py' -o -name terminum -type f)" ]
+check "the package holds the General MIDI SoundFont and its license (AC-64)" [ -s "$tmp/pkg-e2e-a/terminum/soundfonts/GeneralUser-GS.sf2" -a -s "$tmp/pkg-e2e-a/terminum/soundfonts/GeneralUser-GS-LICENSE.txt" ]
 
 # AC-08: install, with tmux not on PATH
 notmux=""
@@ -82,6 +83,7 @@ check "install says how other devices reach it" has "$out" "tailscale serve --bg
 check "install says tmux is needed" has "$out" "tmux is needed for terminals: brew install tmux"
 check "terminumd reports e2e-a on the socket" is_build e2e-a
 check "current → e2e-a" link current e2e-a
+check "the installed build has the SoundFont beside its terminumd" [ -s "$root/builds/e2e-a/soundfonts/GeneralUser-GS.sf2" ]
 check "~/.terminum is 0700" mode "$root" 700
 check "the socket is 0600" mode "$sock" 600
 check "the log is 0600" mode "$root/logs/terminumd.log" 600

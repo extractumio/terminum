@@ -114,6 +114,13 @@ export async function liveView(page, { work }) {
     const afterEsc = { shown: await shownView(), focus: await page.evaluate(() => document.activeElement?.id ?? null), tabs: await view.evaluate(() => document.querySelectorAll(".tab").length) };
     check("AC-70 Esc in View's search panel closes only the panel; another Esc hides View and the terminal takes the keys, its tabs kept",
       !afterSearch.panel && afterSearch.shown && !afterEsc.shown && afterEsc.focus === "kbd" && afterEsc.tabs > 0, JSON.stringify({ afterSearch, afterEsc }));
+    // a file opened from the tree, the keys still there: Esc in the tree hides View and leaves them there
+    await open(path.join(work, "sub/deep/note.txt"));
+    await files.focus("#tree");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => getComputedStyle(document.getElementById("filewin")).display === "none" || document.getElementById("filewin").hidden, null, { timeout: 3000 }).catch(() => {});
+    const fromTree = { shown: await shownView(), page: await page.evaluate(() => document.activeElement?.id ?? null), tree: await files.evaluate(() => !!document.activeElement?.closest("#tree")) };
+    check("AC-70 Esc in the Files tree hides View, the keys staying in the tree", !fromTree.shown && fromTree.page === "files" && fromTree.tree, JSON.stringify(fromTree));
   } finally {
     fs.rmSync(away, { recursive: true, force: true });
   }

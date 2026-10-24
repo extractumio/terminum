@@ -239,6 +239,13 @@ export async function webProjects(browser, name) {
   await pause(page, 150);
   const keys = sent.filter((m) => m.t === "in").slice(n).map((m) => m.data);
   check("AC-03 ⌘Z sends the program's undo (Ctrl+_), ⌘⇧Z fish's redo (Alt+/)", keys.join() === "\x1f,\x1b/", JSON.stringify(keys));
+  // with nothing holding the keys (a selection made with the pointer leaves them on the page) ⌘Z still undoes
+  await page.evaluate(() => document.activeElement?.blur());
+  const n2 = sent.filter((m) => m.t === "in").length;
+  await page.keyboard.press("Meta+KeyZ");
+  await pause(page, 150);
+  const free = sent.filter((m) => m.t === "in").slice(n2).map((m) => m.data);
+  check("AC-03 ⌘Z with nothing holding the keys still sends the program's undo", free.join() === "\x1f", JSON.stringify(free));
   await page.click('#sessions .item[data-id$="%4"]');
   await pause(page, 200);
   await page.click("#term");

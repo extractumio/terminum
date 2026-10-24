@@ -347,6 +347,8 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "/" && !inField) { e.preventDefault(); filterEl.focus(); return; }
   // in View an Esc nothing took first (the editor's search panel, a completion list) hides it (AC-70)
   if (e.key === "Escape" && VIEW && !e.defaultPrevented && !t.closest(".cm-panels, .cm-tooltip") && escapedOutside()) { e.preventDefault(); return; }
+  // in the tree it hides View too, the keys staying here: the next file is a ↓ and Enter away
+  if (e.key === "Escape" && !VIEW && !e.defaultPrevented && t.closest("#tree") && escapedOutside()) return;
   if (e.key === "Escape" && t.closest("#viewer") && !t.closest(".cm-panels")) { tree.focus(); return; }
   if (inField) return;
   const inTree = !!t.closest("#tree");

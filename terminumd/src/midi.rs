@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! MIDI files rendered into WAV for View's player (AC-64): browsers play no MIDI. The page sends
 //! the file's bytes (it has them, from this Mac or a host); terminumd renders them with a General
-//! MIDI SoundFont of the user's (settings.json's `midi.soundfont`, else `~/.terminum/soundfont.sf2`;
-//! none is shipped) through rustysynth, the bank read once and kept while its file is unchanged.
+//! MIDI SoundFont (settings.json's `midi.soundfont`, else `~/.terminum/soundfont.sf2`, else the
+//! package's GeneralUser GS beside this build) through rustysynth, the bank read once and kept
+//! while its file is unchanged.
 
 use std::io::Cursor;
 use std::path::PathBuf;
@@ -29,12 +30,21 @@ const TAIL: f64 = 2.0;
 /// The SoundFont last read: its path, modification time and bank.
 static BANK: Mutex<Option<(PathBuf, SystemTime, Arc<SoundFont>)>> = Mutex::new(None);
 
-/// Where the SoundFont is: settings.json's `midi.soundfont` (`~/` the home), else the default.
+/// The package's SoundFont, in the build's folder (scripts/package.py).
+const BUNDLED: &str = "soundfonts/GeneralUser-GS.sf2";
+
+/// Where the SoundFont is: settings.json's `midi.soundfont` (`~/` the home), else the user's
+/// `~/.terminum/soundfont.sf2` when there is one, else the package's beside this terminumd
+/// (builds/<build>/agents/<platform>/terminumd: three folders up).
 pub fn soundfont_path(named: Option<&str>) -> PathBuf {
+    let own = crate::config::tm_home().join("soundfont.sf2");
     match named {
         Some(p) if p.starts_with("~/") => crate::config::home().join(&p[2..]),
         Some(p) => PathBuf::from(p),
-        None => crate::config::tm_home().join("soundfont.sf2"),
+        None if own.is_file() => own,
+        None => std::env::current_exe().ok()
+            .and_then(|exe| exe.ancestors().skip(1).take(4).map(|d| d.join(BUNDLED)).find(|p| p.is_file()))
+            .unwrap_or(own),
     }
 }
 

@@ -79,6 +79,8 @@ export function undoTouch({ button, field, menu, undo, paste, can }) {
     if (c.redo) items.push(["Redo", () => undo(true)]);
     if (items.length) menu.show(items, x - 105, y - 60 - items.length * 44, true);
   };
+  /** ⌘X: the menu's Cut, when it applies (idekeys.js); whether it did. */
+  editMenu.cut = () => { const c = can(); return !!c.cut && (c.cut(), true); };
   longPress(button, () => button, () => { const r = button.getBoundingClientRect(); editMenu(r.right - 105, r.top); });
   field.addEventListener("beforeinput", (e) => {
     if (e.inputType !== "historyUndo" && e.inputType !== "historyRedo") return;
