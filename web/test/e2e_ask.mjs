@@ -15,7 +15,10 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   await page.click("#askfab");
   await page.waitForSelector("#askbox[open]", { timeout: 3000 }).catch(() => {});
   const dialog = await page.evaluate(() => ({ text: document.getElementById("asktext").textContent, off: document.querySelector("#askbox .primary").disabled, noSend: document.getElementById("asksend").hidden,
-    focused: document.activeElement?.id, gone: document.getElementById("askfab").hidden }));
+    focused: document.activeElement?.id, gone: document.getElementById("askfab").hidden, label: !!document.querySelector("#askbox label"),
+    named: document.getElementById("askq").getAttribute("aria-label"), fill: getComputedStyle(document.getElementById("askq")).backgroundImage }));
+  check(`${at} Ask: its field has no "Question" label (a comment or a task as often), a name for screen readers, and no gradient in focus`,
+    !dialog.label && !!dialog.named && dialog.fill === "none" && dialog.focused === "askq", JSON.stringify(dialog));
   const placed = await page.evaluate(() => { const box = document.getElementById("askbox"), b = box.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
     return { width: box.offsetWidth, dx: Math.round(b.left + b.width / 2 - (t.left + t.width / 2)), dy: Math.round(b.top + b.height / 2 - (t.top + t.height / 2)), termLeft: Math.round(t.left) }; });
   check(`${at} Ask: its dialog 600 px wide (a quarter larger), centered on the terminal, not on the window`,

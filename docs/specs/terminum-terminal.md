@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.9 |
+| Version | 0.4.10 |
 | Date | 2026-10-23 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.10 | 2026-10-23 | Owner: Ask's field has no "Question" label (it holds a comment or a task as often as a question) and says "Your comment or task about it"; a field in focus keeps its fill, edged in the accent, without the accent gradient (every field: the page's and the Files panel's filter) (AC-37; UI-GUIDELINES.md §6). |
 | 0.4.9 | 2026-10-23 | Owner: the quotes ran together in the agent's box (no blank line after a quote or its question) and were folded into "[Pasted text #2 +5 lines]". The quote is a Markdown quote ("> Quote #0007", then each of its lines after "> "), a blank line after it and after the question; in a coding agent's box it is typed (its new lines Ctrl+J), so the agent shows it whole, unless it would fill more than half the pane's rows (a box taller than the pane breaks the agent's redraw, 0.4.7): then it is pasted and folded, as is any quote in a shell (AC-37). |
 | 0.4.8 | 2026-10-23 | Owner: Add to Chat leaves the view where it was (the paste, as typing, brought it to the input's cursor for 3 s, away from the text the user was reading); Send to Agent still goes to the input, where the answer comes (AC-37). |
 | 0.4.7 | 2026-10-23 | Owner: Ask's quote is compact: `Quote #0007: «…»` on its first line, the question under it, no Quote Start/End or rule, the quote's blank lines and line ends' spaces left out, a new line after it (not a blank one). Three quotes at a phone's 45 columns made Claude Code's box taller than the pane's 32 rows, and its redraw then wrote over the answer on the screen (an item of it gone, rows jumbled, the answer reprinted); each quote now takes 4–5 rows fewer (AC-37). |

@@ -52,8 +52,7 @@
   --icon-ink: color-mix(in srgb, var(--t-fg) 72%, var(--t-bg));
   --row-inset: var(--sp-1);   /* the room round the list's buttons, alike on every side: from its right edge, a header's top and bottom (one column) */
   --field-fill: var(--surface-2);  --field-px: 12px;  --field-edge: var(--m-well);   /* a field at rest */
-  --field-focus-fill: linear-gradient(180deg, color-mix(in srgb, var(--accent) 30%, var(--field-fill)), color-mix(in srgb, var(--accent) 6%, var(--field-fill)));
-  --field-focus-edge: var(--m-well), inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);   /* lit from the top, not ringed */
+  --field-focus-edge: var(--m-well), inset 0 0 0 1px color-mix(in srgb, var(--accent) 65%, transparent);   /* a field in focus: edged in the accent, no gradient */
   --pane-shadow: var(--m-edge), 0 0 0 1px rgb(0 0 0 / .18), 0 16px 40px -6px color-mix(in srgb, #000 calc(var(--shadow-a) * 1.2), transparent);
   --dialog-shadow: var(--m-edge), 0 0 0 1px rgb(0 0 0 / .22), 0 22px 70px 14px color-mix(in srgb, #000 calc(var(--shadow-a) * 1.4), transparent);
   --scrim: color-mix(in srgb, #000 45%, transparent);   /* behind a modal: a dialog, a pane from a floating button */

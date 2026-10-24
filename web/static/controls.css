@@ -57,12 +57,12 @@
 .seg button:is([aria-pressed="true"], [aria-selected="true"]) { color: var(--t-fg); background-color: var(--key-fill-hover);
   background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 
-/* ---- fields: a recess at rest; in focus lit from the top in the accent, never a hard ring ---- */
+/* ---- fields: a recess at rest; in focus edged in the accent, its fill as at rest (no gradient) ---- */
 :is(.field, .search, .filter, .inline-edit input, #findq) { border: 0; border-radius: var(--key-r); color: inherit;
   background-color: var(--field-fill); box-shadow: var(--field-edge); }
 :is(#mbtext, #marktext, #asktext) { border-radius: var(--key-r); box-shadow: var(--field-edge); }   /* a quote: a field's recess, the terminal's ground */
 :is(.field, .search, .filter, .inline-edit input, #findq):is(:focus, :focus-within) { outline: none;
-  background-image: var(--field-focus-fill); box-shadow: var(--field-focus-edge); }
+  box-shadow: var(--field-focus-edge); }
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 
 /* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
