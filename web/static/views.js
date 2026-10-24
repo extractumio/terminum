@@ -39,6 +39,7 @@ export class Views {
     $("sideclose").addEventListener("click", () => this.setDocked(false));
     $("fileclose").addEventListener("click", () => this.show("term"));
     $("backterm").addEventListener("click", () => this.show("term"));
+    $("filewin").addEventListener("keydown", (e) => { if (e.key === "Escape" && !e.defaultPrevented) this.escape(); });   // its head, its keys
     WIDE.addEventListener("change", () => {
       // The open view moves between the main column and its wide place.
       if (WIDE.matches && this.current === "file") this.floating = true;
@@ -59,6 +60,13 @@ export class Views {
     else if (name === "file") this.floating = clicked ? !this.floating : true;
     else this.floating = false;
     this.layout();
+  }
+
+  /** Esc in View (its frame tells, fb-esc, or its head): hidden as its × hides it, the terminal shown with the keys (AC-70). */
+  escape() {
+    if (document.activeElement === $("file")) $("file").blur();
+    this.show("term");
+    this.onBack();
   }
 
   /** ⌘B: Files open or closed (docked at WIDE, else in the terminal's place). */
@@ -227,6 +235,7 @@ export class Views {
     if (e.origin !== location.origin || typeof e.data?.path !== "string") return;
     const parked = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.contentWindow === e.source);
     if (parked && e.data.type === "fb-empty") return void parked.remove();   // a waiting View closed its last file
+    if (e.source === $("file").contentWindow && e.data.type === "fb-esc") return this.escape();
     if (e.source === $("file").contentWindow && e.data.type === "fb-empty") {
       document.querySelector('button[data-view="file"]').disabled = true;
       if (!this.floating && this.current !== "file") return;

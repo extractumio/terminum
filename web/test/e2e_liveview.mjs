@@ -99,6 +99,21 @@ export async function liveView(page, { work }) {
     await open(path.join(work, "pic.png"));
     const back2 = await view.evaluate(() => !!document.querySelector('#tools [data-act="reveal"]'));
     check("AC-67 Reveal in tree is not offered for a file outside the tree's folder, and is again for one in it", !offered && back2, JSON.stringify({ offered, back2 }));
+    // Esc in View hides it as its × does and gives the terminal the keys; an Esc the editor's search panel takes closes only that (AC-70)
+    await open(path.join(work, "sub/deep/note.txt"));
+    const shownView = () => page.evaluate(() => getComputedStyle(document.getElementById("filewin")).display !== "none" && !document.getElementById("filewin").hidden);
+    await view.click(".cm-content");
+    await page.keyboard.press(process.platform === "darwin" ? "Meta+f" : "Control+f");
+    await view.waitForSelector(".cm-panels .cm-search", { timeout: 3000 }).catch(() => {});
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(200);
+    const afterSearch = { panel: await view.evaluate(() => !!document.querySelector(".cm-panels .cm-search")), shown: await shownView() };
+    await view.click(".cm-content");
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => getComputedStyle(document.getElementById("filewin")).display === "none" || document.getElementById("filewin").hidden, null, { timeout: 3000 }).catch(() => {});
+    const afterEsc = { shown: await shownView(), focus: await page.evaluate(() => document.activeElement?.id ?? null), tabs: await view.evaluate(() => document.querySelectorAll(".tab").length) };
+    check("AC-70 Esc in View's search panel closes only the panel; another Esc hides View and the terminal takes the keys, its tabs kept",
+      !afterSearch.panel && afterSearch.shown && !afterEsc.shown && afterEsc.focus === "kbd" && afterEsc.tabs > 0, JSON.stringify({ afterSearch, afterEsc }));
   } finally {
     fs.rmSync(away, { recursive: true, force: true });
   }

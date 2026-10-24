@@ -10,7 +10,7 @@ import {
 } from "./api";
 import { renderOffer } from "./host-offer";
 import { contextMenu } from "./context-menu";
-import { acceptFromPage, emptiedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
+import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { Tree, type EditMode } from "./tree";
@@ -345,6 +345,8 @@ document.addEventListener("keydown", (e) => {
   const t = e.target as HTMLElement;
   const inField = t.matches("input, textarea") || !!t.closest(".cm-editor");
   if (e.key === "/" && !inField) { e.preventDefault(); filterEl.focus(); return; }
+  // in View an Esc nothing took first (the editor's search panel, a completion list) hides it (AC-70)
+  if (e.key === "Escape" && VIEW && !e.defaultPrevented && !t.closest(".cm-panels, .cm-tooltip") && escapedOutside()) { e.preventDefault(); return; }
   if (e.key === "Escape" && t.closest("#viewer") && !t.closest(".cm-panels")) { tree.focus(); return; }
   if (inField) return;
   const inTree = !!t.closest("#tree");

@@ -107,7 +107,7 @@ async function wide(browser, name) {
     if (await files.$(".tab")) throw new Error("a tab opened in Files too");
   });
   await liveView(page, { work: WORK });
-  await page.click("#fileclose");
+  if (await page.isVisible("#fileclose")) await page.click("#fileclose");   // liveView may have hidden it (Esc)
   await liveFolds(page, { tmux, work: WORK });
   await liveLimit(page, { tmux, work: WORK });
   await liveKeys(page, { tmux, work: WORK });
