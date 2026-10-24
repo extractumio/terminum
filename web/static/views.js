@@ -69,6 +69,13 @@ export class Views {
     this.onBack();
   }
 
+  /** Esc in Files' tree: View's window hidden, the keys left in the tree (AC-70). */
+  hideView() {
+    if (!WIDE.matches || !this.floating) return;
+    this.floating = false;
+    this.layout();
+  }
+
   /** ⌘B: Files open or closed (docked at WIDE, else in the terminal's place). */
   toggleFiles() {
     if (WIDE.matches) this.setDocked(!this.docked);
@@ -236,6 +243,7 @@ export class Views {
     const parked = [...$("filewin").querySelectorAll("iframe[data-sid]")].find((f) => f.contentWindow === e.source);
     if (parked && e.data.type === "fb-empty") return void parked.remove();   // a waiting View closed its last file
     if (e.source === $("file").contentWindow && e.data.type === "fb-esc") return this.escape();
+    if (e.source === $("files").contentWindow && e.data.type === "fb-esc") return this.hideView();
     if (e.source === $("file").contentWindow && e.data.type === "fb-empty") {
       document.querySelector('button[data-view="file"]').disabled = true;
       if (!this.floating && this.current !== "file") return;
