@@ -4,6 +4,7 @@
 //! on the socket (no real terminumd, no launchd, no tmux), and a stub launchctl.
 
 mod cmd_tests;
+mod folders_tests;
 mod hooks_tests;
 mod import_tests;
 mod install_tests;
@@ -135,7 +136,9 @@ pub fn serve(sock: &Path, routes: HashMap<String, Route>) -> Served {
             }
             let Ok(mut conn) = conn else { continue };
             let Some(req) = read_request(&conn) else { continue };
-            let (status, answer) = match routes.get(&format!("{} {}", req.0, req.1)) {
+            // a route named without its query answers any query
+            let bare = format!("{} {}", req.0, req.1.split('?').next().unwrap_or_default());
+            let (status, answer) = match routes.get(&format!("{} {}", req.0, req.1)).or_else(|| routes.get(&bare)) {
                 Some(f) => f(&req.2),
                 None => (404, json!({"error": "not_found", "message": "no route"})),
             };

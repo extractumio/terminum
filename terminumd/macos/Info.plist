@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial -->
+<!-- Embedded into macOS builds as __TEXT,__info_plist (build.rs): the identity macOS keeps
+     folder grants for, and the reasons it shows when a terminal first reads such a folder (AC-08). -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleIdentifier</key>
+	<string>io.terminum.terminumd</string>
+	<key>CFBundleName</key>
+	<string>terminum</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>NSDocumentsFolderUsageDescription</key>
+	<string>Programs you run in terminum's terminals read and write files in your Documents folder.</string>
+	<key>NSDesktopFolderUsageDescription</key>
+	<string>Programs you run in terminum's terminals read and write files on your Desktop.</string>
+	<key>NSDownloadsFolderUsageDescription</key>
+	<string>Programs you run in terminum's terminals read and write files in your Downloads folder.</string>
+	<key>NSNetworkVolumesUsageDescription</key>
+	<string>Programs you run in terminum's terminals read and write files on network volumes.</string>
+	<key>NSRemovableVolumesUsageDescription</key>
+	<string>Programs you run in terminum's terminals read and write files on removable volumes.</string>
+	<key>NSFileProviderDomainUsageDescription</key>
+	<string>Programs you run in terminum's terminals read and write files in your cloud folders.</string>
+</dict>
+</plist>

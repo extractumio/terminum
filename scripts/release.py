@@ -6,7 +6,9 @@ for macOS and Linux and holds the release key; only on the maintainer's request 
 
   1. checks: release notes in docs/releases/<tag>.md; a clean tree; a new version is above every v* tag and made at origin/main's
      HEAD, an existing tag must be HEAD; its release must not be published yet
-  2. build with dependencies exactly as locked (npm ci, cargo --locked)
+  2. build with dependencies exactly as locked (npm ci, cargo --locked); each macOS terminumd
+     signed with the maintainer's Developer ID (TM_CODESIGN_IDENTITY, local.mk) as
+     io.terminum.terminumd, so macOS keeps folder grants across upgrades (AC-08)
   3. sign SHA256SUMS through ssh-agent with the maintainer's key (TM_RELEASE_KEY, see
      signing_key.py), loaded for two minutes with the passphrase the login Keychain keeps
      (no prompt) and removed from the agent afterwards; check it against release-signers
@@ -161,12 +163,14 @@ def main(argv):
     tag = argv[0]
     if "ssh-" not in (SIGNERS.read_text() if SIGNERS.is_file() else ""):
         sys.exit("release-signers holds no release key: run make signing-key and commit it first")
+    if not os.environ.get("TM_CODESIGN_IDENTITY", "").strip():
+        sys.exit("TM_CODESIGN_IDENTITY is not set: a release is signed with the maintainer's Developer ID (docs/RELEASING.md)")
     check_source(tag)
     notes = release_notes(tag)
     draft = check_unpublished(tag)
     run("npm", "ci", "--ignore-scripts", "--no-fund", "--no-audit", cwd=package.REPO / "ui")
     run("npm", "run", "-s", "build", cwd=package.REPO / "ui", env=dict(os.environ, TM_BUILD=tag))
-    package.main(["--build", tag])
+    package.main(["--build", tag, "--release"])
     for platform in ("linux-x86_64", "linux-aarch64"):
         if not (package.OUT / package.NAME / "agents" / platform / "terminumd").is_file():
             sys.exit(f"the package has no {platform} terminumd (run make toolchain): not released")

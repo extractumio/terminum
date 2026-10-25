@@ -14,3 +14,6 @@ dist/
 # personal instructions for AI agents
 CLAUDE.local.md
 MEMORY.md
+
+# the maintainer's own make settings (Developer ID for codesign)
+local.mk

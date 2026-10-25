@@ -36,7 +36,7 @@ fn the_plist() {
     assert_eq!(ctx.plist(), home.path("Library/LaunchAgents/io.terminum.terminumd.plist"));
     let p = plist_json(&ctx.plist());
     assert_eq!(p["Label"], "io.terminum.terminumd");
-    assert_eq!(p["ProgramArguments"], json!([root.join("builds/current/terminumd").display().to_string(), "serve"]));
+    assert_eq!(p["ProgramArguments"], json!([root.join("daemon/terminumd").display().to_string(), "serve"]));
     assert_eq!((p["RunAtLoad"].clone(), p["KeepAlive"].clone(), p["ThrottleInterval"].clone()), (json!(true), json!(true), json!(1)));
     assert_eq!(p["StandardOutPath"], root.join("logs/terminumd.log").display().to_string());
     assert_eq!(p["StandardErrorPath"], p["StandardOutPath"]);

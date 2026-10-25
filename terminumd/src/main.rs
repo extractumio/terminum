@@ -19,6 +19,7 @@ mod cli;
 mod config;
 mod events;
 mod files;
+mod folders;
 mod hosts;
 mod hotkeys;
 mod http;
@@ -102,7 +103,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),
         projects: Mutex::new(page::projects::Projects::load(dir.join("projects.json"))),
-        unread: Mutex::default(),
+        unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
         cfg,
     })
@@ -129,7 +130,7 @@ async fn run_agent(socket: std::path::PathBuf) {
     logging();
     let env = Env::read(0, "terminum");
     let home = config::home();
-    let cfg = Config { port: 0, agent: true, text_max: env.text_max, history: env.history as i64,
+    let cfg = Config { port: 0, agent: true, launchd: false, text_max: env.text_max, history: env.history as i64,
         dir: setup.dir.clone(), home: home.join(".terminum"), agent_token: setup.token.clone() };
     let looks = looks::Looks::load(&setup.dir);
     let link = Link::Local { tmux: "tmux".into(), socket: "unused".into(), conf: "/dev/null".into() };
@@ -187,8 +188,9 @@ async fn serve() {
         (s.port, s.tmux_socket.clone(), s.tmux_history as usize)
     };
     let mut env = Env::read(port, &socket);
+    let mut launchd = false;
     let listener = match activation::listener() {
-        activation::Activation::Held(l) => tokio::net::TcpListener::from_std(l).expect("launchd's socket"),
+        activation::Activation::Held(l) => { launchd = true; tokio::net::TcpListener::from_std(l).expect("launchd's socket") }
         activation::Activation::Unbound => sock::unbound(activation::unbound_message(env.port)),
         activation::Activation::NotLaunchd => sock::bind_port(&dir, env.port).await,
     };
@@ -206,7 +208,7 @@ async fn serve() {
     }
     let tmux_bin = config::find_program("tmux", "TM_TMUX").unwrap_or_else(|| "tmux".into());
     let link = Link::Local { tmux: tmux_bin, socket: env.tmux_socket.clone(), conf };
-    let cfg = Config { port: env.port, agent: false, text_max: env.text_max,
+    let cfg = Config { port: env.port, agent: false, launchd, text_max: env.text_max,
         history: env.history as i64, dir: dir.clone(), home: home.clone(), agent_token: String::new() };
     let app = build_app(cfg, &env, looks, link, &env.tmux_socket);
     page::bookmarks::adopt(&app);   // a file before version 3: its bookmarks take their projects

@@ -17,6 +17,11 @@ ifeq ($(shell id -u),0)
 $(error Run make as your user, not root: terminum lives in your home folder)
 endif
 
+# the maintainer's own settings, never committed: TM_CODESIGN_IDENTITY, the Developer ID
+# that signs the macOS terminumd (scripts/package.py; without it, ad hoc)
+-include local.mk
+export TM_CODESIGN_IDENTITY
+
 # one id per set of sources, compiled into terminumd (option_env!("TM_BUILD")) and the UI
 BUILD := $(shell python3 scripts/package.py id)
 export TM_BUILD := $(BUILD)

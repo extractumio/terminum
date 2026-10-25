@@ -126,9 +126,10 @@ impl Ctx {
     pub fn bin(&self) -> PathBuf {
         self.root.join("bin")
     }
-    /// What launchd runs: `current` is resolved again at every start.
+    /// What launchd runs: a copy of the live build's terminumd at a path that never changes
+    /// (install.rs place_daemon), so macOS keeps its folder grants across upgrades (AC-08).
     pub fn program(&self) -> PathBuf {
-        self.lib().join("current/terminumd")
+        self.root.join("daemon/terminumd")
     }
 
     /// `path` with the home folder as ~, as messages name it.

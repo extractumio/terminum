@@ -114,7 +114,13 @@ pub fn status_lines(h: &Value) -> Vec<String> {
 
 pub fn status(ctx: &Ctx) {
     match launch::health(ctx) {
-        Some(h) => status_lines(&h).into_iter().for_each(|l| ctx.say(l)),
+        Some(h) => {
+            status_lines(&h).into_iter().for_each(|l| ctx.say(l));
+            // under launchd on macOS only: a terminal's terminumd starts tmux as that terminal (AC-08)
+            if cfg!(target_os = "macos") && h["launchd"] == true && let Some(line) = super::folders::restart_line(ctx, &h["tmux"]["started_by"]) {
+                ctx.say(format!("folders:    {line}"));
+            }
+        }
         None => {
             ctx.say(format!("terminumd:  not running — {}", launch::describe(ctx, None, None)));
             ctx.say(format!("            log: {}", ctx.shown(&ctx.log())));

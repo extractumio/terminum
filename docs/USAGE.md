@@ -44,9 +44,26 @@ curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/inst
 
 Needs macOS 14+ and tmux 3.2+ (`brew install tmux`); nothing else. The installer checks the
 release's signature, installs into `~/.terminum/` (`builds/<build>`, `current`, the command
-`~/.terminum/bin/terminum`, which is terminumd itself), loads the launchd agent
-`io.terminum.terminumd` and says how to set the password. launchd holds `127.0.0.1:48080` from
+`~/.terminum/bin/terminum`, which is terminumd itself, and `daemon/terminumd`, the copy launchd
+runs), loads the launchd agent `io.terminum.terminumd` and says how to set the password. launchd holds `127.0.0.1:48080` from
 then on, so no other program can take the page's port while terminumd restarts or is upgraded.
+
+During the install macOS asks on the Mac's screen, once per folder, whether programs in
+terminum's terminals may read Desktop, Documents, Downloads, iCloud Drive and each cloud folder
+(`~/Library/CloudStorage`): terminumd opens each one itself, so the prompts come while you are
+at the Mac rather than when an agent first reads a folder while you are away. Allow covers
+every shell and agent in terminum's tmux and stays across upgrades, since launchd always runs
+`daemon/terminumd` (signed as `io.terminum.terminumd`). The install waits 5 s for the answers
+and says which folders macOS still asks about; `terminum folders` asks again and waits. A
+refused folder can be allowed again in System Settings › Privacy & Security › Files and Folders.
+
+macOS judges a terminal's program by the program that started terminum's tmux server, and that
+server outlives upgrades. `terminum status`, the install and `terminum folders` say when it was
+started by another program (a build from before this one, a build run by hand, `tmux -L
+terminum` typed in Terminal): restart it once at a quiet moment, by a reboot or `tmux -L
+terminum kill-server`, which ends the programs in it; terminum makes the sessions again with
+their windows, splits, folders and projects (AC-15), and the programs are started again by
+hand (`claude --continue`, `codex resume --last`).
 
 From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed);
 `make test` runs the unit tests.
@@ -57,6 +74,7 @@ From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools 
 terminum password             # the password every browser signs in with (8+ characters)
 terminum open                 # the page in this Mac's browser: http://127.0.0.1:48080/
 terminum status               # build, pid, port, password set, tmux servers and sessions, hosts, pages
+terminum folders              # macOS asks now for the protected folders the terminals read
 terminum signout              # every browser signs in again
 terminum upgrade              # the latest signed release (--to vX.Y.Z); rollback; uninstall
 terminum restart              # load the launchd agent again (a new port in settings.json; a port taken back)

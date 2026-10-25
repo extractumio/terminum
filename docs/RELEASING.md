@@ -30,6 +30,21 @@ for two minutes with the Keychain's passphrase, then removed), checks the signat
 then tags `HEAD`, pushes the tag and publishes the GitHub release once all its files are
 attached. A failure before signing leaves nothing public.
 
+Each macOS terminumd is signed with the maintainer's Developer ID as `io.terminum.terminumd`
+(it embeds `terminumd/macos/Info.plist`), so macOS keeps the folder access the user grants
+across upgrades (spec AC-08). The identity is named, never guessed: `TM_CODESIGN_IDENTITY` in
+the uncommitted `local.mk` beside the Makefile:
+
+```make
+TM_CODESIGN_IDENTITY := Developer ID Application: <name> (<team id>)
+```
+
+`make release` refuses without it, signs with Apple's secure timestamp (online) and checks
+each binary's Team ID; codesign gets 60 s, so a keychain dialog waiting for "Always Allow"
+fails the build instead of hanging it. No hardened runtime and no notarization: the tarball
+arrives by curl, which sets no quarantine. Without `local.mk`, `make install` signs ad hoc and
+says so; macOS then asks again for protected folders after an upgrade.
+
 Release notes go in `docs/releases/vX.Y.Z.md`, committed before `main` is pushed; the release
 command refuses an empty or unreadable file and a symlink out of the tree.
 

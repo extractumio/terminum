@@ -57,7 +57,14 @@ async fn ensure_local(app: &Shared) {
             }
             // settings.json's history lines over tmux.conf's (written once): panes made from now on
             let history = app.looks.settings.read().tmux_history;
-            let _ = server.run(format!("set-option -g history-limit {history}")).await;
+            if let Err(e) = server.local(&["set-option", "-g", "history-limit", &history.to_string()]).await {
+                tracing::warn!(event = "tmux.option", option = "history-limit", error = %e);
+            }
+            // macOS judges every program in its terminals by the program that started it (AC-08)
+            if let Some(exe) = std::env::current_exe().ok().and_then(|e| std::fs::canonicalize(e).ok())
+                && let Err(e) = server.local(&["set-option", "-g", "@terminum-started-by", &exe.display().to_string()]).await {
+                tracing::warn!(event = "tmux.option", option = "@terminum-started-by", error = %e);
+            }
             match server.local_sessions().await {
                 Ok(Some(s)) => s,
                 _ => return,
@@ -126,6 +133,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
                 Vec::new()
             };
             crate::page::projects::seen(app, &server, &read.keys).await;   // closed panes leave their projects (AC-92)
+            crate::page::unread::seen(app, &server).await;                 // a tmux started anew takes its marks (AC-93)
             server.set_panes(read.panes);
             (gs, live, true)
         }

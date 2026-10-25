@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Install, upgrade, roll back and uninstall terminum (AC-08, AC-16).
 //!
-//! Everything lives under ~/.terminum (0700): bin/, builds/, logs/, state/. Each build lives
-//! in its own folder builds/<build>/ (a copy of its package: BUILD, agents/<platform>/terminumd,
+//! Everything lives under ~/.terminum (0700): bin/, builds/, daemon/, logs/, state/. Each build
+//! lives in its own folder builds/<build>/ (a copy of its package: BUILD, agents/<platform>/terminumd,
 //! release-signers, and terminumd linked to the agent of this Mac); the links `current` and
 //! `previous` name the live and the last build, each switched with one rename. launchd runs
-//! builds/current/terminumd, so a restart takes the switch; a build that does not report
-//! itself on the socket within 10 s is switched back. bin/terminum links the newest build's
-//! terminumd, which is the command when run by that name.
+//! daemon/terminumd, a copy of the live build's terminumd renamed into place before every
+//! start: macOS knows the binary that started the tmux server by that path, and refuses its
+//! programs protected folders unasked once that binary is deleted (AC-08). A build that does
+//! not report itself on the socket within 10 s is switched back. bin/terminum links the
+//! newest build's terminumd, which is the command when run by that name.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -131,8 +133,35 @@ pub fn lock(ctx: &Ctx) -> Result<File, String> {
     Ok(f)
 }
 
-/// (Re)starts terminumd on `current` and waits until it reports `build`.
+/// Makes daemon/ the running build's folder as terminumd sees it beside itself: its
+/// terminumd copied in and renamed into place (the path launchd runs stays the same, a
+/// running binary is never written into), `agents` and `soundfonts` linked to the build's.
+/// Any build, an older one rolled back to too, finds its files there as in its own folder.
+fn place_daemon(ctx: &Ctx, build: &str) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dest = ctx.program();
+    let dir = ctx.root.join("daemon");
+    let tmp = dir.join(".terminumd.new");
+    let err = |e: std::io::Error| format!("placing {build}'s terminumd at {}: {e}", ctx.shown(&dest));
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(ctx.lib().join(build).join("terminumd"), &tmp).map_err(err)?;
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(err)?;
+    File::open(&tmp).and_then(|f| f.sync_all()).map_err(err)?;
+    std::fs::rename(&tmp, &dest).map_err(err)?;
+    for name in ["agents", "soundfonts"] {
+        if ctx.lib().join(build).join(name).is_dir() {
+            swap_link(&dir.join(name), &Path::new("../builds").join(build).join(name))?;
+        } else {
+            let _ = std::fs::remove_file(dir.join(name));
+        }
+    }
+    Ok(())
+}
+
+/// (Re)starts terminumd as `build` (its copy at daemon/terminumd) and waits until it reports it.
 fn go_live(ctx: &Ctx, build: &str) -> Result<(), String> {
+    place_daemon(ctx, build)?;
     let mark = launch::log_mark(ctx);
     launch::start(ctx)?;
     if !launch::wait_healthy(ctx, Some(build)) {
@@ -233,6 +262,7 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
         (Some(o), true) => ctx.done(&format!("Upgraded {o} → {build}")),
         _ => open_line(ctx, &build),
     }
+    super::folders::at_install(ctx, !upgrade);
     if !tmux_found(ctx) {
         ctx.say(TMUX_HINT);
     }
@@ -301,6 +331,7 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
     launch::stop(ctx)?;
     launch::forget_legacy(ctx);
     let _ = std::fs::remove_dir_all(ctx.lib());
+    let _ = std::fs::remove_dir_all(ctx.root.join("daemon"));
     let _ = std::fs::remove_file(ctx.bin().join("terminum"));
     let _ = std::fs::remove_dir(ctx.bin()); // only when empty
     ctx.done(&format!(
@@ -312,8 +343,11 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
 
 /// `terminum restart`: the agent loaded again (the port bound anew), then terminumd's answer.
 pub fn restart(ctx: &Ctx) -> Result<(), String> {
-    if target(ctx, "current").is_none() && !ctx.direct {
-        return Err("terminum is not installed (no builds/current): nothing to restart".into());
+    match target(ctx, "current") {
+        // an install from before daemon/ has none yet: the plist written now names it
+        Some(c) => place_daemon(ctx, &c)?,
+        None if !ctx.direct => return Err("terminum is not installed (no builds/current): nothing to restart".into()),
+        None => {}
     }
     let mark = launch::log_mark(ctx);
     launch::reload(ctx)?;
