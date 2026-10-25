@@ -74,9 +74,17 @@ check "the package holds no script" [ -z "$(find "$tmp/pkg-e2e-a/terminum" -name
 check "the package holds the General MIDI SoundFont and its license (AC-64)" [ -s "$tmp/pkg-e2e-a/terminum/soundfonts/GeneralUser-GS.sf2" -a -s "$tmp/pkg-e2e-a/terminum/soundfonts/GeneralUser-GS-LICENSE.txt" ]
 
 # AC-08: install, with tmux not on PATH
-notmux=""
+# a folder holding tmux (on Linux /usr/bin, with bash) is replaced by links to all of it but tmux
+notmux="" shadow=$tmp/notmux
+mkdir -p "$shadow"
 IFS=: read -r -a dirs <<<"$PATH"
-for d in "${dirs[@]}"; do [ -x "$d/tmux" ] || notmux=${notmux:+$notmux:}$d; done
+for d in "${dirs[@]}"; do
+  if [ -x "$d/tmux" ]; then
+    for f in "$d"/*; do [ "${f##*/}" = tmux ] || ln -sf "$f" "$shadow/"; done
+    d=$shadow
+  fi
+  notmux=${notmux:+$notmux:}$d
+done
 out=$(PATH=$notmux install_pkg e2e-a 2>&1); rc=$?
 echo "$out" | sed 's/^/     | /'
 check "install exits 0" [ $rc = 0 ]
