@@ -21,7 +21,7 @@ class PackageTest(unittest.TestCase):
             binary.write_text("#!/bin/sh\n")
             pkg = package.stage("v9.0.0", Path(tmp) / "out", given=str(binary), only_stage=True)
             files = sorted(str(p.relative_to(pkg)) for p in pkg.rglob("*") if p.is_file())
-            self.assertIn(f"agents/{package.agents.mac_platform()}/terminumd", files)
+            self.assertIn(f"agents/{package.agents.this_platform()}/terminumd", files)
             self.assertIn("release-signers", files)
             self.assertEqual((pkg / "BUILD").read_text(), "v9.0.0\n")
             self.assertFalse([f for f in files if f.endswith((".py", ".sh")) or f == "terminum"], files)
@@ -45,6 +45,7 @@ class PackageTest(unittest.TestCase):
 
     def test_a_release_without_the_linux_builds_fails(self):
         with mock.patch.object(package, "build_macos", return_value={}), \
+             mock.patch.object(package.agents, "this_platform", return_value="macos-aarch64"), \
              mock.patch.object(package.agents, "build", side_effect=package.agents.Failed("no zig")):
             self.assertEqual(package.binaries("v9", None, False), {}, "make install: said, not refused")
             with self.assertRaises(package.agents.Failed):
@@ -93,6 +94,7 @@ class SigningTest(unittest.TestCase):
             package.codesign(b, "-", False)
         self.assertIn("over 60 s", str(e.exception))
 
+    @unittest.skipUnless(sys.platform == "darwin", "a package made on Linux holds that machine's terminumd only, never signed")
     def test_a_mach_o_is_signed_and_a_wrapper_script_is_not(self):
         with tempfile.TemporaryDirectory() as tmp:
             for body, signed in ((b"\xcf\xfa\xed\xfe" + b"\0" * 60, True), (b"#!/bin/sh\n", False)):

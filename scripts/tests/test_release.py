@@ -94,6 +94,7 @@ class ReleaseTest(unittest.TestCase):
         del os.environ["FAKE_GH_DRAFT"]
         self.assertFalse(release.check_unpublished("v1.0.0"))
 
+    @unittest.skipUnless(sys.platform == "darwin", "a release is signed on the maintainer's Mac (the key's passphrase in its Keychain)")
     def test_signing_needs_no_prompt_and_leaves_the_key_out_of_the_agent(self):
         sums = self.out / "SHA256SUMS"
         sums.write_text("# release v1.0.0\nabc  x\n")
@@ -101,6 +102,7 @@ class ReleaseTest(unittest.TestCase):
         self.assertTrue(release.verify(sums, self.out / "SHA256SUMS.sig"))
         self.assertNotIn("test", subprocess.run(["ssh-add", "-l"], capture_output=True, text=True).stdout)
 
+    @unittest.skipUnless(sys.platform == "darwin", "a release is signed on the maintainer's Mac (the key's passphrase in its Keychain)")
     def test_a_key_whose_passphrase_is_not_in_the_keychain_fails_without_asking(self):
         subprocess.run(["ssh-keygen", "-q", "-p", "-N", "not-in-any-keychain", "-P", "", "-f", str(self.key)], check=True)
         sums = self.out / "SHA256SUMS"
