@@ -5,12 +5,11 @@
   --t-bg: #000000; --t-fg: #c7c7c7; --accent: #c7c7c7; --sel: #3a5a8a; --selfg: #ffffff;
   --size: 13px;   /* surfaces, sizes and hues: tokens.css */
   --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  --term-font: TermFont, Menlo, "SF Mono", ui-monospace, monospace;   /* the theme's font (app.js) */
+  --term-font: TermFont, TermFontShipped, Menlo, "SF Mono", ui-monospace, monospace;   /* the theme's font (app.js), else the shipped one (fonts/fonts.css) */
   --nav-w: 300px; --side-w: 380px;
   --term-tile: #3a3a3c; --term-tile-ink: #ffffff;   /* a terminal's icon in the list: white on dark gray, on every theme */
   color-scheme: dark light;
 }
-@font-face { font-family: TermFont; src: local("Menlo-Regular"); }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }

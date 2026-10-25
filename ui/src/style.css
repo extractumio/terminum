@@ -37,7 +37,7 @@ html.themed {
   --k-code: var(--t-a12); --k-conf: var(--t-a11); --k-doc: var(--fg-dim); --k-img: var(--t-a13); --k-arch: var(--t-a9); --k-web: var(--t-a14);
   --tk-kw: var(--t-a13); --tk-str: var(--t-a10); --tk-num: var(--t-a11); --tk-fn: var(--t-a12); --tk-type: var(--t-a14);
   --tk-prop: color-mix(in srgb, var(--t-a12) 70%, var(--t-fg)); --tk-tag: var(--t-a9); --tk-cmt: var(--fg-faint);
-  --mono: TermFont, ui-monospace, "SF Mono", Menlo, monospace; --ui: var(--mono);
+  --mono: TermFont, TermFontShipped, ui-monospace, "SF Mono", Menlo, monospace; --ui: var(--mono);
   --fs: calc(var(--t-size) * .9px); --row: calc(var(--t-size) * 1.6px);
 }
 

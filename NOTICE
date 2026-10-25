@@ -8,3 +8,15 @@ commercial license (LICENSE-COMMERCIAL.md): every right in them stays with their
 terminum shows them only to say which coding agent runs in a terminal; it is not affiliated
 with, sponsored or endorsed by Anthropic or OpenAI. To ship terminum without them, delete the
 two files: the page then shows its terminal icon in their place.
+
+terminum: fonts it ships
+
+  web/static/fonts/JetBrainsMonoNFM-*.woff2   JetBrains Mono 2.304, Copyright 2020 The JetBrains
+                                             Mono Project Authors, under the SIL Open Font
+                                             License 1.1 (web/static/fonts/OFL.txt), as patched
+                                             by Nerd Fonts 3.4.0 (MIT; its icon sets under their
+                                             own licenses: github.com/ryanoasis/nerd-fonts),
+                                             subset to the characters fonts.css names
+
+These files are not licensed under the GNU AGPL-3.0 nor under terminum's commercial license:
+they stay under the licenses above, which allow shipping them with terminum.

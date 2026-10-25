@@ -126,6 +126,14 @@ async function wide(browser, name) {
   const theme = JSON.parse(fs.readFileSync(path.join(HOME, "themes/local.json"), "utf8"));
   fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   await within("AC-12 a changed theme file reaches the page without a reload", () => page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#102030", null, { timeout: 5000 }));
+  // a device without the theme's font (an iPhone): the shipped one draws the text; its icons file stays unfetched
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030", font: "NoSuchFont-Regular" }));
+  await within("AC-12 without the theme's font the terminal is drawn in the shipped one; the icons are not fetched", () => page.waitForFunction(() => {
+    const faces = [...document.fonts].filter((f) => f.family.replace(/"/g, "") === "TermFontShipped");
+    const icons = faces.find((f) => f.unicodeRange.toLowerCase().includes("f0000"));
+    return faces.some((f) => f.status === "loaded" && f.weight === "400") && icons?.status === "unloaded";
+  }, null, { timeout: 5000 }));
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   // a color scheme picked in one browser is every browser's (settings.json page.colorScheme)
   const other = await browser.newContext({ viewport: { width: 1000, height: 700 } });
   const page2 = await other.newPage();
