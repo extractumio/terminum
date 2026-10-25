@@ -140,6 +140,7 @@ async fn run_agent(socket: std::path::PathBuf) {
     let (store, bus) = (app.store.clone(), app.bus.clone());
     agent::exit_when_unused(move || bus.subscribers(), move || exit_with(&store, "no Mac connected for 90 s"));
     ops::NO_FINDER.store(true, std::sync::atomic::Ordering::Relaxed);
+    tokio::spawn(page::upload::sweep_daily(home.join(page::upload::REMOTE_DIR)));   // this host's pastes (AC-36)
     let store = app.store.clone();
     tokio::spawn(async move {
         use tokio::signal::unix::{signal, SignalKind};
@@ -221,6 +222,7 @@ async fn serve() {
     tokio::spawn(looks::follow(app.clone()));
     tokio::spawn(restore::follow(app.clone()));
     tokio::spawn(release::run(app.clone()));
+    tokio::spawn(page::upload::sweep_daily(page::upload::local_dir()));   // pastes older than 7 days (AC-36)
     let stopping = app.clone();
     tokio::spawn(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();
