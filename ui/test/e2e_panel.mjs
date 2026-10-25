@@ -135,7 +135,8 @@ try {
   check("AC-56 edits during a save keep the tab dirty", !!(await page.$(".tab.active.dirty")));
   check("AC-56 the save wrote only what was sent", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# a"));
   await page.keyboard.press("ControlOrMeta+s");
-  await page.waitForSelector(".tab.active:not(.dirty)");
+  await within("AC-56 the next save writes the rest", (ms) => page.waitForSelector(".tab.active:not(.dirty)", { timeout: ms }));
+  if (await page.$(".tab.active.dirty")) console.log("     | still unsaved:", JSON.stringify(await page.evaluate(() => ({ modal: document.querySelector(".modal")?.textContent, banner: document.querySelector(".banner")?.textContent, toast: document.getElementById("toast")?.textContent }))));
   await page.waitForTimeout(900); // our own save's fs event must not raise "Changed on disk"
   check("AC-61 own save does not show 'Changed on disk'", !(await page.$('.banner:has-text("Changed on disk")')));
 
