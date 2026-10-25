@@ -24,8 +24,11 @@ ssh-add --apple-use-keychain ~/.config/iterm-enhancer/release-key \
 Then a release is one command, with no prompt: `make release TAG=vX.Y.Z` refuses unless the
 tree is clean, the version is above every `v*` tag and `HEAD` is `origin/main`; it installs
 the UI's dependencies with `npm ci --ignore-scripts`, builds terminumd with `cargo --locked`
-for macOS arm64 and x86_64 and the Linux helpers (`make toolchain` once: zig and
-cargo-zigbuild pinned in `.toolchain/`), signs `SHA256SUMS` through ssh-agent (the key loaded
+for macOS arm64 and x86_64 and Linux x86_64 and aarch64 (`make toolchain` once: zig and
+cargo-zigbuild pinned in `.toolchain/`; a release without the Linux builds fails, since a Linux
+server installs from the same package), packs `terminum.tar.gz` and the same bytes as
+`terminum-macos.tar.gz` (the name installs before 0.22 ask for: keep it until a release notes
+a floor version below which `terminum upgrade` is no longer supported), signs `SHA256SUMS` through ssh-agent (the key loaded
 for two minutes with the Keychain's passphrase, then removed), checks the signature, and only
 then tags `HEAD`, pushes the tag and publishes the GitHub release once all its files are
 attached. A failure before signing leaves nothing public.

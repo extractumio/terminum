@@ -38,7 +38,9 @@ import agents
 REPO = agents.REPO
 OUT = REPO / "dist/package"
 NAME = "terminum"
-TARBALL = "terminum-macos.tar.gz"
+TARBALL = "terminum.tar.gz"
+# the same bytes under the name releases before Linux servers had: their installs ask for it
+MAC_TARBALL = "terminum-macos.tar.gz"
 SIGN_ID = "io.terminum.terminumd"  # macos/Info.plist's CFBundleIdentifier
 COPY = ["release-signers", "LICENSE", "LICENSE-COMMERCIAL.md", "NOTICE", "README.md"]
 # GeneralUser GS 2.0.3 (S. Christian Collins, License v2.0: free use in software), pinned by its
@@ -85,15 +87,18 @@ def build_macos(build, platforms):
     return out
 
 
-def binaries(build, given, stage):
+def binaries(build, given, stage, release=False):
     """{platform: terminumd}: `given` for this Mac only; for `make install` (stage) this
-    Mac's own build; for a release both Mac builds; the Linux pair when the toolchain is there."""
+    Mac's own build; for a release both Mac builds; the Linux pair when the toolchain is there
+    (a release without it fails: a Linux server installs from the same package)."""
     if given:
         return {agents.mac_platform(): Path(given)}
     found = build_macos(build, [agents.mac_platform()] if stage else ["macos-aarch64", "macos-x86_64"])
     try:
         found.update(agents.build(["linux-x86_64", "linux-aarch64"]))
     except agents.Failed as e:  # a developer without the cross toolchain: Mac only, said loudly
+        if release:
+            raise agents.Failed(f"a release needs the Linux builds: {e}")
         print(f"warning: no Linux helpers in this package ({e}); remote hosts' files cannot be enabled. "
               "Run make toolchain.", file=sys.stderr)
     return found
@@ -155,7 +160,7 @@ def stage(build, out, given=None, only_stage=False, release=False):
     for rel in COPY:
         shutil.copy2(REPO / rel, pkg / rel)
     identity = None
-    for platform, path in binaries(build, given, only_stage).items():
+    for platform, path in binaries(build, given, only_stage, release).items():
         dest = pkg / "agents" / platform / "terminumd"
         dest.parent.mkdir(parents=True)
         shutil.copy2(path, dest)
@@ -183,12 +188,13 @@ def archive(pkg, out):
     tar = out / TARBALL
     with tarfile.open(tar, "w:gz") as t:
         t.add(pkg, arcname=NAME, filter=anonymous)
+    shutil.copy2(tar, out / MAC_TARBALL)
     shutil.copy2(REPO / "scripts/install.sh", out / "install.sh")
     # the signed list names its release, so an older one cannot be served as the latest
     sums = f"# release {(pkg / 'BUILD').read_text().strip()}\n" + "".join(
-        f"{hashlib.sha256((out / f).read_bytes()).hexdigest()}  {f}\n" for f in (TARBALL, "install.sh"))
+        f"{hashlib.sha256((out / f).read_bytes()).hexdigest()}  {f}\n" for f in (TARBALL, MAC_TARBALL, "install.sh"))
     (out / "SHA256SUMS").write_text(sums)
-    return [tar, out / "install.sh", out / "SHA256SUMS"]
+    return [tar, out / MAC_TARBALL, out / "install.sh", out / "SHA256SUMS"]
 
 
 def main(argv=None):

@@ -19,8 +19,9 @@ pub struct Config {
     pub port: u16,
     /// running as a remote host's agent (AC-82): served on a Unix socket
     pub agent: bool,
-    /// started by launchd (its socket came from launchd): macOS asks for terminumd itself (AC-08)
-    pub launchd: bool,
+    /// started by the service manager (its socket came from launchd or systemd): on macOS,
+    /// macOS asks for terminumd itself (AC-08)
+    pub service: bool,
     pub text_max: u64,
     /// lines a page may load (TM_HISTORY)
     pub history: i64,

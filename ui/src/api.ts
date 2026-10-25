@@ -20,6 +20,9 @@ export const PROXIED = BASE !== "";
 /** The Mac's own browser (the loopback listener answers only to 127.0.0.1): Finder, default
  *  apps and typing into the terminal are offered there only (terminumd refuses them elsewhere). */
 export const AT_MAC = typeof location !== "undefined" && location.hostname === "127.0.0.1";
+/** terminumd runs where Finder and default apps are (macOS), as its proof said; a Linux server's
+ *  page offers neither (it would refuse them). */
+export let SERVER_APPS = true;
 
 /** The loopback sign-in the page stored (null: the web listener's cookie signs in). */
 const SECRET: string | null = (() => { try { return localStorage.getItem("tm.session"); } catch { return null; } })();
@@ -52,6 +55,7 @@ export function proveServer(): Promise<void> {
       if (!res.ok || body?.proof !== await proof(secret, n)) {
         throw new ApiError(401, "unproven", "terminumd does not prove it knows this page's sign-in, or another program holds its port", body);
       }
+      SERVER_APPS = body.apps !== false;
     });
     mine.catch((e) => { if (e instanceof ApiError) refusal = e.message; if (proven === mine) forgetProof(); });
     proven = mine;

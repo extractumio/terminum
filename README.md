@@ -83,6 +83,19 @@ terminum hooks install   # optional: exact states from Claude Code and Codex
 `terminum upgrade` installs the latest signed release (`terminum rollback` goes back); the page
 shows a chip when one is out.
 
+### On a Ubuntu/Debian server
+
+```bash
+sudo apt install tmux curl openssh-client
+curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
+terminum password
+```
+
+terminumd runs as a systemd user service (`sudo loginctl enable-linger $USER` keeps it, and the
+terminals, after you log out). Open the page from your computer through
+`ssh -L 48080:127.0.0.1:48080 <server>` at `http://127.0.0.1:48080/`, or with `tailscale serve` on
+the server.
+
 ### A Linux server's tmux
 
 Install tmux there (`sudo apt install tmux`) and make sure the Mac reaches it with `ssh`; then,

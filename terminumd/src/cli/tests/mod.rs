@@ -4,11 +4,13 @@
 //! on the socket (no real terminumd, no launchd, no tmux), and a stub launchctl.
 
 mod cmd_tests;
+#[cfg(target_os = "macos")]   // macOS asks for folders, nothing else does
 mod folders_tests;
 mod hooks_tests;
 mod import_tests;
 mod install_tests;
 mod launch_tests;
+mod systemd_tests;
 mod upgrade_tests;
 
 use std::collections::HashMap;

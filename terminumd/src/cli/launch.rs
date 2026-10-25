@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Running terminumd (AC-08, AC-14, AC-16): the launchd agent io.terminum.terminumd, which
 //! holds the page's port (socket activation) and starts terminumd now, at every login and
-//! after a crash; or, with TM_NO_LAUNCHD=1, a plain background process (direct.rs). Health is
+//! after a crash; on Linux systemd's user service of that name (systemd.rs); or, with
+//! TM_NO_LAUNCHD=1, a plain background process (direct.rs). Health is
 //! asked over the private socket, never over TCP. launchctl is only ever called for the live
 //! label when the folders are the real home's, so a test cannot replace the live agent.
 
@@ -224,6 +225,9 @@ pub fn start(ctx: &Ctx) -> Result<(), String> {
         direct::stop(ctx);
         return direct::start(ctx);
     }
+    if ctx.systemd {
+        return super::systemd::start(ctx);
+    }
     if loaded(ctx)? {
         // a build whose plist differs (sockets, arguments) needs it loaded again
         if !plist_changed(ctx) && launchctl(ctx, &["kickstart", "-k", &target(ctx)])?.status.success()
@@ -243,6 +247,9 @@ pub fn reload(ctx: &Ctx) -> Result<(), String> {
     if ctx.direct {
         direct::stop(ctx);
         return direct::start(ctx);
+    }
+    if ctx.systemd {
+        return super::systemd::start(ctx);
     }
     write_plist(ctx)?;
     if loaded(ctx)? {
@@ -308,7 +315,7 @@ pub fn migrate_legacy(ctx: &Ctx) -> Result<(), String> {
 
 fn retire_legacy(ctx: &Ctx) -> Result<(), String> {
     let (plist, aside) = legacy_paths(ctx);
-    if ctx.direct || ctx.label != LABEL || !plist.exists() {
+    if ctx.direct || ctx.systemd || ctx.label != LABEL || !plist.exists() {
         return Ok(());
     }
     let legacy = format!("{}/{LEGACY_LABEL}", domain());
@@ -365,6 +372,9 @@ pub fn stop(ctx: &Ctx) -> Result<(), String> {
     if ctx.direct {
         direct::stop(ctx);
         return Ok(());
+    }
+    if ctx.systemd {
+        return super::systemd::stop(ctx);
     }
     if loaded(ctx)? {
         bootout(ctx)?;

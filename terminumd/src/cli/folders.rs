@@ -73,7 +73,7 @@ pub(super) fn ask_and_report(ctx: &Ctx, wait: Duration) -> Result<(), String> {
     let Some(mut v) = ask(ctx, 1.0) else {
         return Err(format!("terminumd did not answer: {}", launch::describe(ctx, None, None)));
     };
-    if v["launchd"] != true {
+    if v["service"] != true {
         ctx.say("terminumd was not started by launchd: macOS would ask for the app it runs in, not for terminum");
         return Ok(());
     }

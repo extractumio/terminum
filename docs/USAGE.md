@@ -42,7 +42,9 @@ configuration. The overview is in the [README](../README.md).
 curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
 ```
 
-Needs macOS 14+ and tmux 3.2+ (`brew install tmux`); nothing else. The installer checks the
+On a Mac it needs macOS 14+ and tmux 3.2+ (`brew install tmux`); on a Ubuntu/Debian server,
+systemd, tmux 3.2+, curl and openssh-client (`sudo apt install tmux curl openssh-client`).
+Nothing else. The installer checks the
 release's signature, installs into `~/.terminum/` (`builds/<build>`, `current`, the command
 `~/.terminum/bin/terminum`, which is terminumd itself, and `daemon/terminumd`, the copy launchd
 runs), loads the launchd agent `io.terminum.terminumd` and says how to set the password. launchd holds `127.0.0.1:48080` from
@@ -70,6 +72,14 @@ terminum` typed in Terminal): restart it once at a quiet moment, by a reboot or 
 terminum kill-server`, which ends the programs in it; terminum makes the sessions again with
 their windows, splits, folders and projects (AC-15), and the programs are started again by
 hand (`claude --continue`, `codex resume --last`).
+
+On a Linux server terminumd is the systemd user service `io.terminum.terminumd`
+(`~/.config/systemd/user/`), started at once and at every login; a restart, an upgrade or an
+uninstall ends terminumd alone, never the terminals. Without linger the user's services end at
+logout, terminals too: `terminum status` says so, and `sudo loginctl enable-linger $USER` keeps
+them from boot. The page is on the server's `127.0.0.1:48080`; reach it from your computer
+with `ssh -L 48080:127.0.0.1:48080 <server>` (then `http://127.0.0.1:48080/`) or publish it on
+your tailnet with `tailscale serve` on the server. Finder and default apps are a Mac's only.
 
 From a checkout: `make install` (Rust, Node 26 and the Xcode Command Line Tools needed);
 `make test` runs the unit tests.

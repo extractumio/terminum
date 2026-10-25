@@ -72,7 +72,18 @@ pub fn page_url(port: &Value) -> String {
 /// How other devices reach the page: HTTPS through `tailscale serve` (README "Over Tailscale").
 pub fn serve_hint(port: &Value) -> String {
     format!("Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 {} \
-             (it takes the Mac's name; a name of its own: README \"Over Tailscale\")", page_url(port).trim_end_matches('/'))
+             (it takes this machine's name; a name of its own: README \"Over Tailscale\")", page_url(port).trim_end_matches('/'))
+}
+
+/// A desktop to open the page on: a Mac, or Linux with a display.
+pub fn has_desktop(ctx: &Ctx) -> bool {
+    cfg!(target_os = "macos") || ["DISPLAY", "WAYLAND_DISPLAY"].iter().any(|k| ctx.var(k).is_some_and(|v| !v.is_empty()))
+}
+
+/// How a computer reaches the page of a server with no desktop.
+pub fn tunnel_hint(port: &Value) -> String {
+    let p = if port.is_null() { crate::settings::DEFAULT_PORT.to_string() } else { text(port) };
+    format!("From your computer: ssh -L {p}:127.0.0.1:{p} <this server>, then open http://127.0.0.1:{p}/")
 }
 
 /// Whether browsers can sign in: a password is set, or why not.
@@ -117,7 +128,7 @@ pub fn status(ctx: &Ctx) {
         Some(h) => {
             status_lines(&h).into_iter().for_each(|l| ctx.say(l));
             // under launchd on macOS only: a terminal's terminumd starts tmux as that terminal (AC-08)
-            if cfg!(target_os = "macos") && h["launchd"] == true && let Some(line) = super::folders::restart_line(ctx, &h["tmux"]["started_by"]) {
+            if cfg!(target_os = "macos") && h["service"] == true && let Some(line) = super::folders::restart_line(ctx, &h["tmux"]["started_by"]) {
                 ctx.say(format!("folders:    {line}"));
             }
         }
@@ -126,7 +137,10 @@ pub fn status(ctx: &Ctx) {
             ctx.say(format!("            log: {}", ctx.shown(&ctx.log())));
         }
     }
-    if !ctx.direct && let Some(held) = launch::plist_port(ctx) {
+    if ctx.systemd && !ctx.direct && let Some(hint) = super::systemd::linger_hint(ctx) {
+        ctx.say(format!("service:    {hint}"));
+    }
+    if !ctx.direct && !ctx.systemd && let Some(held) = launch::plist_port(ctx) {
         let wanted = launch::port(ctx);
         if wanted != held {
             ctx.say(format!("port:       settings.json says {wanted}, launchd holds {held}: run terminum restart"));
@@ -149,7 +163,9 @@ pub fn open_page(ctx: &Ctx, print_only: bool) -> Result<(), String> {
     }
     let url = page_url(&h["port"]);
     ctx.say(format!("{url} (sign in with your password)"));
-    if !print_only {
+    if !has_desktop(ctx) {
+        ctx.say(tunnel_hint(&h["port"]));
+    } else if !print_only {
         let _ = std::process::Command::new(&ctx.opener).arg(&url).status();
     }
     Ok(())

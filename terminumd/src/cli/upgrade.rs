@@ -12,10 +12,13 @@ use std::process::{Command, Stdio};
 use sha2::{Digest, Sha256};
 
 use super::ctx::Ctx;
-use super::install::mac_platform;
+use super::install::platform;
 
 use crate::update::RELEASES;
-pub const TARBALL: &str = "terminum-macos.tar.gz";
+/// The package of every OS; releases before Linux servers had only the Mac's name for it,
+/// which every release still carries (the same bytes) for the installs of then.
+pub const TARBALL: &str = "terminum.tar.gz";
+pub const MAC_TARBALL: &str = "terminum-macos.tar.gz";
 const NAME: &str = "terminum";
 pub const NAMESPACE: &str = "terminum-release";
 
@@ -162,6 +165,18 @@ pub fn extract(tar: &Path, dest: &Path) -> Result<(), String> {
     plain(dest, dest)
 }
 
+/// The package a release's signed list names for this machine: the one of every OS, else (a
+/// release from before Linux servers) the Mac's, which a Linux server cannot install.
+pub fn archive_of(sums: &str, mac: bool) -> Result<&'static str, String> {
+    let names = |f: &str| sums.lines().any(|l| l.ends_with(&format!("  {f}")));
+    match (names(TARBALL), names(MAC_TARBALL), mac) {
+        (true, _, _) => Ok(TARBALL),
+        (false, true, true) => Ok(MAC_TARBALL),
+        (false, true, false) => Err("that release is from before terminum ran as a Linux server: nothing installed".into()),
+        _ => Err("the signed list names no package: nothing installed".into()),
+    }
+}
+
 /// Downloads, checks and installs a release; the installer's exit status.
 pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
     if let Some(t) = tag.filter(|t| !is_tag(t)) {
@@ -174,7 +189,7 @@ pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
         None => format!("{releases}/latest/download"),
     };
     let tmp = Scratch::new(ctx)?;
-    for f in [TARBALL, "SHA256SUMS", "SHA256SUMS.sig"] {
+    for f in ["SHA256SUMS", "SHA256SUMS.sig"] {
         fetch(&format!("{base}/{f}"), &tmp.0.join(f)).map_err(|e| format!("download failed ({base}): {e}"))?;
     }
     if !verify(&pkg.join("release-signers"), &tmp.0.join("SHA256SUMS"), &tmp.0.join("SHA256SUMS.sig"))? {
@@ -183,14 +198,16 @@ pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
     let sums = std::fs::read_to_string(tmp.0.join("SHA256SUMS")).map_err(|e| e.to_string())?;
     let here = std::fs::read_to_string(pkg.join("BUILD")).unwrap_or_default();
     check_release(&sums, tag, here.trim())?;
-    let want = sums.lines().find(|l| l.ends_with(&format!("  {TARBALL}"))).and_then(|l| l.split_whitespace().next());
-    let data = std::fs::read(tmp.0.join(TARBALL)).map_err(|e| e.to_string())?;
+    let tarball = archive_of(&sums, cfg!(target_os = "macos"))?;
+    fetch(&format!("{base}/{tarball}"), &tmp.0.join(tarball)).map_err(|e| format!("download failed ({base}): {e}"))?;
+    let want = sums.lines().find(|l| l.ends_with(&format!("  {tarball}"))).and_then(|l| l.split_whitespace().next());
+    let data = std::fs::read(tmp.0.join(tarball)).map_err(|e| e.to_string())?;
     let got: String = Sha256::digest(&data).iter().map(|b| format!("{b:02x}")).collect();
     if want != Some(got.as_str()) {
-        return Err(format!("checksum mismatch for {TARBALL}: nothing installed"));
+        return Err(format!("checksum mismatch for {tarball}: nothing installed"));
     }
-    extract(&tmp.0.join(TARBALL), &tmp.0.join("pkg"))?;
-    let installer = tmp.0.join("pkg").join(NAME).join("agents").join(mac_platform()).join("terminumd");
+    extract(&tmp.0.join(tarball), &tmp.0.join("pkg"))?;
+    let installer = tmp.0.join("pkg").join(NAME).join("agents").join(platform()).join("terminumd");
     // the installer sees the command's own environment (ctx.env), as every other child does
     let status = Command::new(&installer).arg("install").env_clear().envs(&ctx.env).status().map_err(|e| format!("{}: {e}", installer.display()))?;
     Ok(status.code().unwrap_or(1))
@@ -199,6 +216,17 @@ pub fn upgrade(ctx: &Ctx, tag: Option<&str>) -> Result<i32, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_package_of_every_os_else_the_macs_only_on_a_mac() {
+        let both = format!("# release v1\n00  {TARBALL}\n00  {MAC_TARBALL}\n");
+        let old = format!("# release v0\n00  {MAC_TARBALL}\n");
+        assert_eq!(archive_of(&both, true), Ok(TARBALL));
+        assert_eq!(archive_of(&both, false), Ok(TARBALL));
+        assert_eq!(archive_of(&old, true), Ok(MAC_TARBALL), "a release from before: the Mac's package");
+        assert!(archive_of(&old, false).is_err_and(|e| e.contains("before terminum ran as a Linux server")));
+        assert!(archive_of("# release v1\n", true).is_err());
+    }
 
     #[test]
     fn versions_and_tags() {

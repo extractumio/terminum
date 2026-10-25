@@ -4,7 +4,7 @@
 // a MIDI file, rendered by terminumd with the user's SoundFont (midi.rs) into a WAV for the same
 // player; anything else is a card with Download (Open with default app on this Mac's own page).
 
-import { esc, fmtSize, hydrateRaw, midiWav, PROXIED, rawBytes, whileShown, type FileView } from "./api";
+import { esc, fmtSize, hydrateRaw, midiWav, PROXIED, rawBytes, SERVER_APPS, whileShown, type FileView } from "./api";
 import { decoderFor, wav } from "./pcm";
 
 const isMidi = (f: FileView) => /^audio\/(x-)?midi$/.test(f.mime ?? "") || /\.(midi?|kar)$/i.test(f.path);
@@ -20,7 +20,7 @@ export function mediaOf(f: FileView): "image" | "pdf" | "video" | "audio" | null
 /** Renders binary file `f` into `body` under `banner`. */
 export function renderBinary(body: HTMLElement, f: FileView, banner: string) {
   const media = mediaOf(f), path = esc(f.path);
-  const action = PROXIED ? `<button class="btn" data-download>Download</button>` // web app (AC-53)
+  const action = PROXIED || !SERVER_APPS ? `<button class="btn" data-download>Download</button>` // web app (AC-53), a Linux server
     : `<button class="btn" data-open-app>Open with default app</button>`;
   if (media === "image") {
     body.innerHTML = `${banner}<div class="scroll imgview"><img data-raw="${path}" alt="" title="Zoom"><div class="imgmeta"></div></div>`;

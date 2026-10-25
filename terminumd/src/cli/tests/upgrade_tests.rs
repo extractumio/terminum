@@ -99,7 +99,9 @@ impl T {
         let installer = format!("#!/bin/sh\necho \"$1 $HOME\" > '{}'\n", self.marker.display());
         vec![
             Member::File("terminum/agents/macos-aarch64/terminumd", installer.clone(), 0o755),
-            Member::File("terminum/agents/macos-x86_64/terminumd", installer, 0o755),
+            Member::File("terminum/agents/macos-x86_64/terminumd", installer.clone(), 0o755),
+            Member::File("terminum/agents/linux-x86_64/terminumd", installer.clone(), 0o755),
+            Member::File("terminum/agents/linux-aarch64/terminumd", installer, 0o755),
             Member::File("terminum/BUILD", "v9\n".into(), 0o644),
         ]
     }
@@ -269,7 +271,6 @@ fn install_sh(t: &T, signers: &str) -> std::process::Output {
         .env("TM_RELEASE_URL", format!("file://{}", t.home.path("releases").display())).output().unwrap()
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn install_sh_checks_the_signature_and_runs_the_packages_terminumd() {
     let t = T::new();
@@ -285,7 +286,6 @@ fn install_sh_checks_the_signature_and_runs_the_packages_terminumd() {
     assert_eq!(t.installed().as_deref().and_then(|s| s.split(' ').next()), Some("install"));
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn install_sh_rejects_a_replayed_signed_release() {
     let t = T::new();

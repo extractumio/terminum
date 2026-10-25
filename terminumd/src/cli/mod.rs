@@ -14,6 +14,7 @@ mod importer;
 mod install;
 mod launch;
 mod sockhttp;
+mod systemd;
 mod term;
 mod upgrade;
 

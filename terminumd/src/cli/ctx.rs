@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! What one run of the `terminum` command works with: the environment it was given, the
 //! folders derived from it (terminumd reads the same: TM_HOME, default ~/.terminum; TM_APP_DIR,
-//! default <home>/state; for tests TM_LAUNCH_AGENTS, default ~/Library/LaunchAgents), the
-//! launchd agent's label, and where its output goes. Tests build one directly, so nothing
+//! default <home>/state; for tests TM_LAUNCH_AGENTS, default ~/Library/LaunchAgents, and
+//! TM_SYSTEMD_UNITS, default ~/.config/systemd/user), the service's label (launchd's agent on
+//! macOS, systemd's user service on Linux), and where its output goes. Tests build one directly, so nothing
 //! here reads the process's environment after `from_env`.
 
 use std::collections::HashMap;
@@ -17,6 +18,8 @@ pub const LABEL: &str = "io.terminum.terminumd";
 /// The only other labels accepted (TM_LAUNCHD_LABEL): the opt-in launchd test's own agent.
 pub const TEST_LABEL_PREFIX: &str = "io.terminum.test-";
 pub const SYSTEM_LAUNCHCTL: &str = "/bin/launchctl";
+pub const SYSTEM_SYSTEMCTL: &str = "/usr/bin/systemctl";
+pub const SYSTEM_LOGINCTL: &str = "/usr/bin/loginctl";
 /// Seconds a new build has to report itself (AC-16).
 pub const WAIT: Duration = Duration::from_secs(10);
 
@@ -28,12 +31,18 @@ pub struct Ctx {
     pub real_home: PathBuf,
     pub root: PathBuf,
     pub app_dir: PathBuf,
-    /// the LaunchAgents folder the plist goes to
+    /// the LaunchAgents folder the plist goes to (macOS)
     pub agents: PathBuf,
+    /// the systemd user units folder the service goes to (Linux; TM_SYSTEMD_UNITS for tests)
+    pub units: PathBuf,
+    /// systemd runs terminumd (Linux), else launchd
+    pub systemd: bool,
     pub label: String,
     /// TM_NO_LAUNCHD=1: terminumd as a plain process with a pid file
     pub direct: bool,
     pub launchctl: PathBuf,
+    pub systemctl: PathBuf,
+    pub loginctl: PathBuf,
     /// what opens a sign-in link in the browser
     pub opener: PathBuf,
     pub wait: Duration,
@@ -68,6 +77,7 @@ impl Ctx {
         let root = get("TM_HOME").unwrap_or_else(|| home.join(".terminum"));
         let app_dir = get("TM_APP_DIR").unwrap_or_else(|| root.join("state"));
         let agents = get("TM_LAUNCH_AGENTS").unwrap_or_else(|| home.join("Library/LaunchAgents"));
+        let units = get("TM_SYSTEMD_UNITS").unwrap_or_else(|| home.join(".config/systemd/user"));
         let label = match env.get("TM_LAUNCHD_LABEL").filter(|v| !v.is_empty()) {
             None => LABEL.to_string(),
             Some(l) if test_label(l) => l.clone(),
@@ -81,9 +91,13 @@ impl Ctx {
             root,
             app_dir,
             agents,
+            units,
+            systemd: cfg!(target_os = "linux"),
             label,
             launchctl: PathBuf::from(SYSTEM_LAUNCHCTL),
-            opener: PathBuf::from("/usr/bin/open"),
+            systemctl: PathBuf::from(SYSTEM_SYSTEMCTL),
+            loginctl: PathBuf::from(SYSTEM_LOGINCTL),
+            opener: PathBuf::from(if cfg!(target_os = "macos") { "/usr/bin/open" } else { "/usr/bin/xdg-open" }),
             wait: WAIT,
             pkg: None,
             tty: false,

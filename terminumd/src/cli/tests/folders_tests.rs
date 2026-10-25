@@ -34,14 +34,13 @@ fn the_restart_line_names_the_program_that_started_tmux_unless_it_is_the_daemon(
     assert!(other.starts_with("terminum's tmux was started by ~/src/target/release/terminumd: macOS judges"), "{other}");
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn decided_folders_are_said_at_once_allowed_on_one_line_refused_with_where_to_allow() {
     let home = Home::new();
     let ctx = home.ctx(&[]);
     let mut err = row("iCloud Drive", "error");
     err["error"] = json!("Input/output error");
-    let answer = json!({"launchd": true, "done": true, "tmux_started_by": ctx.program(),
+    let answer = json!({"service": true, "done": true, "tmux_started_by": ctx.program(),
         "folders": [row("Desktop", "allowed"), row("Documents", "allowed"), row("Downloads", "refused"), err]});
     let _s = serve(&ctx.sock(), HashMap::from([("POST /folders".to_string(), fixed(200, answer))]));
     folders::command(&ctx).unwrap();
@@ -52,14 +51,13 @@ fn decided_folders_are_said_at_once_allowed_on_one_line_refused_with_where_to_al
     ]);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn while_macos_asks_it_says_so_once_then_the_answers_and_that_the_old_tmux_must_restart() {
     let home = Home::new();
     let ctx = home.ctx(&[]);
-    let asking = json!({"launchd": true, "done": false, "tmux_started_by": "",
+    let asking = json!({"service": true, "done": false, "tmux_started_by": "",
         "folders": [row("Desktop", "allowed"), row("Dropbox", "asking"), row("OneDrive", "pending")]});
-    let done = json!({"launchd": true, "done": true, "tmux_started_by": "",
+    let done = json!({"service": true, "done": true, "tmux_started_by": "",
         "folders": [row("Desktop", "allowed"), row("Dropbox", "allowed"), row("OneDrive", "allowed")]});
     let s = serve(&ctx.sock(), HashMap::from([("POST /folders".to_string(), answers(vec![asking.clone(), asking, done]))]));
     folders::command(&ctx).unwrap();
@@ -71,12 +69,11 @@ fn while_macos_asks_it_says_so_once_then_the_answers_and_that_the_old_tmux_must_
     assert_eq!(s.requests.lock().len(), 3, "it waited until the answers came");
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn past_its_wait_it_says_what_macos_still_asks_and_where_to_answer() {
     let home = Home::new();
     let ctx = home.ctx(&[]);
-    let asking = json!({"launchd": true, "done": false, "tmux_started_by": ctx.program(),
+    let asking = json!({"service": true, "done": false, "tmux_started_by": ctx.program(),
         "folders": [row("Desktop", "allowed"), row("Dropbox", "asking"), row("OneDrive", "pending")]});
     let _s = serve(&ctx.sock(), HashMap::from([("POST /folders".to_string(), fixed(200, asking))]));
     folders::ask_and_report(&ctx, Duration::from_millis(200)).unwrap();
@@ -86,12 +83,11 @@ fn past_its_wait_it_says_what_macos_still_asks_and_where_to_answer() {
     ]);
 }
 
-#[cfg(target_os = "macos")]
 #[test]
 fn nothing_is_asked_without_launchd_or_on_an_upgrade_to_an_ad_hoc_build() {
     let home = Home::new();
     let ctx = home.ctx(&[]);
-    let answer = json!({"launchd": false, "done": true, "folders": [], "tmux_started_by": null});
+    let answer = json!({"service": false, "done": true, "folders": [], "tmux_started_by": null});
     let s = serve(&ctx.sock(), HashMap::from([("POST /folders".to_string(), fixed(200, answer))]));
     folders::command(&ctx).unwrap();
     assert_eq!(said(&ctx), ["terminumd was not started by launchd: macOS would ask for the app it runs in, not for terminum"]);

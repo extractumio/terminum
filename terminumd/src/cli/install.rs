@@ -44,8 +44,12 @@ fn unlink(ctx: &Ctx, name: &str) {
     let _ = std::fs::remove_file(ctx.lib().join(name));
 }
 
-/// The Mac's own architecture: an x86_64 build under Rosetta would say x86_64 on Apple Silicon.
-pub fn mac_platform() -> &'static str {
+/// This machine's platform, as the package names its terminumd (agents/<platform>/): on a Mac
+/// its own architecture (an x86_64 build under Rosetta would say x86_64 on Apple Silicon).
+pub fn platform() -> &'static str {
+    if cfg!(target_os = "linux") {
+        return if cfg!(target_arch = "aarch64") { "linux-aarch64" } else { "linux-x86_64" };
+    }
     #[cfg(target_os = "macos")]
     {
         let mut v: libc::c_int = 0;
@@ -91,7 +95,7 @@ fn copy_build(ctx: &Ctx, build: &str, pkg: &Path) -> Result<(), String> {
     let err = |e: std::io::Error| format!("copying the package into {}: {e}", ctx.shown(&dest));
     std::fs::create_dir_all(ctx.lib()).map_err(err)?;
     copy_tree(pkg, &tmp).map_err(err)?;
-    std::os::unix::fs::symlink(format!("agents/{}/terminumd", mac_platform()), tmp.join("terminumd")).map_err(err)?;
+    std::os::unix::fs::symlink(format!("agents/{}/terminumd", platform()), tmp.join("terminumd")).map_err(err)?;
     std::fs::rename(&tmp, &dest).map_err(err)
 }
 
@@ -176,17 +180,20 @@ pub fn tmux_found(ctx: &Ctx) -> bool {
 }
 
 /// The first-install greeting: the page opened in the browser, or how to set the password
-/// first; and how other devices reach it.
+/// first; and how other devices reach it (a server with no desktop: through ssh or Tailscale).
 fn open_line(ctx: &Ctx, build: &str) {
     let h = launch::health(ctx).unwrap_or_default();
     let url = super::commands::page_url(&h["port"]);
     if h["password"]["set"].as_bool() == Some(true) {
         ctx.done(&format!("Installed {build}. Open {url} and sign in with your password (terminum open)"));
-        if cfg!(target_os = "macos") && ctx.var("TM_NO_OPEN") != Some("1") {
+        if super::commands::has_desktop(ctx) && ctx.var("TM_NO_OPEN") != Some("1") {
             let _ = std::process::Command::new(&ctx.opener).arg(&url).output();
         }
     } else {
         ctx.done(&format!("Installed {build}. Set the password every browser signs in with: terminum password; then open {url} (terminum open)"));
+    }
+    if !super::commands::has_desktop(ctx) {
+        ctx.say(super::commands::tunnel_hint(&h["port"]));
     }
     ctx.say(super::commands::serve_hint(&h["port"]));
 }
@@ -207,9 +214,9 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
         return Err(format!("{} is not a package (no BUILD): from a checkout, run make install", pkg.display()));
     };
     let build = text.trim().to_string();
-    let binary = pkg.join("agents").join(mac_platform()).join("terminumd");
+    let binary = pkg.join("agents").join(platform()).join("terminumd");
     if !binary.is_file() {
-        return Err(format!("the package has no terminumd for {}", mac_platform()));
+        return Err(format!("the package has no terminumd for {}", platform()));
     }
     let got = version_of(&binary);
     if got != build {
@@ -263,6 +270,9 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
         _ => open_line(ctx, &build),
     }
     super::folders::at_install(ctx, !upgrade);
+    if ctx.systemd && !ctx.direct && let Some(hint) = super::systemd::linger_hint(ctx) {
+        ctx.say(hint);
+    }
     if !tmux_found(ctx) {
         ctx.say(TMUX_HINT);
     }
@@ -335,7 +345,8 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
     let _ = std::fs::remove_file(ctx.bin().join("terminum"));
     let _ = std::fs::remove_dir(ctx.bin()); // only when empty
     ctx.done(&format!(
-        "Removed terminum: terminumd stopped, its launchd agent, builds and command removed. Settings, state and logs kept in {}; tmux sessions untouched.",
+        "Removed terminum: terminumd stopped, its {} service, builds and command removed. Settings, state and logs kept in {}; tmux sessions untouched.",
+        if ctx.systemd { "systemd" } else { "launchd" },
         ctx.root.display()
     ));
     Ok(())

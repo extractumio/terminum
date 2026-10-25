@@ -58,7 +58,7 @@ fn fresh_install_upgrade_same_build_and_prune() {
     t.install("a").unwrap();
     assert_eq!((t.link("current").as_deref(), t.running().as_deref()), (Some("a"), Some("a")));
     assert!(said(&t.ctx).contains(&"Installed a. Open http://127.0.0.1:48080/ and sign in with your password (terminum open)".to_string()));
-    assert!(said(&t.ctx).contains(&"Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes the Mac's name; a name of its own: README \"Over Tailscale\")".to_string()));
+    assert!(said(&t.ctx).contains(&"Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes this machine's name; a name of its own: README \"Over Tailscale\")".to_string()));
     assert!(std::fs::read_link(root.join("builds/a/terminumd")).unwrap().to_string_lossy().starts_with("agents/macos-"), "the Mac's own terminumd");
     assert!(root.join("builds/a/agents/linux-x86_64/terminumd").is_file(), "the helpers for hosts come along");
     assert_eq!(t.command(), root.join("builds/a/terminumd"), "the command is the build's terminumd");

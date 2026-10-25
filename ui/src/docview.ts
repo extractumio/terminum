@@ -3,7 +3,7 @@
 // the panel: anchors scroll, web links go to the default browser (in the web app: the reader's browser), files open as tabs
 // (`guide.md#install` opens guide.md and scrolls to "install").
 
-import { api, apiOrToast, basename, dirname, decodePath, hasScheme, hydrateRaw, PROXIED, resolvePath, toast, type FileView } from "./api";
+import { api, apiOrToast, basename, dirname, decodePath, hasScheme, hydrateRaw, PROXIED, resolvePath, SERVER_APPS, toast, type FileView } from "./api";
 import { isMarkdown, renderMarkdown } from "./markdown";
 import { dataKind } from "./dataparse";
 import { renderData } from "./dataview";
@@ -29,7 +29,7 @@ export async function followLink(href: string, from: string, scope: Document | H
   if (href.startsWith("#")) return scrollToAnchor(scope, decodePath(href.slice(1)));
   if (/^(https?:|mailto:)/i.test(href)) {
     // in the web app (AC-52) the reader is on another device: open it there, not on the Mac
-    if (PROXIED) return void window.open(href, "_blank", "noopener,noreferrer");
+    if (PROXIED || !SERVER_APPS) return void window.open(href, "_blank", "noopener,noreferrer");
     return void apiOrToast("POST", "/api/os/open", { body: { url: href } });
   }
   if (hasScheme(href) && !href.startsWith("file:")) return toast(`Not opened: ${href.split(":")[0]} links`);

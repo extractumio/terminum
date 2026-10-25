@@ -3,7 +3,7 @@
 // that act on the Mac itself (Finder, apps, typing into its terminal, a host's helper) are
 // left out; terminumd refuses them there anyway.
 
-import { apiOrToast, AT_MAC, dirname, scope, type TermState } from "./api";
+import { apiOrToast, AT_MAC, dirname, scope, SERVER_APPS, type TermState } from "./api";
 import { hostEntries, hostMenu } from "./host-offer";
 import { menu, type MenuEntry } from "./dialogs";
 import type { Tree } from "./tree";
@@ -28,7 +28,7 @@ export async function contextMenu(path: string | null, isDir: boolean, ev: Mouse
   const dir = path && !isDir ? dirname(path) : target;
   const canWrite = tree.isWritable(dir);
   const atMac = AT_MAC;                        // used at the Mac, not from another device
-  const macFiles = atMac && !scope;            // and this Mac's files: Finder and apps can take them
+  const macFiles = atMac && !scope && SERVER_APPS;   // and this Mac's files: Finder and apps can take them
   const entries: MenuEntry[] = [
     { id: "new-file", label: "New File…", keys: "⌥N", disabled: !canWrite },
     { id: "new-folder", label: "New Folder…", keys: "⌥⇧N", disabled: !canWrite },

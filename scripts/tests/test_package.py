@@ -38,6 +38,17 @@ class PackageTest(unittest.TestCase):
                 for m in t.getmembers():
                     self.assertEqual((m.uid, m.gid, m.uname, m.gname, m.mtime), (0, 0, "", "", 0), m.name)
             self.assertTrue((root / "out/SHA256SUMS").read_text().startswith("# release v9.0.0\n"))
+            # one package for every OS, under the Mac's old name too (installs before Linux ask for it)
+            sums = dict(reversed(l.split("  ")) for l in (root / "out/SHA256SUMS").read_text().splitlines()[1:])
+            self.assertEqual(sums[package.TARBALL], sums[package.MAC_TARBALL])
+            self.assertEqual(package.TARBALL, "terminum.tar.gz")
+
+    def test_a_release_without_the_linux_builds_fails(self):
+        with mock.patch.object(package, "build_macos", return_value={}), \
+             mock.patch.object(package.agents, "build", side_effect=package.agents.Failed("no zig")):
+            self.assertEqual(package.binaries("v9", None, False), {}, "make install: said, not refused")
+            with self.assertRaises(package.agents.Failed):
+                package.binaries("v9", None, False, release=True)
 
 
 class SigningTest(unittest.TestCase):

@@ -173,7 +173,8 @@ struct Hello {
 /// `GET /api/hello?n=&id=` (no sign-in): the server proves it holds the page's sign-in.
 async fn hello(State(app): State<Shared>, Query(q): Query<Hello>) -> Response {
     match app.signins.hello(&q.id, &q.n) {
-        Ok(proof) => Json(json!({"proof": proof})).into_response(),
+        // `apps`: Finder and default apps exist here (macOS), told to a known sign-in only
+        Ok(proof) => Json(json!({"proof": proof, "apps": cfg!(target_os = "macos")})).into_response(),
         Err(d) => (StatusCode::from_u16(d.status).unwrap_or(StatusCode::BAD_REQUEST), Json(d.body())).into_response(),
     }
 }

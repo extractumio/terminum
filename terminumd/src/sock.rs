@@ -157,12 +157,12 @@ struct Wait {
 /// `terminum install` and `terminum folders`: each protected folder opened by terminumd itself,
 /// so macOS asks for it while the user is at the Mac (AC-08); said as it stands after `wait` s.
 async fn folders(State(app): State<Shared>, axum::extract::Query(q): axum::extract::Query<Wait>) -> Json<Value> {
-    let mut v = if app.cfg.launchd {
+    let mut v = if app.cfg.service {
         crate::folders::ask(&crate::config::home(), std::time::Duration::from_secs_f64(q.wait.clamp(0.0, 120.0))).await
     } else {
         json!({"done": true, "folders": []})
     };
-    v["launchd"] = json!(app.cfg.launchd);
+    v["service"] = json!(app.cfg.service);
     v["tmux_started_by"] = json!(started_by(&app).await);
     Json(v)
 }
@@ -183,7 +183,7 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
         "port": app.cfg.port, "password": crate::webaccess::status(&app), "servers": servers,
         "hosts": crate::hosts::list(&app), "pages": app.pages.count(),
         "tmux": {"ok": problem.is_none(), "message": problem, "started_by": started_by(&app).await},
-        "launchd": app.cfg.launchd,
+        "service": app.cfg.service,
         "signins": app.signins.count(), "workspaces": app.store.len(),
         "denied_requests": app.denied.load(Ordering::Relaxed), "rss_mb": rss_mb(),
         "hooks": app.hooks.last.lock().iter().map(|(a, t)| (a.to_string(), json!(t.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()))))

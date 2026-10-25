@@ -151,7 +151,7 @@ def publish(tag, draft, notes):
         run("git", "push", "--quiet", "origin", f"refs/tags/{tag}")
         if not draft:
             gh("release", "create", tag, "--verify-tag", "--draft", "--title", tag, "--notes-file", str(path))
-        files = [str(package.OUT / f) for f in (package.TARBALL, "install.sh", "SHA256SUMS", "SHA256SUMS.sig")]
+        files = [str(package.OUT / f) for f in (package.TARBALL, package.MAC_TARBALL, "install.sh", "SHA256SUMS", "SHA256SUMS.sig")]
         gh("release", "upload", tag, *files, "--clobber")  # into the draft only
         gh("release", "edit", tag, "--notes-file", str(path), "--draft=false", "--latest")
         return gh("release", "view", tag, "--json", "url", "--jq", ".url").stdout.strip()
