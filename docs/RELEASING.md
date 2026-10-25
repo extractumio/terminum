@@ -73,10 +73,10 @@ for its platform (`uname -sm`), named by its agent id.
 
 ## CI
 
-Two places, both the owner's: GitHub Actions on the Linux runner of the CI VM for every push
-(`.github/workflows/ci.yml`), and the macOS checks on the LAN's Mac test runner over ssh
-(`make test-mac`, `scripts/ci_mac.sh`; `mac-runner` by default, `TM_MAC_RUNNER` names another), the
-way the owner's Mac pool runs tests: no GitHub runner on a Mac, whose user can do more than a
+Two places, both the owner's: GitHub Actions on the owner's Linux runner for every push
+(`.github/workflows/ci.yml`, label `terminum`), and the macOS checks on a Mac test runner of the
+owner's network over ssh (`make test-mac`, `scripts/ci_mac.sh`; `TM_MAC_RUNNER` is its ssh name,
+in the maintainer's `local.mk`): no GitHub runner on a Mac, whose user can do more than a
 CI job should. `make test-mac` is evidence, not a gate: run it before a release and after a
 change to macOS-only code (launchd, signing, folders, Finder).
 
@@ -86,28 +86,28 @@ private terminumd and tmux, and `security_check.sh`. The page's own checks (`e2e
 measure the layout of Safari and Chrome on the Mac, the page's clients: Linux's fonts and
 WebKit differ (columns, mouse cells, motion, TIFF), so they run on a Mac (`make test-mac`, and
 before every merge on the maintainer's). Timing checks scale by the load per core (`web/test/check.mjs`),
-since the VM is shared with coding agents. A real `systemctl --user` run is not part of it:
+since the runner's machine is shared. A real `systemctl --user` run is not part of it:
 the runner has no user manager, and giving it one (linger) would let a job leave a unit running
 outside the runner's confinement; the systemd half is covered by its unit tests (a stub
 systemctl) and checked by hand on a disposable machine before a release that changes it.
 
-### The runner (once, on the CI VM)
+### The runner (once)
 
-the owner's network notes' `scripts/runner setup script` sets up each runner of that VM under its own
-unprivileged user in `a shared slice` (in those notes). terminum's profile:
-user `<runner user>`, runner `<runner name>`, labels `ci-vm,terminum`, its own memory
-cap of 1536M, and as extra packages `tmux build-essential` and the browsers' system libraries
-(`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root). The slice holds
-2 GB for every runner of the VM together: a terminum job (cargo, two browsers, terminumd and
-tmux) can peak near 1.5 GB, so a concurrent job of another project may fail for memory. Measure the
-first jobs' peak (`systemctl show <unit> -p MemoryPeak`) and raise the slice or move CI to a VM
-of its own if they collide. The registration token travels on stdin, never on a command line:
+An Ubuntu 24.04 machine; the runner under an unprivileged user of its own (no sudo, no docker,
+its home closed to others), as a systemd service confined (`ProtectHome=tmpfs`, `PrivateTmp`, its
+home bound in) and capped in memory (`MemoryMax=1536M`, `OOMPolicy=continue`: a job that runs out
+fails alone), labels `terminum`. Packages: `tmux build-essential` and the browsers' system
+libraries (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root); Rust,
+Node and the browsers install per job into the runner's home. A job peaks near 1.5 GB; it builds
+with one rustc and no debug info (the workflow's env), since two rustc with it outgrew a 2 GB
+machine. The registration token travels on stdin, never on a command line:
 
 ```bash
 gh api -X POST repos/extractumio/terminum/actions/runners/registration-token --jq .token \
-  | ssh <runner machine> 'read -r ACTIONS_RUNNER_INPUT_TOKEN; export ACTIONS_RUNNER_INPUT_TOKEN;
-      RUNNER_VERSION=… RUNNER_SHA256=… /root/runner setup script terminum'
+  | ssh <runner machine> 'read -r ACTIONS_RUNNER_INPUT_TOKEN; export ACTIONS_RUNNER_INPUT_TOKEN; …'
 ```
+
+The maintainer's recipe for it lives with the machine's own records, outside this repository.
 
 The repository's settings keep everyone else's code off the runner: Actions › General ›
 "Require approval for all external contributors" (`gh api -X PUT

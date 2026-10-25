@@ -17,7 +17,7 @@ concurrency:
 jobs:
   linux:
     name: Tests on Linux (Ubuntu), the page in Chromium and WebKit
-    runs-on: [self-hosted, linux, x64, ci-vm, terminum]
+    runs-on: [self-hosted, linux, x64, terminum]
     timeout-minutes: 60
     env:
       # the VM's 2 GB are shared with coding agents: one rustc at a time, no debug info
