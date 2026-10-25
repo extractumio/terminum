@@ -124,6 +124,7 @@ its own with a Tailscale Service: see [Over Tailscale](docs/USAGE.md#over-tailsc
 
 - [The guide](docs/USAGE.md): every command, feature, remote host and setting.
 - [Architecture](docs/ARCHITECTURE.md): every part on one diagram, a Mac, a Linux server and the browsers.
+- [Set it up with a coding agent](skills/terminum-setup/SKILL.md): a skill Claude Code, Codex and the like follow to install, check and repair terminum for you.
 - [SECURITY.md](SECURITY.md): the threat model.
 - [docs/specs/](docs/specs/): behavior, limits and evidence; contributor rules in
   [CLAUDE.md](CLAUDE.md), releases in [docs/RELEASING.md](docs/RELEASING.md).
