@@ -149,10 +149,13 @@ fn typed_bytes_reach_the_pane_as_a_terminal_sends_them() {
 /// with it off (a host's tmux by default) the bytes still reach the program.
 #[test]
 fn shift_enter_is_csi_u_only_for_programs_that_ask() {
-    // (the program asks, the server's extended-keys, what the program reads)
-    for (ask, on, want) in [(true, true, "\x1b[13;2u\x1b[13;5u"), (false, true, "\r\r"), (true, false, "\x1b[13;2u\x1b[13;5u")] {
+    // (the program asks, the server's extended-keys); it reads Enter only from a server that
+    // names the keys (extended-keys on, tmux 3.5+: 3.4 has no extended-keys-format) when it did not ask
+    for (ask, on) in [(true, true), (false, true), (true, false)] {
         let dir = std::env::temp_dir().join(format!("tm-test-xk-{}-{ask}-{on}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
+        let named = on && crate::testutil::tmux_at_least((3, 5));
+        let want = if !ask && named { "\r\r" } else { "\x1b[13;2u\x1b[13;5u" };
         let out = dir.join("got");
         // the program asks only once the options are set (tmux drops a request made before)
         let go = dir.join("go");
@@ -167,7 +170,7 @@ fn shift_enter_is_csi_u_only_for_programs_that_ask() {
             s.tmux(&["display", "-p", "-t", "main", "#{pane_current_command}"]).stdout == b"head\n"
         });
         assert!(ready);
-        for c in commands("main", &parts("\x1b[13;2u\x1b[13;5u"), on) {
+        for c in commands("main", &parts("\x1b[13;2u\x1b[13;5u"), named) {
             let args: Vec<&str> = c.split(' ').collect();
             assert!(s.tmux(&args).status.success(), "{c}");
         }

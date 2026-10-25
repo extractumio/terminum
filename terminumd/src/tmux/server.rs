@@ -28,7 +28,7 @@ pub enum Link {
 }
 
 /// The problem said when tmux is not installed.
-pub const NO_TMUX: &str = "tmux is needed for terminals: brew install tmux";
+pub const NO_TMUX: &str = if cfg!(target_os = "macos") { "tmux is needed for terminals: brew install tmux" } else { "tmux is needed for terminals: sudo apt install tmux (or your system's package manager)" };
 
 /// The session a host's control client holds (OQ-81).
 pub const HOST_SESSION: &str = "terminum";
@@ -233,16 +233,16 @@ impl Server {
         inner.bulk.as_ref().is_some_and(|c| c.alive()) || inner.sessions.values().any(|c| c.alive())
     }
 
-    /// Whether a control client got tmux's first answer (a host's ssh reached tmux).
     /// Whether the server has `extended-keys` on (terminum's tmux.conf sets it; a host's tmux
-    /// is off by default): asked once per connection, an error counts as off.
+    /// is off by default) and is tmux 3.5+ (which has `extended-keys-format`: 3.4 types
+    /// `send-keys S-Enter` as the text "S-Enter"): asked once per connection, an error is off.
     pub async fn extended_keys(&self, client: &Control) -> bool {
         let generation = self.generation.load(Ordering::Relaxed);
         if let Some((g, on)) = *self.extended.lock() && g == generation {
             return on;
         }
-        let answer = client.run_all(vec!["show-options -sv extended-keys".into()]).await.pop();
-        let on = answer.and_then(|a| a.ok()).and_then(|l| l.into_iter().next()).is_some_and(|v| v.trim() != "off");
+        let answers = client.run_all(vec!["show-options -sv extended-keys".into(), "show-options -gv extended-keys-format".into()]).await;
+        let on = matches!(&answers[..], [Ok(keys), Ok(_)] if keys.first().is_some_and(|v| v.trim() != "off"));
         *self.extended.lock() = Some((generation, on));
         on
     }
