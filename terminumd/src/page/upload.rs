@@ -3,7 +3,8 @@
 //! `POST /upload?name=&sid=` (any file) are saved where the pane's shell runs, named by UTC
 //! time and 8 random hex digits, 0600 in a 0700 folder; the page pastes the path it gets.
 //! In ~/.terminum/tmp on this Mac, and on a host through its files agent in the host's
-//! ~/.terminum/tmp. Pastes older than 7 days go at the next one.
+//! ~/.terminum/tmp. Pastes older than 7 days go at the next one, when terminumd (or the host's
+//! files agent) starts and once a day.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -120,12 +121,7 @@ pub fn save_in(folder: &Path, name: &str, data: &[u8]) -> Result<PathBuf, String
         return Err(format!("{} is not a folder of this user's.", folder.display()));
     }
     let _ = std::fs::set_permissions(folder, std::fs::Permissions::from_mode(0o700));
-    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(KEEP_DAYS * 86400);
-    for old in std::fs::read_dir(folder).into_iter().flatten().flatten() {
-        if old.metadata().is_ok_and(|m| m.is_file() && m.modified().is_ok_and(|t| t < cutoff)) {
-            let _ = std::fs::remove_file(old.path());
-        }
-    }
+    sweep(folder);
     let path = folder.join(name);
     if std::fs::symlink_metadata(&path).is_ok() {
         return Err(format!("{name} exists already"));
@@ -141,6 +137,33 @@ pub fn save_in(folder: &Path, name: &str, data: &[u8]) -> Result<PathBuf, String
         e.to_string()
     })?;
     Ok(path)
+}
+
+/// Removes the files in `folder` older than 7 days; nothing when it is not a folder of this
+/// user's (a link is never followed). The number removed.
+pub fn sweep(folder: &Path) -> usize {
+    use std::os::unix::fs::MetadataExt;
+    // SAFETY: getuid has no preconditions
+    let ours = std::fs::symlink_metadata(folder).is_ok_and(|m| m.is_dir() && m.uid() == unsafe { libc::getuid() });
+    if !ours {
+        return 0;
+    }
+    let cutoff = std::time::SystemTime::now() - std::time::Duration::from_secs(KEEP_DAYS * 86400);
+    std::fs::read_dir(folder).into_iter().flatten().flatten()
+        .filter(|old| old.metadata().is_ok_and(|m| m.is_file() && m.modified().is_ok_and(|t| t < cutoff)))
+        .filter(|old| std::fs::remove_file(old.path()).is_ok())
+        .count()
+}
+
+/// `sweep` of `folder` now and once a day after, off the async workers.
+pub async fn sweep_daily(folder: PathBuf) {
+    loop {
+        let f = folder.clone();
+        if let Ok(n) = tokio::task::spawn_blocking(move || sweep(&f)).await && n > 0 {
+            tracing::info!(event = "paste.swept", folder = %folder.display(), removed = n);
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(86400)).await;
+    }
 }
 
 /// This Mac's paste folder: TM_PASTE_DIR, else ~/.terminum/tmp.
@@ -244,6 +267,29 @@ mod tests {
         assert_eq!(std::fs::metadata(&p).unwrap().permissions().mode() & 0o777, 0o600);
         assert_eq!(std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777, 0o700);
         assert!(save_in(&dir, &name, b"again").is_err(), "never over an existing file");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_sweep_takes_files_older_than_7_days_only_in_a_folder_of_ours() {
+        let dir = std::env::temp_dir().join(format!("tm-sweep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (old, new) = (dir.join("old.png"), dir.join("new.png"));
+        for f in [&old, &new] {
+            std::fs::write(f, "x").unwrap();
+        }
+        let eight_days = std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 86400);
+        std::fs::File::options().write(true).open(&old).unwrap().set_modified(eight_days).unwrap();
+        let link = std::env::temp_dir().join(format!("tm-sweep-link-{}", std::process::id()));
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(&dir, &link).unwrap();
+        assert_eq!(sweep(&link), 0, "a link to a folder is not followed");
+        assert!(old.exists());
+        assert_eq!(sweep(&dir), 1);
+        assert!(!old.exists() && new.exists(), "the old one goes, the new one stays");
+        assert_eq!(sweep(&dir.join("none")), 0, "no folder: nothing");
+        std::fs::remove_file(&link).ok();
         std::fs::remove_dir_all(&dir).ok();
     }
 }

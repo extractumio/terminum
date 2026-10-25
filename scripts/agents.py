@@ -79,6 +79,11 @@ def mac_platform():
     return "macos-aarch64" if r.stdout.strip() == "1" or host_platform.machine() == "arm64" else "macos-x86_64"
 
 
+def this_platform():
+    """The platform of the terminumd this machine runs: a Mac's own architecture, or Linux's."""
+    return mac_platform() if host_platform.system() == "Darwin" else native()
+
+
 def native():
     """The platform this machine builds without cross-compiling."""
     system = {"Darwin": "macos", "Linux": "linux"}.get(host_platform.system(), "?")
@@ -123,6 +128,7 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = p.add_subparsers(dest="cmd", required=True)
     sub.add_parser("id")
+    sub.add_parser("platform", help="this machine's platform, as a package names its terminumd")
     t = sub.add_parser("toolchain")
     t.add_argument("platforms", nargs="*")
     b = sub.add_parser("build")
@@ -131,6 +137,8 @@ def main(argv=None):
     try:
         if a.cmd == "id":
             return print(agent_id())
+        if a.cmd == "platform":
+            return print(this_platform())
         if a.cmd == "toolchain":
             return toolchain(a.platforms or list(TARGETS))
         for plat, path in build(a.platforms or list(TARGETS)).items():

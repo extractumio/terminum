@@ -6,13 +6,24 @@
 import fs from "node:fs";
 import { check, SB } from "./e2e_harness.mjs";
 
-/** Dispatches `type` with files `names` (their text "hello <name>") on `sel`; then the marked rows and the line over the tree. */
+/** Dispatches `type` with files `names` (their text "hello <name>") on `sel`; then the marked rows and the line over the tree.
+ *  The row is found and the event sent in one go, again while the panel did not take it: the tree
+ *  draws its rows anew as a folder's listing comes, and an event sent to a row it just replaced
+ *  reaches nothing (a busy machine makes that likelier). */
 async function drag(page, sel, names, type) {
-  await page.$eval(sel, (el, [names, type]) => {
-    const dt = new DataTransfer();
-    for (const n of names) dt.items.add(new File([`hello ${n}`], n, { type: "text/plain" }));
-    el.dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
-  }, [names, type]);
+  for (let i = 0; i < 20; i++) {
+    const taken = await page.evaluate(([sel, names, type]) => {
+      const el = document.querySelector(sel);
+      if (!el) return false;
+      const dt = new DataTransfer();
+      for (const n of names) dt.items.add(new File([`hello ${n}`], n, { type: "text/plain" }));
+      const e = new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true });
+      el.dispatchEvent(e);
+      return e.defaultPrevented;                    // the tree took it (dragover and drop both say so)
+    }, [sel, names, type]);
+    if (taken) break;
+    await page.waitForTimeout(100);
+  }
   await page.waitForTimeout(150);
   return page.evaluate(() => {
     const note = document.querySelector(".dropnote");

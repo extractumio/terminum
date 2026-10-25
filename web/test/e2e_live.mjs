@@ -74,7 +74,7 @@ async function wide(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
   const page = await ctx.newPage();
   const errors = [];
-  page.on("pageerror", (e) => errors.push(String(e)));
+  page.on("pageerror", (e) => errors.push(String(e.stack ?? e)));
   await signIn(page);
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/" && !new URL(page.url()).search);
   check("AC-09 the sign-in is kept in the origin's storage", await page.evaluate(() => /^[0-9a-f]{64}$/.test(localStorage.getItem("tm.session") ?? "")));
@@ -126,6 +126,14 @@ async function wide(browser, name) {
   const theme = JSON.parse(fs.readFileSync(path.join(HOME, "themes/local.json"), "utf8"));
   fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   await within("AC-12 a changed theme file reaches the page without a reload", () => page.waitForFunction(() => getComputedStyle(document.documentElement).getPropertyValue("--t-bg").trim() === "#102030", null, { timeout: 5000 }));
+  // a device without the theme's font (an iPhone): the shipped one draws the text; its icons file stays unfetched
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030", font: "NoSuchFont-Regular" }));
+  await within("AC-12 without the theme's font the terminal is drawn in the shipped one; the icons are not fetched", () => page.waitForFunction(() => {
+    const faces = [...document.fonts].filter((f) => f.family.replace(/"/g, "") === "TermFontShipped");
+    const icons = faces.find((f) => f.unicodeRange.toLowerCase().includes("f0000"));
+    return faces.some((f) => f.status === "loaded" && f.weight === "400") && icons?.status === "unloaded";
+  }, null, { timeout: 5000 }));
+  fs.writeFileSync(path.join(HOME, "themes/local.json"), JSON.stringify({ ...theme, bg: "#102030" }));
   // a color scheme picked in one browser is every browser's (settings.json page.colorScheme)
   const other = await browser.newContext({ viewport: { width: 1000, height: 700 } });
   const page2 = await other.newPage();
@@ -145,9 +153,24 @@ async function wide(browser, name) {
   });
   await page.keyboard.press("Escape");
   await other.close();
+  check("AC-08 terminumd marks the tmux server it started with its own executable",
+    tmux("show-options", "-gqv", "@terminum-started-by") === fs.realpathSync(BIN), tmux("show-options", "-gqv", "@terminum-started-by"));
+  // what a restart of terminumd (an upgrade) keeps: a row marked unread (AC-93), a color scheme picked (AC-12)
+  const byhand = page.locator("#sessions .item", { hasText: "byhand" }).last();
+  await byhand.click({ button: "right" });
+  await page.click('#rowmenu button[data-action="unread"]');
+  await within("AC-93 Mark as Unread marks the row", () => page.waitForFunction(() => [...document.querySelectorAll("#sessions .item.unread")].some((r) => r.innerText.includes("byhand")), null, { timeout: 5000 }));
+  await page.click("#menubtn");
+  await page.click('#schemes .swatch[data-scheme="Nord"]');
+  await page.keyboard.press("Escape");
   await stop();
   await start();
   await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3 && !document.getElementById("status").innerText.includes("not running"), null, { timeout: 8000 }));
+  await within("AC-93 a row marked unread is still unread after terminumd restarts", () => page.waitForFunction(() => [...document.querySelectorAll("#sessions .item.unread")].some((r) => r.innerText.includes("byhand")), null, { timeout: 5000 }));
+  check("AC-12 the color scheme picked is kept across the restart", kept() === "Nord" && await bg(page) === "#2e3440", `${kept()} ${await bg(page)}`);
+  await page.click("#menubtn");
+  await page.click('#schemes .swatch[data-scheme=""]');
+  await page.keyboard.press("Escape");
   check("no page errors", errors.length === 0, errors.slice(0, 3).join(" | "));
   return ctx;
 }

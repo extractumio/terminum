@@ -412,7 +412,7 @@ function applyTheme(theme) {
   if (theme.font && document.fonts && theme.font !== shownFont) {
     shownFont = theme.font;
     const face = new FontFace("TermFont", `local("${theme.font.replace(/["\\]/g, "")}")`);
-    face.load().then((f) => document.fonts.add(f)).catch(() => { /* not on this device: Menlo */ });
+    face.load().then((f) => document.fonts.add(f)).catch(() => { /* not on this device: the shipped one (fonts/fonts.css) */ });
   }
   view.setTheme(theme);
 }

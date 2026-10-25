@@ -154,7 +154,7 @@ fn the_password_is_at_least_8_and_says_how_other_devices_reach_the_page() {
     run(&ctx, Cmd::Password).unwrap();
     assert_eq!(s.requests.lock().iter().find(|r| r.1 == "/password").unwrap().2, Some(json!({"password": "correct horse"})));
     assert_eq!(said(&ctx), ["Password set; browsers signed in before sign in again with it. Open the page: terminum open",
-                            "Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes the Mac's name; a name of its own: README \"Over Tailscale\")"]);
+                            "Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes this machine's name; a name of its own: README \"Over Tailscale\")"]);
 }
 
 #[test]

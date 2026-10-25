@@ -41,7 +41,7 @@ img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(-
 .markdown h1, .markdown h2, .markdown h3, .markdown h4 { margin: 1.3em 0 .5em; line-height: 1.25; font-weight: 600; }   /* set apart by space, not a rule */
 .markdown p, .markdown ul, .markdown ol, .markdown blockquote, .markdown table, .markdown pre { margin: 0 0 .8em; }
 .markdown ul, .markdown ol { padding-left: 1.6em; }
-.markdown code { font-family: TermFont, ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em;
+.markdown code { font-family: TermFont, TermFontShipped, ui-monospace, "SF Mono", Menlo, monospace; font-size: .9em;
   background: var(--surface-3); padding: .1em .35em; border-radius: var(--r-xs); }
 .markdown pre { background: var(--surface-0); border-radius: var(--r-md); }
 .markdown pre code { background: none; padding: 0; font-size: 12.5px; }

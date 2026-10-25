@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Install, upgrade, roll back and uninstall terminum (AC-08, AC-16).
 //!
-//! Everything lives under ~/.terminum (0700): bin/, builds/, logs/, state/. Each build lives
-//! in its own folder builds/<build>/ (a copy of its package: BUILD, agents/<platform>/terminumd,
+//! Everything lives under ~/.terminum (0700): bin/, builds/, daemon/, logs/, state/. Each build
+//! lives in its own folder builds/<build>/ (a copy of its package: BUILD, agents/<platform>/terminumd,
 //! release-signers, and terminumd linked to the agent of this Mac); the links `current` and
 //! `previous` name the live and the last build, each switched with one rename. launchd runs
-//! builds/current/terminumd, so a restart takes the switch; a build that does not report
-//! itself on the socket within 10 s is switched back. bin/terminum links the newest build's
-//! terminumd, which is the command when run by that name.
+//! daemon/terminumd, a copy of the live build's terminumd renamed into place before every
+//! start: macOS knows the binary that started the tmux server by that path, and refuses its
+//! programs protected folders unasked once that binary is deleted (AC-08). A build that does
+//! not report itself on the socket within 10 s is switched back. bin/terminum links the
+//! newest build's terminumd, which is the command when run by that name.
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
@@ -42,8 +44,12 @@ fn unlink(ctx: &Ctx, name: &str) {
     let _ = std::fs::remove_file(ctx.lib().join(name));
 }
 
-/// The Mac's own architecture: an x86_64 build under Rosetta would say x86_64 on Apple Silicon.
-pub fn mac_platform() -> &'static str {
+/// This machine's platform, as the package names its terminumd (agents/<platform>/): on a Mac
+/// its own architecture (an x86_64 build under Rosetta would say x86_64 on Apple Silicon).
+pub fn platform() -> &'static str {
+    if cfg!(target_os = "linux") {
+        return if cfg!(target_arch = "aarch64") { "linux-aarch64" } else { "linux-x86_64" };
+    }
     #[cfg(target_os = "macos")]
     {
         let mut v: libc::c_int = 0;
@@ -89,7 +95,7 @@ fn copy_build(ctx: &Ctx, build: &str, pkg: &Path) -> Result<(), String> {
     let err = |e: std::io::Error| format!("copying the package into {}: {e}", ctx.shown(&dest));
     std::fs::create_dir_all(ctx.lib()).map_err(err)?;
     copy_tree(pkg, &tmp).map_err(err)?;
-    std::os::unix::fs::symlink(format!("agents/{}/terminumd", mac_platform()), tmp.join("terminumd")).map_err(err)?;
+    std::os::unix::fs::symlink(format!("agents/{}/terminumd", platform()), tmp.join("terminumd")).map_err(err)?;
     std::fs::rename(&tmp, &dest).map_err(err)
 }
 
@@ -131,8 +137,35 @@ pub fn lock(ctx: &Ctx) -> Result<File, String> {
     Ok(f)
 }
 
-/// (Re)starts terminumd on `current` and waits until it reports `build`.
+/// Makes daemon/ the running build's folder as terminumd sees it beside itself: its
+/// terminumd copied in and renamed into place (the path launchd runs stays the same, a
+/// running binary is never written into), `agents` and `soundfonts` linked to the build's.
+/// Any build, an older one rolled back to too, finds its files there as in its own folder.
+fn place_daemon(ctx: &Ctx, build: &str) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let dest = ctx.program();
+    let dir = ctx.root.join("daemon");
+    let tmp = dir.join(".terminumd.new");
+    let err = |e: std::io::Error| format!("placing {build}'s terminumd at {}: {e}", ctx.shown(&dest));
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    let _ = std::fs::remove_file(&tmp);
+    std::fs::copy(ctx.lib().join(build).join("terminumd"), &tmp).map_err(err)?;
+    std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755)).map_err(err)?;
+    File::open(&tmp).and_then(|f| f.sync_all()).map_err(err)?;
+    std::fs::rename(&tmp, &dest).map_err(err)?;
+    for name in ["agents", "soundfonts"] {
+        if ctx.lib().join(build).join(name).is_dir() {
+            swap_link(&dir.join(name), &Path::new("../builds").join(build).join(name))?;
+        } else {
+            let _ = std::fs::remove_file(dir.join(name));
+        }
+    }
+    Ok(())
+}
+
+/// (Re)starts terminumd as `build` (its copy at daemon/terminumd) and waits until it reports it.
 fn go_live(ctx: &Ctx, build: &str) -> Result<(), String> {
+    place_daemon(ctx, build)?;
     let mark = launch::log_mark(ctx);
     launch::start(ctx)?;
     if !launch::wait_healthy(ctx, Some(build)) {
@@ -147,17 +180,20 @@ pub fn tmux_found(ctx: &Ctx) -> bool {
 }
 
 /// The first-install greeting: the page opened in the browser, or how to set the password
-/// first; and how other devices reach it.
+/// first; and how other devices reach it (a server with no desktop: through ssh or Tailscale).
 fn open_line(ctx: &Ctx, build: &str) {
     let h = launch::health(ctx).unwrap_or_default();
     let url = super::commands::page_url(&h["port"]);
     if h["password"]["set"].as_bool() == Some(true) {
         ctx.done(&format!("Installed {build}. Open {url} and sign in with your password (terminum open)"));
-        if cfg!(target_os = "macos") && ctx.var("TM_NO_OPEN") != Some("1") {
+        if super::commands::has_desktop(ctx) && ctx.var("TM_NO_OPEN") != Some("1") {
             let _ = std::process::Command::new(&ctx.opener).arg(&url).output();
         }
     } else {
         ctx.done(&format!("Installed {build}. Set the password every browser signs in with: terminum password; then open {url} (terminum open)"));
+    }
+    if !super::commands::has_desktop(ctx) {
+        ctx.say(super::commands::tunnel_hint(&h["port"]));
     }
     ctx.say(super::commands::serve_hint(&h["port"]));
 }
@@ -178,9 +214,9 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
         return Err(format!("{} is not a package (no BUILD): from a checkout, run make install", pkg.display()));
     };
     let build = text.trim().to_string();
-    let binary = pkg.join("agents").join(mac_platform()).join("terminumd");
+    let binary = pkg.join("agents").join(platform()).join("terminumd");
     if !binary.is_file() {
-        return Err(format!("the package has no terminumd for {}", mac_platform()));
+        return Err(format!("the package has no terminumd for {}", platform()));
     }
     let got = version_of(&binary);
     if got != build {
@@ -232,6 +268,10 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
     match (&old, upgrade) {
         (Some(o), true) => ctx.done(&format!("Upgraded {o} → {build}")),
         _ => open_line(ctx, &build),
+    }
+    super::folders::at_install(ctx, !upgrade);
+    if ctx.systemd && !ctx.direct && let Some(hint) = super::systemd::linger_hint(ctx) {
+        ctx.say(hint);
     }
     if !tmux_found(ctx) {
         ctx.say(TMUX_HINT);
@@ -301,10 +341,12 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
     launch::stop(ctx)?;
     launch::forget_legacy(ctx);
     let _ = std::fs::remove_dir_all(ctx.lib());
+    let _ = std::fs::remove_dir_all(ctx.root.join("daemon"));
     let _ = std::fs::remove_file(ctx.bin().join("terminum"));
     let _ = std::fs::remove_dir(ctx.bin()); // only when empty
     ctx.done(&format!(
-        "Removed terminum: terminumd stopped, its launchd agent, builds and command removed. Settings, state and logs kept in {}; tmux sessions untouched.",
+        "Removed terminum: terminumd stopped, its {} service, builds and command removed. Settings, state and logs kept in {}; tmux sessions untouched.",
+        if ctx.systemd { "systemd" } else { "launchd" },
         ctx.root.display()
     ));
     Ok(())
@@ -312,8 +354,11 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
 
 /// `terminum restart`: the agent loaded again (the port bound anew), then terminumd's answer.
 pub fn restart(ctx: &Ctx) -> Result<(), String> {
-    if target(ctx, "current").is_none() && !ctx.direct {
-        return Err("terminum is not installed (no builds/current): nothing to restart".into());
+    match target(ctx, "current") {
+        // an install from before daemon/ has none yet: the plist written now names it
+        Some(c) => place_daemon(ctx, &c)?,
+        None if !ctx.direct => return Err("terminum is not installed (no builds/current): nothing to restart".into()),
+        None => {}
     }
     let mark = launch::log_mark(ctx);
     launch::reload(ctx)?;

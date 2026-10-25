@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: OFL-1.1 (the fonts; this file AGPL-3.0-only OR LicenseRef-Commercial) */
+/* JetBrains Mono Nerd Font Mono 2.304 (Nerd Fonts 3.4.0), shipped for a device without the
+   theme's own font (an iPhone): after TermFont in every font list, so a device that has the font
+   fetches nothing. Text in a small file per weight (Latin, Greek, Cyrillic, punctuation, box
+   drawing, blocks, symbols, powerline); the icons in one fetched only when one shows (OQ-06). */
+@font-face { font-family: TermFontShipped; font-weight: 400; font-display: swap; src: url("JetBrainsMonoNFM-Regular.woff2") format("woff2");
+  unicode-range: U+0000-024F, U+0370-03FF, U+0400-052F, U+2000-2BFF, U+E0A0-E0D7; }
+@font-face { font-family: TermFontShipped; font-weight: 700; font-display: swap; src: url("JetBrainsMonoNFM-Bold.woff2") format("woff2");
+  unicode-range: U+0000-024F, U+0370-03FF, U+0400-052F, U+2000-2BFF, U+E0A0-E0D7; }
+@font-face { font-family: TermFontShipped; font-weight: 100 900; font-display: swap; src: url("JetBrainsMonoNFM-Icons.woff2") format("woff2");
+  unicode-range: U+E000-E09F, U+E0D8-F8FF, U+F0000-F1AFF; }

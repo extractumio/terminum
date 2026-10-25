@@ -19,6 +19,9 @@ pub struct Config {
     pub port: u16,
     /// running as a remote host's agent (AC-82): served on a Unix socket
     pub agent: bool,
+    /// started by the service manager (its socket came from launchd or systemd): on macOS,
+    /// macOS asks for terminumd itself (AC-08)
+    pub service: bool,
     pub text_max: u64,
     /// lines a page may load (TM_HISTORY)
     pub history: i64,
@@ -80,7 +83,7 @@ pub struct App {
     /// named groups of sessions in the list (AC-92)
     pub projects: Mutex<crate::page::projects::Projects>,
     /// panes whose agent ended a turn nobody has looked at since (AC-93)
-    pub unread: Mutex<std::collections::HashSet<String>>,
+    pub unread: Mutex<crate::page::unread::Marks>,
     /// turn ends read from the screen, waiting to stay so (AC-91, AC-93)
     pub turns: crate::page::turns::Turns,
 }

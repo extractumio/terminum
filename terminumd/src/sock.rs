@@ -101,6 +101,7 @@ pub fn routes(app: Shared) -> Router {
         .route("/tmux/{action}", post(tmux_action))
         .route("/restore", post(restore))
         .route("/hook", post(hook))
+        .route("/folders", post(folders))
         .with_state(app)
 }
 
@@ -140,6 +141,32 @@ fn rss_mb() -> f64 {
     (bytes / 1048576.0 * 10.0).round() / 10.0
 }
 
+/// The program that started terminum's tmux server, by which macOS judges its terminals'
+/// folders (AC-08): None when no server runs or it did not say (a version before, by hand: "").
+async fn started_by(app: &Shared) -> Option<String> {
+    let lines = app.tmux.local.run("show-options -gqv @terminum-started-by").await.ok()?;
+    Some(lines.into_iter().next().unwrap_or_default().trim().to_string())
+}
+
+#[derive(Deserialize, Default)]
+struct Wait {
+    #[serde(default)]
+    wait: f64,
+}
+
+/// `terminum install` and `terminum folders`: each protected folder opened by terminumd itself,
+/// so macOS asks for it while the user is at the Mac (AC-08); said as it stands after `wait` s.
+async fn folders(State(app): State<Shared>, axum::extract::Query(q): axum::extract::Query<Wait>) -> Json<Value> {
+    let mut v = if app.cfg.service {
+        crate::folders::ask(&crate::config::home(), std::time::Duration::from_secs_f64(q.wait.clamp(0.0, 120.0))).await
+    } else {
+        json!({"done": true, "folders": []})
+    };
+    v["service"] = json!(app.cfg.service);
+    v["tmux_started_by"] = json!(started_by(&app).await);
+    Json(v)
+}
+
 /// `terminum status`: what runs (AC-08).
 async fn health(State(app): State<Shared>) -> Json<Value> {
     let servers: Vec<Value> = app.tmux.all().iter().map(|s| {
@@ -155,7 +182,8 @@ async fn health(State(app): State<Shared>) -> Json<Value> {
         "build": crate::config::build_id(), "pid": std::process::id(), "uptime_s": app.started.elapsed().as_secs(),
         "port": app.cfg.port, "password": crate::webaccess::status(&app), "servers": servers,
         "hosts": crate::hosts::list(&app), "pages": app.pages.count(),
-        "tmux": {"ok": problem.is_none(), "message": problem},
+        "tmux": {"ok": problem.is_none(), "message": problem, "started_by": started_by(&app).await},
+        "service": app.cfg.service,
         "signins": app.signins.count(), "workspaces": app.store.len(),
         "denied_requests": app.denied.load(Ordering::Relaxed), "rss_mb": rss_mb(),
         "hooks": app.hooks.last.lock().iter().map(|(a, t)| (a.to_string(), json!(t.duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()))))

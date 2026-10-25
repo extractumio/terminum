@@ -249,6 +249,9 @@ async fn existing(path: &str) -> Result<PathBuf, Response> {
 }
 
 async fn run_open(args: &[&str]) -> ApiResult {
+    if !cfg!(target_os = "macos") {
+        return Err(err(StatusCode::NOT_IMPLEMENTED, "open_failed", "Finder and default apps are on macOS only"));
+    }
     match tokio::process::Command::new("/usr/bin/open").args(args).status().await {
         Ok(st) if st.success() => Ok(StatusCode::NO_CONTENT.into_response()),
         Ok(st) => Err(err(StatusCode::BAD_REQUEST, "open_failed", format!("open exited with {st}"))),

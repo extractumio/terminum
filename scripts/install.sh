@@ -6,9 +6,10 @@
 #
 # Downloads the latest release's package, its SHA256SUMS and their signature into a
 # temporary folder, checks the signature with the release key below, then the checksum,
-# and runs the package's own installer: its terminumd for this Mac's architecture with
-# `install` (a versioned build in ~/.terminum/builds, the launchd agent, a health check,
-# rollback when the new build does not come up). Nothing is run before the checks pass. Everything happens in main, called on the last line: a
+# and runs the package's own installer: its terminumd for this machine (a Mac's architecture,
+# or Linux on x86_64 or aarch64) with `install` (a versioned build in ~/.terminum/builds, the
+# launchd agent or the systemd user service, a health check, rollback when the new build does
+# not come up). Nothing is run before the checks pass. Everything happens in main, called on the last line: a
 # cut-off download does nothing.
 set -eu
 
@@ -18,13 +19,21 @@ SIGNERS='terminum-release namespaces="terminum-release" ssh-ed25519 AAAAC3NzaC1l
 fail() { echo "install.sh: $*" >&2; exit 1; }
 
 main() {
-    [ "$(uname -s)" = Darwin ] || fail "terminum installs on macOS"
+    os=$(uname -s)
+    case $os in
+        Darwin) ;;
+        Linux)
+            for tool in curl ssh-keygen tar; do
+                command -v $tool >/dev/null 2>&1 || fail "$tool is needed: sudo apt install curl openssh-client tar"
+            done ;;
+        *) fail "terminum installs on macOS and Linux, not on $os" ;;
+    esac
     [ "$(id -u)" != 0 ] || fail "run it as your user, not root (it installs into your home folder)"
     base="${TM_RELEASE_URL:-https://github.com/extractumio/terminum/releases}/latest/download"
     tmp=$(mktemp -d)
     trap 'rm -rf "$tmp"' EXIT
     echo "Downloading terminum …"
-    curl -q -fsSL "$base/terminum-macos.tar.gz" -o "$tmp/package.tar.gz" || fail "download failed: $base"
+    curl -q -fsSL "$base/terminum.tar.gz" -o "$tmp/package.tar.gz" || fail "download failed: $base"
     curl -q -fsSL "$base/SHA256SUMS" -o "$tmp/SHA256SUMS" || fail "download failed: $base/SHA256SUMS"
     curl -q -fsSL "$base/SHA256SUMS.sig" -o "$tmp/SHA256SUMS.sig" || fail "download failed: $base/SHA256SUMS.sig"
     case $SIGNERS in *ssh-*) ;; *) fail "this installer carries no release key: nothing installed" ;; esac
@@ -32,8 +41,9 @@ main() {
     ssh-keygen -Y verify -f "$tmp/signers" -I terminum-release -n terminum-release \
         -s "$tmp/SHA256SUMS.sig" < "$tmp/SHA256SUMS" >/dev/null 2>&1 \
         || fail "the release is not signed by the release key: nothing installed"
-    want=$(awk '$2 == "terminum-macos.tar.gz" { print $1 }' "$tmp/SHA256SUMS")
-    got=$(shasum -a 256 "$tmp/package.tar.gz" | awk '{ print $1 }')
+    want=$(awk '$2 == "terminum.tar.gz" { print $1 }' "$tmp/SHA256SUMS")
+    if command -v sha256sum >/dev/null 2>&1; then got=$(sha256sum "$tmp/package.tar.gz"); else got=$(shasum -a 256 "$tmp/package.tar.gz"); fi
+    got=$(echo "$got" | awk '{ print $1 }')
     [ -n "$want" ] && [ "$want" = "$got" ] || fail "checksum mismatch: nothing installed"
     release=$(awk '$1 == "#" && $2 == "release" { print $3 }' "$tmp/SHA256SUMS")
     [ -n "$release" ] || fail "the signed list names no release: nothing installed"
@@ -53,9 +63,17 @@ main() {
             fail "the release $release is older than the installed $current: nothing installed"
         fi
     fi
-    # the Mac's own architecture: under Rosetta, uname -m would say x86_64 on Apple Silicon
-    plat=macos-x86_64
-    [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && plat=macos-aarch64
+    if [ "$os" = Darwin ]; then
+        # the Mac's own architecture: under Rosetta, uname -m would say x86_64 on Apple Silicon
+        plat=macos-x86_64
+        [ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && plat=macos-aarch64
+    else
+        case $(uname -m) in
+            x86_64|amd64) plat=linux-x86_64 ;;
+            aarch64|arm64) plat=linux-aarch64 ;;
+            *) fail "no terminum for $(uname -m) Linux (x86_64 and aarch64 only)" ;;
+        esac
+    fi
     mkdir "$tmp/pkg"
     tar -xzf "$tmp/package.tar.gz" -C "$tmp/pkg" || fail "the package does not unpack: nothing installed"
     installer="$tmp/pkg/terminum/agents/$plat/terminumd"

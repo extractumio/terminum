@@ -4,7 +4,7 @@
 // size messages and when they go, the alternate screen, too small a view, a wider pane scaled, a
 // pane sized for another screen, and the mouse reports of clicks, drags, the wheel and taps.
 
-import { check, runningIn } from "./check.mjs";
+import { check, runningIn, slack } from "./check.mjs";
 import { drawn, LAYOUT, line, openPage, pause, SIZES } from "./fake.mjs";
 
 const SID = "tmux:local:terminum:%1";
@@ -48,7 +48,7 @@ export async function webScreen(browser, name) {
     await page.keyboard.press("Escape");
     await pause(page, 150);
     const early = sizes().length;
-    await pause(page, 400);
+    await pause(page, slack(400));
     const bigger = sizes().at(-1);
     check("AC-13 size: a bigger text size sends the smaller grid, 300 ms after the last change",
       early === n0 + 1 && sizes().length === n0 + 2 && bigger.cols < first.cols && bigger.typing === false, JSON.stringify({ early, bigger }));

@@ -35,6 +35,14 @@ impl T {
     fn command(&self) -> PathBuf {
         std::fs::read_link(self.ctx.bin().join("terminum")).unwrap()
     }
+    /// daemon/ is `build`'s: its terminumd a copy (a file, not a link) and its agents linked.
+    fn daemon_is(&self, build: &str) -> bool {
+        let d = self.ctx.root.join("daemon");
+        let file = std::fs::symlink_metadata(d.join("terminumd")).is_ok_and(|m| m.is_file());
+        let same = std::fs::read(d.join("terminumd")).ok() == std::fs::read(self.ctx.lib().join(build).join("terminumd")).ok();
+        let agents = std::fs::read_link(d.join("agents")).ok() == Some(PathBuf::from(format!("../builds/{build}/agents")));
+        file && same && agents && mode(&d.join("terminumd")) == 0o755 && !d.join(".terminumd.new").exists()
+    }
 }
 
 impl Drop for T {
@@ -50,10 +58,12 @@ fn fresh_install_upgrade_same_build_and_prune() {
     t.install("a").unwrap();
     assert_eq!((t.link("current").as_deref(), t.running().as_deref()), (Some("a"), Some("a")));
     assert!(said(&t.ctx).contains(&"Installed a. Open http://127.0.0.1:48080/ and sign in with your password (terminum open)".to_string()));
-    assert!(said(&t.ctx).contains(&"Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes the Mac's name; a name of its own: README \"Over Tailscale\")".to_string()));
+    assert!(said(&t.ctx).contains(&"Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes this machine's name; a name of its own: README \"Over Tailscale\")".to_string()));
     assert!(std::fs::read_link(root.join("builds/a/terminumd")).unwrap().to_string_lossy().starts_with("agents/macos-"), "the Mac's own terminumd");
     assert!(root.join("builds/a/agents/linux-x86_64/terminumd").is_file(), "the helpers for hosts come along");
     assert_eq!(t.command(), root.join("builds/a/terminumd"), "the command is the build's terminumd");
+    assert!(t.daemon_is("a"), "terminumd runs from daemon/, a's copy");
+    assert!(root.join("daemon/agents/linux-x86_64/terminumd").is_file(), "the build's files beside it");
     assert_eq!(mode(root), 0o700);
     assert_eq!(mode(&root.join("logs/terminumd.log")), 0o600);
     assert_eq!(mode(&root.join("state/terminumd.pid")), 0o600);
@@ -61,6 +71,7 @@ fn fresh_install_upgrade_same_build_and_prune() {
     t.install("b").unwrap();
     assert_eq!((t.link("current"), t.link("previous"), t.running()), (Some("b".into()), Some("a".into()), Some("b".into())));
     assert!(said(&t.ctx).contains(&"Upgraded a → b".to_string()));
+    assert!(t.daemon_is("b"), "the same path, now b's");
     let pid = launch::health(&t.ctx).unwrap()["pid"].clone();
     assert_ne!(pid, first, "the old terminumd was replaced");
     t.install("b").unwrap();
@@ -72,6 +83,7 @@ fn fresh_install_upgrade_same_build_and_prune() {
         .map(|d| d.file_name().to_string_lossy().into_owned()).collect();
     builds.sort();
     assert_eq!(builds, ["b", "c"], "only current and previous are kept");
+    assert!(t.daemon_is("c"), "the path launchd runs outlives every pruned build");
 }
 
 #[test]
@@ -80,13 +92,15 @@ fn a_build_that_does_not_come_up_is_rolled_back() {
     t.install("z").unwrap();
     t.install("a").unwrap();
     let msg = install::install(&t.ctx, &package(&t.home, "b", None, true)).unwrap_err();
-    assert!(msg.starts_with("Upgrade to b failed (no answer as b within 3 s; terminumd does not answer: port 48080 is in use"), "{msg}");
+    assert!(msg.starts_with(&format!("Upgrade to b failed (no answer as b within {} s; terminumd does not answer: port 48080 is in use", t.ctx.wait.as_secs())), "{msg}");
     assert!(msg.ends_with("rolled back to a — see ~/.terminum/logs/"), "{msg}");
     assert_eq!((t.link("current"), t.link("previous"), t.running()), (Some("a".into()), Some("z".into()), Some("a".into())), "the build before stays the one to roll back to");
     assert_eq!(t.command(), t.ctx.root.join("builds/a/terminumd"), "the command stays the working build's");
     assert!(t.ctx.root.join("builds/b").is_dir(), "kept for a look; pruned by the next good install");
+    assert!(t.daemon_is("a"), "the build that runs again is the one at daemon/");
     install::rollback(&t.ctx).unwrap();
     assert_eq!(t.running().as_deref(), Some("z"));
+    assert!(t.daemon_is("z"), "a rollback puts the older build there");
 }
 
 #[test]
@@ -196,7 +210,7 @@ fn uninstall_stops_terminumd_and_keeps_state_and_logs() {
     std::fs::write(t.ctx.root.join("settings.json"), "{}").unwrap();
     install::uninstall(&t.ctx).unwrap();
     assert!(launch::health(&t.ctx).is_none());
-    assert!(!t.ctx.root.join("builds").exists() && !t.ctx.root.join("bin").exists());
+    assert!(!t.ctx.root.join("builds").exists() && !t.ctx.root.join("bin").exists() && !t.ctx.root.join("daemon").exists());
     for kept in ["state/workspaces.json", "settings.json", "logs/terminumd.log"] {
         assert!(t.ctx.root.join(kept).exists(), "{kept}");
     }
@@ -211,6 +225,16 @@ fn restart_in_direct_mode_starts_terminumd_again() {
     install::restart(&t.ctx).unwrap();
     assert_ne!(launch::health(&t.ctx).unwrap()["pid"], pid);
     assert!(said(&t.ctx).last().unwrap().starts_with("Restarted terminumd: build a, port 48080"));
+}
+
+#[test]
+fn a_restart_of_an_install_from_before_daemon_puts_it_there() {
+    let t = T::new();
+    t.install("a").unwrap();
+    std::fs::remove_dir_all(t.ctx.root.join("daemon")).unwrap();
+    install::restart(&t.ctx).unwrap();
+    assert!(t.daemon_is("a"));
+    assert_eq!(t.running().as_deref(), Some("a"));
 }
 
 // The result line and the PATH tip: colors only on a terminal that takes them, and no tip

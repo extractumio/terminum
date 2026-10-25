@@ -51,7 +51,7 @@ class ReleaseTest(unittest.TestCase):
         pid = next(line.split("=")[1].split(";")[0] for line in agent.splitlines() if line.startswith("SSH_AGENT_PID"))
         self.addCleanup(lambda: subprocess.run(["kill", pid]))
         env = mock.patch.dict(os.environ, {"PATH": f"{bin_}:{os.environ['PATH']}", "FAKE_GH_LOG": str(self.log),
-                                           "SSH_AUTH_SOCK": str(self.tmp / "agent")})
+                                           "SSH_AUTH_SOCK": str(self.tmp / "agent"), "TM_CODESIGN_IDENTITY": "Developer ID Application: Test"})
         env.start()
         self.addCleanup(env.stop)
         os.environ.pop("FAKE_GH_DRAFT", None)
@@ -205,6 +205,13 @@ class ReleaseTest(unittest.TestCase):
         with mock.patch.object(Path, "read_text", side_effect=AssertionError("must not read target")):
             self.assertIn("inside the repository", self.refused(release.release_notes, "v1.0.0"))
 
+    def test_a_release_needs_the_developer_id_before_anything_runs(self):
+        os.environ["TM_CODESIGN_IDENTITY"] = " "
+        with mock.patch.object(release, "check_source") as checked, mock.patch.object(release, "run") as run:
+            self.assertIn("TM_CODESIGN_IDENTITY is not set", self.refused(release.main, ["v1.0.0"]))
+        checked.assert_not_called()
+        run.assert_not_called()
+
     def test_a_package_without_both_linux_builds_is_not_released(self):
         with mock.patch.object(release, "check_source"), mock.patch.object(release, "release_notes", return_value="x"), \
                 mock.patch.object(release, "check_unpublished", return_value=False), mock.patch.object(release, "run"), \
@@ -230,7 +237,7 @@ class ReleaseTest(unittest.TestCase):
             ui_call = next(call for call in run.call_args_list if call.args == ("npm", "run", "-s", "build"))
             self.assertEqual(ui_call.kwargs["env"]["TM_BUILD"], "v1.0.0")
             self.assertEqual(os.environ["TM_BUILD"], "checkout-id", "the override is local to the UI build")
-            build.assert_called_once_with(["--build", "v1.0.0"])
+            build.assert_called_once_with(["--build", "v1.0.0", "--release"])
             self.assertEqual([call[0] for call in order.mock_calls], ["run", "run", "build", "sign", "publish"])
 
 

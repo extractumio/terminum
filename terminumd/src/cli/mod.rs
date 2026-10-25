@@ -9,10 +9,12 @@ mod commands;
 pub mod hook;
 mod ctx;
 mod direct;
+mod folders;
 mod importer;
 mod install;
 mod launch;
 mod sockhttp;
+mod systemd;
 mod term;
 mod upgrade;
 
@@ -27,6 +29,8 @@ const USAGE: &str = "\
 usage: terminum [command]
 
   status                  what runs: build, pid, port, password, tmux, hosts, pages
+  folders                 have macOS ask now which protected folders (Documents, cloud
+                          folders…) programs in terminum's terminals may read
   open [--print]          the page in this Mac's browser (http://127.0.0.1:48080/)
   password                the password every browser signs in with (8+ characters)
   signout                 sign out every browser
@@ -49,8 +53,8 @@ usage: terminum [command]
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";
 
-const COMMANDS: [&str; 17] = [
-    "status", "open", "password", "signout", "hosts", "tmux", "hooks", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+const COMMANDS: [&str; 18] = [
+    "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -63,6 +67,7 @@ pub fn wanted(args: &[String]) -> bool {
 #[derive(Debug, PartialEq)]
 pub enum Cmd {
     Status,
+    Folders,
     Open { print: bool },
     Password,
     Signout,
@@ -95,6 +100,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
     let none = |c: Cmd| if rest.is_empty() { Ok(c) } else { Err(usage(&format!("usage: terminum {cmd}"))) };
     match cmd.as_str() {
         "status" => none(Cmd::Status),
+        "folders" => none(Cmd::Folders),
         "signout" => none(Cmd::Signout),
         "password" => none(Cmd::Password),
         "rollback" => none(Cmd::Rollback),
@@ -181,6 +187,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         Cmd::Help => ctx.say(USAGE),
         Cmd::Version => ctx.say(crate::config::build_id()),
         Cmd::Status => { commands::status(ctx); hooks_tip(ctx); }
+        Cmd::Folders => folders::command(ctx)?,
         Cmd::Open { print } => { commands::open_page(ctx, print)?; hooks_tip(ctx); }
         Cmd::Signout => commands::signout(ctx)?,
         Cmd::Password => commands::password(ctx)?,

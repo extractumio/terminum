@@ -63,17 +63,50 @@ lives in tmux, so nothing is lost when you close a tab, switch devices or reboot
 
 ## Install
 
+### On a Mac
+
 ```bash
+brew install tmux        # tmux 3.2+; macOS 14+
 curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
 ```
 
-Needs macOS 14+ and tmux 3.2+ (`brew install tmux`). Then:
+macOS then asks on the screen whether terminum's terminals may read Desktop, Documents,
+Downloads and your cloud folders: Allow, once. Then:
 
 ```bash
+echo 'export PATH="$HOME/.terminum/bin:$PATH"' >> ~/.zshrc   # the install's tip
 terminum password        # set the password every browser signs in with
 terminum open            # open it: http://127.0.0.1:48080/
 terminum hooks install   # optional: exact states from Claude Code and Codex
 ```
+
+`terminum upgrade` installs the latest signed release (`terminum rollback` goes back); the page
+shows a chip when one is out.
+
+### On a Ubuntu/Debian server
+
+```bash
+sudo apt install tmux curl openssh-client
+curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
+terminum password
+```
+
+terminumd runs as a systemd user service (`sudo loginctl enable-linger $USER` keeps it, and the
+terminals, after you log out). Open the page from your computer through
+`ssh -L 48080:127.0.0.1:48080 <server>` at `http://127.0.0.1:48080/`, or with `tailscale serve` on
+the server.
+
+### A Linux server's tmux
+
+Install tmux there (`sudo apt install tmux`) and make sure the Mac reaches it with `ssh`; then,
+on the Mac:
+
+```bash
+terminum hosts add devbox 'alex@devbox.example' --files
+```
+
+Its tmux sessions and, with `--files`, its files show on the page; terminum copies its helper
+there and keeps it at the Mac's version.
 
 ### Over Tailscale
 
@@ -90,6 +123,8 @@ its own with a Tailscale Service: see [Over Tailscale](docs/USAGE.md#over-tailsc
 ## Learn more
 
 - [The guide](docs/USAGE.md): every command, feature, remote host and setting.
+- [Architecture](docs/ARCHITECTURE.md): every part on one diagram, a Mac, a Linux server and the browsers.
+- [Set it up with a coding agent](skills/terminum-setup/SKILL.md): a skill Claude Code, Codex and the like follow to install, check and repair terminum for you.
 - [SECURITY.md](SECURITY.md): the threat model.
 - [docs/specs/](docs/specs/): behavior, limits and evidence; contributor rules in
   [CLAUDE.md](CLAUDE.md), releases in [docs/RELEASING.md](docs/RELEASING.md).

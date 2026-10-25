@@ -47,10 +47,12 @@ health_build() {
 is_build() { [ "$(health_build)" = "$1" ]; }
 down() { [ -z "$(health_build)" ]; }
 link() { [ "$(readlink "$root/builds/$1")" = "$2" ]; }
-mode() { [ "$(stat -f %Lp "$1")" = "$2" ]; }
+mode() { [ "$(stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1")" = "$2" ]; }   # BSD stat, else GNU
+# AC-08: launchd's path holds a copy of build $1's terminumd, its files linked beside it
+daemon_is() { [ -f "$root/daemon/terminumd" ] && [ ! -L "$root/daemon/terminumd" ] && cmp -s "$root/daemon/terminumd" "$root/builds/$1/terminumd" \
+  && [ "$(readlink "$root/daemon/agents")" = "../builds/$1/agents" ] && [ "$(readlink "$root/daemon/soundfonts")" = "../builds/$1/soundfonts" ]; }
 
-plat=macos-x86_64
-[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && plat=macos-aarch64
+plat=$(python3 "$repo/scripts/agents.py" platform)
 install_pkg() { # build-id: its package's terminumd runs `install`, as install.sh runs it
   bash -c 'exec -a "$0" "$1" install' "$tmp/pkg-$1/terminum/agents/$plat/terminumd" "$real"
 }
@@ -83,6 +85,7 @@ check "install says how other devices reach it" has "$out" "tailscale serve --bg
 check "install says tmux is needed" has "$out" "tmux is needed for terminals: brew install tmux"
 check "terminumd reports e2e-a on the socket" is_build e2e-a
 check "current → e2e-a" link current e2e-a
+check "terminumd runs from daemon/, a copy of e2e-a's" daemon_is e2e-a
 check "the installed build has the SoundFont beside its terminumd" [ -s "$root/builds/e2e-a/soundfonts/GeneralUser-GS.sf2" ]
 check "~/.terminum is 0700" mode "$root" 700
 check "the socket is 0600" mode "$sock" 600
@@ -106,10 +109,12 @@ check "upgrade A → B" [ $rc = 0 ]
 check "upgrade says so" has "$out" "Upgraded e2e-a → e2e-b"
 check "terminumd reports e2e-b" is_build e2e-b
 check "current → e2e-b, previous → e2e-a" eval 'link current e2e-b && link previous e2e-a'
+check "daemon/ is e2e-b's now, at the same path" daemon_is e2e-b
 out=$("$root/bin/terminum" rollback 2>&1); rc=$?
 check "rollback" [ $rc = 0 ]
 check "terminumd reports e2e-a again" is_build e2e-a
 check "current → e2e-a, previous → e2e-b" eval 'link current e2e-a && link previous e2e-b'
+check "daemon/ is e2e-a's after the rollback" daemon_is e2e-a
 check "the command stays the newest build's" [ "$(readlink "$root/bin/terminum")" = "$root/builds/e2e-b/terminumd" ]
 out=$("$root/bin/terminum" restart 2>&1); rc=$?
 check "restart" [ $rc = 0 ]
@@ -121,6 +126,7 @@ check "and says it rolled back" has "$out" "; rolled back to e2e-a — see ~/.te
 check "the failure names the build" has "$out" "Upgrade to e2e-c failed ("
 check "terminumd runs e2e-a" is_build e2e-a
 check "current → e2e-a, previous → e2e-b after the failed upgrade" eval 'link current e2e-a && link previous e2e-b'
+check "daemon/ is e2e-a's after the failed upgrade" daemon_is e2e-a
 
 # AC-08 edge: the port is in use
 read -r pid _ < "$root/state/terminumd.pid"
@@ -146,6 +152,7 @@ out=$("$root/bin/terminum" uninstall 2>&1); rc=$?
 check "uninstall" [ $rc = 0 ]
 check "terminumd stopped" down
 check "builds removed" [ ! -e "$root/builds" ]
+check "daemon/ removed" [ ! -e "$root/daemon" ]
 check "command removed" [ ! -e "$root/bin/terminum" ]
 check "state kept" [ -f "$root/state/keep.json" ]
 check "logs kept" [ -f "$root/logs/terminumd.log" ]
