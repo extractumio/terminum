@@ -18,7 +18,7 @@ use std::time::Duration;
 use super::ctx::Ctx;
 use super::launch;
 
-pub const TMUX_HINT: &str = "tmux is needed for terminals: brew install tmux";
+pub const TMUX_HINT: &str = crate::tmux::server::NO_TMUX;
 const STARTUP_FILES: [&str; 7] = [".zshenv", ".zprofile", ".zshrc", ".bash_profile", ".bashrc", ".profile", ".config/fish/config.fish"];
 
 /// The build a link names, or None.

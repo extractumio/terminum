@@ -2,7 +2,7 @@
 //! AC-08 / AC-16: install, upgrade, rollback and uninstall in a temporary home, terminumd run
 //! directly (TM_NO_LAUNCHD=1) as a fake that answers on the socket.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use super::*;
@@ -59,7 +59,7 @@ fn fresh_install_upgrade_same_build_and_prune() {
     assert_eq!((t.link("current").as_deref(), t.running().as_deref()), (Some("a"), Some("a")));
     assert!(said(&t.ctx).contains(&"Installed a. Open http://127.0.0.1:48080/ and sign in with your password (terminum open)".to_string()));
     assert!(said(&t.ctx).contains(&"Other devices: serve it over HTTPS on your tailnet: tailscale serve --bg --https=443 http://127.0.0.1:48080 (it takes this machine's name; a name of its own: README \"Over Tailscale\")".to_string()));
-    assert!(std::fs::read_link(root.join("builds/a/terminumd")).unwrap().to_string_lossy().starts_with("agents/macos-"), "the Mac's own terminumd");
+    assert_eq!(std::fs::read_link(root.join("builds/a/terminumd")).unwrap(), Path::new("agents").join(install::platform()).join("terminumd"), "this machine's own terminumd");
     assert!(root.join("builds/a/agents/linux-x86_64/terminumd").is_file(), "the helpers for hosts come along");
     assert_eq!(t.command(), root.join("builds/a/terminumd"), "the command is the build's terminumd");
     assert!(t.daemon_is("a"), "terminumd runs from daemon/, a's copy");
@@ -114,7 +114,9 @@ fn a_first_install_that_does_not_come_up_says_so() {
 #[test]
 fn tmux_missing_is_said_and_the_install_goes_through() {
     let home = Home::new();
-    let ctx = home.ctx(&[("TM_NO_LAUNCHD", "1"), ("TM_NO_OPEN", "1"), ("PATH", "/usr/bin:/bin")]);
+    let none = home.path("no-tmux"); // a Linux server has tmux in /usr/bin
+    std::fs::create_dir_all(&none).unwrap();
+    let ctx = home.ctx(&[("TM_NO_LAUNCHD", "1"), ("TM_NO_OPEN", "1"), ("PATH", none.to_str().unwrap())]);
     let t = T { home, ctx };
     t.install("a").unwrap();
     assert_eq!(said(&t.ctx).last().map(String::as_str), Some(install::TMUX_HINT));

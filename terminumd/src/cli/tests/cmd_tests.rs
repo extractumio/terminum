@@ -23,7 +23,7 @@ struct T {
 impl T {
     fn new() -> T {
         let home = Home::new();
-        let mut ctx = home.ctx(&[("TM_NO_LAUNCHD", "1")]);
+        let mut ctx = home.ctx(&[("TM_NO_LAUNCHD", "1"), ("DISPLAY", ":0")]); // a Linux desktop too
         let opened = home.path("opened");
         ctx.opener = home.path("open");
         write_exec(&ctx.opener, &format!("#!/bin/sh\necho \"$*\" >> '{}'\n", opened.display()));
@@ -119,6 +119,19 @@ fn open_opens_the_page_once_a_password_is_set() {
     let (_, out) = t.cli(&["open", "--print"]);
     assert_eq!(t.opened().len(), 1, "--print only prints");
     assert!(out[0].contains("http://127.0.0.1:48080/"));
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn open_on_a_server_without_a_desktop_says_the_ssh_tunnel() {
+    let mut t = T::new();
+    t.ctx.env.remove("DISPLAY");
+    let _s = t.serve(HashMap::new());
+    let (err, out) = t.cli(&["open"]);
+    assert_eq!(err, None);
+    assert_eq!(out, ["http://127.0.0.1:48080/ (sign in with your password)",
+                     "From your computer: ssh -L 48080:127.0.0.1:48080 <this server>, then open http://127.0.0.1:48080/"]);
+    assert!(t.opened().is_empty(), "no browser to open on a server");
 }
 
 #[test]

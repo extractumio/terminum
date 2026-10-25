@@ -82,7 +82,7 @@ echo "$out" | sed 's/^/     | /'
 check "install exits 0" [ $rc = 0 ]
 check "install says to set the password first" has "$out" "Installed e2e-a. Set the password every browser signs in with: terminum password; then open http://127.0.0.1:$port/"
 check "install says how other devices reach it" has "$out" "tailscale serve --bg --https=443 http://127.0.0.1:$port (it takes this machine's name"
-check "install says tmux is needed" has "$out" "tmux is needed for terminals: brew install tmux"
+check "install says tmux is needed" has "$out" "tmux is needed for terminals: "
 check "terminumd reports e2e-a on the socket" is_build e2e-a
 check "current → e2e-a" link current e2e-a
 check "terminumd runs from daemon/, a copy of e2e-a's" daemon_is e2e-a

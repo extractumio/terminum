@@ -60,6 +60,7 @@ impl Home {
             vars.insert(k.to_string(), v.to_string());
         }
         let mut ctx = Ctx::new(vars, account_home()).unwrap();
+        ctx.systemd = false; // launchd's stub on every OS; systemd_tests turn systemd on
         ctx.captured = Some(Mutex::new(Vec::new()));
         ctx.wait = Duration::from_secs(3) * slack();
         for p in [&ctx.root, &ctx.app_dir, &ctx.plist()] {
@@ -214,7 +215,7 @@ pub fn package(home: &Home, build: &str, answers: Option<&str>, crash: bool) -> 
         format!("exec /usr/bin/env TM_FAKE_TERMINUMD=1 TM_FAKE_BUILD='{build}' '{}' --exact cli::tests::fake_terminumd --nocapture --test-threads=1 -q", exe.display())
     };
     let text = format!("#!/bin/sh\nif [ \"$1\" = --version ]; then echo '{answers}'; exit 0; fi\n{run}\n");
-    for plat in ["macos-aarch64", "macos-x86_64", "linux-x86_64"] {
+    for plat in ["macos-aarch64", "macos-x86_64", "linux-x86_64", "linux-aarch64"] {
         write_exec(&pkg.join("agents").join(plat).join("terminumd"), &text);
     }
     std::fs::write(pkg.join("BUILD"), format!("{build}\n")).unwrap();
