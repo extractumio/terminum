@@ -93,7 +93,7 @@ systemctl) and checked by hand on a disposable machine before a release that cha
 the owner's network notes' `scripts/runner setup script` sets up each runner of that VM under its own
 unprivileged user in `a shared slice` (in those notes). terminum's profile:
 user `<runner user>`, runner `<runner name>`, labels `ci-vm,terminum`, its own memory
-cap, and as extra packages `tmux build-essential` and the browsers' system libraries
+cap of 1536M, and as extra packages `tmux build-essential` and the browsers' system libraries
 (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root). The slice holds
 2 GB for every runner of the VM together: a terminum job (cargo, two browsers, terminumd and
 tmux) can peak near 1.5 GB, so a concurrent job of another project may fail for memory. Measure the
