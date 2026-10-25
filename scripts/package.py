@@ -76,7 +76,8 @@ def build_id(repo=REPO):
 
 
 def build_macos(build, platforms):
-    """terminumd for Mac architectures, compiled with this build id (the installer checks it)."""
+    """terminumd for these platforms (the Mac's, or a Linux machine's own), compiled with this
+    build id (the installer checks it)."""
     env = agents.tool_env()
     env.update(TM_BUILD=build, TM_AGENT_ID=agents.agent_id(), TM_BUILD_DATE=time.strftime("%Y-%m-%d"))
     out = {}
@@ -92,8 +93,11 @@ def binaries(build, given, stage, release=False):
     Mac's own build; for a release both Mac builds; the Linux pair when the toolchain is there
     (a release without it fails: a Linux server installs from the same package)."""
     if given:
-        return {agents.mac_platform(): Path(given)}
-    found = build_macos(build, [agents.mac_platform()] if stage else ["macos-aarch64", "macos-x86_64"])
+        return {agents.this_platform(): Path(given)}
+    here = agents.this_platform()
+    if here.startswith("linux-") and not stage:
+        raise agents.Failed("a release is made on a Mac: its macOS builds are signed there")
+    found = build_macos(build, [here] if stage else ["macos-aarch64", "macos-x86_64"])
     try:
         found.update(agents.build(["linux-x86_64", "linux-aarch64"]))
     except agents.Failed as e:  # a developer without the cross toolchain: Mac only, said loudly

@@ -47,13 +47,12 @@ health_build() {
 is_build() { [ "$(health_build)" = "$1" ]; }
 down() { [ -z "$(health_build)" ]; }
 link() { [ "$(readlink "$root/builds/$1")" = "$2" ]; }
-mode() { [ "$(stat -f %Lp "$1")" = "$2" ]; }
+mode() { [ "$(stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1")" = "$2" ]; }   # BSD stat, else GNU
 # AC-08: launchd's path holds a copy of build $1's terminumd, its files linked beside it
 daemon_is() { [ -f "$root/daemon/terminumd" ] && [ ! -L "$root/daemon/terminumd" ] && cmp -s "$root/daemon/terminumd" "$root/builds/$1/terminumd" \
   && [ "$(readlink "$root/daemon/agents")" = "../builds/$1/agents" ] && [ "$(readlink "$root/daemon/soundfonts")" = "../builds/$1/soundfonts" ]; }
 
-plat=macos-x86_64
-[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && plat=macos-aarch64
+plat=$(python3 "$repo/scripts/agents.py" platform)
 install_pkg() { # build-id: its package's terminumd runs `install`, as install.sh runs it
   bash -c 'exec -a "$0" "$1" install' "$tmp/pkg-$1/terminum/agents/$plat/terminumd" "$real"
 }

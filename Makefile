@@ -12,6 +12,7 @@
 #                   publish; only when the maintainer asks for it (CLAUDE.md §10)
 #   make signing-key       the maintainer's release key (once)
 #   make test       unit tests (Rust, scripts, UI, page)
+#   make test-mac   the macOS checks on the LAN's Mac test runner over ssh (scripts/ci_mac.sh)
 
 ifeq ($(shell id -u),0)
 $(error Run make as your user, not root: terminum lives in your home folder)
@@ -30,10 +31,11 @@ export TM_BUILD_DATE := $(shell date +%Y-%m-%d)
 # which terminumd sources: an agent on a remote host works with this terminumd when the ids match
 export TM_AGENT_ID := $(shell python3 scripts/agents.py id)
 
-.PHONY: all build ui terminumd test install upgrade rollback uninstall package agents toolchain release signing-key
+.PHONY: all build ui terminumd test test-mac install upgrade rollback uninstall package agents toolchain release signing-key
 
-# this Mac's own architecture (sysctl: right under Rosetta too), the package's terminumd for it
-PLATFORM := $(shell [ "$$(sysctl -n hw.optional.arm64 2>/dev/null)" = 1 ] && echo macos-aarch64 || echo macos-x86_64)
+# this machine's platform (a Mac's own architecture, right under Rosetta too; or Linux's), the
+# package's terminumd for it
+PLATFORM := $(shell python3 scripts/agents.py platform)
 # the installed command: the newest build's terminumd
 TERMINUM := $${TM_HOME:-$$HOME/.terminum}/bin/terminum
 
@@ -57,6 +59,9 @@ test: ui
 	python3 -m unittest discover -s scripts/tests
 	cd ui && npx tsc -p . && npm test
 	node --test web/test/*.test.mjs
+
+test-mac:
+	bash scripts/ci_mac.sh
 
 install: ui
 	python3 scripts/package.py --stage

@@ -1,0 +1,64 @@
+name: ci
+
+# The owner's runner only: never a GitHub-hosted runner, cache or artifact store. This
+# repository is public: no pull-request trigger, the runner registered for this repository
+# alone, and fork pull requests' workflows wait for the owner's approval (docs/RELEASING.md
+# "CI"), so no one else's code runs on it. Pushes and manual runs only.
+on:
+  push:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Tests on Linux (Ubuntu), the page in Chromium and WebKit
+    runs-on: [self-hosted, linux, x64, ci-vm, terminum]
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: "2"
+      NO_COLOR: "1"
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26"
+          package-manager-cache: false
+
+      - name: Rust (the runner's own, pinned)
+        run: |
+          command -v rustup >/dev/null || curl -fsSL https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.98.1
+          rustup toolchain install 1.98.1 --profile minimal --component clippy
+          rustup default 1.98.1
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+
+      - name: Unit tests (Rust, scripts, UI, page)
+        run: make test
+
+      - name: No warnings
+        run: cd terminumd && cargo clippy --locked --all-targets -- -D warnings
+
+      - name: Install, upgrade, rollback, uninstall (direct mode, a temporary HOME)
+        run: bash scripts/e2e_install.sh
+
+      - name: Browsers for the page's checks
+        run: cd ui && npx playwright-core install chromium webkit
+
+      - name: The page and the Files panel against a private terminumd and tmux
+        run: |
+          cd terminumd && cargo build --locked && cd ..
+          (cd ui && node test/e2e_panel.mjs)
+          node web/test/e2e_all.mjs
+          node web/test/e2e_live.mjs
+
+      - name: Security checks
+        run: bash scripts/security_check.sh
