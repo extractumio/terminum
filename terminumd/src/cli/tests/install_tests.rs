@@ -92,7 +92,7 @@ fn a_build_that_does_not_come_up_is_rolled_back() {
     t.install("z").unwrap();
     t.install("a").unwrap();
     let msg = install::install(&t.ctx, &package(&t.home, "b", None, true)).unwrap_err();
-    assert!(msg.starts_with("Upgrade to b failed (no answer as b within 3 s; terminumd does not answer: port 48080 is in use"), "{msg}");
+    assert!(msg.starts_with(&format!("Upgrade to b failed (no answer as b within {} s; terminumd does not answer: port 48080 is in use", t.ctx.wait.as_secs())), "{msg}");
     assert!(msg.ends_with("rolled back to a — see ~/.terminum/logs/"), "{msg}");
     assert_eq!((t.link("current"), t.link("previous"), t.running()), (Some("a".into()), Some("z".into()), Some("a".into())), "the build before stays the one to roll back to");
     assert_eq!(t.command(), t.ctx.root.join("builds/a/terminumd"), "the command stays the working build's");

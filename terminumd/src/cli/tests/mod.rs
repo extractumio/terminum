@@ -26,6 +26,17 @@ use serde_json::{json, Value};
 
 use super::ctx::{account_home, Ctx};
 
+/// How much longer than on a quiet machine a fake terminumd may take to answer: the load per
+/// core, 1 to 4 (web/test/check.mjs's SLACK for the command's tests): at load 48 on 16 cores
+/// the test binary started as a fake terminumd took over 3 s.
+pub fn slack() -> u32 {
+    let mut load = [0f64; 3];
+    // SAFETY: getloadavg writes at most 3 values into the array it is given
+    let n = unsafe { libc::getloadavg(load.as_mut_ptr(), 3) };
+    let cores = std::thread::available_parallelism().map_or(1, |c| c.get()) as f64;
+    if n < 1 { 1 } else { (load[0] / cores).clamp(1.0, 4.0).ceil() as u32 }
+}
+
 /// A short temporary home (a Unix socket path holds at most 104 bytes), removed when dropped.
 pub struct Home {
     pub dir: PathBuf,
@@ -50,7 +61,7 @@ impl Home {
         }
         let mut ctx = Ctx::new(vars, account_home()).unwrap();
         ctx.captured = Some(Mutex::new(Vec::new()));
-        ctx.wait = Duration::from_secs(3);
+        ctx.wait = Duration::from_secs(3) * slack();
         for p in [&ctx.root, &ctx.app_dir, &ctx.plist()] {
             assert!(p.starts_with(&self.dir), "{} is outside the test's home", p.display());
         }
