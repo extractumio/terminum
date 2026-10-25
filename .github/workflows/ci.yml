@@ -62,10 +62,12 @@ jobs:
         run: cd ui && npx playwright-core install chromium webkit
 
       - name: The page and the Files panel against a private terminumd and tmux
-        run: |
-          (cd ui && node test/e2e_panel.mjs)
-          node web/test/e2e_all.mjs
-          node web/test/e2e_live.mjs
+        run: | # each runs, so one run shows every failure
+          rc=0
+          (cd ui && node test/e2e_panel.mjs) || rc=1
+          node web/test/e2e_all.mjs || rc=1
+          node web/test/e2e_live.mjs || rc=1
+          exit $rc
 
       - name: Security checks
         run: bash scripts/security_check.sh
