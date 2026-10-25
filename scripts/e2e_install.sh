@@ -47,7 +47,7 @@ health_build() {
 is_build() { [ "$(health_build)" = "$1" ]; }
 down() { [ -z "$(health_build)" ]; }
 link() { [ "$(readlink "$root/builds/$1")" = "$2" ]; }
-mode() { [ "$(stat -f %Lp "$1" 2>/dev/null || stat -c %a "$1")" = "$2" ]; }   # BSD stat, else GNU
+mode() { [ "$(stat -c %a "$1" 2>/dev/null || stat -f %Lp "$1")" = "$2" ]; }   # GNU stat, else BSD (GNU -f is the file system)
 # AC-08: launchd's path holds a copy of build $1's terminumd, its files linked beside it
 daemon_is() { [ -f "$root/daemon/terminumd" ] && [ ! -L "$root/daemon/terminumd" ] && cmp -s "$root/daemon/terminumd" "$root/builds/$1/terminumd" \
   && [ "$(readlink "$root/daemon/agents")" = "../builds/$1/agents" ] && [ "$(readlink "$root/daemon/soundfonts")" = "../builds/$1/soundfonts" ]; }
