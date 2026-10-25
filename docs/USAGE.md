@@ -49,13 +49,19 @@ runs), loads the launchd agent `io.terminum.terminumd` and says how to set the p
 then on, so no other program can take the page's port while terminumd restarts or is upgraded.
 
 During the install macOS asks on the Mac's screen, once per folder, whether programs in
-terminum's terminals may read Desktop, Documents, Downloads, iCloud Drive and each cloud folder
-(`~/Library/CloudStorage`): terminumd opens each one itself, so the prompts come while you are
+terminum's terminals may read Desktop, Documents, Downloads and each cloud folder
+(`~/Library/CloudStorage`: Dropbox, Google Drive, OneDrive…): terminumd opens each one itself, so the prompts come while you are
 at the Mac rather than when an agent first reads a folder while you are away. Allow covers
 every shell and agent in terminum's tmux and stays across upgrades, since launchd always runs
 `daemon/terminumd` (signed as `io.terminum.terminumd`). The install waits 5 s for the answers
 and says which folders macOS still asks about; `terminum folders` asks again and waits. A
 refused folder can be allowed again in System Settings › Privacy & Security › Files and Folders.
+
+iCloud Drive (`~/Library/Mobile Documents`) stays closed to programs in terminum's terminals, as
+to any program without Full Disk Access: macOS refuses it ("Operation not permitted") and never
+asks, so terminum does not ask for it, and does not need Full Disk Access for anything else.
+Keep work in Documents or Desktop (also when "Desktop & Documents Folders" sync to iCloud: their
+own Allow covers them) or in a cloud folder of `~/Library/CloudStorage`.
 
 macOS judges a terminal's program by the program that started terminum's tmux server, and that
 server outlives upgrades. `terminum status`, the install and `terminum folders` say when it was

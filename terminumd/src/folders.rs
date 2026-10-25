@@ -16,17 +16,15 @@ use parking_lot::Mutex;
 use serde_json::{json, Value};
 
 /// The protected folders under `home` that exist (and those that do not, said as absent):
-/// Desktop, Documents, Downloads, iCloud Drive and each cloud folder (a File Provider domain
-/// each: Dropbox, Google Drive, OneDrive…). None but on macOS.
+/// Desktop, Documents, Downloads and each cloud folder (a File Provider domain each: Dropbox,
+/// Google Drive, OneDrive…). Not iCloud Drive (~/Library/Mobile Documents): macOS's sandbox
+/// refuses it to every program without Full Disk Access and never asks (USAGE). None but on
+/// macOS.
 pub fn protected(home: &Path) -> Vec<(String, PathBuf)> {
     if !cfg!(target_os = "macos") {
         return Vec::new();
     }
     let mut out: Vec<(String, PathBuf)> = ["Desktop", "Documents", "Downloads"].iter().map(|n| (n.to_string(), home.join(n))).collect();
-    let icloud = home.join("Library/Mobile Documents/com~apple~CloudDocs");
-    if icloud.is_dir() {
-        out.push(("iCloud Drive".into(), icloud));
-    }
     let mut clouds: Vec<(String, PathBuf)> = std::fs::read_dir(home.join("Library/CloudStorage")).into_iter().flatten().flatten()
         .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
         .map(|e| (e.file_name().to_string_lossy().into_owned(), e.path()))
@@ -113,7 +111,7 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn the_three_home_folders_icloud_and_each_cloud_folder() {
+    fn the_three_home_folders_and_each_cloud_folder_not_icloud() {
         let h = home("list");
         assert_eq!(protected(&h).iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>(), ["Desktop", "Documents", "Downloads"], "absent ones are said too");
         std::fs::create_dir_all(h.join("Library/Mobile Documents/com~apple~CloudDocs")).unwrap();
@@ -122,7 +120,7 @@ mod tests {
         }
         std::fs::write(h.join("Library/CloudStorage/a-file"), "").unwrap();
         let names: Vec<String> = protected(&h).into_iter().map(|(n, _)| n).collect();
-        assert_eq!(names, ["Desktop", "Documents", "Downloads", "iCloud Drive", "Dropbox", "OneDrive-Personal"]);
+        assert_eq!(names, ["Desktop", "Documents", "Downloads", "Dropbox", "OneDrive-Personal"], "iCloud Drive is never asked for");
         std::fs::remove_dir_all(&h).unwrap();
     }
 
