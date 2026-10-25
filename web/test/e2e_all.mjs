@@ -50,6 +50,11 @@ const CHROMIUM_ONLY = { webClip: "synthetic Touch events", webTouch: "a CDP touc
 const args = process.argv.slice(2);
 const browsers = args.filter((a) => BROWSERS.includes(a));
 const only = args.filter((a) => !BROWSERS.includes(a));
+const unknown = only.filter((a) => !Object.hasOwn(CHECKS, a));
+if (unknown.length) {
+  console.error(`unknown check: ${unknown.join(", ")}\nchecks: ${Object.keys(CHECKS).join(" ")}`);
+  process.exit(2);
+}
 const pw = await playwright();
 for (const name of browsers.length ? browsers : BROWSERS) {
   const browser = await pw[name].launch();
@@ -73,5 +78,7 @@ for (const r of results) {
 }
 for (const [k, n] of by) console.log(`${k}: ${n.pass} passed, ${n.fail} failed`);
 const failed = results.filter((r) => !r.ok).length;
+// A run that checked nothing proves nothing: it fails, never "PASS (0 checks)".
+if (!results.length) { console.log("FAIL (0 checks ran)"); process.exit(1); }
 console.log(failed ? `FAIL (${failed} of ${results.length})` : `PASS (${results.length} checks)`);
 process.exit(failed ? 1 : 0);

@@ -136,7 +136,7 @@ try {
   check("AC-56 the save wrote only what was sent", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# a"));
   const puts = [], onPut = (r) => { if (r.method() === "PUT") puts.push(r.url().slice(-40)); };
   page.on("request", onPut);
-  await page.keyboard.press("ControlOrMeta+s");
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s"); // the editor's own key, on Linux too
   await within("AC-56 the next save writes the rest", (ms) => page.waitForSelector(".tab.active:not(.dirty)", { timeout: ms }));
   if (await page.$(".tab.active.dirty")) console.log("     | still unsaved:", JSON.stringify({ puts, disk: fs.readFileSync(`${SB}/app.py`, "utf8").slice(-40), ...await page.evaluate(() => ({ modal: document.querySelector(".modal")?.textContent, banner: document.querySelector(".banner")?.textContent, toast: document.getElementById("toast")?.textContent, focus: `${document.activeElement?.tagName}.${document.activeElement?.className}` })) }));
   page.off("request", onPut);
