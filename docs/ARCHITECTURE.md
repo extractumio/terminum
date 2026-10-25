@@ -78,3 +78,7 @@ flowchart LR
   that started the tmux server, `daemon/terminumd`, so one Allow covers them all (AC-08).
 - **A Linux server** is reached over ssh: its tmux in control mode for the terminals, and a
   `terminumd --agent` for its files, which terminumd copies there and keeps at its own version.
+- **terminumd on a Linux server** is the same picture with systemd's user service
+  `io.terminum.terminumd` in launchd's place (terminumd binds the port itself, `KillMode=process`
+  keeps the terminals through every restart) and no macOS privacy prompts; its page is reached
+  through an ssh tunnel or `tailscale serve` on the server.
