@@ -10,9 +10,9 @@
 #
 #   make test-mac            or   TM_MAC_RUNNER=mac-runner make test-mac
 set -euo pipefail
-host=${TM_MAC_RUNNER:?set TM_MAC_RUNNER to the Mac test runner's ssh name (local.mk: TM_MAC_RUNNER = <name>)}
+host=${TM_MAC_RUNNER:?"set TM_MAC_RUNNER to the ssh name of the Mac test runner (local.mk: TM_MAC_RUNNER = name)"}
 repo=$(cd "$(dirname "$0")/.." && pwd)
-ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" true \
+ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" 'mkdir -p ci/terminum' \
     || { echo "ci_mac: $host does not answer over ssh (asleep, off, or another network)" >&2; exit 2; }
 rsync -a --delete \
     --exclude .git --exclude target --exclude node_modules --exclude ui/dist --exclude dist \
@@ -26,6 +26,9 @@ ssh -o BatchMode=yes "$host" 'bash -lc '"'"'
     mkdir .ci.lock 2>/dev/null || { echo "another run uses ~/ci/terminum (or a stale ~/ci/terminum/.ci.lock)" >&2; exit 3; }
     trap "rmdir .ci.lock" EXIT
     export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH" NO_COLOR=1
+    # the Rust of the Linux CI, for this run only: the default toolchain of the runner stays as it is
+    export RUSTUP_TOOLCHAIN=1.98.1
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal >/dev/null
     echo "== $(hostname) $(sw_vers -productVersion), load $(sysctl -n vm.loadavg)"
     make test
     (cd terminumd && TM_LAUNCHD_TEST=1 cargo test --locked --test launchd)
