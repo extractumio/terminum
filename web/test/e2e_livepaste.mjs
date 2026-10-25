@@ -85,7 +85,8 @@ export async function livePaste(page, { home, name }) {
   check("AC-36 a pasted screenshot is saved in ~/.terminum/tmp (0600) and its path reaches the shell as one word",
     !!printed && fs.realpathSync(path.dirname(printed)) === path.join(dir, "tmp") && /\.png$/.test(printed) && mode === "600"
       && fs.readFileSync(file).subarray(1, 4).toString() === "PNG", JSON.stringify({ printed, mode }));
-  if (name === "webkit") {   // Chromium decodes no TIFF; Safari is where it comes from
+  // Chromium decodes no TIFF, nor does WebKit on Linux; Safari on the Mac is where it comes from
+  if (name === "webkit" && process.platform === "darwin") {
     const tiff = await pasteInto(page, home, TIFF, "image/tiff", "Image.tiff", "tif");
     const saved = tiff && path.join(dir, "tmp", path.basename(tiff));
     check("AC-36 a TIFF on the clipboard is pasted as a PNG", !!saved && /\.png$/.test(saved) && fs.existsSync(saved)

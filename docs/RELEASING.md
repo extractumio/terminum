@@ -81,8 +81,11 @@ CI job should. `make test-mac` is evidence, not a gate: run it before a release 
 change to macOS-only code (launchd, signing, folders, Finder).
 
 The Linux job runs `make test`, clippy with warnings as errors, `e2e_install.sh`, the Files
-panel's and the page's browser checks (Chromium and WebKit) against a private terminumd and
-tmux, and `security_check.sh`. Timing checks scale by the load per core (`web/test/check.mjs`),
+panel's checks and the page's live checks (`e2e_live.mjs`, Chromium and WebKit) against a
+private terminumd and tmux, and `security_check.sh`. The page's own checks (`e2e_all.mjs`)
+measure the layout of Safari and Chrome on the Mac, the page's clients: Linux's fonts and
+WebKit differ (columns, mouse cells, motion, TIFF), so they run on a Mac (`make test-mac`, and
+before every merge on the maintainer's). Timing checks scale by the load per core (`web/test/check.mjs`),
 since the VM is shared with coding agents. A real `systemctl --user` run is not part of it:
 the runner has no user manager, and giving it one (linger) would let a job leave a unit running
 outside the runner's confinement; the systemd half is covered by its unit tests (a stub

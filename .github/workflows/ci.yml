@@ -61,11 +61,12 @@ jobs:
       - name: Browsers for the page's checks
         run: cd ui && npx playwright-core install chromium webkit
 
-      - name: The page and the Files panel against a private terminumd and tmux
+      # The page's own checks (web/test/e2e_all.mjs) measure Safari's and Chrome's layout on the
+      # Mac, the page's clients: they run on a Mac (make test-mac), not with Linux's fonts here.
+      - name: The Files panel and the page against a private terminumd and tmux
         run: | # each runs, so one run shows every failure
           rc=0
           (cd ui && node test/e2e_panel.mjs) || rc=1
-          node web/test/e2e_all.mjs || rc=1
           node web/test/e2e_live.mjs || rc=1
           exit $rc
 
