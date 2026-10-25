@@ -134,9 +134,12 @@ try {
   await page.unroute("**/fb/api/file?*");
   check("AC-56 edits during a save keep the tab dirty", !!(await page.$(".tab.active.dirty")));
   check("AC-56 the save wrote only what was sent", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# a"));
+  const puts = [], onPut = (r) => { if (r.method() === "PUT") puts.push(r.url().slice(-40)); };
+  page.on("request", onPut);
   await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 the next save writes the rest", (ms) => page.waitForSelector(".tab.active:not(.dirty)", { timeout: ms }));
-  if (await page.$(".tab.active.dirty")) console.log("     | still unsaved:", JSON.stringify(await page.evaluate(() => ({ modal: document.querySelector(".modal")?.textContent, banner: document.querySelector(".banner")?.textContent, toast: document.getElementById("toast")?.textContent }))));
+  if (await page.$(".tab.active.dirty")) console.log("     | still unsaved:", JSON.stringify({ puts, disk: fs.readFileSync(`${SB}/app.py`, "utf8").slice(-40), ...await page.evaluate(() => ({ modal: document.querySelector(".modal")?.textContent, banner: document.querySelector(".banner")?.textContent, toast: document.getElementById("toast")?.textContent, focus: `${document.activeElement?.tagName}.${document.activeElement?.className}` })) }));
+  page.off("request", onPut);
   // a ⌘S pressed while a save is in flight saves again once it ends (AC-56)
   await page.route("**/fb/api/file?*", async (route) => {
     if (route.request().method() === "PUT") await new Promise((r) => setTimeout(r, 600));
