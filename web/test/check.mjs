@@ -2,6 +2,15 @@
 // The web page's browser checks share these helpers: a check prints PASS or FAIL with the
 // browser and size it ran in (e2e_all.mjs sets them), and results counts them per run.
 
+import os from "node:os";
+
+/** How much later than on a quiet machine timers and frames may come: the load per core, 1 to
+ *  4, or TM_TEST_SLACK. A check of timing waits and budgets by `slack(ms)`; a quiet machine keeps
+ *  them exact, a busy one (another build, another suite) no longer fails them for its load. */
+export const SLACK = Number(process.env.TM_TEST_SLACK) || Math.min(4, Math.max(1, os.loadavg()[0] / os.cpus().length));
+export const slack = (ms) => Math.round(ms * SLACK);
+if (SLACK > 1) console.log(`timing slack ×${SLACK.toFixed(1)} (load ${os.loadavg()[0].toFixed(0)} on ${os.cpus().length} cores)`);
+
 export const results = [];
 let where = "";
 /** The browser and size the next checks run in, e.g. "webkit 390×844"; "" for none. */

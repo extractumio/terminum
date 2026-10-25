@@ -12,6 +12,7 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { slack } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
 import { layoutTools } from "./e2e_layout.mjs";
 import { diagrams, embedTools, hostOffer, viewerTools } from "./e2e_panel_more.mjs";
@@ -195,8 +196,12 @@ try {
 
   // the video's address is let go once its document closed (it lived as long as the panel did)
   await page.locator(".tab", { has: page.locator('.tname:text("page.html")') }).locator(".close").click();
-  await page.waitForTimeout(5600);
-  const revoked = (await opened(shown.clip)) === "gone";
+  // let go 5 s after the close: asked until then, later on a busy machine
+  let revoked = false;
+  for (const until = Date.now() + slack(8000); !revoked && Date.now() < until;) {
+    await page.waitForTimeout(1000);
+    revoked = (await opened(shown.clip)) === "gone";
+  }
   check("AC-67 a video's blob: address is revoked once its HTML document's tab closed", revoked, shown.clip);
 
   // AC-36 a row dragged out carries its host and path (the page's terminal puts it at the input); a selected one, the selection
@@ -346,9 +351,13 @@ try {
   const openAfter = await page.$$eval("#tree .chev.open", (c) => c.length);
   check("AC-71 … and the expanded folders", openAfter === openBefore && openBefore > 0, `${openAfter} of ${openBefore}`);
   // a save while terminumd is away fails loud and keeps the edit (the tree, all open, scrolled to its row: it draws what shows)
-  const reach = async (p) => {                     // the tree is virtual: from its top down until the row is drawn
-    if (!(await page.$(row(p)))) { await page.$eval("#tree", (t) => { t.scrollTop = 0; }); await page.waitForTimeout(50); }
-    for (let i = 0; i < 40 && !(await page.$(row(p))); i++) await page.$eval("#tree", (t) => { t.scrollTop += t.clientHeight * 0.8; });
+  // the tree is virtual: scrolled down a screen at a time, each drawn before the next (from the top
+  // again past the bottom), until the row is drawn
+  const reach = async (p) => {
+    for (const until = Date.now() + slack(10000); !(await page.$(row(p))) && Date.now() < until;) {
+      await page.$eval("#tree", (t) => { t.scrollTop = t.scrollTop + t.clientHeight >= t.scrollHeight - 1 ? 0 : t.scrollTop + t.clientHeight * 0.8; });
+      await page.waitForTimeout(50);
+    }
   };
   await reach("greet.py");
   await page.click(row("greet.py"));
@@ -366,7 +375,8 @@ try {
   await page.keyboard.press("Meta+s");
   await within("AC-16 after the save the panel reloads", (ms) => page.waitForFunction(() => window.__before === undefined, null, { timeout: ms }), 8000);
   await within("AC-16 … with its tabs and tree", (ms) => page.waitForSelector(`${row("src")}`, { timeout: ms }));
-  check("AC-16 … the edited tab is back", !!(await page.$('.tab .tname:text("greet.py")')));
+  // its tabs come back after its tree
+  check("AC-16 … the edited tab is back", await page.waitForSelector('.tab .tname:text("greet.py")', { timeout: slack(5000) }).then(() => true, () => false));
   check("AC-16 the saved text is on disk", fs.readFileSync(`${SB}/greet.py`, "utf8").includes("# gap"));
   await page.evaluate(() => { window.__after = 1; });
   await page.waitForTimeout(2500);
@@ -376,7 +386,9 @@ try {
   // AC 09 another program on the port while terminumd is away: it never sees the sign-in,
   // whether it answers nothing useful or forges the proof; the panel comes back with its edits
   await reach("greet.py");
-  await page.click(row("greet.py")); await page.waitForSelector(".cm-content");
+  // found and clicked in one go: the tree, its folders opening again after the reload, draws its rows
+  // anew meanwhile, and a click that waits for the row to hold still can wait out its timeout
+  await page.evaluate((sel) => document.querySelector(sel)?.click(), row("greet.py")); await page.waitForSelector(".cm-content");
   await page.click(".cm-content"); await page.keyboard.type("# kept through a squatter\n");
   for (const forge of [false, true]) {
     const seen = [];
@@ -408,7 +420,13 @@ try {
     headers: H({ "Content-Type": "application/json", "If-Match": "*" }), body: JSON.stringify({ text }) });
   const saved = await put("y".repeat(9 << 20));
   check("AC-56 a 9 MB text file is editable and saves", big.writable && saved.status === 200, `${saved.status}`);
-  const huge = await putRaw(`/fb/api/file?path=${encodeURIComponent(`${SB}/big.txt`)}`, JSON.stringify({ text: "\u0001".repeat(11 << 20) }));
+  // terminumd answers 413 and closes while the body still comes: on a busy machine the reset can
+  // beat the answer to this side, so a reset with no answer is asked again (3 times at most)
+  let huge = null;
+  for (let i = 0; i < 3 && !huge; i++) {
+    huge = await putRaw(`/fb/api/file?path=${encodeURIComponent(`${SB}/big.txt`)}`, JSON.stringify({ text: "\u0001".repeat(11 << 20) })).catch(() => null);
+  }
+  huge ??= { status: "reset 3 times", text: "" };
   check("AC-56 a body over the limit is refused as JSON", huge.status === 413 && !!JSON.parse(huge.text || "null")?.error, `${huge.status}`);
   fs.rmSync(`${SB}/big.txt`);
   const noSignin = await fetch(`${base}/fb/api/ls?path=${encodeURIComponent(SB)}`);

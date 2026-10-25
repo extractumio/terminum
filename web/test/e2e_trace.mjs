@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check } from "./check.mjs";
+import { check, slack } from "./check.mjs";
 
 const STATIC = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../static");
 const ORIGIN = "http://web.test";
@@ -74,12 +74,12 @@ export async function webTrace(browser) {
   await page.focus("#kbd");
   await page.keyboard.type("ab", { delay: 120 });
   await page.keyboard.press("Enter");
-  await page.waitForTimeout(400);
+  await page.waitForTimeout(slack(400));
   const ins = sent.filter((m) => m.t === "in");
   check("AC-55 trace: each key carries its number", ins.length === 3 && ins.map((m) => m.k).join() === "1,2,3", JSON.stringify(ins));
 
   await page.click('#sessions .item[data-id="S2"]');
-  await page.waitForTimeout(2300);                       // a batch every 2 s
+  await page.waitForTimeout(slack(2300));                // a batch every 2 s
   const recs = records(sent);
   const echo = recs.filter((r) => r.ev === "echo");
   const a = echo.find((r) => r.k === 1);
@@ -91,7 +91,7 @@ export async function webTrace(browser) {
   check("AC-55 trace: a session opened is timed to its first screen and frame",
     opened?.sid === "S2" && opened.first >= 0 && opened.paint >= opened.first, JSON.stringify(opened));
   check("AC-55 trace: pings every 2 s, timed when the pong comes", sent.some((m) => m.t === "trace" && m.ping === 1) &&
-    (await page.waitForTimeout(2100), records(sent).some((r) => r.ev === "ping" && r.rtt >= 0)));
+    (await page.waitForTimeout(slack(2100)), records(sent).some((r) => r.ev === "ping" && r.rtt >= 0)));
   await page.click("#tracebadge");
   await page.waitForTimeout(200);
   check("AC-55 trace: a tap on the badge ends the trace", sent.some((m) => m.t === "trace" && m.on === false) &&

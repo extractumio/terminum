@@ -24,8 +24,9 @@ export function renderBinary(body: HTMLElement, f: FileView, banner: string) {
     : `<button class="btn" data-open-app>Open with default app</button>`;
   if (media === "image") {
     body.innerHTML = `${banner}<div class="scroll imgview"><img data-raw="${path}" alt="" title="Zoom"><div class="imgmeta"></div></div>`;
-    const img = body.querySelector("img")!;
-    img.onload = () => { body.querySelector(".imgmeta")!.textContent = `${img.naturalWidth} × ${img.naturalHeight} · ${fmtSize(f.size)}`; };
+    // its own caption: the body may show another file by the time the picture loads
+    const img = body.querySelector("img")!, meta = body.querySelector<HTMLElement>(".imgmeta")!;
+    img.onload = () => { meta.textContent = `${img.naturalWidth} × ${img.naturalHeight} · ${fmtSize(f.size)}`; };
     return hydrateRaw(body);
   }
   // the address revoked once the tab closed (hydrateRaw, whileShown)
