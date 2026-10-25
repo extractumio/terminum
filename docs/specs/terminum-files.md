@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.7.0 |
+| Version | 0.7.1 |
 | Date | 2026-10-24 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.7.1 | 2026-10-25 | A ⌘S pressed while a save is still in flight saves again once it ends, so text typed meanwhile is written too (before, the press joined the running save and that text stayed unsaved; seen on the Linux CI, whose slower save outlasted the check's wait) (AC-56). |
 | 0.7.0 | 2026-10-24 | Owner: files dragged from Finder (or another app) onto the tree upload into the folder under the pointer, on this Mac or the pane's host (AC-95): the folder a row is in (a folder's own row: that folder; below the rows: the root) shows as the target while the drag lasts, and moving up or down picks another among those shown. New route `POST /api/fs/upload?dir=&name=[&both=1]` (the file's bytes, at most 100 MB; under Roots; never over an existing file: refused, or with both=1 saved as "name 2.ext"), forwarded to a host's agent as the other file operations are (terminum.md AC-09). |
 | 0.6.1 | 2026-10-24 | Owner: Esc in the Files tree hides View, the keys staying in the tree, so files are looked at one after another (Enter or a click shows one, Esc hides it); MIDI plays on a fresh install with the SoundFont in the package (terminum.md 0.19.2) (AC-70, AC-64). |
 | 0.6.0 | 2026-10-24 | Owner: a player for every sound, MIDI too, and JSON, YAML, CSV and TSV rendered. A sound the browser plays (MP3, AAC/M4A, WAV, FLAC, Ogg; AIFF and AU in Safari) plays in its player; AU (.au, .snd) and AIFF (.aif, .aiff), which Chrome does not play, are decoded in the panel into WAV; MIDI (.mid, .midi), which no browser plays, is rendered on the Mac by terminumd with a General MIDI SoundFont of the user's (settings.json's midi.soundfont, else ~/.terminum/soundfont.sf2; none is shipped: a bank is tens of MB) into a WAV the same player plays, so it seeks, pauses and sets its volume as any sound; no synthesis of the panel's own; a type nothing here plays says so with Download (AC-64). JSON, YAML, CSV and TSV open Rendered with a Source toggle: JSON and YAML as a tree that folds, CSV and TSV as a table (AC-94). |
@@ -239,6 +240,7 @@ Scenario: AC-56 error — changed on disk, outside Roots, during a gap
 
 Scenario: AC-56 edge — closing, competing saves, renames, size
   Then closing a dirty tab asks "Save changes to app.py?" (Save, Don't save, Cancel); text typed before a closing save finishes stays unsaved in the open tab
+  And text typed while a save is in flight stays unsaved; a ⌘S pressed before that save ends saves again once it does, so that text is written too
   And of two pages saving the same etag (symlink aliases included) exactly one succeeds and the other sees the conflict; a save pending across a rename retries on the current path and a stale old-path reply cannot mark it clean
   And a 9 MB file saves; a body over 6 × the text limit answers 413 as JSON; a 255-byte basename saves with no temp file left; a conflict dialog of one host's file is discarded only for that document when the pane switches hosts
 ```

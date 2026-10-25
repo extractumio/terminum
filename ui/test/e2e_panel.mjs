@@ -137,6 +137,18 @@ try {
   await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 the next save writes the rest", (ms) => page.waitForSelector(".tab.active:not(.dirty)", { timeout: ms }));
   if (await page.$(".tab.active.dirty")) console.log("     | still unsaved:", JSON.stringify(await page.evaluate(() => ({ modal: document.querySelector(".modal")?.textContent, banner: document.querySelector(".banner")?.textContent, toast: document.getElementById("toast")?.textContent }))));
+  // a ⌘S pressed while a save is in flight saves again once it ends (AC-56)
+  await page.route("**/fb/api/file?*", async (route) => {
+    if (route.request().method() === "PUT") await new Promise((r) => setTimeout(r, 600));
+    await route.continue();
+  });
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("\n# b"); await page.keyboard.press("ControlOrMeta+s");
+  await page.waitForTimeout(150);
+  await page.keyboard.type("\n# c"); await page.keyboard.press("ControlOrMeta+s");
+  await within("AC-56 a save pressed during a save writes what was typed meanwhile", (ms) => page.waitForSelector(".tab.active:not(.dirty)", { timeout: ms }), 8000);
+  await page.unrouteAll({ behavior: "wait" });
+  check("AC-56 … all of it on disk", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# b\n# c"), JSON.stringify(fs.readFileSync(`${SB}/app.py`, "utf8").slice(-30)));
   await page.waitForTimeout(900); // our own save's fs event must not raise "Changed on disk"
   check("AC-61 own save does not show 'Changed on disk'", !(await page.$('.banner:has-text("Changed on disk")')));
 

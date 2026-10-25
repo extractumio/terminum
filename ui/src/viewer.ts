@@ -390,7 +390,9 @@ export class Viewer {
   /** Save the file (If-Match etag); on conflict ask Overwrite / Reload / Cancel. */
   save(path: string, force = false, d = this.docs.get(path)): Promise<boolean> {
     if (!d) return Promise.resolve(false);
-    if (!d.saving) d.saving = this.doSave(path, d, force).finally(() => { d.saving = undefined; });
+    // a save asked while one is in flight runs after it, for the text typed meanwhile (AC-56)
+    if (d.saving) return d.saving.then((ok) => ok && d.dirty ? this.save(path, force, d) : ok);
+    d.saving = this.doSave(path, d, force).finally(() => { d.saving = undefined; });
     return d.saving;
   }
 
