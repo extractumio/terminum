@@ -82,7 +82,7 @@ try {
   await page.click(".cm-content");
   await page.keyboard.type("import os\n");
   await within("AC-56 dirty marker", (ms) => page.waitForSelector(".tab.dirty", { timeout: ms }));
-  await page.keyboard.press("Meta+s");
+  await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 saved (marker cleared)", (ms) => page.waitForSelector(".tab.active:not(.dirty)", { timeout: ms }));
   check("AC-56 content on disk", fs.readFileSync(`${SB}/hello.py`, "utf8") === "import os\n", JSON.stringify(fs.readFileSync(`${SB}/hello.py`, "utf8")));
 
@@ -108,11 +108,11 @@ try {
   await within("AC-61 deleted file disappears", (ms) => page.waitForSelector(row("new.rs"), { state: "detached", timeout: ms }));
 
   // AC-56 conflict: dirty tab + external change → banner → save → dialog → overwrite
-  await page.click(".cm-content"); await page.keyboard.press("Meta+End"); await page.keyboard.type("# mine");
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.type("# mine");
   await page.waitForSelector(".tab.dirty");
   fs.appendFileSync(`${SB}/app.py`, "print(3)\n");
   await within("AC-61 dirty tab shows 'Changed on disk'", (ms) => page.waitForSelector('.banner:has-text("Changed on disk")', { timeout: ms }));
-  await page.click(".cm-content"); await page.keyboard.press("Meta+s");
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 conflict dialog", (ms) => page.waitForSelector(".modal", { timeout: ms }));
   check("AC-56 dialog title", (await page.textContent(".modal .mtitle")) === "app.py changed on disk", await page.textContent(".modal .mtitle"));
   const before = fs.readFileSync(`${SB}/app.py`, "utf8");
@@ -126,15 +126,15 @@ try {
     if (route.request().method() === "PUT") await new Promise((r) => setTimeout(r, 600));
     await route.continue();
   });
-  await page.click(".cm-content"); await page.keyboard.press("Meta+End"); await page.keyboard.type("\n# a");
-  await page.keyboard.press("Meta+s");
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.type("\n# a");
+  await page.keyboard.press("ControlOrMeta+s");
   await page.waitForTimeout(150);
   await page.keyboard.type("\n# typed during save");
   await page.waitForTimeout(900);
   await page.unroute("**/fb/api/file?*");
   check("AC-56 edits during a save keep the tab dirty", !!(await page.$(".tab.active.dirty")));
   check("AC-56 the save wrote only what was sent", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# a"));
-  await page.keyboard.press("Meta+s");
+  await page.keyboard.press("ControlOrMeta+s");
   await page.waitForSelector(".tab.active:not(.dirty)");
   await page.waitForTimeout(900); // our own save's fs event must not raise "Changed on disk"
   check("AC-61 own save does not show 'Changed on disk'", !(await page.$('.banner:has-text("Changed on disk")')));
@@ -364,7 +364,7 @@ try {
   await page.waitForSelector(".cm-content");
   await page.click(".cm-content"); await page.keyboard.type("# gap\n");
   await stopServer();
-  await page.keyboard.press("Meta+s");
+  await page.keyboard.press("ControlOrMeta+s");
   await within("AC-56 a save during the gap says so", (ms) => page.waitForFunction(() => document.getElementById("toast").textContent === "Not saved: server restarting — save again", null, { timeout: ms }));
   check("AC-56 … and the tab stays unsaved", !!(await page.$(".tab.active.dirty")));
   // an upgrade: the unsaved tab holds the reload back, the save lets it happen, in place
@@ -372,7 +372,7 @@ try {
   await bringBack({ TM_BUILD_ID: "e2e-next" });
   await within("AC-16 a dirty panel waits for the save", (ms) => page.waitForFunction(() => document.getElementById("note").textContent.startsWith("Update ready"), null, { timeout: ms }));
   check("AC-16 … without reloading", (await page.evaluate(() => window.__before)) === 1);
-  await page.keyboard.press("Meta+s");
+  await page.keyboard.press("ControlOrMeta+s");
   await within("AC-16 after the save the panel reloads", (ms) => page.waitForFunction(() => window.__before === undefined, null, { timeout: ms }), 8000);
   await within("AC-16 … with its tabs and tree", (ms) => page.waitForSelector(`${row("src")}`, { timeout: ms }));
   // its tabs come back after its tree

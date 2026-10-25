@@ -33,7 +33,7 @@ export async function hostRegressions({ page, test, focus, text, edit, deferred,
       } else await route.fulfill({ json: { etag: "renamed-saved" } });
       return true;
     };
-    await page.keyboard.press("Meta+s"); await started.promise;
+    await page.keyboard.press("ControlOrMeta+s"); await started.promise;
     await page.evaluate(({ from, to, host, dir }) => window.reviewSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ event: "fs-change", data: { dirs: [dir], files: [], moved: [{ from, to }], host } }) })), { from: path, to: renamed, host: A, dir: SB });
     await page.locator('.tab.active .tname:text("renamed-during-save.txt")').waitFor();
     release.resolve(); await page.click('.modal button[data-id="overwrite"]');
@@ -49,7 +49,7 @@ export async function hostRegressions({ page, test, focus, text, edit, deferred,
       if (host !== A || route.request().method() !== "PUT") return;
       started.resolve(); await release.promise; await route.fulfill({ json: { etag: "old-path-saved" } }); return true;
     };
-    await page.keyboard.press("Meta+s"); await started.promise;
+    await page.keyboard.press("ControlOrMeta+s"); await started.promise;
     await page.evaluate(({ from, to, host, dir }) => window.reviewSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ event: "fs-change", data: { dirs: [dir], files: [], moved: [{ from, to }], host } }) })), { from: path, to: renamed, host: A, dir: SB });
     await page.locator('.tab.active .tname:text("success-renamed.txt")').waitFor(); release.resolve();
     await page.waitForFunction(() => document.querySelector("#toast")?.textContent.includes("file was renamed"));
@@ -65,7 +65,7 @@ export async function hostRegressions({ page, test, focus, text, edit, deferred,
       started.resolve(); await release.promise;
       await route.fulfill({ status: 409, json: { error: "conflict", message: "File moved before save" } }); return true;
     };
-    await page.keyboard.press("Meta+s"); await started.promise;
+    await page.keyboard.press("ControlOrMeta+s"); await started.promise;
     await page.evaluate(({ from, to, host, dir }) => window.reviewSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ event: "fs-change", data: { dirs: [dir], files: [], moved: [{ from, to }], host } }) })), { from: path, to: renamed, host: A, dir: SB });
     await page.locator('.tab.active .tname:text("reload-renamed.txt")').waitFor(); release.resolve();
     await page.click('.modal button[data-id="reload"]');
@@ -89,7 +89,7 @@ export async function hostRegressions({ page, test, focus, text, edit, deferred,
     await started.promise;
     await page.evaluate(({ from, to, host, dir }) => window.reviewSocket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ event: "fs-change", data: { dirs: [dir], files: [], moved: [{ from, to }], host } }) })), { from: path, to: renamed, host: A, dir: SB });
     await page.locator('.tab.active .tname:text("read-renamed.txt")').waitFor(); release.resolve(); await page.waitForTimeout(150);
-    await edit(" current renamed edit"); await page.keyboard.press("Meta+s"); await page.locator(".tab.active:not(.dirty)").waitFor();
+    await edit(" current renamed edit"); await page.keyboard.press("ControlOrMeta+s"); await page.locator(".tab.active:not(.dirty)").waitFor();
     assert.deepEqual(targets, [renamed]);
     beforeFile = async () => {};
   });

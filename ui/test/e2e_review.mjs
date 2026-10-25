@@ -22,7 +22,7 @@ const deferred = () => { let resolve; const promise = new Promise((r) => { resol
 const test = async (name, fn) => { try { await fn(); check(name, true); } catch (e) { check(name, false, e.stack); } };
 const row = (p) => page.locator(`#tree .row[data-p="${p}"]`);
 const text = async (s) => page.waitForFunction((s) => document.querySelector(".cm-content")?.textContent.includes(s), s);
-const edit = async (s) => { await page.click(".cm-content"); await page.keyboard.press("Meta+End"); await page.keyboard.type(s); };
+const edit = async (s) => { await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+End"); await page.keyboard.type(s); };
 async function workspace(key, root, tabs) {
   const url = `${base}/fb/api/workspace?key=${encodeURIComponent(key)}`;
   const headers = { "X-TM-Session": SECRET, "Content-Type": "application/json", Origin: base };
@@ -50,7 +50,7 @@ try {
   await row(`${SB}/app.py`).waitFor();
   await test("CRLF survives edit and save", async () => {
     await focus("review-crlf", SB, [`${SB}/crlf.py`]); await text("one");
-    await edit("three"); await page.keyboard.press("Meta+s");
+    await edit("three"); await page.keyboard.press("ControlOrMeta+s");
     await page.locator(".tab.active:not(.dirty)").waitFor();
     assert.equal(fs.readFileSync(`${SB}/crlf.py`, "utf8"), "one\r\ntwo\r\nthree");
   });
@@ -59,7 +59,7 @@ try {
     await row(`${SB}/rename.py`).click(); await page.focus("#tree"); await page.keyboard.press("F2");
     await page.locator(".inline-edit.on input").fill("renamed.py"); await page.keyboard.press("Enter");
     await page.locator('.tab.active .tname:text("renamed.py")').waitFor();
-    await edit("after rename"); await page.keyboard.press("Meta+s");
+    await edit("after rename"); await page.keyboard.press("ControlOrMeta+s");
     await page.locator(".tab.active:not(.dirty)").waitFor();
     assert.equal(fs.readFileSync(`${SB}/renamed.py`, "utf8"), "rename\nafter rename");
   });
