@@ -86,6 +86,7 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 :is(dialog.dlg, .footform) .field:not(.lead) { padding: var(--sp-2) var(--field-px); }
 :is(dialog.dlg, .footform) textarea.field { resize: vertical; }
 :is(dialog.dlg, .footform) [role="alert"] { margin: 0; color: var(--danger-text); font-size: var(--fs-label); }
+#agentslines.bad { color: var(--danger-text); }   /* AC-99: why enabling or turning off failed */
 :is(dialog.dlg, .footform) .actions { display: flex; justify-content: flex-end; gap: var(--key-gap); margin-top: var(--sp-3); }
 
 /* popover menus: the host's ⋯, the update chip's: rows, not keys */

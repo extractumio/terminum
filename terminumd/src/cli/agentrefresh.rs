@@ -20,11 +20,14 @@ fn warn(ctx: &Ctx, agent: &str, what: &str, e: &str) {
 }
 
 /// After an install or upgrade came up: Claude Code's plugin installed again when it was made by
-/// another build or lacks its MCP server; Codex's MCP block made current (hooks.json untouched but for codex_end).
+/// another build, lacks its MCP server or its hooks file is not this build's (a new entry: PostToolBatch);
+/// Codex's MCP block made current (hooks.json untouched but for codex_end).
 pub fn refresh(ctx: &Ctx) {
     if installed(ctx, "claude") {
         let made = std::fs::read_to_string(marker(ctx)).unwrap_or_default();
-        if (made.trim() != crate::config::build_id() || !plugin_dir(ctx).join(".mcp.json").is_file())
+        let hooks = std::fs::read_to_string(plugin_dir(ctx).join("hooks/hooks.json")).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
+        if (made.trim() != crate::config::build_id() || !plugin_dir(ctx).join(".mcp.json").is_file()
+            || hooks != Some(agentsetup::claude_hooks(&agentsetup::command(ctx, "claude"))))
             && let Err(e) = update_claude(ctx) {
             warn(ctx, "claude", "terminum's plugin was not refreshed; the one installed stays", &e);
         }

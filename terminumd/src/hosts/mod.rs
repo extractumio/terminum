@@ -5,7 +5,7 @@
 //! client, reconnecting after a drop with back-off 1, 2, 4 … 30 s (AC-81); a host's files go
 //! through its agent once enabled (tunnel.rs, AC-82–AC-85).
 
-#[allow(dead_code)] // its callers (`terminum hosts agents <host> on|off`, AC-84 refresh) come with the CLI round
+pub mod agents;
 pub mod agentsinstall;
 pub mod link;
 pub mod recipe;
@@ -249,13 +249,14 @@ pub fn update(app: &Shared, name: &str, f: impl FnOnce(&mut Value)) -> Result<()
     })
 }
 
-/// remove, off, on, retry, enable, decline, files-remove.
+/// remove, off, on, retry, enable, decline, files-remove (agents-on|off: [`agents::set_agents`]).
 pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String> {
     if !records(app).contains_key(name) {
         return Err(format!("no host named {name}"));
     }
     match action {
         "remove" => {
+            agents::removed(app, name);
             tunnel::stop(app, name);
             save(app, |h| {
                 h.remove(name);
@@ -274,6 +275,8 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
         }
         "enable" => tunnel::enable(app, name).await,
         "decline" => set_files(app, name, Some("declined")),
+        // agents on keep the helper: only Files goes
+        "files-remove" if link::wanted(app, name) => set_files(app, name, None).map(|()| link::changed(app, name)),
         "files-remove" => tunnel::remove(app, name).await,
         _ => Err(format!("unknown host action: {action}")),
     }

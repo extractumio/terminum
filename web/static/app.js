@@ -291,7 +291,7 @@ function onMessage(m) {
     case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
-    case "hostadded": tools.hostAdded(m.name); break;
+    case "hostadded": case "hostagents": tools.hostAnswer(m); break;
     case "tmuxadded": tools.tmuxAdded(); break;
     case "tmuxsessions": tools.tmuxChoices(m); break;
     case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg) && !showCurrent.plan.error(m)) status(m.msg); break;   // empty: tmux is back

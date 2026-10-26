@@ -44,6 +44,9 @@ usage: terminum [command]
                           as after ssh in a shell; no name: the destination's host;
                           --files: browse its files (copies a helper once attached)
   hosts remove|enable|files-remove|off|on|retry <name>
+  hosts agents <name> on|off
+                          coding agents' progress from the host: terminum's hooks and
+                          MCP server in its Claude Code and Codex
   tmux                    the sessions of your own tmux attached by name, here and on hosts
   tmux attach|detach <session> [--socket S | --host H]
                           show a session of your tmux (tmux -L S, or on host H) in terminum, or stop
@@ -137,6 +140,8 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
                     [name, recipe @ ..] => Ok(Cmd::HostsAdd { name: Some(name.clone()), recipe: recipe.to_vec(), files }),
                 }
             }
+            [h, name, v] if h == "agents" && (v == "on" || v == "off") => Ok(Cmd::Hosts(Some(format!("agents-{v}")), Some(name.clone()), vec![])),
+            [h, ..] if h == "agents" => Err(usage("usage: terminum hosts agents <name> on|off")),
             [h, more @ ..] if commands::HOST_ACTIONS.contains(&h.as_str()) => {
                 Ok(Cmd::Hosts(Some(h.clone()), more.first().cloned(), more.iter().skip(1).cloned().collect()))
             }

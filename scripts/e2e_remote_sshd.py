@@ -50,8 +50,10 @@ def start_host(work):
              f"echo '{pub}' > /home/alex/.ssh/authorized_keys && chown -R alex /home/alex/.ssh && "
              "chmod 700 /home/alex/.ssh && chmod 600 /home/alex/.ssh/authorized_keys && "
              "echo '# on the host' > /home/alex/notes.md && chown alex /home/alex/notes.md && "
-             "sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/; "
-             "s/^#*AllowStreamLocalForwarding.*/AllowStreamLocalForwarding yes/' /etc/ssh/sshd_config && "
+             # Alpine ships `AllowTcpForwarding no`, which alone denies a Unix -R, and no
+             # AllowStreamLocalForwarding line for a sed to change (AS-84): set the one, add the other
+             "sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/; /^#*AllowStreamLocalForwarding/d' /etc/ssh/sshd_config && "
+             "echo 'AllowStreamLocalForwarding yes' >> /etc/ssh/sshd_config && "
              "exec /usr/sbin/sshd -D -e")
     docker("rm", "-f", NAME, check_ok=False)
     docker("run", "-d", "--rm", "--name", NAME, "-p", f"127.0.0.1:{SSH_PORT}:22", "alpine:3.20", "sh", "-c", setup)

@@ -244,17 +244,22 @@ struct HostBody {
     files: bool,
 }
 
-/// `terminum hosts add|remove|enable|files-remove|off|on|retry` (AC-87).
+/// `terminum hosts add|remove|enable|files-remove|off|on|retry` (AC-87), `hosts agents` (AC-99).
 async fn host_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>, Json(b): Json<HostBody>) -> Response {
-    let result = if action == "add" {
-        crate::hosts::add(&app, &b.name, &b.recipe, b.files).await
-    } else {
-        crate::hosts::action(&app, &b.name, &action).await.map(|()| b.name)
+    let mut message = None;
+    let result = match action.as_str() {
+        "add" => crate::hosts::add(&app, &b.name, &b.recipe, b.files).await,
+        // AC-99: the per-agent result lines are the CLI's message
+        "agents-on" | "agents-off" => crate::hosts::agents::set_agents(&app, &b.name, action == "agents-on").await.map(|lines| {
+            message = Some(lines.join("\n"));
+            b.name
+        }),
+        _ => crate::hosts::action(&app, &b.name, &action).await.map(|()| b.name),
     };
     match result {
         Ok(name) => {
             crate::manager::refresh(&app).await;
-            Json(json!({"ok": true, "name": name, "hosts": crate::hosts::list(&app)})).into_response()
+            Json(json!({"ok": true, "name": name, "message": message, "hosts": crate::hosts::list(&app)})).into_response()
         }
         Err(e) => err(StatusCode::CONFLICT, "host", e),
     }

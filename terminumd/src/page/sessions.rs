@@ -270,6 +270,14 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         "addhost" => crate::hosts::add(app, &s("name"), &s("recipe"), msg["files"].as_bool().unwrap_or(false)).await.map(|name| {
             page.send_json(&json!({"t": "hostadded", "name": name}));
         }),
+        "hostagents" => {
+            let on = msg["on"].as_bool().unwrap_or(false);
+            let got = crate::hosts::agents::set_agents(app, &s("name"), on).await;
+            let (ok, lines) = match got { Ok(l) => (true, l), Err(e) => (false, vec![e]) };
+            page.send_json(&json!({"t": "hostagents", "name": s("name"), "on": on, "ok": ok, "lines": lines}));
+            crate::manager::refresh(app).await;
+            return;
+        }
         "hostaction" => crate::hosts::action(app, &s("name"), &s("action")).await,
         // AC-89: a place is its server's id (`local:<socket>`, `<host>:default`)
         "addtmux" => {

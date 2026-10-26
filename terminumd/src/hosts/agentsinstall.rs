@@ -106,9 +106,18 @@ async fn ssh(recipe: &[String], command: &str, marker: &str) -> Result<String, S
 
 async fn run(app: &Shared, host: &str, action: &str, refresh: bool) -> Result<Vec<(String, String)>, String> {
     let recipe = super::recipe_of(app, host).ok_or_else(|| format!("no host {host}"))?;
+    run_on(&recipe, action, refresh).await
+}
+
+async fn run_on(recipe: &[String], action: &str, refresh: bool) -> Result<Vec<(String, String)>, String> {
     let marker = new_marker()?;
-    let out = ssh(&recipe, &remote_command(&script(&marker, action, refresh)), &marker).await?;
+    let out = ssh(recipe, &remote_command(&script(&marker, action, refresh)), &marker).await?;
     parse(&out, &marker)
+}
+
+/// [`remove`] over a recipe kept from a host being removed.
+pub async fn remove_on(recipe: &[String]) -> Result<Vec<(String, String)>, String> {
+    run_on(recipe, "remove", false).await
 }
 
 /// Install on `host`: `helper` first puts the helper at ~/.terminum/bin/terminumd-agent (given the recipe).

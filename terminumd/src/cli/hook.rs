@@ -4,7 +4,7 @@
 //! agent's write never breaks), keeps a few fields of it, cut short (never a tool's output, a
 //! file's text or the agent's answer; of a plan tool, its items'
 //! words: hookplan.rs), and posts them to every sink at once (the local terminumd's private
-//! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms; it prints at most terminumd's reminder after a PostToolUse and always
+//! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms; it prints at most terminumd's reminder after the agent's reminder event and always
 //! exits 0, so the agent goes on as without it.
 //! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux
 //! nothing is sent.
@@ -58,11 +58,12 @@ pub fn first_reminder(ev: &Value, answers: &[super::sinks::Answer]) -> Option<St
 }
 
 /// The one line the agent reads as context when terminumd's answer reminds (AC-97); None
-/// without a reminder, or for an event other than PostToolUse (the one whose context both
-/// agents are known to take).
+/// without a reminder, or for an event other than the agent's reminder event (Claude's sync
+/// PostToolBatch, Codex's PostToolUse: plans_store.rs), whose name the line carries.
 pub fn remind_line(ev: &Value, answer: &Value) -> Option<String> {
     let text = answer["remind"].as_str().filter(|t| !t.is_empty())?;
-    (ev["event"] == "PostToolUse").then(|| json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}).to_string())
+    let name = crate::plans::remind_event(ev["agent"].as_str().unwrap_or(""));
+    (ev["event"] == name).then(|| json!({"hookSpecificOutput": {"hookEventName": name, "additionalContext": text}}).to_string())
 }
 
 /// Why `terminum hook <agent>` is not an agent's run (`by_hand`: its stdin is a terminal).
@@ -192,23 +193,25 @@ mod tests {
 
     #[test]
     fn a_reminder_is_one_line_of_the_events_context() {
-        let ev = json!({"event": "PostToolUse"});
-        let line = remind_line(&ev, &json!({"remind": "update it"})).unwrap();
-        assert!(!line.contains('\n'));
-        assert_eq!(serde_json::from_str::<Value>(&line).unwrap(),
-                   json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "update it"}}));
-        assert_eq!(remind_line(&ev, &json!({})), None, "no reminder: nothing printed");
-        assert_eq!(remind_line(&ev, &json!({"remind": ""})), None);
-        assert_eq!(remind_line(&json!({}), &json!({"remind": "x"})), None, "no event name: nothing printed");
-        for other in ["PostToolBatch", "Stop", "PreToolUse", "UserPromptSubmit"] {
-            assert_eq!(remind_line(&json!({"event": other}), &json!({"remind": "x"})), None, "{other}: nothing printed");
+        for (agent, name) in [("codex", "PostToolUse"), ("claude", "PostToolBatch")] {
+            let ev = json!({"agent": agent, "event": name});
+            let line = remind_line(&ev, &json!({"remind": "update it"})).unwrap();
+            assert!(!line.contains('\n'));
+            assert_eq!(serde_json::from_str::<Value>(&line).unwrap(),
+                       json!({"hookSpecificOutput": {"hookEventName": name, "additionalContext": "update it"}}));
+            assert_eq!(remind_line(&ev, &json!({})), None, "no reminder: nothing printed");
+            assert_eq!(remind_line(&ev, &json!({"remind": ""})), None);
+        }
+        assert_eq!(remind_line(&json!({"agent": "claude"}), &json!({"remind": "x"})), None, "no event name: nothing printed");
+        for (agent, other) in [("claude", "PostToolUse"), ("codex", "PostToolBatch"), ("claude", "Stop"), ("codex", "PreToolUse"), ("claude", "UserPromptSubmit")] {
+            assert_eq!(remind_line(&json!({"agent": agent, "event": other}), &json!({"remind": "x"})), None, "{agent} {other}: nothing printed");
         }
     }
 
     #[test]
     fn any_sinks_reminder_is_printed_none_without_sinks() {
         use super::super::sinks::post_all;
-        let ev = json!({"event": "PostToolUse"});
+        let ev = json!({"agent": "codex", "event": "PostToolUse"});
         let answers = vec![Err(super::super::sockhttp::Down), Ok((200, Some(json!({})))), Ok((200, Some(json!({"remind": "from a Mac"}))))];
         assert!(first_reminder(&ev, &answers).unwrap().contains("from a Mac"));
         assert_eq!(first_reminder(&ev, &answers[..2]), None);

@@ -342,7 +342,7 @@ pub mod rules;
 
 #[path = "plans_store.rs"]
 mod store;
-pub use store::{flush, hook_event, save, seen};
+pub use store::{flush, hook_event, remind_event, save, seen};
 
 #[cfg(test)]
 #[path = "plans_tests.rs"]

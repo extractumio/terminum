@@ -102,10 +102,12 @@ fn is_ours(entry: &Value, cmd: &str) -> bool {
     entry["hooks"].as_array().is_some_and(|hs| hs.iter().any(|h| h["command"] == cmd))
 }
 
-/// The hooks file of Claude Code's plugin: every lifecycle event runs `cmd` in the background.
+/// The hooks file of Claude Code's plugin: every lifecycle event runs `cmd` in the background, and
+/// PostToolBatch in the foreground (2 s): the reminder's carrier, as an async hook's output never reaches the model (AC-97).
 pub fn claude_hooks(cmd: &str) -> Value {
-    let hooks: serde_json::Map<String, Value> = CLAUDE_EVENTS.iter()
+    let mut hooks: serde_json::Map<String, Value> = CLAUDE_EVENTS.iter()
         .map(|e| (e.to_string(), json!([entry(cmd)]))).collect();
+    hooks.insert("PostToolBatch".into(), json!([{"hooks": [{"type": "command", "command": cmd, "timeout": 2}]}]));
     json!({"description": "terminum: tells terminumd what this session does (terminum hooks)", "hooks": hooks})
 }
 

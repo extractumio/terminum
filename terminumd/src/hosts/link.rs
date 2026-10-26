@@ -24,8 +24,6 @@ pub fn wanted(app: &Shared, host: &str) -> bool {
 
 /// Applies a host's changed `agents` setting (the CLI and the host menu call it after saving):
 /// the helper's ssh restarts with or without the link, or ends when files are off too.
-// its callers (`terminum hosts agents`, the host menu) come with the next round
-#[allow(dead_code)]
 pub fn changed(app: &Shared, host: &str) {
     super::tunnel::stop(app, host);
     super::tunnel::reconcile(app, host);

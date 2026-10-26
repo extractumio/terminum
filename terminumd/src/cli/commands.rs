@@ -232,7 +232,8 @@ pub fn hosts_list(ctx: &Ctx) -> Result<(), String> {
         let files = x["files"].as_str().filter(|f| !f.is_empty()).unwrap_or("not enabled");
         let helper = x["helper"].as_str().filter(|h| !h.is_empty()).map(|h| format!(", helper {h}")).unwrap_or_default();
         let why = x["why"].as_str().filter(|w| !w.is_empty()).map(|w| format!(" — {w}")).unwrap_or_default();
-        ctx.say(format!("{}: {recipe}  {}, files {files}{helper}{why}", x["name"].as_str().unwrap_or("?"), x["state"].as_str().unwrap_or("?")));
+        let agents = x["agents"].as_str().filter(|a| !a.is_empty()).unwrap_or("off");
+        ctx.say(format!("{}: {recipe}  {}, files {files}{helper}, agents {agents}{why}", x["name"].as_str().unwrap_or("?"), x["state"].as_str().unwrap_or("?")));
     }
     Ok(())
 }

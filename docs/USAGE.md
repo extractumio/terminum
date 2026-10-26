@@ -305,10 +305,15 @@ To remove it: `tailscale serve clear svc:terminum`.
 
 ```bash
 terminum hosts add 'alex@devbox.example -p 2222' --files   # or "Add host" under the list
-terminum hosts                                             # each host, its state and files
+terminum hosts                                             # each host, its state, files and agents
 terminum hosts enable devbox                               # browse its files (copies a helper)
+terminum hosts agents devbox on|off                        # coding agents' progress from devbox
 terminum hosts off|on|retry|remove|files-remove devbox
 ```
+
+`hosts agents devbox on` (or the host menu's "Coding agents' progress on devbox…") puts terminum's
+hooks and MCP server into Claude Code and Codex on devbox (`~/.claude`, `~/.codex`) and prints one
+line per agent; Codex asks once to trust them in `/hooks`. `off` takes them out again.
 
 A host is its ssh string (options `-p -l -i -J -4 -6 -C`); terminumd holds its tmux session
 `terminum` over ssh (and the host's other sessions you attach, above), reconnects after a drop, and browses its files through a helper it copies

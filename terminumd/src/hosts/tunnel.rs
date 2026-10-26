@@ -336,6 +336,7 @@ async fn keep(app: Shared, host: String) {
                         tracing::info!(event = "agent.updated", host, to = crate::agent::AGENT_ID);
                         let _ = crate::hosts::set_helper(&app, &host, crate::agent::AGENT_ID);
                         app.tunnels.0.lock().entry(host.clone()).or_default().updated_at = Some(Instant::now());
+                        super::agents::after_update(&app, &host);
                         Duration::ZERO
                     }
                     Err(e) => {
@@ -370,7 +371,7 @@ async fn keep(app: Shared, host: String) {
     app.links.stop(&app, &host);
 }
 
-async fn update(recipe: &[String]) -> Result<(), String> {
+pub(super) async fn update(recipe: &[String]) -> Result<(), String> {
     let p = probe(recipe).await?.0?;
     install(recipe, &binary_for(p)?, crate::agent::AGENT_ID).await
 }
@@ -476,9 +477,14 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
 pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
     stop(app, host);
     let recipe = crate::hosts::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
-    let script = format!("d=\"$HOME/{HOME_DIR}\"; rm -f \"$d/bin/terminumd-agent\" \"$d/bin/terminumd-agent-\"* \"$d/bin/.terminumd-agent.\"* \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; rmdir \"$d/bin\" \"$d/logs\" \"$d\" 2>/dev/null; true");
-    ssh(&recipe, &script, None, Duration::from_secs(60)).await.map_err(|e| format!("Could not remove the helper from {host}: {e}"))?;
+    remove_helper(&recipe).await.map_err(|e| format!("Could not remove the helper from {host}: {e}"))?;
     crate::hosts::set_files(app, host, None)
+}
+
+/// The helper and its log taken off a host (Files' remove, agents off with Files off).
+pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
+    let script = format!("d=\"$HOME/{HOME_DIR}\"; rm -f \"$d/bin/terminumd-agent\" \"$d/bin/terminumd-agent-\"* \"$d/bin/.terminumd-agent.\"* \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; rmdir \"$d/bin\" \"$d/logs\" \"$d\" 2>/dev/null; true");
+    ssh(recipe, &script, None, Duration::from_secs(60)).await.map(drop)
 }
 
 #[cfg(test)]

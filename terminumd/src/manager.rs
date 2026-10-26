@@ -98,7 +98,8 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
     }
     if !local && !server.attached() {
         // judged by its `terminum` client; the user's sessions there wait with the host's state
-        let g = layout::host_group(&server, crate::hosts::files_state(app, &server.name).as_deref());
+        let mut g = layout::host_group(&server, crate::hosts::files_state(app, &server.name).as_deref());
+        g["agents"] = json!(crate::hosts::tunnel::agents_state(app, &server.name));   // AC-99
         let why = format!("{}: {}", server.name, g["why"].as_str().unwrap_or_default());
         let mut gs = vec![g];
         gs.extend(crate::attach::host_waiting(&server, &why));
@@ -124,6 +125,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
                 // the host's own group offers the other sessions running there (AC-89)
                 if let Some(g) = gs.iter_mut().find(|g| g["attached"].is_null()) {
                     g["others"] = json!(others);
+                    g["agents"] = json!(crate::hosts::tunnel::agents_state(app, &server.name));
                 }
                 gs.extend(absent);
             }

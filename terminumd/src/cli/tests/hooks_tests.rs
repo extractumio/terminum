@@ -33,6 +33,9 @@ fn claudes_plugin_hooks_every_lifecycle_event_in_the_background() {
         let h = &v["hooks"][e][0]["hooks"][0];
         assert_eq!((h["command"].as_str(), h["async"].as_bool()), (Some("/x/terminum hook claude"), Some(true)), "{e}");
     }
+    assert_eq!(v["hooks"].as_object().unwrap().len(), 13);
+    // the reminder's carrier: Claude Code delivers no async hook's output (AC-97)
+    assert_eq!(v["hooks"]["PostToolBatch"], json!([{"hooks": [{"type": "command", "command": "/x/terminum hook claude", "timeout": 2}]}]));
 }
 
 #[test]

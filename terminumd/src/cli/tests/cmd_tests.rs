@@ -184,7 +184,9 @@ fn hosts_list() {
     let list = Arc::new(Mutex::new(json!({"hosts": [{"name": "devbox", "ssh": ["-p", "2222", "alex@devbox.example"], "state": "attached", "files": "enabled", "helper": "a1b2c3d4e5f6"}]})));
     let l = list.clone();
     let _s = t.serve(routes(vec![("GET /hosts", Box::new(move |_| (200, l.lock().clone())))]));
-    assert_eq!(t.cli(&["hosts"]).1, ["devbox: -p 2222 alex@devbox.example  attached, files enabled, helper a1b2c3d4e5f6"]);
+    assert_eq!(t.cli(&["hosts"]).1, ["devbox: -p 2222 alex@devbox.example  attached, files enabled, helper a1b2c3d4e5f6, agents off"]);
+    *list.lock() = json!({"hosts": [{"name": "devbox", "ssh": ["alex@devbox.example"], "state": "attached", "agents": "refused: the host's sshd forbids socket forwarding"}]});
+    assert_eq!(t.cli(&["hosts"]).1, ["devbox: alex@devbox.example  attached, files not enabled, agents refused: the host's sshd forbids socket forwarding"]);
     *list.lock() = json!({"hosts": []});
     assert!(t.cli(&["hosts"]).1[0].contains("No hosts yet"));
 }
@@ -226,6 +228,24 @@ fn host_actions() {
     assert_eq!(t.cli(&["hosts", "off", "nope"]).0.as_deref(), Some("no host named nope"));
     assert!(t.cli(&["hosts", "remove"]).0.unwrap().contains("usage"));
     assert!(t.cli(&["hosts", "remove", "a", "b"]).0.unwrap().contains("usage"));
+}
+
+#[test]
+fn hosts_agents_on_off_post_their_action_and_print_the_result_lines() {
+    let t = T::new();
+    let s = t.serve(routes(vec![
+        ("POST /hosts/agents-on", fixed(200, json!({"ok": true, "message": "claude: installed\ncodex: not found"}))),
+        ("POST /hosts/agents-off", fixed(409, json!({"error": "host", "message": "Turned off here; could not take terminum's hooks out of devbox: ssh: timed out"}))),
+    ]));
+    let (err, out) = t.cli(&["hosts", "agents", "devbox", "on"]);
+    assert_eq!(err, None);
+    assert!(out.join("\n").contains("claude: installed\ncodex: not found"), "{out:?}");
+    let last = s.requests.lock().last().cloned().unwrap();
+    assert_eq!((last.1, last.2), ("/hosts/agents-on".to_string(), Some(json!({"name": "devbox"}))));
+    assert!(t.cli(&["hosts", "agents", "devbox", "off"]).0.unwrap().contains("Turned off here"));
+    for bad in [&["hosts", "agents"][..], &["hosts", "agents", "devbox"], &["hosts", "agents", "devbox", "yes"], &["hosts", "agents-on", "devbox"]] {
+        assert!(t.cli(bad).0.unwrap().contains("usage"), "{bad:?}");
+    }
 }
 
 #[test]

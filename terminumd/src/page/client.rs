@@ -76,7 +76,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "plan" | "note" => super::plans::handle(app, page, t, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
-        "addhost" | "hostaction" | "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
+        "addhost" | "hostaction" | "hostagents" | "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);

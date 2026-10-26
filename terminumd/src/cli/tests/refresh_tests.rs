@@ -41,6 +41,8 @@ fn mark_claude(ctx: &Ctx, build: &str, mcp: bool) {
     let plugin = ctx.root.join("hooks/claude/plugins/terminum");
     std::fs::create_dir_all(&plugin).unwrap();
     std::fs::write(ctx.root.join("hooks/claude.installed"), build).unwrap();
+    std::fs::create_dir_all(plugin.join("hooks")).unwrap();
+    std::fs::write(plugin.join("hooks/hooks.json"), agentsetup::claude_hooks(&agentsetup::command(ctx, "claude")).to_string()).unwrap();
     if mcp {
         std::fs::write(plugin.join(".mcp.json"), "{}").unwrap();
     }
@@ -76,6 +78,23 @@ fn claudes_plugin_is_installed_again_for_another_build_or_without_its_mcp() {
     assert!(calls(&s).contains("plugin update"), "same build without .mcp.json: updated again");
     assert!(ctx.root.join("hooks/claude/plugins/terminum/.mcp.json").is_file());
     let _ = &s.home;
+}
+
+#[test]
+fn claudes_plugin_whose_hooks_lack_the_sync_batch_entry_is_updated() {
+    let (s, ctx) = setup(0);
+    mark_claude(&ctx, crate::config::build_id(), true);
+    let file = ctx.root.join("hooks/claude/plugins/terminum/hooks/hooks.json");
+    let mut v: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    v["hooks"].as_object_mut().unwrap().remove("PostToolBatch");
+    std::fs::write(&file, v.to_string()).unwrap();
+    agentrefresh::refresh(&ctx);
+    assert!(calls(&s).contains("plugin update terminum@terminum-local"), "same build, older hooks.json: updated");
+    let now: Value = serde_json::from_str(&std::fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(now["hooks"]["PostToolBatch"][0]["hooks"][0]["timeout"], 2);
+    std::fs::remove_file(&s.log).unwrap();
+    agentrefresh::refresh(&ctx);
+    assert_eq!(calls(&s), "", "now current: left alone");
 }
 
 #[test]

@@ -5,6 +5,7 @@
 // answer, the pencil that names the shown pane, and the page's confirmation dialog.
 
 import { addTmux } from "./addtmux.js";
+import { hostAgents } from "./hostagents.js";
 import { placeModal } from "./fabpane.js";
 import { banner } from "./banners.js";
 
@@ -113,6 +114,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
   const closeForm = (id) => { $(id).hidden = true; $(`${id}btn`).setAttribute("aria-expanded", "false"); if (pending === id) pending = null; };
   $("newsessbtn").onclick = () => openForm("newsess", true);
   $("addhostbtn").onclick = () => openForm("addhost", true);
+  const agents = hostAgents(send);
   const tmux = addTmux({ send, groups, openForm, closeForm, setPending: (f) => { pending = f; } });
   $("addtmuxbtn").onclick = () => { if ($("addtmux").hidden) tmux.open(); else closeForm("addtmux"); };
   for (const f of FORMS) {
@@ -186,6 +188,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
     if (g.attached) box.replaceChildren(item("Detach from terminum", "detach", () => send({ t: "detachtmux", server: g.server, session: g.label })));
     else box.replaceChildren(act("Retry now", "retry"), g.state === "off" ? act("On", "on") : act("Off", "off"),
       ...(g.state === "attached" ? [item("Attach tmux sessions…", "import", () => tmux.open(`${g.host}:default`))] : []),
+      ...agents.item(g, hideHostMenu),
       act("Remove", "remove", `Remove ${g.host}? Its tmux sessions on the host keep running; terminum stops showing them.`));
     const r = button.getBoundingClientRect();
     box.hidden = false;
@@ -242,5 +245,7 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
   });
   $("renamename").addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); endRename(true); } });
 
-  return { showStall, formError, layoutCame, hostAdded, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
+  /** terminumd's answer to the host form or the agents dialog. */
+  const hostAnswer = (m) => (m.t === "hostagents" ? agents.answered(m) : hostAdded(m.name));
+  return { showStall, formError, layoutCame, hostAdded, hostAnswer, tmuxAdded, tmuxChoices: tmux.choices, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu, endRename, renaming: () => !$("renamebox").hidden };
 }

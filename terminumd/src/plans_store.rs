@@ -101,8 +101,15 @@ fn apply(p: &Plans, key: &str, ev: &Value, working: impl FnOnce() -> bool, now: 
         p.hook(key, agent, session, &ev["plan"], now);
         changed = true;
     }
-    let remind = (!sub && matches!(name, "PostToolUse" | "PostToolBatch")).then(|| p.post_tool(key, working(), now)).flatten();
+    // the reminder rides the event whose output reaches the model: Claude's sync PostToolBatch, Codex's PostToolUse
+    let remind = (!sub && name == remind_event(agent)).then(|| p.post_tool(key, working(), now)).flatten();
     (changed, remind)
+}
+
+/// The one event of `agent` that may carry a reminder: Claude Code delivers no async hook's
+/// output in an interactive session, so its reminder waits for the synchronous PostToolBatch.
+pub fn remind_event(agent: &str) -> &'static str {
+    if agent == "claude" { "PostToolBatch" } else { "PostToolUse" }
 }
 
 /// Before terminumd stops: the plans on disk now.
@@ -206,8 +213,25 @@ mod tests {
         let (changed, remind) = apply(&p, K, &ev("", "PostToolUse"), || true, 100_000);
         assert!(changed && remind.is_none(), "the main agent's own op applies (it is fresh)");
         assert_eq!(p.row(K, false, 100_000).map(|r| r.total), Some(1));
-        let main = json!({"agent": "claude", "session": "s1", "event": "PostToolUse"});
+        let main = json!({"agent": "claude", "session": "s1", "event": "PostToolBatch"});
         assert!(apply(&p, K, &main, || true, 200_000).1.is_some(), "the main agent is reminded");
+    }
+
+    #[test]
+    fn claude_is_reminded_on_its_sync_batch_codex_on_its_tool_end() {
+        let p = Plans::default();
+        planned(&p);
+        let ev = |agent: &str, event: &str| json!({"agent": agent, "session": "s1", "event": event});
+        for other in ["PostToolUse", "PostToolUseFailure", "Stop", "PreToolUse"] {
+            assert_eq!(apply(&p, K, &ev("claude", other), || true, 100_000).1, None, "claude {other}: no reminder");
+        }
+        assert_eq!(p.cur.lock()[K].reminded_at, None, "claude's async PostToolUse never consumes the reminder");
+        assert!(apply(&p, K, &ev("claude", "PostToolBatch"), || true, 100_000).1.is_some(), "claude's PostToolBatch reminds");
+        assert_eq!(apply(&p, K, &ev("claude", "PostToolBatch"), || true, 100_010).1, None, "once per window");
+        let q = Plans::default();
+        q.hook(K, "codex", Some("s1"), &json!({"op": "all", "items": [{"text": "a"}, {"text": "b"}]}), 100);
+        assert_eq!(apply(&q, K, &ev("codex", "PostToolBatch"), || true, 100_000).1, None);
+        assert!(apply(&q, K, &ev("codex", "PostToolUse"), || true, 100_000).1.is_some(), "codex's PostToolUse reminds");
     }
 
     #[test]

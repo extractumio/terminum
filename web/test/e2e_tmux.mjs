@@ -146,6 +146,46 @@ export async function webTmux(browser, name) {
       offered.join() === "Retry now,Off,Remove" && retry?.name === "devbox" && retry.action === "retry" && /^Remove devbox\?/.test(ask)
         && last("hostaction").action === "remove", JSON.stringify({ offered, retry, remove: last("hostaction") }));
 
+    // AC-99: an attached host's menu offers coding agents' progress; a dialog says what goes on the host,
+    // Enable sends it, terminumd's result lines show in the dialog as text; once on, the item turns it off with its state
+    const G = '#sessions .grp[data-wid="devbox/terminum"]';
+    f.say({ t: "layout", groups: [...LAYOUT, host("attached", { agents: "off" })] });
+    await pause(page);
+    await headClick(page, G, ".hostbtn");
+    const agentsItem = await page.textContent('#hostmenu button[data-action="agents"]');
+    await page.click('#hostmenu button[data-action="agents"]');
+    const agentAsk = { title: await page.textContent("#agentstitle"), text: await page.textContent("#agentstext"), ok: await page.textContent("#agentsok") };
+    await page.click("#agentsok");
+    for (let i = 0; i < 40 && !last("hostagents"); i++) await pause(page, 50);
+    const sentOn = last("hostagents");
+    f.say({ t: "hostagents", name: "devbox", on: true, ok: true, lines: ["claude: installed", "codex: installed; trust terminum's hooks in Codex's /hooks once", "<b>x</b>"] });
+    await pause(page);
+    const result = await page.evaluate(() => { const l = document.getElementById("agentslines"), d = document.getElementById("agentsbox").getBoundingClientRect();
+      return { text: l.innerText, html: l.innerHTML.includes("<b>"), okHidden: document.getElementById("agentsok").hidden, close: document.getElementById("agentscancel").textContent,
+        inside: d.left >= 0 && d.right <= innerWidth && d.top >= 0 && d.bottom <= innerHeight, overflow: document.documentElement.scrollWidth > innerWidth }; });
+    await page.click("#agentscancel");
+    f.say({ t: "layout", groups: [...LAYOUT, host("attached", { agents: "refused: the host's sshd forbids socket forwarding" })] });
+    await pause(page);
+    await headClick(page, G, ".hostbtn");
+    const offItem = await page.textContent('#hostmenu button[data-action="agents"]');
+    await page.click('#hostmenu button[data-action="agents"]');
+    const offAsk = await page.textContent("#agentstitle");
+    await page.click("#agentsok");
+    for (let i = 0; i < 40 && last("hostagents")?.on !== false; i++) await pause(page, 50);
+    f.say({ t: "hostagents", name: "devbox", on: false, ok: false, lines: ["Turned off here; could not take terminum's hooks out of devbox: ssh: timed out"] });
+    await pause(page);
+    const failedOff = { text: await page.textContent("#agentslines"), bad: await page.evaluate(() => document.getElementById("agentslines").classList.contains("bad")) };
+    await page.click("#agentscancel");
+    check("AC-99 host menu: coding agents' progress asked first (what goes where on the host), the result lines shown as text, turned off with its state",
+      agentsItem === "Coding agents' progress on devbox…" && agentAsk.title === "Coding agents' progress on devbox?"
+        && agentAsk.text.includes("hooks and MCP server for Claude Code and Codex, in ~/.claude and ~/.codex on devbox") && agentAsk.text.includes("/hooks") && agentAsk.ok === "Enable"
+        && sentOn?.name === "devbox" && sentOn.on === true
+        && result.text === "claude: installed\ncodex: installed; trust terminum's hooks in Codex's /hooks once\n<b>x</b>" && !result.html && result.okHidden && result.close === "Close"
+        && result.inside && !result.overflow
+        && offItem === "Turn off coding agents' progress on devbox (refused: the host's sshd forbids socket forwarding)" && /^Turn off coding agents' progress on devbox\?/.test(offAsk)
+        && last("hostagents").on === false && failedOff.bad && failedOff.text.includes("could not take"),
+      JSON.stringify({ agentsItem, agentAsk, sentOn, result, offItem, offAsk, failedOff }));
+
     // Attach tmux sessions (AC-89): "On" this Mac or a host, the running sessions as ticks, a name for one
     // that does not run yet; a late answer for another place is ignored; a group that waits; detach
     if (await page.isHidden("#addtmuxbtn")) await drawer();
@@ -217,7 +257,7 @@ export async function webTmux(browser, name) {
     await pause(page);
     const none = await page.isHidden('#sessions .grp[data-wid="box/terminum"] h2 .import');
     check("AC-89 later: the host's import icon (with the count) and its menu item open Attach tmux sessions on it; no icon when nothing else runs",
-      icon === "Attach tmux sessions running on box (2)" && byIcon.open && byIcon.on === "box:default" && boxMenu.join() === "Retry now,Off,Attach tmux sessions…,Remove"
+      icon === "Attach tmux sessions running on box (2)" && byIcon.open && byIcon.on === "box:default" && boxMenu.join() === "Retry now,Off,Attach tmux sessions…,Coding agents' progress on box…,Remove"
         && byMenu === "box:default" && none, JSON.stringify({ icon, byIcon, boxMenu, byMenu, none }));
     if (phone) await page.click("#drawerclose");
 
