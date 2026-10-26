@@ -9,6 +9,7 @@ pub mod agentsetup;
 mod commands;
 pub mod hook;
 mod hookplan;
+pub(crate) mod hostmode;
 mod ctx;
 mod direct;
 mod folders;
@@ -84,6 +85,8 @@ pub enum Cmd {
     Tmux(Option<(String, String, String, String)>),
     /// `hooks [status|install|remove] [claude|codex]` (AC-39)
     Hooks(String, Option<String>),
+    /// `hooks … --host-mode …` on an ssh host, run by its helper (hostmode.rs)
+    HostHooks(hostmode::HostArgs),
     /// `mcp`: the MCP server a coding agent starts, on stdin and stdout (AC-97, AC-98)
     Mcp,
     Upgrade(Option<String>),
@@ -147,6 +150,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
             _ => Err(usage("usage: terminum tmux [attach|detach <session> [--socket S | --host H]]")),
         },
         "hooks" => match rest {
+            r if r.iter().any(|a| a == "--host-mode") => hostmode::parse(r).map(Cmd::HostHooks),
             [] => Ok(Cmd::Hooks("status".into(), None)),
             [a, more @ ..] if ["status", "install", "remove"].contains(&a.as_str()) && more.len() <= 1
                 && more.first().is_none_or(|x| agentsetup::AGENTS.contains(&x.as_str())) => Ok(Cmd::Hooks(a.clone(), more.first().cloned())),
@@ -211,6 +215,10 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
             as_user()?;
             agentsetup::run(ctx, &action, agent.as_deref())?;
         }
+        Cmd::HostHooks(args) => {
+            as_user()?;
+            hostmode::run(ctx, &args)?;
+        }
         Cmd::Upgrade(tag) => return upgrade::upgrade(ctx, tag.as_deref()),
         Cmd::Import => commands::import_state(ctx)?,
         Cmd::Logs { lines, follow } => commands::logs(ctx, lines, follow)?,
@@ -248,7 +256,10 @@ fn hooks_tip(ctx: &Ctx) {
 pub fn main(args: &[String]) -> i32 {
     let argv0 = args.first().map_or("terminum", String::as_str);
     let result = parse(args.get(1..).unwrap_or(&[])).map_err(|e| (2, e)).and_then(|cmd| {
-        let ctx = Ctx::from_env(argv0).map_err(|e| (1, e))?;
+        let mut ctx = Ctx::from_env(argv0).map_err(|e| (1, e))?;
+        if let Cmd::HostHooks(a) = &cmd {
+            hostmode::prepare(&mut ctx, a);
+        }
         run(&ctx, cmd).map_err(|e| (1, e))
     });
     match result {

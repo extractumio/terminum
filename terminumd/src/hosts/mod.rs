@@ -5,6 +5,9 @@
 //! client, reconnecting after a drop with back-off 1, 2, 4 … 30 s (AC-81); a host's files go
 //! through its agent once enabled (tunnel.rs, AC-82–AC-85).
 
+#[allow(dead_code)] // its callers (`terminum hosts agents <host> on|off`, AC-84 refresh) come with the CLI round
+pub mod agentsinstall;
+pub mod link;
 pub mod recipe;
 pub mod tunnel;
 
@@ -322,7 +325,7 @@ pub fn list(app: &Shared) -> Vec<Value> {
             (None, None) => ("off".into(), String::new()),
         };
         json!({"name": name, "ssh": rec["ssh"], "state": state, "why": why, "files": rec["files"], "helper": rec["helper"],
-               "agent": tunnel::state(app, name)})
+               "agent": tunnel::state(app, name), "agents": tunnel::agents_state(app, name)})
     }).collect()
 }
 

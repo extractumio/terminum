@@ -147,8 +147,6 @@ pub fn path_in(dir: &Path, host: &str) -> PathBuf {
     dir.join("links").join(format!("{}.sock", host_id(host)))
 }
 
-// started and stopped by the host tunnel (the next round); until then only tests use it
-#[allow(dead_code)]
 impl Links {
     /// Listens on `host`'s link (again, when it was), in `dir` (the app folder).
     pub fn start(&self, app: &Shared, dir: &Path, host: &str) -> Result<PathBuf, String> {

@@ -56,7 +56,7 @@ pub fn found(ctx: &Ctx, agent: &str) -> bool {
 
 /// The stable `terminum` command (an upgrade keeps it).
 pub fn program(ctx: &Ctx) -> String {
-    ctx.bin().join("terminum").display().to_string()
+    ctx.bin().join(if ctx.host_mode { super::hostmode::HOST_PROGRAM } else { "terminum" }).display().to_string()
 }
 
 /// The command a hook runs: the stable `terminum` command, as a shell word.
@@ -376,7 +376,7 @@ pub(super) fn remove_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(), 
     Ok(())
 }
 
-fn install_codex(ctx: &Ctx) -> Result<(), String> {
+pub(super) fn install_codex(ctx: &Ctx) -> Result<(), String> {
     let path = resolved(&codex_home(ctx).join("hooks.json"))?;
     let text = std::fs::read_to_string(&path).ok();
     let v = codex_add(text.as_deref(), &command(ctx, "codex")).map_err(|e| format!("{}: {e}", path.display()))?;

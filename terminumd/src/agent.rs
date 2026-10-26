@@ -71,8 +71,18 @@ pub fn start(socket: &Path) -> Setup {
         fail("the token on stdin is too short");
     }
     if let Some((sock, mac)) = link_args() {
-        crate::runlink::setup(&crate::runlink::dir(), &mac, &sock).unwrap_or_else(|e| fail(&e));
-        LINK.set((sock, mac)).ok();
+        // a forward sshd refused (no socket) or a run folder failing its checks: the link is
+        // refused and the helper goes on for Files; the Mac retries later (remote contract)
+        match crate::runlink::setup(&crate::runlink::dir(), &mac, &sock) {
+            Ok(()) => {
+                LINK.set((sock, mac)).ok();
+                println!("terminumd-agent link: up");
+            }
+            Err(e) => {
+                eprintln!("terminumd-agent: link: {e}");
+                println!("terminumd-agent link: refused");
+            }
+        }
     }
     let dir = socket.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| fail("the socket needs a folder"));
     private_dir(dir).unwrap_or_else(|e| fail(&format!("{}: {e}", dir.display())));

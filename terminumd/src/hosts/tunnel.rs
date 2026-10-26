@@ -35,6 +35,12 @@ struct Agent {
     state: String,
     note: String,
     updated_at: Option<Instant>,
+    /// agents' link: "" (off), "up", "refused: <why>" (link.rs)
+    agents: String,
+    /// the last refused forward: -R is asked again RETRY later
+    refused_at: Option<Instant>,
+    /// the host's $HOME, from the probe
+    home: Option<String>,
     task: Option<tokio::task::JoinHandle<()>>,
 }
 
@@ -53,6 +59,25 @@ fn set(app: &Shared, host: &str, state: &str, note: &str) {
 /// The agent's state for the panel's offer and `terminum hosts`.
 pub fn state(app: &Shared, host: &str) -> String {
     app.tunnels.0.lock().get(host).map_or_else(|| "down".to_string(), |a| a.state.clone())
+}
+
+/// The host's agents' link state: "off", "up", "connecting" or "refused: <why>".
+pub fn agents_state(app: &Shared, host: &str) -> String {
+    if !super::link::wanted(app, host) {
+        return "off".into();
+    }
+    app.tunnels.0.lock().get(host).map(|a| a.agents.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "connecting".into())
+}
+
+fn set_agents(app: &Shared, host: &str, state: &str, refused: bool) {
+    let mut g = app.tunnels.0.lock();
+    let a = g.entry(host.to_string()).or_default();
+    a.agents = state.to_string();
+    if refused {
+        a.refused_at = Some(Instant::now());
+    }
+    drop(g);
+    app.dirty.notify_one();
 }
 
 /// The build the helper was just updated to, for 60 s (AC-84).
@@ -119,12 +144,13 @@ async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: 
     Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-/// The host's platform, or why it has no helper.
-async fn probe(recipe: &[String]) -> Result<&'static str, String> {
-    let out = ssh(recipe, "uname -sm", None, Duration::from_secs(30)).await?;
-    let mut w = out.split_whitespace();
-    let (s, m) = (w.next().unwrap_or(""), w.next().unwrap_or(""));
-    platform(s, m).ok_or_else(|| format!("no helper for {s} {m}"))
+/// The host's platform (or why it has no helper) and $HOME; read after a random marker line,
+/// so whatever the host's rc files print cannot be taken for the answer.
+async fn probe(recipe: &[String]) -> Result<(Result<&'static str, String>, String), String> {
+    let marker = format!("tm-probe-{}", crate::auth::crypto::random_hex::<6>());
+    let out = ssh(recipe, &super::link::probe_command(&marker), None, Duration::from_secs(30)).await?;
+    let (s, m, home) = super::link::parse_probe(&out, &marker).ok_or("the host did not answer the probe")?;
+    Ok((platform(&s, &m).ok_or_else(|| format!("no helper for {s} {m}")), home))
 }
 
 /// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> through a temporary name, points
@@ -135,7 +161,7 @@ async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), St
     }
     let unique = crate::auth::crypto::random_hex::<12>();
     let script = format!(
-        "set -e; d=\"$HOME/{HOME_DIR}\"; mkdir -p \"$d/bin\" \"$d/logs\"; chmod 700 \"$d\"; \
+        "set -e; d=\"$HOME/{HOME_DIR}\"; mkdir -p \"$d/bin\" \"$d/logs\"; chmod 700 \"$d\"; mkdir -p -m 700 \"$d/run\"; chmod 700 \"$d/run\"; \
          tmp=\"$d/bin/.terminumd-agent.{unique}.tmp\"; link=\"$d/bin/.terminumd-agent.{unique}.new\"; trap 'rm -f \"$tmp\" \"$link\"' EXIT; \
          cat > \"$tmp\"; chmod 755 \"$tmp\"; got=$(\"$tmp\" --agent-id); [ \"$got\" = \"{id}\" ] || {{ echo \"helper answers $got, expected {id}\" >&2; exit 1; }}; \
          mv -f \"$tmp\" \"$d/bin/terminumd-agent-{id}\"; ln -s \"terminumd-agent-{id}\" \"$link\"; mv -f \"$link\" \"$d/bin/terminumd-agent\"; \
@@ -157,10 +183,19 @@ struct Running {
     agent_id: String,
     /// the agent lives as long as its stdin is open
     _stdin: tokio::process::ChildStdin,
+    /// what the helper said about the agents' link
+    said: Option<super::link::Said>,
+}
+
+/// The agents' link a connection carries: the host's -R path, the Mac's socket, this Mac's id.
+struct LinkTo {
+    remote: String,
+    local: PathBuf,
+    mac: String,
 }
 
 /// Starts the agent through ssh and waits for its "ready" line (20 s).
-async fn connect(app: &Shared, host: &str, recipe: &[String]) -> Result<Running, String> {
+async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&LinkTo>) -> Result<Running, String> {
     let dir = app.cfg.dir.join("agents");
     crate::config::private_dir(&dir);
     let local = dir.join(format!("{}.sock", &crate::auth::crypto::sha256_hex(format!("{host} {}", crate::auth::crypto::random_hex::<6>()).as_bytes())[..12]));
@@ -168,9 +203,11 @@ async fn connect(app: &Shared, host: &str, recipe: &[String]) -> Result<Running,
     let remote = format!("/tmp/tm-{}/s", crate::auth::crypto::random_hex::<6>());
     let own = crate::agent::AGENT_ID;
     let b = format!("\"$HOME/{HOME_DIR}/bin/terminumd-agent");
-    let command = format!("f={b}-{own}\"; [ -x \"$f\" ] || f={b}\"; [ -x \"$f\" ] || {{ echo {MISSING}; exit 0; }}; TM_LOG=info exec \"$f\" --agent --socket {remote} --log \"$HOME/{HOME_DIR}/logs/agent.log\"");
+    let command = format!("f={b}-{own}\"; [ -x \"$f\" ] || f={b}\"; [ -x \"$f\" ] || {{ echo {MISSING}; exit 0; }}; TM_LOG=info exec \"$f\" --agent --socket {remote} --log \"$HOME/{HOME_DIR}/logs/agent.log\"{}", link.map_or_else(String::new, |l| super::link::helper_args(&l.remote, &l.mac)));
     let mut c = ssh_cmd();
-    c.args(["-o", "ExitOnForwardFailure=yes", "-o", "ServerAliveInterval=15", "-L"]).arg(format!("{}:{remote}", local.display()));
+    // agents on only: files' ssh stays exactly as it was when agents are off
+    c.args(super::link::ssh_args(link.map(|l| (l.remote.as_str(), l.local.as_path()))));
+    c.args(["-o", "ServerAliveInterval=15", "-L"]).arg(format!("{}:{remote}", local.display()));
     with_command(&mut c, recipe, &command);
     c.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = c.spawn().map_err(|e| format!("ssh: {e}"))?;
@@ -178,10 +215,12 @@ async fn connect(app: &Shared, host: &str, recipe: &[String]) -> Result<Running,
     let mut stdin = child.stdin.take().expect("piped");
     stdin.write_all(format!("{token}\n").as_bytes()).await.map_err(|e| e.to_string())?;
     let mut out = BufReader::new(child.stdout.take().expect("piped")).lines();
+    let mut said = None;
     let ready = tokio::time::timeout(Duration::from_secs(20), async {
         for _ in 0..50 {
             match out.next_line().await {
                 Ok(Some(l)) if l == MISSING => return Some(String::new()),
+                Ok(Some(l)) if super::link::said(&l).is_some() => said = super::link::said(&l),
                 Ok(Some(l)) => {
                     let w: Vec<&str> = l.split_whitespace().collect();
                     if w.len() == 6 && w[0] == "terminumd-agent" && w[1] == "ready" {
@@ -202,7 +241,7 @@ async fn connect(app: &Shared, host: &str, recipe: &[String]) -> Result<Running,
         return Err(err.trim().lines().last().map_or_else(|| "the helper did not start".to_string(), str::to_string));
     };
     if agent_id.is_empty() {
-        return Ok(Running { child, agent_id, _stdin: stdin }); // no helper: the caller installs it
+        return Ok(Running { child, agent_id, _stdin: stdin, said }); // no helper: the caller installs it
     }
     // the socket appears once ssh forwards it
     let mut forwarded = false;
@@ -217,18 +256,77 @@ async fn connect(app: &Shared, host: &str, recipe: &[String]) -> Result<Running,
         let _ = child.kill().await;
         return Err("ssh did not forward the helper's socket within 5 s".into());
     }
-    crate::remote::register(app, host, Some((local, token)));
-    Ok(Running { child, agent_id, _stdin: stdin })
+    if crate::hosts::files_state(app, host).as_deref() == Some("enabled") {
+        crate::remote::register(app, host, Some((local, token)));
+    }
+    Ok(Running { child, agent_id, _stdin: stdin, said })
 }
 
-/// Keeps a host's agent connected while its files are enabled and its control client is up.
+/// The agents' link for this connection, when agents are on and -R is not in its back-off;
+/// a path too long or a listener that cannot start refuses agents with why (files go on).
+async fn link_for(app: &Shared, host: &str, recipe: &[String]) -> Option<LinkTo> {
+    if !super::link::wanted(app, host) {
+        app.links.stop(app, host);
+        return None;
+    }
+    let (refused_at, home) = app.tunnels.0.lock().get(host).map(|a| (a.refused_at, a.home.clone())).unwrap_or_default();
+    if !super::link::try_forward(refused_at, Instant::now()) {
+        return None;
+    }
+    let home = match home {
+        Some(h) => h,
+        None => match probe(recipe).await {
+            Ok((_, h)) => {
+                app.tunnels.0.lock().entry(host.to_string()).or_default().home = Some(h.clone());
+                h
+            }
+            Err(e) => {
+                set_agents(app, host, &format!("refused: {e}"), true);
+                return None;
+            }
+        },
+    };
+    let mac = super::link::mac_id(&app.cfg.dir);
+    let made = super::link::remote_path(&home, &mac, &crate::auth::crypto::random_hex::<4>()).and_then(|remote| {
+        let local = app.links.start(app, &app.cfg.dir, host)?;
+        super::link::local_ok(&local).map(|()| LinkTo { remote, local, mac })
+    });
+    match made {
+        Ok(l) => Some(l),
+        Err(e) => {
+            app.links.stop(app, host);
+            set_agents(app, host, &format!("refused: {e}"), true);
+            None
+        }
+    }
+}
+
+/// Records what the helper said about the link; a refusal stops the Mac's listener.
+fn heard(app: &Shared, host: &str, said: Option<&super::link::Said>) {
+    match said {
+        Some(super::link::Said::Up) => set_agents(app, host, "up", false),
+        Some(super::link::Said::Refused) => {
+            app.links.stop(app, host);
+            set_agents(app, host, &format!("refused: {}", super::link::refused_why(host)), true);
+        }
+        None => {}
+    }
+}
+
+/// Keeps a host's helper connected while its files or its agents are enabled and its control
+/// client is up.
 async fn keep(app: Shared, host: String) {
     let mut backoff = 1u64;
     loop {
-        let enabled = crate::hosts::files_state(&app, &host).as_deref() == Some("enabled");
+        let enabled = crate::hosts::files_state(&app, &host).as_deref() == Some("enabled") || super::link::wanted(&app, &host);
         let Some(recipe) = crate::hosts::recipe_of(&app, &host).filter(|_| enabled) else { break };
         set(&app, &host, "connecting", &format!("connecting to {host}…"));
-        let wait = match connect(&app, &host, &recipe).await {
+        let link = link_for(&app, &host, &recipe).await;
+        let got = connect(&app, &host, &recipe, link.as_ref()).await;
+        if let Ok(run) = &got {
+            heard(&app, &host, run.said.as_ref());
+        }
+        let wait = match got {
             Ok(mut run) if run.agent_id != crate::agent::AGENT_ID => {
                 let _ = run.child.kill().await;
                 crate::remote::register(&app, &host, None);
@@ -251,6 +349,10 @@ async fn keep(app: Shared, host: String) {
                 backoff = 1;
                 let _ = run.child.wait().await;
                 crate::remote::register(&app, &host, None);
+                if link.is_some() && app.links.path(&host).is_some() {
+                    app.links.stop(&app, &host);
+                    set_agents(&app, &host, "", false);
+                }
                 set(&app, &host, "down", &format!("{host}: connection closed"));
                 Duration::from_secs(backoff)
             }
@@ -265,10 +367,11 @@ async fn keep(app: Shared, host: String) {
     }
     app.tunnels.0.lock().remove(&host);
     crate::remote::register(&app, &host, None);
+    app.links.stop(&app, &host);
 }
 
 async fn update(recipe: &[String]) -> Result<(), String> {
-    let p = probe(recipe).await?;
+    let p = probe(recipe).await?.0?;
     install(recipe, &binary_for(p)?, crate::agent::AGENT_ID).await
 }
 
@@ -286,6 +389,7 @@ pub fn reconcile(app: &Shared, host: &str) {
     // the task is held under the lock, so `stop` (the host removed) aborts it
     let task = match state.as_deref() {
         Some("enabled") => tokio::spawn(keep(shared, name)),
+        _ if super::link::wanted(app, host) => tokio::spawn(keep(shared, name)),
         Some("wanted") if attached => tokio::spawn(async move {
             let Err(e) = enable(&shared, &name).await else { return };
             tracing::warn!(event = "agent.enable_failed", host = name, why = e);
@@ -315,6 +419,7 @@ pub fn stop(app: &Shared, host: &str) {
             t.abort();
         }
     crate::remote::register(app, host, None);
+    app.links.stop(app, host);
 }
 
 /// Enable (AC-83): the platform, the copy, a first connection; then "files": "enabled".
@@ -332,9 +437,9 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
     }
     app.dirty.notify_one();
     let result = async {
-        let p = probe(&recipe).await?;
+        let p = probe(&recipe).await?.0?;
         install(&recipe, &binary_for(p)?, crate::agent::AGENT_ID).await?;
-        let mut trial = connect(app, host, &recipe).await?;
+        let mut trial = connect(app, host, &recipe, None).await?;
         let _ = trial.child.kill().await;
         if trial.agent_id != crate::agent::AGENT_ID {
             return Err(format!("the helper on {host} answers as build {:?}", trial.agent_id));
@@ -351,12 +456,16 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
         Ok(()) => {
             crate::hosts::set_files(app, host, Some("enabled"))?;
             let _ = crate::hosts::set_helper(app, host, crate::agent::AGENT_ID);
-            app.tunnels.0.lock().remove(host);
+            stop(app, host); // an agents-only connection restarts with Files
             reconcile(app, host);
             Ok(())
         }
         Err(e) => {
-            app.tunnels.0.lock().remove(host);
+            let mut g = app.tunnels.0.lock();
+            if !g.get(host).and_then(|a| a.task.as_ref()).is_some_and(|t| !t.is_finished()) {
+                g.remove(host); // an agents-only connection keeps running
+            }
+            drop(g);
             app.dirty.notify_one();
             Err(format!("Could not enable {host}: {e}"))
         }

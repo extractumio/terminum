@@ -58,7 +58,7 @@ fn codex_end(ctx: &Ctx) -> Result<(), String> {
 
 /// This build's plugin over the installed one, never taken out first (a failing claude would
 /// leave no hooks): the local marketplace updated, the plugin updated, then seen in `plugin list`.
-fn update_claude(ctx: &Ctx) -> Result<(), String> {
+pub(super) fn update_claude(ctx: &Ctx) -> Result<(), String> {
     write_plugin(ctx)?;
     claude(ctx, QUICK, &["plugin", "marketplace", "update", MARKET])?;
     claude(ctx, QUICK, &["plugin", "update", PLUGIN])?;

@@ -50,6 +50,8 @@ pub struct Ctx {
     pub pkg: Option<PathBuf>,
     /// stdout is a terminal
     pub tty: bool,
+    /// `hooks … --host-mode` on an ssh host: the stable command is terminum-host (hostmode.rs)
+    pub host_mode: bool,
     /// lines said, kept instead of printed (tests)
     pub captured: Option<Mutex<Vec<String>>>,
     /// terminumd processes started in direct mode by this process, reaped when stopped
@@ -101,6 +103,7 @@ impl Ctx {
             wait: WAIT,
             pkg: None,
             tty: false,
+            host_mode: false,
             captured: None,
             children: Mutex::new(HashMap::new()),
         })
