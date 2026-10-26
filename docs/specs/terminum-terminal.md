@@ -596,6 +596,13 @@ Scenario: AC-97 happy path — installed with the hooks
   And install and remove change only the lines terminum wrote: a line of another's inside the markers (a table Codex added there) is kept; a config.toml that is a symlink is written where it points, the link kept
   When config.toml already has an [mcp_servers.terminum] table outside terminum's block, or the file changed while the install ran
   Then the install refuses and says why, the file untouched
+Scenario: AC-97 happy path — kept current by an install or upgrade of terminum
+  Given the user ran `terminum hooks install` for an agent before
+  When `terminum install` or `terminum upgrade` succeeds
+  Then Claude Code's plugin is installed again (as `terminum hooks install` does) when its marker names another build or the plugin lacks `.mcp.json`, and Codex's MCP block is added or made current while hooks.json stays byte for byte; one line per agent refreshed
+  And an agent where terminum's hooks were never installed gets nothing
+  When the refresh fails (claude not on PATH or not answering within 20 s a call, config.toml refused)
+  Then a "Warning: …; run terminum hooks install" line is said and the install or upgrade still succeeds; `terminum status`, `open` and `install` say in one line that the agent has terminum's hooks without its MCP server, naming `terminum hooks install`
 ```
 
 ### AC-98 — Notes for the user [SHOULD / P1]

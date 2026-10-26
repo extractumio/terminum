@@ -45,7 +45,7 @@ fn on_path(ctx: &Ctx, prog: &str) -> Option<PathBuf> {
     ctx.var("PATH")?.split(':').map(|d| Path::new(d).join(prog)).find(|p| p.is_file())
 }
 
-fn codex_home(ctx: &Ctx) -> PathBuf {
+pub(super) fn codex_home(ctx: &Ctx) -> PathBuf {
     ctx.var("CODEX_HOME").map(PathBuf::from).unwrap_or_else(|| ctx.home.join(".codex"))
 }
 
@@ -69,11 +69,11 @@ fn entry(cmd: &str) -> Value {
     json!({"hooks": [{"type": "command", "command": cmd, "async": true, "timeout": 3}]})
 }
 
-fn marker(ctx: &Ctx) -> PathBuf {
+pub(super) fn marker(ctx: &Ctx) -> PathBuf {
     ctx.root.join("hooks/claude.installed")
 }
 
-fn plugin_dir(ctx: &Ctx) -> PathBuf {
+pub(super) fn plugin_dir(ctx: &Ctx) -> PathBuf {
     ctx.root.join("hooks/claude/plugins").join(NAME)
 }
 
@@ -325,16 +325,20 @@ fn backup(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn claude(ctx: &Ctx, args: &[&str]) -> Result<String, String> {
+/// How long one `claude` call may take when asked for (`terminum hooks`); an install's refresh
+/// and an uninstall use `QUICK` (agentrefresh).
+pub(super) const ASKED: std::time::Duration = std::time::Duration::from_secs(60);
+
+fn claude(ctx: &Ctx, wait: std::time::Duration, args: &[&str]) -> Result<String, String> {
     let prog = on_path(ctx, "claude").ok_or("claude is not on PATH")?;
     let mut cmd = std::process::Command::new(prog);
     cmd.args(args).env("PATH", ctx.var("PATH").unwrap_or(""));
-    let out = super::launch::run_timeout(cmd, std::time::Duration::from_secs(60)).map_err(|e| format!("claude {}: {e}", args.join(" ")))?;
+    let out = super::launch::run_timeout(cmd, wait).map_err(|e| format!("claude {}: {e}", args.join(" ")))?;
     let said = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)).trim().to_string();
     if out.status.success() { Ok(said) } else { Err(format!("claude {}: {said}", args.join(" "))) }
 }
 
-fn install_claude(ctx: &Ctx) -> Result<(), String> {
+pub(super) fn install_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(), String> {
     let market = ctx.root.join("hooks/claude");
     let plugin = plugin_dir(ctx);
     write(&market.join(".claude-plugin/marketplace.json"), &json!({"name": MARKET, "owner": {"name": "terminum"}, "description": "terminum's hooks for Claude Code",
@@ -343,19 +347,20 @@ fn install_claude(ctx: &Ctx) -> Result<(), String> {
         "description": "terminum: tells terminumd what this session does (terminum hooks)"}))?;
     write(&plugin.join("hooks/hooks.json"), &claude_hooks(&command(ctx, "claude")))?;
     write(&plugin.join(".mcp.json"), &json!({"mcpServers": {NAME: {"command": program(ctx), "args": ["mcp"]}}}))?;
-    // added anew each time, so Claude Code copies this build's plugin, not one it cached before
-    let _ = claude(ctx, &["plugin", "uninstall", PLUGIN]);
-    let _ = claude(ctx, &["plugin", "marketplace", "remove", MARKET]);
-    claude(ctx, &["plugin", "marketplace", "add", &market.display().to_string()])?;
-    claude(ctx, &["plugin", "install", PLUGIN, "--scope", "user"])?;
+    // added anew each time, so Claude Code copies this build's plugin, not one it cached before;
+    // a claude that does not answer is not waited for again
+    if let Err(e) = claude(ctx, wait, &["plugin", "uninstall", PLUGIN]) && e.contains("no answer within") { return Err(e) }
+    let _ = claude(ctx, wait, &["plugin", "marketplace", "remove", MARKET]);
+    claude(ctx, wait, &["plugin", "marketplace", "add", &market.display().to_string()])?;
+    claude(ctx, wait, &["plugin", "install", PLUGIN, "--scope", "user"])?;
     std::fs::write(marker(ctx), crate::config::build_id()).map_err(|e| e.to_string())?;
     ctx.say("Claude Code: terminum's plugin (hooks and MCP server) is installed; sessions started from now on use it.");
     Ok(())
 }
 
-fn remove_claude(ctx: &Ctx) -> Result<(), String> {
-    claude(ctx, &["plugin", "uninstall", PLUGIN])?;
-    let _ = claude(ctx, &["plugin", "marketplace", "remove", MARKET]);
+pub(super) fn remove_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(), String> {
+    claude(ctx, wait, &["plugin", "uninstall", PLUGIN])?;
+    let _ = claude(ctx, wait, &["plugin", "marketplace", "remove", MARKET]);
     let _ = std::fs::remove_file(marker(ctx));
     ctx.say("Claude Code: terminum's plugin is removed.");
     Ok(())
@@ -389,7 +394,7 @@ fn install_codex(ctx: &Ctx) -> Result<(), String> {
     Ok(())
 }
 
-fn remove_codex(ctx: &Ctx) -> Result<(), String> {
+pub(super) fn remove_codex(ctx: &Ctx) -> Result<(), String> {
     let path = resolved(&codex_home(ctx).join("hooks.json"))?;
     let conf = resolved(&codex_home(ctx).join("config.toml"))?;
     let toml = std::fs::read_to_string(&conf).ok();
@@ -431,9 +436,9 @@ pub fn run(ctx: &Ctx, action: &str, agent: Option<&str>) -> Result<(), String> {
             }
             for a in agents {
                 match (action, a) {
-                    ("install", "claude") => install_claude(ctx)?,
+                    ("install", "claude") => install_claude(ctx, ASKED)?,
                     ("install", _) => install_codex(ctx)?,
-                    (_, "claude") => remove_claude(ctx)?,
+                    (_, "claude") => remove_claude(ctx, ASKED)?,
                     _ => remove_codex(ctx)?,
                 }
             }
@@ -460,8 +465,15 @@ pub fn run(ctx: &Ctx, action: &str, agent: Option<&str>) -> Result<(), String> {
     Ok(())
 }
 
-/// One line for `terminum status`, `open` and `install` when an agent is found without terminum's hooks.
+/// One line for `terminum status`, `open` and `install` when an agent is found without terminum's
+/// hooks, or has them without its MCP server (an install's refresh failed).
 pub fn hint(ctx: &Ctx) -> Option<String> {
-    let missing: Vec<&str> = AGENTS.iter().copied().filter(|a| found(ctx, a) && !installed(ctx, a)).map(label).collect();
-    (!missing.is_empty()).then(|| format!("{} found without terminum's hooks: run terminum hooks install for exact states, prompts and reminders", missing.join(" and ")))
+    let names = |f: &dyn Fn(&str) -> bool| AGENTS.iter().copied().filter(|a| f(a)).map(label).collect::<Vec<_>>().join(" and ");
+    let hooks = names(&|a| found(ctx, a) && !installed(ctx, a));
+    let mcp = names(&|a| installed(ctx, a) && !mcp_installed(ctx, a));
+    let lines: Vec<String> = [
+        (!hooks.is_empty()).then(|| format!("{hooks} found without terminum's hooks: run terminum hooks install for exact states, prompts and reminders")),
+        (!mcp.is_empty()).then(|| format!("{mcp} has terminum's hooks without its MCP server (plans, notes): run terminum hooks install")),
+    ].into_iter().flatten().collect();
+    (!lines.is_empty()).then(|| lines.join("; "))
 }

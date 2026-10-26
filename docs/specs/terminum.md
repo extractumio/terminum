@@ -702,8 +702,10 @@ Scenario: AC-16 happy path — rollback and uninstall
   Then "current" → "A", "previous" → "B", "daemon/terminumd" becomes A's, terminumd restarts (kickstart) and reports "A" within 10 s; a state file written by "B" with fields "A" does not know is read by "A" (unknown fields ignored, every field has a default)
   When the user runs "terminum restart"
   Then the plist is written again (a changed port in settings.json takes effect), the agent is booted out and bootstrapped, and terminumd answers within 10 s
+  And a rollback leaves the agents' hooks and MCP server as they are: they run "~/.terminum/bin/terminum", which stays the newest build's, so an MCP tool A's terminumd does not know fails as a tool error, never the agent
   When the user runs "terminum uninstall"
-  Then terminumd stops, the launchd agent is removed, builds, links and "daemon/" are removed; state/ (token, workspaces, themes, layout) and logs/ are kept; tmux sessions are untouched
+  Then first terminum's hooks and MCP server are taken out of Claude Code and Codex where present (as "terminum hooks remove" does; a failure is a warning naming what to remove by hand, the uninstall goes on), so no agent calls a missing command; then terminumd stops, the launchd agent is removed, builds, links and "daemon/" are removed; state/ (token, workspaces, themes, layout) and logs/ are kept; tmux sessions are untouched
+  And after an install or upgrade, terminum's agent integration is refreshed only where its hooks were installed (AC 97 of terminum-terminal.md); a failure is a warning, never the install's
 Scenario: AC-16 failure — the new build does not come up
   When "B" does not report its build within 10 s
   Then "current" → "A", terminumd restarts on "A", and the command exits non-zero with "Upgrade to B failed (<reason>); rolled back to A — see ~/.terminum/logs/"

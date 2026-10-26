@@ -112,7 +112,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   with `claude plugin`) and Codex (entries in `~/.codex/hooks.json`; trust them once in Codex's
   `/hooks`) tell terminum when they work, wait for an approval or an answer, stop, fail or run
   subagents; without them terminum reads their screens. `terminum hooks` says what is set up,
-  `terminum hooks remove` takes terminum's hooks out.
+  `terminum hooks remove` takes terminum's hooks out. An install or upgrade of terminum refreshes them (and the
+  MCP server) where you installed them, never elsewhere; `terminum uninstall` takes them out.
 - **MCP server**: `terminum hooks install` also adds `terminum mcp`, terminum's MCP server, so
   the agent can keep the session's plan, progress and notes for you (AC-97, AC-98): in Claude
   Code through the same plugin (its `.mcp.json`), in Codex as one block in

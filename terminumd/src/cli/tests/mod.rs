@@ -7,6 +7,7 @@ mod cmd_tests;
 #[cfg(target_os = "macos")]   // macOS asks for folders, nothing else does
 mod folders_tests;
 mod hooks_tests;
+mod refresh_tests;
 mod import_tests;
 mod install_tests;
 mod launch_tests;

@@ -4,6 +4,7 @@
 //! the newest build's terminumd) or with a command as its first argument (`terminumd install`,
 //! as install.sh runs it from the package).
 
+pub(crate) mod agentrefresh;
 pub mod agentsetup;
 mod commands;
 pub mod hook;
@@ -219,11 +220,15 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
                 Cmd::Install => {
                     let pkg = ctx.pkg.clone().ok_or("cannot tell which package this terminumd came in")?;
                     install::install(ctx, &pkg)?;
+                    agentrefresh::refresh(ctx);
                     install::path_tip(ctx);
                     hooks_tip(ctx);
                 }
                 Cmd::Rollback => install::rollback(ctx)?,
-                Cmd::Uninstall => install::uninstall(ctx)?,
+                Cmd::Uninstall => {
+                    agentrefresh::remove(ctx);
+                    install::uninstall(ctx)?;
+                }
                 _ => install::restart(ctx)?,
             }
         }
