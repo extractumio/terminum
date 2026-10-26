@@ -153,8 +153,7 @@ async fn probe(recipe: &[String]) -> Result<(Result<&'static str, String>, Strin
     Ok((platform(&s, &m).ok_or_else(|| format!("no helper for {s} {m}")), home))
 }
 
-/// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> through a temporary name, points
-/// bin/terminumd-agent at it, keeps one older version, checks it answers with `id`.
+/// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> via a temp name, points bin/terminumd-agent at it, keeps one older, checks its id.
 async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), String> {
     if !(id == "dev" || (id.len() == 12 && id.bytes().all(|b| b.is_ascii_hexdigit()))) {
         return Err(format!("not an agent id: {id}"));
@@ -170,9 +169,10 @@ async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), St
          \"$d/bin/terminumd-agent-{id}\" --agent-id"
     );
     let bytes = tokio::fs::read(binary).await.map_err(|e| format!("{}: {e}", binary.display()))?;
-    let got = ssh(recipe, &script, Some(bytes), Duration::from_secs(300)).await?;
-    if got.trim() != id {
-        return Err(format!("the copied helper says {}, expected {id}", got.trim()));
+    let out = ssh(recipe, &script, Some(bytes), Duration::from_secs(300)).await?; // rc output first (AS-84 f): the last line
+    let got = out.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("");
+    if got != id {
+        return Err(format!("the copied helper says {got}, expected {id}"));
     }
     Ok(())
 }
