@@ -7,6 +7,7 @@ import { agentMark, el, folderBar, metaLine, shownState, stateIcon } from "./nav
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 import { following } from "./follow.js";
+import { planPane } from "./planpane.js";
 
 const $ = (id) => document.getElementById(id);
 const span = (cls, text) => el("span", cls, text);
@@ -24,11 +25,13 @@ export function headerParts(group, item, follow = following()) {
 }
 
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
-export function pageHeader({ copy, renaming, setAgent }) {
+export function pageHeader({ copy, renaming, setAgent, send, sid, toChat }) {
+  const plan = planPane({ send, sid, toChat });   // the shown session's plan (AC-97): its progress here, its pane
   function show(found) {
     $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
     $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
     setAgent(found?.item.agent ?? null);
+    plan.header(found?.item ?? null);
     if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); }
     else {
       const { group: g, item: it } = found, { folder, path, where, rest } = headerParts(g, it), parts = [];
@@ -54,5 +57,6 @@ export function pageHeader({ copy, renaming, setAgent }) {
     document.title = found ? `${found.item.title} – terminum` : "terminum";
     if (!renaming()) $("rename").hidden = !found;
   }
+  show.plan = plan;
   return show;
 }

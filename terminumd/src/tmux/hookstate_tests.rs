@@ -154,3 +154,18 @@ fn the_agents_own_folder_is_its_last_own_events_not_a_subagents() {
     h.apply(K, &ev("claude", "SessionEnd", json!({})), t);
     assert_eq!(h.cwd(K), None, "the session ended");
 }
+
+#[test]
+fn working_is_the_hooks_word_and_a_changed_program_is_told_once() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    assert!(!h.working(K), "no hooks: not working");
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    assert!(h.working(K));
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    assert!(!h.working(K));
+    h.view(K, "claude", t);
+    assert!(h.take_changed().is_empty(), "the same program");
+    assert_eq!(h.view(K, "zsh", t), None);
+    assert_eq!(h.take_changed(), vec![K.to_string()]);
+    assert!(h.take_changed().is_empty(), "told once");
+}

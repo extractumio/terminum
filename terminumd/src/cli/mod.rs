@@ -7,12 +7,14 @@
 pub mod agentsetup;
 mod commands;
 pub mod hook;
+mod hookplan;
 mod ctx;
 mod direct;
 mod folders;
 mod importer;
 mod install;
 mod launch;
+mod mcp;
 mod sockhttp;
 mod systemd;
 mod term;
@@ -49,12 +51,13 @@ usage: terminum [command]
   hooks [install|remove] [claude|codex]
                           the coding agents found and terminum's hooks in them: exact
                           states, prompts and reminders (no agent named: every one found)
+  mcp                     the MCP server a coding agent starts (plans, notes: hooks install)
   import                  workspaces, bookmarks and hosts of iterm-enhancer
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";
 
-const COMMANDS: [&str; 18] = [
-    "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+const COMMANDS: [&str; 19] = [
+    "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "mcp", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -79,6 +82,8 @@ pub enum Cmd {
     Tmux(Option<(String, String, String, String)>),
     /// `hooks [status|install|remove] [claude|codex]` (AC-39)
     Hooks(String, Option<String>),
+    /// `mcp`: the MCP server a coding agent starts, on stdin and stdout (AC-97, AC-98)
+    Mcp,
     Upgrade(Option<String>),
     Rollback,
     Restart,
@@ -108,6 +113,7 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
         "uninstall" => none(Cmd::Uninstall),
         "import" => none(Cmd::Import),
         "install" => none(Cmd::Install),
+        "mcp" => none(Cmd::Mcp),
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         "--version" => Ok(Cmd::Version),
         "open" => match rest {
@@ -185,6 +191,7 @@ fn as_user() -> Result<(), String> {
 pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
     match cmd {
         Cmd::Help => ctx.say(USAGE),
+        Cmd::Mcp => return Ok(mcp::main()),
         Cmd::Version => ctx.say(crate::config::build_id()),
         Cmd::Status => { commands::status(ctx); hooks_tip(ctx); }
         Cmd::Folders => folders::command(ctx)?,

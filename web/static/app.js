@@ -301,6 +301,7 @@ function onMessage(m) {
     case "stall": tools.showStall(m); break;
     case "build": conn.checkBuild(m.id); showBuild(m); break;
     case "trace": trace.onMessage(m); break;
+    case "plan": case "plannew": showCurrent.plan.onMessage(m); break;   // the Plan pane (AC-97)
     case "sentone": case "sentnew": sent.onMessage(m); break;
     case "projects": st.projects = Array.isArray(m.items) ? m.items : []; bookmarks.changed(); break;   // the list, and what each session shows
     case "created": pick(m.id); if (m.note) toast(m.note, 6000); break;
@@ -367,7 +368,8 @@ function toggleGroup(key) {
 }
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
-const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => view.setAgent(a) });
+const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => view.setAgent(a),
+  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text) });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;

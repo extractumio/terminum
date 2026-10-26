@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="foot.css">
 <link rel="stylesheet" href="marks.css">
 <link rel="stylesheet" href="reminders.css">
+<link rel="stylesheet" href="planpane.css">
 <link rel="stylesheet" href="find.css">
 <link rel="stylesheet" href="shapes.css">
 <link rel="stylesheet" href="tmux.css">
@@ -106,7 +107,7 @@
       <div id="current" title="Show all sessions">
         <span id="curbar"></span>
         <span class="lines">
-          <span class="tline"><span id="curstate"></span><span id="curagent"></span><span class="t">Choose a session</span>
+          <span class="tline"><span id="curstate"></span><span id="curagent"></span><span class="t">Choose a session</span><button id="curplan" type="button" hidden aria-expanded="false" aria-controls="planpane" title="Plan"><span id="curplant"></span></button>
             <button id="rename" type="button" title="Name this session" aria-label="Name this session" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg></button></span>
           <span id="cursub" class="s"></span>
         </span>
@@ -198,6 +199,10 @@
     <div id="remindpane" class="box" role="region" aria-label="Reminders" tabindex="-1" hidden>
       <div class="sphead"><h2>Reminders</h2><button id="remindclose" class="icon" type="button" title="Close" aria-label="Close"></button></div>
       <div id="remindlist"></div>
+    </div>
+    <div id="planpane" class="box" role="region" aria-label="Plan and notes" tabindex="-1" hidden>
+      <div class="sphead"><h2>Plan</h2><button id="planclose" class="icon" type="button" title="Close" aria-label="Close"></button></div>
+      <div id="planbody"></div>
     </div>
     <form id="findbox" class="box" role="search" hidden>
       <input id="findq" class="field" type="search" placeholder="Find in this session" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search" maxlength="200" aria-label="Find in this session">

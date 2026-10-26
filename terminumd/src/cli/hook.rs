@@ -2,12 +2,14 @@
 //! `terminum hook claude|codex` (AC-39): what a coding agent's hooks run (`terminum hooks
 //! install`). It only observes: it reads the event the agent gives on stdin (to its end, so the
 //! agent's write never breaks), keeps a few fields of it, cut short (never a tool's output, a
-//! file's text or the agent's answer), and posts them to terminumd's private socket with a
-//! budget of 150 ms; it prints nothing and always exits 0, so the agent goes on as without it.
+//! file's text or the agent's answer; of a plan tool, its items'
+//! words: hookplan.rs), and posts them to terminumd's private socket with a
+//! budget of 150 ms; it prints at most terminumd's reminder after a PostToolUse and always
+//! exits 0, so the agent goes on as without it.
 //! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux
 //! nothing is sent.
 
-use std::io::Read;
+use std::io::{Read, Write};
 use std::time::Duration;
 
 use serde_json::{json, Map, Value};
@@ -39,9 +41,21 @@ pub fn main(agent: &str) -> i32 {
     let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
     if let Some(ev) = event(agent, &input, &tmux, &pane) {
         let sock = crate::sock::path(&crate::config::app_dir());
-        let _ = super::sockhttp::call(&sock, "POST", "/hook", Some(&ev), BUDGET);
+        if let Ok((200, Some(answer))) = super::sockhttp::call(&sock, "POST", "/hook", Some(&ev), BUDGET)
+            && let Some(line) = remind_line(&ev, &answer) {
+            // a closed stdout is the agent's choice: never a panic, still 0
+            let _ = writeln!(std::io::stdout().lock(), "{line}");
+        }
     }
     0
+}
+
+/// The one line the agent reads as context when terminumd's answer reminds (AC-97); None
+/// without a reminder, or for an event other than PostToolUse (the one whose context both
+/// agents are known to take).
+pub fn remind_line(ev: &Value, answer: &Value) -> Option<String> {
+    let text = answer["remind"].as_str().filter(|t| !t.is_empty())?;
+    (ev["event"] == "PostToolUse").then(|| json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}}).to_string())
 }
 
 /// Why `terminum hook <agent>` is not an agent's run (`by_hand`: its stdin is a terminal).
@@ -112,6 +126,9 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     if let Some(m) = asked.map(|q| cut(q, 200)).or_else(|| text(input, "message", 200)) {
         out.insert("message".into(), json!(m));
     }
+    if let Some(p) = super::hookplan::plan(input) {
+        out.insert("plan".into(), p);
+    }
     if name == "UserPromptSubmit"
         && let Some(p) = input.get("prompt").and_then(Value::as_str) {
             out.insert("prompt".into(), json!(p.chars().take(crate::sent::TEXT).collect::<String>()));
@@ -151,6 +168,32 @@ mod tests {
         let key = format!("sk-{}", "ant-api03-abcdefghijkl");               // no secret's shape in the source
         assert_eq!(tool_summary("Bash", &json!({"command": format!("echo {key}")})), "Bash: echo [redacted]");
         assert_eq!(tool_summary("Bash", &json!({"command": "make X=1"})), "Bash: make X=…");
+    }
+
+    #[test]
+    fn a_plan_tools_items_go_as_plan() {
+        let input = json!({"hook_event_name": "PostToolUse", "session_id": "s1", "tool_name": "TodoWrite",
+            "tool_input": {"todos": [{"content": "alpha", "status": "pending", "activeForm": "Working on alpha"}]}, "tool_response": {"oldTodos": []}});
+        let ev = event("claude", &input, TMUX, "%3").unwrap();
+        assert_eq!(ev["plan"], json!({"op": "all", "items": [{"text": "alpha", "status": "pending"}]}));
+        assert!(!ev.to_string().contains("oldTodos") && !ev.to_string().contains("activeForm"));
+        let bash = json!({"hook_event_name": "PostToolUse", "tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": "a"});
+        assert!(event("claude", &bash, TMUX, "%3").unwrap().get("plan").is_none());
+    }
+
+    #[test]
+    fn a_reminder_is_one_line_of_the_events_context() {
+        let ev = json!({"event": "PostToolUse"});
+        let line = remind_line(&ev, &json!({"remind": "update it"})).unwrap();
+        assert!(!line.contains('\n'));
+        assert_eq!(serde_json::from_str::<Value>(&line).unwrap(),
+                   json!({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": "update it"}}));
+        assert_eq!(remind_line(&ev, &json!({})), None, "no reminder: nothing printed");
+        assert_eq!(remind_line(&ev, &json!({"remind": ""})), None);
+        assert_eq!(remind_line(&json!({}), &json!({"remind": "x"})), None, "no event name: nothing printed");
+        for other in ["PostToolBatch", "Stop", "PreToolUse", "UserPromptSubmit"] {
+            assert_eq!(remind_line(&json!({"event": other}), &json!({"remind": "x"})), None, "{other}: nothing printed");
+        }
     }
 
     #[test]

@@ -11,6 +11,7 @@
 
 mod activation;
 mod agent;
+mod agentapi;
 mod api_fs;
 mod app;
 mod attach;
@@ -27,11 +28,13 @@ mod listing;
 mod looks;
 mod manager;
 mod midi;
+mod notes;
 mod ops;
 mod page;
 mod release;
 mod panel_api;
 mod panel_ws;
+mod plans;
 mod remote;
 mod restore;
 mod restore_srv;
@@ -105,6 +108,8 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         projects: Mutex::new(page::projects::Projects::load(dir.join("projects.json"))),
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
+        plans: plans::Plans::load(&dir),
+        notes: notes::Notes::load((!cfg.agent).then_some(dir.as_path())),
         cfg,
     })
 }
@@ -247,6 +252,7 @@ async fn serve() {
             server.kill_clients();
         }
         page::unread::flush(&stopping);                // a mark shown is kept (AC-93)
+        plans::flush(&stopping);                       // a plan is kept (AC-97)
         exit_with(&stopping.store, "signal");
     });
     let router = routes::pages(app);

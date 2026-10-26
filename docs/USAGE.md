@@ -113,6 +113,17 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   `/hooks`) tell terminum when they work, wait for an approval or an answer, stop, fail or run
   subagents; without them terminum reads their screens. `terminum hooks` says what is set up,
   `terminum hooks remove` takes terminum's hooks out.
+- **MCP server**: `terminum hooks install` also adds `terminum mcp`, terminum's MCP server, so
+  the agent can keep the session's plan, progress and notes for you (AC-97, AC-98): in Claude
+  Code through the same plugin (its `.mcp.json`), in Codex as one block in
+  `~/.codex/config.toml` between `# >>> terminum: MCP server …` and `# <<< terminum` (the file
+  backed up first; nothing else in it changes, lines of others inside the markers are kept, a
+  symlinked file is written where it points). An `[mcp_servers.terminum]` of your own there, or a
+  file changed while the install ran, is refused, not overwritten. Restart running Codex sessions
+  to give them the server. Codex still runs terminum's hooks only once trusted in its `/hooks`;
+  `terminum hooks remove` takes the block out. The server starts in every Claude Code and Codex
+  session on the Mac, but outside a terminum pane it offers no tools and no instructions, so it
+  costs those sessions nothing.
 - **Sent history**: the speech bubble under the split shows what you sent in the pane's folder
   (its prompts and commands, kept in `~/.terminum/sessions`), newest first: ↑ older, ↓ newer;
   Jump to message shows where it was sent, Insert into chat types it again (without Enter). On a

@@ -86,6 +86,10 @@ pub struct App {
     pub unread: Mutex<crate::page::unread::Marks>,
     /// turn ends read from the screen, waiting to stay so (AC-91, AC-93)
     pub turns: crate::page::turns::Turns,
+    /// the panes' session plans (AC-97)
+    pub plans: crate::plans::Plans,
+    /// notes coding agents left for the user (AC-97)
+    pub notes: crate::notes::Notes,
 }
 
 pub type Shared = Arc<App>;

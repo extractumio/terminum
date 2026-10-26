@@ -61,6 +61,8 @@ pub struct Hooks {
     recs: Mutex<HashMap<String, Rec>>,
     /// when each agent's hooks last spoke (terminum hooks / status: installed and running)
     pub last: Mutex<HashMap<&'static str, std::time::SystemTime>>,
+    /// panes whose program changed since `take_changed` was last asked (their plans go)
+    changed: Mutex<Vec<String>>,
 }
 
 /// The coding agents with hooks (`terminum hooks`), by the name they come with.
@@ -157,7 +159,7 @@ impl Hooks {
         let r = recs.get_mut(key)?;
         match &r.command {
             None => r.command = Some(command.to_string()),       // the program it ran in
-            Some(c) if c != command => { recs.remove(key); return None; }
+            Some(c) if c != command => { recs.remove(key); self.changed.lock().push(key.to_string()); return None; }
             _ => {}
         }
         let state = r.state?;
@@ -181,9 +183,24 @@ impl Hooks {
         self.recs.lock().get(key).map(|r| r.cwd.clone()).filter(|c| !c.is_empty())
     }
 
+    /// Whether pane `key`'s hooks last said it works.
+    pub fn working(&self, key: &str) -> bool {
+        self.recs.lock().get(key).is_some_and(|r| r.state == Some(State::Working))
+    }
+
     /// Whether pane `key`'s agent has hooks that spoke (its prompts come from them).
     pub fn has(&self, key: &str) -> bool {
         self.recs.lock().contains_key(key)
+    }
+
+    /// The panes whose program changed since this was last asked.
+    pub fn take_changed(&self) -> Vec<String> {
+        std::mem::take(&mut *self.changed.lock())
+    }
+
+    /// Pane `key`'s agent and its session, as its hooks last said.
+    pub fn session(&self, key: &str) -> Option<(&'static str, String)> {
+        self.recs.lock().get(key).map(|r| (r.agent, r.session.clone()))
     }
 
     /// Forgets the panes of a server (`prefix`, "tmux:<host>:<socket>:") that are gone.

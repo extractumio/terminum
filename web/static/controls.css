@@ -102,4 +102,7 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   :is(#foldfab, #findfab, #splitfab, #sentfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { width: 44px; height: 44px; }   /* a selection's three stand where the column does, as large */
   #menu .row { min-height: 44px; }
   .seg button { height: 34px; }   /* a segment in a full-width row */
+  :is(#planpane button, #curplan) { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */
+  #curplan { margin-block: -11px; }   /* a finger's height in the title's 22px line */
+  .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
 }

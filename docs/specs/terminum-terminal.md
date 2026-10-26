@@ -1,12 +1,12 @@
 # terminum — Specification (terminal features)
 
-Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, security). This spec holds the reading and coding-agent features of the terminal view, inherited from iterm-enhancer's web app (its AC 52, AC 55, AC 56, AC 57, AC 58). Cases are AC-31…AC-40; the core's AC 02 (screens), AC 03 (typing) and AC 04 (Lines modes) are assumed. A case of another spec is written `AC nn` (a space); `AC-nn` is this spec's own.
+Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, security). This spec holds the reading and coding-agent features of the terminal view, inherited from iterm-enhancer's web app (its AC 52, AC 55, AC 56, AC 57, AC 58). Cases are AC-31…AC-40, AC-90, AC-91, AC-97 and AC-98; the core's AC 02 (screens), AC 03 (typing) and AC 04 (Lines modes) are assumed. A case of another spec is written `AC nn` (a space); `AC-nn` is this spec's own.
 
 ## 0. Metadata
 
 | Field | Value |
 |---|---|
-| Version | 0.4.17 |
+| Version | 0.5.0 |
 | Date | 2026-10-26 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.5.0 | 2026-10-26 | Owner: a session's plan and progress, and notes for the user (AC-97, AC-98). The plan comes from the agent's own plan tool, read by terminum's hooks from successful PostToolUse events (Claude Code's TaskCreate, TaskUpdate, TodoWrite; Codex's update_plan), and from `terminum mcp`, an MCP server `terminum hooks install` adds to both agents (update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user), whose items count only for a session with no built-in plan; the percent is completed of all items, never the agent's; the ETA is the agent's eta_minutes from the call's time, shown as its estimate; a plan not updated for clamp(turn / 6, 10, 30) minutes of a working turn is asked for once in that time through the hook's additionalContext, never typed; plans.json and notes.json in `state/`. Pragmatic review applied: an unknown id marks the plan partial, never an item; a failed tool call changes nothing; a new agent session in the pane archives the plan; model text as plain text only. Second review: a subagent's plan calls are not the session's; no reminder for an all-completed plan, staleness from the later of update and turn start; an unknown agent after a restart keeps the plan; notes bound to their tmux server, a pane's notes kept after it joins a project, 500 done notes at most; bidi controls dropped from model text; `terminum mcp` outside a pane offers nothing; Codex's block edits only terminum's lines, follows a symlink, refuses a file changed meanwhile. Deferred: get_other_sessions, the agent deleting notes, remote hosts. |
 | 0.4.17 | 2026-10-26 | Owner: a session whose agent started subagents and stopped its own turn showed done while they still ran. Claude Code's idle notice (sent while the main thread waits) set it done, a next prompt forgot the subagents, and the footer's agents counted 10 minutes at most, as a shell does. Now subagents keep it working through the idle notice and the next prompts until the last one stops; the footer's agents (local agents, teams, dynamic workflows, cloud sessions) keep it working however long they run, its shells and monitors 10 minutes as before; on a screen without Claude Code's input box (Codex) the last 10 rows' "2 agents still running", "1 subagent is running", "Waiting for 2 agents" keep it working. Claude Code's "← 1 agent" is its agents view's count of other background sessions waiting on the user, not this turn's work (read in its code, 2.1.310) (AC-39). |
 | 0.4.16 | 2026-10-26 | Owner: in a split's embedded page (a quick shell, a split pane) a selection's Copy and [+] stood at the terminal's left, over the text: their column's place was read from find's button, which that page does not draw. They stand where the column stands, at the terminal's right, as on the tab's own page (AC-33, AC-37). |
 | 0.4.15 | 2026-10-26 | An audit's findings fixed. Send to Agent's Enter, typed 0.2 s after the quote, went to whatever pane was shown by then (a shell's line there ran), and Send to Agent stayed in the dialog after the agent ended (the quote was then sent into the shell and run): the Enter goes only to the same pane while it still runs its agent, else a toast says it was not pressed; Send to Agent hides, said in the dialog, when the agent ends while it is open; after a number that did not come in 10 s, Add to Chat and Send to Agent ask again (they did nothing) (AC-37). On a touch screen the terminal no longer redraws while the page takes a selection away for 0.12 s to put iOS's menu away, so the selection comes back whole (AC-37). The sent history's and the reminders' panes keep Tab and Shift+Tab among their buttons and the keys from the terminal's input behind them (AC-90). A paste's or an upload's body is read only once one of the two upload slots is free (it was read first, so any number were held in memory) (AC-36). |
@@ -90,6 +91,7 @@ Out of scope (explicit):
 - Rendering by the terminal of inline images or sixel (core §2).
 - Editing a file from the terminal view (the Files panel's View does that, `terminum-files.md`).
 - Programs' own mouse handling outside Screen mode (core AC 06).
+- Plans and notes (AC-97, AC-98) in v1: an MCP tool listing other sessions (get_other_sessions), the agent deleting notes (delete_notes_for_user: the user deletes), and panes of remote hosts (their hooks do not reach this Mac's terminumd).
 
 ## 3. Assumptions, dependencies, open questions
 
@@ -129,6 +131,8 @@ Open questions:
 | AC-39 | [MUST / P0] | A pane running a coding agent shows its state (working, waiting, failed; done shows no mark) in the list and the header, breathes while it works, and a reminder over the terminal names an agent that waits for an answer in a pane not shown. |
 | AC-90 | [SHOULD / P1] | Every message or command the user sends in a pane is kept per project (its host and folder) and read back as Markdown from a button under the magnifier: the last first, older and newer. |
 | AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia button comes up, its count filled, over every session when its session's coding agent ends a turn, until pressed; its pane shows the open reminders as Markdown; Close puts one down until the next turn's end, Resolve ends it. |
+| AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
+| AC-98 | [SHOULD / P1] | A coding agent leaves notes for the user (bugs, deferred work, follow-ups, questions) through terminum's MCP tools; the Plan pane lists them with Done, Reopen, Delete and Insert into chat. |
 | AC-40 | [MUST / P0] | In a coding agent's input box on a phone, a tap puts the cursor on the character under it, ↑ and ↓ move by the page's lines, a slide moves the cursor, held delete deletes words, the box is a panel above the keyboard with its status lines behind ⓘ, and the cursor is drawn in the box when the agent left it below the footer. |
 
 ## 5. BDD scenarios
@@ -523,6 +527,107 @@ Scenario: AC-91 failure — not saved
   Then a reminder does not come up and terminumd's log says why; a save in the dialog says why (AC-33)
 ```
 
+### AC-97 — Session plans and progress [SHOULD / P1]
+
+```gherkin
+Scenario: AC-97 happy path — the agent's own plan
+  Given Claude Code with terminum's hooks in pane %3
+  When its TaskCreate makes "Write the parser" (id 1) and "Add tests" (id 2) and its TaskUpdate sets id 1 completed
+  Then terminumd keeps the pane's plan from the successful PostToolUse events only: 2 items, 1 completed, 50%
+  And the session's row shows "50%" right of its title over a thin track in the row's color, its hover "1 of 2 · updated 1 min ago"; the shown session's header "1/2 · 50% · 1 min ago"
+  When TodoWrite sends the whole list (3 items) or Codex's update_plan its steps (a result "Plan updated")
+  Then that list replaces the plan; a TaskUpdate with status "deleted" removes its item
+  When a subagent of the session (an event carrying its agent_id) calls a plan tool
+  Then the session's plan is not changed and that event gets no reminder
+
+Scenario: AC-97 happy path — the Plan pane
+  When the user presses the percent or the header's progress
+  Then the Plan pane opens (modal, as the reminders' pane): the title, the current step ("doing"), the items marked ✓ ▶ ○ ⚠ (completed, in progress, pending, blocked), the ETA "~17:40 (agent's estimate, given 16:55)", "updated 2 min ago" (terminumd's times, aged by the browser's clock), then the notes (AC-98)
+  And every text the agent wrote is kept without control or bidi characters (U+202A–U+202E, U+2066–U+2069) and shown as plain text (never Markdown or HTML: "<b>x</b>" reads as typed); on a phone the pane is full-width under the header, its buttons at least 44 px
+
+Scenario: AC-97 happy path — terminum's MCP tools
+  Given `terminum mcp` started by the agent in pane %3 (TMUX and TMUX_PANE from its environment)
+  When the agent calls update_session_plan {items: 7 with 3 completed, doing: "Run the tests", eta_minutes: 45}
+  Then it answers "Plan stored: 3 of 7 completed (43%), ETA ~17:40." and the row shows "43%"; the ETA is the call's time plus 45 minutes, shown as the agent's estimate; an absolute time from the agent is never taken
+  When the session also keeps a built-in plan (TaskCreate, TodoWrite, update_plan)
+  Then the MCP call's items are not applied ("Doing and ETA stored; items follow your own plan tool (3 of 7 completed), so the items sent were not taken, ETA ~17:40.") and a later built-in plan replaces MCP items; doing, title and ETA are kept on either
+  When the agent calls get_session_plan {}
+  Then it answers the stored plan as lines "[x] …", "[>] …", "[ ] …", "[!] …"
+
+Scenario: AC-97 happy path — the stale reminder
+  Given a pane whose hooks say working, its turn started at its UserPromptSubmit
+  When a PostToolUse of the main agent comes and the plan was last updated longer ago than clamp(turn's time / 6, 10 min, 30 min), counted from the later of its update and the turn's start, or there is no plan and the turn has worked 10 min
+  Then terminumd answers the hook with terminum's fixed text and numbers only ("terminum: this session's plan was last updated 14 min ago. Update it now: …"), which `terminum hook` gives the agent as the event's additionalContext; nothing is typed into the pane; the row's percent dims while stale
+  And no second reminder comes within one threshold, and a turn without a plan gets one at most
+  And a plan whose items are all completed gets no reminder; only PostToolUse answers carry one (never PreToolUse, a prompt or a stop)
+
+Scenario: AC-97 edge — partial, ETA, reuse, restart
+  When a TaskUpdate names id 9, which no TaskCreate made (an event lost)
+  Then no item is invented; the plan is marked partial ("partial: some updates were missed"), its known counts shown, until a whole list (TodoWrite, update_plan, update_session_plan) heals it
+  When the items change without a new eta_minutes
+  Then the ETA is dropped (it said nothing about the new list)
+  When the agent ends and a new agent session starts in the same pane (SessionStart, another session id, another program)
+  Then the old plan is archived (kept in plans.json, never shown) and the row shows no percent until the new session keeps a plan
+  When terminumd restarts
+  Then every plan comes back from `state/plans.json` with its updated time; a pane gone is archived when its hook record is dropped (kept in plans.json, not shown)
+  And an MCP call that terminumd cannot yet tie to an agent or session (its hooks not heard since the restart) keeps the restored plan, never archives it
+  When the turn is interrupted or stopped mid-plan
+  Then the plan stays as it was, not stale; the next prompt of the same session goes on with it
+  When the pane is idle, waiting or stopped
+  Then no reminder comes; after the Mac slept, the first PostToolUse may remind once
+
+Scenario: AC-97 failure — tools refused
+  When a plan tool's call fails (PostToolUseFailure, Codex's update_plan refused in Plan mode, a result that is not a success)
+  Then the plan is not changed
+  When `terminum mcp` starts outside a terminum pane (no TMUX or TMUX_PANE: it starts in every Claude Code and Codex session of the Mac)
+  Then it offers no tools and no instructions, so it costs that session nothing
+  When a tool is called anyway, or terminumd does not know the pane
+  Then the tool answers an error "This session does not run in a terminum pane; do not call terminum's tools again."
+  When terminumd is not running (no answer on its private socket in 2 s)
+  Then each tool answers an error "terminum is not running; go on without it."
+  When update_session_plan has no items, over 50, an item over 200 characters, or a status not pending, in_progress, completed or blocked
+  Then it answers an error naming the limit or the allowed values (an empty list: "send the whole plan"), and nothing is stored; eta_minutes outside 1–1440 is refused the same way
+  When plans.json cannot be written or does not parse
+  Then terminumd's log says why; a file that does not parse is set aside as plans.json.bak and an empty state starts
+
+Scenario: AC-97 happy path — installed with the hooks
+  When the user runs `terminum hooks install`
+  Then Claude Code's terminum plugin carries `.mcp.json` naming `terminum mcp`, and Codex's config.toml gets one block between "# >>> terminum: MCP server …" and "# <<< terminum" ([mcp_servers.terminum], env_vars TMUX and TMUX_PANE, tools approved), the file backed up first; hooks.json's entries stay byte for byte; `terminum hooks` says whether each agent has the MCP server; `terminum hooks remove` takes the block out; the install says to restart running Codex sessions (they read config.toml when they start)
+  And install and remove change only the lines terminum wrote: a line of another's inside the markers (a table Codex added there) is kept; a config.toml that is a symlink is written where it points, the link kept
+  When config.toml already has an [mcp_servers.terminum] table outside terminum's block, or the file changed while the install ran
+  Then the install refuses and says why, the file untouched
+```
+
+### AC-98 — Notes for the user [SHOULD / P1]
+
+```gherkin
+Scenario: AC-98 happy path — the agent leaves notes
+  When the agent calls add_notes_for_user {notes: [{kind: "bug", text: "The parser drops a BOM", file: "src/parse.rs"}, {kind: "deferred", text: "Paging of the list"}]}
+  Then terminumd keeps them in `state/notes.json` under the scope a bookmark of the session would have (its project, else the session, AC-33) and answers their ids; the Plan pane lists them (kind, text, file) as plain text under the plan
+  When the agent calls update_notes_for_user {id, status: "done"} or with a new text or kind
+  Then that note changes; a note of another scope is not found
+  When the session joins a project
+  Then the notes it left before stay shown on its row with the project's
+
+Scenario: AC-98 happy path — the user acts
+  When the user presses Done on a note
+  Then it is marked done (Reopen opens it again); Delete asks once and removes it; Insert into chat pastes its text into the shown pane's input through the paste path (control characters dropped), never Enter
+
+Scenario: AC-98 edge — limits and restarts
+  When a scope holds 100 open notes
+  Then add_notes_for_user answers an error naming the limit, nothing added; a call carries 1–20 notes of at most 1000 characters each (file at most 300), kinds bug, deferred, followup or question
+  When terminumd restarts
+  Then the notes come back; a note's text is redacted (`sent::redact`) before it is kept; at most 500 done notes are kept, the oldest done dropped first
+  When the tmux server restarts (a reboot) and a new pane takes an old pane's id
+  Then the old pane's notes are kept in notes.json but not shown on the new pane, nor found by its agent
+
+Scenario: AC-98 failure — not kept
+  When the call is made outside a terminum pane or terminumd is down
+  Then it answers the same errors as AC-97's tools
+  When notes.json cannot be written
+  Then the tool answers an error and terminumd's log says why; the Page's Done or Delete says why where it was pressed
+```
+
 ### AC-40 — Editing a coding agent's input on a phone [MUST / P0]
 
 ```gherkin
@@ -789,3 +894,5 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.4.15 (2026-10-26) — AC-37 `web/test/e2e_ask.mjs` through `e2e_marks.mjs` (Chromium and WebKit: the agent ending while the dialog is open hides Send to Agent and says so; another pane shown within the Enter's 0.2 s gets no Enter and a toast says so; both red with the ask.js before), `web/test/e2e_touch.mjs` (Chromium: a row's change while the selection is taken away waits, the selection comes back whole; red with the touchcopy.js before); AC-90 `web/test/e2e_sent.mjs` (Chromium and WebKit, both sizes: Tab and Shift+Tab stay in the pane, nothing typed reaches the terminal; red with the fabpane.js before); AC-36: the slot taken before the body (reviewed, the e2e uploads pass) → pass. `node web/test/e2e_all.mjs` 1182/1183 (the one: `motion: it goes back fast`, 359 ms against 250, under the full run's load; alone twice → pass). Not covered: Send to Agent when the agent exits within the 0.2 s before the page's list says so.
 - [x] 0.4.16 (2026-10-26) — AC-33, AC-37 `web/test/e2e_sent.mjs` (Chromium and WebKit: a split's embedded page, a selection: Copy and [+] 26 px from the terminal's right, one under another; red before: both at its left edge) → pass.
 - [x] 0.4.17 (2026-10-26) — AC-39 `cargo test tmux::` (hooks: a stop, Claude Code's idle notice and a next prompt's stop with a subagent running: working with 1 until its stop, then done and ended once; an idle notice with none: done; the footer: local agents, teams, workflows, cloud sessions are agents, unlimited; a shell, a monitor, tasks and "← 1 agent" are not; Codex's last 10 rows: four ways of saying agents run are working, four of finished or none are done, a line 12 rows up is not read) and `cargo test page::turns` (past ten minutes only agents keep a hook's turn), `scripts/e2e_hooks.py` 32/32, `scripts/e2e_agentstate.py` 11/11 → pass.
+- [x] 0.5.0 — AC-97 `cargo test plans::` (each feed op, a failed call ignored, an unknown id partial and healed by a whole list, deleted, 50 items and 200 characters, MCP items only without a built-in plan, ETA dropped with new items, a new session archived, plans.json kept 0600 and set aside when it does not parse, the reminder's threshold, once per window, never idle), `cli::` (`terminum hook`'s plan field and additionalContext; `terminum mcp`'s protocol, tools, limits, not in a pane, terminumd down; `hooks install` and `remove`: `.mcp.json`, Codex's block backed up, refused beside a table of its own), `web/test/e2e_plans.mjs` (Chromium and WebKit, wide and phone: the row's percent and track, the header, the Plan pane, plain text, stale dimmed) → done 2026-10-26 on the session-plans tree: `make test` passed (cargo 563 + 1, ui, web node 136), `node web/test/e2e_all.mjs` PASS 1269 (webPlans 41 per browser), `node web/test/e2e_live.mjs` PASS 175 (e2e_liveplans: a pane's `terminum hook claude` and `terminum mcp` against a private terminumd and tmux, a restart keeps the plan and notes), `cd ui && node test/e2e_panel.mjs` PASS 157, `scripts/security_check.sh` PASS; a real Claude Code 2.1.310 (`claude -p --plugin-dir`, a private terminumd and tmux) made the plan from its TaskCreate/TaskUpdate (1 of 3), stored doing and ETA through `update_session_plan` and a note through `add_notes_for_user`.
+- [x] 0.5.0 — AC-98 `cargo test notes::` (scope as a bookmark's, 100 open, 1–20 a call, redacted, another scope not found, kept across a restart) and `web/test/e2e_plans.mjs` (Done, Reopen, Delete asks once, Insert into chat without Enter) → done 2026-10-26 on the session-plans tree: `make test` passed (cargo 563 + 1, ui, web node 136), `node web/test/e2e_all.mjs` PASS 1269 (webPlans 41 per browser), `node web/test/e2e_live.mjs` PASS 175 (e2e_liveplans: a pane's `terminum hook claude` and `terminum mcp` against a private terminumd and tmux, a restart keeps the plan and notes), `cd ui && node test/e2e_panel.mjs` PASS 157, `scripts/security_check.sh` PASS; a real Claude Code 2.1.310 (`claude -p --plugin-dir`, a private terminumd and tmux) made the plan from its TaskCreate/TaskUpdate (1 of 3), stored doing and ETA through `update_session_plan` and a note through `add_notes_for_user`.

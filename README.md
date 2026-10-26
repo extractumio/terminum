@@ -24,7 +24,10 @@ lives in tmux, so nothing is lost when you close a tab, switch devices or reboot
 ### Made for coding agents
 
 - **Claude Code and Codex hooks.** One command (`terminum hooks install`) and every session shows
-  what its agent does: working, waiting for your approval, done, running subagents.
+  what its agent does: working, waiting for your approval, done, running subagents. It also adds
+  terminum's MCP server, through which the agent keeps the session's plan, progress and notes for
+  you (in Codex a marked block in `~/.codex/config.toml`; trust terminum's hooks once in Codex's
+  `/hooks` and restart running Codex sessions). Outside terminum the server offers no tools.
 - **Alerts across sessions.** See at a glance which agent waits for you, and which finished while
   you were away, without opening each session.
 - **Quote & Ask.** Select any output, ask about it, and the quote and your question go straight

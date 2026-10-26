@@ -8,6 +8,7 @@
 import { folderHues, folderKey } from "./dircolors.js";
 import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
+import { planPct, planTrack } from "./planrow.js";
 import { textForm } from "./render.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing.
@@ -159,7 +160,9 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   const idx = el("span", "idx", child ? "" : item.index || "");
   if (item.index && !child) idx.title = item.host ?? "This machine";     // where the window runs
   head.append(idx, agentMark(item), el("span", "t", item.title));
+  if (item.plan) head.append(planPct(item, onPick));
   txt.append(head);
+  if (item.plan) txt.append(planTrack(item.plan));
   if (item.host || item.sub?.length) txt.append(rowLine(item));
   const st = el("span", "st");
   const clone = opts.onClone && !child;
@@ -172,6 +175,11 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);
+  if (item.notes) {                                // the agent's open notes for the user (AC-98)
+    const n = el("span", "notes", String(item.notes));
+    n.title = `${item.notes} open note${item.notes > 1 ? "s" : ""} from its agent`;
+    st.append(n);
+  }
   if (item.subagents) {
     const n = el("span", "subs", String(item.subagents));
     n.title = `${item.subagents} subagent${item.subagents > 1 ? "s" : ""} running`;

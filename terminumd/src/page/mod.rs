@@ -11,6 +11,7 @@ pub mod folds;
 pub mod pystr;
 pub mod hist;
 pub mod marks;
+pub mod plans;
 pub mod projects;
 pub mod quick;
 pub mod search;

@@ -101,17 +101,18 @@ pub fn routes(app: Shared) -> Router {
         .route("/tmux/{action}", post(tmux_action))
         .route("/restore", post(restore))
         .route("/hook", post(hook))
+        .route("/agent", post(crate::agentapi::agent))
         .route("/folders", post(folders))
         .with_state(app)
 }
 
 /// A coding agent's hook event (`terminum hook`, AC-39), for a pane of a tmux terminumd knows:
 /// it changes what the list shows (and keeps a prompt, AC-15 sent history), nothing else.
-async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> StatusCode {
+async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> Response {
     let (socket, pane) = (ev["socket"].as_str().unwrap_or(""), ev["pane"].as_str().unwrap_or(""));
-    let Some(server) = app.tmux.all().into_iter().find(|s| s.is_local() && s.socket == socket) else { return StatusCode::NO_CONTENT };
+    let Some(server) = app.tmux.all().into_iter().find(|s| s.is_local() && s.socket == socket) else { return StatusCode::NO_CONTENT.into_response() };
     if server.session_of(pane).is_none() {
-        return StatusCode::NO_CONTENT;                  // a pane it does not list: nothing is made up
+        return StatusCode::NO_CONTENT.into_response();  // a pane it does not list: nothing is made up
     }
     let key = server.key(pane);
     if app.hooks.apply(&key, &ev, std::time::Instant::now()) {
@@ -127,9 +128,13 @@ async fn hook(State(app): State<Shared>, Json(ev): Json<Value>) -> StatusCode {
     let known = ev["agent"].as_str().and_then(crate::tmux::hookstate::agent).is_some();
     if let (true, Some(prompt), Some(cwd)) = (known && ev["event"] == "UserPromptSubmit", ev["prompt"].as_str(), ev["cwd"].as_str()) {
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook"}));
+        let (app, key) = (app.clone(), key.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, "local", &cwd, &key, &prompt, info).await });
     }
-    StatusCode::NO_CONTENT
+    match known.then(|| crate::plans::hook_event(&app, &key, &ev)).flatten() {
+        Some(text) => Json(json!({"remind": text})).into_response(),
+        None => StatusCode::NO_CONTENT.into_response(),
+    }
 }
 
 fn rss_mb() -> f64 {
