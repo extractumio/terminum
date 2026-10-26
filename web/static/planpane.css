@@ -1,15 +1,16 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* Plans and notes (AC-97, AC-98): a row's percent and thin track in the row's own color (its text's,
    theme-driven, no edge stripe), the header's progress, the Plan pane (as the reminders' pane). */
-.item .plpct { flex: none; margin-left: auto; font-size: var(--fs-micro); font-variant-numeric: tabular-nums; color: var(--muted); cursor: pointer; }
+.item .plpct { flex: none; margin-left: auto; font-size: var(--fs-micro); font-variant-numeric: tabular-nums; color: var(--muted-text); cursor: pointer; }
 .item .plpct.stale, .item .pltrack.stale, #curplan.stale { opacity: .5; }
 .item .pltrack { display: block; height: 2px; margin-top: 3px; border-radius: 1px; background: color-mix(in srgb, currentColor 15%, transparent); overflow: hidden; }
 .item .pltrack .plfill { display: block; height: 100%; width: var(--pct, 0%); background: currentColor; opacity: .6; }
-.item .notes { font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }
+.item .notes { font-size: var(--fs-micro); line-height: 1; color: var(--muted-text); font-variant-numeric: tabular-nums; }
 /* the header's progress yields its room first: the title keeps it, the progress ends in …; the button is
    its hit box (a finger's on a phone, controls.css), the span inside its look, the title line's height */
-#curplan { flex: 0 1000 auto; min-width: 0; display: flex; align-items: center; margin-left: 8px; padding: 0; border: 0; background: none;
-  color: var(--muted); font: var(--fs-meta) var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; }
+#curplan { flex: 0 1000 auto; min-width: 4em;   /* never gone: a long title at --size 20 squeezed it to 0px */
+  display: flex; align-items: center; margin-left: 8px; padding: 0; border: 0; background: none;
+  color: var(--muted-text); font: var(--fs-meta) var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; }
 #curplant { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: var(--r-sm); background: var(--surface-2);
   background-image: linear-gradient(currentColor, currentColor); background-size: var(--pct, 0%) 2px; background-repeat: no-repeat; background-position: left bottom; }
 #curplan[aria-expanded="true"] { color: var(--t-fg); }
@@ -17,22 +18,23 @@
 #planpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 70%; overflow: auto; padding: var(--sp-2);
   border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
 #planpane .sphead { display: flex; align-items: center; }
-#planpane h2 { flex: 1; margin: 0 4px; font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted); }
+#planpane h2 { flex: 1; margin: 0 4px; font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted-text); }
 #planbody { padding: 0 4px; overflow-wrap: anywhere; }
 #planbody h3 { margin: var(--sp-2) 0 4px; font-size: var(--fs-label); font-weight: var(--fw-head); }
 .pldoing { margin: 0 0 var(--sp-2); }
-.plmeta, .plpartial, .plfile, .plwhen { margin: 2px 0; font-size: var(--fs-meta); color: var(--muted); }
+.plmeta, .plpartial, .plfile, .plwhen { margin: 2px 0; font-size: var(--fs-meta); color: var(--muted-text); }
 .plpartial { font-style: italic; }
+.plerr { margin: 2px 0 var(--sp-2); color: var(--danger-text); font-weight: var(--fw-head); }
 .plitems, .plnotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .plitem { display: flex; gap: 8px; align-items: baseline; }
-.plitem .plmark { flex: none; width: 1.2em; text-align: center; color: var(--muted); }
-.plitem.completed .pltext { color: var(--muted); }
+.plitem .plmark { flex: none; width: 1.2em; text-align: center; color: var(--muted-text); }
+.plitem.completed .pltext { color: var(--muted-text); }
 .plitem.in_progress .pltext { font-weight: var(--fw-head); }
 .plnotes { gap: var(--sp-2); }
 .plnote { padding: var(--sp-2); border-radius: var(--r-md); background: var(--surface-1); }
 .plnote.done { opacity: .7; }
 .plnotehead { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
-.plkind { font-size: var(--fs-meta); font-weight: var(--fw-head); color: var(--muted); text-transform: uppercase; }
+.plkind { font-size: var(--fs-meta); font-weight: var(--fw-head); color: var(--muted-text); text-transform: uppercase; }
 .plnotetext { margin: 4px 0; white-space: pre-wrap; }
 body:not([data-shown="term"]) #planpane { display: none !important; }
 

@@ -5,6 +5,7 @@
 // closes it; the agent's text stays text. Alone: node web/test/e2e_all.mjs webPlans.
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
+import { planLook } from "./e2e_planslook.mjs";
 
 const A = "tmux:local:terminum:%1", B = "tmux:local:terminum:%2", C = "tmux:local:terminum:%3";
 const HOSTILE = "<img src=x onerror=window.__pwned=1>";
@@ -151,6 +152,7 @@ export async function webPlans(browser, name) {
     check("no sideways page scroll (plans)", scroll <= 0, String(scroll));
     check("no page errors (plans)", !f.errors.length, f.errors.join(" | "));
     await f.close();
+    await planLook(browser, name, size, device);
   }
   runningIn(name);
 }

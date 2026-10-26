@@ -13,13 +13,22 @@ use crate::plans::{Plans, Update};
 
 use crate::plans::rules::{self, NOT_IN_PANE, STATUSES};
 
-/// The caller: its pane key, notes scope, agent and session.
+/// The caller: its pane key, notes scope, agent and session; whether terminumd has a hook
+/// event of the pane, and whether the call's own session (Codex's _meta.sessionId) is another
+/// than the hooked one (a subagent's).
 pub struct Caller {
     pub key: String,
     pub scope: Scope,
     pub agent: String,
     pub session: Option<String>,
+    pub hooks: bool,
+    pub other: bool,
 }
+
+/// The plan answers' last line when no hook event came from the pane (F8).
+pub const HOOKS_OFF: &str = "terminum's hooks are not running in this session (Codex: trust them in /hooks); send the whole plan with update_session_plan.";
+/// The answer to a plan update from another session than the pane's hooked one.
+pub const OTHER_SESSION: &str = "Not applied: this call comes from another session than the pane's main agent (a subagent's). Only the main agent calls update_session_plan; report to it instead.";
 
 /// What a tool call changed, so the list is read again and the plans saved.
 #[derive(Debug, PartialEq)]
@@ -35,9 +44,11 @@ pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<V
     let Some(server) = server.filter(|s| s.session_of(pane).is_some()) else { return answer(NOT_IN_PANE, true) };
     let key = server.key(pane);
     let hooked = app.hooks.session(&key);
-    let session = hooked.as_ref().map(|(_, s)| s.clone()).filter(|s| !s.is_empty())
-        .or_else(|| body["session"].as_str().map(|s| s.chars().filter(|c| !c.is_control()).take(100).collect()));
-    let caller = Caller { scope: crate::notes::scope_of(&app, &key), agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key };
+    let asked: Option<String> = body["session"].as_str().map(|s| s.chars().filter(|c| !c.is_control()).take(100).collect());
+    let main = hooked.as_ref().map(|(_, s)| s.clone()).filter(|s| !s.is_empty());
+    let other = matches!((&main, &asked), (Some(m), Some(a)) if !a.is_empty() && m != a);
+    let (hooks, session) = (hooked.is_some(), main.or(asked));
+    let caller = Caller { scope: crate::notes::scope_of(&app, &key), agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
     let (a, key, scope) = (app.clone(), caller.key.clone(), caller.scope.clone());
     let done = tokio::task::spawn_blocking(move || {
@@ -66,12 +77,17 @@ fn answer(text: &str, error: bool) -> Json<Value> {
 /// One tool call: (answer, is an error, what changed).
 pub fn run(plans: &Plans, notes: &Notes, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, Changed) {
     let r = match tool {
+        "update_session_plan" if c.other => Err(OTHER_SESSION.to_string()),
         "update_session_plan" => update_plan(plans, c, args, now).map(|t| (t, Changed::Plan)),
         "get_session_plan" => Ok((plan_text(plans, &c.key, working, now), Changed::Nothing)),
         "add_notes_for_user" => add_notes(notes, c, args, now).map(|t| (t, Changed::Notes)),
         "update_notes_for_user" => update_note(notes, c, args, now).map(|t| (t, Changed::Notes)),
         other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user")),
     };
+    let r = r.map(|(t, ch)| match tool {
+        "update_session_plan" | "get_session_plan" if !c.hooks => (format!("{t}\n{HOOKS_OFF}"), ch),
+        _ => (t, ch),
+    });
     match r {
         Ok((t, ch)) => (t, false, ch),
         Err(e) => (e, true, Changed::Nothing),

@@ -13,12 +13,12 @@ use crate::plans::{Details, Row};
 
 /// Each row's plan summary and open notes count (absent without one).
 pub fn mark(app: &Shared, groups: &mut [Value]) {
-    let (now, projects) = (crate::auth::store::unix_now(), crate::notes::projects_of(app));
+    let (now, projects, open) = (crate::auth::store::unix_now(), crate::notes::projects_of(app), app.notes.open_counts());
     for it in groups.iter_mut().flat_map(|g| g["items"].as_array_mut().into_iter().flatten()) {
         let Some(key) = it["id"].as_str().map(str::to_string) else { continue };
         let row = app.plans.row(&key, app.hooks.working(&key), now);
         let scope = Scope { project: projects.get(&key).cloned(), key };
-        put(it, row, app.notes.open(&scope));
+        put(it, row, open.of(&scope));
     }
 }
 
@@ -53,7 +53,17 @@ pub fn tell(pages: &super::Pages, keys: &[String]) {
 /// The `plan` answer for pane `key`: its plan (null without one) and its scope's notes.
 pub fn answer(app: &Shared, key: &str) -> Value {
     let plan = app.plans.details(key, app.hooks.working(key), crate::auth::store::unix_now());
-    reply(key, plan, &app.notes.list(&crate::notes::scope_of(app, key)))
+    let mut v = reply(key, plan, &app.notes.list(&crate::notes::scope_of(app, key)));
+    hooks(&mut v, app.hooks.session(key).is_some());
+    v
+}
+
+/// A plan of a pane terminumd has no hook event from carries `hooks: false` (its agent's
+/// hooks are not installed or not trusted, F8).
+pub fn hooks(v: &mut Value, hooked: bool) {
+    if !hooked && !v["plan"].is_null() {
+        v["plan"]["hooks"] = json!(false);
+    }
 }
 
 /// The `plan` message of pane `key`.

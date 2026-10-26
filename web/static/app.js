@@ -294,7 +294,7 @@ function onMessage(m) {
     case "hostadded": tools.hostAdded(m.name); break;
     case "tmuxadded": tools.tmuxAdded(); break;
     case "tmuxsessions": tools.tmuxChoices(m); break;
-    case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
+    case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg) && !showCurrent.plan.error(m)) status(m.msg); break;   // empty: tmux is back
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
     case "stall": tools.showStall(m); break;

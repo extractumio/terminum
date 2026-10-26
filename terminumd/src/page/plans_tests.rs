@@ -116,3 +116,15 @@ fn plannew_reaches_every_page_once_per_key() {
     tell(&pages, &[]);
     assert!(ra.try_recv().is_err());
 }
+
+#[test]
+fn a_plan_without_hook_events_says_hooks_false() {
+    let d = |hooked: bool, plan: bool| {
+        let mut v = json!({"t": "plan", "plan": if plan { json!({"title": "x"}) } else { Value::Null }});
+        hooks(&mut v, hooked);
+        v
+    };
+    assert_eq!(d(false, true)["plan"]["hooks"], false);
+    assert!(d(true, true)["plan"].get("hooks").is_none(), "hooked: no field");
+    assert!(d(false, false)["plan"].is_null(), "no plan: nothing to say");
+}

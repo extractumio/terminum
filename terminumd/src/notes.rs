@@ -6,7 +6,7 @@
 //! (kept). state/notes.json, 0600, written atomically; a file that cannot be read is set aside
 //! as notes.json.bak, never written over.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use parking_lot::Mutex;
@@ -18,6 +18,10 @@ const VERSION: u64 = 1;
 pub const OPEN_MOST: usize = 100;
 /// Done notes kept at most, the newest.
 pub const DONE_MOST: usize = 500;
+/// Notes kept at most in all: past it the oldest done go first, then the oldest unseen.
+pub const ALL_MOST: usize = 2000;
+/// An open note shown nowhere (orphaned, or its pane gone outside a project) goes this old.
+pub const UNSEEN_DAYS: u64 = 30;
 pub use crate::plans::rules::{clean, KINDS};
 use crate::plans::rules::{NOTE_FILE, NOTES_MOST, NOTE_TEXT};
 
@@ -74,15 +78,27 @@ struct Inner {
 }
 
 impl Inner {
-    /// Keeps the DONE_MOST newest done notes.
-    fn prune(&mut self) {
+    /// Keeps the DONE_MOST newest done notes, drops open notes shown nowhere (orphaned, or
+    /// their pane not in `live` and in no project) once UNSEEN_DAYS old, and holds ALL_MOST in
+    /// all (oldest done first, then oldest unseen). `live`: None when the panes are not known.
+    fn prune(&mut self, now: u64, live: Option<&HashSet<String>>) {
+        let unseen = |n: &Note| n.status == "open" && (n.orphaned || (n.project.is_none() && live.is_some_and(|l| !l.contains(&n.key))));
+        let old = now.saturating_sub(UNSEEN_DAYS * 86_400);
+        self.notes.retain(|n| !(unseen(n) && n.at < old));
         let mut done: Vec<(u64, u64)> = self.notes.iter().filter(|n| n.status == "done").map(|n| (n.done_at.unwrap_or(n.at), n.id)).collect();
-        if done.len() <= DONE_MOST {
-            return;
-        }
         done.sort_unstable_by(|a, b| b.cmp(a));
-        let gone: std::collections::HashSet<u64> = done[DONE_MOST..].iter().map(|(_, id)| *id).collect();
-        self.notes.retain(|n| !gone.contains(&n.id));
+        let mut gone: HashSet<u64> = done.iter().skip(DONE_MOST).map(|(_, id)| *id).collect();
+        let over = |gone: &HashSet<u64>| (self.notes.len() - gone.len()).saturating_sub(ALL_MOST);
+        let kept_done: Vec<u64> = done.iter().take(DONE_MOST).rev().map(|(_, id)| *id).collect();
+        let n = over(&gone);
+        gone.extend(kept_done.into_iter().take(n));
+        let mut hidden: Vec<(u64, u64)> = self.notes.iter().filter(|n| unseen(n)).map(|n| (n.at, n.id)).collect();
+        hidden.sort_unstable();
+        let n = over(&gone);
+        gone.extend(hidden.into_iter().take(n).map(|(_, id)| id));
+        if !gone.is_empty() {
+            self.notes.retain(|n| !gone.contains(&n.id));
+        }
     }
 }
 
@@ -154,7 +170,10 @@ impl Notes {
             ids.push(id);
         }
         // kept only once saved: the agent's retry would make them twice
+        let before = inner.notes.clone();
+        inner.prune(now, None);
         if let Err(e) = self.save(&inner) {
+            inner.notes = before;
             inner.notes.truncate(len);
             inner.next = next;
             return Err(format!("The notes were not saved ({e}); none was added."));
@@ -189,7 +208,7 @@ impl Notes {
         if let Some(k) = kind {
             n.kind = k.to_string();
         }
-        inner.prune();
+        inner.prune(now, None);
         self.save(&inner)
     }
 
@@ -202,7 +221,7 @@ impl Notes {
             "done" | "open" => set_status(&mut inner.notes[i], action, now),
             other => return Err(format!("unknown action {other}: done, open or delete")),
         }
-        inner.prune();
+        inner.prune(now, None);
         self.save(&inner)
     }
 
@@ -215,9 +234,39 @@ impl Notes {
 }
 
 impl Notes {
-    /// How many notes of `scope` are open.
+    /// How many notes of `scope` are open (as a row counts them).
+    #[cfg(test)]
     pub fn open(&self, scope: &Scope) -> usize {
-        self.inner.lock().notes.iter().filter(|n| n.status == "open" && scope.holds(n)).count()
+        self.open_counts().of(scope)
+    }
+
+    /// Open notes counted once for every row: (by project, by pane outside a project).
+    pub fn open_counts(&self) -> OpenCounts {
+        let mut c = OpenCounts::default();
+        for n in self.inner.lock().notes.iter().filter(|n| n.status == "open") {
+            match &n.project {
+                Some(p) => *c.project.entry(p.clone()).or_default() += 1,
+                None if !n.orphaned => *c.pane.entry(n.key.clone()).or_default() += 1,
+                None => {}
+            }
+        }
+        c
+    }
+
+    /// The panes of the servers read now are `live` (keys starting with one of `prefixes`):
+    /// a gone pane's old open notes outside a project go (UNSEEN_DAYS). True when any went.
+    pub fn sweep(&self, prefixes: &[String], live: &HashSet<String>, now: u64) -> Result<bool, String> {
+        let mut inner = self.inner.lock();
+        let len = inner.notes.len();
+        // panes of servers not read now count as live
+        let mut known: HashSet<String> = live.clone();
+        known.extend(inner.notes.iter().filter(|n| !prefixes.iter().any(|p| n.key.starts_with(p.as_str()))).map(|n| n.key.clone()));
+        inner.prune(now, Some(&known));
+        if inner.notes.len() == len {
+            return Ok(false);
+        }
+        self.save(&inner)?;
+        Ok(true)
     }
 
     /// The scope note `id` shows in.
@@ -254,6 +303,20 @@ impl Notes {
             self.save(&inner)?;
         }
         Ok(changed)
+    }
+}
+
+/// `Notes::open_counts`: a scope's open notes are its project's plus its pane's own.
+#[derive(Default)]
+pub struct OpenCounts {
+    project: HashMap<String, usize>,
+    pane: HashMap<String, usize>,
+}
+
+impl OpenCounts {
+    pub fn of(&self, scope: &Scope) -> usize {
+        let own = self.pane.get(&scope.key).copied().unwrap_or(0);
+        own + scope.project.as_ref().and_then(|p| self.project.get(p)).copied().unwrap_or(0)
     }
 }
 

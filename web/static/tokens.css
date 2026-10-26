@@ -23,6 +23,7 @@
   --chrome-2: var(--surface-3);
   --line: color-mix(in srgb, var(--t-fg) 16%, var(--t-bg));        /* the few lines left: tree guides, rendered content */
   --muted: color-mix(in srgb, var(--t-fg) 58%, var(--t-bg));       /* secondary text, idle icons, placeholders */
+  --muted-text: var(--muted);                                       /* small secondary text that must reach 4.5:1: fg 75% on a light theme (below) */
   --faint: color-mix(in srgb, var(--t-fg) 40%, var(--t-bg));       /* a quiet dot, a disabled glyph */
   --shadow-a: 40%;                                                  /* 18% on a light theme (below) */
   --shadow-near: 0 2px 8px -2px color-mix(in srgb, #000 calc(var(--shadow-a) * .5), transparent);   /* a blob: a soft lift, never a black halo */
@@ -125,6 +126,8 @@
 /* a light theme (app.js sets .light): shadows lift rather than stain, folder hues darken; the
    material's light shows only where it is brighter than the surface, its shade is softer */
 :root.light { --shadow-a: 18%; --dir-l: .62; --dir-c: .11;
+  /* --muted (3.2-3.6:1) and danger 80% (3.1:1) fall under 4.5:1 for small text on a light theme */
+  --muted-text: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); --danger-text: color-mix(in srgb, var(--danger) 45%, var(--t-fg));
   --m-hi: rgb(255 255 255 / .7); --m-lo: rgb(0 0 0 / .1); --m-hi-ctl: rgb(255 255 255 / .8); --m-lo-ctl: rgb(0 0 0 / .16);
   --m-drop: rgb(0 0 0 / .08); --m-well-a: rgb(0 0 0 / .14); --m-well-ring: rgb(0 0 0 / .1);
   --m-matte: linear-gradient(180deg, rgb(255 255 255 / .3), rgb(0 0 0 / .03)); --m-seam: 0 1px 0 rgb(0 0 0 / .12), 0 2px 0 rgb(255 255 255 / .5);

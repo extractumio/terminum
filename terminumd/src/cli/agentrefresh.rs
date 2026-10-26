@@ -5,8 +5,10 @@
 
 use std::time::Duration;
 
-use super::agentsetup::{self, codex_home, codex_mcp_add, install_claude, installed, marker, mcp_installed, plugin_dir,
-                        program, remove_claude, remove_codex, replace_checked, resolved};
+use super::agentsetup::{self, claude, codex_home, codex_mcp_add, installed, marker, mcp_installed, plugin_dir, program,
+                        remove_claude, remove_codex, replace_checked, resolved, write_plugin, MARKET, PLUGIN};
+use serde_json::Value;
+
 use super::Ctx;
 
 /// One `claude` call's limit here: a local marketplace answers in a second or two; a claude that
@@ -18,18 +20,55 @@ fn warn(ctx: &Ctx, agent: &str, what: &str, e: &str) {
 }
 
 /// After an install or upgrade came up: Claude Code's plugin installed again when it was made by
-/// another build or lacks its MCP server; Codex's MCP block made current (hooks.json untouched).
+/// another build or lacks its MCP server; Codex's MCP block made current (hooks.json untouched but for codex_end).
 pub fn refresh(ctx: &Ctx) {
     if installed(ctx, "claude") {
         let made = std::fs::read_to_string(marker(ctx)).unwrap_or_default();
         if (made.trim() != crate::config::build_id() || !plugin_dir(ctx).join(".mcp.json").is_file())
-            && let Err(e) = install_claude(ctx, QUICK) {
-            warn(ctx, "claude", "terminum's plugin was not refreshed", &e);
+            && let Err(e) = update_claude(ctx) {
+            warn(ctx, "claude", "terminum's plugin was not refreshed; the one installed stays", &e);
         }
     }
     if installed(ctx, "codex") && let Err(e) = codex_mcp(ctx) {
         warn(ctx, "codex", "terminum's MCP server was not refreshed", &e);
     }
+    if installed(ctx, "codex") && let Err(e) = codex_end(ctx) {
+        warn(ctx, "codex", "terminum's SessionEnd hook was not made synchronous", &e);
+    }
+}
+
+/// hooks.json's one change a refresh makes: terminum's SessionEnd entry without `async`, only
+/// in a file as terminum writes it (every other byte kept); otherwise untouched.
+fn codex_end(ctx: &Ctx) -> Result<(), String> {
+    let path = resolved(&codex_home(ctx).join("hooks.json"))?;
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    let mut v: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
+    let pretty = |v: &serde_json::Value| serde_json::to_string_pretty(v).map(|t| t + "\n").map_err(|e| e.to_string());
+    let was = pretty(&v)?;
+    if !codex_sync_end(&mut v, &agentsetup::command(ctx, "codex")) {
+        return Ok(());
+    }
+    if was != text {
+        return Err(format!("{} is laid out by hand, so it was left as it is", ctx.shown(&path)));
+    }
+    replace_checked(&path, Some(&text), &pretty(&v)?)?;
+    ctx.say(CODEX_RETRUST);
+    Ok(())
+}
+
+/// This build's plugin over the installed one, never taken out first (a failing claude would
+/// leave no hooks): the local marketplace updated, the plugin updated, then seen in `plugin list`.
+fn update_claude(ctx: &Ctx) -> Result<(), String> {
+    write_plugin(ctx)?;
+    claude(ctx, QUICK, &["plugin", "marketplace", "update", MARKET])?;
+    claude(ctx, QUICK, &["plugin", "update", PLUGIN])?;
+    let list = claude(ctx, QUICK, &["plugin", "list"])?;
+    if !list.contains(PLUGIN) {
+        return Err(format!("claude plugin list does not show {PLUGIN}"));
+    }
+    std::fs::write(marker(ctx), crate::config::build_id()).map_err(|e| e.to_string())?;
+    ctx.say("Claude Code: terminum's plugin (hooks and MCP server) is updated; sessions started from now on use it.");
+    Ok(())
 }
 
 /// Codex's config.toml with this build's MCP block, said only when it changed.
@@ -54,3 +93,19 @@ pub fn remove(ctx: &Ctx) {
         ctx.say(format!("Warning: Codex: terminum's hooks or MCP server were not removed ({e}); take terminum's lines out of hooks.json and config.toml"));
     }
 }
+
+/// Codex runs an async SessionEnd hook synchronously and warns at each start: terminum's
+/// SessionEnd entry loses its `async` (only that entry). True when it had one.
+pub fn codex_sync_end(v: &mut Value, cmd: &str) -> bool {
+    let mut changed = false;
+    let ends = v.get_mut("hooks").and_then(|h| h.get_mut("SessionEnd")).and_then(Value::as_array_mut);
+    for e in ends.into_iter().flatten() {
+        for h in e.get_mut("hooks").and_then(Value::as_array_mut).into_iter().flatten().filter(|h| h["command"] == cmd) {
+            changed |= h.as_object_mut().and_then(|o| o.remove("async")).is_some();
+        }
+    }
+    changed
+}
+
+/// What install and refresh say when terminum's SessionEnd entry changed (its trust hash with it).
+pub const CODEX_RETRUST: &str = "Codex: trust terminum's changed SessionEnd hook in /hooks once.";

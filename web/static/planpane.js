@@ -16,7 +16,7 @@ const STATUS = { completed: "completed", in_progress: "in progress", pending: "p
 /** send(msg) to terminumd; sid(): the shown pane's key; toChat(text): pasted into its input, no Enter. */
 export function planPane({ send, sid, toChat }) {
   const fab = $("curplan");
-  let of = null, shown = null, waiting = false;      // the key the pane shows; the shown row (layout); asked, no answer yet
+  let of = null, shown = null, waiting = false, acted = false;   // the key the pane shows; the shown row (layout); asked, no answer yet; a note act sent, no answer yet
   const pane = fabPane({ fab, pane: $("planpane"), close: $("planclose"), onToggle: (on) => {
     of = on ? sid() : null;
     if (on) { $("planbody").replaceChildren(el("p", "plmeta", "Loading…")); ask(); place(); }
@@ -45,12 +45,25 @@ export function planPane({ send, sid, toChat }) {
   function onMessage(m) {
     if (!pane.open() || m.key !== of) return;
     if (m.t === "plannew") return void ask();
-    waiting = false;
-    draw(m.plan, orderNotes(m.notes));
+    waiting = false; acted = false;
+    draw(m.plan, orderNotes(m.notes), m.hooks);
   }
 
-  function draw(p, notes) {
+  /** terminumd's refusal of a note act (an {"t":"error"} of the pane's key): shown in the pane, true when it was. */
+  function error(m) {
+    if (!pane.open() || !acted || (m.sid && m.sid !== of)) return false;
+    acted = false;
+    $("planbody").querySelector(".plerr")?.remove();
+    const e = el("p", "plerr", m.msg);
+    e.setAttribute("role", "alert");
+    $("planbody").prepend(e);
+    return true;
+  }
+  const note = (id, act) => { acted = true; send({ t: "note", key: of, id, act }); };
+
+  function draw(p, notes, hooks) {
     const body = [];
+    if (hooks === false) body.push(el("p", "plmeta plhooks", "terminum's hooks are not running in this session (Codex: trust them in /hooks)."));
     if (!p) body.push(el("p", "plmeta", "No plan for this session."));
     else {
       if (p.title) body.push(el("h3", "pltitle", p.title));
@@ -92,19 +105,25 @@ export function planPane({ send, sid, toChat }) {
     act(INSERT, () => { pane.toggle(false); toChat(noteChat(n)); }, "tochat");
     const del = el("button", "del", "Delete");                  // asks again: a second press deletes it
     del.type = "button";
-    armed(del, () => ["Delete"], () => send({ t: "note", key: of, id: n.id, act: "delete" }));
+    armed(del, () => ["Delete"], () => note(n.id, "delete"));
     acts.append(del);
-    if (n.status === "open") act("Done", () => send({ t: "note", key: of, id: n.id, act: "done" }), "primary");
-    else act("Reopen", () => send({ t: "note", key: of, id: n.id, act: "open" }));
+    if (n.status === "open") act("Done", () => note(n.id, "done"), "primary");
+    else act("Reopen", () => note(n.id, "open"));
     li.append(acts);
     return li;
   }
 
   $("planclose").replaceChildren(icon("x", 16));
-  return { header, onMessage, place };
+  new MutationObserver(place).observe($("status").parentElement, { subtree: true, attributes: true, attributeFilter: ["hidden"] });   // a banner shown or gone moves it
+  return { header, onMessage, error, place };
   /** Placed by fabpane; as a phone's sheet, its top at the header's bottom. */
   function place() {
+    if (!pane.open()) return;
     pane.place();
-    if ("sheet" in $("planpane").dataset) $("planpane").style.setProperty("--plan-top", `${Math.round($("bar").getBoundingClientRect().bottom)}px`);
+    const p = $("planpane"), shown = [...document.querySelectorAll(".banner")].filter((b) => !b.hidden && b.offsetParent);
+    const below = Math.round(Math.max($("bar").getBoundingClientRect().bottom, ...shown.map((b) => b.getBoundingClientRect().bottom)));
+    if ("sheet" in p.dataset) return void p.style.setProperty("--plan-top", `${below}px`);
+    const top = p.getBoundingClientRect().top;                     // beside its button, under the banners shown (UI-GUIDELINES §6)
+    if (shown.length && top < below + 8) p.style.top = `${p.offsetTop + below + 8 - Math.round(top)}px`;
   }
 }

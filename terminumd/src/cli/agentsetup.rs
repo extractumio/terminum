@@ -26,9 +26,9 @@ use super::Ctx;
 pub use crate::tmux::hookstate::AGENTS;
 const NAME: &str = "terminum";
 /// The local marketplace terminum's plugin comes from (named apart from any other "terminum").
-const MARKET: &str = "terminum-local";
+pub(super) const MARKET: &str = "terminum-local";
 /// terminum's plugin as Claude Code names it.
-const PLUGIN: &str = "terminum@terminum-local";
+pub(super) const PLUGIN: &str = "terminum@terminum-local";
 const CLAUDE_EVENTS: [&str; 12] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest",
                                     "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "SessionEnd"];
 const CODEX_EVENTS: [&str; 10] = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop",
@@ -121,6 +121,7 @@ pub fn codex_add(text: Option<&str>, cmd: &str) -> Result<Value, String> {
     if v["hooks"].is_null() {
         v["hooks"] = json!({});
     }
+    super::agentrefresh::codex_sync_end(&mut v, cmd);
     let hooks = v["hooks"].as_object_mut().expect("an object");
     for e in CODEX_EVENTS {
         let list = hooks.entry(e).or_insert_with(|| json!([]));
@@ -129,6 +130,9 @@ pub fn codex_add(text: Option<&str>, cmd: &str) -> Result<Value, String> {
             let mut ours = entry(cmd);
             if CODEX_TOOL_EVENTS.contains(&e) {
                 ours["matcher"] = json!(".*");
+            }
+            if e == "SessionEnd" {
+                ours["hooks"][0].as_object_mut().map(|h| h.remove("async"));
             }
             l.push(ours);
         }
@@ -329,7 +333,7 @@ fn backup(path: &Path) -> Result<(), String> {
 /// and an uninstall use `QUICK` (agentrefresh).
 pub(super) const ASKED: std::time::Duration = std::time::Duration::from_secs(60);
 
-fn claude(ctx: &Ctx, wait: std::time::Duration, args: &[&str]) -> Result<String, String> {
+pub(super) fn claude(ctx: &Ctx, wait: std::time::Duration, args: &[&str]) -> Result<String, String> {
     let prog = on_path(ctx, "claude").ok_or("claude is not on PATH")?;
     let mut cmd = std::process::Command::new(prog);
     cmd.args(args).env("PATH", ctx.var("PATH").unwrap_or(""));
@@ -339,14 +343,7 @@ fn claude(ctx: &Ctx, wait: std::time::Duration, args: &[&str]) -> Result<String,
 }
 
 pub(super) fn install_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(), String> {
-    let market = ctx.root.join("hooks/claude");
-    let plugin = plugin_dir(ctx);
-    write(&market.join(".claude-plugin/marketplace.json"), &json!({"name": MARKET, "owner": {"name": "terminum"}, "description": "terminum's hooks for Claude Code",
-        "plugins": [{"name": NAME, "source": "./plugins/terminum", "description": "terminum: the session's states, prompts and subagents"}]}))?;
-    write(&plugin.join(".claude-plugin/plugin.json"), &json!({"name": NAME, "version": crate::config::build_id(), "author": {"name": "terminum"},
-        "description": "terminum: tells terminumd what this session does (terminum hooks)"}))?;
-    write(&plugin.join("hooks/hooks.json"), &claude_hooks(&command(ctx, "claude")))?;
-    write(&plugin.join(".mcp.json"), &json!({"mcpServers": {NAME: {"command": program(ctx), "args": ["mcp"]}}}))?;
+    let market = write_plugin(ctx)?;
     // added anew each time, so Claude Code copies this build's plugin, not one it cached before;
     // a claude that does not answer is not waited for again
     if let Err(e) = claude(ctx, wait, &["plugin", "uninstall", PLUGIN]) && e.contains("no answer within") { return Err(e) }
@@ -356,6 +353,19 @@ pub(super) fn install_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(),
     std::fs::write(marker(ctx), crate::config::build_id()).map_err(|e| e.to_string())?;
     ctx.say("Claude Code: terminum's plugin (hooks and MCP server) is installed; sessions started from now on use it.");
     Ok(())
+}
+
+/// This build's plugin written into terminum's local marketplace; the marketplace's folder.
+pub(super) fn write_plugin(ctx: &Ctx) -> Result<PathBuf, String> {
+    let market = ctx.root.join("hooks/claude");
+    let plugin = plugin_dir(ctx);
+    write(&market.join(".claude-plugin/marketplace.json"), &json!({"name": MARKET, "owner": {"name": "terminum"}, "description": "terminum's hooks for Claude Code",
+        "plugins": [{"name": NAME, "source": "./plugins/terminum", "description": "terminum: the session's states, prompts and subagents"}]}))?;
+    write(&plugin.join(".claude-plugin/plugin.json"), &json!({"name": NAME, "version": crate::config::build_id(), "author": {"name": "terminum"},
+        "description": "terminum: tells terminumd what this session does (terminum hooks)"}))?;
+    write(&plugin.join("hooks/hooks.json"), &claude_hooks(&command(ctx, "claude")))?;
+    write(&plugin.join(".mcp.json"), &json!({"mcpServers": {NAME: {"command": program(ctx), "args": ["mcp"]}}}))?;
+    Ok(market)
 }
 
 pub(super) fn remove_claude(ctx: &Ctx, wait: std::time::Duration) -> Result<(), String> {
@@ -379,7 +389,12 @@ fn install_codex(ctx: &Ctx) -> Result<(), String> {
     } else {
         let json = serde_json::to_string_pretty(&v).map_err(|e| e.to_string())? + "\n";
         replace_checked(&path, text.as_deref(), &json)?;
-        ctx.say(format!("Codex: terminum's hooks are in {}. Codex runs a hook only once you trust it: open /hooks in Codex and trust terminum's.", ctx.shown(&path)));
+        let mut old = text.as_deref().and_then(|t| serde_json::from_str::<Value>(t).ok()).unwrap_or_default();
+        if super::agentrefresh::codex_sync_end(&mut old, &command(ctx, "codex")) {
+            ctx.say(super::agentrefresh::CODEX_RETRUST);
+        } else {
+            ctx.say(format!("Codex: terminum's hooks are in {}. Codex runs a hook only once you trust it: open /hooks in Codex and trust terminum's.", ctx.shown(&path)));
+        }
     }
     if toml.as_deref() == Some(new_toml.as_str()) {
         ctx.say("Codex: terminum's MCP server is in already.");

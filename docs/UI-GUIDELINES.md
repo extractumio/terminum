@@ -40,6 +40,7 @@ Elevation is a step of background, never a line: each surface is `--t-fg` mixed 
 | `--surface-4` | Hover and pressed on a floating surface; Cancel in a form (`fg 18%`). |
 | `--line` | The few lines left: tree guides (`.kids`, the Panel's guides), rendered content, a field's resting ring on a light theme (`fg 16%`). |
 | `--muted`, `--faint` | Secondary text, idle icons, placeholders (`fg 58%`); a quiet dot (`fg 40%`). |
+| `--muted-text` | Small secondary text that must reach 4.5:1 (the plan's percent, progress and pane text): `--muted`, on a light theme `fg 75%` (`--muted` is 3.2–3.6:1 there). |
 | `--shadow-near`, `--shadow-far` | A floating button's shadow; a box's: its edges (`--m-edge`, §2.7) and a deep drop, `#000` at `--shadow-a` (40%, 18% on a light theme). |
 | `--accent` | The theme's cursor color: selection, primary button fill, active tab. |
 | `--ring` | The focus ring: `--accent`, or `--t-fg` when the accent is under 3:1 against `--t-bg` (contrast.js). |
@@ -64,7 +65,7 @@ Selected list row: `color-mix(in srgb, var(--accent) 16%, var(--chrome))`. Press
 | Bookmark and reminder marks | `.wave.mark`, `.wave.remind` (marks.css) | Wavy lines beside a row's folder bar, never a straight strip; side by side when a project has both. |
 | Reminder | `--remind: #e8a3dc`, text on it `--remind-ink: #2a0f25`, its text on the theme `--remind-text` (mixed into `--t-fg`) (reminders.css) | The bell, its count, its pane's primary and "up now", a row's strip, the dialog's primary for a reminder. |
 | This Mac / a host | `--local: #4f9dff`, `--remote: #a98bff`; `--host-label: cornflowerblue` | Rows, group labels, `.tsess` pill. |
-| Danger / error | `--danger: #ff6b5e` (a dot or icon), `--danger-text` (= danger 80% into `--t-fg`: every error text), `--danger-fill: #b3372e` (fills, white text) | Remove/Close/Sign out, error lines, a failed host's state, `#status`, confirm primary, armed delete. |
+| Danger / error | `--danger: #ff6b5e` (a dot or icon), `--danger-text` (= danger 80% into `--t-fg`, 45% on a light theme for 4.5:1: every error text), `--danger-fill: #b3372e` (fills, white text) | Remove/Close/Sign out, error lines, a failed host's state, `#status`, confirm primary, armed delete. |
 | Done / ok | `--ok-fill: #2f7d4f` | `#restored`, update chip. |
 | Warning / waiting | `--warn-fill: #9a6a12`; `--waiting: #ffb020` (a dot or edge, never text) | `#stall`, `#sized`, Screen label warn, waiting cards. |
 | Text on the bookmark color | `#1b1200` | `#markbox .primary`. |

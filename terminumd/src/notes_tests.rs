@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::HashSet;
 use crate::testutil::fresh_dir;
 
 fn pane(key: &str) -> Scope {
@@ -206,4 +207,60 @@ fn bidi_controls_are_dropped_and_length_counts_after_cleaning() {
     assert_eq!(n.list(&s)[0].text, "ab");
     let padded = format!("{}{}", "x".repeat(1000), "\u{200F}".repeat(10));
     assert!(n.add(&s, "", vec![new("bug", &padded)], 1).is_ok());
+}
+
+const DAY: u64 = 86_400;
+
+#[test]
+fn unseen_open_notes_go_once_30_days_old_kept_ones_stay() {
+    let n = Notes::load(None);
+    let (gone, live, member) = (pane("tmux:local:t:%1"), pane("tmux:local:t:%2"), project("tmux:local:t:%3", "P"));
+    n.add(&gone, "s", vec![new("bug", "old gone")], 1).unwrap();
+    n.add(&live, "s", vec![new("bug", "old live")], 1).unwrap();
+    n.add(&member, "s", vec![new("bug", "old project")], 1).unwrap();
+    let now = 1 + 31 * DAY;
+    n.add(&pane("tmux:local:t:%4"), "s", vec![new("bug", "new gone")], now - DAY).unwrap();
+    let keys: HashSet<String> = ["tmux:local:t:%2".to_string()].into();
+    assert!(n.sweep(&["tmux:local:t:".into()], &keys, now).unwrap());
+    let texts: Vec<String> = n.inner.lock().notes.iter().map(|x| x.text.clone()).collect();
+    assert_eq!(texts, ["old live", "old project", "new gone"], "a gone pane's young note and project notes stay");
+    // another server's panes are not judged by this list
+    n.add(&pane("tmux:devbox:t:%1"), "s", vec![new("bug", "other host")], 1).unwrap();
+    assert!(!n.sweep(&["tmux:local:t:".into()], &keys, now).unwrap(), "a second sweep changes nothing");
+    assert_eq!(n.list(&pane("tmux:devbox:t:%1")).len(), 1);
+}
+
+#[test]
+fn orphaned_notes_go_after_30_days_on_any_change() {
+    let n = Notes::load(None);
+    let s = pane("tmux:local:t:%1");
+    for day in 0..3 {
+        n.add(&s, "s", vec![new("bug", "x")], 1 + day * DAY).unwrap();
+        n.seen("tmux:local:t:", &format!("server{day}")).unwrap();   // a restart each day
+    }
+    assert_eq!(n.inner.lock().notes.len(), 3);
+    n.add(&s, "s", vec![new("bug", "fresh")], 32 * DAY).unwrap();
+    let left: Vec<u64> = n.inner.lock().notes.iter().map(|x| x.at).collect();
+    assert_eq!(left, [1 + 2 * DAY, 32 * DAY], "orphans over 30 days old went, the younger stays");
+}
+
+#[test]
+fn all_notes_are_capped_oldest_done_then_oldest_unseen() {
+    let n = Notes::load(None);
+    {
+        let mut i = n.inner.lock();
+        let mk = |id: u64, status: &str, orphaned: bool| Note { id, kind: "bug".into(), text: "x".into(), file: None, status: status.into(),
+            at: id, done_at: (status == "done").then_some(id), key: format!("tmux:local:t:%{id}"), session: String::new(), project: None, orphaned };
+        i.notes = (1..=DONE_MOST as u64).map(|id| mk(id, "done", false)).collect();
+        i.notes.extend((1001..=2500).map(|id| mk(id, "open", true)));
+        i.notes.extend((3001..=3600).map(|id| mk(id, "open", false)));
+        i.next = 4000;
+    }
+    n.add(&pane("tmux:local:t:%9999"), "s", vec![new("bug", "y")], 5000).unwrap();
+    let i = n.inner.lock();
+    assert_eq!(i.notes.len(), ALL_MOST);
+    assert_eq!(i.notes.iter().filter(|x| x.status == "done").count(), 0, "all done went first");
+    let orphans = i.notes.iter().filter(|x| x.orphaned).map(|x| x.id).min();
+    assert_eq!(orphans, Some(1102), "then the 101 oldest orphaned");
+    assert_eq!(i.notes.iter().filter(|x| !x.orphaned).count(), 601, "visible open notes are never capped away");
 }

@@ -18,11 +18,12 @@ const MAX_LINE: usize = 1 << 20;
 const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_VERSION: &str = "2025-06-18";
 
-pub const INSTRUCTIONS: &str = "terminum shows this session's plan and progress to the user. Keep a plan: \
-with your own plan tool (TaskCreate/TaskUpdate, update_plan), or, if you have none, update_session_plan with \
-the whole list. Call update_session_plan with doing (the current step) and eta_minutes when you start a long \
-task, when a step changes, and at least every 10 minutes of work. Record bugs, deferred work and follow-ups \
-you will not do now with add_notes_for_user. If a tool says the session is not in terminum, stop calling.";
+pub const INSTRUCTIONS: &str = "terminum shows the user your plan and progress. Keep a plan: your own plan tool \
+(TaskCreate/TaskUpdate, update_plan), else update_session_plan with the whole list. Call \
+update_session_plan with doing (the current step) and eta_minutes as a long task starts, at each step \
+and at least every 10 minutes of work. Only the main agent calls update_session_plan; subagents report \
+to it. Record bugs, deferred work and follow-ups you leave with add_notes_for_user. If a tool says you \
+are not in terminum, stop calling.";
 
 pub use crate::plans::rules::NOT_IN_PANE;
 use crate::plans::rules::{self, KINDS, NOTE_STATUSES, STATUSES};

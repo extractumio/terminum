@@ -3,7 +3,7 @@ use crate::testutil::fresh_dir;
 
 fn caller(project: Option<&str>) -> Caller {
     let key = "tmux:local:t:%1".to_string();
-    Caller { scope: Scope { key: key.clone(), project: project.map(String::from) }, agent: "claude".into(), session: Some("s1".into()), key }
+    Caller { scope: Scope { key: key.clone(), project: project.map(String::from) }, agent: "claude".into(), session: Some("s1".into()), key, hooks: true, other: false }
 }
 
 fn go(plans: &Plans, notes: &Notes, c: &Caller, tool: &str, args: Value) -> (String, bool, Changed) {
@@ -100,4 +100,32 @@ fn a_call_of_an_unknown_agent_after_a_restart_keeps_the_plan() {
     assert!(!err && t.contains("not taken"), "{t}");
     assert_eq!(p.archived(), 0);
     assert!(go(&p, &n, &c, "update_session_plan", json!({"items": [{"text": "b", "status": "pending"}], "eta_minutes": 5.0})).1, "a float ETA is refused");
+}
+
+#[test]
+fn without_hook_events_the_plan_answers_say_hooks_are_off() {
+    let (p, n) = (Plans::default(), Notes::load(None));
+    let c = Caller { hooks: false, agent: crate::plans::UNKNOWN.into(), ..caller(None) };
+    let items = json!([{"text": "a", "status": "pending"}]);
+    let (t, err, _) = go(&p, &n, &c, "update_session_plan", json!({"items": items}));
+    assert!(!err && t.ends_with(&format!("\n{HOOKS_OFF}")), "{t}");
+    let (t, _, _) = go(&p, &n, &c, "get_session_plan", json!({}));
+    assert!(t.starts_with("[ ] a") && t.ends_with(HOOKS_OFF), "{t}");
+    let (t, _, _) = go(&p, &n, &c, "add_notes_for_user", json!({"notes": [{"kind": "bug", "text": "x"}]}));
+    assert!(!t.contains(HOOKS_OFF), "notes answers stay as they are");
+    let (t, _, _) = go(&p, &n, &caller(None), "get_session_plan", json!({}));
+    assert!(!t.contains(HOOKS_OFF), "hooked: no line");
+}
+
+#[test]
+fn another_sessions_plan_update_is_not_applied() {
+    let (p, n, c) = (Plans::default(), Notes::load(None), caller(None));
+    go(&p, &n, &c, "update_session_plan", json!({"items": [{"text": "main", "status": "in_progress"}], "doing": "main step"}));
+    let sub = Caller { other: true, ..caller(None) };
+    let (t, err, ch) = go(&p, &n, &sub, "update_session_plan", json!({"items": [{"text": "sub", "status": "pending"}], "doing": "sub step", "eta_minutes": 5}));
+    assert!(err && t == OTHER_SESSION && ch == Changed::Nothing, "{t}");
+    let (t, _, _) = go(&p, &n, &c, "get_session_plan", json!({}));
+    assert!(t.starts_with("[>] main\nDoing: main step") && !t.contains("ETA"), "{t}");
+    let (t, err, _) = go(&p, &n, &sub, "get_session_plan", json!({}));
+    assert!(!err && t.starts_with("[>] main"), "a subagent may read it: {t}");
 }
