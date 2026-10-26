@@ -144,6 +144,7 @@ fn update_plan(plans: &Plans, c: &Caller, args: &Value, now: u64) -> Result<Stri
 }
 
 /// `at` (unix s) as local HH:MM.
+#[allow(deprecated)] // the libc crate marks musl's time_t deprecated ahead of its move to 64 bits
 fn clock(at: u64) -> String {
     let t = at as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
