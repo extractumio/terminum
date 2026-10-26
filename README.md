@@ -29,6 +29,9 @@ lives in tmux, so nothing is lost when you close a tab, switch devices or reboot
   terminum's MCP server, through which the agent keeps the session's plan, progress and notes for
   you (in Codex a marked block in `~/.codex/config.toml`; trust terminum's hooks once in Codex's
   `/hooks` and restart running Codex sessions). Outside terminum the server offers no tools.
+- **Plans, progress and notes.** Each agent session shows its plan as a percent in the list;
+  the Plan pane has the steps, the agent's ETA and the notes it left you (bugs, follow-ups,
+  questions), with Done and Insert into chat. Agents on your ssh hosts too, once enabled per host.
 - **Alerts across sessions.** See at a glance which agent waits for you, and which finished while
   you were away, without opening each session.
 - **Quote & Ask.** Select any output, ask about it, and the quote and your question go straight

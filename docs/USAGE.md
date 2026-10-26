@@ -194,6 +194,59 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   file's row: its folder; below the rows: the root), on this Mac or the pane's host; the folder
   shows while you drag. A name already there asks Keep Both or Skip: nothing is written over.
 
+## Plans, progress and notes
+
+With terminum's hooks installed (`terminum hooks install`, above), a coding agent's plan shows
+where it is:
+
+- **Where**: the session's row shows "43%" right of its title over a thin track (hover: "3 of 7 ·
+  updated 2 min ago"); the shown session's header shows "3/7 · 43% · 2 min ago". The percent is
+  the items completed of all, never the agent's own guess; it dims when the plan is stale.
+- **The Plan pane**: press the percent on a row (it shows that session) or the header's
+  progress; by keyboard, Tab to the header's progress and press Enter or Space; Esc or × closes
+  it. It shows the plan's title, the current step, the items, the agent's ETA ("~17:40 (agent's
+  estimate, given 16:55)") and when it was updated, then the notes. Everything the agent wrote is
+  shown as plain text.
+- **Marks**: ✓ completed, ▶ in progress, ○ pending, ⚠ blocked. "partial: some updates were
+  missed" means an update named an item terminum never saw; the next whole list heals it.
+- **Notes for you**: bugs, deferred work, follow-ups and questions the agent left, under the
+  plan: Done (Reopen undoes it), Delete (asks once), Insert into chat (pastes the note into the
+  pane's input, never Enter). Notes of a project's session show in every session of the project.
+- **How agents feed it**: their own plan tool, read from their hooks (Claude Code's tasks and
+  TodoWrite, Codex's update_plan where it has one), and terminum's MCP server `terminum mcp`
+  (update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user): the
+  current step, an ETA in minutes, and the plan itself for an agent without a plan tool (Codex
+  0.164 has none). A new agent session in the pane starts with no plan.
+- **The reminder**: when a working agent has not updated its plan for 10–30 minutes (by the
+  turn's length), terminum asks it once through the hook's answer (Claude Code: a synchronous
+  PostToolBatch hook; Codex: its PostToolUse); nothing is typed into the pane, and an idle,
+  waiting or finished plan is never reminded.
+
+### When the Plan pane is empty or wrong
+
+- **No percent at all**: terminum's hooks are not installed (`terminum hooks` says), or Codex
+  does not trust them yet (open `/hooks` in Codex and trust terminum's, the changed SessionEnd
+  one too); the pane then says "terminum's hooks are not running in this session".
+- **The session started before the install or an upgrade**: restart it; agents read their
+  plugins and `config.toml` only when they start.
+- **Not a terminum pane**: an agent in another terminal, or under sudo, su, a container or a
+  nested ssh, is not seen; its MCP tools answer that the session does not run in a terminum pane.
+- **terminumd is down**: the tools answer "terminum is not running"; `terminum status`, then
+  `terminum restart`.
+- **After `terminum rollback`** the hooks and the MCP server keep working: they run
+  `~/.terminum/bin/terminum`, which a rollback never moves (it stays the newest build's); an MCP
+  tool the older terminumd does not know fails as a tool error, never the agent.
+- **"MCP server failed" in Claude Code or Codex** after `terminum uninstall` or `terminum
+  upgrade --to` a release older than 0.23.0 (an upgrade does move `~/.terminum/bin/terminum`): the
+  older build has no `terminum mcp`. Run `terminum hooks remove` with the newer build first;
+  after the fact, delete Codex's block between `# >>> terminum: MCP server …` and `# <<<
+  terminum` in `~/.codex/config.toml` and run `terminum hooks install` with the build you kept.
+- **A host's agents do not show**: see Remote hosts below.
+- **Stored where**: `~/.terminum/state/plans.json` and `~/.terminum/state/notes.json`. To clear
+  them, stop terminumd first (`launchctl bootout gui/$(id -u)/io.terminum.terminumd`; on Linux
+  `systemctl --user stop io.terminum.terminumd`), remove the files, then `terminum restart`;
+  terminals live in tmux and are not touched.
+
 ## Your own tmux sessions
 
 ```bash
@@ -313,7 +366,22 @@ terminum hosts off|on|retry|remove|files-remove devbox
 
 `hosts agents devbox on` (or the host menu's "Coding agents' progress on devbox…") puts terminum's
 hooks and MCP server into Claude Code and Codex on devbox (`~/.claude`, `~/.codex`) and prints one
-line per agent; Codex asks once to trust them in `/hooks`. `off` takes them out again.
+line per agent: installed, not found, needs Codex trust (/hooks), uses devbox's own terminum,
+refused (a terminum entry of another command) or failed and why. Codex asks once to trust them in
+`/hooks`; restart agent sessions already running there. devbox's rows and Plan pane then show its
+agents as local ones (Plans, progress and notes, above). `off`, or removing the host, takes them
+out again; nothing is written to devbox's `~/.claude` or `~/.codex` before you turn it on.
+
+The events ride on the Files helper's ssh as a reverse Unix-socket forward, so devbox's sshd must
+allow it: `AllowStreamLocalForwarding yes` (the default) and, on Alpine, `AllowTcpForwarding yes`
+(its stock value is `no`). When only this reverse forward is refused (`AllowStreamLocalForwarding
+local`), the host menu and `terminum hosts` say "forwarding refused by devbox's sshd", Files keep
+working, and the forward is tried again every 10 minutes. `DisableForwarding yes` or
+`AllowStreamLocalForwarding no` refuse the Files tunnel too (it forwards a socket the other way);
+Dropbear forwards no Unix socket in either direction, so neither Files nor agents work there:
+Files say "forwarding refused by devbox's sshd (…)" and "Files cannot reach the helper". Only agents in devbox's default tmux server are
+seen; an account with a ForceCommand or a login file that ends the session shows the ssh's last
+lines in the host menu instead.
 
 A host is its ssh string (options `-p -l -i -J -4 -6 -C`); terminumd holds its tmux session
 `terminum` over ssh (and the host's other sessions you attach, above), reconnects after a drop, and browses its files through a helper it copies

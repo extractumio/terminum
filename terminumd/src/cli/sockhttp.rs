@@ -6,7 +6,7 @@
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
@@ -14,12 +14,11 @@ use serde_json::{json, Value};
 #[derive(Debug)]
 pub struct Down;
 
-/// (status, parsed JSON or None) of one request; a POST always carries a JSON body.
+/// (status, parsed JSON or None) of one request; a POST always carries a JSON body. `timeout`
+/// is the whole call's: connect, write and every read share it.
 pub fn call(sock: &Path, method: &str, path: &str, body: Option<&Value>, timeout: Duration) -> Result<(u16, Option<Value>), Down> {
-    let down = |_| Down;
-    let mut s = UnixStream::connect(sock).map_err(down)?;
-    s.set_read_timeout(Some(timeout)).map_err(down)?;
-    s.set_write_timeout(Some(timeout)).map_err(down)?;
+    let end = Instant::now() + timeout;
+    let mut s = crate::runlink::connect_within(sock, timeout).map_err(|_| Down)?;
     let mut req = format!("{method} {path} HTTP/1.0\r\nHost: localhost\r\n");
     let data = if method == "GET" { None } else { Some(body.cloned().unwrap_or_else(|| json!({})).to_string()) };
     if let Some(d) = &data {
@@ -27,9 +26,25 @@ pub fn call(sock: &Path, method: &str, path: &str, body: Option<&Value>, timeout
     }
     req.push_str("\r\n");
     req.push_str(data.as_deref().unwrap_or(""));
-    s.write_all(req.as_bytes()).map_err(down)?;
+    let mut out = req.as_bytes();
+    while !out.is_empty() {
+        left(&s, end)?;
+        match s.write(out) {
+            Ok(0) | Err(_) => return Err(Down),
+            Ok(n) => out = &out[n..],
+        }
+    }
     let mut raw = Vec::new();
-    s.read_to_end(&mut raw).map_err(down)?;
+    let mut buf = [0u8; 16 * 1024];
+    loop {
+        left(&s, end)?;
+        match s.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => raw.extend_from_slice(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err(Down),
+        }
+    }
     let (status, body) = parse(&raw).ok_or(Down)?;
     if body.is_empty() {
         return Ok((status, None));
@@ -41,6 +56,17 @@ pub fn call(sock: &Path, method: &str, path: &str, body: Option<&Value>, timeout
             Ok((status, Some(json!({"error": "bad_answer", "message": text}))))
         }
     }
+}
+
+/// Sets the socket's read and write timeouts to what is left until `end`; none left is Down.
+/// macOS refuses the setting (EINVAL) once the other end closed: the next call then ends at once.
+fn left(s: &UnixStream, end: Instant) -> Result<(), Down> {
+    let rest = end.saturating_duration_since(Instant::now());
+    if rest.is_zero() {
+        return Err(Down);
+    }
+    let _ = s.set_read_timeout(Some(rest)).and_then(|()| s.set_write_timeout(Some(rest)));
+    Ok(())
 }
 
 /// The status and body of an HTTP/1.x answer (Content-Length, chunked or to the end).
@@ -105,6 +131,37 @@ mod tests {
         assert_eq!(message(Some(&json!({"error": "web", "message": "no"})), 409), "no");
         assert_eq!(message(Some(&json!({"error": "web"})), 409), "web");
         assert_eq!(message(None, 500), "HTTP 500");
+    }
+
+    /// A server on a fresh socket that accepts and then sends `trickle` one byte every 40 ms
+    /// (empty: never answers), kept open 3 s.
+    fn stalled(tag: &str, trickle: &'static [u8]) -> std::path::PathBuf {
+        let p = std::env::temp_dir().join(format!("tms-{}-{tag}.sock", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        let l = std::os::unix::net::UnixListener::bind(&p).unwrap();
+        std::thread::spawn(move || {
+            if let Ok((mut c, _)) = l.accept() {
+                for b in trickle {
+                    std::thread::sleep(Duration::from_millis(40));
+                    let _ = c.write_all(&[*b]);
+                }
+                std::thread::sleep(Duration::from_secs(3));
+            }
+        });
+        p
+    }
+
+    #[test]
+    fn a_stalled_or_trickling_server_is_down_within_the_budget() {
+        let budget = Duration::from_millis(150);
+        for (tag, trickle) in [("mute", &b""[..]), ("drip", &b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\n{}"[..])] {
+            let p = stalled(tag, trickle);
+            let began = Instant::now();
+            assert!(call(&p, "POST", "/hook", Some(&json!({})), budget).is_err(), "{tag}");
+            let took = began.elapsed();
+            assert!(took >= budget && took < budget + Duration::from_millis(100), "{tag}: {took:?}");
+            let _ = std::fs::remove_file(p);
+        }
     }
 
     #[test]

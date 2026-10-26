@@ -76,7 +76,12 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "plan" | "note" => super::plans::handle(app, page, t, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
-        "addhost" | "hostaction" | "hostagents" | "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
+        // a host's ssh, helper copy and install take up to minutes: the page's loop goes on (it waits for the answer)
+        "addhost" | "hostaction" | "hostagents" => {
+            let (app, page) = (app.clone(), page.clone());
+            tokio::spawn(async move { super::sessions::admin(&app, &page, msg["t"].as_str().unwrap_or(""), &msg).await });
+        }
+        "restore" | "addtmux" | "detachtmux" | "tmuxsessions" => super::sessions::admin(app, page, t, &msg).await,
         "updatechoice" if !page.web => {
             if let Err(e) = crate::release::choose(app, &s("action"), msg["tag"].as_str()) {
                 error(page, e, None);

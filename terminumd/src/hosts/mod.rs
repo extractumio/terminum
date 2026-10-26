@@ -328,7 +328,7 @@ pub fn list(app: &Shared) -> Vec<Value> {
             (None, None) => ("off".into(), String::new()),
         };
         json!({"name": name, "ssh": rec["ssh"], "state": state, "why": why, "files": rec["files"], "helper": rec["helper"],
-               "agent": tunnel::state(app, name), "agents": tunnel::agents_state(app, name)})
+               "agent": tunnel::state(app, name), "agents": link::agents_state(app, name)})
     }).collect()
 }
 

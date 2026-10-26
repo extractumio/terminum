@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::{DefaultBodyLimit, Request, State};
 use axum::http::StatusCode;
@@ -26,6 +26,10 @@ pub const BODY_MOST: usize = 64 * 1024;
 /// A link's rate limit: a burst of 50 requests, then 20 a second; more is refused (429).
 const BURST: f64 = 50.0;
 const PER_S: f64 = 20.0;
+/// A link's connections at once; one more is closed at once.
+pub const CONNS_MOST: usize = 16;
+/// A request's time on a link: its head, then its body and answer, each within it.
+pub const REQUEST_MOST: Duration = Duration::from_secs(5);
 
 /// Where an event came in: the CLI socket (this Mac's servers) or a host's link.
 pub enum Via {
@@ -107,6 +111,41 @@ pub fn routes<S: Clone + Send + Sync + 'static>(hook: MethodRouter<S>, agent: Me
         }))
 }
 
+/// Serves `router` on `l`, one request a connection: at most `most` connections at once (one
+/// more is closed unread), a head read within `wait` and the body and answer within `wait` (408).
+/// The connections are this future's own: dropping or aborting it ends them too.
+pub async fn serve(l: tokio::net::UnixListener, router: Router, most: usize, wait: Duration) {
+    use tower::ServiceExt;
+    let room = Arc::new(tokio::sync::Semaphore::new(most));
+    let mut conns = tokio::task::JoinSet::new();
+    loop {
+        tokio::select! {
+            got = l.accept() => {
+                let Ok((stream, _)) = got else {
+                    tokio::time::sleep(Duration::from_millis(50)).await;   // out of files: never a busy loop
+                    continue;
+                };
+                let Ok(permit) = room.clone().try_acquire_owned() else { continue };   // dropped: closed
+                let router = router.clone();
+                conns.spawn(async move {
+                    let svc = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                        let answer = router.clone().oneshot(req.map(axum::body::Body::new));
+                        async move { Ok::<_, std::convert::Infallible>(tokio::time::timeout(wait, answer).await.map_or_else(|_| StatusCode::REQUEST_TIMEOUT.into_response(), |r| r.into_response())) }
+                    });
+                    let conn = hyper::server::conn::http1::Builder::new()
+                        .timer(hyper_util::rt::TokioTimer::new())
+                        .header_read_timeout(wait)
+                        .keep_alive(false)
+                        .serve_connection(hyper_util::rt::TokioIo::new(stream), svc);
+                    let _ = conn.await;
+                    drop(permit);
+                });
+            }
+            Some(_) = conns.join_next(), if !conns.is_empty() => {}
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Link {
     app: Shared,
@@ -135,7 +174,7 @@ async fn agent(State(l): State<Link>, Json(body): Json<Value>) -> Json<Value> {
     crate::agentapi::agent_on(l.app, server, body).await
 }
 
-/// Each host's link: its socket path and the task serving it.
+/// Each host's link: its socket path and the task serving it (aborted, its connections end too).
 #[derive(Default)]
 pub struct Links(Mutex<HashMap<String, (PathBuf, tokio::task::JoinHandle<()>)>>);
 
@@ -164,7 +203,7 @@ impl Links {
         std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600)).map_err(|e| format!("{}: {e}", p.display()))?;
         let link = Link { app: app.clone(), host: host.to_string() };
         let router = routes(axum::routing::post(hook), axum::routing::post(agent), Arc::new(Bucket::new())).with_state(link);
-        let task = tokio::spawn(async move { drop(axum::serve(l, router).await) });
+        let task = tokio::spawn(serve(l, router, CONNS_MOST, REQUEST_MOST));
         self.0.lock().insert(host.to_string(), (p.clone(), task));
         Ok(p)
     }

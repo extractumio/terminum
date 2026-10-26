@@ -83,8 +83,45 @@ pub fn link(dir: &Path, mac: &str, sock: &Path) -> Result<PathBuf, String> {
     Ok(to)
 }
 
+/// A sweep's wait for one socket: a stuck listener (a full backlog) never holds the helper's start.
+const SWEEP_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Connects to the socket at `path` within `wait`: std's connect has no timeout, and Linux
+/// blocks a connect to a full backlog until the socket's send timeout (macOS refuses it at once).
+pub fn connect_within(path: &Path, wait: std::time::Duration) -> std::io::Result<std::os::unix::net::UnixStream> {
+    use std::os::fd::FromRawFd;
+    use std::os::unix::ffi::OsStrExt;
+    let bytes = path.as_os_str().as_bytes();
+    // SAFETY: sockaddr_un is plain data; all zeroes is a valid value
+    let mut addr: libc::sockaddr_un = unsafe { std::mem::zeroed() };
+    if bytes.is_empty() || bytes.len() >= addr.sun_path.len() || bytes.contains(&0) {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a socket path"));
+    }
+    addr.sun_family = libc::AF_UNIX as libc::sa_family_t;
+    for (d, b) in addr.sun_path.iter_mut().zip(bytes) {
+        *d = *b as libc::c_char;
+    }
+    // SAFETY: a plain socket(2); its fd is owned by the stream at once (closed on every error)
+    let fd = unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_STREAM, 0) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: fd is a socket of ours, owned by nothing else
+    let s = unsafe { std::os::unix::net::UnixStream::from_raw_fd(fd) };
+    // SAFETY: fcntl on our own fd
+    unsafe { libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC) };
+    s.set_write_timeout(Some(wait.max(std::time::Duration::from_millis(1))))?;   // SO_SNDTIMEO bounds the connect
+    let len = (std::mem::offset_of!(libc::sockaddr_un, sun_path) + bytes.len()) as libc::socklen_t;
+    // SAFETY: addr is a valid sockaddr_un of `len` bytes
+    if unsafe { libc::connect(fd, (&raw const addr).cast::<libc::sockaddr>(), len) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(s)
+}
+
 /// Removes this Mac's `m-<mac>-*.sock` other than `keep` that refuse a connection: a dead
-/// ssh's leftovers. Never another Mac's, never by age, never one that answers or times out.
+/// ssh's leftovers. Never another Mac's, never by age, never one that answers or times out
+/// (each connect waits at most SWEEP_WAIT).
 pub fn sweep(dir: &Path, mac: &str, keep: &Path) -> Vec<PathBuf> {
     let prefix = format!("m-{mac}-");
     let Ok(rd) = std::fs::read_dir(dir) else { return Vec::new() };
@@ -94,7 +131,7 @@ pub fn sweep(dir: &Path, mac: &str, keep: &Path) -> Vec<PathBuf> {
         if !name.starts_with(&prefix) || !name.ends_with(".sock") || p == keep || check_socket(dir, &p).is_err() {
             continue;
         }
-        let refused = std::os::unix::net::UnixStream::connect(&p).err().is_some_and(|e| e.kind() == std::io::ErrorKind::ConnectionRefused);
+        let refused = connect_within(&p, SWEEP_WAIT).err().is_some_and(|e| e.kind() == std::io::ErrorKind::ConnectionRefused);
         if refused && std::fs::remove_file(&p).is_ok() {
             gone.push(p);
         }

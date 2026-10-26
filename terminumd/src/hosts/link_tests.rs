@@ -8,7 +8,8 @@ fn ssh_args_forward_a_socket_without_mux_or_exit_on_failure() {
     let a = ssh_args(Some(("/home/alex/.terminum/run/m-abc-12345678.sock", &PathBuf::from("/Users/alex/.terminum/links/h.sock"))));
     assert_eq!(a, ["-o", "ControlPath=none", "-o", "ExitOnForwardFailure=no", "-R", "/home/alex/.terminum/run/m-abc-12345678.sock:/Users/alex/.terminum/links/h.sock"]);
     assert!(!a.iter().any(|s| s.contains("ClearAllForwardings")));
-    assert_eq!(helper_args("/r/m.sock", "abc"), " --link /r/m.sock --mac abc");
+    assert_eq!(helper_args("/r/m.sock", "abc"), " --link '/r/m.sock' --mac 'abc'", "single-quoted words");
+    assert_eq!(helper_args("/r/it's", "abc"), " --link '/r/it'\\''s' --mac 'abc'");
 }
 
 #[test]
@@ -18,6 +19,11 @@ fn remote_and_local_paths_are_checked() {
     assert!(remote_path(&long, "abc", "12345678").unwrap_err().contains("longer than 100"));
     assert!(remote_path("relative", "abc", "12345678").is_err());
     assert!(remote_path("/a:b", "abc", "12345678").is_err());
+    for home in ["/home/alex smith", "/home/$USER", "/home/a;b", "/home/a'b", "/home/a\nb"] {
+        let e = remote_path(home, "abc", "12345678").unwrap_err();
+        assert!(e.contains("characters terminum cannot pass"), "{home:?}: {e}");
+    }
+    assert!(remote_path("/home/alex.b_c-1", "abc", "12345678").is_ok());
     assert!(local_ok(&PathBuf::from("/Users/alex/.terminum/links/x.sock")).is_ok());
     assert!(local_ok(&PathBuf::from(format!("/{}", "x".repeat(103)))).unwrap_err().contains("103"));
     assert!(local_ok(&PathBuf::from("x.sock")).is_err());
@@ -50,8 +56,11 @@ fn link_lines_and_retry_timing() {
 fn the_mac_id_is_made_once_and_kept() {
     let d = std::env::temp_dir().join(format!("tm-macid-{}", crate::auth::crypto::random_hex::<4>()));
     std::fs::create_dir_all(&d).unwrap();
-    let a = mac_id(&d);
+    let a = mac_id(&d).unwrap();
     assert_eq!(a.len(), 12);
-    assert_eq!(mac_id(&d), a);
+    assert_eq!(mac_id(&d).unwrap(), a);
     std::fs::remove_dir_all(&d).unwrap();
+    // an id that cannot be kept is refused, never a new one per connection
+    let e = mac_id(&d.join("missing")).unwrap_err();
+    assert!(e.contains("could not be kept") && e.contains("mac-id"), "{e}");
 }

@@ -130,3 +130,85 @@ fn a_link_socket_is_short_stable_and_per_host() {
     assert_eq!(p.parent(), Some(dir.join("links").as_path()));
     assert_eq!(p.file_name().unwrap().len(), 12 + ".sock".len());
 }
+
+/// A fresh socket path for `serve` (short: macOS caps socket paths at 104 bytes).
+fn sock(tag: &str) -> PathBuf {
+    let p = std::env::temp_dir().join(format!("tml-{}-{tag}.sock", std::process::id()));
+    let _ = std::fs::remove_file(&p);
+    p
+}
+
+/// Serves `r` on a new socket with `most` connections and `wait`; the task and its path.
+fn serving(tag: &str, r: Router, most: usize, wait: Duration) -> (tokio::task::JoinHandle<()>, PathBuf) {
+    let p = sock(tag);
+    let l = tokio::net::UnixListener::bind(&p).unwrap();
+    (tokio::spawn(serve(l, r, most, wait)), p)
+}
+
+/// What the other end sends until it closes, and how long that took (None: still open after 3 s).
+async fn till_closed(s: &mut tokio::net::UnixStream) -> Option<(String, Duration)> {
+    use tokio::io::AsyncReadExt;
+    let began = Instant::now();
+    let mut got = Vec::new();
+    match tokio::time::timeout(Duration::from_secs(3), s.read_to_end(&mut got)).await {
+        Ok(_) => Some((String::from_utf8_lossy(&got).into_owned(), began.elapsed())),
+        Err(_) => None,
+    }
+}
+
+const HEAD: &[u8] = b"POST /hook HTTP/1.1\r\nHost: localhost\r\n";
+
+async fn connect(p: &Path) -> tokio::net::UnixStream {
+    let s = tokio::net::UnixStream::connect(p).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(30)).await;   // accepted, in order
+    s
+}
+
+#[tokio::test]
+async fn connections_over_the_cap_are_closed_at_once() {
+    use tokio::io::AsyncWriteExt;
+    let (task, p) = serving("cap", router(), 2, Duration::from_secs(5));
+    let (_a, mut b) = (connect(&p).await, connect(&p).await);
+    let mut over = connect(&p).await;
+    let (said, took) = till_closed(&mut over).await.expect("the third connection is closed");
+    assert!(said.is_empty() && took < Duration::from_millis(500), "{said:?} {took:?}");
+    drop(b.shutdown().await);
+    drop(b);
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let mut again = connect(&p).await;
+    again.write_all(b"POST /hook HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}").await.unwrap();
+    let (said, _) = till_closed(&mut again).await.expect("answered once one closed");
+    assert!(said.starts_with("HTTP/1.1 204"), "{said}");
+    task.abort();
+    let _ = std::fs::remove_file(p);
+}
+
+#[tokio::test]
+async fn a_stalled_head_or_a_slow_answer_ends_within_the_wait() {
+    use tokio::io::AsyncWriteExt;
+    let slow = Router::new().route("/hook", post(|| async { tokio::time::sleep(Duration::from_secs(30)).await; StatusCode::NO_CONTENT }));
+    let (task, p) = serving("wait", slow, 4, Duration::from_millis(300));
+    let mut head = connect(&p).await;
+    head.write_all(HEAD).await.unwrap();
+    let (said, took) = till_closed(&mut head).await.expect("a head never finished is closed");
+    assert!(!said.starts_with("HTTP/1.1 2") && took < Duration::from_millis(1000), "{said:?} {took:?}");
+    let mut answer = connect(&p).await;
+    answer.write_all(b"POST /hook HTTP/1.1\r\nHost: localhost\r\nContent-Length: 0\r\n\r\n").await.unwrap();
+    let (said, took) = till_closed(&mut answer).await.expect("a slow answer is cut");
+    assert!(said.starts_with("HTTP/1.1 408") && took < Duration::from_millis(1000), "{said:?} {took:?}");
+    task.abort();
+    let _ = std::fs::remove_file(p);
+}
+
+#[tokio::test]
+async fn stopping_a_link_ends_its_accepted_connections() {
+    use tokio::io::AsyncWriteExt;
+    let (task, p) = serving("stop", router(), 4, Duration::from_secs(5));
+    let mut open = connect(&p).await;
+    open.write_all(HEAD).await.unwrap();
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    task.abort();
+    let (said, took) = till_closed(&mut open).await.expect("closed when the link stops");
+    assert!(said.is_empty() && took < Duration::from_millis(500), "{said:?} {took:?}");
+    let _ = std::fs::remove_file(p);
+}

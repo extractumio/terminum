@@ -30,22 +30,22 @@ const UPDATED_NOTE: Duration = Duration::from_secs(60);
 const UPDATE_RETRY: Duration = Duration::from_secs(600);
 
 #[derive(Default)]
-struct Agent {
+pub(super) struct Agent {
     /// enabling, connecting, updating, up, down; failed (a ticked enabling, AC-83)
     state: String,
     note: String,
     updated_at: Option<Instant>,
     /// agents' link: "" (off), "up", "refused: <why>" (link.rs)
-    agents: String,
+    pub(super) agents: String,
     /// the last refused forward: -R is asked again RETRY later
-    refused_at: Option<Instant>,
+    pub(super) refused_at: Option<Instant>,
     /// the host's $HOME, from the probe
-    home: Option<String>,
+    pub(super) home: Option<String>,
     task: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Default)]
-pub struct Tunnels(Mutex<HashMap<String, Agent>>);
+pub struct Tunnels(pub(super) Mutex<HashMap<String, Agent>>);
 
 fn set(app: &Shared, host: &str, state: &str, note: &str) {
     let mut g = app.tunnels.0.lock();
@@ -59,25 +59,6 @@ fn set(app: &Shared, host: &str, state: &str, note: &str) {
 /// The agent's state for the panel's offer and `terminum hosts`.
 pub fn state(app: &Shared, host: &str) -> String {
     app.tunnels.0.lock().get(host).map_or_else(|| "down".to_string(), |a| a.state.clone())
-}
-
-/// The host's agents' link state: "off", "up", "connecting" or "refused: <why>".
-pub fn agents_state(app: &Shared, host: &str) -> String {
-    if !super::link::wanted(app, host) {
-        return "off".into();
-    }
-    app.tunnels.0.lock().get(host).map(|a| a.agents.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "connecting".into())
-}
-
-fn set_agents(app: &Shared, host: &str, state: &str, refused: bool) {
-    let mut g = app.tunnels.0.lock();
-    let a = g.entry(host.to_string()).or_default();
-    a.agents = state.to_string();
-    if refused {
-        a.refused_at = Some(Instant::now());
-    }
-    drop(g);
-    app.dirty.notify_one();
 }
 
 /// The build the helper was just updated to, for 60 s (AC-84).
@@ -146,35 +127,47 @@ async fn ssh(recipe: &[String], command: &str, stdin: Option<Vec<u8>>, timeout: 
 
 /// The host's platform (or why it has no helper) and $HOME; read after a random marker line,
 /// so whatever the host's rc files print cannot be taken for the answer.
-async fn probe(recipe: &[String]) -> Result<(Result<&'static str, String>, String), String> {
+pub(super) async fn probe(recipe: &[String]) -> Result<(Result<&'static str, String>, String), String> {
     let marker = format!("tm-probe-{}", crate::auth::crypto::random_hex::<6>());
     let out = ssh(recipe, &super::link::probe_command(&marker), None, Duration::from_secs(30)).await?;
     let (s, m, home) = super::link::parse_probe(&out, &marker).ok_or("the host did not answer the probe")?;
     Ok((platform(&s, &m).ok_or_else(|| format!("no helper for {s} {m}")), home))
 }
 
-/// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> via a temp name, points bin/terminumd-agent at it, keeps one older, checks its id.
+/// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> through a temporary name, points
+/// bin/terminumd-agent at it, keeps one older version, checks it answers with `id`.
 async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), String> {
     if !(id == "dev" || (id.len() == 12 && id.bytes().all(|b| b.is_ascii_hexdigit()))) {
         return Err(format!("not an agent id: {id}"));
     }
     let unique = crate::auth::crypto::random_hex::<12>();
-    let script = format!(
-        "set -e; d=\"$HOME/{HOME_DIR}\"; mkdir -p \"$d/bin\" \"$d/logs\"; chmod 700 \"$d\"; mkdir -p -m 700 \"$d/run\"; chmod 700 \"$d/run\"; \
-         tmp=\"$d/bin/.terminumd-agent.{unique}.tmp\"; link=\"$d/bin/.terminumd-agent.{unique}.new\"; trap 'rm -f \"$tmp\" \"$link\"' EXIT; \
-         cat > \"$tmp\"; chmod 755 \"$tmp\"; got=$(\"$tmp\" --agent-id); [ \"$got\" = \"{id}\" ] || {{ echo \"helper answers $got, expected {id}\" >&2; exit 1; }}; \
-         mv -f \"$tmp\" \"$d/bin/terminumd-agent-{id}\"; ln -s \"terminumd-agent-{id}\" \"$link\"; mv -f \"$link\" \"$d/bin/terminumd-agent\"; \
-         ls -1t \"$d/bin\" | grep '^terminumd-agent-' | grep -v '^terminumd-agent-{id}$' | tail -n +2 | while read -r f; do rm -f \"$d/bin/$f\"; done; \
-         rm -f \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/bin/.{LEGACY}.\"*; \
-         \"$d/bin/terminumd-agent-{id}\" --agent-id"
-    );
+    let script = [
+        format!("set -e; d=\"$HOME/{HOME_DIR}\"; mkdir -p \"$d/bin\" \"$d/logs\"; chmod 700 \"$d\""),
+        "mkdir -p -m 700 \"$d/run\"; chmod 700 \"$d/run\"".into(),
+        format!("tmp=\"$d/bin/.terminumd-agent.{unique}.tmp\"; link=\"$d/bin/.terminumd-agent.{unique}.new\""),
+        "trap 'rm -f \"$tmp\" \"$link\"' EXIT; cat > \"$tmp\"; chmod 755 \"$tmp\"".into(),
+        format!("got=$(\"$tmp\" --agent-id); [ \"$got\" = \"{id}\" ] || {{ echo \"helper answers $got, expected {id}\" >&2; exit 1; }}"),
+        format!("mv -f \"$tmp\" \"$d/bin/terminumd-agent-{id}\"; ln -s \"terminumd-agent-{id}\" \"$link\""),
+        "mv -f \"$link\" \"$d/bin/terminumd-agent\"".into(),
+        format!("ls -1t \"$d/bin\" | grep '^terminumd-agent-' | grep -v '^terminumd-agent-{id}$' | tail -n +2 \
+         | while read -r f; do rm -f \"$d/bin/$f\"; done"),
+        format!("rm -f \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/bin/.{LEGACY}.\"*"),
+        format!("\"$d/bin/terminumd-agent-{id}\" --agent-id"),
+    ]
+    .join("; ");
     let bytes = tokio::fs::read(binary).await.map_err(|e| format!("{}: {e}", binary.display()))?;
-    let out = ssh(recipe, &script, Some(bytes), Duration::from_secs(300)).await?; // rc output first (AS-84 f): the last line
-    let got = out.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("");
+    let out = ssh(recipe, &script, Some(bytes), Duration::from_secs(300)).await?;
+    let got = answer(&out);
     if got != id {
         return Err(format!("the copied helper says {got}, expected {id}"));
     }
     Ok(())
+}
+
+/// The helper's answer: the last non-empty line, so rc files' output before it (AS-84 f), a
+/// trailing blank line and a `\r` are left out.
+fn answer(out: &str) -> &str {
+    out.lines().map(str::trim).rfind(|l| !l.is_empty()).unwrap_or("")
 }
 
 /// One running tunnel: the ssh child and the agent's id.
@@ -187,15 +180,25 @@ struct Running {
     said: Option<super::link::Said>,
 }
 
-/// The agents' link a connection carries: the host's -R path, the Mac's socket, this Mac's id.
-struct LinkTo {
-    remote: String,
-    local: PathBuf,
-    mac: String,
+/// Whether the helper answers an HTTP request through ssh's -L (any status): a host whose sshd
+/// refuses the forward closes each connection at once, while ssh's listener on the Mac stays.
+async fn answers(mut stream: tokio::net::UnixStream) -> Result<(), String> {
+    let ask = async {
+        stream.write_all(b"GET / HTTP/1.1\r\nHost: agent\r\nConnection: close\r\n\r\n").await?;
+        let mut head = [0u8; 7];
+        stream.read_exact(&mut head).await.map(|_| head)
+    };
+    match tokio::time::timeout(Duration::from_secs(5), ask).await {
+        Ok(Ok(head)) if &head == b"HTTP/1." => Ok(()),
+        Ok(Ok(_)) => Err("not an HTTP answer".into()),
+        Ok(Err(e)) => Err(e.to_string()),
+        Err(_) => Err("no answer within 5 s".into()),
+    }
 }
 
-/// Starts the agent through ssh and waits for its "ready" line (20 s).
-async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&LinkTo>) -> Result<Running, String> {
+/// Starts the agent through ssh and waits for its "ready" line (20 s); with `files`, also that
+/// the helper answers through the forward.
+async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&super::link::LinkTo>, files: bool) -> Result<Running, String> {
     let dir = app.cfg.dir.join("agents");
     crate::config::private_dir(&dir);
     let local = dir.join(format!("{}.sock", &crate::auth::crypto::sha256_hex(format!("{host} {}", crate::auth::crypto::random_hex::<6>()).as_bytes())[..12]));
@@ -203,7 +206,11 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&Link
     let remote = format!("/tmp/tm-{}/s", crate::auth::crypto::random_hex::<6>());
     let own = crate::agent::AGENT_ID;
     let b = format!("\"$HOME/{HOME_DIR}/bin/terminumd-agent");
-    let command = format!("f={b}-{own}\"; [ -x \"$f\" ] || f={b}\"; [ -x \"$f\" ] || {{ echo {MISSING}; exit 0; }}; TM_LOG=info exec \"$f\" --agent --socket {remote} --log \"$HOME/{HOME_DIR}/logs/agent.log\"{}", link.map_or_else(String::new, |l| super::link::helper_args(&l.remote, &l.mac)));
+    let link_args = link.map_or_else(String::new, |l| super::link::helper_args(&l.remote, &l.mac));
+    let command = format!(
+        "f={b}-{own}\"; [ -x \"$f\" ] || f={b}\"; [ -x \"$f\" ] || {{ echo {MISSING}; exit 0; }}; \
+         TM_LOG=info exec \"$f\" --agent --socket {remote} --log \"$HOME/{HOME_DIR}/logs/agent.log\"{link_args}"
+    );
     let mut c = ssh_cmd();
     // agents on only: files' ssh stays exactly as it was when agents are off
     c.args(super::link::ssh_args(link.map(|l| (l.remote.as_str(), l.local.as_path()))));
@@ -243,74 +250,27 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&Link
     if agent_id.is_empty() {
         return Ok(Running { child, agent_id, _stdin: stdin, said }); // no helper: the caller installs it
     }
-    // the socket appears once ssh forwards it
-    let mut forwarded = false;
+    // the socket appears once ssh listens; only a request answered shows the host forwards it
+    let mut forwarded = None;
     for _ in 0..100 {
-        if tokio::net::UnixStream::connect(&local).await.is_ok() {
-            forwarded = true;
+        if let Ok(stream) = tokio::net::UnixStream::connect(&local).await {
+            forwarded = Some(stream);
             break;
         }
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
-    if !forwarded {
+    let Some(stream) = forwarded else {
         let _ = child.kill().await;
         return Err("ssh did not forward the helper's socket within 5 s".into());
+    };
+    if files && let Err(e) = answers(stream).await {
+        let _ = child.kill().await;
+        return Err(format!("{}; Files cannot reach the helper ({e})", super::link::refused_why(host)));
     }
-    if crate::hosts::files_state(app, host).as_deref() == Some("enabled") {
+    if files && crate::hosts::files_state(app, host).as_deref() == Some("enabled") {
         crate::remote::register(app, host, Some((local, token)));
     }
     Ok(Running { child, agent_id, _stdin: stdin, said })
-}
-
-/// The agents' link for this connection, when agents are on and -R is not in its back-off;
-/// a path too long or a listener that cannot start refuses agents with why (files go on).
-async fn link_for(app: &Shared, host: &str, recipe: &[String]) -> Option<LinkTo> {
-    if !super::link::wanted(app, host) {
-        app.links.stop(app, host);
-        return None;
-    }
-    let (refused_at, home) = app.tunnels.0.lock().get(host).map(|a| (a.refused_at, a.home.clone())).unwrap_or_default();
-    if !super::link::try_forward(refused_at, Instant::now()) {
-        return None;
-    }
-    let home = match home {
-        Some(h) => h,
-        None => match probe(recipe).await {
-            Ok((_, h)) => {
-                app.tunnels.0.lock().entry(host.to_string()).or_default().home = Some(h.clone());
-                h
-            }
-            Err(e) => {
-                set_agents(app, host, &format!("refused: {e}"), true);
-                return None;
-            }
-        },
-    };
-    let mac = super::link::mac_id(&app.cfg.dir);
-    let made = super::link::remote_path(&home, &mac, &crate::auth::crypto::random_hex::<4>()).and_then(|remote| {
-        let local = app.links.start(app, &app.cfg.dir, host)?;
-        super::link::local_ok(&local).map(|()| LinkTo { remote, local, mac })
-    });
-    match made {
-        Ok(l) => Some(l),
-        Err(e) => {
-            app.links.stop(app, host);
-            set_agents(app, host, &format!("refused: {e}"), true);
-            None
-        }
-    }
-}
-
-/// Records what the helper said about the link; a refusal stops the Mac's listener.
-fn heard(app: &Shared, host: &str, said: Option<&super::link::Said>) {
-    match said {
-        Some(super::link::Said::Up) => set_agents(app, host, "up", false),
-        Some(super::link::Said::Refused) => {
-            app.links.stop(app, host);
-            set_agents(app, host, &format!("refused: {}", super::link::refused_why(host)), true);
-        }
-        None => {}
-    }
 }
 
 /// Keeps a host's helper connected while its files or its agents are enabled and its control
@@ -321,10 +281,11 @@ async fn keep(app: Shared, host: String) {
         let enabled = crate::hosts::files_state(&app, &host).as_deref() == Some("enabled") || super::link::wanted(&app, &host);
         let Some(recipe) = crate::hosts::recipe_of(&app, &host).filter(|_| enabled) else { break };
         set(&app, &host, "connecting", &format!("connecting to {host}…"));
-        let link = link_for(&app, &host, &recipe).await;
-        let got = connect(&app, &host, &recipe, link.as_ref()).await;
+        let link = super::link::link_for(&app, &host, &recipe).await;
+        let files = crate::hosts::files_state(&app, &host).as_deref() == Some("enabled");
+        let got = connect(&app, &host, &recipe, link.as_ref(), files).await;
         if let Ok(run) = &got {
-            heard(&app, &host, run.said.as_ref());
+            super::link::heard(&app, &host, run.said.as_ref());
         }
         let wait = match got {
             Ok(mut run) if run.agent_id != crate::agent::AGENT_ID => {
@@ -352,7 +313,7 @@ async fn keep(app: Shared, host: String) {
                 crate::remote::register(&app, &host, None);
                 if link.is_some() && app.links.path(&host).is_some() {
                     app.links.stop(&app, &host);
-                    set_agents(&app, &host, "", false);
+                    super::link::set_agents(&app, &host, "", false);
                 }
                 set(&app, &host, "down", &format!("{host}: connection closed"));
                 Duration::from_secs(backoff)
@@ -440,7 +401,7 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
     let result = async {
         let p = probe(&recipe).await?.0?;
         install(&recipe, &binary_for(p)?, crate::agent::AGENT_ID).await?;
-        let mut trial = connect(app, host, &recipe, None).await?;
+        let mut trial = connect(app, host, &recipe, None, true).await?;
         let _ = trial.child.kill().await;
         if trial.agent_id != crate::agent::AGENT_ID {
             return Err(format!("the helper on {host} answers as build {:?}", trial.agent_id));
@@ -483,7 +444,11 @@ pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
 
 /// The helper and its log taken off a host (Files' remove, agents off with Files off).
 pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
-    let script = format!("d=\"$HOME/{HOME_DIR}\"; rm -f \"$d/bin/terminumd-agent\" \"$d/bin/terminumd-agent-\"* \"$d/bin/.terminumd-agent.\"* \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; rmdir \"$d/bin\" \"$d/logs\" \"$d\" 2>/dev/null; true");
+    let script = format!(
+        "d=\"$HOME/{HOME_DIR}\"; rm -f \"$d/bin/terminumd-agent\" \"$d/bin/terminumd-agent-\"* \"$d/bin/.terminumd-agent.\"* \
+         \"$d/bin/{LEGACY}\" \"$d/bin/{LEGACY}-\"* \"$d/logs/agent.log\"*; \
+         rmdir \"$d/bin\" \"$d/logs\" \"$d/run\" \"$d\" 2>/dev/null; true"
+    );
     ssh(recipe, &script, None, Duration::from_secs(60)).await.map(drop)
 }
 
@@ -496,5 +461,32 @@ mod tests {
         assert_eq!(platform("Darwin", "arm64"), Some("macos-aarch64"));
         assert_eq!(platform("Linux", "aarch64"), Some("linux-aarch64"));
         assert_eq!(platform("FreeBSD", "amd64"), None);
+    }
+
+    #[test]
+    fn the_helper_answer_is_the_last_non_empty_line() {
+        assert_eq!(answer("Welcome to devbox\nlast login: today\n0123456789ab\n"), "0123456789ab", "rc noise before");
+        assert_eq!(answer("noise\n0123456789ab\n\n  \n"), "0123456789ab", "a trailing blank line");
+        assert_eq!(answer("noise\r\n0123456789ab\r\n\r\n"), "0123456789ab", "CRLF");
+        assert_eq!(answer(""), "");
+    }
+
+    #[tokio::test]
+    async fn a_forward_counts_only_when_the_helper_answers() {
+        let dir = std::env::temp_dir().join(format!("tm-fw-{}", crate::auth::crypto::random_hex::<4>()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (up, refused) = (dir.join("up.sock"), dir.join("no.sock"));
+        let (l1, l2) = (tokio::net::UnixListener::bind(&up).unwrap(), tokio::net::UnixListener::bind(&refused).unwrap());
+        tokio::spawn(async move {
+            let (mut s, _) = l1.accept().await.unwrap();
+            let mut b = [0u8; 64];
+            let _ = s.read(&mut b).await;
+            let _ = s.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await;
+        });
+        // an sshd refusing the channel: ssh accepted on the Mac, then closes it
+        tokio::spawn(async move { drop(l2.accept().await.unwrap()) });
+        assert_eq!(answers(tokio::net::UnixStream::connect(&up).await.unwrap()).await, Ok(()));
+        assert!(answers(tokio::net::UnixStream::connect(&refused).await.unwrap()).await.is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -5,7 +5,7 @@
 //! `terminumd-agent link: up` or `link: refused` before its ready line; a refusal is retried
 //! with -R after 10 min while files keep working.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::app::Shared;
@@ -29,24 +29,28 @@ pub fn changed(app: &Shared, host: &str) {
     super::tunnel::reconcile(app, host);
 }
 
-/// This Mac's id on hosts: a random 12-hex id kept in `<app>/mac-id`, made once.
-pub fn mac_id(dir: &Path) -> String {
+/// This Mac's id on hosts: a random 12-hex id kept in `<app>/mac-id`, made once; an id that
+/// cannot be kept is refused (a new one per connection would leave sockets no sweep removes).
+pub fn mac_id(dir: &Path) -> Result<String, String> {
     let f = dir.join("mac-id");
     if let Ok(s) = std::fs::read_to_string(&f) {
         let s = s.trim();
         if !s.is_empty() && s.len() <= 16 && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') {
-            return s.to_string();
+            return Ok(s.to_string());
         }
     }
     let id = crate::auth::crypto::random_hex::<6>();
-    let _ = std::fs::write(&f, &id);
-    id
+    std::fs::write(&f, &id).map_err(|e| format!("this Mac's id could not be kept in {}: {e}", f.display()))?;
+    Ok(id)
 }
 
 /// The remote end of the forward: `<home>/.terminum/run/m-<macid>-<rand8>.sock`, or why not.
 pub fn remote_path(home: &str, mac: &str, rand8: &str) -> Result<String, String> {
-    if !home.starts_with('/') || home.contains(['\n', '\0', ':']) {
-        return Err(format!("the host's home {home:?} is not a usable absolute path"));
+    if !home.starts_with('/') {
+        return Err(format!("the host's home {home:?} is not an absolute path"));
+    }
+    if !home.bytes().all(|b| b.is_ascii_alphanumeric() || b"/._-".contains(&b)) {
+        return Err(format!("the host's home {home:?} has characters terminum cannot pass (only A-Z a-z 0-9 / . _ -)"));
     }
     let p = format!("{}/.terminum/run/m-{mac}-{rand8}.sock", home.trim_end_matches('/'));
     if p.len() > REMOTE_MAX {
@@ -76,9 +80,11 @@ pub fn ssh_args(link: Option<(&str, &Path)>) -> Vec<String> {
     vec!["-o".into(), "ControlPath=none".into(), "-o".into(), "ExitOnForwardFailure=no".into(), "-R".into(), format!("{remote}:{}", local.display())]
 }
 
-/// The helper's flags for the link.
+/// The helper's flags for the link, each value one single-quoted word of the login shell
+/// (`remote` is also limited to safe characters by [`remote_path`]).
 pub fn helper_args(remote: &str, mac: &str) -> String {
-    format!(" --link {remote} --mac {mac}")
+    let sq = |s: &str| format!("'{}'", s.replace('\'', "'\\''"));
+    format!(" --link {} --mac {}", sq(remote), sq(mac))
 }
 
 /// What the helper said about the link.
@@ -119,6 +125,85 @@ pub fn parse_probe(out: &str, marker: &str) -> Option<(String, String, String)> 
     let (s, m) = (w.next()?.to_string(), w.next()?.to_string());
     let home = lines.next()?.trim_end_matches('\r').to_string();
     Some((s, m, home))
+}
+
+/// The agents' link a connection carries: the host's -R path, the Mac's socket, this Mac's id.
+pub struct LinkTo {
+    pub remote: String,
+    pub local: PathBuf,
+    pub mac: String,
+}
+
+/// The host's agents' link state: "off", "up", "connecting" or "refused: <why>".
+pub fn agents_state(app: &Shared, host: &str) -> String {
+    if !wanted(app, host) {
+        return "off".into();
+    }
+    let g = app.tunnels.0.lock();
+    g.get(host).map(|a| a.agents.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "connecting".into())
+}
+
+/// Sets the link state shown; `refused` starts the -R back-off.
+pub(super) fn set_agents(app: &Shared, host: &str, state: &str, refused: bool) {
+    let mut g = app.tunnels.0.lock();
+    let a = g.entry(host.to_string()).or_default();
+    a.agents = state.to_string();
+    if refused {
+        a.refused_at = Some(Instant::now());
+    }
+    drop(g);
+    app.dirty.notify_one();
+}
+
+/// The agents' link for this connection, when agents are on and -R is not in its back-off;
+/// a path too long or a listener that cannot start refuses agents with why (files go on).
+pub(super) async fn link_for(app: &Shared, host: &str, recipe: &[String]) -> Option<LinkTo> {
+    if !wanted(app, host) {
+        app.links.stop(app, host);
+        return None;
+    }
+    let (refused_at, home) = app.tunnels.0.lock().get(host).map(|a| (a.refused_at, a.home.clone())).unwrap_or_default();
+    if !try_forward(refused_at, Instant::now()) {
+        return None;
+    }
+    let home = match home {
+        Some(h) => h,
+        None => match super::tunnel::probe(recipe).await {
+            Ok((_, h)) => {
+                app.tunnels.0.lock().entry(host.to_string()).or_default().home = Some(h.clone());
+                h
+            }
+            Err(e) => {
+                set_agents(app, host, &format!("refused: {e}"), true);
+                return None;
+            }
+        },
+    };
+    let made = mac_id(&app.cfg.dir).and_then(|mac| {
+        let remote = remote_path(&home, &mac, &crate::auth::crypto::random_hex::<4>())?;
+        let local = app.links.start(app, &app.cfg.dir, host)?;
+        local_ok(&local).map(|()| LinkTo { remote, local, mac })
+    });
+    match made {
+        Ok(l) => Some(l),
+        Err(e) => {
+            app.links.stop(app, host);
+            set_agents(app, host, &format!("refused: {e}"), true);
+            None
+        }
+    }
+}
+
+/// Records what the helper said about the link; a refusal stops the Mac's listener.
+pub(super) fn heard(app: &Shared, host: &str, said: Option<&Said>) {
+    match said {
+        Some(Said::Up) => set_agents(app, host, "up", false),
+        Some(Said::Refused) => {
+            app.links.stop(app, host);
+            set_agents(app, host, &format!("refused: {}", refused_why(host)), true);
+        }
+        None => {}
+    }
 }
 
 #[cfg(test)]

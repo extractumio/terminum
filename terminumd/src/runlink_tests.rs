@@ -111,3 +111,19 @@ fn links_resolve_in_name_order_and_skip_broken_ones() {
     std::os::unix::fs::symlink(t.0.join("elsewhere.sock"), run.join("mac-c.sock")).unwrap();
     assert_eq!(links(&run), vec![b, a], "mac-a before mac-b; a link out of the folder skipped");
 }
+
+#[test]
+fn a_bounded_connect_reaches_a_listener_and_says_why_it_did_not() {
+    let t = tmp("conn");
+    let live = t.0.join("live.sock");
+    let _l = UnixListener::bind(&live).unwrap();   // never accepts: the backlog takes the connect
+    let began = std::time::Instant::now();
+    assert!(connect_within(&live, SWEEP_WAIT).is_ok());
+    assert!(began.elapsed() < SWEEP_WAIT);
+    let dead = t.0.join("dead.sock");
+    drop(UnixListener::bind(&dead).unwrap());
+    assert_eq!(connect_within(&dead, SWEEP_WAIT).unwrap_err().kind(), std::io::ErrorKind::ConnectionRefused);
+    assert_eq!(connect_within(&t.0.join("none.sock"), SWEEP_WAIT).unwrap_err().kind(), std::io::ErrorKind::NotFound);
+    let long = PathBuf::from(format!("/{}", "x".repeat(200)));
+    assert_eq!(connect_within(&long, SWEEP_WAIT).unwrap_err().kind(), std::io::ErrorKind::InvalidInput);
+}

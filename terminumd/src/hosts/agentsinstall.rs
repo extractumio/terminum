@@ -40,7 +40,7 @@ pub fn script(marker: &str, action: &str, refresh: bool) -> String {
     let refresh = if refresh { " --refresh" } else { "" };
     format!(r#"M={marker}; export M
 S="${{SHELL:-/bin/sh}}"
-cap() {{ "$@" </dev/null 2>/dev/null & p=$!; (sleep 10; kill -9 $p) >/dev/null 2>&1 & k=$!; wait $p; r=$?; kill $k 2>/dev/null; return $r; }}
+{CAP}
 after() {{ awk -v m="$M" 'f {{ print; exit }} $0 == m {{ f = 1 }}' | tr -d '\r'; }}
 ask() {{ v=$(cap "$S" -lc "echo \"\$M\"; $1" | after); [ -n "$v" ] || v=$(cap "$S" -ic "echo \"\$M\"; $1" | after); echo "$v"; }}
 c=""
@@ -55,6 +55,22 @@ if [ -n "$c" ]; then set -- --claude "$c"; else set --; fi
 exec "$H" hooks {action} --host-mode --marker "$M"{refresh} "$@"
 "#, agents = AGENTS.join(" "))
 }
+
+/// `cap <command…>`: the command without input, its stdout through a temporary file (a child
+/// it leaves behind holding stdout, e.g. an rc's `sleep 60 &`, cannot keep a pipe open past the
+/// cap), stopped after 10 s. `setsid` (Linux, busybox) starts it in its own process group, which
+/// goes whole once it ended or at the cap; without setsid (macOS) its direct children go at the
+/// cap. Not `set -m`: dash and busybox turn job control off without a terminal (`ssh -T`).
+const CAP: &str = r#"cap() {
+  t=$(mktemp) || return 1
+  if command -v setsid >/dev/null 2>&1; then setsid "$@" </dev/null >"$t" 2>/dev/null &
+  else "$@" </dev/null >"$t" 2>/dev/null &
+  fi
+  p=$!
+  (sleep 10; pkill -9 -P $p; kill -9 -$p || kill -9 $p) >/dev/null 2>&1 & k=$!
+  wait $p; r=$?; kill $k 2>/dev/null; kill -9 -$p 2>/dev/null
+  cat "$t"; rm -f "$t"; return $r
+}"#;
 
 /// The remote command: the script under /bin/sh, whatever the login shell is.
 pub fn remote_command(script: &str) -> String {
