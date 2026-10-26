@@ -28,7 +28,7 @@ pub struct Read {
 
 /// Reads `server`'s panes; `theme(session)` names the theme a session wears (its dot); `ending`:
 /// the panes whose hooks ended a turn that waits (page/turns.rs).
-pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, ending: &HashSet<String>, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
+pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, ending: &HashMap<String, bool>, home: &str, theme: impl Fn(&str) -> String) -> Result<Read, String> {
     let lines = server.run(format!("list-panes -a -F '{LIST_PANES_FORMAT}'")).await?;
     let all: Vec<PaneFields> = lines.iter().filter_map(|l| titles::parse_list_panes(l)).collect();
     let mut sessions: Vec<(String, String)> = Vec::new();
@@ -209,9 +209,10 @@ fn maybe_codex(p: &PaneFields) -> bool {
 /// The hooks' state while it holds (AC-39), no screen read for that pane; but a wait they said
 /// gives way to a screen that shows the agent at work (an approval answered fires no event until
 /// its tool ends), and a Stop whose turn waits (`ending`) to a footer that counts a shell or an
-/// agent it started, still running in the background (its screen read then, only its footer).
+/// agent it started, still running in the background (its screen read then, only its footer;
+/// past BACKGROUND_LIMIT, `ending`'s true, only an agent).
 /// Also the hooks' views, by pane, for the rows.
-async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, ending: &HashSet<String>, panes: &[PaneFields])
+async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, ending: &HashMap<String, bool>, panes: &[PaneFields])
     -> (HashMap<String, Option<agentstate::State>>, HashMap<String, super::hookstate::View>) {
     use agentstate::State::{Done, Waiting, Working};
     let now = Instant::now();
@@ -221,8 +222,8 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
             Some(h) => {
                 if h.state == Waiting {
                     read.push(p);
-                } else if h.state == Done && h.agent == "claude" && ending.contains(&server.key(&p.pane_id)) {
-                    ended.push(p);
+                } else if let Some(&late) = ending.get(&server.key(&p.pane_id)).filter(|_| h.state == Done && h.agent == "claude") {
+                    ended.push((p, late));
                 }
                 held.insert(p.pane_id.clone(), h);
             }
@@ -240,12 +241,15 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
 }
 
 /// The panes of `panes` whose Claude Code footer counts work in the background, read now (no
-/// cached read: one from before the turn would say nothing).
-async fn background(server: &Server, panes: &[&PaneFields]) -> HashSet<String> {
+/// cached read: one from before the turn would say nothing): agents, or (not `late`) any.
+async fn background(server: &Server, panes: &[(&PaneFields, bool)]) -> HashSet<String> {
     let Some(client) = server.bulk().filter(|_| !panes.is_empty()) else { return HashSet::new() };
-    let answers = client.run_all(panes.iter().map(|p| format!("capture-pane -p -J -t {}", p.pane_id)).collect()).await;
-    panes.iter().zip(answers).filter(|(_, a)| a.as_deref().is_ok_and(agentstate::background_tasks))
-        .map(|(p, _)| p.pane_id.clone()).collect()
+    let answers = client.run_all(panes.iter().map(|(p, _)| format!("capture-pane -p -J -t {}", p.pane_id)).collect()).await;
+    panes.iter().zip(answers).filter(|((_, late), a)| a.as_deref().is_ok_and(|rows| match agentstate::background_tasks(rows) {
+        agentstate::Background::Agents => true,
+        agentstate::Background::Tasks => !*late,
+        agentstate::Background::None => false,
+    })).map(|((p, _), _)| p.pane_id.clone()).collect()
 }
 
 /// Agent states of the panes that run a coding agent, read only when due; a `node` pane is one

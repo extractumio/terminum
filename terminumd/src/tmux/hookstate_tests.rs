@@ -54,6 +54,29 @@ fn a_turn_with_subagents_in_the_background_ends_with_the_last() {
     assert!(h.take_ended(K));
 }
 
+/// The main thread idle (Claude Code's idle notification) or a new prompt while subagents run in
+/// the background: still working until the last of them stops, and only then ended.
+#[test]
+fn subagents_keep_it_working_through_an_idle_notice_and_the_next_prompt() {
+    let h = Hooks::default();
+    let t = Instant::now();
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a1"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "Notification", json!({"kind": "idle_prompt", "message": "Claude is waiting for your input"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Working, 1)), "idle, its subagent is not");
+    assert!(!h.take_ended(K));
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p2"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p2"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Working, 1)), "the next turn ended; the subagent of the one before runs on");
+    assert!(!h.take_ended(K));
+    h.apply(K, &ev("claude", "SubagentStop", json!({"turn": "p1", "sub": "a1"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Done, 0)));
+    assert!(h.take_ended(K), "the last one's stop ends it");
+    h.apply(K, &ev("claude", "Notification", json!({"kind": "idle_prompt"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| v.state), Some(State::Done), "no subagents: an idle notice is done");
+}
+
 #[test]
 fn waiting_for_an_approval_or_an_answer_and_a_failure() {
     let h = Hooks::default();

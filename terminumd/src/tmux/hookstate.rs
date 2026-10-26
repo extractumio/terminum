@@ -5,7 +5,8 @@
 //! renewed for LEASE (a waiting one for WAIT_LEASE) gives way to the screen's reading again
 //! (agentstate.rs), as does a pane whose program changed. A turn that stopped while its
 //! subagents run (in the background) is working until the last of them stops (or BG_LEASE
-//! passes without an event): its end is then, for reminders and unread. Hook events come out of order (they
+//! passes without an event), through an idle notification and the next prompts: its end is
+//! then, for reminders and unread. Hook events come out of order (they
 //! run in the background): a working event of a turn that stopped changes nothing. Codex has no
 //! failure event and no question event: its done and its questions are the screen's.
 
@@ -109,7 +110,8 @@ impl Hooks {
         let working = |r: &mut Rec| { r.state = Some(State::Working); r.why.clear(); };
         match name.as_str() {
             "SessionStart" => r.state = Some(State::Done),
-            "UserPromptSubmit" => { working(r); r.tool.clear(); r.subs.clear(); r.stopped = None; r.turn = turn.clone(); }
+            // subagents in the background run on into the next turn: a prompt does not end them
+            "UserPromptSubmit" => { working(r); r.tool.clear(); r.stopped = None; r.turn = turn.clone(); }
             "PreToolUse" if !stopped => {
                 if s(ev, "tool").starts_with("AskUserQuestion") {
                     r.state = Some(State::Waiting);
@@ -123,7 +125,8 @@ impl Hooks {
             "PermissionRequest" if !stopped => { r.state = Some(State::Waiting); r.why = format!("Approve {}", s(ev, "tool")).trim().to_string(); }
             "Notification" => match ev["kind"].as_str().unwrap_or("") {
                 "permission_prompt" | "agent_needs_input" | "elicitation_dialog" if !stopped => { r.state = Some(State::Waiting); r.why = s(ev, "message"); }
-                "idle_prompt" => r.state = Some(State::Done),
+                // the main thread idles while its subagents work: not done until the last stops
+                "idle_prompt" if r.subs.is_empty() => r.state = Some(State::Done),
                 _ => {}
             },
             // its subagents still run (in the background): working until the last one stops
