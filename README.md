@@ -19,7 +19,8 @@ lives in tmux, so nothing is lost when you close a tab, switch devices or reboot
 - **Splits and sessions as in tmux.** Split panes, windows, a Quick shell under any pane; attach
   the tmux sessions you already run, without disturbing them.
 - **Sessions that never die.** They outlive the browser and the server, and after a reboot come
-  back with their windows, splits and folders.
+  back with their windows, splits and folders; a session's menu shows its last 300 lines from
+  before the restart.
 
 ### Made for coding agents
 

@@ -87,6 +87,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "scheme" => crate::looks::set_scheme(app, page, &msg),
         "restoreseen" => crate::restore::seen(app),
         "unread" => super::unread::set(app, &s("id"), msg["on"].as_bool().unwrap_or(true)),
+        "lastlines" => crate::lastlines::show(app, page, &s("id")).await,
         "trace" => super::timing::handle(app, page, &msg),
         "pause" => {
             pause(page, true);

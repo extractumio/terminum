@@ -36,6 +36,7 @@ mod panel_api;
 mod panel_ws;
 mod plans;
 mod remote;
+mod lastlines;
 mod restore;
 mod restore_srv;
 mod routes;
@@ -226,6 +227,7 @@ async fn serve() {
     tokio::spawn(manager::run(app.clone()));
     tokio::spawn(looks::follow(app.clone()));
     tokio::spawn(restore::follow(app.clone()));
+    tokio::spawn(lastlines::follow(app.clone()));
     tokio::spawn(release::run(app.clone()));
     tokio::spawn(page::upload::sweep_daily(page::upload::local_dir()));   // pastes older than 7 days (AC-36)
     let stopping = app.clone();

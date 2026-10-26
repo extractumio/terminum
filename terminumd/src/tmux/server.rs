@@ -261,7 +261,7 @@ impl Server {
     pub async fn identity(&self) -> Option<String> {
         self.per_connection(&self.identity, async {
             let mine = crate::auth::crypto::random_hex::<8>();
-            let set = format!("if -F '#{{@terminum-id}}' '' 'set -s @terminum-id {mine}'");
+            let set = format!("set -sqo @terminum-id {mine}");
             let read = self.run_all(vec![set, "show -sv @terminum-id".into()]).await.pop()?.ok()?;
             read.into_iter().next().map(|l| l.trim().to_string()).filter(|l| !l.is_empty())
         }).await

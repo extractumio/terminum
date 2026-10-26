@@ -4,7 +4,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 0.23.0 |
+| Version | 0.24.0 |
 | Date | 2026-10-26 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -13,6 +13,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.24.0 | 2026-10-26 | Owner: a restart of tmux (a reboot, a killed server) lost what each session showed last, such as a coding agent's last turn; AC-15 makes the panes again with fresh shells. Now terminumd keeps each shown pane's last 300 lines (`lastLines`, 0–2000, 0 off) within 5 s of its output (a host's within 15 s) in `state/lastlines/`, by the tmux server's `@terminum-id`; a restore hands the old pane's lines to the pane made in its place; a row's menu has Show Last 300 Lines, a window with the lines from before the restart and those kept since, plain text, Copy; the restore report points to it (AC-96, AC-15). Owner, while it was built: a full-screen program's own screen is not kept (nothing a restart brings back), the terminal's lines under it are. Pragmatic review applied: the identity read in the same answer as the panes and the captures on one control client (a restart between reads would file a new server's panes under the old identity); only the panes a restore made are paired, by the identity the checkpoint saved (a kept pane, paired with itself, would take another server's `%N`); a pane's lines go only once it stays absent 30 s (a reboot ends programs before tmux, their panes close while it answers); off while restore is off (nothing would take them); Time Machine exclusion; quick shells not kept; at most 2000 lines; hosts every 15 s. Code review (pragmatic) applied: no sweep in the first hour and only servers read lately count as current (a Mac off for 7 days lost the lines before the restore ran; a removed host's were touched forever); a second restart hands on the earlier lines while the pane printed only its prompt; a round read before the restart writes none of the old server's lines after the restore took them, and the old server's lines the restore did not take go; a capture's time taken before it; the page's identity read now (the one kept for the connection is the old one just after a restart); twice the rows read; a bench of 50 panes each printing a 180-column line every 0.2 s (release build): key echo p50 14.4 ms with 300 lines kept as with none, p95 19–27 ms, terminumd 2–3 MB more and 2–5 % CPU instead of under 1 % (AC-20's budgets hold; idle panes cost one list a server every 5 s). Found while testing: since 0.21.0 the server's identity was set with `if -F … 'set …'`, which on a server without one answers twice, both as the client's own: every later answer of that control client was the one before it, after each start of a tmux server (a restart, a first attach); now `set -sqo` (set only where none is, one answer), here and in the restore's (AC-89, AC-93). Rejected: dropping "Now" and showing the item only after a restart: the owner asked for Show Last 300 Lines as every session's function, and "Now" shows that lines are kept before any restart. |
 | 0.23.0 | 2026-10-26 | Owner: a tmux session's group had no rename. Its menu has Rename… (after New Session): it asks with the group's name and renames its session on terminum's own tmux (`rename-session`, the name taken literally as the pencil's, a name tmux refuses said); the group keeps its place among the groups and its fold in this browser; the user's own tmux sessions and a host's keep their own menus (AC-07). A project's Rename… was already in its menu (AC-92). Also: a new file or folder on a name a link to outside the roots took says the name is taken (it said read-only), and a host's agent reads a paste's body only once an upload slot is free (AC-95, AC-36). |
 | 0.22.2 | 2026-10-26 | An audit's findings fixed. A release's Linux terminumd named the build cached for its agent id, not the release's, so a Linux install of a release refused it (`--version` ≠ BUILD): the package builds it for its own build, the cache keeps the build beside each binary and builds again for another, and a cross build is checked by the build in its bytes (AC-08). At history-limit a trim and as many rows again bring the count back to the frame's, which read as nothing moved: the screen's top rows, read with the capture, now decide, and rows drawn over in place keep the count's numbers (AC-02). A collapsed tmux group's menu had New Session and Close Group off (its members were read from its drawn rows): they come from the list (AC-07). Unread marks changed just before a stop could be lost (written off the workers, the process ended first): the stop writes them (AC-93). `/folders?wait=NaN` on the service's socket ended its request in a panic: a wait that is no number of seconds is a 400 (AC-08). The systemd unit's log path took a `%` as a specifier: written `%%` (AC-08). The space bar's trackpad moved two characters over an emoji (UTF-16 halves): moves are counted by characters (AC-03). |
 | 0.22.1 | 2026-10-25 | First run of the Linux CI (Ubuntu 24.04, tmux 3.4): tmux 3.4 types `send-keys S-Enter` as the text "S-Enter" and has no `extended-keys-format`, so a server without that option counts as `extended-keys off` and gets Shift/Ctrl+Enter as bytes (AS-10); tmux 3.4 writes a `$` in a window name and a pane's folder as `\$` (limits); the tmux-missing hint names apt on Linux (AC-08). |
@@ -179,6 +180,7 @@ Open questions:
 | AC-88 | [SHOULD / P1] | On a computer the user opens a quick shell for the shown pane, below it or on its left, in the pane's folder: a terminal of its own taking a third of the view, resized by dragging its edge and closed with its ×; it stays with its pane until closed. |
 | AC-92 | [SHOULD / P1] | The user groups sessions into named projects, each in a color of its own far from the others, listed first with a [+] that opens a window in the project's folder, reordered by dragging; every page shows the same. |
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
+| AC-96 | [SHOULD / P1] | After tmux restarts (a reboot, a killed server) the user opens a session's last 300 lines from before the restart from its menu, the number set in settings.json. |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 
 ## 5. BDD scenarios
@@ -682,7 +684,7 @@ Scenario: AC-15 edge — nothing to restore, or the user said no
   Given the server runs already (terminumd restarted), or {"restore": false}
   Then nothing is recreated; the checkpoint goes on (or stops with "restore": false)
 Scenario: AC-15 edge — what is never stored
-  Then layout.json holds no output, history, environment, command lines other than an ssh recipe (destination and allowlisted options), or passwords
+  Then layout.json holds no output, history, environment, command lines other than an ssh recipe (destination and allowlisted options), or passwords; it names each server's identity (@terminum-id), whose files hold its panes' last lines (AC-96, kept apart)
 Scenario: AC-15 failure — a session cannot be made
   When "new-session" fails (tmux missing, a bad name)
   Then the report names it, the other sessions are restored, and "Restore again" in the page's menu retries once
@@ -913,6 +915,35 @@ Scenario: AC-89 edge — the user's tmux.conf
   Then the windows terminumd sized there get tmux's own size back ("set-option -w -u window-size"); terminumd marks each window it sizes there "@tm-sized", so after a crash or a dropped host link the marked windows no page shows get their size back when the server is attached again
 ```
 
+### AC-96 — Last lines survive a restart [SHOULD / P1]
+
+```gherkin
+Scenario: AC-96 happy path — how a session ended, after its tmux restarted
+  Given settings.json has {"lastLines": 300} (the default) and {"restore": true}, and window "api" of "main" shows a coding agent's last turn
+  Then within 5 s of its output (a host's pane within 15 s) terminumd keeps the pane's last 300 lines as `capture-pane -J` gives them (its history's end and its screen, wrapped lines joined, trailing blanks and blank bottom lines dropped) in state/lastlines/<host>@<socket>/<identity>_<N>.json with the session's and window's names, the folder and the time (it reads twice that many rows: wrapped rows joined give fewer lines); a pane whose window printed nothing since the second before it was read is not read again, the same text is not written again
+  And under a full-screen program (vim, htop) the lines kept are the terminal's under it (its history and the normal screen, `capture-pane -a`), never the program's own screen
+  When terminum's tmux is killed or the Mac reboots and AC-15 makes "api" again
+  Then the lines kept for the old pane become the new pane's "before the restart" (by the identity layout.json saved for that server and the pairs of the panes the restore made), and the report adds "Last lines before the restart: a session's menu, Show Last 300 Lines."
+  When the user picks Show Last 300 Lines in the row's menu (the number the setting's)
+  Then a large window shows them as plain text in the terminal's font, scrolled to the end, under "Before the restart · main · api · /Users/alex/work/api · Oct 26, 14:05"; "Before restart | Now" switches to the lines kept since; Copy copies the lines shown; Esc or × closes it
+  And the same holds for a host's "terminum" session and the user's own tmux sessions attached by name (AC-89) that AC-15 makes again; quick shells (AC-88) are not kept
+Scenario: AC-96 edge — nothing kept, or off
+  When a pane has nothing kept (a new pane in its first 5 s, a pane of a server that no restore made again)
+  Then the window says "Nothing kept yet: a session's last lines are kept within 5 s of its output."
+  Given {"lastLines": 0} or {"restore": false} (no restart would hand the lines on)
+  Then nothing is kept, the menu has no Show Last Lines, and every line kept before is deleted
+Scenario: AC-96 edge — when kept lines go
+  When the user closes a pane (absent from reads of its running tmux 30 s apart)
+  Then its lines go, those from before the restart with them; a pane that closes as its tmux ends (a reboot ends programs before tmux) keeps them
+  And when a restore made panes again, the old server's lines it did not hand on go at once (panes not made again); a server's that no restore took (its last pane closed by the user, a host removed or not attached since) go 7 days after terminumd last read that server (an hourly sweep, the first an hour after terminumd started, so a restore comes first)
+  And a second restart before a pane printed more than its prompt (2 lines) hands on the lines from before the first
+Scenario: AC-96 edge — privacy
+  Then the files are 0600 in 0700 folders, the folder is excluded from Time Machine on macOS, and their text reaches only a signed-in page that asks for one pane's; a host's lines are kept on this Mac; layout.json holds none of it
+Scenario: AC-96 failure — a file cannot be written or read
+  When a write fails (a full disk)
+  Then terminumd logs `lastlines.unsaved` and goes on; a file that cannot be read, a pane gone or its tmux not answering is said in the window in terminumd's words
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -1099,6 +1130,7 @@ WebSocket messages, page → terminumd (`t` names iterm-enhancer's where they ex
 | `rename`, `reorder`, `move`, `kill` | `id`, `name`, `ids`, `session` | sessions (AC-07) |
 | `unfold`, `find`, `mark`, `unmark`, `locate`, `marks` | as in iterm-enhancer | `terminum-terminal.md` |
 | `trace`, `pause`, `resume`, `files` | as in iterm-enhancer | — |
+| `lastlines` | `id` | a pane's last lines (AC-96): answered `{t: "lastlines", id, lines, before, latest}` (each `{key, session, window, dir, at, text}`, null, or `{error}`) or `{t: "lastlines", id, error}` |
 
 terminumd → page: `layout`, `theme`, `screen` (with `alt`, `mouse` and, when it changed, `split`: null or `{panes, zoomed, wcols}`, AC-13), `hist`, `folds`, `lines`, `found`, `marks`, `marked`, `created`, `files`, `fit`, `sized` (`cols`, `rows`, `mine`), `note`, `error`, `build`, `settings`, `restore` (the report), `stall`, `update` (`latest`); page → terminumd also `updatechoice` (`skip` with `tag`, `off`), the Mac's page only.
 
@@ -1166,6 +1198,10 @@ Layout checkpoint `~/.terminum/state/layout.json` (AC-15):
  "hosts": ["devbox"]}
 ```
 
+The checkpoint also names its server's identity: `"identity": "6db00afe9596fc57"` at the top for terminum's tmux, in each of `servers` for the others (AC-96).
+
+Last lines `state/lastlines/local@terminum/6db00afe9596fc57_3.json` (AC-96; `…_3.before.json` from before a restart): `{"key": "tmux:local:terminum:%3", "session": "main", "window": "api", "dir": "/Users/alex/work/api", "at": 1792000000, "text": "…"}`.
+
 Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expires": 1794592000, "by": "app"}]}` (at most 20, oldest dropped). Workspaces, bookmarks and web files keep iterm-enhancer's formats (`workspaces.json`, `web-bookmarks.json`, `web.json`, `web-sessions.json`).
 
 ### Configuration
@@ -1179,6 +1215,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 | `TM_HISTORY` | `10000` | `20000` | lines a page may load |
 | `size`, `page.lines`, `page.screenMode` | — | — | no longer used (AC-04): reported once |
 | `restore` | `true` | `false` | reboot restore (AC-15) |
+| `lastLines` | `300` | `1000`, `0` | lines kept of each session's end, 0–2000; 0 (or `restore: false`) keeps none and deletes those kept (AC-96) |
 | `themes.*` | local, hosts `*` remote | — | theme rules (AC-12) |
 | `page.*` | `textSize 13, lines wrap, screenMode auto` | — | page defaults (AC-19) |
 | `TM_WRITABLE_ROOTS` | `$HOME:/tmp` | `$HOME:/tmp:/opt/work` | Roots |
@@ -1236,6 +1273,8 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 | Control command answer | 10 s | the client is restarted (AC-14) |
 | Theme and settings files | 64 KB each | refused with a toast |
 | Window and session names | 100 characters, no control characters | refused inline |
+| Last lines kept per pane | 2000 (`lastLines`, default 300) | refused with a toast; the default is used |
+| Last lines of a server no restore took | 7 days after it was last seen | deleted |
 
 ### Security
 
@@ -1243,6 +1282,7 @@ Local sign-ins `state/local-sessions.json`: `{"items": [{"sha256": "…", "expir
 - tmux commands: every user string is one quoted argument with `#` doubled where tmux expands formats (AS-11, probed: a folder named `#(cmd)` would run `cmd`); control characters are refused before a command is formed; keys go as names; `-H` only from terminumd's tables; `send-keys -l` is never given a newline the user did not type.
 - The page: CSP as AC-09; terminal output is text; Markdown raw HTML off; Mermaid strict; links open new tabs with `noopener`.
 - Files: writes under Roots on resolved paths; Trash only; regular files only; as `terminum-files.md`.
+- Last lines (AC-96): what panes showed last is kept on disk, which tmux alone never did: printed secrets survive a reboot there. 0600 files in 0700 folders under the state folder, excluded from Time Machine, deleted with their pane, 7 days after their server was last seen, or all at `lastLines: 0`; read only by a signed-in page for one pane; a host's on this Mac.
 - Nothing leaves the Mac by itself except the daily release check (one HEAD request) and the ssh connections the user configured.
 
 Denied request:
@@ -1347,3 +1387,4 @@ Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/re
 - [x] 0.18.1 (2026-10-22) — AC-03 `web/test/e2e_notes.mjs` (Chromium and WebKit, both sizes: a paste with no text sends nothing and says so), `e2e_phonerow.mjs` (the input menu's Paste with a full clipboard pastes it; one `clipboard.read()`, no `readText()` after it), tmux measured on a private server: `load-buffer` of an empty file makes no buffer and `paste-buffer` then says "no buffer tm-…" (terminumd now takes an empty paste as nothing); AC-14 `e2e_notes.mjs` (an error banner closed with its × stays away until another error, a stall banner stays away while its seconds count on); AC-18 `e2e_notes.mjs` (a tap on ⟨…⟩ puts the keyboard and the hot keys away, then unfolds), `e2e_fold.mjs` (while a finger scrolls, "To the bottom" is out of sight too; back once the scroll stopped; a reminder due: a still pink ring, no blink); simplified after `/simplify` (reuse, simplification, efficiency, altitude reviews: the header calls the list's `metaLine`, one `termRange`, one `.banner` rule, one selection rule for the column, the sheets' rule once, the fold watching only the bell, find's field placed once a frame, the Files separator one width a frame); `node web/test/e2e_all.mjs` 1086, live 83, Panel 137, `make test` (cargo 444 + 1, scripts 14, Panel units 25, web units 120), `scripts/security_check.sh` pass.
 - [x] 0.22.2 (2026-10-26) — AC-02 `cargo test page::hist` (a private tmux at history-limit 100: a trim and 10 rows bring the count back, the rows found where they moved, red without the screen-top check; the screen's top rows drawn over in place, nothing scrolled, the count's rows); AC-07 `web/test/e2e_projects.mjs` (Chromium and WebKit: a collapsed group's menu keeps New Session and Close Group, New Session clones its last row); AC-03 `web/test/e2e_touch.mjs` (the trackpad over an emoji: one ←); AC-08 `cargo test sock::` (NaN, ±inf: 400), `cargo test systemd` (the log's path with `%%`), `python3 -m unittest discover -s scripts/tests` 24/24 (a package's Linux terminumd built for its build, a cached other built again, one naming another build refused); AC-93: the stop writes unread.json (no test: no app is built in unit tests) → pass. `make test` (481 Rust, 166 JS, 24 Python), clippy `-D warnings` clean.
 - [x] 0.23.0 (2026-10-26) — AC-07 `web/test/e2e_projects.mjs` (Chromium and WebKit: the group's menu New Session, Rename…, moves, Close Group; Rename… asks with its name, sends `renamegroup` with the name trimmed, the group first in the order as before and folded as before) and `python3 scripts/e2e_core.py` 44/44 (a private tmux: `-n#otes` named literally, `bad:name` refused in words, renamed back); AC-95, AC-36 `cargo test ops` (a dangling link's name: exists for a file and a folder; a folder linked outside: outside) → pass.
+- [x] 0.24.0 (2026-10-26) — AC-96 `cargo test lastlines` 9 (a read keeps shown panes but quick shells, the identity from the same answer; the tail's blank ends; under a full-screen program the normal screen, never the program's, no history capture without history; file names; read again only after output; closed only when absent 30 s; panes of an earlier terminumd known; the sweep; a restart hands on the old pane's lines, or the earlier ones under a mere prompt), `settings` (300, 0, 2000, restore off: 0, wrong values said), `tmux::control` (the identity set once with one answer, later answers in order; fails with the former `if -F`); `scripts/e2e_lastlines.py` 16/16 against a private terminumd and tmux (the last 300 lines within 5 s, 0600 in 0700 folders, out of Time Machine; the lines under a full-screen program, not its screen; the checkpoint's identity and no output in layout.json; the server killed: the restored panes show the old panes' lines from before the restart, the report says where; a pane closed keeps its lines 12 s and loses them by 40 s; lastLines 0 deletes them all), 27 runs: 25 passed, one a segfault of tmux 3.6a itself (`control_write`, Noticed), one the identity answered twice (fixed, then 8 runs passed); `web/test/e2e_lastlines.mjs` 36/36 in Chromium and WebKit at 1400×900 and 390×844 (the menu item with the setting's number, none at 0; plain text scrolled to the end; Before restart | Now; Copy; nothing kept and a refusal said; Esc); screenshots of the window dark and light at both sizes, keys 44 px and segments 34 px on the phone; `scripts/e2e_restore.py` 14/14; `make test` (cargo 493, Python 25, Panel units 38, page units 128), `node web/test/e2e_all.mjs` 1223 checks, `cd ui && node test/e2e_panel.mjs` 157 checks, `scripts/security_check.sh` → pass; the bench above. Not checked by a test: a host's and the user's own tmux restored with their lines (the same code path as terminum's, by their checkpoint's identity), a real reboot.

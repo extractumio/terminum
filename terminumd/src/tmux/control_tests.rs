@@ -26,6 +26,18 @@ async fn answers_come_in_order_and_errors_say_why() {
 }
 
 #[tokio::test]
+async fn the_identity_is_set_once_with_one_answer_so_later_answers_stay_in_order() {
+    let Some(s) = Tmux::start("ctl-identity", (40, 10), "/bin/sh") else { return };
+    let (c, _n, _d) = attach(&s);
+    let set = |id: &str| format!("set -sqo @terminum-id {id}");
+    let answers = c.run_all(vec![set("aaa"), "show -sv @terminum-id".into(), "display -p next".into()]).await;
+    assert_eq!(answers[1], Ok(vec!["aaa".to_string()]));
+    assert_eq!(answers[2], Ok(vec!["next".to_string()]), "an `if -F` that sets answers twice: this was the identity");
+    let again = c.run_all(vec![set("bbb"), "show -sv @terminum-id".into()]).await;
+    assert_eq!(again[1], Ok(vec!["aaa".to_string()]), "a second connection keeps the first identity");
+}
+
+#[tokio::test]
 async fn output_of_a_pane_is_a_notice() {
     let Some(s) = Tmux::start("ctl-notice", (40, 10), "/bin/sh") else { return };
     let (c, mut n, _d) = attach(&s);

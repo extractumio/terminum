@@ -34,7 +34,11 @@ configuration. The overview is in the [README](../README.md).
 - **Sessions outlive everything**: terminals live in tmux; terminumd runs as a launchd agent
   and comes back after a crash; after a reboot, or when a tmux server was killed, the sessions,
   windows, splits and folders are restored: terminum's own, each host's and the sessions of your
-  own tmux you attached (`"restore": true`).
+  own tmux you attached (`"restore": true`). Each session's last 300 lines are kept as well
+  (`"lastLines"`, up to 2000, 0 for none): after the restart, **Show Last 300 Lines** in its row's
+  menu shows how it ended (the terminal's lines; a full-screen program's own screen is not kept).
+  They are kept on disk in `~/.terminum/state/lastlines/` (private, out of Time Machine) until the
+  pane closes; `"lastLines": 0` deletes them.
 
 ## Install
 
@@ -316,7 +320,7 @@ Everything is in `~/.terminum/` and is read again within a second of a change:
 
 | File | What |
 |---|---|
-| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
+| `settings.json` | `port`, `tmux.socket`, `tmux.history`, `size`, `restore`, `lastLines`, `themes` rules (by host and session), `page` defaults (`textSize`, `markdownSize`, `widgets`, `folds`, `followAgent`), `midi.soundfont` (the .sf2 MIDI files play with), `hosts` (each with `attach`: sessions of its tmux), `attach` (sessions of your own tmux by socket) |
 | `themes/*.json` | colors, ANSI palette, font; `local.json` and `remote.json` ship as defaults |
 | `hotkeys.json` | the hot keys panel's rows (`"F5"`, `"C-r"`, `"text:git status"`, `"Paste"`) |
 | `custom.css` | your stylesheet, loaded after the page's own |

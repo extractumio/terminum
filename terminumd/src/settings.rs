@@ -53,6 +53,8 @@ pub struct Settings {
     pub tmux_socket: String,
     pub tmux_history: u32,
     pub restore: bool,
+    /// lines kept of each session's end, to read after its tmux restarted (AC-96); 0: none
+    pub last_lines: u32,
     pub themes: ThemeRules,
     pub page: PageSettings,
     /// Host records as written (`ssh`, `files`, `helper`, `theme`): the hosts module judges them.
@@ -72,6 +74,7 @@ impl Default for Settings {
             tmux_socket: "terminum".into(),
             tmux_history: 12000,
             restore: true,
+            last_lines: 300,
             themes: ThemeRules {
                 default: "local".into(),
                 hosts: BTreeMap::from([("*".to_string(), "remote".to_string())]),
@@ -90,7 +93,7 @@ impl Settings {
     /// The `settings` message's body: the page defaults and what was wrong with the file.
     pub fn page_json(&self) -> Value {
         let p = &self.page;
-        json!({"textSize": p.text_size, "markdownSize": p.markdown_size, "history": self.tmux_history,
+        json!({"textSize": p.text_size, "markdownSize": p.markdown_size, "history": self.tmux_history, "lastLines": if self.restore { self.last_lines } else { 0 },
                "widgets": p.widgets, "folds": p.folds, "colorScheme": p.color_scheme, "followAgent": p.follow_agent, "messages": self.messages})
     }
 }
@@ -221,6 +224,10 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
         }
         "size" => m.bad(NO_LONGER),
         "restore" => boolean(v, "restore", &mut s.restore, m),
+        "lastLines" => match v.as_u64() {
+            Some(n @ 0..=2000) => s.last_lines = n as u32,
+            _ => m.bad("lastLines must be 0–2000"),
+        },
         "themes" => {
             for (k, v) in members(v, "themes", m) {
                 match k {

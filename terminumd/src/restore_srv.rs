@@ -19,6 +19,8 @@ use crate::tmux::server::{plain, Link, Server, HOST_SESSION};
 
 pub const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{@tm-quick}\t#{window_name}\t#{window_layout}";
 pub const PANES: &str = "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}";
+/// The server's identity (`@terminum-id`) for the checkpoint: whose files hold its panes' last lines (AC-96).
+pub const IDENTITY: &str = "show -sqv @terminum-id";
 
 /// How tmux commands reach a server: its own process (`tmux -L <socket>`, a config file for
 /// terminum's), or a control client of it (a host's).
@@ -45,6 +47,13 @@ impl Exec<'_> {
             }
             Exec::Ctl(s) => s.run(words.iter().map(|w| args::word(w)).collect::<Vec<_>>().join(" ")).await.map(|l| l.join("\n")),
         }
+    }
+
+    /// The server's identity, given as Server::identity gives it (set only where none is).
+    pub async fn identity(&self) -> Option<String> {
+        let mine = crate::auth::crypto::random_hex::<8>();
+        self.run(&["set", "-sqo", "@terminum-id", &mine]).await.ok()?;
+        self.run(&["show", "-sv", "@terminum-id"]).await.ok().map(|i| i.trim().to_string()).filter(|i| !i.is_empty())
     }
 }
 
@@ -97,6 +106,8 @@ pub struct Made {
     pub notes: Vec<String>,
     /// the panes made again: (the checkpoint's pane id, the new one)
     pub panes: Vec<(String, String)>,
+    /// how many of them got their last lines from before the restart (AC-96)
+    pub lines: usize,
 }
 
 /// Makes `sessions` on the server `exec` reaches, but those in `existing`; `into` names a
@@ -173,8 +184,9 @@ pub async fn checkpoint(app: &Shared, prev: &Value) -> Value {
     let mut servers = prev.as_object().cloned().unwrap_or_default();
     for s in app.tmux.all().into_iter().filter(|s| !std::ptr::eq(s.as_ref(), app.tmux.local.as_ref())) {
         let Some(bulk) = s.bulk() else { continue };
-        let mut answers = bulk.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'")]).await.into_iter();
+        let mut answers = bulk.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'"), IDENTITY.into()]).await.into_iter();
         let (Some(Ok(wins)), Some(Ok(panes))) = (answers.next(), answers.next()) else { continue };
+        let identity = answers.next().and_then(Result::ok).and_then(|l| l.into_iter().next()).unwrap_or_default();
         // a host's tmux started anew is kept as it was until its layout was made again (host())
         if !s.is_local() && let Some(started) = started(&s).await {
             let at = servers.get(&s.id()).and_then(|v| v["at"].as_i64()).unwrap_or(i64::MAX);
@@ -186,7 +198,7 @@ pub async fn checkpoint(app: &Shared, prev: &Value) -> Value {
         if sessions.is_empty() {
             continue;                                   // nothing of it shown now: what was kept stays
         }
-        servers.insert(s.id(), json!({"host": (!s.is_local()).then(|| s.name.clone()), "at": crate::auth::store::unix_now(), "sessions": sessions}));
+        servers.insert(s.id(), json!({"host": (!s.is_local()).then(|| s.name.clone()), "at": crate::auth::store::unix_now(), "identity": identity.trim(), "sessions": sessions}));
     }
     Value::Object(servers)
 }
@@ -237,6 +249,7 @@ pub async fn users_local(app: &Shared, server: &Server) {
     let kept = kept(&exec).await;
     make(&exec, &wanted, &[], None, crate::restore::usable, &home, &mut m).await;
     crate::page::projects::restarted(app, &server.key(""), &[m.panes.clone(), kept].concat()).await;
+    m.lines = crate::lastlines::restarted(app, &server.id(), saved["identity"].as_str(), exec.identity().await, &m.panes).await;
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
@@ -263,6 +276,7 @@ pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let kept = kept(&Exec::Ctl(server)).await;
     make(&Exec::Ctl(server), &sessions, &existing, Some(HOST_SESSION), |_| true, if home.is_empty() { "~" } else { &home }, &mut m).await;
     crate::page::projects::restarted(app, &server.key(""), &[m.panes.clone(), kept].concat()).await;
+    m.lines = crate::lastlines::restarted(app, &server.id(), saved["identity"].as_str(), Exec::Ctl(server).identity().await, &m.panes).await;
     // the fresh session's own first window goes once the kept ones are there
     if m.windows > 0 && fresh.len() == 1 {
         let _ = server.run(format!("kill-window -t {}", args::word(&fresh[0]))).await;

@@ -228,6 +228,8 @@ try {
   });
   const one = await dragOf(row("app.py"));
   await page.click(row("src")); await page.click(row("app.py"), { modifiers: ["Alt"] });   // ⌥ adds to the selection (⌘ on a file opens a window)
+  // both selected and the tree redrawn (src's listing comes after its click): a row drawn anew carries no drag of the old
+  await page.waitForFunction(() => document.querySelectorAll("#tree .row.sel").length === 2, null, { timeout: 3000 }).catch(() => {}); await page.waitForTimeout(300);
   const both = await dragOf(row("src"));
   check("AC-36 a tree row is draggable and carries its host and path; a selected row carries the selection, itself first; other places get plain text",
     one.draggable === "true" && one.paths === JSON.stringify({ host: null, paths: [`${SB}/app.py`] }) && one.text === `${SB}/app.py`
