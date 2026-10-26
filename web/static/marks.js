@@ -5,7 +5,7 @@
 // below the sessions of those no session shows (orphaned). Text from the terminal is shown as text only.
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
-import { markPicker } from "./markpick.js";
+import { columnLeft, markPicker } from "./markpick.js";
 import { placeBeside, placeModal } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
@@ -356,7 +356,7 @@ export class Marks {
     if (!shown) this.search.toggle(false);
     if ($("marksfab").hidden) this.togglePane(false);
     if (!shown) return;
-    const left = `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
+    const left = columnLeft(term);
     const shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
     let y = term.offsetTop + 14;
     if (floats()) { Object.assign($("foldfab").style, { top: `${y}px`, left }); y += ($("foldfab").offsetHeight || 44) + 12; }

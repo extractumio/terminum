@@ -251,5 +251,21 @@ export async function webSent(browser, name) {
   const fabs = await e.page.evaluate(() => ["findfab", "splitfab", "sentfab", "marksfab", "remindfab"]
     .filter((id) => { const b = document.getElementById(id); return getComputedStyle(b).display !== "none" && b.getBoundingClientRect().width > 0; }));
   check("a split's embedded page shows none of the floating buttons", !fabs.length, fabs.join());
+  // a selection there: its Copy and [+] stand at the terminal's right, top down, never over the text at its left (no Ask there)
+  await e.page.evaluate(() => {
+    const row = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("reminder text"));
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let n; while ((n = walk.nextNode()) && !n.data.includes("reminder"));
+    const r = document.createRange(); r.setStart(n, n.data.indexOf("reminder")); r.setEnd(n, n.data.indexOf("reminder") + 8);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+  });
+  await pause(e.page, 300);
+  const sel = await e.page.evaluate(() => {
+    const t = document.getElementById("term").getBoundingClientRect();
+    return ["markcopy", "markadd"].map((id) => { const b = document.getElementById(id), r = b.getBoundingClientRect();
+      return { id, shown: !b.hidden && r.width > 0, right: Math.round(t.right - r.right), left: Math.round(r.left - t.left), top: Math.round(r.top) }; });
+  });
+  check("a split's embedded page: a selection's Copy and [+] stand at the terminal's right, one under another, not over its text",
+    sel.every((b) => b.shown && b.right >= 8 && b.right <= 80 && b.left > 100) && sel[0].top < sel[1].top, JSON.stringify(sel));
   await e.context.close();
 }

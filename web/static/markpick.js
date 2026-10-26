@@ -69,6 +69,10 @@ const firstRect = (range) => [...range.getClientRects()].find((r) => r.height > 
 /** Shows `button` while text in `term` (within `main`) is selected, `copyButton` above it and
  *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text, n) (the text
  *  as taken while it was selected). */
+/** The floating buttons' column's left in the terminal's area (marks.js placeFab; the selection's
+ *  buttons too, where the column is not drawn: a split's embedded page). */
+export const columnLeft = (term) => `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
+
 export function markPicker({ term, main, button, copyButton, askButton, view, onPick, onCopy, onAsk }) {
   let kept = null, hide = 0, frame = 0, copied = false;
   const floating = matchMedia(FLOATING);
@@ -80,7 +84,7 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
     frame = 0;
     const lead = document.getElementById(floating.matches ? "foldfab" : "findfab");
     if (!kept || !lead) return;
-    const h = button.offsetHeight || 32, step = h + 12, x = lead.style.left;
+    const h = button.offsetHeight || 32, step = h + 12, x = lead.style.left || columnLeft(term);   // none drawn: the column's place
     const t = term.getBoundingClientRect(), m = main.getBoundingClientRect();
     const y = floating.matches ? parseFloat(lead.style.top) || t.top - m.top + 14
       : Math.min(Math.max(kept.rect.top + kept.rect.height / 2 - h / 2, t.top + 4), t.bottom - 2 * step - h - 4) - m.top;
