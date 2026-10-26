@@ -81,13 +81,14 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         "split" => split(app, page, &s("id"), &s("how")).await,
         "clone" => clone_window(app, page, &s("id"), msg["project"].as_str()).await,
         "rename" => rename(app, &s("id"), msg["name"].as_str().unwrap_or("")).await,
+        "renamegroup" => rename_group(app, &s("group"), &s("name")).await,
         "reorder" => reorder(app, &s("group"), msg["ids"].as_array().cloned().unwrap_or_default()).await,
         "move" => move_window(app, &s("id"), &s("session")).await,
         "kill" => kill(app, &s("id")).await,
         _ => Ok(()),
     };
     match result {
-        Ok(()) if matches!(t, "rename" | "reorder" | "move" | "kill") => {
+        Ok(()) if matches!(t, "rename" | "renamegroup" | "reorder" | "move" | "kill") => {
             crate::manager::refresh(app).await;
         }
         Ok(()) => {}
@@ -193,6 +194,22 @@ async fn rename(app: &Shared, id: &str, name: &str) -> Result<(), String> {
         a.map_err(|e| format!("Not renamed: {}", said(&e)))?;
     }
     Ok(())
+}
+
+/// A tmux session's group renamed (its menu's Rename…): its session, on terminum's own tmux only
+/// (the user's own sessions and a host's keep the names they have there, AC-89).
+async fn rename_group(app: &Shared, wid: &str, name: &str) -> Result<(), String> {
+    let (server, session) = group(app, wid).ok_or("That session is gone.")?;
+    if !server.is_local() || server.is_users() {
+        return Err("Only a session of terminum's own tmux is renamed here.".into());
+    }
+    let name = args::check_session_name(name.trim())?;
+    if name == session {
+        return Ok(());
+    }
+    // `--`: a name that starts with "-" is the name, not a flag
+    let line = format!("rename-session -t {} -- {}", args::quote(&format!("={session}")), args::format_arg(&name));
+    server.run(line).await.map(drop).map_err(|e| format!("Not renamed: {}", said(&e)))
 }
 
 /// Windows of a session in the order the page dragged them to (rows of another session

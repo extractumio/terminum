@@ -7,6 +7,7 @@
 import { esc, fmtSize, hydrateRaw, midiWav, PROXIED, rawBytes, SERVER_APPS, whileShown, type FileView } from "./api";
 import { decoderFor, wav } from "./pcm";
 
+let sounds = 0;            // the sounds decoded or rendered here, each named for whileShown
 const isMidi = (f: FileView) => /^audio\/(x-)?midi$/.test(f.mime ?? "") || /\.(midi?|kar)$/i.test(f.path);
 
 /** The view `f` gets by its type, or null for a plain binary card: a PDF may be all text. */
@@ -48,12 +49,16 @@ export function renderBinary(body: HTMLElement, f: FileView, banner: string) {
   // decoded or rendered here into a WAV the player plays
   const audio = body.querySelector("audio")!, info = body.querySelector<HTMLElement>(".mediainfo")!;
   info.textContent = isMidi(f) ? "Rendering the MIDI file…" : "Decoding…";
+  // the tab closed or another file shown meanwhile: its render is called off, its WAV let go
+  const wanted = new AbortController();
+  let url = "";
+  whileShown(`sound ${++sounds}`, audio, () => { wanted.abort(); if (url) URL.revokeObjectURL(url); });
   void (async () => {
     try {
       const bytes = await rawBytes(f.path);
-      let url: string;
+      if (wanted.signal.aborted) return;
       if (isMidi(f)) {
-        const got = await midiWav(bytes);
+        const got = await midiWav(bytes, wanted.signal);
         url = got.url;
         info.textContent = `MIDI · played with ${got.font || "the SoundFont"}`;
       } else {
@@ -61,10 +66,10 @@ export function renderBinary(body: HTMLElement, f: FileView, banner: string) {
         url = URL.createObjectURL(new Blob([wav(pcm)], { type: "audio/wav" }));
         info.textContent = `${pcm.channels === 1 ? "Mono" : `${pcm.channels} channels`} · ${pcm.rate} Hz · decoded here`;
       }
+      if (wanted.signal.aborted) return URL.revokeObjectURL(url);
       audio.src = url;
-      whileShown(url, audio, () => URL.revokeObjectURL(url));
     } catch (e: any) {
-      info.textContent = `Not played: ${e.message ?? e}`;
+      if (!wanted.signal.aborted) info.textContent = `Not played: ${e.message ?? e}`;
     }
   })();
 }

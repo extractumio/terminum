@@ -99,7 +99,7 @@ def binaries(build, given, stage, release=False):
         raise agents.Failed("a release is made on a Mac: its macOS builds are signed there")
     found = build_macos(build, [here] if stage else ["macos-aarch64", "macos-x86_64"])
     try:
-        found.update(agents.build(["linux-x86_64", "linux-aarch64"]))
+        found.update(agents.build(["linux-x86_64", "linux-aarch64"], build))   # a Linux install checks its build
     except agents.Failed as e:  # a developer without the cross toolchain: Mac only, said loudly
         if release:
             raise agents.Failed(f"a release needs the Linux builds: {e}")

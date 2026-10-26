@@ -175,10 +175,12 @@ pub fn mkdir(roots: &Roots, parent: &Path, name: &str) -> Result<PathBuf, OpErro
         check_component(c)?;
     }
     let target = parent.join(name);
-    check_writable(roots, &target)?;
+    // a name taken (by a link to a folder outside the roots too) is a name taken, said as such
+    check_writable(roots, parent)?;
     if target.symlink_metadata().is_ok() {
         return Err(exists_in(name, parent));
     }
+    check_writable(roots, &target)?;
     fs::create_dir_all(&target).map_err(|e| io(e, &target))?;
     Ok(target)
 }
@@ -187,7 +189,10 @@ pub fn mkdir(roots: &Roots, parent: &Path, name: &str) -> Result<PathBuf, OpErro
 pub fn touch(roots: &Roots, parent: &Path, name: &str) -> Result<PathBuf, OpError> {
     check_component(name)?;
     let target = parent.join(name);
-    check_writable(roots, &target)?;
+    // judged where the new entry lands: a name taken by a link to a file outside the roots is a
+    // name taken (create_new never follows it), not a write there
+    check_writable(roots, parent)?;
+    check_entry_writable(roots, &target)?;
     match fs::OpenOptions::new().write(true).create_new(true).open(&target) {
         Ok(_) => Ok(target),
         Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(exists_in(name, parent)),
@@ -202,10 +207,13 @@ pub fn upload(roots: &Roots, dir: &Path, name: &str, data: &[u8], both: bool) ->
     use std::os::unix::fs::OpenOptionsExt;
     check_component(name)?;
     let first = dir.join(name);
-    check_writable(roots, &first)?;
+    // the new entry is judged where it lands, in `dir`: a name taken by a link to a file outside
+    // the roots is a name taken (rename_exclusive never follows it), not a write there
+    check_writable(roots, dir)?;
     if !dir.is_dir() {
         return Err(OpError::Missing(format!("{}: No such folder", name_of(dir))));
     }
+    check_entry_writable(roots, &first)?;
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let part = dir.join(format!(".tm-upload-{}-{seq}.part", std::process::id()));

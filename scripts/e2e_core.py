@@ -182,6 +182,16 @@ def main():
         check("AC-92 renamed; its last session taken out, the project goes; kept in projects.json",
               renamed is not None and gone is not None and json.load(open(os.path.join(t.app, "projects.json")))["projects"] == [], renamed)
         tmux("kill-pane", "-t", twin["id"].rsplit(":", 1)[-1])
+        # a tmux session's group renamed: its session, # and a leading - kept literally; a name tmux refuses said
+        ws.send({"t": "renamegroup", "group": "local/notes", "name": "-n#otes"})
+        regrouped = wait_layout(ws, lambda gs: any(g.get("wid") == "local/-n#otes" for g in gs))
+        check("AC-07 a group's Rename names its tmux session, # and a leading - literally", regrouped is not None and "-n#otes" in tmux("ls", "-F", "#S").split("\n"),
+              tmux("ls", "-F", "#S"))
+        ws.send({"t": "renamegroup", "group": "local/-n#otes", "name": "bad:name"})
+        refused = ws.until(lambda m: m["t"] == "error", 5)
+        ws.send({"t": "renamegroup", "group": "local/-n#otes", "name": "notes"})
+        back = wait_layout(ws, lambda gs: any(g.get("wid") == "local/notes" for g in gs))
+        check("AC-07 a group name tmux refuses is refused in words; renamed back", refused is not None and back is not None, refused and refused["msg"])
         tmux("new-window", "-d", "-t", "main:", "-n", "byhand")
         check("AC-01 a window made by hand shows within 2 s", wait_layout(ws, lambda gs: any(i["title"] == "byhand" for i in items(gs)), 3) is not None)
 
@@ -262,6 +272,14 @@ def main():
         check("AC-14 the server is started again with a session main", seen["main"])
         h = t.health()
         check("AC-08 status names the build, port and tmux", h["port"] == PORT and h["tmux"]["ok"] and h["build"], {k: h[k] for k in ("build", "port", "pages")})
+
+        # AC-93: a mark set just before a stop is on disk after it (the stop writes unread.json)
+        mark = first["id"].rsplit(":", 1)[0] + ":" + tmux("list-panes", "-a", "-F", "#{pane_id}").split()[-1]
+        ws.send({"t": "unread", "id": mark, "on": True})
+        ws.until(lambda m: m["t"] == "layout" and any(i["id"] == mark and i.get("unread") for i in items(m["groups"])), 5)
+        t.stop()
+        kept = json.load(open(os.path.join(t.app, "unread.json"))).get("unread", []) if os.path.exists(os.path.join(t.app, "unread.json")) else []
+        check("AC-93 an unread mark set just before a stop is kept", mark and mark in kept, kept)
     finally:
         if not all(results):
             print(t.log())

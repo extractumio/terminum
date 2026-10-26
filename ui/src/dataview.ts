@@ -36,7 +36,7 @@ export function openDepth(roots: Value[], budget: number): number {
 
 /** Renders a tree of `docs` (one per YAML document) into `box`. */
 function tree(box: HTMLElement, docs: Value[]) {
-  const values = new Map<HTMLElement, Value>();
+  const values = new WeakMap<HTMLElement, Value>();   // a redrawn tree's old rows go with their values
   const row = (key: string | null, v: Value, depth: number, open: number) => {
     const item = document.createElement("div");
     item.className = "dn";
@@ -55,20 +55,27 @@ function tree(box: HTMLElement, docs: Value[]) {
     }
     return item;
   };
-  const kids = (item: HTMLElement, v: Value[] | { [k: string]: Value }, depth: number, open: number, from = 0) => {
-    let box = item.querySelector<HTMLElement>(":scope > .dc");
-    if (!box) { box = document.createElement("div"); box.className = "dc"; item.append(box); }
-    const list = entries(v), part = list.slice(from, from + CHILDREN);
-    box.append(...part.map(([k, x]) => row(k, x, depth + 1, open)));
+  // rows at `depth` of `list` (a number: a YAML document's heading), CHILDREN at a time, the next
+  // drawn where their button stood
+  const page = (list: ([string | null, Value] | number)[], depth: number, open: number, from = 0): HTMLElement[] => {
+    const out: HTMLElement[] = list.slice(from, from + CHILDREN).map((x) => (typeof x === "number" ? heading(x) : row(x[0], x[1], depth, open)));
     if (from + CHILDREN < list.length) {
       const more = document.createElement("button");
       more.className = "dmore";
       more.type = "button";
-      more.style.setProperty("--d", String(depth + 1));
+      more.style.setProperty("--d", String(depth));
       more.textContent = `… ${(list.length - from - CHILDREN).toLocaleString()} more`;
-      more.onclick = () => { more.remove(); kids(item, v, depth, open, from + CHILDREN); };
-      box.append(more);
+      more.onclick = () => more.replaceWith(...page(list, depth, open, from + CHILDREN));
+      out.push(more);
     }
+    return out;
+  };
+  const heading = (i: number) => { const h = document.createElement("div"); h.className = "ddoc"; h.textContent = `Document ${i + 1}`; return h; };
+  const kids = (item: HTMLElement, v: Value[] | { [k: string]: Value }, depth: number, open: number) => {
+    const box = document.createElement("div");
+    box.className = "dc";
+    item.append(box);
+    box.append(...page(entries(v), depth + 1, open));
   };
   function unfold(item: HTMLElement, head: HTMLElement, open: number) {
     head.setAttribute("aria-expanded", "true");
@@ -79,14 +86,9 @@ function tree(box: HTMLElement, docs: Value[]) {
   }
   function draw(budget: number) {
     const open = openDepth(docs.length === 1 && isBox(docs[0]) ? entries(docs[0]).map(([, x]) => x) : docs, budget);
-    const root = box.querySelector<HTMLElement>(".dtree")!;
-    root.replaceChildren(...docs.flatMap((d, i) => {
-      const parts: HTMLElement[] = [];
-      if (docs.length > 1) { const h = document.createElement("div"); h.className = "ddoc"; h.textContent = `Document ${i + 1}`; parts.push(h); }
-      if (isBox(d)) for (const [k, x] of entries(d)) parts.push(row(Array.isArray(d) ? `${k}` : k, x, 0, open));
-      else parts.push(row(null, d, 0, open));
-      return parts;
-    }));
+    // the top level paged as a folder's children: a root of 100,000 values draws CHILDREN rows
+    const top = docs.flatMap((d, i): ([string | null, Value] | number)[] => [...(docs.length > 1 ? [i] : []), ...(isBox(d) ? entries(d) : [[null, d] as [null, Value]])]);
+    box.querySelector<HTMLElement>(".dtree")!.replaceChildren(...page(top, 0, open));
   }
   box.innerHTML = '<div class="dbar"><button type="button" class="btn" data-all="open">Expand all</button><button type="button" class="btn" data-all="close">Collapse all</button></div><div class="dtree" role="tree"></div>';
   box.addEventListener("click", (e) => {
@@ -110,7 +112,7 @@ function tree(box: HTMLElement, docs: Value[]) {
 /** Renders `rows` (the first the head) as a table into `box`. */
 function table(box: HTMLElement, rows: string[][]) {
   const [head = [], ...body] = rows;
-  const width = Math.max(head.length, ...body.slice(0, ROWS).map((r) => r.length));
+  const width = body.reduce((w, r) => Math.max(w, r.length), head.length);   // every row's: a later one may be wider
   const numeric = Array.from({ length: width }, (_, c) => body.slice(0, ROWS).every((r) => !r[c] || /^[-+]?(\d[\d,_]*)?(\.\d+)?([eE][-+]?\d+)?%?$/.test(r[c].trim())) && body.some((r) => r[c]));
   const cell = (t: string | undefined, c: number) => `<td${numeric[c] ? ' class="num"' : ""}>${esc(t ?? "")}</td>`;
   box.innerHTML = `<table class="dtab"><thead><tr><th class="rn">#</th>${Array.from({ length: width }, (_, c) => `<th>${esc(head[c] ?? "")}</th>`).join("")}</tr></thead><tbody></tbody></table>`;

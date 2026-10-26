@@ -154,17 +154,23 @@ struct Wait {
     wait: f64,
 }
 
+/// The wait asked for, held to 0..120 s; None when it is no number of seconds (NaN, infinite).
+fn wait_of(s: f64) -> Option<std::time::Duration> {
+    s.is_finite().then(|| std::time::Duration::from_secs_f64(s.clamp(0.0, 120.0)))
+}
+
 /// `terminum install` and `terminum folders`: each protected folder opened by terminumd itself,
 /// so macOS asks for it while the user is at the Mac (AC-08); said as it stands after `wait` s.
-async fn folders(State(app): State<Shared>, axum::extract::Query(q): axum::extract::Query<Wait>) -> Json<Value> {
+async fn folders(State(app): State<Shared>, axum::extract::Query(q): axum::extract::Query<Wait>) -> Response {
+    let Some(wait) = wait_of(q.wait) else { return err(StatusCode::BAD_REQUEST, "bad_wait", "wait: a number of seconds") };
     let mut v = if app.cfg.service {
-        crate::folders::ask(&crate::config::home(), std::time::Duration::from_secs_f64(q.wait.clamp(0.0, 120.0))).await
+        crate::folders::ask(&crate::config::home(), wait).await
     } else {
         json!({"done": true, "folders": []})
     };
     v["service"] = json!(app.cfg.service);
     v["tmux_started_by"] = json!(started_by(&app).await);
-    Json(v)
+    Json(v).into_response()
 }
 
 /// `terminum status`: what runs (AC-08).
@@ -301,5 +307,19 @@ async fn restore(State(app): State<Shared>) -> Response {
     match crate::restore::again(&app).await {
         Ok(()) => Json(json!({"ok": true})).into_response(),
         Err(e) => err(StatusCode::CONFLICT, "restore", e),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_wait_is_a_number_of_seconds_held_to_two_minutes() {
+        use std::time::Duration;
+        assert_eq!(super::wait_of(5.0), Some(Duration::from_secs(5)));
+        assert_eq!(super::wait_of(-1.0), Some(Duration::ZERO));
+        assert_eq!(super::wait_of(1e9), Some(Duration::from_secs(120)));
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(super::wait_of(bad), None, "{bad}");
+        }
     }
 }

@@ -6,7 +6,8 @@ terminumd runs as the files agent (`terminumd --agent`).
 Apple targets build with cargo; Linux targets build static (musl) with cargo-zigbuild and
 zig from the `ziglang` wheel, both pinned and kept in ./.toolchain. Output goes to
 dist/agents/<agent id>/<platform>/terminumd and is reused while the agent id (a hash of
-terminumd's sources and manifests) is unchanged.
+terminumd's sources and manifests) and the build it names (`--version`, its BUILD file beside
+it) are unchanged.
 
     python3 scripts/agents.py id                       print the agent id
     python3 scripts/agents.py toolchain                install the pinned toolchain (once)
@@ -91,17 +92,21 @@ def native():
     return f"{system}-{machine}"
 
 
-def build(platforms):
-    """Build each platform's agent once per agent id; returns {platform: path}."""
+def build(platforms, build_id=None):
+    """Build each platform's agent once per agent id and build; returns {platform: path}.
+    `build_id`: the build it names (a package's, which its installer checks against BUILD);
+    else TM_BUILD, else agent-<id>."""
     aid = agent_id()
     env = tool_env()
-    env.update(TM_AGENT_ID=aid, TM_BUILD=env.get("TM_BUILD") or f"agent-{aid}")
+    bid = build_id or env.get("TM_BUILD") or f"agent-{aid}"
+    env.update(TM_AGENT_ID=aid, TM_BUILD=bid)
     out = {}
     for p in platforms:
         if p not in TARGETS:
             raise Failed(f"unknown platform {p} (one of {', '.join(TARGETS)})")
         dest = DIST / aid / p / "terminumd"
-        if not dest.is_file():
+        stamp = dest.with_name("BUILD")  # the build the cached one names: another is built anew
+        if not dest.is_file() or not stamp.is_file() or stamp.read_text().strip() != bid:
             target = TARGETS[p]
             if p.startswith("linux-"):  # the same way on the Mac and on the Linux runner
                 if not (TOOLCHAIN / "bin/cargo-zigbuild").exists():
@@ -114,11 +119,18 @@ def build(platforms):
             dest.parent.mkdir(parents=True, exist_ok=True)
             tmp = dest.with_name(".terminumd.new")  # checked before it is cached under its id
             shutil.copy2(TERMINUMD / "target" / target / "release/terminumd", tmp)
-            got = subprocess.run([str(tmp), "--agent-id"], capture_output=True, text=True).stdout.strip() if p == native() else aid
-            if got != aid:
+            if p == native():  # asked (no TM_BUILD_ID: it would answer for it), else found in its bytes
+                own = {k: v for k, v in os.environ.items() if k != "TM_BUILD_ID"}
+                said = lambda flag: subprocess.run([str(tmp), flag], capture_output=True, text=True, env=own).stdout.strip()
+                got = (said("--agent-id"), said("--version"))
+            else:
+                data = tmp.read_bytes()
+                got = tuple(x if x.encode() in data else "none" for x in (aid, bid))
+            if got != (aid, bid):
                 tmp.unlink()
-                raise Failed(f"{target} terminumd says agent id {got}, expected {aid}")
+                raise Failed(f"{target} terminumd says agent id {got[0]}, build {got[1]}; expected {aid}, {bid}")
             tmp.replace(dest)
+            stamp.write_text(bid + "\n")
         out[p] = dest
     return out
 

@@ -118,7 +118,7 @@ export async function webTmux(browser, name) {
         color: c(g.querySelector("h2 .label")), row: c(g.querySelector(".item .host")),
         rowText: g.querySelector(".item .host").textContent }; });
     const ATTACH = "ssh -t -- devbox.example 'tmux attach -t =terminum'";
-    const WHY = "kex_exchange_identification: read: Connection reset by peer; Connection reset by 10.0.0.5 port 22";
+    const WHY = "kex_exchange_identification: read: Connection reset by peer; Connection reset by 192.0.2.5 port 22";
     f.say({ t: "layout", groups: [...LAYOUT, host("failed", { why: WHY, session: "terminum", attach: ATTACH })] });
     await pause(page);
     const failed = await page.evaluate(() => { const g = document.querySelector('#sessions .grp[data-wid="devbox/terminum"]'), s = g.querySelector(".gstate");

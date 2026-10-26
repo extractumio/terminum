@@ -112,6 +112,18 @@ export async function webTouch(browser) {
   const moved = sent.slice(pad).filter((m) => m.t === "in").map((m) => m.data);
   check(`${at} the space bar's trackpad: the caret's moves are sent as ← and →, a jump to the field's end as nothing`,
     JSON.stringify(moved) === JSON.stringify(["\x1b[D\x1b[D", "\x1b[C"]), JSON.stringify(moved));
+  // the caret moved over an emoji kept in the field: one ←, not one for each UTF-16 half
+  await page.evaluate((pad) => {
+    const k = document.getElementById("kbd");
+    k.value = pad + "a\u{1F600}" + pad; k.setSelectionRange(pad.length + 3, pad.length + 3);
+    k.dispatchEvent(new InputEvent("input", { inputType: "insertText", data: "a\u{1F600}", bubbles: true }));
+  }, "\u200b".repeat(32));
+  await page.waitForTimeout(700);
+  const emo = sent.length;
+  await page.evaluate((n) => document.getElementById("kbd").setSelectionRange(n + 1, n + 1), 32);
+  await page.waitForTimeout(50);
+  const overEmoji = sent.slice(emo).filter((m) => m.t === "in").map((m) => m.data);
+  check(`${at} the space bar's trackpad over an emoji: one ←`, JSON.stringify(overEmoji) === JSON.stringify(["\x1b[D"]), JSON.stringify(overEmoji));
 
   // the caret before the kept character (iOS's space-bar trackpad): a delete still goes; a cut sends nothing
   const edge = sent.length;
@@ -303,6 +315,30 @@ export async function webTouch(browser) {
   await page.waitForTimeout(100);
   const top1 = await page.evaluate(() => document.getElementById("term").scrollTop);
   check(`${at} a swipe down that starts on the input box scrolls the terminal`, top1 < top0, JSON.stringify({ top0, top1 }));
+
+  // a selection the page takes away a moment (iOS's menu put away) and makes again: a row that changes
+  // meanwhile waits, so the selection comes back whole (AC-37)
+  const answer = [line("⏺ Done and checked."), line(""), line(RULE), line("> "), line(RULE)];
+  say({ t: "screen", sid: "S1", full: true, n: answer.length, cols: 60, rows: answer.length, ch: answer.map((r, i) => [i, r]) });
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    document.getElementById("kbd").blur();
+    const row = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("Done and checked"));
+    const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
+    let n; while ((n = walk.nextNode()) && !n.data.includes("checked"));
+    const r = document.createRange(), i = n.data.indexOf("checked");
+    r.setStart(n, i); r.setEnd(n, i + 7);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+  });
+  const away = await page.waitForFunction(() => !getSelection().rangeCount, null, { timeout: 3000, polling: "raf" }).then(() => true, () => false);
+  say({ t: "screen", sid: "S1", full: false, n: answer.length, cols: 60, rows: answer.length, ch: [[0, line("⏺ Done and checked again.")]] });
+  await page.waitForTimeout(400);
+  const back = await page.evaluate(() => String(getSelection()));
+  await page.evaluate(() => getSelection().removeAllRanges());
+  await page.waitForTimeout(200);
+  const later = await page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("checked again")));
+  check(`${at} a selection taken away a moment for iOS's menu comes back whole: the row's change waits, then shows`,
+    away && back === "checked" && later, JSON.stringify({ away, back, later }));
   await page.close();
 }
 

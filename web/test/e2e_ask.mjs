@@ -113,4 +113,35 @@ export async function askChecks({ page, sent, say, at, layout, selectRow }) {
   check(`${at} Ask on a narrow window: just under the [+]`, narrow.shown && narrow.above && narrow.sameX && narrow.sent === "hidden", JSON.stringify(narrow));
   await page.evaluate(() => getSelection().removeAllRanges());
   await page.setViewportSize({ width: 1400, height: 900 });
+  await page.waitForTimeout(300);
+
+  // Send to Agent's Enter only to its pane, still in its agent: the agent ending while the dialog is
+  // open hides the button and says so; another pane shown within the Enter's 0.2 s gets no Enter
+  const agentLayout = [{ ...layout[0], items: [{ ...layout[0].items[0], agent: "claude", shell: false }, layout[0].items[1]] }];
+  say({ t: "layout", groups: agentLayout });
+  await page.waitForTimeout(150);
+  await selectRow(page, "out 2500 lorem");
+  await page.click("#askfab");
+  await page.waitForSelector("#askbox[open]", { timeout: 3000 }).catch(() => {});
+  const shown = await page.evaluate(() => !document.getElementById("asksend").hidden);
+  say({ t: "layout", groups: layout });                               // the agent ended (another client's view)
+  await page.waitForTimeout(150);
+  const ended = await page.evaluate(() => ({ hidden: document.getElementById("asksend").hidden, said: document.getElementById("askerr").textContent, open: document.getElementById("askbox").open }));
+  await page.keyboard.press("Escape");
+  check(`${at} Ask: the agent ending while the dialog is open hides Send to Agent and says so`,
+    shown && ended.hidden && /agent ended/.test(ended.said) && ended.open, JSON.stringify({ shown, ended }));
+  say({ t: "layout", groups: agentLayout });
+  await page.waitForTimeout(150);
+  await selectRow(page, "out 2500 lorem");
+  await page.click("#askfab");
+  await page.fill("#askq", "switch away");
+  k = sent.length;
+  await page.click("#asksend");
+  await page.waitForFunction(() => !document.getElementById("askbox").open, null, { timeout: 5000 }).catch(() => {});
+  await page.evaluate((id) => document.querySelector(`#sessions .item[data-id="${id}"]`)?.click(), layout[0].items[1].id);   // within the 0.2 s
+  await page.waitForTimeout(400);
+  const away = { keys: sent.slice(k).filter((x) => x.t === "in").map((x) => x.data), sub: sent.slice(k).some((x) => x.t === "sub" && x.id === layout[0].items[1].id),
+    toast: await page.evaluate(() => document.getElementById("toast").textContent) };
+  check(`${at} Ask's Send to Agent: another pane shown before the Enter gets none, and a toast says it was not pressed`,
+    away.sub && away.keys.length === 1 && !away.keys.includes("\r") && /not pressed/.test(away.toast), JSON.stringify(away));
 }

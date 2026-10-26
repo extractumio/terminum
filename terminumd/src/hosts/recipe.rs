@@ -119,7 +119,7 @@ pub fn parse(text: &str) -> Result<Vec<String>, String> {
 }
 
 /// The name a host gets when none is given: its destination's host, its first label unless
-/// it is an IPv4 address ("alex@devbox.example" -> "devbox", "10.0.0.5" as is).
+/// it is an IPv4 address ("alex@devbox.example" -> "devbox", "192.0.2.5" as is).
 pub fn default_name(recipe: &[String]) -> Result<String, String> {
     let dest = recipe.last().map_or("", String::as_str);
     let host = dest.rsplit_once('@').map_or(dest, |(_, h)| h);
@@ -179,7 +179,7 @@ mod tests {
         assert_eq!(name("alex@devbox.example -p 2222").unwrap(), "devbox");
         assert_eq!(name("box2").unwrap(), "box2");
         assert_eq!(name("-l alex vm-1.lan").unwrap(), "vm-1");
-        assert_eq!(name("root@10.0.0.5").unwrap(), "10.0.0.5");
+        assert_eq!(name("root@192.0.2.5").unwrap(), "192.0.2.5");
         assert_eq!(name("alex@[fe80::1]").unwrap_err(), "give this host a name");
         assert_eq!(name("local").unwrap_err(), "give this host a name");
     }

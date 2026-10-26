@@ -12,19 +12,32 @@
 set -euo pipefail
 host=${TM_MAC_RUNNER:?"set TM_MAC_RUNNER to the ssh name of the Mac test runner (local.mk: TM_MAC_RUNNER = name)"}
 repo=$(cd "$(dirname "$0")/.." && pwd)
-ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" 'mkdir -p ci/terminum' \
-    || { echo "ci_mac: $host does not answer over ssh (asleep, off, or another network)" >&2; exit 2; }
+# one run at a time on the runner: the lock (beside the tree) is taken before the tree is
+# replaced, so a second run never changes the files of one under way
+rc=0
+ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" 'mkdir -p ci/terminum && { mkdir ci/terminum.lock 2>/dev/null || exit 3; }' || rc=$?
+case $rc in
+    0) ;;
+    3) echo "ci_mac: another run uses $host:~/ci/terminum (or a stale ~/ci/terminum.lock: remove it)" >&2; exit 3 ;;
+    255) echo "ci_mac: $host does not answer over ssh (asleep, off, or another network)" >&2; exit 2 ;;
+    *) echo "ci_mac: $host:~/ci/terminum could not be made" >&2; exit 2 ;;
+esac
+# until the run starts the lock is this script's to give back; then the run's (it may outlive an interrupted ssh)
+running=0
+trap '[ $running = 1 ] || ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "rmdir ci/terminum.lock" \
+    || echo "ci_mac: $host:~/ci/terminum.lock was left: remove it" >&2' EXIT
 rsync -a --delete \
     --exclude .git --exclude target --exclude node_modules --exclude ui/dist --exclude dist \
     --exclude .toolchain --exclude 'local.mk' --exclude 'CLAUDE.local.md' --exclude 'MEMORY.md' \
-    --exclude '.env*' --exclude 'workspaces.json' --exclude '.claude' --exclude .ci.lock \
+    --exclude '.env*' --exclude 'workspaces.json' --exclude '.claude' \
     "$repo/" "$host:ci/terminum/"
-# one run at a time on the runner (a lock beside the tree); a login shell for Homebrew's PATH
+running=1
+# a login shell for Homebrew's PATH; a link that never came up leaves the lock (the run may have started)
+trap 'rc=$?; [ $rc = 255 ] && echo "ci_mac: ssh to $host failed: if no run is under way there, remove ~/ci/terminum.lock" >&2; exit $rc' EXIT
 ssh -o BatchMode=yes "$host" 'bash -lc '"'"'
     set -euo pipefail
+    trap "rmdir ~/ci/terminum.lock" EXIT
     cd ~/ci/terminum
-    mkdir .ci.lock 2>/dev/null || { echo "another run uses ~/ci/terminum (or a stale ~/ci/terminum/.ci.lock)" >&2; exit 3; }
-    trap "rmdir .ci.lock" EXIT
     export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH" NO_COLOR=1
     # the Rust of the Linux CI, for this run only: the default toolchain of the runner stays as it is
     export RUSTUP_TOOLCHAIN=1.98.1

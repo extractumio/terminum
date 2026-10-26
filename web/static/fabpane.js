@@ -124,6 +124,25 @@ export function fabPane({ fab, pane, close, onToggle }) {
   fab.addEventListener("click", () => toggle());
   fab.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   close.addEventListener("click", () => toggle(false));
-  pane.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); toggle(false); } });
+  pane.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); toggle(false); }
+    else if (e.key === "Tab") keepTab(pane, e);
+  });
+  // modal: the keys never reach what lies behind it (the terminal's input) while it is open;
+  // a <dialog> opened over it takes them
+  document.addEventListener("focusin", (e) => {
+    if (open && !pane.contains(e.target) && !e.target.closest?.("dialog[open]")) pane.focus({ preventScroll: true });
+  });
   return { toggle, open: () => open, place };
+}
+
+/** Tab and Shift+Tab go round the buttons and fields of `pane`, never out of it. */
+function keepTab(pane, e) {
+  const all = [...pane.querySelectorAll("button, input, textarea, select, a[href], [tabindex]:not([tabindex='-1'])")]
+    .filter((el) => !el.disabled && el.offsetParent);
+  const at = all.indexOf(document.activeElement), last = all.length - 1;
+  if (at === -1 || (e.shiftKey ? at === 0 : at === last)) {
+    e.preventDefault();
+    (e.shiftKey ? all[last] : all[0])?.focus({ preventScroll: true });
+  }
 }

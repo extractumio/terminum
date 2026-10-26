@@ -59,10 +59,39 @@ export async function webProjects(browser, name) {
   await page.click("#confirmok");
   await pause(page, 100);
   const gkilled = sent.filter((m) => m.t === "kill").slice(gkills).map((m) => m.id);
-  check("AC-07 a session group's menu (a right click on its header, or its ⋯): New Session, moves among the groups, Close Group (asked first)",
-    JSON.stringify(gmenu) === JSON.stringify(["New Session", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Close Group…"]) && downed === "local/notes,local/main"
+  check("AC-07 a session group's menu (a right click on its header, or its ⋯): New Session, Rename, moves among the groups, Close Group (asked first)",
+    JSON.stringify(gmenu) === JSON.stringify(["New Session", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Close Group…"]) && downed === "local/notes,local/main"
     && await order() === "local/main,local/notes" && JSON.stringify(byDots) === JSON.stringify(gmenu) && JSON.stringify(gnew) === JSON.stringify({ t: "clone", id: ID(4) })
     && gasks === "Close the group notes and its session?" && JSON.stringify(gkilled) === JSON.stringify([ID(3)]), JSON.stringify({ gmenu, downed, byDots, gnew, gasks, gkilled }));
+  // a collapsed group keeps its actions: its menu reads its sessions from the list, not from its drawn rows
+  const fold = () => page.click('#sessions section[data-wid="local/main"] h2 .toggle');
+  await fold();
+  await pause(page, 100);
+  await groupAt("local/main");
+  const folded = { menu: await menuItems(page), rows: await page.evaluate(() => document.querySelectorAll('#sessions section[data-wid="local/main"] li').length) };
+  await page.click('#rowmenu button[data-action="new"]');
+  folded.cloned = last(sent, "clone");
+  await fold();
+  await pause(page, 100);
+  check("AC-07 a collapsed session group's menu keeps New Session and Close Group",
+    folded.rows === 0 && JSON.stringify(folded.menu) === JSON.stringify(gmenu) && JSON.stringify(folded.cloned) === JSON.stringify({ t: "clone", id: ID(4) }), JSON.stringify(folded));
+  // Rename… names the group's tmux session; the group keeps its place among the groups and its fold
+  await fold();
+  await pause(page, 100);
+  await groupAt("local/main");
+  await page.click('#rowmenu button[data-action="rename"]');
+  await page.waitForSelector("#namebox[open]", { timeout: 3000 }).catch(() => {});
+  const naming = await page.evaluate(() => ({ value: document.getElementById("namefield").value, text: document.getElementById("nametext").textContent }));
+  await page.fill("#namefield", "  work  ");
+  await page.click("#nameok");
+  await pause(page, 100);
+  const regrouped = { naming, sent: last(sent, "renamegroup"), order: await page.evaluate(() => JSON.parse(localStorage.getItem("groupOrder") ?? "null")),
+    folded: await page.evaluate(() => JSON.parse(localStorage.getItem("collapsed") ?? "[]")) };
+  await fold();
+  await pause(page, 100);
+  check("AC-07 a session group's Rename… asks with its name and names its tmux session; its place and fold are kept",
+    naming.value === "main" && /Rename main/.test(naming.text) && JSON.stringify(regrouped.sent) === JSON.stringify({ t: "renamegroup", group: "local/main", name: "work" })
+      && regrouped.order?.[0] === "local/work" && regrouped.folded.some((k) => k.includes("\nwork\n")), JSON.stringify(regrouped));
   // the unread row's hatching: pale lines over its whole box (its background), the blob gone; `ink` the lines' color
   const mark = (pg = page) => pg.evaluate(() => {
     const b = document.querySelector('#sessions .item[data-id$="%4"]'), img = getComputedStyle(b).backgroundImage;

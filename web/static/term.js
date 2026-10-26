@@ -54,6 +54,7 @@ export class TermView {
     this.end = openEnd({ term, toBottom: () => this.toBottom() });   // a session just opened keeps to its end
     this.reset();
     this.touching = false;
+    this.held = 0;           // hold()s not yet let go
     this.thawers = [];       // whenThawed's waiters, in the order asked
     term.addEventListener("scroll", () => this.onScroll(), { passive: true });
     bottomBtn.addEventListener("click", () => this.toBottom());
@@ -85,7 +86,7 @@ export class TermView {
   }
 
   frozen() {
-    if (this.touching) return true;
+    if (this.touching || this.held) return true;
     const sel = getSelection();
     // a selection in an output widget is in its row's shadow root (AC-56); browsers report it
     // collapsed by the row, with its text (markpick.js)
@@ -105,6 +106,13 @@ export class TermView {
     if (this.pending) this.flush();
     const w = this.thawers; this.thawers = [];
     for (const fn of w) setTimeout(fn);      // each in a task of its own, after the page caught up
+  }
+
+  /** Frozen while held, with or without a selection: touchcopy.js takes a selection away a
+   *  moment and makes it again, and a line redrawn meanwhile would lose it. */
+  hold(on) {
+    this.held = Math.max(0, this.held + (on ? 1 : -1));
+    if (!this.held) this.resume();
   }
 
   /** Runs fn now, or when resume() finds the view no longer frozen. */

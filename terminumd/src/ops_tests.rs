@@ -112,15 +112,29 @@ fn an_upload_is_a_new_file_never_written_over_another() {
     std::os::unix::fs::symlink(dir.join("elsewhere"), dir.join("link")).unwrap();
     assert_eq!(upload(&roots, &dir, "link", b"x", false).unwrap_err().code(), "exists");
     assert!(!dir.join("elsewhere").exists());
+    // a name taken by a link to a file outside the roots: taken, and Keep Both saves beside it
+    let outside = crate::testutil::fresh_dir("regression-upload-outside");
+    fs::write(outside.join("far.txt"), "far").unwrap();
+    std::os::unix::fs::symlink(outside.join("far.txt"), dir.join("far.txt")).unwrap();
+    assert_eq!(upload(&roots, &dir, "far.txt", b"x", false).unwrap_err().code(), "exists");
+    assert_eq!(upload(&roots, &dir, "far.txt", b"near", true).unwrap(), dir.join("far 2.txt"));
+    assert_eq!((fs::read(outside.join("far.txt")).unwrap(), fs::read_link(dir.join("far.txt")).unwrap()), (b"far".to_vec(), outside.join("far.txt")));
     // no part files left behind
     assert!(fs::read_dir(&dir).unwrap().all(|e| !e.unwrap().file_name().to_string_lossy().ends_with(".part")));
     fs::remove_dir_all(dir).unwrap();
+    fs::remove_dir_all(outside).unwrap();
 }
 
 #[test]
 fn an_upload_keeps_to_the_roots_and_plain_names() {
     let (roots, dir) = setup("upload-roots");
     assert_eq!(upload(&roots, Path::new("/tmp"), "x", b"x", false).unwrap_err().code(), "outside_writable_roots");
+    // a folder in the roots that is a link to one outside: outside
+    let outside = crate::testutil::fresh_dir("regression-upload-roots-outside");
+    std::os::unix::fs::symlink(&outside, dir.join("out")).unwrap();
+    assert_eq!(upload(&roots, &dir.join("out"), "x", b"x", false).unwrap_err().code(), "outside_writable_roots");
+    assert!(!outside.join("x").exists());
+    fs::remove_dir_all(&outside).unwrap();
     for bad in ["", "..", "a/b", "a\0b"] {
         assert_eq!(upload(&roots, &dir, bad, b"x", false).unwrap_err().code(), "bad_name", "{bad:?}");
     }
@@ -129,4 +143,21 @@ fn an_upload_keeps_to_the_roots_and_plain_names() {
     assert_eq!(numbered("a.tar.gz", 2), "a.tar 2.gz");
     assert_eq!(numbered("README", 4), "README 4");
     fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn a_new_file_or_folder_on_a_name_a_link_outside_took_is_a_name_taken() {
+    let (roots, dir) = setup("touch-link");
+    let outside = crate::testutil::fresh_dir("regression-touch-outside");
+    std::os::unix::fs::symlink(outside.join("far.txt"), dir.join("far.txt")).unwrap();   // dangling: never created there
+    std::os::unix::fs::symlink(&outside, dir.join("far")).unwrap();
+    assert_eq!(touch(&roots, &dir, "far.txt").unwrap_err().code(), "exists");
+    assert_eq!(mkdir(&roots, &dir, "far").unwrap_err().code(), "exists");
+    assert!(!outside.join("far.txt").exists(), "nothing written outside");
+    // a folder that is a link outside: outside, for both
+    assert_eq!(touch(&roots, &dir.join("far"), "x").unwrap_err().code(), "outside_writable_roots");
+    assert_eq!(mkdir(&roots, &dir.join("far"), "x").unwrap_err().code(), "outside_writable_roots");
+    assert!(!outside.join("x").exists());
+    fs::remove_dir_all(dir).unwrap();
+    fs::remove_dir_all(outside).unwrap();
 }

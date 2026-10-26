@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core). This spec holds the Files panel: iterm-enha
 
 | Field | Value |
 |---|---|
-| Version | 0.7.1 |
-| Date | 2026-10-24 |
+| Version | 0.7.2 |
+| Date | 2026-10-26 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.7.2 | 2026-10-26 | An audit's findings fixed. A JSON or YAML root of 100,000 values drew 100,000 rows at once: the top level is paged as a folder's children; Expand all and Collapse all kept every tree drawn before in memory. YAML: a key named `__proto__` vanished (it set the object's prototype), a key twice in one mapping kept the last silently, `\UFFFFFFFF` threw and left Rendered blank: each key is a member of its own, a key twice and an escape past Unicode are errors with their line and column. CSV: a last record `""` with no line end was dropped, and a column first met after row 5000 was never shown (AC-94). A video or a sound no longer shown played on, detached: it is stopped and let go as soon as its element leaves the page; a picture's `blob:` address lives while it is shown (it was revoked once drawn, so Open Image in New Tab failed); MIDI renders run two at a time, and one whose tab closed or file changed is called off, its WAV never made (AC-64). Keep Both was refused when the name was taken by a link to a file outside the roots: the new file is judged in its folder, and saved beside the link (AC-95). |
 | 0.7.1 | 2026-10-25 | A ⌘S pressed while a save is still in flight saves again once it ends, so text typed meanwhile is written too (before, the press joined the running save and that text stayed unsaved; seen on the Linux CI, whose slower save outlasted the check's wait) (AC-56). |
 | 0.7.0 | 2026-10-24 | Owner: files dragged from Finder (or another app) onto the tree upload into the folder under the pointer, on this Mac or the pane's host (AC-95): the folder a row is in (a folder's own row: that folder; below the rows: the root) shows as the target while the drag lasts, and moving up or down picks another among those shown. New route `POST /api/fs/upload?dir=&name=[&both=1]` (the file's bytes, at most 100 MB; under Roots; never over an existing file: refused, or with both=1 saved as "name 2.ext"), forwarded to a host's agent as the other file operations are (terminum.md AC-09). |
 | 0.6.1 | 2026-10-24 | Owner: Esc in the Files tree hides View, the keys staying in the tree, so files are looked at one after another (Enter or a click shows one, Esc hides it); MIDI plays on a fresh install with the SoundFont in the package (terminum.md 0.19.2) (AC-70, AC-64). |
@@ -399,13 +400,14 @@ Scenario: AC-64 happy path — a closer look
 Scenario: AC-64 happy path — a PDF, a video, a sound
   When the user opens "docs/spec.pdf", "demo.mp4" or "note.mp3"
   Then its tab shows the PDF in the browser's own viewer, filling the tab (its pages, zoom, find, print, its own download), or the video or the sound in the browser's player with its controls, not started, Download (Open with default app on this Mac's own page) under it
-  And the file is fetched with the sign-in's header and shown from a blob: address of its own type, revoked once its tab closed; at most 64 MB, as an image
+  And the file is fetched with the sign-in's header and shown from a blob: address of its own type, revoked once its tab closed (a picture's too: it opens by its address while shown); at most 64 MB, as an image
+  And a video or a sound no longer shown (another file, its tab closed) is stopped and let go at once
 
 Scenario: AC-64 happy path — every sound
   When the user opens a sound
   Then one the browser plays (MP3, AAC and M4A, WAV, FLAC, Ogg, Opus; AIFF and AU in Safari) plays in the browser's player
   And an AU (.au, .snd: μ-law, A-law, 8-, 16-, 24-, 32-bit and float PCM) or an AIFF (.aif, .aiff: 8-, 16-, 24- and 32-bit PCM) the browser does not play is decoded in the panel into a WAV and plays in the same player; one it cannot decode says why
-  And a MIDI file (.mid, .midi, .kar; formats 0 and 1) is sent to terminumd (POST /api/midi, at most 4 MB, also from a remote host's file: the page has its bytes), which renders it with the SoundFont named in settings.json's midi.soundfont (else ~/.terminum/soundfont.sf2, else the package's GeneralUser GS 2.0.3; read once and kept while its file is unchanged; at most 10 minutes, 44.1 kHz stereo, rendered a block at a time) into a WAV the same player plays: it seeks, pauses and sets its volume as any sound; the bank's name shows under it
+  And a MIDI file (.mid, .midi, .kar; formats 0 and 1) is sent to terminumd (POST /api/midi, at most 4 MB, also from a remote host's file: the page has its bytes), which renders it with the SoundFont named in settings.json's midi.soundfont (else ~/.terminum/soundfont.sf2, else the package's GeneralUser GS 2.0.3; read once and kept while its file is unchanged; at most 10 minutes, 44.1 kHz stereo, rendered a block at a time, two at once, the others waiting; one whose tab closed or file changed is called off) into a WAV the same player plays: it seeks, pauses and sets its volume as any sound; the bank's name shows under it
   But with none of them readable the tab says "No SoundFont for MIDI: put a General MIDI .sf2 at ~/.terminum/soundfont.sf2 or name one in settings.json (midi.soundfont)"; a file it cannot read says why
   And a sound nothing here plays says "This browser cannot play <type>" with Download (Open with default app on this Mac's own page)
 
@@ -459,14 +461,15 @@ Scenario: AC-94 happy path — JSON and YAML as a tree
   When the user opens "package.json" or "config.yaml"
   Then its tab is Rendered (the Source toggle shows the text, to edit, as for Markdown): a tree of its objects (mappings) and arrays (sequences), each key before its value, a folded one with its count ("{12}", "[3]"), keys, strings, numbers, true, false and null in the editor's syntax colors; open as far as 2000 rows allow (level by level: a level that would pass them stays folded), a click on a row folds or unfolds it, Expand all (as far as 20,000 rows) and Collapse all at the top; a YAML file of several documents shows each
   And a row's value copies with its button (a JSON text of its subtree); a long string wraps
-  And a folder of more than 1000 children shows the first 1000 and "… 2,300 more" (a press shows the next 1000)
+  And a folder of more than 1000 children, the top level too, shows the first 1000 and "… 2,300 more" (a press shows the next 1000)
+  And every key is a member as named (`__proto__`, `constructor` too), shown, counted and copied
 
 Scenario: AC-94 happy path — CSV and TSV as a table
   When the user opens "data.csv" or "data.tsv"
-  Then its tab is Rendered: a table whose first row is the head (sticky), its rows numbered, quoted fields (RFC 4180: commas, quotes and new lines inside) read as one cell, numbers right-aligned; at most 5000 rows shown with "… 12,000 more rows" (a press shows the next 5000)
+  Then its tab is Rendered: a table whose first row is the head (sticky), its rows numbered, quoted fields (RFC 4180: commas, quotes and new lines inside) read as one cell, numbers right-aligned, as many columns as its widest row; at most 5000 rows shown with "… 12,000 more rows" (a press shows the next 5000); a last record `""` (an empty field) is a row with or without a line end after it
 
 Scenario: AC-94 failure — a file that does not parse
-  When the JSON or YAML is not valid, or the CSV has an unclosed quote
+  When the JSON or YAML is not valid (a YAML key twice in one mapping, an escape past Unicode too), or the CSV has an unclosed quote
   Then Rendered says why and where ("Line 12, column 4: …") over the Source, which still edits it; a file over the text limit shows as the others do
 ```
 
@@ -482,7 +485,7 @@ Scenario: AC-95 happy path — the folder under the pointer
 
 Scenario: AC-95 edge — a name taken, a folder, a read-only place
   When "notes.txt" exists in "src"
-  Then the panel asks "“notes.txt” is in src already" with Keep Both (saved as "notes 2.txt", the next free number) and Skip; nothing is ever written over
+  Then the panel asks "“notes.txt” is in src already" with Keep Both (saved as "notes 2.txt", the next free number) and Skip; nothing is ever written over; a name taken by a link (to a file outside the writable roots too) is a name taken, and the link is left as it is
   And a folder dropped is not uploaded (said in the toast with the others' outcome); a folder outside the writable roots is no target (the drag shows "Read-only: outside writable folders" and drops nothing)
 
 Scenario: AC-95 failure — too large, refused, gone
@@ -821,3 +824,4 @@ Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromiu
 - [x] 0.5.7 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` (Chromium and WebKit: Esc in the editor's search panel closes only the panel; another Esc hides View, the terminal has the keys, the tabs stay) → pass.
 - [x] 0.5.8, 0.6.0 (2026-10-24) — AC-64, AC-94 `cd ui && node test/e2e_panel.mjs` 148/148 (`e2e_panel_media.mjs`: a PDF in a frame filling its tab and a video in the player, both from blob:, no CSP refusal; an AU decoded into the player; a MIDI file says where to put a SoundFont, and with `TM_TEST_SOUNDFONT` (GeneralUser GS 2.0.3) plays rendered by terminumd; JSON open as a tree in the editor's colors that folds; YAML's two documents; CSV as a table, its quoted comma one cell, numbers right; a bad JSON's line 3, column 8; Source shows the text); `node --test ui/test/dataparse.test.mjs` (JSON's error place, YAML's mappings, flow, quotes, block scalars, anchors and documents, the core schema's scalars, CSV and TSV by RFC 4180) and `pcm.test.mjs` (AU μ-law, PCM and A-law, AIFF, the WAV); `cargo test midi::` (the SoundFont's path, no SoundFont said, the WAV, a song rendered with a real bank, not MIDI said) → pass.
 - [x] 0.6.1 (2026-10-24) — AC-70 `web/test/e2e_liveview.mjs` in `e2e_live.mjs` 111/111 (Chromium and WebKit: a file opened from the tree, Esc in the tree hides View, the page's keys on Files and Files' on the tree) → pass.
+- [x] 0.7.2 (2026-10-26) — AC-94 `node --test ui/test/dataparse.test.mjs` (`__proto__`, `constructor`, `toString` as members, copied; a key twice an error at the second, the same key in two mappings none; `\UFFFFFFFF` an error at its string, `\U0010FFFF` read; `""` a record with and without a line end) and `cd ui && node test/e2e_panel.mjs` 157/157 (a root of 100,000 values: 1,000 rows and "… 99,000 more", 2,000 after a press; a column first met at row 5001 shown); AC-64 the same run (a picture's blob: address opens while shown; a video no longer shown paused, its src gone); `cargo test midi` (a request gone sets its flag; a render asked to stop is not made: with `TM_TEST_SOUNDFONT` only); AC-95 `cargo test ops` (a name taken by a link to a file outside the roots: exists, Keep Both beside it, link and target unchanged; a folder linked outside refused) → pass. Not covered: an aborted MIDI request through `tailscale serve` (its connection may stay open, so the render runs to its end).

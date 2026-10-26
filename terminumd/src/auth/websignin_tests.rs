@@ -14,18 +14,18 @@ fn wrong_passwords_slow_down_one_address_only() {
     let mut b = Brakes::default();
     let t0 = Instant::now();
     for _ in 0..FREE_ATTEMPTS - 1 {
-        b.failed("10.0.0.9", t0);
+        b.failed("192.0.2.9", t0);
     }
-    assert_eq!(b.locked_for("10.0.0.9", t0), 0, "four are free");
-    b.failed("10.0.0.9", t0);
-    assert_eq!(b.locked_for("10.0.0.9", t0), 15, "the fifth waits 15 s");
-    assert_eq!(b.locked_for("10.0.0.5", t0), 0, "one address cannot lock out another");
-    assert_eq!(b.locked_for("10.0.0.9", t0 + Duration::from_millis(14_001)), 1, "rounded up");
-    assert_eq!(b.locked_for("10.0.0.9", t0 + Duration::from_secs(15)), 0);
-    b.failed("10.0.0.9", t0 + Duration::from_secs(15));
-    assert_eq!(b.locked_for("10.0.0.9", t0 + Duration::from_secs(15)), 30, "doubling");
-    b.passed("10.0.0.9");
-    assert_eq!(b.locked_for("10.0.0.9", t0 + Duration::from_secs(15)), 0, "the right password clears it");
+    assert_eq!(b.locked_for("192.0.2.9", t0), 0, "four are free");
+    b.failed("192.0.2.9", t0);
+    assert_eq!(b.locked_for("192.0.2.9", t0), 15, "the fifth waits 15 s");
+    assert_eq!(b.locked_for("192.0.2.5", t0), 0, "one address cannot lock out another");
+    assert_eq!(b.locked_for("192.0.2.9", t0 + Duration::from_millis(14_001)), 1, "rounded up");
+    assert_eq!(b.locked_for("192.0.2.9", t0 + Duration::from_secs(15)), 0);
+    b.failed("192.0.2.9", t0 + Duration::from_secs(15));
+    assert_eq!(b.locked_for("192.0.2.9", t0 + Duration::from_secs(15)), 30, "doubling");
+    b.passed("192.0.2.9");
+    assert_eq!(b.locked_for("192.0.2.9", t0 + Duration::from_secs(15)), 0, "the right password clears it");
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn many_addresses_do_not_grow_the_brakes_forever() {
     for i in 0..1002 {
         b.failed(&format!("10.1.{}.{}", i / 256, i % 256), t0);
     }
-    b.failed("10.9.9.9", t0 + Duration::from_secs(1));
+    b.failed("198.51.100.9", t0 + Duration::from_secs(1));
     assert!(b.failures.len() <= 2, "the ones no longer waiting went: {}", b.failures.len());
 }
 
@@ -78,8 +78,8 @@ fn a_proxy_on_this_mac_names_the_browser_others_cannot() {
     assert_eq!(client_address(ip("127.0.0.1"), Some("6.6.6.6, 100.64.0.7"), true), "100.64.0.7");
     assert_eq!(client_address(ip("::1"), Some("100.64.0.7"), true), "100.64.0.7");
     assert_eq!(client_address(ip("::ffff:127.0.0.1"), Some("100.64.0.7"), true), "100.64.0.7");
-    assert_eq!(client_address(ip("10.0.0.9"), Some("1.2.3.4"), true), "10.0.0.9");
-    assert_eq!(client_address(ip("::ffff:10.0.0.9"), None, true), "10.0.0.9");
+    assert_eq!(client_address(ip("192.0.2.9"), Some("1.2.3.4"), true), "192.0.2.9");
+    assert_eq!(client_address(ip("::ffff:192.0.2.9"), None, true), "192.0.2.9");
     assert_eq!(client_address(ip("127.0.0.1"), Some("1.2.3.4, "), true), "127.0.0.1", "an empty last entry");
     assert_eq!(client_address(ip("127.0.0.1"), None, true), "127.0.0.1");
     assert_eq!(client_address(ip("127.0.0.1"), Some("100.64.0.7"), false), "127.0.0.1", "to 127.0.0.1: this Mac's own, whatever it names");
@@ -94,18 +94,18 @@ fn auth(hold: Duration) -> Arc<WebAuth> {
 #[tokio::test]
 async fn only_the_right_password_passes() {
     let a = auth(Duration::from_millis(10));
-    assert_eq!(a.login("wrong".into(), "10.0.0.5".into()).await, Login::Wrong { retry: 0 });
-    assert_eq!(a.login("right one".into(), "10.0.0.5".into()).await, Login::Right);
-    assert_eq!(a.login("right one ".into(), "10.0.0.5".into()).await, Login::Wrong { retry: 0 });
+    assert_eq!(a.login("wrong".into(), "192.0.2.5".into()).await, Login::Wrong { retry: 0 });
+    assert_eq!(a.login("right one".into(), "192.0.2.5".into()).await, Login::Right);
+    assert_eq!(a.login("right one ".into(), "192.0.2.5".into()).await, Login::Wrong { retry: 0 });
 }
 
 #[tokio::test]
 async fn a_wrong_password_holds_the_next_check_for_a_second() {
     let a = auth(WRONG_HOLD);
     let t0 = Instant::now();
-    let (wrong, right) = tokio::join!(a.login("guess".into(), "10.0.0.9".into()), async {
+    let (wrong, right) = tokio::join!(a.login("guess".into(), "192.0.2.9".into()), async {
         tokio::time::sleep(Duration::from_millis(50)).await;
-        a.login("right one".into(), "10.0.0.5".into()).await
+        a.login("right one".into(), "192.0.2.5".into()).await
     });
     assert_eq!(wrong, Login::Wrong { retry: 0 });
     assert!(matches!(right, Login::Right));
@@ -117,7 +117,7 @@ async fn guesses_sent_at_once_are_checked_one_by_one() {
     let a = auth(Duration::from_millis(5));
     let tries = (0..12).map(|_| {
         let a = a.clone();
-        tokio::spawn(async move { a.login("guess".into(), "10.0.0.9".into()).await })
+        tokio::spawn(async move { a.login("guess".into(), "192.0.2.9".into()).await })
     });
     let mut wrong = 0;
     let mut locked = 0;
@@ -133,8 +133,8 @@ async fn guesses_sent_at_once_are_checked_one_by_one() {
     }
     assert_eq!(wrong, FREE_ATTEMPTS as usize, "after the free tries the rest wait instead of hashing");
     assert_eq!(locked, 12 - FREE_ATTEMPTS as usize);
-    assert!(matches!(a.login("right one".into(), "10.0.0.9".into()).await, Login::Locked { .. }), "even the right one waits");
-    assert!(matches!(a.login("right one".into(), "10.0.0.5".into()).await, Login::Right), "another address does not");
+    assert!(matches!(a.login("right one".into(), "192.0.2.9".into()).await, Login::Locked { .. }), "even the right one waits");
+    assert!(matches!(a.login("right one".into(), "192.0.2.5".into()).await, Login::Right), "another address does not");
 }
 
 #[tokio::test]
@@ -142,10 +142,10 @@ async fn hanging_up_mid_check_escapes_neither_the_brakes_nor_the_hold() {
     let a = auth(Duration::from_millis(200));
     for _ in 0..FREE_ATTEMPTS {
         // the client goes before the answer: its request's future is dropped
-        let _ = tokio::time::timeout(Duration::from_millis(1), a.login("guess".into(), "10.0.0.9".into())).await;
+        let _ = tokio::time::timeout(Duration::from_millis(1), a.login("guess".into(), "192.0.2.9".into())).await;
     }
     let t0 = Instant::now();
-    let next = a.login("right one".into(), "10.0.0.9".into()).await;
+    let next = a.login("right one".into(), "192.0.2.9".into()).await;
     assert!(matches!(next, Login::Locked { .. }), "{next:?}");
     assert!(t0.elapsed() >= Duration::from_millis(150), "it waited for the dropped checks' holds");
 }

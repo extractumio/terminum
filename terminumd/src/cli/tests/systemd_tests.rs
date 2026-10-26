@@ -54,6 +54,8 @@ fn a_home_with_a_percent_or_a_quote_is_escaped_and_one_with_a_space_refused() {
     ctx.root = home.path("a%b\"c");
     let unit = systemd::unit(&ctx).unwrap();
     assert!(unit.contains("a%%b\\\"c/daemon/terminumd"), "{unit}");
+    let log = ctx.log().display().to_string().replace('%', "%%");
+    assert!(log.contains("a%%b\"c") && unit.contains(&format!("StandardOutput=append:{log}\nStandardError=append:{log}\n")), "the log's path a path, not a specifier:\n{unit}");
     ctx.root = home.path("with space");
     assert!(systemd::unit(&ctx).unwrap_err().contains("systemd cannot append to a path with spaces"));
 }

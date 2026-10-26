@@ -56,6 +56,16 @@ export async function webSent(browser, name) {
       md: document.querySelector("#spbody strong")?.textContent, newer: document.getElementById("spnewer").disabled, inView: (() => { const r = document.getElementById("sentpane").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; })() }));
     check("sent: the last one as Markdown, where, 1 of 2; newer is off; the pane fits the view", shown.md === "tests" && shown.pos === "1 of 2"
       && shown.where.replace(/\u200e/g, "") === "/Users/alex/work/api" && shown.newer && shown.inView, JSON.stringify(shown));
+    // modal: Tab and Shift+Tab go round its buttons, never to the terminal's input behind it, and a key typed reaches no pane
+    const typedFrom = sent.length, inside = [];
+    for (const key of [...Array(12).fill("Tab"), ...Array(4).fill("Shift+Tab")]) {
+      await page.keyboard.press(key);
+      inside.push(await page.evaluate(() => document.getElementById("sentpane").contains(document.activeElement)));
+    }
+    await page.keyboard.type("x");
+    await pause(page, 150);
+    check("sent: its pane keeps the keys: Tab and Shift+Tab stay in it, nothing typed reaches the pane behind it",
+      inside.every(Boolean) && !sent.slice(typedFrom).some((m) => m.t === "in"), JSON.stringify({ inside, typed: sent.slice(typedFrom).filter((m) => m.t === "in") }));
     await page.click("#spolder");
     await page.waitForFunction(() => document.querySelector("#spbody code")?.textContent.includes("ls -la"), null, { timeout: 5000 }).catch(() => {});
     const older = await page.evaluate(() => ({ code: document.querySelector("#spbody code")?.textContent, pos: document.getElementById("sppos").textContent }));

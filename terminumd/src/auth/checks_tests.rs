@@ -142,7 +142,7 @@ fn each_kind_of_name_has_its_scheme() {
     let allow = vec!["Devbox.Example".to_string()];
     let a = Listener { port: PORT, allow: &allow };
     for origin in ["http://devbox.example:8080", "https://devbox.example:8080"] {
-        let h = [("host", "devbox.example:8080"), ("origin", origin), ("content-type", "application/json"), ("x-forwarded-for", "10.0.0.2")];
+        let h = [("host", "devbox.example:8080"), ("origin", origin), ("content-type", "application/json"), ("x-forwarded-for", "192.0.2.2")];
         assert_eq!(ask(&a, "POST", "/fb/api/fs/mkdir", &h, true), Ok(false), "{origin}");
     }
 }
@@ -202,7 +202,7 @@ fn paths_that_route_differently_than_they_read_are_refused() {
 
 #[test]
 fn host_names_lose_their_port_and_brackets() {
-    assert_eq!(host_name("10.0.0.5:8765"), "10.0.0.5");
+    assert_eq!(host_name("192.0.2.5:8765"), "192.0.2.5");
     assert_eq!(host_name("[::1]:8765"), "::1");
     assert_eq!(host_name("[::1]"), "::1");
     assert_eq!(host_name("fe80::1"), "fe80::1");

@@ -10,7 +10,7 @@
 import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { placeModal } from "./fabpane.js";
-import { projectColor } from "./nav.js";
+import { groupKey, groupRows, projectColor } from "./nav.js";
 
 const $ = (id) => document.getElementById(id);
 const HOLD = 500;                // ms a finger rests before its menu opens
@@ -38,8 +38,9 @@ export function saveOrder(send, ul, ids) {
 }
 
 /** list: #sessions; item(id): the row's layout item; projects(): terminumd's; clone(item);
- *  groups(): the layout's; split(item, side): its quick shell below, right or left. */
-export function rowMenus({ list, send, item, projects, clone, orderGroups, groups, split }) {
+ *  groups(): the layout's; split(item, side): its quick shell below, right or left;
+ *  keepFolded(from, to): a renamed group's fold key `to` folded when `from` was. */
+export function rowMenus({ list, send, item, projects, clone, orderGroups, groups, split, keepFolded }) {
   const box = $("rowmenu");
   const hide = () => {
     if (!box.open) return;
@@ -199,23 +200,35 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
   }
 
   /** A tmux session's group's menu, under its ⋯ `b` or at x, y: a new window after its last row,
-   *  moves among the groups (kept in this browser, as a drag), Close Group (its windows end, after
-   *  asking). */
+   *  Rename (its tmux session; its place and fold kept), moves among the groups (kept in this
+   *  browser, as a drag), Close Group (its windows end, after asking). */
   function groupMenu(wid, b, x, y) {
     if (b && box.open && box.dataset.for === wid) return hide();
     const sec = [...list.querySelectorAll("section.grp[data-wid]")].find((s) => s.dataset.wid === wid);
-    if (!sec) return;
+    const g = groups().find((x) => x.wid === wid);
+    if (!sec || !g) return;
     const label = sec.querySelector("h2 .label")?.textContent ?? wid;
-    const rows = [...sec.querySelectorAll(":scope > ul > li > .item")].map((r) => r.dataset.id).filter((id) => item(id));
+    // from the list's model, not its rows: a collapsed group draws none (and a filter only some)
+    const rows = groupRows(groups(), projects(), wid).filter((id) => item(id));
     const ids = [...list.querySelectorAll("section.grp[data-wid]")].map((s) => s.dataset.wid), i = ids.indexOf(wid), last = ids.length - 1;
     const move = (to) => { hide(); const o = ids.filter((k) => k !== wid); o.splice(to, 0, wid); orderGroups(o); };
+    const rename = async () => {
+      hide();
+      const name = (await askName(`Rename ${label}`, label))?.trim();
+      if (!name || name === label) return;
+      const to = `${wid.slice(0, wid.indexOf("/") + 1)}${name}`;
+      keepFolded?.(groupKey(g), groupKey({ ...g, label: name }));
+      orderGroups(ids.map((k) => (k === wid ? to : k)));          // the renamed group keeps its place
+      send({ t: "renamegroup", group: wid, name });
+    };
     const closeAll = async () => {
       hide();
       const n = rows.length, them = n === 1 ? "its session" : `its ${n} sessions`;
       if (await askConfirm(`Close the group ${label} and ${them}? The programs running in them end.`, "Close Group")) for (const id of rows) send({ t: "kill", id });
     };
     fill(label,
-      button("New Session", "new", () => { hide(); clone(item(rows.at(-1))); }, rows.length > 0 && !!sec.querySelector("li > .clone")),
+      button("New Session", "new", () => { hide(); clone(item(rows.at(-1))); }, rows.length > 0 && !!g.new),
+      button("Rename…", "rename", rename),
       document.createElement("hr"),
       button("Move to the Top", "top", () => move(0), i > 0),
       button("Move Up", "up", () => move(i - 1), i > 0),

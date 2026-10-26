@@ -50,10 +50,10 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
 }
 
 /** send(msg) to terminumd; toChat(text, stay): pasted into the shown pane's input; keys(data, stay): typed
- *  there (stay: Add to Chat's, the view left where it was); agent(): the shown pane runs a coding agent;
- *  pane(): its {cols, rows}; asked(n, quote, line): one was asked about (asked.js keeps it marked).
- *  {open(text, line), seen(m)}. */
-export function askBox({ send, toChat, keys, agent, pane, asked }) {
+ *  there (stay: Add to Chat's, the view left where it was); sid(): the shown pane; agent(): it runs a
+ *  coding agent; pane(): its {cols, rows}; asked(n, quote, line): one was asked about (asked.js keeps it
+ *  marked); toast(text): says what was not done. {open(text, line), seen(m), sync()}. */
+export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
   let quote = "", line = null, waiting = null;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
@@ -75,26 +75,40 @@ export function askBox({ send, toChat, keys, agent, pane, asked }) {
     if (how !== "add" && how !== "send") return;                    // Cancel closes it
     e.preventDefault();
     if (!q.value.trim() || waiting) return;
+    if (how === "send" && !agent()) return sync();                 // the agent ended since it opened
     ready(false);
     fail("");
+    const at = sid();
     const m = await new Promise((resolve) => {
-      const timer = setTimeout(() => resolve({ error: "The Mac did not answer: is the connection back?" }), ANSWER);
+      const timer = setTimeout(() => waiting?.({ error: "The Mac did not answer: is the connection back?" }), ANSWER);
       waiting = (got) => { clearTimeout(timer); waiting = null; resolve(got); };
       send({ t: "askno" });
     });
     ready(q.value.trim());
     if (!m || !box.open) return;                                   // closed meanwhile
     if (m.error || !Number.isInteger(m.n)) return fail(m.error ?? "No number came back.");
+    if (sid() !== at) return fail("The pane shown changed: nothing was put in.");
+    if (how === "send" && !agent()) return sync();
     box.close();
     asked?.(m.n, quote, line);                                      // the quote stays marked where it was selected
     const stay = how === "add";                                   // Send to Agent goes to the input: the answer comes there
     const text = askText(m.n, quote, q.value), { cols, rows } = pane();
     const typed = !!cols && !!rows && boxRows(text, cols) <= rows * TYPED_SHARE;
     for (const [kind, data] of askSends(text, { agent: agent(), now: !stay, typed })) {
-      if (kind === "enter") setTimeout(() => keys(data), ENTER_AFTER);
-      else (kind === "keys" ? keys : toChat)(data, stay);
+      if (kind !== "enter") (kind === "keys" ? keys : toChat)(data, stay);
+      // the Enter only to the same pane, still in its agent: another pane's line or a shell would run it
+      else setTimeout(() => {
+        if (sid() === at && agent()) return keys(data);
+        toast?.(sid() === at ? "Send to Agent: the agent ended, so Enter was not pressed." : "Send to Agent: the pane shown changed, so Enter was not pressed there.");
+      }, ENTER_AFTER);
     }
   });
+  /** Send to Agent only while the shown pane runs a coding agent: a shell would run the quote. */
+  function sync() {
+    const was = !now.hidden;
+    now.hidden = !agent();
+    if (was && now.hidden && box.open) fail("The coding agent ended: Send to Agent is off, Add to Chat puts the quote in.");
+  }
   return {
     open(text, at = null) {
       quote = text;
@@ -102,13 +116,15 @@ export function askBox({ send, toChat, keys, agent, pane, asked }) {
       $("asktext").textContent = text;
       q.value = "";
       ready(false);
-      now.hidden = !agent();                                        // a shell would run the quote
       fail("");
+      sync();
       box.showModal();
       place();
       q.focus();
     },
     /** Every message from terminumd (app.js dropped another pane's). */
     seen(m) { if (m.t === "askno") waiting?.(m); },
+    /** The list changed (a layout): the shown pane may have left its agent. */
+    sync() { if (box.open) sync(); },
   };
 }

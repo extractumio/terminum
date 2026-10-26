@@ -110,7 +110,7 @@ const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term")
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
     wordDeletes: () => { const it = st.sid && findItem(st.groups, st.sid)?.item; return !!(it?.agent ? view.box : it?.shell && !st.ran); } } });
 copyButton($("copyfab"), $("term"), (text) => input.copySelection(text));
-quietSelection($("term"), touch);                   // no iOS menu over a selection: the page's Copy, [+], Ask (AC-37)
+quietSelection($("term"), touch, { hold: (on) => view.hold(on) });                   // no iOS menu over a selection: the page's Copy, [+], Ask (AC-37)
 
 // The files the output names, on the pane's host: a path is a link, an image gets a button, only
 // when its file is there (relative paths from the pane's folder, as a click takes them).
@@ -277,7 +277,7 @@ function onMessage(m) {
   ask.seen(m);
   asked.seen(m);
   switch (m.t) {
-    case "layout": st.groups = m.groups; seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); tools.layoutCame(m.groups); views.forget(m.groups); break;
+    case "layout": st.groups = m.groups; seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
     case "hist":                                    // a reset: another pane, or its scrollback cleared
       if (m.mode === "reset") widgets.folds.reset();
@@ -313,7 +313,7 @@ function onMessage(m) {
 // Clone (AC-07): a new window right after the row's, in its folder; in its project when it has one (AC-92)
 function cloneRow(item) { send({ t: "clone", id: item.id }); }
 const rowMenu = rowMenus({ list: $("sessions"), send, item: itemOf, projects: () => st.projects, clone: cloneRow, orderGroups: (ids) => { store.set("groupOrder", ids); drawNav(); },
-  groups: () => st.groups, split: (it, side) => { pick(it.id); quick.open(side); } });
+  groups: () => st.groups, split: (it, side) => { pick(it.id); quick.open(side); }, keepFolded: (from, to) => { if (st.collapsed.has(from)) { st.collapsed.add(to); store.set("collapsed", [...st.collapsed]); } } });
 
 // a finger resting on the keyboard button or held on the input offers Paste, Undo and Redo (AC-03)
 const editMenu = undoTouch({ button: $("kbdbtn"), field: $("kbd"), menu: rowMenu, undo: undoRedo, paste: () => input.pasteFromClipboard(), can: editChoices({ term: $("term"), item: () => itemOf(st.sid), undone: () => !!st.undone,
@@ -335,8 +335,8 @@ const sent = sentHistory({ view, send, item: () => itemOf(st.sid), copy: (text) 
   jump: (it) => bookmarks.jumpText(it) });
 const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: () => st.sid, marks: bookmarks, toast });
 // Add to Chat's paste ("asked") leaves the view where it was: the user reads on, the cursor out of sight (AC-37)
-const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "asked" : "paste"); focusTerminal(); }, keys: (data, stay) => input.type(data, stay ? "asked" : "ask"), agent: () => !!itemOf(st.sid)?.agent,
-  pane: () => ({ cols: view.cols, rows: view.rows }), asked: asked.asked });
+const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "asked" : "paste"); focusTerminal(); }, keys: (data, stay) => input.type(data, stay ? "asked" : "ask"), sid: () => st.sid, agent: () => !!itemOf(st.sid)?.agent,
+  pane: () => ({ cols: view.cols, rows: view.rows }), asked: asked.asked, toast });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks, send });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)

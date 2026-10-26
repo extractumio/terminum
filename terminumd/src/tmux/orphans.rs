@@ -39,10 +39,11 @@ fn listed(lines: &[String]) -> Vec<u32> {
     }).collect()
 }
 
-/// The server's user option the script answers in: one per terminumd and connection, so two
-/// Macs never read each other's and a late answer is never taken for a later sweep's.
-fn answer_option(server: &Server) -> String {
-    format!("@tm-orphans-{}-{}", std::process::id(), server.generation.load(std::sync::atomic::Ordering::Relaxed))
+/// The server's user option the script answers in: one per sweep, its name random (a pid and a
+/// connection's number repeat across Macs and across host names of one server), so no sweep reads
+/// another's and a late answer is never taken for a later sweep's.
+fn answer_option() -> String {
+    format!("@tm-orphans-{}", crate::auth::crypto::random_hex::<8>())
 }
 
 async fn sweep(server: &Server) {
@@ -53,7 +54,7 @@ async fn sweep(server: &Server) {
         Some((p.parse::<u32>().ok()?, s.to_string()))
     }) else { return };
     let lines = server.run("list-clients -F '#{client_pid} #{client_control_mode} #{client_flags}'").await.unwrap_or_default();
-    let opt = answer_option(server);
+    let opt = answer_option();
     let _ = server.run(format!("set-option -gu {opt}")).await;
     // in the background (a slow `ps` never holds up the host's commands), quiet: a control
     // client gets run-shell's output outside its answer
@@ -143,6 +144,13 @@ mod tests {
             "321 1 control-mode,ignore-size",
         ].iter().map(|s| s.to_string()).collect();
         assert_eq!(listed(&lines), vec![123, 321]);
+    }
+
+    /// AC-81: two sweeps (two Macs, two host names of one server) never answer in the same option.
+    #[test]
+    fn each_sweep_answers_in_an_option_of_its_own() {
+        let (a, b) = (answer_option(), answer_option());
+        assert!(a.starts_with("@tm-orphans-") && a.len() == "@tm-orphans-".len() + 16 && a != b, "{a} {b}");
     }
 
     /// AC-81: the script is plain for run-shell (no format, no quote of its own) and names only pids.

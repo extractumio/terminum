@@ -138,5 +138,49 @@ class BuildIdTest(unittest.TestCase):
             self.assertEqual(before, build_id())
 
 
+
+class LinuxBuildTest(unittest.TestCase):
+    """AC-08: a package's Linux terminumd names the package's build (its installer checks it
+    against BUILD), whatever TM_BUILD the shell has and whatever an earlier build cached."""
+
+    def build(self, root, build_id, says=None):
+        """agents.build of linux-x86_64 on a Mac, cargo stubbed: the binary it makes holds the
+        agent id and the build it was given in TM_BUILD (or `says`); returns (path, cargo runs)."""
+        agents, target = package.agents, root / "target"
+        runs = []
+
+        def cargo(cmd, env=None, cwd=None):
+            runs.append(env["TM_BUILD"])
+            out = target / agents.TARGETS["linux-x86_64"] / "release/terminumd"
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(f"\0{env['TM_AGENT_ID']}\0{says or env['TM_BUILD']}\0".encode())
+        (root / "tc/bin").mkdir(parents=True, exist_ok=True)
+        (root / "tc/bin/cargo-zigbuild").write_text("")
+        with mock.patch.object(agents, "agent_id", return_value="aid1"), mock.patch.object(agents, "run", side_effect=cargo), \
+             mock.patch.object(agents, "DIST", root / "dist"), mock.patch.object(agents, "TERMINUMD", root), \
+             mock.patch.object(agents, "TOOLCHAIN", root / "tc"), mock.patch.object(agents, "native", return_value="macos-aarch64"), \
+             mock.patch.dict(os.environ, {"TM_BUILD": "checkout-id"}):
+            return agents.build(["linux-x86_64"], build_id)["linux-x86_64"], runs
+
+    def test_the_package_build_is_built_in_and_a_cached_other_is_built_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            path, runs = self.build(root, None)
+            self.assertEqual(runs, ["checkout-id"], "agents alone: the shell's build")
+            path, runs = self.build(root, "v1.2.3")
+            self.assertEqual(runs, ["v1.2.3"], "the package's build, not the one cached for this agent id")
+            self.assertIn(b"\0v1.2.3\0", path.read_bytes())
+            self.assertEqual(self.build(root, "v1.2.3")[1], [], "the same build: the cached one")
+            with self.assertRaises(package.agents.Failed):
+                self.build(root, "v1.2.4", says="checkout-id")   # one that names another build is never packed
+
+    def test_a_package_asks_for_its_own_build(self):
+        with mock.patch.object(package, "build_macos", return_value={}), \
+             mock.patch.object(package.agents, "this_platform", return_value="macos-aarch64"), \
+             mock.patch.object(package.agents, "build", return_value={}) as built:
+            package.binaries("v9.9.9", None, False, release=True)
+        self.assertEqual(built.call_args.args, (["linux-x86_64", "linux-aarch64"], "v9.9.9"))
+
+
 if __name__ == "__main__":
     unittest.main()

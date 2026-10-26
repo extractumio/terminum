@@ -246,6 +246,7 @@ async fn serve() {
         for server in stopping.tmux.all() {
             server.kill_clients();
         }
+        page::unread::flush(&stopping);                // a mark shown is kept (AC-93)
         exit_with(&stopping.store, "signal");
     });
     let router = routes::pages(app);

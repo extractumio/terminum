@@ -48,8 +48,9 @@ export function copyButton(button, term, copy) {
  *  do not see, `quiet` ms without a change, once for each range) the page clears it, which puts
  *  iOS's menu away, and makes the same range again `gap` ms later (measured in the iPhone
  *  simulator: a frame is too soon, the menu stays; 120 ms puts it away). The page's own changes
- *  are not taken for the finger's. */
-export function quietSelection(term, touch, { lift = 60, quiet = 600, gap = 120 } = {}) {
+ *  are not taken for the finger's; hold(on) keeps the terminal from drawing meanwhile (a line
+ *  redrawn under the range taken away would lose it). */
+export function quietSelection(term, touch, { lift = 60, quiet = 600, gap = 120, hold = () => {} } = {}) {
   let wait = 0, mineUntil = 0, fingers = 0, last = "";
   const later = (ms, again) => { clearTimeout(wait); if (touch.matches) wait = setTimeout(() => remake(again), ms); };
   function remake(again) {
@@ -60,8 +61,12 @@ export function quietSelection(term, touch, { lift = 60, quiet = 600, gap = 120 
     if (key === last && !again) return;
     last = key;
     mineUntil = performance.now() + gap + 200;
+    hold(true);
     sel.removeAllRanges();
-    setTimeout(() => { if (!getSelection().rangeCount && r.startContainer.isConnected) getSelection().addRange(r); }, gap);
+    setTimeout(() => {
+      if (!getSelection().rangeCount && r.startContainer.isConnected) getSelection().addRange(r);
+      hold(false);
+    }, gap);
   }
   document.addEventListener("selectionchange", () => { if (performance.now() >= mineUntil) later(quiet, false); });
   const count = (e) => { fingers = e.touches.length; if (!fingers && e.type !== "touchstart") later(lift, true); };

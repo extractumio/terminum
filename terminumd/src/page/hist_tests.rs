@@ -121,3 +121,67 @@ async fn at_tmuxs_limit_rows_that_repeat_are_not_guessed() {
     let got = capture(&c, &pane, 1000, history, 100, &screen, 995, 1000, 80).await;
     assert!(got.as_ref().is_err_and(|e| e.contains("not found")), "{got:?}");
 }
+
+/// At tmux's limit, a trim and as many rows again bring the count back to the frame's: the
+/// screen's top rows say the rows moved, and they are found where they went (AC-02).
+#[tokio::test]
+async fn at_tmuxs_limit_a_count_come_back_still_finds_the_rows() {
+    let script = "seq -f L%04g 1 295; read x; seq -f L%04g 296 304; exec cat";
+    let Some(s) = Tmux::start("hist-again", (80, 10), "sleep 60") else { return };
+    s.read(&["set-option", "-g", "history-limit", "100"]);
+    s.read(&["new-window", "-t", "main", &format!("sh -c '{script}'")]);
+    let c = attach(&s);
+    let pane = c.run("display -p -t main:1 '#{pane_id}'").await.unwrap().remove(0);
+    for _ in 0..50 {
+        let shown = c.run(format!("capture-pane -p -t {pane}")).await.unwrap();
+        if shown.iter().any(|l| l.contains("L0295")) { break; }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let shown = c.run(format!("capture-pane -p -e -J -t {pane}")).await.unwrap();
+    let rows = crate::screen::rows::screen_rows(&shown.join("\n"), 80, 10);
+    let screen: Vec<u64> = rows.iter().map(|r| crate::screen::history::hash(&crate::screen::rows::row_text(r))).collect();
+    let history: i64 = c.run(format!("display -p -t {pane} '#{{history_size}}'")).await.unwrap()[0].trim().parse().unwrap();
+    let above: Vec<String> = c.run(format!("capture-pane -p -t {pane} -S -5 -E -1")).await.unwrap();
+    c.run(format!("send-keys -t {pane} Enter")).await.unwrap();
+    for _ in 0..50 {
+        let shown = c.run(format!("capture-pane -p -t {pane}")).await.unwrap();
+        if shown.iter().any(|l| l.contains("L0304")) { break; }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let now: i64 = c.run(format!("display -p -t {pane} '#{{history_size}}'")).await.unwrap()[0].trim().parse().unwrap();
+    assert_eq!(now, history, "tmux trimmed a tenth and 10 rows scrolled (the Enter and 9): the count came back ({history} → {now})");
+    let got: Vec<String> = capture(&c, &pane, 1000, history, 100, &screen, 995, 1000, 80).await.unwrap().iter().map(text).collect();
+    assert_eq!(got, above.iter().map(|l| l.trim_end().to_string()).collect::<Vec<_>>(), "the rows that were above the screen, not those 10 rows on");
+}
+
+/// At tmux's limit, the screen's top rows drawn over in place (a progress bar's redraw), nothing
+/// scrolled (the Enter not echoed): they are found nowhere, and the count, unchanged, numbers the rows (AC-02).
+#[tokio::test]
+async fn at_tmuxs_limit_top_rows_drawn_over_in_place_keep_the_count() {
+    let script = r"stty -echo; seq -f L%04g 1 295; read x; printf '\033[HNEW1\033[K\nNEW2\033[K\nNEW3\033[K'; exec cat";
+    let Some(s) = Tmux::start("hist-redrawn", (80, 10), "sleep 60") else { return };
+    s.read(&["set-option", "-g", "history-limit", "100"]);
+    s.read(&["new-window", "-t", "main", &format!("sh -c \"{script}\"")]);
+    let c = attach(&s);
+    let pane = c.run("display -p -t main:1 '#{pane_id}'").await.unwrap().remove(0);
+    for _ in 0..50 {
+        let shown = c.run(format!("capture-pane -p -t {pane}")).await.unwrap();
+        if shown.iter().any(|l| l.contains("L0295")) { break; }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let shown = c.run(format!("capture-pane -p -e -J -t {pane}")).await.unwrap();
+    let rows = crate::screen::rows::screen_rows(&shown.join("\n"), 80, 10);
+    let screen: Vec<u64> = rows.iter().map(|r| crate::screen::history::hash(&crate::screen::rows::row_text(r))).collect();
+    let history: i64 = c.run(format!("display -p -t {pane} '#{{history_size}}'")).await.unwrap()[0].trim().parse().unwrap();
+    let above: Vec<String> = c.run(format!("capture-pane -p -t {pane} -S -5 -E -1")).await.unwrap();
+    c.run(format!("send-keys -t {pane} Enter")).await.unwrap();
+    for _ in 0..50 {
+        let shown = c.run(format!("capture-pane -p -t {pane}")).await.unwrap();
+        if shown.iter().any(|l| l.contains("NEW3")) { break; }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let now: i64 = c.run(format!("display -p -t {pane} '#{{history_size}}'")).await.unwrap()[0].trim().parse().unwrap();
+    assert!(history >= 90 && now == history, "at the limit, nothing scrolled ({history} → {now})");
+    let got: Vec<String> = capture(&c, &pane, 1000, history, 100, &screen, 995, 1000, 80).await.unwrap().iter().map(text).collect();
+    assert_eq!(got, above.iter().map(|l| l.trim_end().to_string()).collect::<Vec<_>>(), "the rows above the screen, as the count says");
+}

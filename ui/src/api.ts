@@ -171,9 +171,9 @@ export const rawBytes = async (path: string) => (await raw(path)).arrayBuffer();
 
 /** A MIDI file's bytes rendered by terminumd with the user's SoundFont (AC-64): a WAV's blob:
  *  address (the caller revokes it) and the bank's name; an error as terminumd says it. */
-export async function midiWav(bytes: ArrayBuffer): Promise<{ url: string; font: string }> {
+export async function midiWav(bytes: ArrayBuffer, signal?: AbortSignal): Promise<{ url: string; font: string }> {
   await proveServer();
-  const res = await fetch("/api/midi", { method: "POST", body: bytes, headers: { "Content-Type": "audio/midi", ...(SECRET ? { "X-TM-Session": SECRET } : {}) } });
+  const res = await fetch("/api/midi", { method: "POST", body: bytes, signal, headers: { "Content-Type": "audio/midi", ...(SECRET ? { "X-TM-Session": SECRET } : {}) } });
   if (!res.ok) { const body = await res.json().catch(() => null); throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body); }
   return { url: URL.createObjectURL(new Blob([await res.arrayBuffer()], { type: "audio/wav" })), font: res.headers.get("x-tm-soundfont") ?? "" };
 }
@@ -205,29 +205,36 @@ async function raw(path: string): Promise<Response> {
   throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
 }
 
-// A video's, a sound's or a PDF's address, kept while it plays from it: revoked once its element
-// left the page or its document's frame closed (looked at every SWEEP ms while there is one); a
-// player of the panel's own (MIDI) is stopped then.
+// A picture's, a video's, a sound's or a PDF's address, kept while it is shown: revoked once its
+// element left the page or its document's frame closed (looked at on each change of the page and
+// every SWEEP ms while there is one); a player is stopped then: a detached one plays on.
 const playing = new Map<string, [HTMLElement, () => void]>();
 const SWEEP = 5000;
-let sweeping = 0;
+let sweeping = 0, watching: MutationObserver | null = null;
 function sweep() {
   for (const [url, [el, gone]] of playing) {
     if (el.isConnected && el.ownerDocument.defaultView) continue;
+    if (el.tagName === "VIDEO" || el.tagName === "AUDIO") {   // tagName: a frame's elements are of its own classes
+      const media = el as HTMLMediaElement;
+      media.pause();
+      media.removeAttribute("src");
+      media.load();                                // its decoder let go
+    }
     gone();
     playing.delete(url);
   }
-  if (!playing.size) { clearInterval(sweeping); sweeping = 0; }
+  if (!playing.size) { clearInterval(sweeping); sweeping = 0; watching?.disconnect(); watching = null; }
 }
 /** `gone()` once `el` left the page (its address revoked, its player stopped); `id` names it. */
 export function whileShown(id: string, el: HTMLElement, gone: () => void) {
   playing.set(id, [el, gone]);
   sweeping ||= window.setInterval(sweep, SWEEP);
+  if (!watching) { watching = new MutationObserver(sweep); watching.observe(document, { childList: true, subtree: true }); }
 }
 
 /** Fills the elements under `root` that name a file in `data-raw` (rendered Markdown, an HTML
- *  document, an image tab): `src` from rawBlob, a stylesheet's text into a <style>. An image's
- *  address is revoked once it is drawn; a video's or a sound's once it is gone (sweep). */
+ *  document, an image tab): `src` from rawBlob, a stylesheet's text into a <style>. Each address
+ *  is revoked once its element is gone (sweep): a picture shown may still be opened by it. */
 export function hydrateRaw(root: ParentNode) {
   for (const el of root.querySelectorAll<HTMLElement>("[data-raw]")) {
     const path = el.dataset.raw!;
@@ -241,9 +248,7 @@ export function hydrateRaw(root: ParentNode) {
       continue;
     }
     void rawBlob(path).then((url) => {
-      // tagName, not instanceof: an HTML document's elements are of its frame's own classes
-      if (el.tagName === "IMG") { const done = () => URL.revokeObjectURL(url); el.addEventListener("load", done, { once: true }); el.addEventListener("error", done, { once: true }); }
-      else whileShown(url, el, () => URL.revokeObjectURL(url));
+      whileShown(url, el, () => URL.revokeObjectURL(url));
       el.setAttribute("src", url);
     }, (e: Error) => { el.title = `${path}: ${e.message}`; });
   }

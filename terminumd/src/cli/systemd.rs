@@ -30,6 +30,7 @@ pub fn unit(ctx: &Ctx) -> Result<String, String> {
     if log.chars().any(char::is_whitespace) {
         return Err(format!("{log}: systemd cannot append to a path with spaces; set TM_HOME to another folder"));
     }
+    let log = log.replace('%', "%%");                    // a path, not specifiers (it takes no quotes)
     let env: String = launch::service_env(ctx).iter().map(|(k, v)| format!("Environment={}\n", word(&format!("{k}={v}")))).collect();
     Ok(format!(
         "# {label}: written by `terminum install`; `terminum restart` writes it again\n\

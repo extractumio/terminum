@@ -77,12 +77,20 @@ export function scalar(t: string): Value {
   return t;
 }
 
+/** What makes a YAML text no data though its grammar holds: why, and the offset where. */
+class YamlError { constructor(readonly error: string, readonly at: number) {} }
+
 const ESC: Record<string, string> = { n: "\n", t: "\t", r: "\r", "0": "\0", '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", e: "\x1b", " ": " ", N: "\u0085", _: " " };
-function quoted(t: string): string {
+/** A quoted scalar's text (`at`: its offset, for an escape past Unicode). */
+function quoted(t: string, at: number): string {
   const fold = (s: string) => s.replace(/[ \t]*\n[ \t]*/g, "\n").replace(/([^\n])\n(?!\n)/g, "$1 ").replace(/\n(\n+)/g, "$1");
   if (t.startsWith("'")) return fold(t.slice(1, -1)).replace(/''/g, "'");
-  return fold(t.slice(1, -1)).replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, c: string) =>
-    c.length > 1 ? String.fromCodePoint(parseInt(c.slice(1), 16)) : ESC[c] ?? c);
+  return fold(t.slice(1, -1)).replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, c: string) => {
+    if (c.length === 1) return ESC[c] ?? c;
+    const code = parseInt(c.slice(1), 16);
+    if (code > 0x10ffff) throw new YamlError(`\\${c} is past the last Unicode character`, at);
+    return String.fromCodePoint(code);
+  });
 }
 
 /** A block scalar: "|" keeps its line ends, ">" folds lines into spaces; "-" strips the last line
@@ -96,7 +104,8 @@ function block(header: string, content: string): string {
   return text + (header.includes("-") ? "" : header.includes("+") ? "\n" + trailing : "\n");
 }
 
-/** Every document of a YAML stream, or the first error (a syntax error, a mapping's key twice). */
+/** Every document of a YAML stream, or the first error (a syntax error, a mapping's key twice,
+ *  an escape past Unicode). */
 export function parseYaml(text: string): Parsed<Value[]> {
   const tree = parser.parse(text);
   let bad: SyntaxNode | null = null;
@@ -109,7 +118,7 @@ export function parseYaml(text: string): Parsed<Value[]> {
     if (!n) return null;
     switch (n.name) {
       case "Literal": return scalar(src(n).trim());
-      case "QuotedLiteral": return quoted(src(n));
+      case "QuotedLiteral": return quoted(src(n), n.from);
       case "BlockLiteral": return block(src(n.getChild("BlockLiteralHeader")!), n.getChild("BlockLiteralContent") ? src(n.getChild("BlockLiteralContent")!) : "");
       case "Alias": return anchors.has(src(n).slice(1)) ? anchors.get(src(n).slice(1))! : src(n);
       case "Anchored": case "Tagged": {
@@ -126,21 +135,28 @@ export function parseYaml(text: string): Parsed<Value[]> {
         for (const pair of kids(n, "Pair")) {
           const key = pair.getChild("Key");
           const k = String(key ? valueOf(key.firstChild) : "");
+          if (Object.hasOwn(out, k)) throw new YamlError(`The key ${JSON.stringify(k)} is in this mapping twice`, (key ?? pair).from);
           let v: SyntaxNode | null = pair.getChild(":")?.nextSibling ?? null;
           while (v && v.name === "Comment") v = v.nextSibling;
-          out[k] = valueOf(v);
+          // its own member whatever its name: out["__proto__"] = … would set the prototype
+          Object.defineProperty(out, k, { value: valueOf(v), enumerable: true, writable: true, configurable: true });
         }
         return out;
       }
       default: return valueOf(n.firstChild);
     }
   };
-  const docs = tree.topNode.getChildren("Document").map((d) => {
-    let c = d.firstChild;
-    while (c && /^(DirectiveEnd|DocEnd|Comment|Directive)$/.test(c.name)) c = c.nextSibling;
-    return valueOf(c);
-  });
-  return { ok: true, value: docs.length ? docs : [null] };
+  try {
+    const docs = tree.topNode.getChildren("Document").map((d) => {
+      let c = d.firstChild;
+      while (c && /^(DirectiveEnd|DocEnd|Comment|Directive)$/.test(c.name)) c = c.nextSibling;
+      return valueOf(c);
+    });
+    return { ok: true, value: docs.length ? docs : [null] };
+  } catch (e) {
+    if (e instanceof YamlError) return { ok: false, error: e.error, ...lineCol(text, e.at) };
+    throw e;
+  }
 }
 
 // ── CSV and TSV ──────────────────────────────────────────────────────────────
@@ -149,7 +165,7 @@ export function parseYaml(text: string): Parsed<Value[]> {
  *  ("" for one) and line ends; a line end is \n or \r\n; a last empty line is none. */
 export function parseDelimited(text: string, sep: "," | "\t"): Parsed<string[][]> {
   const rows: string[][] = [];
-  let row: string[] = [], field = "", i = 0, quotedAt = -1;
+  let row: string[] = [], field = "", i = 0, quotedAt = -1, quotedRow = false;   // quotedRow: a quoted field began in this row ("" is one)
   const n = text.length;
   while (i < n) {
     const c = text[i];
@@ -160,17 +176,17 @@ export function parseDelimited(text: string, sep: "," | "\t"): Parsed<string[][]
       }
       field += c; i++; continue;
     }
-    if (c === '"' && field === "") { quotedAt = i; i++; continue; }
+    if (c === '"' && field === "") { quotedAt = i; quotedRow = true; i++; continue; }
     if (c === sep) { row.push(field); field = ""; i++; continue; }
     if (c === "\n" || c === "\r") {
-      row.push(field); rows.push(row); row = []; field = "";
+      row.push(field); rows.push(row); row = []; field = ""; quotedRow = false;
       i += c === "\r" && text[i + 1] === "\n" ? 2 : 1;
       continue;
     }
     field += c; i++;
   }
   if (quotedAt >= 0) return { ok: false, error: "A quoted field is not closed", ...lineCol(text, quotedAt) };
-  if (field !== "" || row.length) { row.push(field); rows.push(row); }
+  if (field !== "" || row.length || quotedRow) { row.push(field); rows.push(row); }
   return { ok: true, value: rows };
 }
 

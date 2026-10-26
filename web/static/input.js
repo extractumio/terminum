@@ -97,9 +97,11 @@ export class Input {
       if (!touchable || document.activeElement !== k || composingNow) return;
       const at = k.selectionStart, want = PAD.length + kept.length;
       if (at === want && k.selectionEnd === at) return;
-      const by = at - want, tapped = performance.now() - touchedAt < TAP_CARET, chose = k.selectionEnd !== at;
+      const tapped = performance.now() - touchedAt < TAP_CARET, chose = k.selectionEnd !== at;
+      // the characters passed, not UTF-16 halves: an emoji is one move
+      const by = at < want ? -chars(k.value.slice(at, want)).length : chars(k.value.slice(want, at)).length;
       refill();
-      if (tapped || chose || Math.abs(by) >= PAD.length) return;     // a selection in the field is no move
+      if (tapped || chose || Math.abs(at - want) >= PAD.length) return;   // a selection in the field is no move
       const dir = by > 0 ? "C" : "D", arrow = this.options.appCursor() ? `\x1bO${dir}` : `\x1b[${dir}`;
       this.type(arrow.repeat(Math.abs(by)), "slide");
     });

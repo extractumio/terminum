@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.4.14 |
-| Date | 2026-10-25 |
+| Version | 0.4.15 |
+| Date | 2026-10-26 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.4.15 | 2026-10-26 | An audit's findings fixed. Send to Agent's Enter, typed 0.2 s after the quote, went to whatever pane was shown by then (a shell's line there ran), and Send to Agent stayed in the dialog after the agent ended (the quote was then sent into the shell and run): the Enter goes only to the same pane while it still runs its agent, else a toast says it was not pressed; Send to Agent hides, said in the dialog, when the agent ends while it is open; after a number that did not come in 10 s, Add to Chat and Send to Agent ask again (they did nothing) (AC-37). On a touch screen the terminal no longer redraws while the page takes a selection away for 0.12 s to put iOS's menu away, so the selection comes back whole (AC-37). The sent history's and the reminders' panes keep Tab and Shift+Tab among their buttons and the keys from the terminal's input behind them (AC-90). A paste's or an upload's body is read only once one of the two upload slots is free (it was read first, so any number were held in memory) (AC-36). |
 | 0.4.14 | 2026-10-25 | Owner: pasted and uploaded files older than 7 days went only at the next paste, so a Mac or host nobody pasted on kept them (264 files, 107 MB here); now they also go when terminumd starts and once a day, and on a host when its files agent starts and once a day while it runs (AC-36). |
 | 0.4.13 | 2026-10-24 | Owner: on a computer a selection's Copy, [+] and Ask stand in the floating buttons' column, in one line with find and the sent history, Copy level with the selection's first line (kept inside the terminal), and the column's other buttons are hidden while they show (they stood left of the column, level with the selection's end, beside the column) (AC-33, AC-37). The floating buttons answer the pointer: they lift 2 px and grow 12% on a spring, and their icon nods once (docs/UI-GUIDELINES.md §2.8). |
 | 0.4.12 | 2026-10-24 | Owner: files and folders dragged from the Files panel onto the terminal put their paths at the input's cursor (shell-quoted, separated by spaces, no Enter), nothing uploaded: they are already where the pane runs; several selected rows go together; a file of another host than the pane's is refused with a toast (AC-36; terminum-files.md AC-52). |
@@ -362,6 +363,8 @@ Scenario: AC-37 happy path — Ask about a selection
   And in a shell, where Ctrl+J would run the line, it is pasted with the blank line inside the paste
   When the shown pane runs a coding agent and the user presses Send to Agent (left of Add to Chat) instead
   Then the same text, without the blank line after the question, is typed (or pasted, by the same rule) into the agent's box and Enter follows 0.2 s later (an Enter in the same read as a paste is a new line to Claude Code), so the agent gets it at once, and the view goes to the input, where the answer comes; in a shell the button is not shown
+  But the Enter goes only to the pane the quote went to while it still runs its agent: another pane shown by then, or the agent ended, and it is not pressed and a toast says so; the agent ending while the dialog is open hides Send to Agent and the dialog says so (Add to Chat still puts the quote in)
+  And a number that does not come within 10 s is said in the dialog, and Add to Chat or Send to Agent pressed again asks again
   And Cancel or Esc closes the dialog and pastes nothing; Add to Chat and Send to Agent are off while the question is empty
 
 Scenario: AC-37 happy path — an asked quote stays marked
@@ -779,3 +782,4 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.4.13 (2026-10-24) — AC-33, AC-37 `web/test/e2e_marks.mjs` (Chromium and WebKit: a selection's Copy and [+] in the floating column, same left as find and the sent history, 20 px under it; Ask under the [+], the bookmarks' button under them), `e2e_ask.mjs`, `e2e_phonerow.mjs` (a phone: the three where ⟨…⟩ stands, as before); UI-GUIDELINES §2.8 `web/test/e2e_motion.mjs` (a blob under the pointer: scale 1.12, lifted 2 px, its icon's "nod" played once; with reduced motion nothing moves) → pass.
 - [x] 0.4.11 (2026-10-24) — AC-35 `cargo test tmux::hookstate` (the agent's own last cwd, not a subagent's or a relative one, gone at its end); `node --test web/test/panefiles.test.mjs` (a path under the agent's folder found there, one under the pane's there, none neither; red without the agent's folder); `web/test/e2e_app.mjs` (Chromium and WebKit: "shots/row.png" under the agent's worktree underlined and opened in View from there) → pass.
 - [x] 0.4.12 (2026-10-24) — AC-36 `node --test web/test/upload.test.mjs` (absolute paths with their host; relative ones, control characters, not text dropped); `web/test/e2e_app.mjs` (Chromium and WebKit: a folder and a file dropped as Files' rows put their quoted paths, no Enter, nothing uploaded; another host's refused with a toast); `cd ui && node test/e2e_panel.mjs` (a row is draggable, carries its host and path, a selected row the selection itself first, plain text one path a line) → pass. Not covered: a real mouse drag between the frames (synthetic events on each side).
+- [x] 0.4.15 (2026-10-26) — AC-37 `web/test/e2e_ask.mjs` through `e2e_marks.mjs` (Chromium and WebKit: the agent ending while the dialog is open hides Send to Agent and says so; another pane shown within the Enter's 0.2 s gets no Enter and a toast says so; both red with the ask.js before), `web/test/e2e_touch.mjs` (Chromium: a row's change while the selection is taken away waits, the selection comes back whole; red with the touchcopy.js before); AC-90 `web/test/e2e_sent.mjs` (Chromium and WebKit, both sizes: Tab and Shift+Tab stay in the pane, nothing typed reaches the terminal; red with the fabpane.js before); AC-36: the slot taken before the body (reviewed, the e2e uploads pass) → pass. `node web/test/e2e_all.mjs` 1182/1183 (the one: `motion: it goes back fast`, 359 ms against 250, under the full run's load; alone twice → pass). Not covered: Send to Agent when the agent exits within the 0.2 s before the page's list says so.

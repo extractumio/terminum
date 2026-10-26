@@ -19,7 +19,7 @@ const LAYOUT = [group("local", [
   item(ID(6), "slicer", { index: "11", agent: "claude", shell: false, sub: ["2.1", "~/work/slicer"], dir: "/Users/alex/work/slicer", state: "working" }),
   item(ID(7), "notes", { index: "13", sub: ["bash", "~/notes"], dir: "/Users/alex/notes" })]),
   group("main", [item(OWN(1), "mr", { index: "1", sub: ["zsh", "~/work/mr"], dir: "/Users/alex/work/mr" })],
-    { session: "ai4", attached: true, attach: "tmux attach -t ai4", wid: "own/main" })];
+    { session: "work", attached: true, attach: "tmux attach -t work", wid: "own/main" })];
 const PROJECT = { id: "p1", name: "API", color: 2, dir: DIR, members: [ID(1)] };
 const MARKS = [{ id: "M1", sid: ID(1), key: ID(1), n: 1, text: "x", note: "n", title: "api", host: null, dir: DIR, at: 1792000000 },
   { id: "R1", sid: ID(1), key: ID(1), n: 2, text: "y", note: "n", title: "api", host: null, dir: DIR, at: 1792000000, remind: true }];

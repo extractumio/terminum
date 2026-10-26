@@ -3,10 +3,12 @@
 //! the file's bytes (it has them, from this Mac or a host); terminumd renders them with a General
 //! MIDI SoundFont (settings.json's `midi.soundfont`, else `~/.terminum/soundfont.sf2`, else the
 //! package's GeneralUser GS beside this build) through rustysynth, the bank read once and kept
-//! while its file is unchanged.
+//! while its file is unchanged. RENDERS render at once, the others wait their turn; a render whose
+//! page went away (its tab closed, another file shown) stops at its next block.
 
 use std::io::Cursor;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -26,6 +28,18 @@ const RATE: i32 = 44100;
 /// Seconds rendered at most, and of quiet after the last event (its notes' release).
 const LONGEST: f64 = 10.0 * 60.0;
 const TAIL: f64 = 2.0;
+
+/// Renders at once: each takes a core and up to ~106 MB of WAV for a 10-minute file.
+const RENDERS: usize = 2;
+static TURNS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(RENDERS);
+
+/// Sets its flag when dropped: the request's future ended (answered, or its client gone).
+struct Gone(Arc<AtomicBool>);
+impl Drop for Gone {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
 
 /// The SoundFont last read: its path, modification time and bank.
 static BANK: Mutex<Option<(PathBuf, SystemTime, Arc<SoundFont>)>> = Mutex::new(None);
@@ -61,8 +75,8 @@ fn bank(path: &PathBuf) -> Result<Arc<SoundFont>, String> {
     Ok(b)
 }
 
-/// The MIDI file `bytes` rendered with `font`: a 16-bit stereo WAV.
-pub fn render(font: &Arc<SoundFont>, bytes: &[u8]) -> Result<Vec<u8>, String> {
+/// The MIDI file `bytes` rendered with `font`: a 16-bit stereo WAV; given up once `stop` is set.
+pub fn render(font: &Arc<SoundFont>, bytes: &[u8], stop: &AtomicBool) -> Result<Vec<u8>, String> {
     let midi = Arc::new(MidiFile::new(&mut Cursor::new(bytes)).map_err(|e| format!("Not a MIDI file this can play: {e:?}"))?);
     let length = midi.get_length();
     if length > LONGEST {
@@ -76,6 +90,9 @@ pub fn render(font: &Arc<SoundFont>, bytes: &[u8]) -> Result<Vec<u8>, String> {
     let mut out = wav_head(frames);
     let (mut l, mut r) = (vec![0f32; 4096], vec![0f32; 4096]);
     for at in (0..frames).step_by(4096) {
+        if stop.load(Ordering::Relaxed) {
+            return Err("No longer wanted".into());
+        }
         let n = 4096.min(frames - at);
         seq.render(&mut l[..n], &mut r[..n]);
         put(&mut out, &l[..n], &r[..n]);
@@ -117,7 +134,11 @@ fn put(out: &mut Vec<u8>, left: &[f32], right: &[f32]) {
 pub async fn post(State(app): State<Shared>, body: Bytes) -> Response {
     let path = soundfont_path(app.looks.settings.read().midi_soundfont.as_deref());
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-    let done = tokio::task::spawn_blocking(move || bank(&path).and_then(|b| render(&b, &body))).await;
+    // waiting for a turn ends with the request; the render stops with it
+    let Ok(_turn) = TURNS.acquire().await else { return err(StatusCode::INTERNAL_SERVER_ERROR, "midi", "Rendering failed") };
+    let stop = Arc::new(AtomicBool::new(false));
+    let _gone = Gone(stop.clone());
+    let done = tokio::task::spawn_blocking(move || bank(&path).and_then(|b| render(&b, &body, &stop))).await;
     match done {
         Ok(Ok(wav)) => {
             let mut res = wav.into_response();
@@ -160,6 +181,13 @@ mod tests {
     }
 
     #[test]
+    fn a_gone_request_sets_its_flag() {
+        let stop = Arc::new(AtomicBool::new(false));
+        drop(Gone(stop.clone()));
+        assert!(stop.load(Ordering::Relaxed));
+    }
+
+    #[test]
     fn a_wav_is_riff_stereo_16_bit() {
         let w = wav(&[0.5, -1.0], &[0.0, 2.0]);
         assert_eq!(&w[..4], b"RIFF");
@@ -174,9 +202,10 @@ mod tests {
     fn a_song_renders_with_a_real_soundfont() {
         let Ok(path) = std::env::var("TM_TEST_SOUNDFONT") else { return };
         let font = bank(&PathBuf::from(path)).unwrap();
-        let w = render(&font, &song()).unwrap();
+        let w = render(&font, &song(), &AtomicBool::new(false)).unwrap();
+        assert_eq!(render(&font, &song(), &AtomicBool::new(true)).unwrap_err(), "No longer wanted", "its page gone: not rendered");
         let loud = w[44..].chunks(2).map(|b| i16::from_le_bytes([b[0], b[1]]).unsigned_abs()).max().unwrap();
         assert!(w.len() > 44 + 4 * RATE as usize && loud > 1000, "{} bytes, peak {loud}", w.len());
-        assert!(render(&font, b"not midi").unwrap_err().starts_with("Not a MIDI file"));
+        assert!(render(&font, b"not midi", &AtomicBool::new(false)).unwrap_err().starts_with("Not a MIDI file"));
     }
 }

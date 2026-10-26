@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -189,11 +189,17 @@ impl Drop for Slot {
     }
 }
 
-/// `POST /paste` and `POST /upload` (the route says which).
-pub async fn save(app: &Shared, upload: bool, q: PasteQuery, headers: &HeaderMap, body: Bytes) -> Response {
-    let Some(_slot) = Slot::take() else {
-        return refuse(StatusCode::TOO_MANY_REQUESTS, "Two uploads are running already");
-    };
+/// A paste's or an upload's body, read once a slot is free (never before: the slots bound the
+/// bodies held in memory); the slot is held until the caller is done with it.
+async fn read(body: Body) -> Result<(Slot, Bytes), Response> {
+    let slot = Slot::take().ok_or_else(|| refuse(StatusCode::TOO_MANY_REQUESTS, "Two uploads are running already"))?;
+    let bytes = axum::body::to_bytes(body, MAX_BYTES).await
+        .map_err(|_| refuse(StatusCode::PAYLOAD_TOO_LARGE, "Larger than the 100 MB an upload may be"))?;
+    Ok((slot, bytes))
+}
+
+/// `POST /paste` and `POST /upload` (the route says which), its body read.
+async fn save(app: &Shared, upload: bool, q: PasteQuery, headers: &HeaderMap, body: Bytes) -> Response {
     let content_type = headers.get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
     let name = if upload { upload_name(q.name.as_deref().unwrap_or(""), &body) } else { image_name(content_type, &body) };
     let name = match name {
@@ -217,12 +223,18 @@ pub async fn save(app: &Shared, upload: bool, q: PasteQuery, headers: &HeaderMap
     }
 }
 
-pub async fn paste(State(app): State<Shared>, Query(q): Query<PasteQuery>, headers: HeaderMap, body: Bytes) -> Response {
-    save(&app, false, q, &headers, body).await
+pub async fn paste(State(app): State<Shared>, Query(q): Query<PasteQuery>, headers: HeaderMap, body: Body) -> Response {
+    match read(body).await {
+        Ok((_slot, body)) => save(&app, false, q, &headers, body).await,
+        Err(refused) => refused,
+    }
 }
 
-pub async fn upload(State(app): State<Shared>, Query(q): Query<PasteQuery>, headers: HeaderMap, body: Bytes) -> Response {
-    save(&app, true, q, &headers, body).await
+pub async fn upload(State(app): State<Shared>, Query(q): Query<PasteQuery>, headers: HeaderMap, body: Body) -> Response {
+    match read(body).await {
+        Ok((_slot, body)) => save(&app, true, q, &headers, body).await,
+        Err(refused) => refused,
+    }
 }
 
 #[cfg(test)]

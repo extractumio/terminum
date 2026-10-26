@@ -252,11 +252,15 @@ pub struct PasteName {
 }
 
 /// On an agent: `POST /api/paste?name=` saves the body in ~/.terminum/tmp (AC-85).
-pub async fn agent_paste(axum::extract::Query(q): axum::extract::Query<PasteName>, body: axum::body::Bytes) -> Response {
+pub async fn agent_paste(axum::extract::Query(q): axum::extract::Query<PasteName>, body: Body) -> Response {
     let dir = crate::config::home().join(crate::page::upload::REMOTE_DIR);
-    if body.len() > crate::page::upload::MAX_BYTES {
+    // read once a slot is free: the slots bound the bodies held in memory
+    let Some(_slot) = crate::page::upload::Slot::take() else {
+        return err(StatusCode::TOO_MANY_REQUESTS, "busy", "Two uploads are running already");
+    };
+    let Ok(body) = axum::body::to_bytes(body, crate::page::upload::MAX_BYTES).await else {
         return err(StatusCode::PAYLOAD_TOO_LARGE, "too_large", "Larger than 100 MB");
-    }
+    };
     let name = q.name.clone();
     match crate::http::blocking(move || crate::page::upload::save_in(&dir, &name, &body)).await {
         Ok(Ok(p)) => Json(json!({"path": p.display().to_string()})).into_response(),

@@ -119,7 +119,7 @@ export function metaLine(parts, hostFirst) {
 }
 
 /** The key a group's collapsed state is remembered by: its window or tmux session, and host. */
-const groupKey = (g) => `${g.kind}\n${g.label}${g.session ? " " + g.session : ""}\n${g.host ?? ""}`;
+export const groupKey = (g) => `${g.kind}\n${g.label}${g.session ? " " + g.session : ""}\n${g.host ?? ""}`;
 
 function matches(item, q) {
   if (!q) return true;
@@ -214,6 +214,31 @@ export function hostState(g) {
 // while its tmux runs other sessions an icon that offers them (onImport(group), AC-89).
 // Projects (AC-92) come first, each its sessions with their panes and quick shells, which
 // their tmux groups then leave out; every row has its Clone button (onClone(item)).
+/** Which rows go where: a project's session takes its window's other panes and its quick shells
+ *  with it. {byId, kids(top), taken}: taken, the ids a project lists (they leave their group). */
+function membership(groups, projects) {
+  const all = groups.flatMap((g) => g.items), win = (it) => it.id.slice(0, it.id.lastIndexOf(":") + 1) + it.window;
+  const byId = new Map(all.map((it) => [it.id, it]));
+  const under = new Map();                         // a window's first pane or a quick shell's pane -> what goes under it
+  const firsts = new Map(all.filter((it) => !(it.pane > 1)).map((it) => [win(it), it]));
+  for (const it of all) {
+    const top = it.quickOf ? byId.get(it.quickOf) : it.pane > 1 ? firsts.get(win(it)) : null;
+    if (top) under.set(top.id, [...(under.get(top.id) ?? []), it]);
+  }
+  const kids = (top) => under.get(top.id) ?? [];
+  const taken = new Set(projects.flatMap((p) => p.members).flatMap((k) => [k, ...(byId.has(k) ? kids(byId.get(k)).map((it) => it.id) : [])]));
+  return { byId, kids, taken };
+}
+
+/** The sessions (a window's first pane, not the panes and quick shells under it) the tmux group
+ *  `wid` lists, in order, whether it is collapsed or filtered: its menu's New Session and Close Group. */
+export function groupRows(groups, projects, wid) {
+  const g = groups.find((x) => x.wid === wid);
+  if (!g) return [];
+  const { taken } = membership(groups, projects), left = g.items.filter((it) => !taken.has(it.id));
+  return left.filter((it) => !(it.pane > 1) && !(it.quickOf && left.some((x) => x.id === it.quickOf))).map((it) => it.id);
+}
+
 export function renderNav(list, groups, current, query, onPick, collapsed, onToggle, marked = new Map(), onHost = null, onCopy = null, onImport = null,
   { projects = [], onClone = null, onProjectNew = null, onProjectMenu = null, onProjectRename = null, onGroupMenu = null } = {}) {
   const q = query.trim().toLowerCase();
@@ -222,18 +247,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   hues = folderHues(groups.flatMap((g) => g.items.map(folderKey)));
   const down = new Map(groups.filter((g) => g.host && !g.attached && g.state && g.state !== "attached").map((g) => [g.host, g.state]));
   let shown = 0;
-  // a project's session takes its window's other panes and its quick shells with it: one pass
-  const all = groups.flatMap((g) => g.items), win = (it) => it.id.slice(0, it.id.lastIndexOf(":") + 1) + it.window;
-  const byId = new Map(all.map((it) => [it.id, it]));
-  const projectOf = new Map(projects.flatMap((p) => p.members.map((k) => [k, p])));
-  const under = new Map();                         // a window's first pane or a quick shell's pane -> what goes under it
-  const firsts = new Map(all.filter((it) => !(it.pane > 1)).map((it) => [win(it), it]));
-  for (const it of all) {
-    const top = it.quickOf ? byId.get(it.quickOf) : it.pane > 1 ? firsts.get(win(it)) : null;
-    if (top) under.set(top.id, [...(under.get(top.id) ?? []), it]);
-  }
-  const kids = (top) => under.get(top.id) ?? [];
-  const taken = new Set([...projectOf.keys()].flatMap((k) => [k, ...(byId.has(k) ? kids(byId.get(k)).map((it) => it.id) : [])]));
+  const { byId, kids, taken } = membership(groups, projects);
   const box = el("div", "projects");
   let above = null, tinted = 0;                    // the hue of the group drawn last; the other groups tinted so far
   for (const p of projects) {

@@ -53,24 +53,36 @@ impl Marks {
     }
 }
 
-/// unread.json written off the async workers with the marks as they are when it is written, one
-/// write at a time: the last one holds the last change.
+/// One write of unread.json at a time.
+static WRITING: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
+
+/// unread.json with the marks as they are when it is written.
+fn write(app: &Shared) {
+    let _one = WRITING.lock();
+    let v = app.unread.lock().json();
+    if let Err(e) = crate::auth::store::write_private(&app.cfg.dir.join(FILE), &v) {
+        tracing::warn!(event = "unread.unsaved", error = %e);
+    }
+}
+
+/// unread.json written off the async workers, one write at a time: the last one holds the last
+/// change (and `flush` the marks a stop came with).
 fn save(app: &Shared) {
-    static WRITING: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
     if app.cfg.agent {
         return;
     }
     let a = app.clone();
-    let write = move || {
-        let _one = WRITING.lock();
-        let v = a.unread.lock().json();
-        if let Err(e) = crate::auth::store::write_private(&a.cfg.dir.join(FILE), &v) {
-            tracing::warn!(event = "unread.unsaved", error = %e);
-        }
-    };
     match tokio::runtime::Handle::try_current() {
-        Ok(rt) => drop(rt.spawn_blocking(write)),
-        Err(_) => write(),
+        Ok(rt) => drop(rt.spawn_blocking(move || write(&a))),
+        Err(_) => write(&a),
+    }
+}
+
+/// Before terminumd stops: the marks as they are now on disk, whether or not a write
+/// `save` started has run yet (the process ends before it would).
+pub fn flush(app: &Shared) {
+    if !app.cfg.agent {
+        write(app);
     }
 }
 

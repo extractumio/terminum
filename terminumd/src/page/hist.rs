@@ -28,10 +28,12 @@ const UNFOLD_MAX: i64 = 20_000;
 /// them (a burst of output over ssh): so the capture reaches `margin` rows above the range and
 /// comes with the history's size read before and after it, and the rows asked for are taken
 /// from where those that scrolled meanwhile moved them. Where the count cannot say how far they
-/// moved (a history that shrank, or at its `limit`, where tmux drops the oldest tenth at once),
-/// the last frame's screen rows (`screen`, hashes, the first at `top`) are found in a capture
-/// down to the screen and number the rows. A width that changed (tmux re-wrapped) or rows found
-/// nowhere is an error, never rows of another place shown as these (AC-02).
+/// moved (a history that shrank, or at its `limit`, where tmux drops the oldest tenth at once,
+/// and the count may come back to the frame's: then the screen's top rows show whether anything
+/// moved; drawn over in place, they are found nowhere and the count holds), the last frame's
+/// screen rows (`screen`, hashes, the first at `top`) are found in a capture down to the screen
+/// and number the rows. A width that changed (tmux re-wrapped) or rows found nowhere is an
+/// error, never rows of another place shown as these (AC-02).
 #[allow(clippy::too_many_arguments)]
 pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit: i64, screen: &[u64], from: i64, to: i64, width: usize) -> Result<Vec<Value>, String> {
     if from >= to {
@@ -41,17 +43,34 @@ pub async fn capture(client: &Control, pane: &str, top: i64, history: i64, limit
     let read = sizes;
     let want = (to - from) as usize;
     let mut margin = MARGIN;
+    let full = |h: i64| h >= limit - limit / 10;           // at tmux's limit: trimmed a tenth at a time
+    let tops = screen.len().min(ANCHOR_ROWS);
     for _ in 0..3 {
         // offsets as the frame counted them, reaching `margin` rows above the range
         let (s, e) = (from - top - margin, to - top - 1);
-        let mut answers = client.run_all(vec![probe.clone(), format!("capture-pane -p -e -J -t {pane} -S {s} -E {e}"), probe.clone()]).await.into_iter();
+        let mut cmds = vec![probe.clone(), format!("capture-pane -p -e -J -t {pane} -S {s} -E {e}"), probe.clone()];
+        let check = full(history) && tops > 0;
+        if check {
+            cmds.push(format!("capture-pane -p -e -J -t {pane} -S 0 -E {}", tops - 1));   // the screen's top rows now
+        }
+        let mut answers = client.run_all(cmds).await.into_iter();
         let (before, lines, after) = (read(answers.next())?, answers.next().ok_or("no answer")??, read(answers.next())?);
         if before.1 != width || after.1 != width {
             return Err("the pane changed width while its lines were read".into());
         }
         let moved = before.0 - history;                    // rows that scrolled off since the frame
-        if moved < 0 || (moved > 0 && before.0 >= limit - limit / 10) {
+        // the same count at the limit may be a trim and as many rows again: not when the screen's top is the frame's
+        let trimmed = moved == 0 && check && full(before.0) && {
+            let now = rows::capture_rows(&answers.next().ok_or("no answer")??.join("\n"), width);
+            !now.iter().map(|r| crate::screen::history::hash(&rows::row_text(r))).eq(screen[..tops].iter().copied())
+        };
+        if moved < 0 || (moved > 0 && full(before.0)) {
             return anchored(client, &probe, pane, top, screen, from, to, width).await;
+        }
+        // found where a trim moved them; found nowhere, the top rows were drawn over in place (a
+        // progress bar's redraw), nothing moved, and the count numbers them
+        if trimmed && let Ok(rows) = anchored(client, &probe, pane, top, screen, from, to, width).await {
+            return Ok(rows);
         }
         if before.0 != after.0 || moved > margin {
             margin = 2 * moved.max(after.0 - history) + MARGIN;   // it went on meanwhile: once more, reaching further
