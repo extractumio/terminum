@@ -51,10 +51,19 @@ pub fn tell(pages: &super::Pages, keys: &[String]) {
 }
 
 /// The `plan` answer for pane `key`: its plan (null without one) and its scope's notes.
+/// Without a plan, the pane's newest archived one, marked `finished` (its agent exited, AC-97).
 pub fn answer(app: &Shared, key: &str) -> Value {
-    let plan = app.plans.details(key, app.hooks.working(key), crate::auth::store::unix_now());
+    let now = crate::auth::store::unix_now();
+    let (plan, finished) = match app.plans.details(key, app.hooks.working(key), now) {
+        Some(d) => (Some(d), false),
+        None => (app.plans.last_archived(key, now), true),
+    };
     let mut v = reply(key, plan, &app.notes.list(&crate::notes::scope_of(app, key)));
-    hooks(&mut v, app.hooks.session(key).is_some());
+    if finished && !v["plan"].is_null() {
+        v["plan"]["finished"] = json!(true);
+    } else {
+        hooks(&mut v, app.hooks.session(key).is_some());
+    }
     v
 }
 

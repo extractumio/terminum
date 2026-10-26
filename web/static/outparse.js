@@ -3,7 +3,7 @@
 // fenced code, a Markdown document, a Mermaid diagram, a drawn table, and image files named in it. Pure: rows
 // are {text, eol, styled}, as term.js knows them; widgets.js draws what this finds. A wrong
 // widget hides real output and a missed one costs nothing, so the rules ask for clear signs.
-import { drawnTable, tableMarkdown, tableTop } from "./drawntable.js";
+import { boxLine, drawnTable, tableMarkdown, tableTop } from "./drawntable.js";
 import { diffTable } from "./difftable.js";
 import { tokens } from "./links.js";
 
@@ -174,6 +174,9 @@ export function scan(rows, end = rows.length) {
   // a region near the end may still grow (a document, a diagram), the last line too (no hard end);
   // but no further back than a region can be long: a scan never grows with the history
   open = Math.max(Math.min(open, Math.max(0, lines.length - GAP - 2)), lines.length - MAX_LINES);
+  // nor inside a drawn box (a table not whole yet, or off its grid): the next scan, from there,
+  // would take a row of it for a head (AC-31)
+  while (open > Math.max(0, lines.length - MAX_LINES) && open < lines.length && boxLine(lines[open].text) && boxLine(lines[open - 1].text)) open--;
   for (const r of found) if (r.lastLine >= open) open = Math.min(open, r.line);
   const settled = open < lines.length ? lines[open].from : Math.min(end, rows.length);
   return { found: found.map(({ line, lastLine, ...r }) => r), settled };

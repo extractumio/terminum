@@ -14,7 +14,17 @@ const MIN_PASSWORD: usize = 8;
 
 /// The answer of terminumd; Err with its message when it refused or is down.
 fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
-    let (status, answer) = sockhttp::call(&ctx.sock(), method, path, body.as_ref(), Duration::from_secs(5))
+    waited(ctx, method, path, body, Duration::from_secs(5))
+}
+
+/// How long `hosts <action>` waits for terminumd: enabling coding agents' progress copies the
+/// helper to the host and installs it there (AC-99), which takes far longer than an answer.
+pub fn host_budget(action: &str) -> Duration {
+    Duration::from_secs(if action == "agents-on" { 300 } else { 5 })
+}
+
+fn waited(ctx: &Ctx, method: &str, path: &str, body: Option<Value>, budget: Duration) -> Result<Value, String> {
+    let (status, answer) = sockhttp::call(&ctx.sock(), method, path, body.as_ref(), budget)
         .map_err(|_| format!("{} (see: terminum status)", launch::describe(ctx, None, None)))?;
     let refused = answer.as_ref().and_then(|a| a.get("error")).and_then(Value::as_str).is_some_and(|s| !s.is_empty());
     if status >= 400 || refused {
@@ -252,7 +262,10 @@ pub fn hosts_add(ctx: &Ctx, name: Option<&str>, recipe: &[String], files: bool) 
 }
 
 pub fn hosts_action(ctx: &Ctx, action: &str, name: &str) -> Result<(), String> {
-    let answer = checked(ctx, "POST", &format!("/hosts/{action}"), Some(json!({"name": name})))?;
+    if action == "agents-on" {
+        ctx.say(format!("Enabling coding agents' progress on {name}… (copying the helper and installing)"));
+    }
+    let answer = waited(ctx, "POST", &format!("/hosts/{action}"), Some(json!({"name": name})), host_budget(action))?;
     ctx.say(answer["message"].as_str().map_or_else(|| format!("{name}: {action} done"), str::to_string));
     Ok(())
 }

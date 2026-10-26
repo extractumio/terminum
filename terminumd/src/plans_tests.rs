@@ -180,3 +180,17 @@ fn an_unknown_agent_or_session_matches_the_stored_plan() {
     q.turn(K, "codex", Some("c2"), T0 + 5);
     assert_eq!(q.archived(), 2, "a known other agent archives");
 }
+
+#[test]
+fn the_last_archived_plan_shows_until_a_new_one() {
+    let p = Plans::default();
+    assert!(p.last_archived(K, T0).is_none(), "nothing archived");
+    p.hook(K, "claude", Some("s1"), &json!({"op": "add", "id": "1", "text": "a"}), T0);
+    assert!(p.last_archived(K, T0).is_none(), "a live plan is no finished one");
+    p.session(K, None);
+    let d = p.last_archived(K, T0 + 5).expect("the exited agent's plan");
+    assert_eq!((d.items.len(), d.row.total, d.row.stale), (1, 1, false));
+    assert!(p.last_archived("tmux:local:x:%9", T0).is_none(), "another pane's");
+    p.hook(K, "claude", Some("s2"), &json!({"op": "add", "id": "1", "text": "b"}), T0 + 9);
+    assert!(p.last_archived(K, T0 + 9).is_none(), "a new session's plan replaces it");
+}

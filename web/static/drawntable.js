@@ -26,17 +26,23 @@ const width = (t) => (t[0] === "+" ? t.split("+").length - 2 : (t.match(JUNCTION
 // a box row: a bar at each end, n columns between
 const boxRow = (t) => /^[│┃║].*[│┃║]$/.test(t);
 const columns = (t) => t.split(BOX.bar).length - 2;
-/** Whether line `text` is a head row with no top rule: a box row the middle rule `next` follows. */
-const headRow = (text, next) => {
+const BOX_START = new RegExp(`^[│┃║${RULE.top[0]}${RULE.mid[0]}${RULE.end[0]}]`);
+/** Whether a line is a line of a box: one of its rows or rules, whole or cut off. */
+export const boxLine = (text) => BOX_START.test((text ?? "").replace(LEAD, ""));
+/** Whether line `text` is a head row with no top rule: a box row the middle rule `next` follows,
+ *  and `prev`, the line before it, no line of a box (a row after a line off a table's grid is
+ *  one of its rows, not a head: the table stays text, never half text, half a widget). */
+const headRow = (text, next, prev) => {
   const t = text.replace(LEAD, "").trimEnd(), r = next?.trim() ?? "";
-  return boxRow(t) && BOX.mid.test(r) && columns(t) === width(r) && width(r) >= 2;
+  return boxRow(t) && BOX.mid.test(r) && columns(t) === width(r) && width(r) >= 2 && !boxLine(prev);
 };
 
 /** Whether a line starts a drawn table of two columns or more: its top rule, or a head row
- *  (without a top rule) when `next`, the line after it, is a middle rule. */
-export const tableTop = (text, next) => {
+ *  (without a top rule) when `next`, the line after it, is a middle rule and `prev`, the line
+ *  before it, no line of a box. */
+export const tableTop = (text, next, prev) => {
   const t = text.replace(LEAD, "").trimEnd();
-  return ((BOX.top.test(t) || ASCII.test(t)) && width(t) >= 2) || headRow(text, next);
+  return ((BOX.top.test(t) || ASCII.test(t)) && width(t) >= 2) || headRow(text, next, prev);
 };
 
 /** The table whose top rule is line i of `lines` ([{text}]): {to (its bottom rule's line), head
@@ -48,7 +54,7 @@ export const tableTop = (text, next) => {
  *  the row above (box tables only: mysql and its kind never wrap a cell, and an empty first
  *  value is a row of its own). */
 export function drawnTable(lines, i, max) {
-  const headless = headRow(lines[i].text, lines[i + 1]?.text);
+  const headless = headRow(lines[i].text, lines[i + 1]?.text, lines[i - 1]?.text);
   if (!headless && !tableTop(lines[i].text)) return undefined;
   const top = headless ? lines[i + 1].text.trim() : lines[i].text.replace(LEAD, "").trimEnd();
   const ascii = top[0] === "+", n = width(top);

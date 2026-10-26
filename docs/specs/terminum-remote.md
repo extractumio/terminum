@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.8.2 | 2026-10-26 | Owner: the first "terminum hosts agents <host> on" printed only "terminumd answers (see: terminum status)": the CLI waited 5 s, the install takes longer. It says what it does and waits up to 5 minutes (AC-99). |
 | 0.8.1 | 2026-10-26 | Found over a real sshd (Alpine, Debian): `DisableForwarding yes` refuses the Files tunnel's own `-L` too, so only a refusal of `-R` alone (`AllowStreamLocalForwarding local`) keeps Files working (AC-99, AS-84); a login shell that prints made the helper's id check fail on every enable (files and agents): its last line is the answer. AC-99's Definition of Done filled; a macOS host over real sshd not verified. |
 | 0.8.0 | 2026-10-26 | Owner: coding agents' progress on a host (AC-99): Claude Code's and Codex's hooks and `terminum mcp` in a host's tmux reach the Mac's terminumd, so the host's rows and the Plan pane show them as for local panes (terminal spec AC 97, AC 98). A per-host `agents` setting (CLI `terminum hosts agents <host> on\|off`, the host menu), installed over ssh with per-agent result lines; the events ride on the files helper's ssh as a reverse Unix-socket forward (`-R`), files staying off unless enabled; a refused forward keeps files working; matching on the host server's full socket path; per-Mac link names; content-based refresh after AC-84; link loss drops the host's hook state. Pragmatic review applied (its must-change list 1–9). Assumption AS-84 to verify. |
 | 0.7.3 | 2026-10-26 | An audit's finding fixed: the orphan sweep's answer option was named by terminumd's pid and the connection's number, which two Macs (or two host names of one server) can share, so one sweep could read or remove another's answer; it is named at random per sweep (`@tm-orphans-<16 hex>`) (AC-81). |
@@ -245,6 +246,8 @@ Scenario: AC-99 happy path — enable
   And runs "~/.terminum/bin/terminum-host hooks install --host-mode" there, with hook and MCP entries calling terminum-host by absolute path; the host's own "~/.terminum/bin/terminum" is never touched
   And records "agents": "enabled" for devbox and shows one result line per agent: "installed", "not found", "needs Codex trust (/hooks)", "uses devbox's own terminum", "refused: a terminum entry of another command", or "failed: <why>"
   And nothing is installed in devbox's ~/.claude or ~/.codex before that action; Add host has no tick for it in v1
+
+  And "terminum hosts agents devbox on" first says "Enabling coding agents' progress on devbox… (copying the helper and installing)" and waits up to 5 minutes for the result lines (other host commands: 5 s)
 
 Scenario: AC-99 happy path — the link
   Given devbox's agents are enabled and its files not

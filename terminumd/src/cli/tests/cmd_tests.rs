@@ -249,6 +249,20 @@ fn hosts_agents_on_off_post_their_action_and_print_the_result_lines() {
 }
 
 #[test]
+fn hosts_agents_on_waits_for_the_whole_enable() {
+    // the install on the host outlasts every other answer's 5 s: its first run prints the result (AC-99)
+    assert_eq!((commands::host_budget("agents-on").as_secs(), commands::host_budget("on").as_secs()), (300, 5));
+    let t = T::new();
+    let _s = t.serve(routes(vec![("POST /hosts/agents-on", Box::new(|_: &Option<Value>| {
+        std::thread::sleep(std::time::Duration::from_secs(6));
+        (200, json!({"ok": true, "message": "claude: installed"}))
+    }))]));
+    let (err, out) = t.cli(&["hosts", "agents", "devbox", "on"]);
+    assert_eq!(err, None);
+    assert_eq!(out, ["Enabling coding agents' progress on devbox… (copying the helper and installing)", "claude: installed"]);
+}
+
+#[test]
 fn the_name_or_a_command_selects_the_cli() {
     let a = |v: &[&str]| v.iter().map(|s| s.to_string()).collect::<Vec<_>>();
     assert!(wanted(&a(&["/Users/alex/.terminum/bin/terminum"])));

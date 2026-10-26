@@ -11,6 +11,7 @@ import { ageText, clock, etaLine, headerText, noteChat, orderNotes, rowTitle, so
 
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() / 1000;
+export const EMPTY = "No plan yet. A coding agent reports its plan here when it works on a longer task: with its own plan tool (Claude Code's tasks) or terminum's MCP tools (update_session_plan). Sessions started before terminum's hooks were installed report nothing until restarted.";
 const STATUS = { completed: "completed", in_progress: "in progress", pending: "pending", blocked: "blocked" };
 
 /** send(msg) to terminumd; sid(): the shown pane's key; toChat(text): pasted into its input, no Enter. */
@@ -29,14 +30,16 @@ export function planPane({ send, sid, toChat }) {
   function header(item) {
     shown = item;
     const plan = item?.plan ?? null, notes = item?.notes ?? 0;
+    $("planmenu").hidden = !item;                    // the header ⋯ menu's entry, for any shown session
     if (pane.open() && sid() !== of) pane.toggle(false);
     else if (pane.open() && waiting) ask();          // asked while terminumd was away (a restart): its next layout asks again
-    fab.hidden = !plan && !notes;                    // notes alone still open the pane
+    fab.hidden = !plan && !notes && !item?.agent;    // notes alone, or a coding agent without a plan yet, still open the pane
     if (fab.hidden) return;
     fab.classList.toggle("stale", !!plan?.stale);
+    fab.classList.toggle("quiet", !plan && !notes);  // the entry point alone: a ghost "Plan" (UI-GUIDELINES)
     const said = notes ? `${notes} note${notes > 1 ? "s" : ""}` : "";
-    $("curplant").textContent = plan ? headerText(plan, now()) : said;
-    fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : `Notes: ${said}`;
+    $("curplant").textContent = plan ? headerText(plan, now()) : said || "Plan";
+    fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Notes: ${said}` : "Plan and Notes: no plan yet";
     fab.setAttribute("aria-label", fab.title);
     fab.style.setProperty("--pct", `${Math.max(0, Math.min(100, plan?.pct ?? 0))}%`);
   }
@@ -64,8 +67,9 @@ export function planPane({ send, sid, toChat }) {
   function draw(p, notes, hooks) {
     const body = [];
     if (hooks === false) body.push(el("p", "plmeta plhooks", "terminum's hooks are not running in this session (Codex: trust them in /hooks)."));
-    if (!p) body.push(el("p", "plmeta", "No plan for this session."));
+    if (!p) body.push(el("p", "plmeta plempty", EMPTY));
     else {
+      if (p.finished) body.push(el("p", "plmeta plfinished", `Finished session (agent exited ${clock(p.finished_at ?? p.updated)})`));
       if (p.title) body.push(el("h3", "pltitle", p.title));
       if (p.doing) body.push(el("p", "pldoing", p.doing));
       const ul = el("ul", "plitems");

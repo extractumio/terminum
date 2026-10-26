@@ -157,6 +157,9 @@ export async function webMarks(browser, name = "") {
   });
   check(`${at} a gray Copy button stands just above it; both are blobs, not circles`,
     pair.shown && pair.above && pair.sameX && /^rgb\((\d+), \1, |^rgb\(1[45]\d, 1[56]\d, 1[67]\d\)/.test(pair.gray) && pair.radius !== pair.other, JSON.stringify(pair));
+  const gaps = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect();
+    return [r("markadd").top - r("markcopy").bottom, r("askfab").top - r("markadd").bottom].map(Math.round); });
+  check(`${at} a computer: Copy, [+] and Ask one gap (--sp-3, 12 px) apart`, gaps.every((g) => g === 12), JSON.stringify(gaps));
   await page.evaluate(() => { window.copied = []; document.addEventListener("copy", () => window.copied.push(String(getSelection()))); });
   // Ask (AC-37): while text is selected, under the [+], on a pastel cornflower blue fill; the column stays in sight
   const asking = await page.evaluate(() => { const g = (id) => document.getElementById(id), r = (id) => g(id).getBoundingClientRect();

@@ -15,6 +15,33 @@ const seen = (page, ids) => page.evaluate((ids) => Object.fromEntries(ids.map((i
   return [id, !e.hidden && getComputedStyle(e).visibility === "visible" && getComputedStyle(e).opacity !== "0"];
 })), ids);
 
+// a wheel, then the terminal scrolled: the column fades, back 1 s after; the page's own scroll and an
+// open find's field keep it in sight
+async function scrollHides(page, where, ids) {
+  const scroll = (wheel) => page.evaluate((wheel) => { const t = document.getElementById("term");
+    if (wheel) t.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -120 }));
+    t.scrollTop = t.scrollTop > 200 ? t.scrollTop - 200 : t.scrollHeight; }, wheel);
+  await scroll(false);
+  await pause(page, 450);
+  const own = await seen(page, ids);
+  await scroll(true);
+  await pause(page, 450);
+  const during = await seen(page, ids);
+  await pause(page, 1100);
+  const after = await seen(page, ids);
+  check(`AC-18 ${where}: while the user scrolls the terminal the floating buttons fade, back 1 s after it stops; the page's own scroll leaves them`,
+    ids.every((id) => own[id] && !during[id] && after[id]), JSON.stringify({ own, during, after }));
+  if (!ids.includes("findfab")) return;
+  await page.click("#findfab");
+  await pause(page, 200);
+  await scroll(true);
+  await pause(page, 450);
+  const open = await seen(page, ["findfab"]);
+  await page.keyboard.press("Escape");
+  await pause(page, 200);
+  check(`AC-18 ${where}: never while a pane they opened (find's field) is open`, open.findfab, JSON.stringify(open));
+}
+
 export async function webFold(browser, name) {
   runningIn(`${name} 390×844`);
   const f = await openPage(browser, { device: PHONE, screen: Array.from({ length: 80 }, (_, i) => line(`line ${i} of a long answer`)) });
@@ -71,20 +98,35 @@ export async function webFold(browser, name) {
     await pause(page, 200);
     const during = await seen(page, ["foldfab", "fabs", "bottom"]);
     await at("touchEnd");
-    await pause(page, 600);
+    await pause(page, 1400);
     const after = await seen(page, ["foldfab", "fabs", "bottom"]);
     check("AC-18 a phone: while a finger scrolls the terminal every floating button (To the bottom too) is out of sight, back once it lifted and the scroll stopped",
       !during.foldfab && !during.fabs && !during.bottom && after.foldfab && after.fabs && after.bottom, JSON.stringify({ during, after }));
   }
+  await scrollHides(page, "a phone", ["foldfab"]);
   check("AC-18 no page errors (fold, phone)", !f.errors.length, f.errors.join(" | "));
   await f.close();
 
   runningIn(`${name} 1400×900`);
-  const w = await openPage(browser, { device: WIDE });
+  const w = await openPage(browser, { device: WIDE, screen: Array.from({ length: 120 }, (_, i) => line(`line ${i} of a long answer`)) });
   await drawn(w.page);
   await pause(w.page, 300);
   const wide = await seen(w.page, ["foldfab", "findfab", "sentfab"]);
   check("AC-18 a computer: no ⟨…⟩, the column as before", !wide.foldfab && wide.findfab && wide.sentfab, JSON.stringify(wide));
+  await scrollHides(w.page, "a computer", ["findfab", "sentfab"]);
+  // a real wheel over the terminal; the pointer coming near the column brings it back at once
+  const box = await w.page.evaluate(() => { const r = document.getElementById("term").getBoundingClientRect(), b = document.getElementById("findfab").getBoundingClientRect();
+    return { x: r.left + r.width / 3, y: r.top + r.height / 2, fx: b.left - 10, fy: b.top + b.height / 2 }; });
+  await w.page.mouse.move(box.x, box.y);
+  await w.page.mouse.wheel(0, -400);
+  await pause(w.page, 450);
+  const wheeled = await seen(w.page, ["findfab", "sentfab"]);
+  await w.page.mouse.move(box.fx, box.fy, { steps: 4 });
+  await pause(w.page, 300);
+  const near = await seen(w.page, ["findfab", "sentfab"]);
+  check("AC-18 a computer: a wheel's scroll hides the column, the pointer near it brings it back at once",
+    !wheeled.findfab && !wheeled.sentfab && near.findfab && near.sentfab, JSON.stringify({ wheeled, near }));
+  check("AC-18 no page errors (fold, computer)", !w.errors.length, w.errors.join(" | "));
   await w.close();
   runningIn(name);
 }

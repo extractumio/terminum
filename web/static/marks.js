@@ -358,7 +358,7 @@ export class Marks {
     if (!shown) return;
     const left = columnLeft(term);
     const shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
-    let y = term.offsetTop + 14;
+    let y = term.offsetTop + 12;                    // the gap between them (--sp-3) above the first too
     if (floats()) { Object.assign($("foldfab").style, { top: `${y}px`, left }); y += ($("foldfab").offsetHeight || 44) + 12; }
     for (const group of [PLAIN, COLORED]) {
       for (const b of shownOf(group)) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 12; }

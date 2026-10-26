@@ -42,3 +42,6 @@ body:not([data-shown="term"]) #planpane { display: none !important; }
    not the centered sheet; its finger sizes are in controls.css */
 #planpane[data-sheet] { top: var(--plan-top, 0px) !important; translate: -50% 0 !important; width: 100vw !important;
   max-height: calc(var(--app-h, 100dvh) - var(--plan-top, 0px)) !important; border-radius: 0; }
+#curplan.quiet #curplant { background: none; color: var(--muted-text); }   /* the entry point without a plan: the guidelines' ghost */
+.plempty { white-space: normal; }
+.plfinished { font-weight: 600; }

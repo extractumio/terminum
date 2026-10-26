@@ -143,7 +143,7 @@ export async function planLook(browser, name, size, device) {
   await page.click("#curplan", { timeout: 5000 });
   await pause(page, 250);
   const empty = await page.evaluate(() => [...document.querySelectorAll("#planbody p, #planbody h3")].map((e) => e.textContent));
-  check(`${at} the empty state: "No plan for this session." and "No notes", no hooks line`, empty.includes("No plan for this session.") && empty.includes("No notes") && empty.length === 2, JSON.stringify(empty));
+  check(`${at} the empty state: "No plan yet…" and "No notes", no hooks line`, empty.some((t) => t.startsWith("No plan yet.")) && empty.includes("No notes") && empty.length === 2, JSON.stringify(empty));
   check(`no page errors (plans look) ${size}`, !f.errors.length, f.errors.join(" | "));
   await f.close();
 }

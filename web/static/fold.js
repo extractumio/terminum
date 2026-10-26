@@ -7,7 +7,8 @@
 // on-screen keyboard and the hot keys away (away()), so the terminal is seen whole. Folded, it carries the bookmarks' count and the
 // reminders' pink. While text is selected the selection's Copy, [+] and Ask stand there instead
 // (markpick.js). From a finger's first move scrolling the terminal to its lift, every floating
-// button is out of sight (body.scrolling, fold.css), so the text under them can be read.
+// button is out of sight (body.scrolling, fold.css), so the text under them can be read; a wheel's,
+// a key's or the scroll bar's scroll hides the column alone (body.scrolled), both back 1 s after it.
 
 const $ = (id) => document.getElementById(id);
 export const FLOATING = "(hover: none), (max-width: 860px)";   // where the buttons float: the page's one query of it (style.css's #fabs)
@@ -18,7 +19,12 @@ export const floats = () => (floatsQuery ??= matchMedia(FLOATING)).matches;
 export const FOLDED = ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"];
 const FOR = 3000;              // ms the column stays unfolded
 const SCROLL = 10;             // px a finger moves before it scrolls
-const SETTLE = 250;            // ms without a scroll after the lift before they come back
+const SETTLE = 1000;           // ms without a scroll after the lift before they come back
+const BACK = SETTLE;           // … and after a wheel's or a key's scroll: the column alone
+const ASKED = 400;             // ms after a wheel, a key or a press that a scroll is the user's
+const NEAR = 24;               // px round a button where the pointer brings the column back
+const SCROLL_KEYS = /^(PageUp|PageDown|Home|End|ArrowUp|ArrowDown| )$/;
+const COLUMN = ["foldfab", ...FOLDED, "markcopy", "markadd", "askfab"];
 
 /** away(): the on-screen keyboard and the hot keys panel put away. */
 export function fabFold({ away }) {
@@ -71,6 +77,29 @@ export function fabFold({ away }) {
   const lift = () => { startY = null; if (body.classList.contains("scrolling")) settled(); };
   document.addEventListener("touchend", lift, { passive: true, capture: true });
   document.addEventListener("touchcancel", lift, { passive: true, capture: true });
+  // a wheel, a key or the scroll bar scrolling the terminal (or its View) hides the column alone
+  // (body.scrolled) until BACK ms without a scroll, the pointer near it or the focus on it; never
+  // while a pane they opened is open, never for the page's own scroll (output followed)
+  let asked = 0, back = 0, px = -1, py = -1;
+  const PANES = ["sentpane", "remindpane", "markpane", "findbox"];
+  const ask = () => { asked = Date.now(); };
+  const show = () => { clearTimeout(back); body.classList.remove("scrolled"); };
+  for (const t of ["wheel", "pointerdown"]) document.addEventListener(t, (e) => { if (mine(e) && e.pointerType !== "touch") ask(); }, { passive: true, capture: true });
+  document.addEventListener("keydown", (e) => { if (SCROLL_KEYS.test(e.key)) ask(); }, true);
+  $("term").addEventListener("scroll", () => {
+    const going = body.classList.contains("scrolled");   // a scroll on (momentum, a held key) keeps them away
+    if ((!going && Date.now() - asked > ASKED) || PANES.some((id) => !$(id).hidden)) return show();
+    body.classList.add("scrolled");
+    clearTimeout(back); back = setTimeout(show, BACK);
+  }, { passive: true });
+  document.addEventListener("pointermove", (e) => {
+    const moved = Math.hypot(e.clientX - px, e.clientY - py) > 4;
+    px = e.clientX; py = e.clientY;
+    if (!moved || !body.classList.contains("scrolled") || e.pointerType === "touch") return;
+    const near = (b) => { const r = b.getBoundingClientRect(); return r.width && e.clientX > r.left - NEAR && e.clientX < r.right + NEAR && e.clientY > r.top - NEAR && e.clientY < r.bottom + NEAR; };
+    if (COLUMN.some((id) => near($(id)))) show();
+  }, { passive: true });
+  document.addEventListener("focusin", (e) => { if (COLUMN.some((id) => $(id).contains(e.target))) show(); });
 
   // Esc folds them, the keys back on ⟨…⟩
   document.addEventListener("keydown", (e) => {

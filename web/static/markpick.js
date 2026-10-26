@@ -84,10 +84,12 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
     frame = 0;
     const lead = document.getElementById(floating.matches ? "foldfab" : "findfab");
     if (!kept || !lead) return;
-    const h = button.offsetHeight || 32, step = h + 12, x = lead.style.left || columnLeft(term);   // none drawn: the column's place
+    // one gap (the guidelines' --sp-3) between the three, above the first and below the last
+    const gap = parseFloat(getComputedStyle(term).getPropertyValue("--sp-3")) || 12;
+    const h = button.offsetHeight || 32, step = h + gap, x = lead.style.left || columnLeft(term);   // none drawn: the column's place
     const t = term.getBoundingClientRect(), m = main.getBoundingClientRect();
-    const y = floating.matches ? parseFloat(lead.style.top) || t.top - m.top + 14
-      : Math.min(Math.max(kept.rect.top + kept.rect.height / 2 - h / 2, t.top + 4), t.bottom - 2 * step - h - 4) - m.top;
+    const y = floating.matches ? parseFloat(lead.style.top) || t.top - m.top + gap
+      : Math.min(Math.max(kept.rect.top + kept.rect.height / 2 - h / 2, t.top + gap), t.bottom - 2 * step - h - gap) - m.top;
     [copyButton, button, askButton].forEach((b, i) => Object.assign(b.style, { left: x, top: `${Math.round(y + i * step)}px` }));
   };
   const later = () => { if (!frame) frame = requestAnimationFrame(place); };

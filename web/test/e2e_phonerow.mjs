@@ -131,6 +131,9 @@ export async function webPhoneRow(browser, name) {
   check("AC-18 AC-37 a phone: a selection's Copy, [+] and Ask stand in a column where ⟨…⟩ stood, Copy first; ⟨…⟩ and the folded column out of sight",
     sel.markcopy.seen && sel.markadd.seen && sel.askfab.seen && !sel.foldfab.seen && !sel.findfab.seen && sel.markcopy.x === sel.foldfab.x && sel.markcopy.y === sel.foldfab.y
     && sel.markadd.y > sel.markcopy.y && sel.askfab.y > sel.markadd.y && sel.markadd.x === sel.markcopy.x, JSON.stringify(sel));
+  const gaps = await page.evaluate(() => { const r = (id) => document.getElementById(id).getBoundingClientRect();
+    return [r("markcopy").top - r("term").top, r("markadd").top - r("markcopy").bottom, r("askfab").top - r("markadd").bottom].map(Math.round); });
+  check("AC-37 a phone: Copy, [+] and Ask one gap (--sp-3, 12 px) apart, and the same gap above Copy", gaps.every((g) => g === 12), JSON.stringify(gaps));
   await page.evaluate(() => getSelection().removeAllRanges());
   await f.close();
 

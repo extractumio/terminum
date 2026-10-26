@@ -18,3 +18,6 @@ body:has(#markcopy:not([hidden])) :is(#foldfab, #findfab, #splitfab, #sentfab, #
 /* a finger scrolling the terminal: every floating button out of sight, taking no tap, until it lifts and the scroll stops */
 #fabs { transition: opacity var(--dur-hover); }   /* the blobs fade by motion.css */
 body.scrolling :is(#foldfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab, #fabs, #bottom) { opacity: 0; pointer-events: none; }
+/* a wheel's, a key's or the scroll bar's scroll: the column alone fades until it stops (fold.js), calm, no motion when reduced */
+body.scrolled :is(#foldfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { opacity: 0; pointer-events: none; transition-duration: var(--dur-settle); }
+@media (prefers-reduced-motion: reduce) { body:is(.scrolled, .scrolling) :is(#foldfab, #findfab, #sentfab, #splitfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { transition: none; } }

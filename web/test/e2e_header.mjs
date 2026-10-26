@@ -18,11 +18,26 @@ export async function webHeader(browser, name) {
     await pause(page, 200);
     const line = await page.evaluate(() => {
       const parts = [...document.getElementById("cursub").children].filter((e) => !e.matches(".sep"));
-      const boxes = parts.map((e) => e.getBoundingClientRect()), overlap = boxes.some((b, i) => i && b.left < boxes[i - 1].right - 0.5);
+      const inline = parts.filter((e) => getComputedStyle(e).position !== "absolute");   // a phone's Copy stands in a column of its own
+      const boxes = inline.map((e) => e.getBoundingClientRect()), overlap = boxes.some((b, i) => i && b.left < boxes[i - 1].right - 0.5);
       return { parts: parts.map((e) => e.className + ":" + e.textContent), overlap };
     });
     check("AC-01 the header's second line: the folder and its Copy, then session:window, then what runs there; no part over another",
       JSON.stringify(line.parts) === JSON.stringify(["dir:~/work/api", "copydir:", "where:main:3", "set:claude·local·Fixing the tests"]) && !line.overlap, JSON.stringify(line));
+    const target = await page.evaluate(() => {      // the Copy's finger target (its ::after), the title's text, the header
+      document.querySelector("#current .t").textContent = "A long session title that runs past the phone's width and ends in an ellipsis";
+      const b = document.querySelector("#cursub .copydir"), r = b.getBoundingClientRect(), a = getComputedStyle(b, "::after");
+      const t = document.querySelector("#current .t").getBoundingClientRect(), bar = document.getElementById("bar").getBoundingClientRect();
+      const box = { top: r.top + parseFloat(a.top), bottom: r.bottom - parseFloat(a.bottom), left: r.left + parseFloat(a.left), right: r.right - parseFloat(a.right) };
+      const mid = document.elementFromPoint(t.left + t.width / 2, t.top + t.height / 2);
+      return { w: Math.round(box.right - box.left), h: Math.round(box.bottom - box.top),
+        overTitle: box.left < t.right && box.right > t.left && box.top < t.bottom && box.bottom > t.top || !!mid?.closest(".copydir"),
+        inBar: box.top >= bar.top && box.bottom <= bar.bottom && box.left >= bar.left && box.right <= bar.right,
+        clear: [document.getElementById("rename"), document.getElementById("menubtn"), getComputedStyle(b).position === "absolute" && document.querySelector("#cursub .dir")].filter(Boolean).every((e) => {   // ✎, ⋯ and, in a column of its own, the folder
+          const o = e.getBoundingClientRect(); return !o.width || o.right <= box.left + 0.5 || o.left >= box.right - 0.5; }) };
+    });
+    check("AC-01 the folder's Copy: its target never over the title's text (a long title's middle opens the list), inside the header, clear of ✎ and ⋯ (and the folder on a phone), a finger's 44 × 44 on a phone",
+      !target.overTitle && target.inBar && target.clear && (!size.startsWith("390") || (target.w >= 44 && target.h >= 44)), JSON.stringify(target));
     await page.evaluate(() => {                     // what was copied: by the clipboard API or the older copy command
       window.copied = [];
       document.addEventListener("copy", () => window.copied.push(String(getSelection())), true);
@@ -34,6 +49,20 @@ export async function webHeader(browser, name) {
     const got = await page.evaluate(() => ({ copied: window.copied.at(-1) ?? null, app: document.getElementById("app").className }));
     check("AC-01 the header's Copy copies the folder's full path and opens nothing else",
       got.copied === "/Users/alex/work/api" && got.app === drawer, JSON.stringify({ ...got, drawer }));
+    const tap = async (sel, top) => {               // a tap at an element's top centre (1 px in) or its centre; what it did
+      const [x, y] = await page.evaluate(([s, top]) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, top ? r.top + 1 : r.top + r.height / 2]; }, [sel, top]);
+      const n = await page.evaluate(() => window.copied.length);
+      await page.mouse.click(x, y);
+      await pause(page, 300);
+      return page.evaluate((n) => ({ copied: window.copied.length > n, files: document.querySelector('#views [data-view="files"]').ariaSelected, app: document.getElementById("app").className }), n);
+    };
+    if (size.startsWith("390")) {
+      const files = await tap('#views [data-view="files"]', true);
+      check("AC-01 a phone: a tap at the Files tab's top centre opens Files, not the folder's Copy", files.files === "true" && !files.copied, JSON.stringify(files));
+      const before = await page.evaluate(() => document.getElementById("app").className);
+      const title = await tap("#current .t", false);
+      check("AC-01 a phone: a tap on a long title's middle opens the list, not the folder's Copy", !title.copied && title.app !== before, JSON.stringify({ ...title, before }));
+    }
     check("AC-01 no page errors (header)", !f.errors.length, f.errors.join(" | "));
     await f.close();
 

@@ -280,6 +280,39 @@ test("a drawn table caught half-drawn waits for the rest: a row cut midway, blan
   assert.deepEqual(found("┌───┬───┐\n│ a │ b │\n│ c   d │\n\n  Done."), [], "a line off the grid with text after it: no table");
 });
 
+// Claude Code's box table of 13 rows, Cyrillic text and dashes: an owner's answer split in two
+const RESULTS = [["Набор", "Коммит", "Результат"], ...["make test", "clippy", "e2e_all", "e2e_live", "e2e_panel", "e2e_lastlines",
+  "e2e_remote", "e2e_remote_agents", "реальный sshd AC-81–84", "агенты на хосте, Alpine / Debian", "security_check (включая отказы terminumd)"]
+  .map((s, i) => [s, "3e78316", i ? "пройдено" : "пройдено — 0 ошибок"])];
+const boxTable = (cells) => {
+  const w = cells[0].map((_, c) => Math.max(...cells.map((r) => r[c].length)) + 2);
+  const rule = (l, j, r) => `  ${l}${w.map((n) => "─".repeat(n)).join(j)}${r}`;
+  const row = (r) => `  │${r.map((v, c) => ` ${v.padEnd(w[c] - 1)}`).join("│")}│`;
+  return [rule("┌", "┬", "┐"), ...cells.flatMap((r, i) => (i ? [rule("├", "┼", "┤"), row(r)] : [row(r)])), rule("└", "┴", "┘")];
+};
+
+test("a long drawn table is one widget with its head: never a widget from a row of it, the rows above it text", () => {
+  const table = boxTable(RESULTS), lead = "x\n".repeat(30);
+  assert.equal(table.length, 25);
+  const whole = scan(rows(lead + table.join("\n") + "\n\n✻ Done"));
+  assert.deepEqual(whole.found.map(({ kind, from, to, table: t }) => [kind, from, to, t.head, t.rows.length]),
+    [["table", 30, 54, ["Набор", "Коммит", "Результат"], 11]]);
+  // caught while a row is drawn again (text after it): no table yet, and settled at its top, not
+  // inside it, so the next scan, from there, finds it whole
+  const half = [...table.slice(0, 11), table[11].slice(0, 20), "", "✻ Thinking…"];
+  const first = scan(rows(lead + half.join("\n")));
+  assert.deepEqual(first.found, []);
+  assert.ok(first.settled <= 30, `settled at its top rule, not inside it (${first.settled})`);
+  const later = rows(lead + table.join("\n") + "\n\n✻ Done").slice(first.settled);
+  assert.deepEqual(scan(later).found.map(({ from, table: t }) => [from + first.settled, t.head[0], t.rows.length]), [[30, "Набор", 11]]);
+  // a line off its grid with text after it (a frame drawn over another): it stays text, all of
+  // it; no widget from the row after that line, that row as its head
+  const broken = [...table.slice(0, 11), table[11].slice(0, 20), ...table.slice(5)];
+  assert.deepEqual(found(lead + broken.join("\n") + "\n\n✻ Done"), []);
+  // its top rule scrolled away (a history's first line): it starts at its head row still
+  assert.deepEqual(found(table.slice(1).join("\n")).map(({ kind, from }) => [kind, from]), [["table", 0]]);
+});
+
 test("a Markdown document ends before a drawn table, which is a widget of its own", () => {
   const text = "## Plan\n\n- read **a**\n- write `b`\n" + CLAUDE_TABLE.slice(2, 10).join("\n");
   assert.deepEqual(found(text).map((r) => r.kind), ["markdown", "table"]);

@@ -312,6 +312,19 @@ impl Plans {
                        items: p.items.clone(), row: r, eta_given: p.eta_given })
     }
 
+    /// The pane's newest archived plan (its agent exited), when the pane has no plan of its
+    /// own: the Plan pane shows it as a finished session (AC-97).
+    pub fn last_archived(&self, key: &str, now: u64) -> Option<Details> {
+        if self.cur.lock().contains_key(key) {
+            return None;
+        }
+        let a = self.archived.lock();
+        let (_, p) = a.iter().rev().find(|(k, _)| k == key)?;
+        let r = row(p, false, now).unwrap_or(Row { done: 0, total: 0, pct: 0, eta: None, updated: p.updated, stale: false, partial: p.incomplete });
+        Some(Details { agent: p.agent.clone(), source: p.source, title: p.title.clone(), doing: p.doing.clone(),
+                       items: p.items.clone(), row: Row { eta: None, ..r }, eta_given: None })
+    }
+
     #[cfg(test)]
     pub fn archived(&self) -> usize {
         self.archived.lock().len()

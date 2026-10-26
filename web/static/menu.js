@@ -17,6 +17,7 @@ export function paneMenu({ send, pick, signOut, copy }) {
   document.addEventListener("click", (e) => { if (!$("menu").hidden && !e.target.closest("#menu")) close(); });
 
   $("restoreagain").onclick = () => { close(); send({ t: "restore" }); };
+  $("planmenu").onclick = () => { close(); document.dispatchEvent(new Event("planopen")); };   // the shown session's (AC-97)
   $("signout").onclick = () => { close(); signOut(); };
 
   // ---------- the restore report (AC-15) ----------

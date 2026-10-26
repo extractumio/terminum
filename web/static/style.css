@@ -154,8 +154,16 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #cursub:empty { display: none; }
 /* the folder's Copy: a 13px icon in the line, a finger's target round it (no line is taller) */
 #cursub .copydir { position: relative; flex: none; display: grid; place-items: center; width: 18px; height: 16px; margin-left: -2px; padding: 0; color: var(--muted); }
-#cursub .copydir::after { content: ""; position: absolute; inset: -4px -6px; }
-@media (max-width: 860px), (pointer: coarse) { #cursub .copydir { height: 40px; margin-block: -12px; } }   /* a finger's height, the line still 16 px */
+#cursub .copydir::after { content: ""; position: absolute; inset: -2px -6px -6px; }   /* up to the title line, never over it */
+/* a phone or a finger: the Copy has a 44 px column of its own at the title block's right (left of ✎),
+   its 44 × 44 across both lines; the title and the folder end before it, nothing of it below the header */
+@media (max-width: 860px), (pointer: coarse) {
+  #current { position: relative; --copy-r: 0px; }
+  #current:has(#rename:not([hidden])) { --copy-r: calc(var(--icon-key) + var(--sp-2)); }
+  #bar #current:has(#cursub .copydir) .lines { padding-right: calc(var(--copy-r) + 44px); }
+  #cursub .copydir { position: absolute; right: var(--copy-r); top: calc(50% - 22px); width: 44px; height: 44px; margin: 0; }
+  #cursub .copydir::after { inset: 0; }
+}
 @media (hover: hover) { #cursub .copydir:hover { color: var(--t-fg); } }
 #term.onlink { cursor: pointer; }
 /* addresses and paths that open (linkmarks.js) */
@@ -391,7 +399,7 @@ body.ctxtrace #fabs { display: flex; }
   #bar { flex-wrap: wrap; gap: var(--sp-2); padding: calc(env(safe-area-inset-top) + var(--sp-2)) 14px var(--sp-2); }
   #current { order: 1; position: relative; }
   #current #rename { --ik: var(--icon-key); position: absolute; right: 0; top: calc(50% - var(--ik) / 2); margin: 0; }   /* ✎ as large as ⋯, in a column of its own beside it */
-  #current:has(#rename:not([hidden])) .lines { padding-right: calc(var(--icon-key) + var(--sp-2)); }   /* its room: the title and details end before it */
+  #current:has(#rename:not([hidden])) .lines { padding-right: calc(var(--icon-key) + var(--sp-2)); }   /* its room: the title and details end before it (and the Copy's column, above) */
   #renamebox { order: 1; }
   #navbtn { order: 0; }
   #tools { display: contents; }
