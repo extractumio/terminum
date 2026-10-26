@@ -158,11 +158,13 @@ mod tests {
         lines.push(format!("select-pane -t main:0 -T {}", format_arg("it's #{host} #(id)")));
         s.source(&lines);
 
-        // tmux 3.4 writes the `$` of a window name and a pane's folder as `\$` (3.5 no longer)
+        // tmux 3.4 writes the `$` of a window name and a pane's folder as `\$` (3.5 no longer);
+        // tmux 3.8 keeps a window name's `\` as `\\` (not a folder's)
         let shown = |name: &str| if crate::testutil::tmux_at_least((3, 5)) { name.to_string() } else { name.replace('$', "\\$") };
+        let named = |name: &str| if crate::testutil::tmux_at_least((3, 8)) { name.replace('\\', "\\\\") } else { shown(name) };
         for (index, name, folder) in &want {
             let target = format!("main:{index}");
-            assert_eq!(s.read(&["display", "-p", "-t", &target, "#{window_name}"]), format!("{}\n", shown(name)));
+            assert_eq!(s.read(&["display", "-p", "-t", &target, "#{window_name}"]), format!("{}\n", named(name)));
             assert_eq!(s.read(&["display", "-p", "-t", &target, "#{pane_current_path}"]),
                        format!("{}\n", shown(&folder.display().to_string())), "folder of {name:?}");
         }

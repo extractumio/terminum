@@ -1255,7 +1255,7 @@ curl -s -X POST -H "X-TM-Session: …" -H "Origin: http://evil.example" -H "Cont
 
 - State files: every field optional with a default; unknown fields ignored and dropped on the next write; `version` bumped only for a changed meaning.
 - iterm-enhancer's `workspaces.json` and `web-bookmarks.json` are read as they are (`terminum import` copies them from `~/.iterm-enhancer/state`; keys `tmux:<host>:<socket>:%N` match for tmux panes; iTerm2 session keys are dropped).
-- tmux 3.2–3.6 (DEP-02); a server without `ignore-size` (older) is refused with "tmux 3.2 or newer is needed". tmux 3.4 (Ubuntu 24.04) writes a `$` in a window name and in `#{pane_current_path}` as `\$`: terminumd shows tmux's name as it is, and the Files panel of a pane in a folder whose name holds `$` says the folder is not found (tmux 3.5+ is exact).
+- tmux 3.2–3.6 (DEP-02); a server without `ignore-size` (older) is refused with "tmux 3.2 or newer is needed". tmux 3.4 (Ubuntu 24.04) writes a `$` in a window name and in `#{pane_current_path}` as `\$`: terminumd shows tmux's name as it is, and the Files panel of a pane in a folder whose name holds `$` says the folder is not found (tmux 3.5+ is exact). tmux 3.8 (Homebrew, 2026-10) keeps a `\` of a window name as `\\` (its folder exact): the list shows tmux's name as it is, and a rename typed over it keeps the doubled one.
 
 ```bash
 terminum upgrade            # forward: builds/B, current → B, restart, health, prune

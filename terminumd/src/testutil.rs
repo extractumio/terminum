@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 /// Whether the tmux on PATH is at least `want` (major, minor): 3.4 types `send-keys S-Enter` as
-/// text and writes `$` in a window name as `\$`.
+/// text and writes `$` in a window name as `\$`; 3.8 keeps a window name's `\` as `\\`.
 pub fn tmux_at_least(want: (u32, u32)) -> bool {
     let v = Command::new("tmux").arg("-V").output().map(|o| String::from_utf8_lossy(&o.stdout).into_owned()).unwrap_or_default();
     let n: Vec<u32> = v.split(|c: char| !c.is_ascii_digit()).filter_map(|p| p.parse().ok()).take(2).collect();
