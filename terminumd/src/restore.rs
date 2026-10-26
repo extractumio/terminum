@@ -5,7 +5,8 @@
 //! it shows (restore_srv.rs: hosts, the user's own tmux). When terminum's tmux has no session
 //! (after a reboot, or its server was killed), terminumd recreates the sessions with shells in
 //! their folders, applies each window's layout and writes a report the first page shows. Never
-//! stored: output, history, environment, command lines other than a checked ssh recipe.
+//! stored: output, history, environment, command lines other than a checked ssh recipe (the
+//! last lines of panes are kept apart, lastlines.rs: the checkpoint names the server's identity).
 
 use std::time::Duration;
 
@@ -16,7 +17,7 @@ use crate::app::Shared;
 use crate::tmux::server::Link;
 
 const EVERY: Duration = Duration::from_secs(5);
-use crate::restore_srv::{make, sessions_of, Exec, Made, PANES, WINDOWS};
+use crate::restore_srv::{make, sessions_of, Exec, Made, IDENTITY, PANES, WINDOWS};
 
 #[derive(Default)]
 pub struct Restore {
@@ -108,14 +109,15 @@ fn kind(command: &str, tty: &str, procs: &[(String, Vec<String>)]) -> Value {
 
 /// The local server's layout as layout.json holds it.
 async fn checkpoint(app: &Shared, prev: &Value) -> Option<Value> {
-    let mut answers = app.tmux.local.bulk()?.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'")]).await.into_iter();
+    let mut answers = app.tmux.local.bulk()?.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'"), IDENTITY.into()]).await.into_iter();
     let (wins, panes) = (answers.next()?.ok()?, answers.next()?.ok()?);
+    let identity = answers.next().and_then(Result::ok).and_then(|l| l.into_iter().next()).unwrap_or_default();
     let ssh_ttys: Vec<&str> = panes.iter().map(|l| l.splitn(6, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 6 && g[3] == "ssh").map(|g| g[4]).collect();
     let procs = ssh_commands(&ssh_ttys).await;
     let sessions = sessions_of(&wins, &panes, |_| true, |c, tty| kind(c, tty, &procs));
     let hosts: Vec<String> = app.tmux.hosts().iter().map(|h| h.name.clone()).collect();
     let servers = crate::restore_srv::checkpoint(app, &prev["servers"]).await;
-    Some(json!({"version": 2, "boot": boot_id(), "sessions": sessions, "hosts": hosts, "servers": servers}))
+    Some(json!({"version": 2, "boot": boot_id(), "identity": identity.trim(), "sessions": sessions, "hosts": hosts, "servers": servers}))
 }
 
 /// Writes the checkpoint within 5 s of a change, while restore is on.
@@ -177,6 +179,7 @@ async fn run(app: &Shared, saved: &Value) -> bool {
     let kept = crate::restore_srv::kept(&exec).await;
     make(&exec, saved["sessions"].as_array().map(Vec::as_slice).unwrap_or_default(), &existing, None, usable, &home, &mut m).await;
     crate::page::projects::restarted(app, &app.tmux.local.key(""), &[m.panes.clone(), kept].concat()).await;
+    m.lines = crate::lastlines::restarted(app, &app.tmux.local.id(), saved["identity"].as_str(), exec.identity().await, &m.panes).await;
     let made = m.sessions;
     let mut text = format!("Restored {made} session{}, {} window{}.", if made == 1 { "" } else { "s" }, m.windows, if m.windows == 1 { "" } else { "s" });
     if !m.programs.is_empty() {
@@ -199,7 +202,12 @@ pub fn add_report(app: &Shared, text: &str, m: Made) {
         if let Some(a) = report[k].as_array_mut() { a.extend(v.into_iter().map(Value::from)); }
     }
     let was = report["text"].as_str().unwrap_or("").to_string();
-    report["text"] = json!(if was.is_empty() { text.to_string() } else { format!("{was} {text}") });
+    let mut text = text.to_string();
+    let lines = format!("Last lines before the restart: a session's menu, Show Last {} Lines.", crate::lastlines::wanted(app));
+    if m.lines > 0 && !was.contains(&lines) {
+        text = format!("{text}{} {lines}", if text.ends_with('.') { "" } else { "." });
+    }
+    report["text"] = json!(if was.is_empty() { text.clone() } else { format!("{was} {text}") });
     let _ = crate::config::write_private(&app.cfg.dir.join("restore-report.json"), report.to_string().as_bytes());
     tracing::info!(event = "restore", text);
     *r = Some(report.clone());

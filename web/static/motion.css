@@ -73,7 +73,7 @@
 @supports not (overlay: auto) {
   :where(dialog.box:not([open])) { display: block; visibility: hidden; position: fixed; inset-block: 0; z-index: 50;
     transition-property: opacity, scale, filter, color, background-color, visibility, overlay; }
-  :is(#rowmenu, #marksdlg, #markdoc):not([open]) { display: flex; }
+  :is(#rowmenu, #marksdlg, .docdlg):not([open]) { display: flex; }
   :where(dialog.box:not([open])) > * { animation: none; }   /* laid out: its rows' cascade starts again when it opens */
 }
 :where(.box[role="menu"]) > * { animation: row-in var(--dur-row) var(--ease-out) calc(var(--row-lead) + min(var(--i, 0), 4) * var(--row-step)) backwards; }

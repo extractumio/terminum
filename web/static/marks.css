@@ -123,10 +123,11 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 .mkall { height: 26px; padding: 0 10px; border-radius: var(--r-sm); font-size: var(--fs-label); color: var(--muted); }
 @media (hover: hover) { .mkall:hover { color: var(--t-fg); background: var(--surface-3); } }
 .mkkind button[aria-pressed="true"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }
-#markdoc { width: min(860px, calc(100vw - 24px)); height: calc(100dvh - 48px); max-height: none; padding: 0; border: 0; border-radius: var(--r-xl);
+/* a large document window: the bookmarks' (markdoc.js), a session's last lines (lastlines.js); over dialog.dlg's size */
+dialog.dlg.docdlg { width: min(860px, calc(100vw - 24px)); height: calc(100dvh - 48px); max-height: none; padding: 0; border: 0; border-radius: var(--r-xl);
   --fill: var(--chrome); color: var(--t-fg); display: none; flex-direction: column; }
-#markdoc[open] { display: flex; }
-#markdoc .dhead { margin: 0; padding: 10px 10px 10px 16px; }
+dialog.dlg.docdlg[open] { display: flex; }
+dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 #markdocbody { flex: 1; overflow: auto; padding: 4px 22px 40px; font: var(--md-size, 14px)/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
 #markdocbody blockquote { margin: 0 0 6px; padding-left: 10px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); white-space: pre-wrap; }
 

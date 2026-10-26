@@ -1,0 +1,11 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A session's last lines (lastlines.js, AC-96): in the bookmarks' document window (.docdlg,
+   marks.css), the lines as the terminal's text on its surface, scrolling inside. */
+/* the title on one line; on a narrow screen the switch, Copy and × go under it */
+#lastlines .dhead { flex-wrap: wrap; row-gap: 8px; }
+#lastlines .dhead h2 { flex: 1 1 12em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#lastlines .seg { flex: none; margin-left: auto; }
+.docmeta { margin: 0; padding: 0 16px 8px; font-size: var(--fs-label); color: var(--muted); overflow-wrap: anywhere; }
+.docmeta.bad { color: var(--danger-text); }
+#lastlinestext { flex: 1; min-height: 0; overflow: auto; margin: 0 12px 12px; padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--t-bg); color: var(--t-fg); font: var(--size, 13px)/1.35 var(--term-font); white-space: pre; tab-size: 8; }

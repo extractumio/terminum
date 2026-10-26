@@ -14,7 +14,7 @@ fn missing_or_empty_gives_every_default_and_no_message() {
     assert_eq!((s.port, s.tmux_socket.as_str(), s.tmux_history, s.restore), (48080, "terminum", 12000, true));
     assert_eq!(s.themes.default, "local");
     assert_eq!(s.themes.hosts.get("*").map(String::as_str), Some("remote"));
-    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "messages": []}));
+    assert_eq!(s.page_json(), json!({"textSize": 13, "markdownSize": 14, "history": 12000, "lastLines": 300, "widgets": true, "folds": true, "colorScheme": null, "followAgent": true, "messages": []}));
     let (s, m) = load(Path::new("/nonexistent/terminum/settings.json"));
     assert_eq!((s, m), (Settings::default(), vec![]));
 }
@@ -51,6 +51,18 @@ fn the_ac19_table_messages_word_for_word() {
         assert_eq!(m, vec![msg.to_string()], "{text}");
         assert_eq!(s.page.text_size, 13, "the default is kept");
         assert_eq!(s.page_json()["messages"], json!([msg]));
+    }
+}
+
+#[test]
+fn last_lines_are_300_by_default_0_turns_them_off_and_a_wrong_number_is_said() {
+    assert_eq!(parse("{}").0.last_lines, 300);
+    assert_eq!(parse(r#"{"lastLines": 0}"#).0.last_lines, 0);
+    assert_eq!(parse(r#"{"lastLines": 2000}"#).0.page_json()["lastLines"], json!(2000));
+    assert_eq!(parse(r#"{"lastLines": 500, "restore": false}"#).0.page_json()["lastLines"], json!(0), "restore off: no lines kept");
+    for bad in ["2001", "-1", "\"300\"", "1.5"] {
+        let (s, m) = parse(&format!(r#"{{"lastLines": {bad}}}"#));
+        assert_eq!((s.last_lines, m), (300, vec!["settings.json: lastLines must be 0–2000".to_string()]), "{bad}");
     }
 }
 
