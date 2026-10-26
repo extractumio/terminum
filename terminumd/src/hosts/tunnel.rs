@@ -196,6 +196,13 @@ async fn answers(mut stream: tokio::net::UnixStream) -> Result<(), String> {
     }
 }
 
+/// Whether the helper that said ready is this build's, the only one Files is checked against
+/// and given; none (the caller installs it) or another build (the caller replaces it, AC-84) is
+/// not: an older helper may not answer through the forward, and must not stop its update.
+fn current(agent_id: &str) -> bool {
+    agent_id == crate::agent::AGENT_ID
+}
+
 /// Starts the agent through ssh and waits for its "ready" line (20 s); with `files`, also that
 /// the helper answers through the forward.
 async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&super::link::LinkTo>, files: bool) -> Result<Running, String> {
@@ -247,8 +254,8 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
         let _ = child.kill().await;
         return Err(err.trim().lines().last().map_or_else(|| "the helper did not start".to_string(), str::to_string));
     };
-    if agent_id.is_empty() {
-        return Ok(Running { child, agent_id, _stdin: stdin, said }); // no helper: the caller installs it
+    if !current(&agent_id) {
+        return Ok(Running { child, agent_id, _stdin: stdin, said });
     }
     // the socket appears once ssh listens; only a request answered shows the host forwards it
     let mut forwarded = None;
@@ -288,7 +295,7 @@ async fn keep(app: Shared, host: String) {
             super::link::heard(&app, &host, run.said.as_ref());
         }
         let wait = match got {
-            Ok(mut run) if run.agent_id != crate::agent::AGENT_ID => {
+            Ok(mut run) if !current(&run.agent_id) => {
                 let _ = run.child.kill().await;
                 crate::remote::register(&app, &host, None);
                 set(&app, &host, "updating", &format!("updating the helper on {host}…"));
@@ -403,7 +410,7 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
         install(&recipe, &binary_for(p)?, crate::agent::AGENT_ID).await?;
         let mut trial = connect(app, host, &recipe, None, true).await?;
         let _ = trial.child.kill().await;
-        if trial.agent_id != crate::agent::AGENT_ID {
+        if !current(&trial.agent_id) {
             return Err(format!("the helper on {host} answers as build {:?}", trial.agent_id));
         }
         crate::remote::register(app, host, None);
@@ -453,40 +460,5 @@ pub(super) async fn remove_helper(recipe: &[String]) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn platforms_with_a_helper() {
-        assert_eq!(platform("Darwin", "arm64"), Some("macos-aarch64"));
-        assert_eq!(platform("Linux", "aarch64"), Some("linux-aarch64"));
-        assert_eq!(platform("FreeBSD", "amd64"), None);
-    }
-
-    #[test]
-    fn the_helper_answer_is_the_last_non_empty_line() {
-        assert_eq!(answer("Welcome to devbox\nlast login: today\n0123456789ab\n"), "0123456789ab", "rc noise before");
-        assert_eq!(answer("noise\n0123456789ab\n\n  \n"), "0123456789ab", "a trailing blank line");
-        assert_eq!(answer("noise\r\n0123456789ab\r\n\r\n"), "0123456789ab", "CRLF");
-        assert_eq!(answer(""), "");
-    }
-
-    #[tokio::test]
-    async fn a_forward_counts_only_when_the_helper_answers() {
-        let dir = std::env::temp_dir().join(format!("tm-fw-{}", crate::auth::crypto::random_hex::<4>()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let (up, refused) = (dir.join("up.sock"), dir.join("no.sock"));
-        let (l1, l2) = (tokio::net::UnixListener::bind(&up).unwrap(), tokio::net::UnixListener::bind(&refused).unwrap());
-        tokio::spawn(async move {
-            let (mut s, _) = l1.accept().await.unwrap();
-            let mut b = [0u8; 64];
-            let _ = s.read(&mut b).await;
-            let _ = s.write_all(b"HTTP/1.1 403 Forbidden\r\n\r\n").await;
-        });
-        // an sshd refusing the channel: ssh accepted on the Mac, then closes it
-        tokio::spawn(async move { drop(l2.accept().await.unwrap()) });
-        assert_eq!(answers(tokio::net::UnixStream::connect(&up).await.unwrap()).await, Ok(()));
-        assert!(answers(tokio::net::UnixStream::connect(&refused).await.unwrap()).await.is_err());
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-}
+#[path = "tunnel_tests.rs"]
+mod tests;

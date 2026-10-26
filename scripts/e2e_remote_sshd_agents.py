@@ -5,7 +5,7 @@ container with sshd and tmux (Docker), a throwaway key, a private terminumd whos
 the Linux helper. On the host a stub `claude` under ~/.nvm (it records its argv) and a ~/.codex
 folder; no real agent runs. Checks: enabling agents (per-agent lines, the link up, the host's
 files), `terminum-host hook claude` and `terminum-host mcp` in the host's pane reaching the
-Mac's rows, a refused forward (a second sshd with `AllowStreamLocalForwarding local`, user bob), a lost
+Mac's rows, a refused forward (a second sshd with `AllowStreamLocalForwarding local`, user alexb), a lost
 link (its sshd session ended in the container), and disabling.
 
     python3 scripts/e2e_remote_sshd_agents.py MAC_TERMINUMD LINUX_HELPER [alpine|debian]
@@ -52,23 +52,23 @@ def on_host(cmd, user="alex"):
 
 
 def setup_script(pub):
-    users = ("adduser -D -s /bin/sh alex && adduser -D -s /bin/sh bob && echo 'alex:*' | chpasswd -e && echo 'bob:*' | chpasswd -e"
-             if VARIANT == "alpine" else "useradd -m -s /bin/bash alex && useradd -m -s /bin/bash bob && usermod -p '*' alex && usermod -p '*' bob")
+    users = ("adduser -D -s /bin/sh alex && adduser -D -s /bin/sh alexb && echo 'alex:*' | chpasswd -e && echo 'alexb:*' | chpasswd -e"
+             if VARIANT == "alpine" else "useradd -m -s /bin/bash alex && useradd -m -s /bin/bash alexb && usermod -p '*' alex && usermod -p '*' alexb")
     pkgs = ("apk add --no-cache openssh tmux procps >/dev/null && ssh-keygen -A" if VARIANT == "alpine" else
             "apt-get update -qq >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq openssh-server tmux procps >/dev/null && mkdir -p /run/sshd")
     keys = " && ".join(f"mkdir -p /home/{u}/.ssh && echo '{pub}' > /home/{u}/.ssh/authorized_keys && chmod 700 /home/{u}/.ssh && "
                        f"chmod 600 /home/{u}/.ssh/authorized_keys && echo '# on the host' > /home/{u}/notes.md && chown -R {u} /home/{u}"
-                       for u in ("alex", "bob"))
+                       for u in ("alex", "alexb"))
     rc = ("" if VARIANT == "alpine" else
-          " && sed -i '1i echo bashrc-says-hi' /home/alex/.bashrc /home/bob/.bashrc && echo 'echo profile-says-hi' >> /home/alex/.profile")
+          " && sed -i '1i echo bashrc-says-hi' /home/alex/.bashrc /home/alexb/.bashrc && echo 'echo profile-says-hi' >> /home/alex/.profile")
     sshd = "/usr/sbin/sshd"
     return (f"{pkgs} && {users} && {keys}{rc} && "
             "sed -i 's/^#*AllowTcpForwarding.*/AllowTcpForwarding yes/; /^#*AllowStreamLocalForwarding/d' /etc/ssh/sshd_config && "
             "echo 'AllowStreamLocalForwarding yes' >> /etc/ssh/sshd_config && "
-            # the refusing sshd: bob only, -R refused, -L kept (AS-84 a); files ride -L, so
+            # the refusing sshd: alexb only, -R refused, -L kept (AS-84 a); files ride -L, so
             # `DisableForwarding yes` would refuse files too
             "grep -v '^Match\\|^ *ForceCommand\\|^AllowStreamLocalForwarding' /etc/ssh/sshd_config > /etc/ssh/sshd_refuse && "
-            "echo 'AllowStreamLocalForwarding local' >> /etc/ssh/sshd_refuse && echo 'AllowUsers bob' >> /etc/ssh/sshd_refuse && "
+            "echo 'AllowStreamLocalForwarding local' >> /etc/ssh/sshd_refuse && echo 'AllowUsers alexb' >> /etc/ssh/sshd_refuse && "
             f"echo 'AllowUsers alex' >> /etc/ssh/sshd_config && "
             f"{sshd} -f /etc/ssh/sshd_refuse -p 2200 -E /tmp/refuse.log && exec {sshd} -D -e")
 
@@ -86,7 +86,7 @@ def start_host(work):
     os.chmod(wrapper, 0o755)
     r = None
     for _ in range(120):
-        r = subprocess.run([wrapper, "-o", "BatchMode=yes", "-p", str(BOB_PORT), "-i", f"{work}/key", "bob@127.0.0.1", "tmux -V"],
+        r = subprocess.run([wrapper, "-o", "BatchMode=yes", "-p", str(BOB_PORT), "-i", f"{work}/key", "alexb@127.0.0.1", "tmux -V"],
                            capture_output=True, text=True)
         if r.returncode == 0:
             break
@@ -94,7 +94,7 @@ def start_host(work):
     else:
         raise RuntimeError("the container's sshd did not answer: " + r.stderr)
     stub_dir = "$HOME/.nvm/versions/node/v22.0.0/bin"
-    for u in ("alex", "bob"):
+    for u in ("alex", "alexb"):
         subprocess.run(["docker", "exec", "-i", "-u", u, NAME, "sh", "-c", f"mkdir -p {stub_dir} $HOME/.codex && cat > {stub_dir}/claude && chmod 755 {stub_dir}/claude"],
                        input=STUB, text=True, check=True)
     return wrapper
@@ -230,19 +230,19 @@ def main():
         row = row_until(ws, "devbox", lambda it: it.get("plan", {}).get("eta") and it.get("notes"))
         check(f"[{v}] AC-99 the host row has the ETA and the note", row is not None, row)
 
-        # refused forward: bob's sshd allows only local stream forwards
-        st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refuser", "recipe": f"bob@127.0.0.1 -p {BOB_PORT} -i {work}/key", "files": True})
+        # refused forward: alexb's sshd allows only local stream forwards
+        st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refuser", "recipe": f"alexb@127.0.0.1 -p {BOB_PORT} -i {work}/key", "files": True})
         item_of(ws, "refuser")
         st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "refuser"})
         rec = state_until(t, "refuser", lambda s: s.startswith("refused"))
         check(f"[{v}] AC-99 a refused forward: the host's agents state says refused…", st == 200 and rec.get("agents", "").startswith("refused"), [body, rec])
         for _ in range(60):
-            st, lst = api(t, secret, "/fb/api/ls?path=/home/bob", host="refuser")
+            st, lst = api(t, secret, "/fb/api/ls?path=/home/alexb", host="refuser")
             if st == 200:
                 break
             time.sleep(0.5)
         check(f"[{v}] AC-99 a refused forward keeps files working", st == 200 and "notes.md" in [e["n"] for e in lst.get("entries", [])], lst)
-        code, out = in_pane(put_events(events("/home/bob")[:2], "bob") + "; echo hooks-done", "bob")
+        code, out = in_pane(put_events(events("/home/alexb")[:2], "alexb") + "; echo hooks-done", "alexb")
         check(f"[{v}] AC-99 with no link the hook exits 0 silently", code == "0" and out.strip() == "hooks-done", [code, out])
 
         # link loss: alex's sshd sessions ended inside this container
