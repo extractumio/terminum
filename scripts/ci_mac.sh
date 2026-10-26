@@ -32,13 +32,14 @@ rsync -a --delete \
     --exclude '.env*' --exclude 'workspaces.json' --exclude '.claude' \
     "$repo/" "$host:ci/terminum/"
 running=1
-# a login shell for Homebrew's PATH; a link that never came up leaves the lock (the run may have started)
-trap 'rc=$?; [ $rc = 255 ] && echo "ci_mac: ssh to $host failed: if no run is under way there, remove ~/ci/terminum.lock" >&2; exit $rc' EXIT
+# a login shell for Homebrew's PATH; no tmux there would skip every check of a real tmux
+rc=0
 ssh -o BatchMode=yes "$host" 'bash -lc '"'"'
     set -euo pipefail
-    trap "rmdir ~/ci/terminum.lock" EXIT
+    trap "rmdir ~/ci/terminum.lock 2>/dev/null || true" EXIT
     cd ~/ci/terminum
     export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH" NO_COLOR=1
+    command -v tmux >/dev/null || { echo "ci_mac: no tmux on the runner: its tmux checks would be skipped (brew install tmux)" >&2; exit 4; }
     # the Rust of the Linux CI, for this run only: the default toolchain of the runner stays as it is
     export RUSTUP_TOOLCHAIN=1.98.1
     rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal >/dev/null
@@ -49,4 +50,13 @@ ssh -o BatchMode=yes "$host" 'bash -lc '"'"'
     (cd terminumd && cargo build --locked)
     node web/test/e2e_all.mjs
     node web/test/e2e_live.mjs
-'"'"
+'"'" || rc=$?
+# the run ended (ssh says how): its lock goes, whatever its own trap did; a link that dropped
+# leaves it (the run may go on there)
+if [ "$rc" = 255 ]; then
+    echo "ci_mac: ssh to $host failed: if no run is under way there, remove ~/ci/terminum.lock" >&2
+else
+    ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" 'rmdir ci/terminum.lock 2>/dev/null || true' \
+        || echo "ci_mac: $host:~/ci/terminum.lock was left: remove it" >&2
+fi
+exit "$rc"

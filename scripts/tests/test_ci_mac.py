@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """The Mac checks' runner script (scripts/ci_mac.sh) against a stub ssh and rsync: the runner's
 lock is taken before its tree is replaced, so a second run never changes the files of one under
-way, and the lock is given back when nothing ran."""
+way; it goes once the run ended, and stays (said) when the link dropped."""
 import os
 import subprocess
 import tempfile
@@ -9,11 +9,12 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "ci_mac.sh"
-# ssh: its first command run in the stub runner's home (the run itself only logged); rsync: logged
+# ssh: its commands run in the stub runner's home but the run itself, only logged (it ends with
+# RUN_RC, 255 a dropped link); rsync: logged
 SSH = """#!/bin/bash
 for a; do last=$a; done
 echo "ssh ${last//$'\n'/ }" >> "$LOG"
-case $last in *"bash -lc"*) exit 0 ;; esac
+case $last in *"bash -lc"*) exit "${RUN_RC:-0}" ;; esac
 cd "$RUNNER" && bash -c "$last"
 """
 RSYNC = """#!/bin/bash
@@ -22,8 +23,8 @@ echo "rsync" >> "$LOG"
 
 
 class CiMacTest(unittest.TestCase):
-    def run_script(self, root):
-        env = {**os.environ, "PATH": f"{root / 'bin'}:{os.environ['PATH']}", "LOG": str(root / "log"),
+    def run_script(self, root, rc=0):
+        env = {**os.environ, "RUN_RC": str(rc), "PATH": f"{root / 'bin'}:{os.environ['PATH']}", "LOG": str(root / "log"),
                "RUNNER": str(root / "runner"), "TM_MAC_RUNNER": "mac-runner"}
         r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=30)
         log = (root / "log").read_text().splitlines() if (root / "log").exists() else []
@@ -49,12 +50,20 @@ class CiMacTest(unittest.TestCase):
         self.assertNotIn("rsync", log, "the tree of the run under way is left as it is")
         self.assertTrue((self.root / "runner/ci/terminum.lock").is_dir(), "and its lock too")
 
-    def test_the_lock_comes_before_the_tree_and_the_run_gives_it_back(self):
-        r, log = self.run_script(self.root)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertEqual([x.split()[0] for x in log], ["ssh", "rsync", "ssh"], log)
-        self.assertIn('trap "rmdir ~/ci/terminum.lock" EXIT', log[-1], "the run gives the lock back")
-        self.assertTrue((self.root / "runner/ci/terminum.lock").is_dir(), "the stub ran nothing: still held")
+    def test_the_lock_comes_before_the_tree_and_goes_when_the_run_ended(self):
+        for rc in (0, 1):
+            with self.subTest(rc=rc):
+                r, log = self.run_script(self.root, rc)
+                self.assertEqual(r.returncode, rc, r.stderr)
+                self.assertEqual([x.split()[0] for x in log], ["ssh", "rsync", "ssh", "ssh"], log)
+                self.assertIn("command -v tmux", log[2], "a runner without tmux is refused, not a run of skipped checks")
+                self.assertFalse((self.root / "runner/ci/terminum.lock").exists(), "the run ended, passed or failed: its lock went")
+
+    def test_a_dropped_link_leaves_the_lock_and_says_so(self):
+        r, log = self.run_script(self.root, 255)
+        self.assertEqual(r.returncode, 255)
+        self.assertIn("remove ~/ci/terminum.lock", r.stderr)
+        self.assertTrue((self.root / "runner/ci/terminum.lock").is_dir(), "the run may go on there")
 
 
 if __name__ == "__main__":
