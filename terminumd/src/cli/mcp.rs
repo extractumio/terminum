@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! `terminum mcp` (AC-97, AC-98): the MCP server a coding agent starts (`terminum hooks
 //! install`), newline-delimited JSON-RPC 2.0 on stdin and stdout, read to EOF; stdout carries
-//! only the protocol. Its four tools check their arguments here, then go to terminumd's private
-//! socket (POST /agent, 2 s) with the pane tmux names in the agent's environment (TMUX,
-//! TMUX_PANE); terminumd keeps the plan and the notes, this process keeps nothing.
+//! only the protocol. Its four tools check their arguments here, then go (POST /agent, 2 s) to the
+//! first sink that knows the pane tmux names in the agent's environment (TMUX, TMUX_PANE): the
+//! local terminumd, else a Mac's link on a host (sinks.rs); terminumd keeps the plan and the
+//! notes, this process keeps nothing. Tools and instructions are offered only when a sink
+//! knows the pane (one `probe` to each at initialize, 2 s in all).
 
 use std::io::{BufRead, Read, Write};
 use std::time::Duration;
@@ -31,10 +33,12 @@ pub const DOWN: &str = "terminum is not running; go on without it.";
 
 pub const TOOLS: [&str; 4] = ["update_session_plan", "get_session_plan", "add_notes_for_user", "update_notes_for_user"];
 
-/// The agent's environment: TMUX and TMUX_PANE.
+/// The agent's environment: TMUX and TMUX_PANE; `known`: whether a sink knows the pane
+/// (None until probed).
 pub struct Env {
     pub tmux: Option<String>,
     pub pane: Option<String>,
+    pub known: std::cell::Cell<Option<bool>>,
 }
 
 /// One POST /agent: (status, answer) or Down.
@@ -47,9 +51,13 @@ pub fn main() -> i32 {
         eprintln!("terminum mcp is the MCP server a coding agent starts; to set it up: terminum hooks install");
         return 2;
     }
-    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok() };
-    let sock = crate::sock::path(&crate::config::app_dir());
-    let forward = |body: &Value| super::sockhttp::call(&sock, "POST", "/agent", Some(body), BUDGET);
+    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default() };
+    let sinks = super::sinks::all();
+    let forward = |body: &Value| {
+        // a probe is cheap: 2 s for all the sinks; a call: 2 s for each
+        let each = if body["tool"] == "probe" { BUDGET / sinks.len().max(1) as u32 } else { BUDGET };
+        super::sinks::first_knowing(&sinks, |p| super::sockhttp::call(p, "POST", "/agent", Some(body), each))
+    };
     let mut stdin = std::io::stdin().lock();
     let mut stdout = std::io::stdout().lock();
     while let Some(line) = read_line(&mut stdin) {
@@ -110,9 +118,9 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
     }
     let params = obj.get("params").cloned().unwrap_or_else(|| json!({}));
     match method {
-        "initialize" => result(id, initialize(&params, pane_of(env).is_some())),
+        "initialize" => result(id, initialize(&params, knows(env, forward))),
         "ping" => result(id, json!({})),
-        "tools/list" => result(id, json!({"tools": if pane_of(env).is_some() { tools() } else { json!([]) }})),
+        "tools/list" => result(id, json!({"tools": if knows(env, forward) { tools() } else { json!([]) }})),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             if !TOOLS.contains(&name) {
@@ -126,7 +134,25 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
     }
 }
 
-/// Outside a tmux pane (`in_pane` false) the session pays for no instructions and no tools.
+/// Whether a sink knows the agent's pane: probed once (a sink that answers anything but
+/// "not in a pane" knows it), false outside a tmux pane.
+fn knows(env: &Env, forward: Forward) -> bool {
+    let Some((socket, pane)) = pane_of(env) else { return false };
+    if let Some(k) = env.known.get() {
+        return k;
+    }
+    let body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": "probe", "args": {}});
+    let k = matches!(forward(&body), Ok(a @ (200, Some(_))) if !super::sinks::not_in_pane(&a));
+    env.known.set(Some(k));
+    k
+}
+
+/// TMUX's first field: the tmux server's socket path.
+fn socket_path(env: &Env) -> String {
+    env.tmux.as_deref().and_then(|t| t.split(',').next()).unwrap_or("").chars().take(300).collect()
+}
+
+/// Outside a pane a sink knows (`in_pane` false) the session pays for no instructions and no tools.
 fn initialize(params: &Value, in_pane: bool) -> Value {
     let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
     let version = VERSIONS.iter().find(|v| **v == asked).copied().unwrap_or(DEFAULT_VERSION);
@@ -158,7 +184,7 @@ pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward:
         Err(why) => return text_result(&why, true),
     };
     let Some((socket, pane)) = pane_of(env) else { return text_result(NOT_IN_PANE, true) };
-    let mut body = json!({"socket": socket, "pane": pane, "tool": tool, "args": args});
+    let mut body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": tool, "args": args});
     if let Some(s) = session.map(|s| s.chars().filter(|c| !c.is_control()).take(100).collect::<String>()).filter(|s| !s.is_empty()) {
         body["session"] = json!(s);
     }

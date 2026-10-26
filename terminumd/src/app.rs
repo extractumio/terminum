@@ -74,6 +74,9 @@ pub struct App {
     /// remote hosts and their files agents (AC-81–AC-87)
     pub hosts: crate::hosts::Hosts,
     pub tunnels: crate::hosts::tunnel::Tunnels,
+    /// each host's agents link (links.rs)
+    #[allow(dead_code)] // started and stopped by the host tunnel (the next round)
+    pub links: crate::links::Links,
     /// reboot restore (AC-15)
     pub restore: crate::restore::Restore,
     /// the latency trace's file (AC-38)

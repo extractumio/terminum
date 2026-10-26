@@ -91,7 +91,7 @@ Out of scope (explicit):
 - Rendering by the terminal of inline images or sixel (core §2).
 - Editing a file from the terminal view (the Files panel's View does that, `terminum-files.md`).
 - Programs' own mouse handling outside Screen mode (core AC 06).
-- Plans and notes (AC-97, AC-98) in v1: an MCP tool listing other sessions (get_other_sessions), the agent deleting notes (delete_notes_for_user: the user deletes), and panes of remote hosts (their hooks do not reach this Mac's terminumd).
+- Plans and notes (AC-97, AC-98) in v1: an MCP tool listing other sessions (get_other_sessions), the agent deleting notes (delete_notes_for_user: the user deletes); panes of remote hosts are specified in terminum-remote.md AC 99 (coding agents' progress on a host).
 
 ## 3. Assumptions, dependencies, open questions
 

@@ -3,8 +3,8 @@
 //! install`). It only observes: it reads the event the agent gives on stdin (to its end, so the
 //! agent's write never breaks), keeps a few fields of it, cut short (never a tool's output, a
 //! file's text or the agent's answer; of a plan tool, its items'
-//! words: hookplan.rs), and posts them to terminumd's private socket with a
-//! budget of 150 ms; it prints at most terminumd's reminder after a PostToolUse and always
+//! words: hookplan.rs), and posts them to every sink at once (the local terminumd's private
+//! socket, the Macs' links on a host: sinks.rs) with a budget of 150 ms; it prints at most terminumd's reminder after a PostToolUse and always
 //! exits 0, so the agent goes on as without it.
 //! The pane is the one tmux names in the agent's environment (TMUX, TMUX_PANE); outside tmux
 //! nothing is sent.
@@ -40,14 +40,21 @@ pub fn main(agent: &str) -> i32 {
     }
     let (Ok(input), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(&kept), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return 0 };
     if let Some(ev) = event(agent, &input, &tmux, &pane) {
-        let sock = crate::sock::path(&crate::config::app_dir());
-        if let Ok((200, Some(answer))) = super::sockhttp::call(&sock, "POST", "/hook", Some(&ev), BUDGET)
-            && let Some(line) = remind_line(&ev, &answer) {
+        let answers = super::sinks::post_all(&super::sinks::all(), "/hook", &ev, BUDGET);
+        if let Some(line) = first_reminder(&ev, &answers) {
             // a closed stdout is the agent's choice: never a panic, still 0
             let _ = writeln!(std::io::stdout().lock(), "{line}");
         }
     }
     0
+}
+
+/// The reminder line of the first sink whose answer reminds, if any.
+pub fn first_reminder(ev: &Value, answers: &[super::sinks::Answer]) -> Option<String> {
+    answers.iter().find_map(|a| match a {
+        Ok((200, Some(answer))) => remind_line(ev, answer),
+        _ => None,
+    })
 }
 
 /// The one line the agent reads as context when terminumd's answer reminds (AC-97); None
@@ -98,7 +105,8 @@ pub fn tool_summary(name: &str, input: &Value) -> String {
 /// The fields terminumd gets of `input`, the agent's event, from pane `pane` of the tmux
 /// whose socket `tmux` names ("/private/tmp/tmux-501/terminum,123,0"); None when it is no event.
 pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value> {
-    let socket = tmux.split(',').next()?.rsplit('/').next()?.to_string();
+    let socket_path = tmux.split(',').next()?;
+    let socket = socket_path.rsplit('/').next()?.to_string();
     let name = text(input, "hook_event_name", 40)?;
     if crate::tmux::hookstate::agent(agent).is_none() || socket.is_empty() || !pane.starts_with('%') || !pane[1..].bytes().all(|b| b.is_ascii_digit()) {
         return None;
@@ -106,6 +114,7 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     let mut out = Map::new();
     out.insert("agent".into(), json!(agent));
     out.insert("socket".into(), json!(cut(&socket, 64)));
+    out.insert("socket_path".into(), json!(cut(socket_path, 300)));
     out.insert("pane".into(), json!(pane));
     out.insert("event".into(), json!(name));
     for (from, to, n) in [("session_id", "session", 100), ("agent_id", "sub", 100), ("agent_type", "subtype", 60),
@@ -148,7 +157,7 @@ mod tests {
             "tool_name": "Bash", "tool_input": {"command": "npm test --watch=false SECRET=abc"}, "tool_response": {"stdout": "all the output"},
             "transcript_path": "/Users/alex/.claude/x.jsonl", "last_assistant_message": "done"});
         let ev = event("claude", &input, TMUX, "%3").unwrap();
-        assert_eq!(ev, json!({"agent": "claude", "socket": "terminum", "pane": "%3", "event": "PostToolUse", "session": "s1", "turn": "p1",
+        assert_eq!(ev, json!({"agent": "claude", "socket": "terminum", "socket_path": "/private/tmp/tmux-501/terminum", "pane": "%3", "event": "PostToolUse", "session": "s1", "turn": "p1",
             "cwd": "/Users/alex/api", "tool": "Bash: npm test"}));
         assert!(!ev.to_string().contains("output") && !ev.to_string().contains("SECRET") && !ev.to_string().contains("transcript"));
     }
@@ -194,6 +203,17 @@ mod tests {
         for other in ["PostToolBatch", "Stop", "PreToolUse", "UserPromptSubmit"] {
             assert_eq!(remind_line(&json!({"event": other}), &json!({"remind": "x"})), None, "{other}: nothing printed");
         }
+    }
+
+    #[test]
+    fn any_sinks_reminder_is_printed_none_without_sinks() {
+        use super::super::sinks::post_all;
+        let ev = json!({"event": "PostToolUse"});
+        let answers = vec![Err(super::super::sockhttp::Down), Ok((200, Some(json!({})))), Ok((200, Some(json!({"remind": "from a Mac"}))))];
+        assert!(first_reminder(&ev, &answers).unwrap().contains("from a Mac"));
+        assert_eq!(first_reminder(&ev, &answers[..2]), None);
+        let none = post_all(&[], "/hook", &ev, BUDGET);
+        assert!(none.is_empty() && first_reminder(&ev, &none).is_none(), "no sinks: nothing posted, nothing printed");
     }
 
     #[test]

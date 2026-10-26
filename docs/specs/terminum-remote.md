@@ -1,12 +1,12 @@
 # terminum — Specification (remote hosts)
 
-Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux sessions over ssh, their files through an agent, helpers that follow the Mac's build, and the builds and releases. Cases are AC-81…AC-87. A case of another spec is written `AC nn` (a space); `AC-nn` is this spec's own.
+Sibling of `terminum.md` (the core). This spec holds remote hosts: their tmux sessions over ssh, their files through an agent, helpers that follow the Mac's build, and the builds and releases. Cases are AC-81…AC-87 and AC-99. A case of another spec is written `AC nn` (a space); `AC-nn` is this spec's own.
 
 ## 0. Metadata
 
 | Field | Value |
 |---|---|
-| Version | 0.7.3 |
+| Version | 0.8.0 |
 | Date | 2026-10-26 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.8.0 | 2026-10-26 | Owner: coding agents' progress on a host (AC-99): Claude Code's and Codex's hooks and `terminum mcp` in a host's tmux reach the Mac's terminumd, so the host's rows and the Plan pane show them as for local panes (terminal spec AC 97, AC 98). A per-host `agents` setting (CLI `terminum hosts agents <host> on\|off`, the host menu), installed over ssh with per-agent result lines; the events ride on the files helper's ssh as a reverse Unix-socket forward (`-R`), files staying off unless enabled; a refused forward keeps files working; matching on the host server's full socket path; per-Mac link names; content-based refresh after AC-84; link loss drops the host's hook state. Pragmatic review applied (its must-change list 1–9). Assumption AS-84 to verify. |
 | 0.7.3 | 2026-10-26 | An audit's finding fixed: the orphan sweep's answer option was named by terminumd's pid and the connection's number, which two Macs (or two host names of one server) can share, so one sweep could read or remove another's answer; it is named at random per sweep (`@tm-orphans-<16 hex>`) (AC-81). |
 | 0.7.2 | 2026-10-24 | Owner, asked whether a host's picture could be a way in: terminumd passed a host's Content-Type and Content-Security-Policy on as they came, so a host not to be trusted (or a helper replaced there) could have a picture's answer be HTML without the `sandbox` policy; a raw answer now carries terminumd's type, by the file's name, and its `sandbox` policy, every other forwarded answer (an error too) is JSON; `scripts/e2e_remote.py` reads a host's PNG and SVG through the header (AC-82; terminum.md 0.18.15, AC-09). |
 | 0.7.1 | 2026-10-21 | Owner, on what 0.7.0 left: a host with busybox's ps (no -U, no -p) is swept, through /proc; where tmux rewrites a client's command line (FreeBSD, OpenBSD) one of this server's socket with no terminal counts. Pragmatic review applied: no terminal read from /proc where ps cannot say (else none: kept), only this server's socket (AC-81). |
@@ -57,6 +58,7 @@ Assumptions:
 | AS-81 | `ssh -T -o BatchMode=yes <options> -- <destination> 'tmux -u -C new-session -A -f ignore-size -s terminum'` gives a control-mode client over ssh whose stdout is line-based and whose `%output` arrives within the link's latency; `pause-after` flow control (`refresh-client -f pause-after=2`) keeps a slow link from backing up. | Claude | verified 2026-10-15 with a stand-in ssh on this Mac (`scripts/fake_ssh.py`, `scripts/e2e_remote.py`); a real sshd not measured |
 | AS-82 | The agent (`terminumd --agent --socket <path>`) is iterm-enhancer's `fbd --agent` moved: a Unix socket on the host, a token on stdin, exits on stdin EOF. | Claude | verified in iterm-enhancer |
 | AS-83 | The hosts in the owner's use are Ubuntu and Debian x86_64 and arm64 and macOS arm64. | Owner | stated |
+| AS-84 | OpenSSH's `-R <host path>:<Mac path>` (AC-99): (a) a forward refused by `AllowStreamLocalForwarding no` or `DisableForwarding yes` is told on ssh's stderr in words terminumd can match, the session still running without it; (b) sshd binds the host's socket (mode 0600, StreamLocalBindMask 0177) when the forward is requested, before the remote command runs, and never creates its folder; (c) `ClearAllForwardings=yes` in a user's ssh config does or does not drop a command-line `-R`; (d) a `-R` asked by a ControlMaster mux client outlives that client under ControlPersist, which `-o ControlPath=none` avoids. Dropbear has no stream-local forwarding. | Claude | to verify (experiments round, against `scripts/e2e_remote_sshd.py`'s container) |
 
 Dependencies:
 
@@ -83,6 +85,7 @@ Open questions:
 | AC-85 | [SHOULD / P1] | Pasted images and uploaded files reach a host's pane as paths on that host. |
 | AC-86 | [SHOULD / P1] | The maintainer builds terminumd for macOS arm64 and x86_64 and Linux x86_64 and arm64 the same way on the Mac and on the owner's runner, and publishes signed releases from the Mac. |
 | AC-87 | [SHOULD / P1] | Hosts are their ssh destinations: two hosts reporting the same name are two hosts; a host's identity and options live in settings and the `terminum hosts` command manages them. |
+| AC-99 | [SHOULD / P1] | Once the user enables coding agents' progress on a host, Claude Code and Codex in that host's tmux report status, plans and notes to the host's rows and the Plan pane as local panes do (AC 97, AC 98); a host that cannot forward says why and keeps its files. |
 
 ## 5. BDD scenarios
 
@@ -231,6 +234,70 @@ Scenario: AC-87 failure — a bad record
   Then the host is not started, the list shows it with "settings.json: option not allowed: -o" and the other hosts run
 ```
 
+### AC-99 — Coding agents' progress on a host [SHOULD / P1]
+
+```gherkin
+Scenario: AC-99 happy path — enable
+  Given devbox is attached
+  When the user picks "Coding agents' progress on devbox…" in the host menu, or runs "terminum hosts agents devbox on"
+  Then terminumd copies or updates the helper as for files (AC 83, shared code), links "~/.terminum/bin/terminum-host" to it, creates "~/.terminum/run" (0700), and over ssh in "exec /bin/sh -c '…'" finds claude (known paths, then "$SHELL -lc", then "$SHELL -ic", each without input, 10 s, output between a random marker) and CODEX_HOME
+  And runs "~/.terminum/bin/terminum-host hooks install --host-mode" there, with hook and MCP entries calling terminum-host by absolute path; the host's own "~/.terminum/bin/terminum" is never touched
+  And records "agents": "enabled" for devbox and shows one result line per agent: "installed", "not found", "needs Codex trust (/hooks)", "uses devbox's own terminum", "refused: a terminum entry of another command", or "failed: <why>"
+  And nothing is installed in devbox's ~/.claude or ~/.codex before that action; Add host has no tick for it in v1
+
+Scenario: AC-99 happy path — the link
+  Given devbox's agents are enabled and its files not
+  Then terminumd runs the helper's ssh (AC 82) for agents alone with "-o ControlPath=none" and "-R <devbox's $HOME>/.terminum/run/m-<mac id>-<rand8>.sock:<app>/links/<host id>.sock", registers no Files for devbox, and Files still offers Enable
+  And the link counts as up only after the helper's ready line; the helper checks "run" (the user's, 0700, not a symlink) and the forwarded socket (a socket of the user's), points "run/mac-<mac id>.sock" at it atomically, and removes only its own Mac's sockets that refuse a connection
+  And with files enabled too, the same ssh carries both: no extra connection
+
+Scenario: AC-99 happy path — events and MCP from a host pane
+  Given Claude Code runs in a pane of devbox's "terminum" session
+  When its hooks fire and it calls update_session_plan through "terminum-host mcp"
+  Then the hook posts to the host's own terminumd socket and to every "run/mac-*.sock" in parallel within 150 ms, each event with TMUX's full socket path
+  And the Mac's terminumd takes the host from the listener the event came in on, matches the socket path to devbox's "#{socket_path}", and the pane's row shows the status and percent and the Plan pane its plan and notes, as for a local pane (AC 97, AC 98)
+  And a prompt the agent was sent is kept under devbox, never under the Mac ("local")
+
+Scenario: AC-99 failure — the host refuses the forward
+  Given devbox's sshd has "AllowStreamLocalForwarding no" or "DisableForwarding yes", or devbox runs Dropbear
+  When the link's ssh says the forward failed
+  Then terminumd runs the same ssh without "-R", devbox's files keep working, the host menu and "terminum hosts" say "forwarding refused by devbox's sshd" (Dropbear: "devbox's ssh server cannot forward sockets"), and the forward is tried again after 10 minutes
+
+Scenario: AC-99 failure — no ready line
+  Given devbox's account runs a ForceCommand, a restricted shell, or a login file that ends the session
+  Then no ready line comes, the link is not up, and the host menu shows the last lines of the ssh's stdout and stderr; nothing claims events reach the Mac
+
+Scenario: AC-99 edge — two Macs on one host
+  Given two Macs, each with devbox's agents enabled
+  Then each has its own "m-<mac id>-*.sock" and "mac-<mac id>.sock"; a hook posts to both; neither removes the other's live socket; one stopped leaves the other's events flowing
+  And a refresh after AC 84 reinstalls only when the plugin's files, ".mcp.json" or the hook command differ, never because the two builds differ
+
+Scenario: AC-99 edge — a TMUX_TMPDIR server also named "default"
+  Given a user's own tmux on devbox with TMUX_TMPDIR=/x, so its socket is also named "default"
+  When an agent in its pane %3 posts an event
+  Then its socket path differs from devbox's "#{socket_path}", the event answers 204 (MCP: NOT_IN_PANE), and "tmux:devbox:default:%3" is untouched
+
+Scenario: AC-99 edge — link loss
+  When devbox's link drops
+  Then devbox's hook state is dropped, its rows fall back to the screen reading (AC 90, AC 91) instead of a "working" kept forever, and the link reconnects with the helper's back-off; events while down are lost
+
+Scenario: AC-99 edge — upgrade
+  When AC 84 updates devbox's helper
+  Then "terminum-host hooks install --host-mode --refresh" runs there and refreshes by content; a current install changes nothing
+
+Scenario: AC-99 edge — disable or remove the host
+  When the user picks the menu item again and turns it off, runs "terminum hosts agents devbox off", or removes devbox
+  Then "hooks remove --host-mode" runs on devbox and removes only entries whose command is terminum-host, the link stops, "<app>/links/<host id>.sock" is removed, "agents" is cleared, and the helper is removed only when files are off
+
+Scenario: AC-99 edge — a host with its own terminum
+  Given devbox runs its own terminum whose hooks are installed
+  Then the host-mode install skips each agent with "uses devbox's own terminum" and changes nothing; its hooks reach this Mac through the link once that terminum is of this build
+
+Scenario: AC-99 limits
+  Then only panes of devbox's default-named tmux server at its default socket path are served; panes of "tmux -L other", and agents under sudo, su, a container or a nested ssh post nothing the Mac takes
+  And when "<devbox's $HOME>/.terminum/run/m-<mac id>-<rand8>.sock" exceeds 100 bytes, agents are refused with "devbox's home path is too long for a socket" and nothing is installed
+```
+
 ## 6. Flow and sequence diagrams
 
 ### A host's two connections (AC-81, AC-82)
@@ -273,6 +340,10 @@ A shown pane keeps its last screen while reconnecting; typing is refused with th
 | AC-85 | `paste.py` saves through a remote script over ssh. | Through the agent's API. | `iterm-enhancer/bridge/fbbridge/web/paste.py:85` |
 | AC-86 | `scripts/agents.py`, `release.py`, the runner workflows. | Rename. | `iterm-enhancer/scripts/agents.py:1`, `release.py:1` |
 | AC-87 | Hosts keyed by ssh args in `agents.json`. | `settings.json` hosts; a CLI. | `iterm-enhancer/bridge/fbbridge/hosts.py:1` |
+| AC-99 | terminumd drops a host's hook and MCP events: `/hook` and `/agent` take only local panes by socket name; a hook prompt is kept under "local". | A link per host (`-R` on the helper's ssh), a router with limits, socket-path matching, host-mode install, the host passed to `sent::keep`. | `terminumd/src/sock.rs:113`, `sock.rs:132`, `terminumd/src/agentapi.rs:34` |
+| AC-82 | Noticed, not fixed: the helper's ssh passes no `RemoteCommand=none`, which §9 Security claims. | Pass it, or correct §9. | `terminumd/src/hosts/tunnel.rs:88` |
+| AC-83 | Noticed, not fixed: the probe reads the first two words of stdout, so a host's rc file that prints (bash sources `.bashrc` for sshd commands on Debian) breaks the `uname -sm` parse. | Frame the probe's output with a random marker. | `terminumd/src/hosts/tunnel.rs:124` |
+| AC-82, AC-83 | Noticed, not fixed: every remote script is POSIX sh handed to the login shell, so fish and rbash hosts fail Files. | `exec /bin/sh -c '…'` (fixes fish, csh, nu); rbash and ForceCommand stated unsupported. | `terminumd/src/hosts/tunnel.rs:137` |
 
 ## 8. Recommendation and ownership
 
@@ -324,13 +395,17 @@ Control client command: `ssh -T -o BatchMode=yes -o ServerAliveInterval=15 -o Se
 |---|---|---|
 | Hosts | 32 | "At most 32 hosts" |
 | Reconnect back-off | 1, 2, 4 … 30 s | — |
-| ssh connections per host | 1 + one per attached session (AC 89) + the files tunnel | sessions start one at a time, back-off 1 … 30 s each |
+| ssh connections per host | 1 + one per attached session (AC 89) + one helper ssh while files or agents are enabled (agents' `-R` rides on it, AC-99) | sessions start one at a time, back-off 1 … 30 s each |
+| Agents link (AC-99) | the host's socket path ≤ 100 bytes; 64 KB a request; 50 requests a second in a burst, 20 sustained, per link | agents refused with why; 413; 429 (never queued) |
+| Refused forward (AC-99) | retried with `-R` after 10 min | files keep running without it |
 | Agent answers | 64 MB; 30 s idle, 120 s total | request fails, connection freed |
 | Helper copy | 60 s | failure shown, retry later |
 
 ### Security
 
 The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no remote command but tmux or the agent, each shell-quoted for the host; `BatchMode=yes`, `RemoteCommand=none` for the agent tunnel); a host is its record, never a name it reports; the agent's token on stdin; on a host terminumd ends only the user's orphaned tmux control clients (AC-81: listed by that tmux with `ignore-size` and still a tmux process, or on Linux named `tmux: client` with terminum's command line; a parent that is init or a shell of init's; never the server; one with `ignore-size` that init runs on purpose is taken for one, an accepted risk); answers untrusted; nothing copied to a host before Enable; releases signed on the Mac only; a host's other sessions are never typed into or sized until the user attaches them (AC 89), attached by session id with `-E` (no name in the host's shell, no environment copied into them). Denied: `terminum hosts add x 'alex@h -o ProxyCommand=…'` → `option not allowed: -o`.
+
+Agents' link (AC-99): nothing is written to a host's `~/.claude` or `~/.codex` before the user turns agents on, and remove takes off only entries whose command is terminum-host. A process on the host (the user, or root) can, only for that host's rows: post status, plan and prompt events for panes of the host's default server, write and read their plans and notes, and receive reminder text; it cannot reach other routes, local or other hosts' keys, or the Mac's files (a note's file is shown as text). Other users of the host cannot connect: sshd binds the socket 0600 in a 0700 folder; root can, an accepted risk. The Mac-side socket `<app>/links/<host id>.sock` (0600, folder 0700) has two routes only, `POST /hook` and `POST /agent`, with the limits of §9 Constraints; the host is the listener's, never a name in the body; the body's socket path must equal that server's `#{socket_path}`; a prompt is kept under that host. The helper, not shell glue, checks `~/.terminum/run` (the user's, 0700, not a symlink) and the socket's owner before linking, and the hook checks the folder the same way before connecting. A host's notes shown in a project mixing local panes carry the host's name.
 
 ### Compatibility
 
@@ -355,6 +430,7 @@ The recipe allowlist (no `-o`, no `-F`, no destination starting with `-`, no rem
 | Stage 1 (fast lane) | AC-81 | Add a host and work in its tmux sessions from every client; survive drops | — |
 | Stage 2 | AC-82, AC-83, AC-87 | Browse and edit a host's files after one click; manage hosts | — |
 | Stage 3 | AC-84, AC-85, AC-86 | Helpers follow upgrades; paste to a host; releases for four platforms | — |
+| Stage 4 | AC-99 | See a host's coding agents' status, plans and notes after one action | — |
 
 ## 11. Checklist with Definition of Done
 
@@ -370,4 +446,5 @@ Evidence of 2026-10-15: `scripts/e2e_remote.py` runs a private terminumd whose s
 - [x] AC-87 — `cargo test hosts::` (allowlist, names) and `scripts/e2e_remote.py` (refusal, record, removal) → pass.
 - [x] AC-81 orphans 0.7.1 (2026-10-21) — `scripts/e2e_remote_sshd.py` with procps and with `TM_SSHD_BUSYBOX=1` (busybox's ps only): the planted orphan is ended and logged, the server keeps its pid, 13/13 each; the script run in an Alpine container with busybox against a real orphan: `KILL` of exactly it; `cargo test tmux::orphans` (a BSD client of no terminal ended, one with a terminal left; a ps that fails gives way to /proc and, with none, ends nothing) → pass. A FreeBSD or OpenBSD host itself was not tried: its ps is a stand-in in the test.
 - [x] 0.7.2 (2026-10-24) — AC-82 `cargo test remote` (a hostile agent: terminumd's type and sandbox policy, JSON for a listing and an error) and `scripts/e2e_remote.py` 31/31 (a host's PNG and SVG through the header: typed by name, the sandbox policy, the same bytes; `?t=` refused) → pass.
+- [ ] AC-99 — `cargo test` (link router: other routes 404, body and rate limits, host from the listener; socket-path match with the TMUX_TMPDIR collision; sinks' order and folder checks: foreign owner, symlinked folder, own dead socket removed, another Mac's live one kept; host-mode install on a fake home: paths, refusal, idempotence, content refresh; ssh argv with `-R` and `ControlPath=none`; refusal fallback); `scripts/e2e_remote.py` (enable on the fake host, a hook and `terminum-host mcp` from a host pane reach the row's percent and the Plan pane, refused forward's message, disable removes); `scripts/e2e_remote_sshd.py` (Alpine and a debian-slim with an echoing `.bashrc` and a claude stub under `~/.nvm`: forwarding off, a ForceCommand user, two terminumd on one container, a killed sshd session reconnecting). A macOS host over real sshd: not verified unless the owner provides one. AS-84 to verify first.
 - [x] 0.7.3 (2026-10-26) — AC-81 `cargo test tmux::orphans` (each sweep's option its own, random) and `python3 scripts/e2e_remote.py` 32/32 → pass. Not run: `scripts/e2e_remote_sshd.py` (Docker and the Linux helper).

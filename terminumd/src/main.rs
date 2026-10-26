@@ -37,9 +37,11 @@ mod panel_ws;
 mod plans;
 mod remote;
 mod lastlines;
+mod links;
 mod restore;
 mod restore_srv;
 mod routes;
+mod runlink;
 mod screen;
 mod sent;
 mod settings;
@@ -103,6 +105,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         web: Default::default(),
         hosts: Default::default(),
         tunnels: Default::default(),
+        links: Default::default(),
         restore: Default::default(),
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),

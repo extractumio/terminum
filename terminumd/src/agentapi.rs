@@ -39,9 +39,18 @@ pub enum Changed {
 }
 
 pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
-    let (socket, pane) = (body["socket"].as_str().unwrap_or(""), body["pane"].as_str().unwrap_or(""));
-    let server = app.tmux.all().into_iter().find(|s| s.is_local() && s.socket == socket);
+    let server = crate::links::resolve(&app, crate::links::Via::Local, &body).await;
+    agent_on(app, server, body).await
+}
+
+/// A tool call for the server it was resolved to (None: no server of the call's).
+pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::server::Server>>, body: Value) -> Json<Value> {
+    let pane = body["pane"].as_str().unwrap_or("");
     let Some(server) = server.filter(|s| s.session_of(pane).is_some()) else { return answer(NOT_IN_PANE, true) };
+    if body["tool"] == "probe" {
+        // `terminum mcp` asks at initialize whether to offer its tools here
+        return answer("terminum knows this pane.", false);
+    }
     let key = server.key(pane);
     let hooked = app.hooks.session(&key);
     let asked: Option<String> = body["session"].as_str().map(|s| s.chars().filter(|c| !c.is_control()).take(100).collect());

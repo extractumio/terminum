@@ -3,7 +3,8 @@
 //! Unix socket that ssh forwards. The Mac starts it as `ssh <recipe> -- <dest>
 //! terminumd-agent --agent --socket <path>` and writes a fresh token as the first line of its
 //! stdin (never a command line); the agent lives exactly as long as that ssh connection: it
-//! exits when stdin closes.
+//! exits when stdin closes. With `--link <sock> --mac <macid>` it also points that Mac's
+//! link in `~/.terminum/run` at the forwarded hook socket before it says ready (runlink.rs).
 
 use std::io::{BufRead, Write};
 use std::os::unix::fs::{DirBuilderExt, PermissionsExt};
@@ -23,6 +24,9 @@ pub const HOST: &str = "terminumd-agent";
 
 /// The agent's private folder (socket, scratch state); removed on any exit.
 static DIR: OnceLock<PathBuf> = OnceLock::new();
+/// `--link <sock> --mac <macid>`: the Mac's forwarded hook socket in `~/.terminum/run` and
+/// that Mac's id; the socket and its link go on any exit (runlink.rs).
+static LINK: OnceLock<(PathBuf, String)> = OnceLock::new();
 
 pub struct Setup {
     pub dir: PathBuf,
@@ -42,6 +46,17 @@ pub fn socket_arg() -> Option<PathBuf> {
     }
 }
 
+/// `--link <sock> --mac <macid>`, both or neither.
+fn link_args() -> Option<(PathBuf, String)> {
+    let args: Vec<String> = std::env::args().collect();
+    let val = |k: &str| args.iter().position(|a| a == k).map(|i| args.get(i + 1).cloned().unwrap_or_default());
+    match (val("--link"), val("--mac")) {
+        (None, None) => None,
+        (Some(l), Some(m)) if !l.is_empty() && !m.is_empty() => Some((PathBuf::from(l), m)),
+        _ => fail("--link <path> and --mac <macid> go together"),
+    }
+}
+
 fn fail(msg: &str) -> ! {
     eprintln!("terminumd-agent: {msg}");
     std::process::exit(2);
@@ -54,6 +69,10 @@ pub fn start(socket: &Path) -> Setup {
     let token = token.trim().to_string();
     if token.len() < 16 {
         fail("the token on stdin is too short");
+    }
+    if let Some((sock, mac)) = link_args() {
+        crate::runlink::setup(&crate::runlink::dir(), &mac, &sock).unwrap_or_else(|e| fail(&e));
+        LINK.set((sock, mac)).ok();
     }
     let dir = socket.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or_else(|| fail("the socket needs a folder"));
     private_dir(dir).unwrap_or_else(|e| fail(&format!("{}: {e}", dir.display())));
@@ -125,8 +144,11 @@ pub fn exit_when_unused(subscribers: impl Fn() -> usize + Send + 'static, exit: 
     });
 }
 
-/// Remove the private folder (socket included); a no-op outside agent mode.
+/// Remove the private folder (socket included) and the Mac's link; a no-op outside agent mode.
 pub fn cleanup() {
+    if let Some((sock, mac)) = LINK.get() {
+        crate::runlink::unlink(&crate::runlink::dir(), mac, sock);
+    }
     if let Some(d) = DIR.get() {
         let _ = std::fs::remove_dir_all(d);
     }

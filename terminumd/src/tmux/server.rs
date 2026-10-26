@@ -77,6 +77,8 @@ pub struct Server {
     home: Mutex<Option<(u64, String)>>,
     /// its identity (machine, socket, pid), as read once per generation
     identity: Mutex<Option<(u64, String)>>,
+    /// tmux's `#{socket_path}`, read once per generation: a hook event names its server by it
+    socket_path: Mutex<Option<(u64, String)>>,
     /// the user's own sessions attached by name (AC-89): on a server of the user's own on
     /// this Mac all it lists; on a host besides `terminum`; `None` for the private server
     pub only: Mutex<Option<Vec<String>>>,
@@ -104,6 +106,7 @@ impl Server {
             extended: Mutex::new(None),
             home: Mutex::new(None),
             identity: Mutex::new(None),
+            socket_path: Mutex::new(None),
             only: Mutex::new(None),
             tries: Mutex::default(),
             closed_by_user: AtomicBool::new(false),
@@ -264,6 +267,13 @@ impl Server {
             let set = format!("set -sqo @terminum-id {mine}");
             let read = self.run_all(vec![set, "show -sv @terminum-id".into()]).await.pop()?.ok()?;
             read.into_iter().next().map(|l| l.trim().to_string()).filter(|l| !l.is_empty())
+        }).await
+    }
+
+    /// The server's full socket path (the first field of a pane's `TMUX`), read once per connection.
+    pub async fn socket_path(&self) -> Option<String> {
+        self.per_connection(&self.socket_path, async {
+            self.run("display -p '#{socket_path}'").await.ok()?.into_iter().next().map(|l| l.trim().to_string()).filter(|l| !l.is_empty())
         }).await
     }
 
@@ -485,16 +495,5 @@ async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceive
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keys_name_host_socket_and_pane() {
-        let n = Arc::new(Notify::new());
-        let s = Server::new("local", "terminum", Link::Local { tmux: "tmux".into(), socket: "terminum".into(), conf: "/dev/null".into() }, n.clone());
-        assert_eq!(s.key("%3"), "tmux:local:terminum:%3");
-        let h = Server::new("devbox", "default", Link::Ssh { ssh: "ssh".into(), args: vec!["devbox.example".into()] }, n);
-        assert_eq!(h.key("%7"), "tmux:devbox:default:%7");
-        assert!(!h.is_local());
-    }
-}
+#[path = "server_tests.rs"]
+pub mod tests;

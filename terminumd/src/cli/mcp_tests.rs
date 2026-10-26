@@ -6,7 +6,11 @@ use super::*;
 const TMUX: &str = "/private/tmp/tmux-501/terminum,123,0";
 
 fn in_pane() -> Env {
-    Env { tmux: Some(TMUX.into()), pane: Some("%3".into()) }
+    env(Some(TMUX), Some("%3"), Some(true))
+}
+
+fn env(tmux: Option<&str>, pane: Option<&str>, known: Option<bool>) -> Env {
+    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known) }
 }
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
@@ -141,7 +145,7 @@ fn a_call_goes_to_terminumd_with_the_pane_and_only_known_fields() {
     let reply = Ok((200, Some(json!({"text": "Plan stored: 1 of 2 completed (50%), ETA ~17:40.", "error": false}))));
     let (r, sent) = tool("update_session_plan", args, &in_pane(), reply);
     assert_eq!(r, json!({"content": [{"type": "text", "text": "Plan stored: 1 of 2 completed (50%), ETA ~17:40."}], "isError": false}));
-    assert_eq!(sent.unwrap(), json!({"socket": "terminum", "pane": "%3", "tool": "update_session_plan", "session": "019a-uuid",
+    assert_eq!(sent.unwrap(), json!({"socket": "terminum", "socket_path": "/private/tmp/tmux-501/terminum", "pane": "%3", "tool": "update_session_plan", "session": "019a-uuid",
         "args": {"items": [{"text": "Write the parser", "status": "completed"}, {"text": "Add tests", "status": "in_progress"}],
                  "doing": "Run the tests", "eta_minutes": 45}}));
     let (r, sent) = tool("get_session_plan", json!({}), &in_pane(), Ok((200, Some(json!({"text": "[x] a", "error": true})))));
@@ -163,9 +167,9 @@ fn without_a_session_id_none_is_sent() {
 
 #[test]
 fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
-    let outside = [Env { tmux: None, pane: None }, Env { tmux: Some(TMUX.into()), pane: None }, Env { tmux: None, pane: Some("%3".into()) },
-                   Env { tmux: Some(TMUX.into()), pane: Some("%x".into()) }, Env { tmux: Some(TMUX.into()), pane: Some("%".into()) },
-                   Env { tmux: Some(",1,0".into()), pane: Some("%3".into()) }];
+    let outside = [env(None, None, None), env(Some(TMUX), None, None), env(None, Some("%3"), None),
+                   env(Some(TMUX), Some("%x"), None), env(Some(TMUX), Some("%"), None),
+                   env(Some(",1,0"), Some("%3"), None)];
     for env in &outside {
         for t in TOOLS {
             let args = match t {
@@ -249,7 +253,7 @@ fn mcp_is_a_command_without_arguments() {
 
 #[test]
 fn outside_tmux_initialize_has_no_instructions_and_no_tools() {
-    for env in [Env { tmux: None, pane: None }, Env { tmux: Some(TMUX.into()), pane: None }, Env { tmux: None, pane: Some("%3".into()) }] {
+    for env in [env(None, None, None), env(Some(TMUX), None, None), env(None, Some("%3"), None)] {
         let say = |line: &str| -> Value { serde_json::from_str(&answer(line, &env, &no_call).unwrap()).unwrap() };
         let init = say(r#"{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}"#);
         assert_eq!(init["result"]["protocolVersion"], "2025-06-18");
@@ -268,4 +272,41 @@ fn lengths_count_after_cleaning_and_eta_is_an_integer() {
     assert!(refused("update_session_plan", json!({"items": [{"text": "\u{2066}\u{7}", "status": "pending"}]})).contains("empty"));
     assert!(refused("update_session_plan", json!({"items": [{"text": "a", "status": "pending"}], "eta_minutes": 30.0})).contains("whole number"));
     assert!(refused("add_notes_for_user", json!({"notes": [{"kind": "bug", "text": "x".repeat(1001)}]})).contains("over 1000"));
+}
+
+#[test]
+fn a_probe_nobody_knows_gives_no_tools_and_no_instructions() {
+    let e = env(Some(TMUX), Some("%3"), None);
+    let probes = RefCell::new(Vec::new());
+    let f = |b: &Value| {
+        probes.borrow_mut().push(b.clone());
+        Ok((200, Some(json!({"text": NOT_IN_PANE, "error": true}))))
+    };
+    let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
+    assert!(init["result"].get("instructions").is_none(), "{init}");
+    let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(list["result"]["tools"], json!([]));
+    let p = probes.into_inner();
+    assert_eq!(p.len(), 1, "probed once");
+    assert_eq!(p[0], json!({"socket": "terminum", "socket_path": "/private/tmp/tmux-501/terminum", "pane": "%3", "tool": "probe", "args": {}}));
+    let down = env(Some(TMUX), Some("%3"), None);
+    let r = answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &down, &|_: &Value| Err(Down)).unwrap();
+    assert!(!r.contains("instructions"), "nothing up: no instructions");
+}
+
+#[test]
+fn a_link_that_knows_the_pane_gives_the_tools() {
+    use super::super::sinks::first_knowing;
+    let e = env(Some(TMUX), Some("%3"), None);
+    let sinks: Vec<std::path::PathBuf> = ["local", "mac-a"].iter().map(std::path::PathBuf::from).collect();
+    // the local terminumd does not know the pane, the Mac's link does
+    let f = |_: &Value| first_knowing(&sinks, |p| Ok((200, Some(if p.to_str() == Some("local") {
+        json!({"text": NOT_IN_PANE, "error": true})
+    } else {
+        json!({"text": "ok"})
+    }))));
+    let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(init["result"]["instructions"], INSTRUCTIONS);
+    let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 4);
 }

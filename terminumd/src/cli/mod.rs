@@ -16,6 +16,7 @@ mod importer;
 mod install;
 mod launch;
 mod mcp;
+mod sinks;
 mod sockhttp;
 mod systemd;
 mod term;
