@@ -32,9 +32,33 @@ const HOME = path.join(tmp, "h"), APP = path.join(tmp, "a"), WORK = fs.realpathS
 fs.mkdirSync(HOME);
 for (const f of ["alpha.txt", "beta.md"]) fs.writeFileSync(path.join(WORK, f), `${f}\n`);
 const UI_BUILD = fs.readFileSync(path.join(ROOT, "ui/.build-id"), "utf8").trim();
-const tmux = (...a) => { try { return execFileSync("tmux", ["-L", SOCKET, ...a], { encoding: "utf8" }).trim(); } catch { return ""; } };
-/** This test's tmux server gone (after terminumd stopped: running, it would start it again). */
-const purge = () => tmux("kill-server");
+const tmux = (...a) => { try { return execFileSync("tmux", ["-L", SOCKET, ...a], { encoding: "utf8", timeout: 5000 }).trim(); } catch { return ""; } };   // a hung server answers nothing, never holds the run
+/** The pids of this test's tmux server and terminumd's control clients, noted while they answer:
+    a server that hangs does not take kill-server, so it is ended by them (never by a name or pattern). */
+const ours = new Set();
+const note = () => {
+  for (const p of [tmux("display", "-p", "#{pid}"), ...tmux("list-clients", "-F", "#{client_pid}").split("\n")]) if (Number(p) > 0) ours.add(Number(p));
+};
+const ps = (pid) => { try { return execFileSync("ps", ["-o", "command=", "-p", String(pid)], { encoding: "utf8" }); } catch { return ""; } };
+const nap = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+/** This test's tmux server gone (after terminumd stopped: running, it would start it again); one
+    left after kill-server is ended by its noted pid, said aloud, and fails the run if it stays. */
+const purge = () => {
+  note();
+  tmux("kill-server");
+  for (const pid of ours) {
+    const ourTmux = () => ps(pid).includes(`-L ${SOCKET}`);   // still ours, not a reused pid
+    for (let i = 0; i < 20 && ourTmux(); i++) nap(100);
+    for (const sig of ["SIGTERM", "SIGKILL"]) {
+      if (!ourTmux()) break;
+      console.error(`purge: tmux pid ${pid} (-L ${SOCKET}) did not end on kill-server; sending ${sig}`);
+      try { process.kill(pid, sig); } catch {}
+      for (let i = 0; i < 20 && ourTmux(); i++) nap(100);
+    }
+    if (ourTmux()) check(`this test's tmux pid ${pid} ended`, false, ps(pid).trim());
+  }
+  ours.clear();
+};
 
 let proc = null;
 const onSocket = (method, p, body) => new Promise((resolve, reject) => {
@@ -50,7 +74,10 @@ async function start() {
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {
-    try { await onSocket("GET", "/health"); return; } catch { await new Promise((r) => setTimeout(r, 100)); }
+    try { await onSocket("GET", "/health"); } catch { await new Promise((r) => setTimeout(r, 100)); continue; }
+    for (let j = 0; j < 30 && !tmux("list-clients"); j++) await new Promise((r) => setTimeout(r, 100));   // its control clients attached
+    note();
+    return;
   }
   throw new Error("terminumd did not start");
 }
