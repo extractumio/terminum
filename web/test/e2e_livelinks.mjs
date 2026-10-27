@@ -26,11 +26,18 @@ export async function liveLinks(page, { work }) {
   const halves = await page.evaluate((mr) => [...document.querySelectorAll("#term .ln .olink")].filter((s) => s.dataset.href === mr).map((s) => s.textContent), MR);
   const evil = await page.evaluate(() => [...document.querySelectorAll("#term .ln span")].filter((s) => s.textContent === "evil").map((s) => s.classList.contains("olink") || !!s.title));
   const mod = process.platform === "darwin" ? "Meta" : "Control";
-  if (link) { await page.keyboard.down(mod); await page.mouse.click(link.x, link.y); await page.keyboard.up(mod); }
+  // where the link rests: the view may still move after the output (the prompt drawn, the view kept at its bottom)
+  const at = link && await page.waitForFunction(() => {
+    const e = [...document.querySelectorAll("#term .ln .olink")].find((s) => s.textContent.includes("MR !318")), b = e?.getBoundingClientRect();
+    const now = b && `${b.left},${b.top}`;
+    if (!now || now !== window.linkWas) { window.linkWas = now; window.linkSince = performance.now(); return null; }
+    return performance.now() - window.linkSince > 300 ? { x: b.left + b.width / 2, y: b.top + b.height / 2 } : null;
+  }, null, { timeout: 5000, polling: 50 }).then((h) => h.jsonValue(), () => null);
+  if (at) { await page.keyboard.down(mod); await page.mouse.click(at.x, at.y); await page.keyboard.up(mod); }
   const opened = await page.evaluate(() => window.opened);
   check("AC-35 a program's OSC 8 link through tmux: its text underlined with its address on hover, ⌘-click opens that address; a javascript: one is plain text",
     link?.text === "Attack and Compromise Detection — MR !318" && link.href === MR && link.title === MR && JSON.stringify(opened) === JSON.stringify([MR])
-      && JSON.stringify(evil) === "[false]", JSON.stringify({ link, opened, evil }));
+      && JSON.stringify(evil) === "[false]", JSON.stringify({ link, at, opened, evil }));
   // tmux 3.6a ends a link at a row's end and does not open it again on the next (AS-03): its first row only
   check("AC-35 an OSC 8 link wider than the pane is a link on its first row; the text after it is not",
     halves.length === 2 && LONG.startsWith(halves[1]) && halves[1].length > 20 && !halves.some((t) => t.includes("after")), JSON.stringify(halves));
