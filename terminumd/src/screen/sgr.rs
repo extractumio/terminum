@@ -227,10 +227,8 @@ fn skip_escape(line: &str, i: usize, style: &mut Style, link: &mut Option<Arc<st
                         continue;
                     }
                 };
-                if b[i] == b']' {
-                    if let Some(rest) = line[i + 1..j].strip_prefix("8;") {
-                        *link = hyperlink(rest);
-                    }
+                if b[i] == b']' && let Some(rest) = line[i + 1..j].strip_prefix("8;") {
+                    *link = hyperlink(rest);
                 }
                 return end;
             }
