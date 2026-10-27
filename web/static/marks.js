@@ -15,9 +15,10 @@ import { floats, FOLDED } from "./fold.js";
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
 const ARMED = 3000;            // ms a Delete pressed once waits for the second press
-// the floating buttons at the terminal's top right, top down: the plain ones, then the colored ones together;
-// where the keyboard's buttons float (a phone, a narrow window) they fold under ⟨…⟩ (fold.js)
-const PLAIN = FOLDED.slice(0, 4), COLORED = FOLDED.slice(4);
+// the floating buttons at the terminal's top right, top down: the plan's progress (while there is a plan,
+// planpane.js), the plain ones, then the colored ones together; where the keyboard's buttons float (a
+// phone, a narrow window) they fold under ⟨…⟩ (fold.js)
+const PLAN = FOLDED.slice(0, 1), PLAIN = FOLDED.slice(1, 5), COLORED = FOLDED.slice(5);
 
 export const el = (tag, cls, text) => {
   const e = document.createElement(tag);
@@ -69,6 +70,7 @@ export class Marks {
     this.jumper = new Jumper({ view, widgets, term, send, sid });
     this.search = new Find({ view, widgets, term, send, sid });   // its magnifier stands beside the bookmarks' button
     this.search.onOpen = () => this.togglePane(false);                // one of the two at a time
+    document.addEventListener("planfab", () => this.placeFab());      // the plan's progress circle shown or gone (planpane.js)
     markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
       onPick: (sel) => this.edit(null, sel), onCopy: copy, onAsk: (text, line) => this.onAsk?.(text, line) });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
@@ -351,6 +353,7 @@ export class Marks {
     for (const id of PLAIN) $(id).hidden = !shown;
     $("marksfab").hidden = !(shown && n > 0);
     $("remindfab").hidden = !shown || !here.some(openReminder);
+    $("planfab").hidden = !shown || !("pct" in $("planfab").dataset);
     $("marksfabn").textContent = String(n);
     $("marksfab").setAttribute("aria-label", `Bookmarks of this ${this.hereProject() ? "project" : "session"}: ${n}`);
     if (!shown) this.search.toggle(false);
@@ -360,9 +363,10 @@ export class Marks {
     const shownOf = (ids) => ids.map($).filter((b) => !b.hidden && b.offsetHeight);   // the split is the header's on a computer
     let y = term.offsetTop + 12;                    // the gap between them (--sp-3) above the first too
     if (floats()) { Object.assign($("foldfab").style, { top: `${y}px`, left }); y += ($("foldfab").offsetHeight || 44) + 12; }
-    for (const group of [PLAIN, COLORED]) {
-      for (const b of shownOf(group)) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 12; }
-      y += 8;                                      // the colored ones set apart
+    for (const group of [PLAN, PLAIN, COLORED]) {
+      const bs = shownOf(group);
+      for (const b of bs) { Object.assign(b.style, { top: `${y}px`, left }); y += b.offsetHeight + 12; }
+      if (bs.length) y += 8;                       // each group set apart
     }
     this.onPlaced?.();                             // first: ⟨…⟩ folds or not (fold.js), which find's field stands by
     this.search.place();

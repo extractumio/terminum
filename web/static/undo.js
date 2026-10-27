@@ -77,7 +77,7 @@ export function undoTouch({ button, field, menu, undo, paste, can }) {
     if (c.copy) items.push(["Copy", c.copy]);
     if (c.undo) items.push(["Undo", () => undo(false)]);
     if (c.redo) items.push(["Redo", () => undo(true)]);
-    if (items.length) menu.show(items, x - 105, y - 60 - items.length * 44, true);
+    if (items.length) menu.show(items, x - 105, y - 60 - items.length * 44, true, document.activeElement === field);   // the keyboard stays up
   };
   /** ⌘X: the menu's Cut, when it applies (idekeys.js); whether it did. */
   editMenu.cut = () => { const c = can(); return !!c.cut && (c.cut(), true); };

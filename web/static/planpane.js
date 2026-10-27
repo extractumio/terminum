@@ -1,32 +1,34 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The Plan pane (AC-97, AC-98): the shown session's plan and its notes for the user, modal as the
-// reminders' pane (fabpane.js). Opened by the header's progress (#curplan, its button) or a row's
-// percent (a "planopen" event after the row's session is shown). It asks terminumd {"t":"plan"} on
+// reminders' pane (fabpane.js). Opened by the header's Plan button (#curplan), the progress circle
+// in the floating column (#planfab) or a row's percent (a "planopen" event after the row's session is shown). It asks terminumd {"t":"plan"} on
 // opening and again on {"t":"plannew"} of its key; it closes when another session is shown. Every
 // text the agent wrote goes in as text (el's textContent): never HTML or Markdown.
 import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
 import { armed, el, INSERT } from "./marks.js";
-import { ageText, clock, etaLine, headerText, noteChat, orderNotes, rowTitle, sourceText, statusIcon } from "./plans.js";
+import { ageText, clock, etaLine, noteChat, orderNotes, pctText, rowTitle, sourceText, statusIcon } from "./plans.js";
 
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() / 1000;
-export const EMPTY = "No plan yet. A coding agent reports its plan here when it works on a longer task: with its own plan tool (Claude Code's tasks) or terminum's MCP tools (update_session_plan). Sessions started before terminum's hooks were installed report nothing until restarted.";
+export const EMPTY = "No plan: the agent has not sent one for this session.";
 const STATUS = { completed: "completed", in_progress: "in progress", pending: "pending", blocked: "blocked" };
 
 /** send(msg) to terminumd; sid(): the shown pane's key; toChat(text): pasted into its input, no Enter. */
 export function planPane({ send, sid, toChat }) {
-  const fab = $("curplan");
+  const fab = $("curplan"), ring = $("planfab");
   let of = null, shown = null, waiting = false, acted = false;   // the key the pane shows; the shown row (layout); asked, no answer yet; a note act sent, no answer yet
   const pane = fabPane({ fab, pane: $("planpane"), close: $("planclose"), onToggle: (on) => {
     of = on ? sid() : null;
+    ring.setAttribute("aria-expanded", String(on));
     if (on) { $("planbody").replaceChildren(el("p", "plmeta", "Loading…")); ask(); place(); }
   } });
+  ring.addEventListener("click", () => pane.toggle());
+  ring.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   const ask = () => { if (of) { waiting = true; send({ t: "plan", key: of }); } };
-  fab.addEventListener("click", (e) => e.stopPropagation());     // not the header's own click (the list)
   document.addEventListener("planopen", () => { if (!pane.open()) pane.toggle(true); else ask(); });
 
-  /** The header's progress for the shown row (item: a layout row or null). */
+  /** The header's button and the column's progress circle for the shown row (item: a layout row or null). */
   function header(item) {
     shown = item;
     const plan = item?.plan ?? null, notes = item?.notes ?? 0;
@@ -34,14 +36,29 @@ export function planPane({ send, sid, toChat }) {
     if (pane.open() && sid() !== of) pane.toggle(false);
     else if (pane.open() && waiting) ask();          // asked while terminumd was away (a restart): its next layout asks again
     fab.hidden = !plan && !notes && !item?.agent;    // notes alone, or a coding agent without a plan yet, still open the pane
-    if (fab.hidden) return;
-    fab.classList.toggle("stale", !!plan?.stale);
-    fab.classList.toggle("quiet", !plan && !notes);  // the entry point alone: a ghost "Plan" (UI-GUIDELINES)
     const said = notes ? `${notes} note${notes > 1 ? "s" : ""}` : "";
-    $("curplant").textContent = plan ? headerText(plan, now()) : said || "Plan";
     fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Notes: ${said}` : "Plan and Notes: no plan yet";
     fab.setAttribute("aria-label", fab.title);
-    fab.style.setProperty("--pct", `${Math.max(0, Math.min(100, plan?.pct ?? 0))}%`);
+    const pct = plan ? Math.round(Math.max(0, Math.min(100, plan.pct ?? 0))) : 0;
+    $("curplanp").textContent = pct ? `${pct}%` : "";   // 0%: nothing, the icon alone
+    fab.classList.toggle("pct", pct > 0);                // its width for "100%" (style.css)
+    progress(pct ? plan : null, fab.title);
+  }
+
+  /** The column's circle: the percent in its ring while a plan has some done (marks.js placeFab shows and places it). */
+  function progress(plan, title) {
+    const had = "pct" in ring.dataset;
+    if (!plan) delete ring.dataset.pct;
+    else {
+      const pct = Math.round(Math.max(0, Math.min(100, plan.pct ?? 0)));
+      ring.dataset.pct = String(pct);
+      ring.style.setProperty("--p", String(pct));
+      $("planfabt").textContent = pct === 100 ? "✓" : pctText(plan);   // "100%" outgrows the ring
+      ring.classList.toggle("stale", !!plan.stale);
+      ring.title = title;
+      ring.setAttribute("aria-label", title);
+    }
+    if (had !== !!plan) document.dispatchEvent(new Event("planfab"));   // shown or gone: the column placed again
   }
   setInterval(() => { if (shown) header(shown); }, 60_000);   // the age moves on without a message
 

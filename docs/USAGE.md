@@ -200,13 +200,19 @@ With terminum's hooks installed (`terminum hooks install`, above), a coding agen
 where it is:
 
 - **Where**: the session's row shows "43%" right of its title over a thin track (hover: "3 of 7 ·
-  updated 2 min ago"); the shown session's header shows "3/7 · 43% · 2 min ago". The percent is
+  updated 2 min ago"); the shown session's progress is a circle "43%" with a ring, first in the floating buttons'
+  column (on a phone, tap ⟨…⟩ to see it with the others); the header has a Plan button right of ✎ with the percent ("43%"; the icon alone at 0%)
+  for a session with a coding agent. The percent is
   the items completed of all, never the agent's own guess; it dims when the plan is stale.
-- **The Plan pane**: press the percent on a row (it shows that session) or the header's
-  progress; by keyboard, Tab to the header's progress and press Enter or Space; Esc or × closes
+- **The Plan pane**: press the percent on a row (it shows that session), the progress circle
+  or the header's Plan button; by keyboard, Tab to the Plan button and press Enter or Space; Esc or × closes
   it. It shows the plan's title, the current step, the items, the agent's ETA ("~17:40 (agent's
   estimate, given 16:55)") and when it was updated, then the notes. Everything the agent wrote is
   shown as plain text.
+- **"No plan: the agent has not sent one for this session."**: the agent made no plan yet. Claude
+  Code makes tasks only for longer, multi-step work (or when asked: "make a plan with tasks");
+  terminum's MCP tools report one too (update_session_plan). A session started before terminum's
+  hooks were installed reports nothing until it is restarted.
 - **Marks**: ✓ completed, ▶ in progress, ○ pending, ⚠ blocked. "partial: some updates were
   missed" means an update named an item terminum never saw; the next whole list heals it.
 - **Notes for you**: bugs, deferred work, follow-ups and questions the agent left, under the

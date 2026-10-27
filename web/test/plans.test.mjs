@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageText, etaLine, headerText, noteChat, orderNotes, pctText, rowTitle, sourceText, statusIcon } from "../static/plans.js";
+import { ageText, etaLine, noteChat, orderNotes, pctText, rowTitle, sourceText, statusIcon } from "../static/plans.js";
 
 const now = 1_800_000_000;
 const plan = { done: 3, total: 7, pct: 42.857, eta: null, updated: now - 120, stale: false, partial: false };
@@ -28,9 +28,9 @@ test("ages", () => {
   assert.equal(ageText(now - 86400 * 2, now), "2 d ago");
 });
 
-test("row and header without an ETA", () => {
+test("row without an ETA", () => {
   assert.equal(rowTitle(plan, now), "3 of 7 · updated 2 min ago");
-  assert.equal(headerText(plan, now), "3/7 · 43% · 2 min ago");
+  assert.equal(pctText(plan), "43%");
   assert.equal(etaLine(plan), "");
 });
 
@@ -38,7 +38,6 @@ test("row with ETA, partial and stale", () => {
   const p = { ...plan, eta: now + 2700, partial: true, stale: true };
   const t = rowTitle(p, now);
   assert.match(t, /^3 of 7 · ETA ~\d\d:\d\d · updated 2 min ago · partial · stale$/);
-  assert.match(headerText(p, now), /^3\/7 · 43% · ETA ~\d\d:\d\d · 2 min ago$/);
   assert.match(etaLine({ ...p, eta_given: now }), /^~\d\d:\d\d \(agent's estimate, given \d\d:\d\d\)$/);
   assert.match(etaLine(p), /^~\d\d:\d\d \(agent's estimate\)$/);
 });

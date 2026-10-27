@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Reminders of the other sessions whose coding agent waits for an answer (AC-52): a card each
-// over the terminal, at its side on a computer (three at most) and one slim line under the
-// header on a phone, so a question asked in another session is not missed. A card goes when the
+// Reminders of the other sessions whose coding agent waits for an answer (AC-39): a line each
+// across the terminal's top (three at most on a computer, one on a phone), so a question asked in
+// another session is not missed. A card goes when the
 // user closes it, opens that session (from the card or the list), or the session stops waiting;
 // it comes back the next time that session asks. "Waiting" is read off the screen, and the
 // bridge sends a layout only when something changed, so a session counts as waiting once it has
@@ -21,7 +21,7 @@ export function waitingCards(box, onOpen) {
 
   function card(id) {
     const c = document.createElement("div");
-    c.className = "ask box";
+    c.className = "ask";
     const go = document.createElement("button");
     go.type = "button";
     go.className = "go";

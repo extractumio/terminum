@@ -32,12 +32,6 @@ export function rowTitle(plan, now) {
     plan.partial && "partial", plan.stale && "stale"].filter(Boolean).join(" · ");
 }
 
-/** The header's: "3/7 · 43% · ETA ~17:40 · 2 min ago". */
-export function headerText(plan, now) {
-  const eta = etaText(plan);
-  return [`${plan.done}/${plan.total}`, pctText(plan), eta && `ETA ${eta}`, ageText(plan.updated, now)].filter(Boolean).join(" · ");
-}
-
 /** The pane's ETA: "~17:40 (agent's estimate, given 16:55)". */
 export function etaLine(plan) {
   if (!plan.eta) return "";

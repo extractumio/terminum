@@ -130,9 +130,14 @@ export async function webLook(browser, name) {
         const r = (id) => document.getElementById(id)?.getBoundingClientRect();
         const ask = document.querySelector("#asks .ask:not([hidden])")?.getBoundingClientRect(), banner = r("restored");
         const meets = (a, b) => !!(a && b && b.width && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom);
-        return { ask: !!ask, banner: meets(ask, banner), fabs: ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"].filter((id) => meets(ask, r(id))) };
+        const term = r("term"), what = document.querySelector("#asks .ask:not([hidden]) .what"), icon = document.querySelector("#asks .ask:not([hidden]) .state svg");
+        return { ask: !!ask, banner: meets(ask, banner), fabs: ["findfab", "splitfab", "sentfab", "attachfab", "marksfab", "remindfab"].filter((id) => meets(ask, r(id))),
+          across: !!ask && Math.abs(ask.left - term.left) <= 1 && Math.abs(ask.right - term.right) <= 1 && ask.bottom <= term.top + 1 && ask.top >= banner.bottom - 1,
+          oneLine: !!what && what.scrollHeight <= what.clientHeight + 1 && getComputedStyle(what).textOverflow === "ellipsis",
+          yellow: !!icon && getComputedStyle(icon).color, shadow: ask && getComputedStyle(document.querySelector("#asks .ask:not([hidden])")).boxShadow };
       });
-      check("look: a waiting card covers neither the banners nor a floating button", boxes.ask && !boxes.banner && !boxes.fabs.length, JSON.stringify(boxes));
+      check("AC-39 look: a waiting session's line spans the terminal's width at its top, under the banners, one line ending in an ellipsis, no card's shadow; it covers neither the banners nor a floating button",
+        boxes.ask && !boxes.banner && !boxes.fabs.length && boxes.across && boxes.oneLine && boxes.shadow === "none", JSON.stringify(boxes));
     }
     await f.close();
   }

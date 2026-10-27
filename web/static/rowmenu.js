@@ -10,6 +10,7 @@
 import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { placeModal } from "./fabpane.js";
+import { floats } from "./fold.js";
 import { groupKey, groupRows, projectColor } from "./nav.js";
 import { lastLinesView } from "./lastlines.js";
 
@@ -57,6 +58,7 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     b.setAttribute("role", "menuitem");
     // the lift of the finger that opened it is no press of what is under it now
     b.onclick = (e) => { e.stopPropagation(); if (performance.now() - openedAt > 350) run(); };
+    b.addEventListener("mousedown", (e) => e.preventDefault());   // the input keeps the keys (a menu opened with them, open)
     return b;
   };
   /** The menu's items under a head: what it is for, and × to close it. */
@@ -72,15 +74,18 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     head.append(t, x);
     box.replaceChildren(head, ...items);
   }
-  function open(x, y, byFinger = false) {
-    if (!box.open) { back = document.activeElement; box.showModal(); }
+  /** keepKeys: the field with the keys keeps them (the on-screen keyboard stays up, the sheet with it):
+   *  opened without showModal (it takes the focus and makes the page inert), over a sheet's shade. */
+  function open(x, y, byFinger = false, keepKeys = false) {
+    const keep = keepKeys && floats() && !box.open;
+    if (!box.open) { back = document.activeElement; if (keep) box.setAttribute("open", ""); else box.showModal(); }
     openedAt = byFinger ? performance.now() : -Infinity;
     const w = box.offsetWidth, h = box.offsetHeight;
-    if (!placeModal(box)) {          // a computer's: at the pointer
+    if (!placeModal(box, keep ? hide : null, !keep)) {   // a computer's: at the pointer
       box.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
       box.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
     }
-    box.querySelector("button:not(:disabled):not([data-action=x])")?.focus({ preventScroll: true });
+    if (!keep) box.querySelector("button:not(:disabled):not([data-action=x])")?.focus({ preventScroll: true });
   }
 
   /** The rows beside `li` in its list, and where its order goes. */
@@ -289,11 +294,11 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
   });
   box.addEventListener("cancel", (e) => { e.preventDefault(); hide(); });   // Esc: the focus goes back too
   /** A menu of `items` ([label, run]) at x, y (the input's Paste, Undo and Redo); byFinger: a
-   *  finger still down opened it. */
-  function show(items, x, y, byFinger = false) {
+   *  finger still down opened it; keepKeys: the input has the keys and keeps them (open). */
+  function show(items, x, y, byFinger = false, keepKeys = false) {
     fill("Edit", ...items.map(([label, run]) => button(label, label.toLowerCase(), () => { hide(); run(); })));
     box.dataset.for = "";
-    open(x, y, byFinger);
+    open(x, y, byFinger, keepKeys);
   }
   return { headMenu, groupMenu, hide, show, rename, held, seen: kept.seen };
 }

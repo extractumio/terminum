@@ -78,7 +78,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const info = await rowInfo();
     check("AC-97 the row's id is the pane's key", info.id === `tmux:local:${tmux("display", "-p", "-t", paneId, "#{socket_path}").split("/").pop()}:${paneId}`, JSON.stringify(info));
     await row().click();
-    await within("AC-97 the shown session's header says 1/3 · 33% · just now", () => until(() => page.textContent("#curplant"), (t) => /^1\/3 · 33% · just now$/.test(t ?? "")));
+    await within("AC-97 the shown session's progress circle says 33%, its Plan button's hover 1 of 3 · updated just now", () => until(() => page.evaluate(() => [document.getElementById("planfabt").textContent, document.getElementById("curplan").title].join(" | ")), (t) => t === "33% | Plan: 1 of 3 · updated just now"));
     await page.click("#curplan");
     await within("AC-97 the Plan pane lists alpha ✓, beta ▶, gamma ○ from the agent's plan tool", () => until(paneState, (s) => s.open
       && s.items.join("|") === "✓ alpha plitem completed|▶ beta plitem in_progress|○ gamma plitem pending" && s.meta.includes("from the agent's plan tool")));
@@ -103,7 +103,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     check("AC-98 add_notes_for_user answers the two notes' ids", a[4]?.result?.isError === false && !!ids, textOf(a[4]));
     check("AC-97 get_session_plan answers the stored plan as [x] [>] [ ] lines, doing and ETA",
       textOf(a[5]).startsWith(`[x] alpha\n[>] beta\n[ ] gamma\nDoing: Checking the live page\nETA: ~${eta}\n`), textOf(a[5]));
-    await within("AC-97 the header shows the agent's ETA: 1/3 · 33% · ETA ~hh:mm", () => until(() => page.textContent("#curplant"), (t) => t === `1/3 · 33% · ETA ~${eta} · just now`));
+    await within("AC-97 the Plan button's hover shows the agent's ETA: 1 of 3 · ETA ~hh:mm", () => until(() => page.evaluate(() => document.getElementById("curplan").title), (t) => (t ?? "").startsWith(`Plan: 1 of 3 · ETA ~${eta} · updated just now`)));
     const [bug, later] = [ids?.[1], ids?.[2]];
     await within("AC-98 the open pane asks again: doing, the ETA as the agent's estimate, both notes as plain text", () => until(paneState, (s) => s.doing === "Checking the live page"
       && s.meta.some((m) => m.startsWith(`ETA ~${eta} (agent's estimate, given `)) && s.notes.length === 2
@@ -143,7 +143,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
       await page.waitForFunction(() => !document.getElementById("status").innerText.includes("not running") && document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 8000 });
       await until(rowInfo, (r) => r.pct === "33%");
       await row().click({ position: { x: 12, y: 8 } });  // its title's side, not the percent (which opens the pane)
-      await until(() => page.textContent("#curplant"), (t) => (t ?? "").startsWith("1/3 · 33% · ETA ~"));
+      await until(() => page.evaluate(() => [document.getElementById("planfabt").textContent, document.getElementById("curplan").title].join(" | ")), (t) => (t ?? "").startsWith("33% | Plan: 1 of 3 · ETA ~"));
       if (!(await paneState()).open) await page.click("#curplan");
       await until(paneState, (s) => s.open && s.doing === "Checking the live page" && s.notes.length === 1 && s.notes[0].id === bug && !s.notes[0].open);
     });
@@ -155,7 +155,8 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
       const p = await phone.newPage();
       await signIn(p);
       await p.evaluate((k) => document.querySelector(`#sessions .item[data-id="${k}"]`).click(), info.id);
-      await within("a phone: the header shows the plan's progress", () => p.waitForFunction(() => /^1\/3 · 33% · ETA ~/.test(document.getElementById("curplant").textContent), null, { timeout: 8000 }));
+      await within("a phone: the progress circle says 33%, the Plan button's hover the ETA", () => p.waitForFunction(() => document.getElementById("planfabt").textContent === "33%"
+        && /^Plan: 1 of 3 · ETA ~/.test(document.getElementById("curplan").title), null, { timeout: 8000 }));
       await p.click("#curplan");
       await within("a phone: the Plan pane is full width under the header with the three items, its buttons a finger's size", () => p.waitForFunction(() => {
         const pane = document.getElementById("planpane"), r = pane.getBoundingClientRect(), bar = document.getElementById("bar").getBoundingClientRect();

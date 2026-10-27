@@ -49,15 +49,15 @@ export async function planLook(browser, name, size, device) {
   await pause(page, 250);
   await page.evaluate(MEASURE);
 
-  // a light theme: the row's percent and track, the header's progress
+  // a light theme: the row's percent and track, the column's progress circle
   const row = await page.evaluate((a) => {
     const r = document.querySelector(`.item[data-id="${a}"]`), p = r.querySelector(".plpct"), t = r.querySelector(".pltrack .plfill");
-    const ct = document.getElementById("curplant");
+    const ct = document.getElementById("planfabt"), arc = document.querySelector("#planfab .arc");
     return { light: document.documentElement.classList.contains("light"), pct: __ratio(p), fill: __ratio(t, getComputedStyle(t).backgroundColor),
-      head: __ratio(ct), bar: __ratio(ct, getComputedStyle(ct).color) };
+      head: __ratio(ct), arc: __ratio(ct, getComputedStyle(arc).stroke) };
   }, A);
-  check(`${at} light theme: a row's percent ≥ 4.5:1, its track's fill ≥ 3:1, the header's progress ≥ 4.5:1`,
-    row.light && row.pct >= 4.5 && row.fill >= 3 && row.head >= 4.5, JSON.stringify(row));
+  check(`${at} light theme: a row's percent ≥ 4.5:1, its track's fill ≥ 3:1, the progress circle's percent ≥ 4.5:1 and its ring ≥ 3:1`,
+    row.light && row.pct >= 4.5 && row.fill >= 3 && row.head >= 4.5 && row.arc >= 3, JSON.stringify(row));
 
   // long names: ellipsis, the percent in the row, no overlap, no sideways scroll
   // a phone: back to the list by the title, pressed at its top: the Copy's finger target reaches over its middle (style.css)
@@ -72,13 +72,13 @@ export async function planLook(browser, name, size, device) {
     longRow.cut && longRow.ell === "ellipsis" && longRow.apart && longRow.pct[1] <= longRow.row[1] && longRow.scroll <= 0, JSON.stringify(longRow));
   if (phone) { await page.click(`.item[data-id="${A}"]`); await pause(page, 300); }
 
-  // the keyboard: Tab reaches the progress with a ring, Enter opens, Tab reaches the pane's buttons, Esc closes and gives focus back
+  // the keyboard: Tab reaches the Plan button with a ring, Enter opens, Tab reaches the pane's buttons, Esc closes and gives focus back
   await page.evaluate(() => document.activeElement?.blur());
   const TAB = name === "webkit" ? "Alt+Tab" : "Tab";   // Safari's default: Tab between fields only, ⌥Tab every control
   let reached = false;
   for (let i = 0; i < 40 && !reached; i++) { await page.keyboard.press(TAB); reached = await page.evaluate(() => document.activeElement?.id === "curplan"); }
   const ring = await page.evaluate(() => { const s = getComputedStyle(document.getElementById("curplan")); return { style: s.outlineStyle, w: parseFloat(s.outlineWidth) }; });
-  check(`${at} Tab reaches the header's progress, with a visible focus ring`, reached && ring.style !== "none" && ring.w >= 1, JSON.stringify({ reached, ring }));
+  check(`${at} Tab reaches the header's Plan button, with a visible focus ring`, reached && ring.style !== "none" && ring.w >= 1, JSON.stringify({ reached, ring }));
   await page.keyboard.press("Enter");
   await page.waitForSelector("#planbody .plitems", { timeout: 3000 }).catch(() => {});
   let btns = [];
@@ -118,32 +118,33 @@ export async function planLook(browser, name, size, device) {
   });
   check(`${at} the Plan pane and a banner: the pane does not cover the banner`, !!stack.banner && !!stack.pane && !overlaps(stack.pane, stack.banner), JSON.stringify(stack));
 
-  // --size 10 and 20: the pane, the header's progress and a row's percent fit and do not overlap
+  // --size 10 and 20: the pane, the header's Plan button and the progress circle fit and do not overlap
   for (const px of [10, 20]) {
     await page.evaluate((px) => document.documentElement.style.setProperty("--size", `${px}px`), px);
     await pause(page, 150);
     const s = await page.evaluate(() => {
-      const r = (q) => document.querySelector(q)?.getBoundingClientRect(), p = r("#planpane"), c = r("#curplan"), t = r("#current .t");
-      const ct = document.getElementById("curplant");
-      return { pane: p && p.left >= -1 && p.right <= innerWidth + 1, head: !!c && c.width >= 30 && (!t || c.left >= t.right - 1) && c.right <= innerWidth, w: c && Math.round(c.width),
-        clipV: ct.scrollHeight > ct.clientHeight + 1, sideways: document.documentElement.scrollWidth - innerWidth };
+      const r = (q) => document.querySelector(q)?.getBoundingClientRect(), p = r("#planpane"), c = r("#curplan"), t = r("#current .t"), o = r("#planfab");
+      const ct = document.getElementById("planfabt");
+      return { pane: p && p.left >= -1 && p.right <= innerWidth + 1, head: !!c && c.width >= 30 && (!t || c.left >= t.right - 1) && c.right <= innerWidth, w: c && Math.round(c.width), c: c && [Math.round(c.left), Math.round(c.right)], t: t && [Math.round(t.left), Math.round(t.right)], iw: innerWidth,
+        tw: Math.round(ct.getBoundingClientRect().width * 10) / 10, sw: Math.round(document.querySelector("#planfab svg").getBoundingClientRect().width),
+        ring: o.right <= innerWidth && (() => { const s = document.querySelector("#planfab svg").getBoundingClientRect(), x = ct.getBoundingClientRect(); return x.width <= s.width * 30.8 / 36; })(), sideways: document.documentElement.scrollWidth - innerWidth };
     });
-    check(`${at} --size ${px}: the pane in view, the header's progress shown (≥ 30px) after the title, not cut in height, no sideways scroll`, s.pane && s.head && !s.clipV && s.sideways <= 0, JSON.stringify(s));
+    check(`${at} --size ${px}: the pane in view, the Plan button shown (≥ 30px) after the title, the circle's percent whole, no sideways scroll`, s.pane && s.head && s.ring && s.sideways <= 0, JSON.stringify(s));
   }
 
-  // Esc closes the pane and gives the focus back to the progress
+  // Esc closes the pane and gives the focus back to the Plan button
   await page.focus("#planpane");
   await page.keyboard.press("Escape");
   await pause(page, 150);
   const back = await page.evaluate(() => ({ open: !document.getElementById("planpane").hidden, focus: document.activeElement?.id }));
-  check(`${at} Esc closes the pane and gives the focus back to the header's progress`, !back.open && back.focus === "curplan", JSON.stringify(back));
+  check(`${at} Esc closes the pane and gives the focus back to the header's Plan button`, !back.open && back.focus === "curplan", JSON.stringify(back));
 
   // the empty state: no plan, no notes
   reply = { plan: null, notes: [] };
   await page.click("#curplan", { timeout: 5000 });
   await pause(page, 250);
   const empty = await page.evaluate(() => [...document.querySelectorAll("#planbody p, #planbody h3")].map((e) => e.textContent));
-  check(`${at} the empty state: "No plan yet…" and "No notes", no hooks line`, empty.some((t) => t.startsWith("No plan yet.")) && empty.includes("No notes") && empty.length === 2, JSON.stringify(empty));
+  check(`${at} the empty state: "No plan: …" and "No notes", no hooks line`, empty.some((t) => t.startsWith("No plan: ")) && empty.includes("No notes") && empty.length === 2, JSON.stringify(empty));
   check(`no page errors (plans look) ${size}`, !f.errors.length, f.errors.join(" | "));
   await f.close();
 }

@@ -51,16 +51,40 @@ export async function webPlans(browser, name) {
     check("AC-97 a stale plan's percent is dimmed", rows.bStale && Number(rows.bOpacity) < 1 && Number(rows.aOpacity) === 1, JSON.stringify(rows));
     check("AC-97 a row without a plan shows neither percent nor track; AC-98 its notes count shows only with notes", !rows.c && rows.notes === "2" && !rows.cNotes, JSON.stringify(rows));
 
-    // the header (the shown session is A)
-    const head = await q(page, () => { const b = document.getElementById("curplan"); return { hidden: b.hidden, text: document.getElementById("curplant").textContent, title: b.title }; });
-    check("AC-97 the header shows 3/7 · 43% · ETA ~hh:mm · 5 min ago", !head.hidden && /^3\/7 · 43% · ETA ~\d\d:\d\d · 5 min ago$/.test(head.text) && /2 notes/.test(head.title), JSON.stringify(head));
-
-    const fit = await q(page, () => { const r = (s) => document.querySelector(s).getBoundingClientRect(), t = r("#current .t"), p = r("#curplan"), e = r("#rename");
-      return { title: Math.round(t.width), need: document.querySelector("#current .t").scrollWidth, plan: [Math.round(p.left), Math.round(p.right)], rename: Math.round(e.left), shown: e.width > 0 }; });
-    check("AC-97 the header's progress leaves the title its room and ends before ✎", fit.title >= Math.min(fit.need - 4, 40) && (!fit.shown || fit.plan[1] <= fit.rename), JSON.stringify(fit));
+    // the header's Plan button and the column's progress circle (the shown session is A)
+    const head = await q(page, () => {
+      const b = document.getElementById("curplan"), r = b.getBoundingClientRect(), e = document.getElementById("rename"), er = e.getBoundingClientRect();
+      const t = document.querySelector("#current .t").getBoundingClientRect(), m = document.getElementById("menubtn").getBoundingClientRect(), p = document.getElementById("curplanp");
+      const was = p.textContent; p.textContent = "100%"; const fits = b.scrollWidth <= b.clientWidth && p.getBoundingClientRect().right <= r.right; p.textContent = was;
+      return { hidden: b.hidden, title: b.title, text: p.textContent, inLine: b.parentElement.classList.contains("tline"), afterRename: b.previousElementSibling === e,
+        renameShown: er.width > 0, gap: Math.round(r.left - er.right), mid: Math.abs((r.top + r.bottom) / 2 - (er.top + er.bottom) / 2), clear: t.right <= Math.min(r.left, er.left) + 1,
+        beforeMenu: r.right <= m.left, fits, w: Math.round(r.width), h: Math.round(r.height),
+        withMenu: Math.abs((r.top + r.bottom) / 2 - (m.top + m.bottom) / 2) <= 1 && Math.round(r.height) === Math.round(m.height) }; });
+    check(`AC-97 the header's Plan button right of ✎ (${phone ? 4 : 10} px apart, level with it), as tall as ⋯ and level with it, 43% beside its icon, room for 100%, its hover the progress and the notes`,
+      !head.hidden && head.inLine && head.afterRename && head.renameShown && head.gap === (phone ? 4 : 10) && head.mid <= 1 && head.withMenu && head.clear && head.beforeMenu && head.fits
+      && head.text === "43%" && /^Plan: 3 of 7 · ETA ~\d\d:\d\d · updated 5 min ago · 2 notes$/.test(head.title) && head.h === (phone ? 44 : 30), JSON.stringify(head));
+    if (phone) {
+      const folded = await q(page, () => getComputedStyle(document.getElementById("planfab")).visibility);
+      check("a phone: the progress circle is folded under ⟨…⟩", folded === "hidden", folded);
+      await page.click("#foldfab");
+      await pause(page, 100);
+    }
+    const ring = await q(page, () => { const b = document.getElementById("planfab"), r = b.getBoundingClientRect(), f = document.getElementById("findfab").getBoundingClientRect();
+      return { hidden: b.hidden, seen: getComputedStyle(b).visibility, text: document.getElementById("planfabt").textContent, p: b.style.getPropertyValue("--p"), label: b.getAttribute("aria-label"),
+        dash: getComputedStyle(b.querySelector(".arc")).strokeDasharray, above: r.bottom <= f.top, left: Math.round(r.left) === Math.round(f.left), round: getComputedStyle(b).borderRadius, w: Math.round(r.width) }; });
+    check(`AC-97 the progress circle says 43% with its ring 43 of 100, first in the column above find${phone ? " (unfolded by ⟨…⟩)" : ""}`,
+      !ring.hidden && ring.seen === "visible" && ring.text === "43%" && ring.p === "43" && /^43(px)?,? 100(px)?$/.test(ring.dash.replace(/\s+/g, " ")) && ring.above && ring.left && ring.round === "50%"
+      && ring.w === (phone ? 44 : 32) && /^Plan: 3 of 7/.test(ring.label ?? ""), JSON.stringify(ring));
+    let from = f.sent.length;
+    await page.click("#planfab");
+    await pause(page, 200);
+    check("AC-97 a press on the progress circle opens the Plan pane and asks {t:plan, key}", await paneOpen(page) && asked(f, from) === 1
+      && await q(page, () => document.getElementById("planfab").getAttribute("aria-expanded")) === "true", JSON.stringify(f.sent.slice(from)));
+    await page.keyboard.press("Escape");
+    await pause(page, 150);
 
     // the header opens the pane: it asks, the reply is drawn
-    let from = f.sent.length;
+    from = f.sent.length;
     await page.click("#curplan");
     await page.waitForSelector("#planbody .plitems", { timeout: 3000 }).catch(() => {});
     const drawnPane = await q(page, () => {
@@ -70,7 +94,7 @@ export async function webPlans(browser, name) {
         notes: [...b.querySelectorAll(".plnote")].map((e) => `${e.dataset.id}:${e.classList.contains("open") ? "open" : "done"}`),
         expanded: document.getElementById("curplan").getAttribute("aria-expanded") };
     });
-    check("AC-97 a press on the header's progress opens the Plan pane and asks {t:plan, key}", await paneOpen(page) && asked(f, from) === 1, JSON.stringify(f.sent.slice(from)));
+    check("AC-97 a press on the header's Plan button opens the Plan pane and asks {t:plan, key}", await paneOpen(page) && asked(f, from) === 1, JSON.stringify(f.sent.slice(from)));
     check("AC-97 the pane shows the title, what the agent does, ✓ ▶ ○ ⚠ and the partial note",
       drawnPane.title === "Session plans" && drawnPane.doing === "writing the browser check" && drawnPane.marks === "✓▶○⚠○○" && /partial/.test(drawnPane.partial ?? ""), JSON.stringify(drawnPane));
     check("AC-97 the pane's ETA is the agent's estimate with its time given, and the source",
@@ -124,7 +148,7 @@ export async function webPlans(browser, name) {
           scroll: document.documentElement.scrollWidth - innerWidth };
       });
       check("a phone: the Plan pane is full width just under the header", ph.left === 0 && ph.width === 390 && Math.abs(ph.top - ph.bar) <= 1, JSON.stringify(ph));
-      check("a phone: every button of the pane and the header's progress is a finger's size (44px)", ph.small === 0 && ph.cur[0] >= 44 && ph.cur[1] >= 44, JSON.stringify(ph));
+      check("a phone: every button of the pane and the header's Plan button is a finger's size (44px)", ph.small === 0 && ph.cur[0] >= 44 && ph.cur[1] >= 44, JSON.stringify(ph));
       check("a phone: no sideways scroll with the pane open", ph.scroll <= 0, JSON.stringify(ph));
     }
 
@@ -145,8 +169,16 @@ export async function webPlans(browser, name) {
       JSON.stringify(f.sent.slice(from).filter((m) => m.t !== "in")));
     await q(page, (c) => document.querySelector(`.item[data-id="${c}"]`).click(), C);
     await pause(page, 300);
-    const gone = await q(page, () => document.getElementById("curplan").hidden);
-    check("AC-97 showing another session closes the pane; the header's progress hides without a plan or notes", !await paneOpen(page) && gone, JSON.stringify({ gone }));
+    const gone = await q(page, () => [document.getElementById("curplan").hidden, document.getElementById("planfab").hidden]);
+    check("AC-97 showing another session closes the pane; the Plan button and the progress circle hide without a plan or notes", !await paneOpen(page) && gone[0] && gone[1], JSON.stringify({ gone }));
+
+    // 0%: the button's icon alone, no circle
+    f.say({ t: "layout", groups: [group("main", [item(A, "api", { plan: { ...rowPlan(), done: 0, pct: 0 }, notes: 2 }), item(C, "notes", { index: "3" })])] });
+    await q(page, (a) => document.querySelector(`.item[data-id="${a}"]`).click(), A);
+    await pause(page, 300);
+    const zero = await q(page, () => { const b = document.getElementById("curplan"); return { hidden: b.hidden, text: document.getElementById("curplanp").textContent,
+      w: Math.round(b.getBoundingClientRect().width), ring: document.getElementById("planfab").hidden }; });
+    check("AC-97 at 0% the Plan button shows its icon alone (a square key) and the column no circle", !zero.hidden && zero.text === "" && zero.w === (phone ? 44 : 30) && zero.ring, JSON.stringify(zero));
 
     const scroll = await q(page, () => document.documentElement.scrollWidth - innerWidth);
     check("no sideways page scroll (plans)", scroll <= 0, String(scroll));

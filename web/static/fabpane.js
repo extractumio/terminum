@@ -11,15 +11,16 @@ const GAP = 14;                // px between a button and its pane
 
 /** On a phone or a narrow window `el` is a centered modal sheet (sheets.css, AC-18): its inline
  *  place is cleared and `data-sheet` set, true returned; elsewhere false and the caller places it.
- *  With `close`, a shade (#sheetscrim) lies under it until it is hidden: a press there takes the
- *  whole press (nothing under it gets it) and calls `close`. A <dialog> has its ::backdrop. */
-export function placeModal(el, close) {
+ *  With `close`, a shade (#sheetscrim) lies under it until it is hidden (a <dialog>: closed): a press
+ *  there takes the whole press (nothing under it gets it) and calls `close`; the sheet takes the
+ *  focus unless `focus` is false (the input keeps the keys, rowmenu.js). A modal <dialog> has its ::backdrop. */
+export function placeModal(el, close, focus = true) {
   if (!floats()) { delete el.dataset.sheet; return false; }
   if ("sheet" in el.dataset && sheets.some((x) => x.el === el)) return true;   // open as one: placed again each frame, nothing to do
   for (const p of ["top", "left", "right", "bottom"]) el.style.removeProperty(p);
   delete el.dataset.under;
   el.dataset.sheet = "";
-  if (close && !el.hidden) shadeUnder(el, close);
+  if (close && !el.hidden) shadeUnder(el, close, focus);
   return true;
 }
 const LINGER = 400;            // ms the closed shade still takes the presses (the click after a tap)
@@ -50,11 +51,12 @@ function restack() {
   if (s.style.opacity) s.later = setTimeout(() => { s.hidden = true; }, LINGER); else s.hidden = true;
 }
 let escapes = false;
-function shadeUnder(el, close) {
+const gone = (el) => el.hidden || !("sheet" in el.dataset) || (el.tagName === "DIALOG" && !el.open);
+function shadeUnder(el, close, focus) {
   if (!escapes) {                                  // Esc closes the top sheet (a <dialog> over it closes itself first)
     escapes = true;
     document.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape" || !sheets.length || document.querySelector("dialog[open]")) return;
+      if (e.key !== "Escape" || !sheets.length || document.querySelector("dialog:modal")) return;   // a non-modal one (rowmenu.js) is a sheet here
       e.preventDefault();
       e.stopPropagation();
       sheets.at(-1).close();
@@ -63,15 +65,15 @@ function shadeUnder(el, close) {
   if (!sheets.some((x) => x.el === el)) {
     sheets.push({ el, close });
     const watch = new MutationObserver(() => {
-      if (!el.hidden && "sheet" in el.dataset) return;
+      if (!gone(el)) return;
       watch.disconnect();
       sheets.splice(sheets.findIndex((x) => x.el === el), 1);
       restack();
     });
-    watch.observe(el, { attributes: true, attributeFilter: ["hidden", "data-sheet"] });
+    watch.observe(el, { attributes: true, attributeFilter: ["hidden", "data-sheet", "open"] });
   }
   restack();
-  if (!el.contains(document.activeElement)) el.querySelector("button:not(:disabled), input, textarea, [tabindex]")?.focus({ preventScroll: true });
+  if (focus && !el.contains(document.activeElement)) el.querySelector("button:not(:disabled), input, textarea, [tabindex]")?.focus({ preventScroll: true });
 }
 
 /** Places `pane` beside `fab` (nothing while it is hidden). */

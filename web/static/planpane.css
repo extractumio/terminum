@@ -1,19 +1,36 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* Plans and notes (AC-97, AC-98): a row's percent and thin track in the row's own color (its text's,
-   theme-driven, no edge stripe), the header's progress, the Plan pane (as the reminders' pane). */
+   theme-driven, no edge stripe), the header's Plan button, the column's progress circle, the Plan pane
+   (as the reminders' pane). */
 .item .plpct { flex: none; margin-left: auto; font-size: var(--fs-micro); font-variant-numeric: tabular-nums; color: var(--muted-text); cursor: pointer; }
-.item .plpct.stale, .item .pltrack.stale, #curplan.stale { opacity: .5; }
+.item .plpct.stale, .item .pltrack.stale, #planfab.stale { opacity: .5; }
 .item .pltrack { display: block; height: 2px; margin-top: 3px; border-radius: 1px; background: color-mix(in srgb, currentColor 15%, transparent); overflow: hidden; }
 .item .pltrack .plfill { display: block; height: 100%; width: var(--pct, 0%); background: currentColor; opacity: .6; }
 .item .notes { font-size: var(--fs-micro); line-height: 1; color: var(--muted-text); font-variant-numeric: tabular-nums; }
-/* the header's progress yields its room first: the title keeps it, the progress ends in …; the button is
-   its hit box (a finger's on a phone, controls.css), the span inside its look, the title line's height */
-#curplan { flex: 0 1000 auto; min-width: 4em;   /* never gone: a long title at --size 20 squeezed it to 0px */
-  display: flex; align-items: center; margin-left: 8px; padding: 0; border: 0; background: none;
-  color: var(--muted-text); font: var(--fs-meta) var(--ui); font-variant-numeric: tabular-nums; cursor: pointer; }
-#curplant { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 6px; border-radius: var(--r-sm); background: var(--surface-2);
-  background-image: linear-gradient(currentColor, currentColor); background-size: var(--pct, 0%) 2px; background-repeat: no-repeat; background-position: left bottom; }
-#curplan[aria-expanded="true"] { color: var(--t-fg); }
+/* the header's Plan button: a key as ✎ (controls.css), right of it (10 px: the title line's 8 and 2; on a phone 4 px, style.css),
+   its icon and the percent ("100%" fits: one width with a percent, the icon's alone without) */
+#curplan { flex: none; height: var(--icon-key-sm); min-width: var(--icon-key-sm); margin: -3px 0 -3px 2px; padding: 0 5px; display: inline-flex;
+  align-items: center; justify-content: center; gap: 4px; border-radius: var(--key-r); color: var(--icon-ink); background-color: var(--key-fill);
+  background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); font: 600 var(--fs-meta)/1 var(--ui); font-variant-numeric: tabular-nums; }
+:root { --plan-pct-w: 62px; }
+#curplan.pct { width: var(--plan-pct-w); }
+#curplanp:empty { display: none; }
+@media (hover: hover) { #curplan:hover { color: var(--t-fg); background-color: var(--key-fill-hover); } }
+#curplan:active, #curplan[aria-expanded="true"] { color: var(--t-fg); box-shadow: var(--m-well); }
+@media (max-width: 860px), (pointer: coarse) { :root { --plan-pct-w: 70px; } #curplan { font-size: 13px; } }
+
+/* the progress circle, first in the floating column (marks.js placeFab), on its surface (find.css):
+   round, not a blob, its ring filled to the percent (--p: planpane.js), the percent inside */
+#planfab { position: absolute; z-index: 6; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; border-radius: 50%;
+  background: var(--surface-3); color: var(--t-fg); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); box-shadow: var(--shadow-near); }
+#planfab > svg { position: absolute; inset: 1px; width: calc(100% - 2px); height: calc(100% - 2px); }   /* inside the ring: 30.8 of 36, "43%" at 10px fits */
+#planfab circle { fill: none; stroke-width: 2.2; }
+#planfab .ring { stroke: color-mix(in srgb, currentColor 22%, transparent); }
+#planfab .arc { stroke: currentColor; stroke-linecap: round; stroke-dasharray: var(--p, 0) 100; }
+#planfab[data-pct="0"] .arc { stroke: none; }   /* a round cap would draw a dot at 0 */
+#planfabt { position: relative; font: 700 10px/1 var(--ui); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+#planfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
+@media (max-width: 860px), (pointer: coarse) { #planfabt { font-size: 11px; } }
 
 #planpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 70%; overflow: auto; padding: var(--sp-2);
   border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
@@ -42,6 +59,5 @@ body:not([data-shown="term"]) #planpane { display: none !important; }
    not the centered sheet; its finger sizes are in controls.css */
 #planpane[data-sheet] { top: var(--plan-top, 0px) !important; translate: -50% 0 !important; width: 100vw !important;
   max-height: calc(var(--app-h, 100dvh) - var(--plan-top, 0px)) !important; border-radius: 0; }
-#curplan.quiet #curplant { background: none; color: var(--muted-text); }   /* the entry point without a plan: the guidelines' ghost */
 .plempty { white-space: normal; }
 .plfinished { font-weight: 600; }

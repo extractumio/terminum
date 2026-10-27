@@ -15,7 +15,7 @@ export function sessionDrawer({ narrow, store, drawNav, focusInput }) {
     $("navbtn").setAttribute("aria-expanded", "false");
   }
   $("navbtn").onclick = openDrawer;
-  $("current").onclick = () => (narrow.matches ? openDrawer() : $("filter").focus());
+  $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? openDrawer() : $("filter").focus(); };   // its buttons (✎, Plan, Copy) are theirs
 
   $("scrim").onclick = closeDrawer;
   $("drawerclose").onclick = closeDrawer;

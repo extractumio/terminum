@@ -259,6 +259,39 @@ export async function webTouch(browser) {
     early === null && JSON.stringify(held) === JSON.stringify(["Paste", "Undo"]) && JSON.stringify(undone) === JSON.stringify(["\x1f"])
     && await page.evaluate(() => !document.getElementById("rowmenu").open), JSON.stringify({ early, held, undone }));
 
+  // the keyboard up (the input has the keys): held and lifted, the menu opens without taking them, so the
+  // on-screen keyboard stays and the sheet stays where it opened (centered above it); its shade closes it
+  await page.evaluate(() => document.getElementById("kbd").focus());
+  const keptMenu = await hold(700);
+  const keys = await page.evaluate(() => { const m = document.getElementById("rowmenu"), r = m.getBoundingClientRect(), sh = document.getElementById("sheetscrim");
+    return { focus: document.activeElement?.id, modal: m.matches(":modal"), sheet: "sheet" in m.dataset, shade: !!sh && !sh.hidden,
+      inView: r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth, over: !!sh && Number(getComputedStyle(m).zIndex) > Number(getComputedStyle(sh).zIndex) }; });
+  await page.waitForTimeout(300);
+  await page.mouse.click(8, 8);                                   // the shade, at the screen's corner
+  await page.waitForTimeout(150);
+  const shut = await page.evaluate(() => ({ open: document.getElementById("rowmenu").open, focus: document.activeElement?.id }));
+  check(`${at} with the keyboard up a held lift opens the menu over a shade, the input keeping the keys (no modal); a press on the shade closes it, the keys still the input's`,
+    JSON.stringify(keptMenu) === JSON.stringify(["Paste", "Undo"]) && keys.focus === "kbd" && !keys.modal && keys.sheet && keys.shade && keys.inView && keys.over
+    && !shut.open && shut.focus === "kbd", JSON.stringify({ keptMenu, keys, shut }));
+  // kept, Esc closes it (no ESC to the program) and an item leaves the keys with the input
+  await page.waitForTimeout(400);                                 // the closed shade lingers for the press's click (fabpane.js)
+  const escFrom = sent.length, reheld = await hold(700);
+  await page.waitForTimeout(300);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(150);
+  const esc = await page.evaluate(() => ({ open: document.getElementById("rowmenu").open, focus: document.activeElement?.id }));
+  const escSent = sent.slice(escFrom).filter((m) => m.t === "in" && m.data.includes("\x1b")).length;
+  await page.waitForTimeout(400);
+  await hold(700);
+  await page.waitForTimeout(300);
+  await page.click("#rowmenu button[data-action=undo]");
+  await page.waitForTimeout(150);
+  const item = await page.evaluate(() => ({ open: document.getElementById("rowmenu").open, focus: document.activeElement?.id }));
+  check(`${at} kept, Esc closes the menu and sends nothing to the program; Undo runs and the input keeps the keys`,
+    JSON.stringify(reheld) === JSON.stringify(["Paste", "Undo"]) && !esc.open && esc.focus === "kbd" && escSent === 0 && !item.open && item.focus === "kbd" && sent.slice(escFrom).some((m) => m.t === "in" && m.data === "\x1f"),
+    JSON.stringify({ reheld, esc, escSent, item, sent: sent.slice(escFrom).filter((m) => m.t === "in") }));
+  await page.evaluate(() => document.getElementById("kbd").blur());
+
   // a quick swipe is not a slide
   const swipeFrom = sent.length;
   await touch("touchStart", geo.x);

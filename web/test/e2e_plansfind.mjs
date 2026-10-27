@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The Plan pane found before a plan (AC-97) against a fake terminumd, at both sizes: a coding
-// agent's row without a plan shows a quiet "Plan" in the header; "Plan and Notes…" in a row's menu
-// and the header ⋯ menu, for any session; the pane without a plan says what to expect; a plan whose
+// agent's row without a plan shows the header's Plan button and no progress circle; "Plan and Notes…" in a row's menu
+// and the header ⋯ menu, for any session; the pane without a plan says the agent sent none; a plan whose
 // agent exited is marked finished. Alone: node web/test/e2e_all.mjs webPlansFind.
 import { check, runningIn } from "./check.mjs";
 import { drawn, group, item, openPage, pause, SIZES } from "./fake.mjs";
@@ -26,15 +26,14 @@ export async function webPlansFind(browser, name) {
     await pause(page, 200);
 
     const head = await q(page, () => { const b = document.getElementById("curplan"), r = b.getBoundingClientRect();
-      return { hidden: b.hidden, text: document.getElementById("curplant").textContent, quiet: b.classList.contains("quiet"), w: r.width,
-        bg: getComputedStyle(document.getElementById("curplant")).backgroundColor }; });
-    check("AC-97 a coding agent's row without a plan shows a quiet Plan button in the header", !head.hidden && head.text === "Plan" && head.quiet && head.w > 0
-      && /rgba\(0, 0, 0, 0\)|transparent/.test(head.bg), JSON.stringify(head));
+      return { hidden: b.hidden, title: b.title, w: r.width, ring: document.getElementById("planfab").hidden }; });
+    check("AC-97 a coding agent's row without a plan shows the header's Plan button (no plan yet), no progress circle", !head.hidden && head.title === "Plan and Notes: no plan yet" && head.w > 0
+      && head.ring, JSON.stringify(head));
 
     await page.click("#curplan");
     await pause(page, 300);
     const empty = await paneText(page);
-    check("AC-97 the Plan pane without a plan says what to expect, then the notes", /^No plan yet\. A coding agent reports its plan here.*until restarted\.No notes$/.test(empty ?? ""), empty);
+    check("AC-97 the Plan pane without a plan says the agent sent none, then the notes", empty === "No plan: the agent has not sent one for this session.No notes", empty);
     await page.keyboard.press("Escape");
     await pause(page, 200);
 
@@ -49,7 +48,7 @@ export async function webPlansFind(browser, name) {
     const viaRow = await q(page, (b) => ({ asked: null, hidden: document.getElementById("curplan").hidden, shown: document.querySelector(`.item[data-id="${b}"]`)?.getAttribute("aria-current") }), B);
     const asked = f.sent.filter((m) => m.t === "plan").map((m) => m.key);
     check("AC-97 Plan and Notes… shows the row's session and opens its Plan pane (no header button without an agent)",
-      /^No plan yet/.test(await paneText(page) ?? "") && asked.at(-1) === B && viaRow.hidden, JSON.stringify({ ...viaRow, asked }));
+      /^No plan: /.test(await paneText(page) ?? "") && asked.at(-1) === B && viaRow.hidden, JSON.stringify({ ...viaRow, asked }));
     const inView = await q(page, () => { const r = document.getElementById("planpane").getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0 && r.width > 200; });
     check("AC-97 the pane opened from a menu stands in the window", inView, String(inView));
     await page.keyboard.press("Escape");
