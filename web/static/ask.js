@@ -3,10 +3,10 @@
 // field for the question; Add to Chat asks terminumd for the pane's next quote number (it
 // counts up across devices: `askno`) and puts the quote, as a Markdown quote, and the question at
 // the input's cursor, a blank line after each, without Enter, the view left where it was. In a
-// coding agent's box it is typed (its new lines as Ctrl+J), so the agent shows it whole rather than
-// folded into "[Pasted text]", unless it would fill more than half the pane's rows: an agent's box
-// taller than the pane breaks its redraw (Claude Code draws over its answer), so a long quote is
-// pasted and folded. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
+// coding agent's box it is typed (its new lines as Ctrl+J; terminumd types a long one in parts,
+// keys.rs), so the agent shows it whole rather than folded into "[Pasted text]", unless it would
+// fill more than half the pane's rows: an agent's box taller than the pane breaks its redraw
+// (Claude Code draws over its answer), so a long quote is pasted and folded. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
 import { placeModal } from "./fabpane.js";

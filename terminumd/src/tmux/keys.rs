@@ -24,16 +24,17 @@ pub enum Part {
 }
 
 const MODS: [&str; 7] = ["S-", "M-", "M-S-", "C-", "C-S-", "C-M-", "C-M-S-"];
-/// Keys in one `send-keys` at most. The terminal hands a program its input in parts of its
-/// buffer (1 KB on macOS), which may end inside a key's bytes; a program busy drawing then
-/// takes a lone ESC for Escape and the rest for text ("[D" in a coding agent's input), so a
-/// longer run goes in parts, each once the program read the last (typing.rs).
-pub const KEY_PART: usize = 100;
-
-/// Keys (not text) in `parts`.
-pub fn key_count(parts: &[Part]) -> usize {
-    parts.iter().map(|p| if let Part::Keys(k) = p { k.len() } else { 0 }).sum()
-}
+/// Bytes of input one part carries at most; more goes in parts, each once the program read the
+/// last (typing.rs). The terminal hands a program its input in parts of its buffer (1 KB on
+/// macOS), which may end inside a key's bytes: a program busy drawing then takes a lone ESC for
+/// Escape and the rest for text ("[D" in a coding agent's input). And Claude Code takes more
+/// than 800 characters read at once for a paste, folded ("[Pasted text #1 +16 lines]"): a
+/// Linux terminal hands on 4 KB at once.
+pub const PART_BYTES: usize = 512;
+/// A key's bytes as a part counts them: its longest encoding (CSI u, `ESC [ 106 ; 5 u`).
+const KEY_BYTES: usize = 8;
+/// Keys in one `send-keys` at most.
+pub const KEY_PART: usize = PART_BYTES / KEY_BYTES;
 
 /// The bracketed-paste markers the page wraps a paste in when the menu's switch is on.
 pub const PASTE_START: &str = "\x1b[200~";
@@ -196,18 +197,33 @@ pub fn needs_extended(parts: &[Part]) -> bool {
     parts.iter().any(|p| matches!(p, Part::Keys(k) if k.iter().any(|n| csi_u(n).is_some())))
 }
 
-/// The `send-keys` commands for `parts`, in order, for pane `target` (`%3`). A server with
-/// `extended-keys off` (a host's own tmux by default) would send S-Enter as Enter, so there
-/// Shift+Enter and Ctrl+Enter go as their CSI u bytes (`-H`), as iTerm2 sends them (AS-10).
-pub fn commands(target: &str, parts: &[Part], extended: bool) -> Vec<String> {
+/// The `send-keys` commands for `parts`, in order, for pane `target` (`%3`), in parts of at most
+/// PART_BYTES of input, each part sent once the program read the last (typing.rs); one part
+/// when it all fits. A server with `extended-keys off` (a host's own tmux by default) would
+/// send S-Enter as Enter, so there Shift+Enter and Ctrl+Enter go as their CSI u bytes (`-H`),
+/// as iTerm2 sends them (AS-10).
+pub fn in_parts(target: &str, parts: &[Part], extended: bool) -> Vec<Vec<String>> {
+    let mut out: Vec<Vec<String>> = Vec::new();
+    let mut size = 0;
+    for (cmd, bytes) in weighed(target, parts, extended) {
+        match out.last_mut() {
+            Some(part) if size + bytes <= PART_BYTES => part.push(cmd),
+            _ => { out.push(vec![cmd]); size = 0; }
+        }
+        size += bytes;
+    }
+    out
+}
+
+/// in_parts' commands, each with the bytes of input it carries (a key as KEY_BYTES), none over PART_BYTES.
+fn weighed(target: &str, parts: &[Part], extended: bool) -> Vec<(String, usize)> {
     let t = word(target);
-    let names = |k: &[&String]| format!("send-keys -t {t} {}", k.iter().map(|n| word(n)).collect::<Vec<_>>().join(" "));
+    let names = |k: &[&String]| (format!("send-keys -t {t} {}", k.iter().map(|n| word(n)).collect::<Vec<_>>().join(" ")), k.len() * KEY_BYTES);
     let mut out = Vec::new();
     for p in parts {
         match p {
-            Part::Text(s) if s.is_empty() => {}
             // "--": text starting with "-" is not read as flags (tmux 3.6: "unknown flag")
-            Part::Text(s) => out.push(format!("send-keys -t {t} -l -- {}", quote(s))),
+            Part::Text(s) => out.extend(pieces(s, PART_BYTES).map(|s| (format!("send-keys -t {t} -l -- {}", quote(s)), s.len()))),
             Part::Keys(k) => {
                 let mut run: Vec<&String> = Vec::new();
                 for n in k {
@@ -217,7 +233,7 @@ pub fn commands(target: &str, parts: &[Part], extended: bool) -> Vec<String> {
                                 out.push(names(&run));
                                 run.clear();
                             }
-                            out.push(format!("send-keys -t {t} -H {}", bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")));
+                            out.push((format!("send-keys -t {t} -H {}", bytes.iter().map(|b| format!("{b:02x}")).collect::<Vec<_>>().join(" ")), bytes.len()));
                         }
                         None => run.push(n),
                     }
@@ -233,6 +249,23 @@ pub fn commands(target: &str, parts: &[Part], extended: bool) -> Vec<String> {
         }
     }
     out
+}
+
+/// `s` cut at character boundaries into pieces of at most `max` bytes; none of an empty `s`.
+pub fn pieces(s: &str, max: usize) -> impl Iterator<Item = &str> {
+    let mut rest = s;
+    std::iter::from_fn(move || {
+        if rest.is_empty() {
+            return None;
+        }
+        let mut end = rest.len().min(max);
+        while !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        let (piece, after) = rest.split_at(end);
+        rest = after;
+        Some(piece)
+    })
 }
 
 /// Whether tmux knows `name` as a key (hot keys in `hotkeys.json`, AC-18): `C-`, `M-`, `S-`

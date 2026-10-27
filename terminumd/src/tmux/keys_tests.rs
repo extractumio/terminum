@@ -9,6 +9,11 @@ fn keys(names: &[&str]) -> Part {
     Part::Keys(names.iter().map(|s| s.to_string()).collect())
 }
 
+/// The commands of every part, in order.
+fn commands(target: &str, parts: &[Part], extended: bool) -> Vec<String> {
+    in_parts(target, parts, extended).concat()
+}
+
 fn text(s: &str) -> Part {
     Part::Text(s.to_string())
 }
@@ -186,10 +191,33 @@ fn shift_enter_is_csi_u_only_for_programs_that_ask() {
 #[test]
 fn a_long_run_of_keys_goes_in_parts_of_key_part() {
     let left = parts(&"\x1b[D".repeat(250));
-    assert_eq!(key_count(&left), 250);
     let cmds = commands("%3", &left, true);
     let sizes: Vec<usize> = cmds.iter().map(|c| c.matches(" Left").count()).collect();
-    assert_eq!(sizes, [KEY_PART, KEY_PART, 50], "each part's bytes fit the terminal's buffer with room");
-    assert!(KEY_PART * "\x1b[1;2D".len() < 1022, "even with a modifier a part is under the 1 KB a terminal hands on at once");
+    assert_eq!(sizes, [KEY_PART, KEY_PART, KEY_PART, 250 - 3 * KEY_PART], "each part's bytes fit the terminal's buffer with room");
+    assert!(KEY_PART * "\x1b[106;5u".len() <= PART_BYTES && PART_BYTES < 800, "even as CSI u a part is under the 1 KB a terminal hands on at once and Claude Code's 800 characters");
+    assert_eq!(in_parts("%3", &left, true).len(), 4, "a part a round trip, each once the program read the last");
     assert_eq!(commands("%3", &parts("\x1b[D\x1b[D"), true), ["send-keys -t %3 Left Left"], "a short run stays one command");
+}
+
+#[test]
+fn long_typed_text_goes_in_parts_of_part_bytes() {
+    // a quote Ask types: lines with ⌃J between, 2.3 KB, Cyrillic (2 bytes a character)
+    let quote = (0..30).map(|i| format!("> строка {i:02} цитаты из ответа агента")).collect::<Vec<_>>().join("\n");
+    let p = parts(&quote);
+    let split = in_parts("%3", &p, true);
+    assert!(split.len() >= 5, "{} parts", split.len());
+    for part in &split {
+        let text: usize = part.iter().filter_map(|c| c.strip_prefix("send-keys -t %3 -l -- ")).map(|q| q.len() - 2).sum();
+        let keys: usize = part.iter().filter(|c| !c.contains(" -l ")).map(|c| c.split(' ').count() - 3).sum();
+        assert!(text + keys * 8 <= PART_BYTES, "{part:?}");
+    }
+    // one line longer than a part: cut at characters, all of it sent
+    let long = "ж".repeat(700);
+    let cmds = commands("%3", &parts(&long), true);
+    assert_eq!(cmds.len(), 3);
+    let back: String = cmds.iter().map(|c| c.trim_start_matches("send-keys -t %3 -l -- ").trim_matches('\'')).collect();
+    assert_eq!(back, long);
+    assert_eq!(in_parts("%3", &parts("ls -la\r"), true), [["send-keys -t %3 -l -- 'ls -la'", "send-keys -t %3 Enter"]], "what fits is one part");
+    assert_eq!(pieces("ab€cd", 3).collect::<Vec<_>>(), ["ab", "€", "cd"], "never inside a character");
+    assert_eq!(pieces("", 3).count(), 0);
 }

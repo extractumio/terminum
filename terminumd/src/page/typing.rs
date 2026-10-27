@@ -169,22 +169,18 @@ async fn send(app: &Shared, client: &crate::tmux::control::Control, server: &Ser
         if !before.is_empty() {
             let parts = keys::parts(before);
             let extended = !keys::needs_extended(&parts) || server.extended_keys(client).await;
-            let cmds = keys::commands(pane, &parts, extended);
-            if keys::key_count(&parts) <= keys::KEY_PART {
-                for a in client.run_all(cmds).await {
+            // more than a part (moves by lines, held; a long quote typed): a part once the pane
+            // printed since the last (the program read it), or PART_WAIT (keys.rs PART_BYTES)
+            let cmds = keys::in_parts(pane, &parts, extended);
+            let n = cmds.len();
+            for (i, part) in cmds.into_iter().enumerate() {
+                let seen = server.printed(pane);
+                for a in client.run_all(part).await {
                     a.map_err(|e| format!("tmux did not take the keys: {e}"))?;
                 }
-            } else {
-                // a long run (moves by lines, held): a part once the pane printed since the last
-                // (the program read it), or PART_WAIT: never more than the terminal's buffer
-                let n = cmds.len();
-                for (i, cmd) in cmds.into_iter().enumerate() {
-                    let seen = server.printed(pane);
-                    client.run(cmd).await.map_err(|e| format!("tmux did not take the keys: {e}"))?;
-                    let until = tokio::time::Instant::now() + PART_WAIT;
-                    while i + 1 < n && server.printed(pane) == seen && tokio::time::Instant::now() < until {
-                        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-                    }
+                let until = tokio::time::Instant::now() + PART_WAIT;
+                while i + 1 < n && server.printed(pane) == seen && tokio::time::Instant::now() < until {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
                 }
             }
         }
@@ -217,7 +213,7 @@ async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, serv
         loaded.map_err(|e| format!("tmux did not take the paste: {e}"))?;
     } else {
         let mut first = true;
-        for part in chunks(text, BUFFER_PART) {
+        for part in keys::pieces(text, BUFFER_PART) {
             let append = if first { "" } else { "-a " };
             first = false;
             // `--`: a part that starts with "-" is text, not a flag (tmux stops at the first word)
@@ -226,22 +222,6 @@ async fn paste_buffer(app: &Shared, client: &crate::tmux::control::Control, serv
     }
     client.run(format!("paste-buffer -p -d -b {name} -t {pane}")).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
     Ok(())
-}
-
-/// `s` cut at character boundaries into parts of at most `max` bytes.
-fn chunks(s: &str, max: usize) -> Vec<&str> {
-    let mut out = Vec::new();
-    let mut rest = s;
-    while rest.len() > max {
-        let mut at = max;
-        while !rest.is_char_boundary(at) {
-            at -= 1;
-        }
-        out.push(&rest[..at]);
-        rest = &rest[at..];
-    }
-    out.push(rest);
-    out
 }
 
 /// Text in tmux's double quotes, where `\n`, `\t`, `\r` escape and `$` would expand.
@@ -282,14 +262,6 @@ mod tests {
         }).collect();
         assert_eq!(got, ["keys:ab", "mouse:\x1b[<64;1;1M\x1b[<64;1;1M", "keys:c"]);
         assert_eq!(mouse_line("%3", b"\x1b["), "send-keys -t %3 -H 1b 5b");
-    }
-
-    #[test]
-    fn parts_never_split_a_character() {
-        let s = "ab€cd";
-        let parts = chunks(s, 3);
-        assert_eq!(parts.concat(), s);
-        assert!(parts.iter().all(|p| p.len() <= 3));
     }
 
     #[test]

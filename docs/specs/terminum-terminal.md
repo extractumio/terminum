@@ -373,7 +373,7 @@ Scenario: AC-37 happy path — Ask about a selection
     "> Quote #0007\n> <the selected text's first line>\n> <its next line>\n\n<the question>\n\n"
   And the selected text's blank lines, line ends' spaces and control characters are left out and its tabs are spaces (each would be a key typed); a line ending in an @-word ends in a space (the agent's file list it opened closes before the new line)
   And the view stays where it was (typing elsewhere brings it to the cursor): the user reads on from the text asked about
-  And in a coding agent's box it is typed, its new lines as Ctrl+J (a new line there), so the agent shows it whole: Claude Code folds a paste into "[Pasted text #1 +5 lines]"
+  And in a coding agent's box it is typed, its new lines as Ctrl+J (a new line there), so the agent shows it whole: Claude Code folds a paste into "[Pasted text #1 +5 lines]", and so also more than 800 characters it reads at once, so terminumd types a long quote in parts (terminum.md AC-03)
   But when it would fill more than half the pane's rows it is pasted there (folded) and the blank line typed after it: a coding agent's box taller than the pane breaks its redraw, which then writes over the answer
   And in a shell, where Ctrl+J would run the line, it is pasted with the blank line inside the paste
   When the shown pane runs a coding agent and the user presses Send to Agent (left of Add to Chat) instead
