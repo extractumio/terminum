@@ -45,14 +45,17 @@ export function stateIcon(state, size = 16) {
 let hues = new Map();                  // each folder's hue, for the list as last drawn (AC-01)
 // a coding agent's own mark (their owners' trademarks, outside terminum's licenses: NOTICE)
 const MARKS = { claude: ["agents/claude.svg", "Claude Code"], codex: ["agents/codex.svg", "Codex"] };
+// a program shown by its mark alone, by its name as tmux has it (no coding agent's input box: its own full screen)
+const PROGRAM_MARKS = { opencode: ["agents/opencode.svg", "OpenCode"] };
+const markOf = (item) => MARKS[item.agent] ?? PROGRAM_MARKS[[...(item.sub ?? []), item.title].find((p) => Object.hasOwn(PROGRAM_MARKS, p))];
 
 /** A coding agent's name ("Claude Code"), undefined for another program. */
 export const agentName = (agent) => MARKS[agent]?.[1];
 
-/** What runs in a pane, as an icon: a coding agent's mark, else the terminal's (also when a mark
+/** What runs in a pane, as an icon: a coding agent's or OpenCode's mark, else the terminal's (also when a mark
  *  file was left out of the build). */
 export function agentMark(item, size = 14) {
-  const [src, name] = MARKS[item.agent] ?? [];
+  const [src, name] = markOf(item) ?? [];
   const wrap = el("span", "agmark");
   wrap.title = name ?? "Terminal";
   const terminal = () => { wrap.classList.add("term"); return icon("terminal", Math.round(size * 0.72)); };   // white on a dark gray tile (style.css)
@@ -104,7 +107,7 @@ function rowLine(item) {
   return s;
 }
 
-const AGENT_WORDS = { claude: "ag-claude", codex: "ag-codex" };   // the program's own name, in its color
+const AGENT_WORDS = { claude: "ag-claude", codex: "ag-codex", opencode: "ag-opencode" };   // the program's own name, in its color
 
 /** "a · b · c" as spans: the last part (a title, else the folder) shortens first, a program's
  *  name (a word right after the host) never. */

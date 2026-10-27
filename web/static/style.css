@@ -104,6 +104,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .host { color: var(--remote); font-weight: 500; }
 .s .ag-claude { color: color-mix(in srgb, #f0b48a 60%, var(--t-fg)); }     /* pale orange, readable on a light theme too */
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
+.s .ag-opencode { color: color-mix(in srgb, #a9c4ff 60%, var(--t-fg)); }   /* pale blue */
 .item .st { display: grid; place-items: center; padding-top: 2px; }
 .item .st .subs { font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* subagents running (hooks) */
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */

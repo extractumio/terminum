@@ -2,12 +2,13 @@ terminum: third-party marks, outside its licenses
 
   web/static/agents/claude.svg   the Claude Code mark, a trademark of Anthropic, PBC
   web/static/agents/codex.svg    the Codex mark, a trademark of OpenAI
+  web/static/agents/opencode.svg the OpenCode mark, of the OpenCode project's owners
 
-These two files are not licensed under the GNU AGPL-3.0 (LICENSE) nor under terminum's
+These files are not licensed under the GNU AGPL-3.0 (LICENSE) nor under terminum's
 commercial license (LICENSE-COMMERCIAL.md): every right in them stays with their owners.
 terminum shows them only to say which coding agent runs in a terminal; it is not affiliated
-with, sponsored or endorsed by Anthropic or OpenAI. To ship terminum without them, delete the
-two files: the page then shows its terminal icon in their place.
+with, sponsored or endorsed by Anthropic, OpenAI or OpenCode's owners. To ship terminum without
+them, delete the files: the page then shows its terminal icon in their place.
 
 terminum: fonts it ships
 

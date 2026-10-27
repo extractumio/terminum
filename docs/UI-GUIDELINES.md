@@ -143,9 +143,9 @@ changed (they become 4/8 and 8/12). `--gutter`: 12px wide, 16px on a touch scree
 ### 2.5 Icons
 
 - Lucide only, with one exception: a coding agent's own mark (`web/static/agents/claude.svg`,
-  `codex.svg`, as `<img>` through `agentMark()` in nav.js; their owners' trademarks, outside the
-  licenses: `NOTICE`), beside a row's title and the header's; a plain pane shows Lucide's `terminal`.
-  No other brand mark is added.
+  `codex.svg`, `opencode.svg`, as `<img>` through `agentMark()` in nav.js; their owners' trademarks,
+  outside the licenses: `NOTICE`), beside a row's title and the header's; a plain pane shows
+  Lucide's `terminal`. No other brand mark is added without the owner's request.
 - Lucide glyphs: inline `<svg class="lu" viewBox="0 0 24 24" aria-hidden="true">` in index.html, or
   `icon(name, size)` from `web/static/icons.js` (Panel: `ui/src/icons.ts`, `ui/src/icons/`). Stroke 2,
   round caps and joins, `currentColor`. Add a new glyph to `ICONS` from lucide-static, never draw one.

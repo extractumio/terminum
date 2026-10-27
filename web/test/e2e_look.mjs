@@ -11,7 +11,8 @@ const HOST = group("devbox", [item("tmux:devbox:default:%1", "build", { host: "d
   { host: "devbox", session: "terminum", state: "attached", others: 2, server: "devbox:default", attach: "ssh -t -- devbox 'tmux attach -t =terminum'" });
 const ASKING = group("asks", [item("tmux:local:terminum:%7", "claude", { agent: "claude", shell: false, state: "waiting" })]);
 const AGENTS = group("agents", [item("tmux:local:terminum:%8", "Claude Code", { agent: "claude", shell: false }),
-  item("tmux:local:terminum:%9", "Codex", { agent: "codex", shell: false, index: "2" })]);
+  item("tmux:local:terminum:%9", "Codex", { agent: "codex", shell: false, index: "2" }),
+  item("tmux:local:terminum:%10", "OpenCode", { sub: ["opencode", "~/p"], shell: false, index: "3" }), item("tmux:local:terminum:%11", "OpenCode", { index: "4" })]);
 
 /** Every visible button under `sel` smaller than `least` px tall: "id-or-class:height" (a closed
  *  dialog in Safari stays laid out, out of sight: motion.css). */
@@ -40,8 +41,9 @@ export async function webLook(browser, name) {
       return [b.dataset.id.split(":").pop(), img ? `${img.getAttribute("src")}:${img.naturalWidth > 0}` : m?.querySelector("svg.lu") ? "terminal" : "-"];
     })));
     const header = await page.evaluate(() => document.querySelector("#curagent svg.lu, #curagent img")?.tagName);
-    check("look: a row shows Claude Code's or Codex's mark, else the terminal icon; the header shows the shown pane's",
-      marks["%8"] === "agents/claude.svg:true" && marks["%9"] === "agents/codex.svg:true" && marks["%1"] === "terminal" && !!header, JSON.stringify({ marks, header }));
+    check("look: a row shows Claude Code's, Codex's or OpenCode's mark (by its program, not a shell's title), else the terminal icon; the header shows the shown pane's",
+      marks["%8"] === "agents/claude.svg:true" && marks["%9"] === "agents/codex.svg:true" && marks["%10"] === "agents/opencode.svg:true"
+        && marks["%11"] === "terminal" && marks["%1"] === "terminal" && !!header, JSON.stringify({ marks, header }));
 
     check("look: every dialog's primary button is filled apart from its Cancel", dialogs.length >= 3 && dialogs.every(([, p, c]) => c && p !== c),
       JSON.stringify(dialogs));
