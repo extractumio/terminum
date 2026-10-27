@@ -220,3 +220,41 @@ fn a_wrapped_row_keeps_its_trailing_space() {
     assert_eq!(encode(&rows[0], None), json!({"r": [["abcd ", null, null, 0]], "e": false}));
     assert_eq!(encode(&rows[1], None), json!({"r": [["efgh", null, null, 0]], "e": true}));
 }
+
+/// AC-35, AS-03: an OSC 8 hyperlink as tmux 3.6a's `capture-pane -e` gives it (`id=` params, ST
+/// ends, an empty URI closes it) keeps its address with its run, also across a wrapped row;
+/// one too long or with a control character, or cut by the line's end, is plain text.
+#[test]
+fn an_osc8_link_keeps_its_address_with_its_run() {
+    let mr = "https://git.example/a/-/merge_requests/318";
+    let text = format!("see \x1b]8;id=a1;{mr}\x1b\\MR !318\x1b]8;;\x1b\\ end\n");
+    assert_eq!(enc(&text, 40), vec![json!({"r": [["see ", null, null, 0], ["MR !318", null, null, 0, 0], [" end", null, null, 0]], "e": true, "h": [mr]})]);
+    let wrapped = format!("\x1b]8;;{mr}\x07abcdefgh\x1b]8;;\x07!\n");
+    assert_eq!(enc(&wrapped, 5), vec![
+        json!({"r": [["abcde", null, null, 0, 0]], "e": false, "h": [mr]}),
+        json!({"r": [["fgh", null, null, 0, 0], ["!", null, null, 0]], "e": true, "h": [mr]}),
+    ]);
+    let long = format!("\x1b]8;;https://x.example/{}\x1b\\a\x1b]8;;\x1b\\\n", "y".repeat(2048));
+    assert_eq!(enc(&long, 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
+    assert_eq!(enc("\x1b]8;;https://x.example/\x01\x1b\\a\n", 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
+    assert_eq!(enc("a\x1b]8;;https://x.example/cut\n", 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
+    assert_eq!(enc("\x1b]8;;https://x.example/\u{202E}gpj\x1b\\a\n", 10), vec![json!({"r": [["a", null, null, 0]], "e": true})]);
+}
+
+/// AC-35: one address under many colors is sent once in its row ("h"); a second address gets its own index.
+#[test]
+fn a_links_address_is_sent_once_per_row() {
+    let a = format!("https://x.example/{}", "y".repeat(2000));
+    let text = format!("\x1b]8;;{a}\x1b\\\x1b[31mr\x1b[32mg\x1b[34mb\x1b]8;;https://z.example/\x1b\\z\x1b]8;;\x1b\\\n");
+    let row = &enc(&text, 10)[0];
+    assert_eq!(row["h"], json!([a, "https://z.example/"]));
+    assert_eq!(row["r"], json!([["r", 1, null, 0, 0], ["g", 2, null, 0, 0], ["b", 4, null, 0, 0], ["z", 4, null, 0, 1]]));
+    assert_eq!(row.to_string().matches(&a).count(), 1);
+}
+
+/// AC-35: a link's blank cells are kept at a hard row's end (they are the link's own).
+#[test]
+fn a_links_trailing_blank_is_kept() {
+    assert_eq!(enc("\x1b]8;;https://x.example/\x1b\\a \x1b]8;;\x1b\\\n", 10),
+        vec![json!({"r": [["a ", null, null, 0, 0]], "e": true, "h": ["https://x.example/"]})]);
+}

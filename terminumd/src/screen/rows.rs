@@ -11,6 +11,7 @@
 
 use super::sgr::{self, Color, Style};
 use serde_json::Value;
+use std::sync::Arc;
 use unicode_width::UnicodeWidthChar;
 
 /// The cursor flag of a run.
@@ -31,6 +32,8 @@ pub struct Cell {
     /// 1, 2 for the left half of a wide character, 0 for its right half.
     pub width: u8,
     pub style: Style,
+    /// The OSC 8 hyperlink's address the cell is in (AC-35).
+    pub link: Option<Arc<str>>,
 }
 
 impl Cell {
@@ -62,10 +65,11 @@ pub struct Row {
 pub fn capture_rows(text: &str, width: usize) -> Vec<Row> {
     let width = width.max(1);
     let mut style = Style::default();
+    let mut link = None;
     let mut rows = Vec::new();
     let mut cells = Vec::with_capacity(width);
     for line in sgr::lines(text) {
-        line_cells(line, &mut style, &mut cells);
+        line_cells(line, &mut style, &mut link, &mut cells);
         cut(&mut cells, width, &mut rows);
     }
     rows
@@ -82,9 +86,9 @@ pub fn screen_rows(text: &str, width: usize, height: usize) -> Vec<Row> {
 
 /// The cells of one line, one per character with its zero-width followers, wide ones not
 /// yet split into halves.
-fn line_cells(line: &str, style: &mut Style, out: &mut Vec<Cell>) {
+fn line_cells(line: &str, style: &mut Style, link: &mut Option<Arc<str>>, out: &mut Vec<Cell>) {
     let mut join = false; // the previous character was a ZWJ: this one belongs to its cell
-    sgr::parse_line(line, style, |c, st| {
+    sgr::parse_line(line, style, link, |c, st, ln| {
         let c = if c.is_control() { ' ' } else { c };
         let w = c.width().unwrap_or(1).min(2) as u8;
         if let Some(last) = out.last_mut().filter(|_| join || w == 0) {
@@ -96,7 +100,7 @@ fn line_cells(line: &str, style: &mut Style, out: &mut Vec<Cell>) {
             return;
         }
         join = c == ZWJ;
-        out.push(Cell { ch: c, extra: String::new(), width: w.max(1), style: st });
+        out.push(Cell { ch: c, extra: String::new(), width: w.max(1), style: st, link: ln.cloned() });
     });
 }
 
@@ -112,10 +116,10 @@ fn cut(cells: &mut Vec<Cell>, width: usize, rows: &mut Vec<Row>) {
             col = 0;
         }
         col += w;
-        let style = cell.style;
+        let (style, link) = (cell.style, cell.link.clone());
         row.push(cell);
         if w == 2 {
-            row.push(Cell { ch: ' ', extra: String::new(), width: 0, style });
+            row.push(Cell { ch: ' ', extra: String::new(), width: 0, style, link });
         }
     }
     rows.push(Row { cells: row, hard: true });
@@ -139,12 +143,16 @@ fn cells_value(cells: &[Cell]) -> Value {
     }
 }
 
-fn run(text: Value, fg: Value, bg: Value, flags: u16) -> Value {
-    Value::Array(vec![text, fg, bg, Value::from(flags)])
+fn run(text: Value, fg: Value, bg: Value, flags: u16, link: Option<usize>) -> Value {
+    let mut r = vec![text, fg, bg, Value::from(flags)];
+    r.extend(link.map(Value::from));
+    Value::Array(r)
 }
 
-/// A row as `{"r": runs, "e": hard_eol}`; a run is `[text-or-cells, fg, bg, flags]`. Runs
-/// group cells of equal style; a hard row's trailing blank cells are dropped unless they draw
+/// A row as `{"r": runs, "e": hard_eol}`; a run is `[text-or-cells, fg, bg, flags]`. When cells
+/// are an OSC 8 hyperlink's (AC-35) the row also has `"h"`, its addresses each once, and such a run
+/// a fifth element, the index of its address there (a long address over many colors is sent once).
+/// Runs group cells of equal style and link; a hard row's trailing blank cells are dropped unless they draw
 /// something (a row tmux wrapped keeps them: they are the line's own spaces, which the page needs
 /// when it joins the rows again, AC-04); the cursor cell gets its own run with the cursor flag,
 /// padded out past the text.
@@ -152,17 +160,18 @@ pub fn encode(row: &Row, cursor: Option<usize>) -> Value {
     let cells = &row.cells;
     let key = |i: usize| {
         let st = cells[i].style;
-        (st.fg, st.bg, st.flags | if cursor == Some(i) { CURSOR } else { 0 })
+        (st.fg, st.bg, st.flags | if cursor == Some(i) { CURSOR } else { 0 }, cells[i].link.as_ref())
     };
     let mut n = cells.len();
     while n > 0 && row.hard {
-        let (_, bg, flags) = key(n - 1);
-        if !(cells[n - 1].is_plain_blank() && bg == Color::Default && flags & VISIBLE_WHEN_BLANK == 0) {
+        let (_, bg, flags, link) = key(n - 1);
+        if !(cells[n - 1].is_plain_blank() && bg == Color::Default && flags & VISIBLE_WHEN_BLANK == 0 && link.is_none()) {
             break;
         }
         n -= 1;
     }
     let mut runs = Vec::new();
+    let mut links: Vec<&Arc<str>> = Vec::new();
     let mut i = 0;
     while i < n {
         let k = key(i);
@@ -170,18 +179,27 @@ pub fn encode(row: &Row, cursor: Option<usize>) -> Value {
         while j < n && key(j) == k {
             j += 1;
         }
-        runs.push(run(cells_value(&cells[i..j]), color(k.0), color(k.1), k.2));
+        let link = k.3.map(|l| {
+            links.iter().position(|&h| h == l).unwrap_or_else(|| {
+                links.push(l);
+                links.len() - 1
+            })
+        });
+        runs.push(run(cells_value(&cells[i..j]), color(k.0), color(k.1), k.2, link));
         i = j;
     }
     if let Some(x) = cursor.filter(|&x| x >= cells.len()) {
         if x > n {
-            runs.push(run(Value::String(" ".repeat(x - n)), Value::Null, Value::Null, 0));
+            runs.push(run(Value::String(" ".repeat(x - n)), Value::Null, Value::Null, 0, None));
         }
-        runs.push(run(Value::String(" ".into()), Value::Null, Value::Null, CURSOR));
+        runs.push(run(Value::String(" ".into()), Value::Null, Value::Null, CURSOR, None));
     }
-    let mut line = serde_json::Map::with_capacity(2);
+    let mut line = serde_json::Map::with_capacity(3);
     line.insert("r".into(), Value::Array(runs));
     line.insert("e".into(), Value::Bool(row.hard));
+    if !links.is_empty() {
+        line.insert("h".into(), links.iter().map(|l| Value::String(l.to_string())).collect());
+    }
     Value::Object(line)
 }
 

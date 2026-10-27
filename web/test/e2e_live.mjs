@@ -19,6 +19,7 @@ import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
 import { liveFolds } from "./e2e_livefolds.mjs";
+import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
 import { livePlans } from "./e2e_liveplans.mjs";
@@ -137,6 +138,7 @@ async function wide(browser, name) {
   await liveView(page, { work: WORK });
   if (await page.isVisible("#fileclose")) await page.click("#fileclose");   // liveView may have hidden it (Esc)
   await liveFolds(page, { tmux, work: WORK });
+  await liveLinks(page, { work: WORK });
   await liveLimit(page, { tmux, work: WORK });
   await liveKeys(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });

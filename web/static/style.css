@@ -168,6 +168,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #term.onlink { cursor: pointer; }
 /* addresses and paths that open (linkmarks.js) */
 ::highlight(lnk) { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); }
+#term .ln .olink { text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); }   /* an OSC 8 link's text (render.js) */
 #term.dropping { outline: 2px dashed var(--accent); outline-offset: -6px; }
 #renamebox { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; }
 #renamebox input { flex: 1; min-width: 0; height: 34px; padding: 0 10px; border-radius: var(--r-md); border: 0;

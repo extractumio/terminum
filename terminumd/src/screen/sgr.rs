@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The SGR parser of tmux's captures (AC-02, AS-03): `capture-pane -p -e -J` text holds the
-//! pane's characters and `CSI … m` sequences only; every other escape sequence (another CSI,
-//! an OSC such as an `OSC 8` hyperlink, a DCS, a lone ESC) is skipped and draws nothing.
+//! pane's characters, `CSI … m` sequences and `OSC 8` hyperlinks (their address is kept, AC-35);
+//! every other escape sequence (another CSI, OSC, a DCS, a lone ESC) is skipped and draws nothing.
 //!
 //! tmux keeps the SGR state running across the lines of one capture (it emits no reset at a
-//! line end with `-J`), so a [`Style`] is carried from one line to the next by the caller.
+//! line end with `-J`), so a [`Style`] and the open link are carried from one line to the next by
+//! the caller.
+
+use std::sync::Arc;
+
+/// The longest hyperlink address kept; a longer one draws as plain text.
+const LINK_MAX: usize = 2048;
 
 /// A cell color: the terminal's default, a 256-palette index, or RGB.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -155,10 +161,10 @@ fn simple(style: &mut Style, code: u32) {
     }
 }
 
-/// Walks one line (no `\n`), applying SGR to `style` and calling `emit` with every other
-/// character (control characters included: the caller decides how they draw) and the style
-/// it has. An escape sequence cut by the line's end is dropped.
-pub fn parse_line(line: &str, style: &mut Style, mut emit: impl FnMut(char, Style)) {
+/// Walks one line (no `\n`), applying SGR to `style` and OSC 8 to `link` and calling `emit` with
+/// every other character (control characters included: the caller decides how they draw), the
+/// style it has and the link it is in. An escape sequence cut by the line's end is dropped.
+pub fn parse_line(line: &str, style: &mut Style, link: &mut Option<Arc<str>>, mut emit: impl FnMut(char, Style, Option<&Arc<str>>)) {
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < line.len() {
@@ -166,12 +172,12 @@ pub fn parse_line(line: &str, style: &mut Style, mut emit: impl FnMut(char, Styl
         let next = memchr_esc(&bytes[i..]).map_or(line.len(), |k| i + k);
         if next > i {
             for c in line[i..next].chars() {
-                emit(c, *style);
+                emit(c, *style, link.as_ref());
             }
             i = next;
             continue;
         }
-        i = skip_escape(line, i + 1, style);
+        i = skip_escape(line, i + 1, style, link);
     }
 }
 
@@ -179,9 +185,9 @@ fn memchr_esc(b: &[u8]) -> Option<usize> {
     b.iter().position(|&x| x == 0x1b)
 }
 
-/// After an ESC at `i - 1`: consumes the sequence (applying it when it is SGR) and returns
-/// the index after it.
-fn skip_escape(line: &str, i: usize, style: &mut Style) -> usize {
+/// After an ESC at `i - 1`: consumes the sequence (applying it when it is SGR or OSC 8) and
+/// returns the index after it.
+fn skip_escape(line: &str, i: usize, style: &mut Style, link: &mut Option<Arc<str>>) -> usize {
     let b = line.as_bytes();
     match b.get(i) {
         Some(b'[') => {
@@ -213,11 +219,20 @@ fn skip_escape(line: &str, i: usize, style: &mut Style) -> usize {
         Some(b']' | b'P' | b'X' | b'^' | b'_') => {
             let mut j = i + 1;
             while j < b.len() {
-                match b[j] {
-                    0x07 => return j + 1,
-                    0x1b if b.get(j + 1) == Some(&b'\\') => return j + 2,
-                    _ => j += 1,
+                let end = match b[j] {
+                    0x07 => j + 1,
+                    0x1b if b.get(j + 1) == Some(&b'\\') => j + 2,
+                    _ => {
+                        j += 1;
+                        continue;
+                    }
+                };
+                if b[i] == b']' {
+                    if let Some(rest) = line[i + 1..j].strip_prefix("8;") {
+                        *link = hyperlink(rest);
+                    }
                 }
+                return end;
             }
             b.len()
         }
@@ -237,6 +252,15 @@ fn skip_escape(line: &str, i: usize, style: &mut Style) -> usize {
     }
 }
 
+/// The address of an OSC 8 `params;URI` (after "8;"): none for the empty URI that ends a link,
+/// nor for one too long or with a control or bidi formatting character (it could make the address
+/// shown on hover read otherwise), which draws as plain text.
+fn hyperlink(rest: &str) -> Option<Arc<str>> {
+    let uri = rest.split_once(';')?.1;
+    let odd = |c: char| c.is_control() || matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}');
+    (!uri.is_empty() && uri.len() <= LINK_MAX && !uri.chars().any(odd)).then(|| Arc::from(uri))
+}
+
 #[cfg(test)]
 /// The lines of one capture (split on `\n`; a final `\n` ends the last line), each as its
 /// characters with their styles; `style` starts the first line and ends as the last left it.
@@ -244,7 +268,7 @@ pub fn parse_capture(text: &str, style: &mut Style) -> Vec<Vec<(char, Style)>> {
     lines(text)
         .map(|line| {
             let mut out = Vec::with_capacity(line.len());
-            parse_line(line, style, |c, st| out.push((c, st)));
+            parse_line(line, style, &mut None, |c, st, _| out.push((c, st)));
             out
         })
         .collect()

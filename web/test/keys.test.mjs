@@ -84,6 +84,9 @@ test("the cursor's column on a row, and the row with the cursor moved (as the br
   const wide = { r: [[["❯", " ", "日", "", "x"], null, null, 0]] };
   assert.deepEqual(withCursor(wide, 3).r, [[["❯", " "], null, null, 0], [["日", ""], null, null, 256], [["x"], null, null, 0]], "a wide character's two cells together");
   assert.equal(cursorCol(withCursor(wide, 4)), 4);
+  const linked = { r: [["MR !318", null, null, 0, 0]], e: true, h: ["https://git.example/mr/318"] };
+  assert.deepEqual(withCursor(linked, 2), { r: [["MR", null, null, 0, 0], [" ", null, null, 256, 0], ["!318", null, null, 0, 0]], e: true, h: ["https://git.example/mr/318"] },
+    "an OSC 8 link's runs keep their address's index (AC-35)");
 });
 
 test("Option+↑/↓ and ⌘↑/↓ are Page Up and Page Down", () => {

@@ -2,13 +2,16 @@
 // Clicks and taps on web addresses and file paths in the terminal (AC-52): the text under the
 // pointer, taken with the rows it was wrapped over, and what opening it means.
 import { pointAt } from "./cursor.js";
-import { absolutePath, tokenAt } from "./links.js";
+import { absolutePath, hrefToken, tokenAt } from "./links.js";
 import { continues, joinedText, offsetOf } from "./rowtext.js";
 
 const rowOf = (el) => (el?.classList?.contains("ln") ? el : null);
 
-/** The address or path at viewport point (x, y) of the terminal, or null. */
+/** The address or path at viewport point (x, y) of the terminal, or null: an OSC 8 link's own
+ *  address first (render.js), else the one its text names. */
 export function linkAt(x, y) {
+  const a = document.elementFromPoint(x, y)?.closest(".ln .olink");
+  if (a) return hrefToken(a.dataset.href);
   const p = pointAt(x, y);
   if (!p) return null;
   let first = p.row;
@@ -55,14 +58,20 @@ export function bindLinks(term, actions) {
   });
   term.addEventListener("mouseleave", () => term.classList.remove("onlink"));
   addEventListener("keyup", (e) => { if (!held(e)) term.classList.remove("onlink"); });
+  // an OSC 8 link to a file that is not there is underlined all the same: a press says so
+  const missing = (x, y) => {
+    const tok = !usable(x, y) && document.elementFromPoint(x, y)?.closest(".ln .olink") && linkAt(x, y);
+    if (tok) actions.toast(`${tok.value} is not there.`, 6000);
+    return !!tok;
+  };
   term.addEventListener("click", (e) => {
     if (e.button !== 0 || !held(e) || String(getSelection())) return;   // a click that ends a selection opens nothing
     const tok = usable(e.clientX, e.clientY);
-    if (tok) { e.preventDefault(); void openLink(tok, actions); }
+    if (tok) { e.preventDefault(); void openLink(tok, actions); } else if (missing(e.clientX, e.clientY)) e.preventDefault();
   });
   return (x, y) => {
     const tok = usable(x, y);
     if (tok) void openLink(tok, actions);
-    return !!tok;
+    return !!tok || missing(x, y);
   };
 }

@@ -1,7 +1,7 @@
 // The web app's links in terminal text (AC-52): which address or path a click is on.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { absolutePath, tokenAt, tokens } from "../static/links.js";
+import { absolutePath, tokenAt, tokens, hrefToken } from "../static/links.js";
 
 const at = (text, word) => tokenAt(text, text.indexOf(word) + 1);
 
@@ -43,4 +43,13 @@ test("every address and path of a text, where each is named: what is underlined 
   assert.deepEqual(found.map((t) => text.slice(t.start, t.end)), ["src/db/pool.rs:42", "https://devbox.example/a", "~/notes.md"]);
   for (const t of found) assert.deepEqual(tokenAt(text, t.start), { kind: t.kind, value: t.value, ...(t.line ? { line: t.line } : {}) });
   assert.equal(tokenAt(text, text.indexOf("and/or")), null);
+});
+
+test("an OSC 8 link's address: http and https open, a local file:// is its path, anything else is no link (AC-35)", () => {
+  assert.deepEqual(hrefToken("https://git.example/a/-/merge_requests/318"), { kind: "url", value: "https://git.example/a/-/merge_requests/318" });
+  assert.deepEqual(hrefToken("http://x.example"), { kind: "url", value: "http://x.example/" });
+  assert.deepEqual(hrefToken("file:///Users/alex/a%20b.md"), { kind: "path", value: "/Users/alex/a b.md" });
+  assert.deepEqual(hrefToken("file://localhost/tmp/x.txt"), { kind: "path", value: "/tmp/x.txt" });
+  for (const bad of ["javascript:alert(1)", "data:text/html,x", "ssh://devbox.example", "file://devbox.example/etc/hosts", "not a url", "file:///%E0%A4%A"])
+    assert.equal(hrefToken(bad), null, bad);
 });

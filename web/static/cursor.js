@@ -101,9 +101,9 @@ export function cursorCol(data) {
 export function withCursor(data, col) {
   const runs = [];
   let x = 0;
-  for (const [text, fg, bg, flags] of data.r) {
+  for (const [text, fg, bg, flags, ...link] of data.r) {                 // link: its OSC 8 address's index (render.js)
     const cells = cellsOf(text), f = flags & ~CURSOR;
-    const part = (a, b, fl) => { if (b > a) runs.push([Array.isArray(text) ? cells.slice(a, b) : cells.slice(a, b).join(""), fg, bg, fl]); };
+    const part = (a, b, fl) => { if (b > a) runs.push([Array.isArray(text) ? cells.slice(a, b) : cells.slice(a, b).join(""), fg, bg, fl, ...link]); };
     let i = col == null ? -1 : col - x;
     if (i >= 0 && i < cells.length) {
       if (cells[i] === "" && i > 0) i--;                                   // the right half of a wide one

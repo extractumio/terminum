@@ -61,6 +61,16 @@ function looksLikePath(w) {
   return dot > 0 && EXTENSIONS.has(name.slice(dot + 1).toLowerCase());
 }
 
+/** What an OSC 8 hyperlink's address opens (AC-35), or null: an http or https address as one, a
+ *  file:// one with no host or "localhost" as its absolute path; any other scheme is no link. */
+export function hrefToken(href) {
+  let u;
+  try { u = new URL(href); } catch { return null; }
+  if (u.protocol === "http:" || u.protocol === "https:") return { kind: "url", value: u.href };
+  if (u.protocol !== "file:" || (u.hostname && u.hostname !== "localhost")) return null;
+  try { return { kind: "path", value: decodeURIComponent(u.pathname) }; } catch { return null; }
+}
+
 /** The absolute path a printed path names, from the pane's folder and home; null when it cannot. */
 export function absolutePath(value, cwd, home) {
   let p;

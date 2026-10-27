@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Draws one iTerm2 line ({r: [[text-or-cells, fg, bg, flags]...], e: hardEol}) as a DOM element.
+// Draws one iTerm2 line ({r: [[text-or-cells, fg, bg, flags, link?]...], e: hardEol, h?}) as a DOM
+// element; link indexes h, the row's OSC 8 hyperlink addresses (AC-35).
 // Plain DOM text keeps the browser's own selection, copy, scrolling and wrapping, also on iOS.
+
+import { hrefToken } from "./links.js";
 
 const BOLD = 1, FAINT = 2, ITALIC = 4, UNDERLINE = 8, STRIKE = 16, INVERSE = 32, INVISIBLE = 64,
   CURSOR = 256;
@@ -48,7 +51,7 @@ function fillCells(s, cells) {
   if (plain) s.append(plain);
 }
 
-function span([text, fg, bg, flags], theme, pal) {
+function span([text, fg, bg, flags, link], theme, pal, href = null) {
   const s = document.createElement("span");
   // terminal content is untrusted: text nodes only, never innerHTML
   if (Array.isArray(text)) fillCells(s, text); else s.textContent = text;
@@ -58,7 +61,7 @@ function span([text, fg, bg, flags], theme, pal) {
   let b = resolve(bg, theme, pal, null);
   if (flags & BOLD && fg === null && theme.useBold && theme.bold) f = theme.bold;
   if (flags & INVERSE) [f, b] = [b ?? theme.bg, f];
-  if (flags & CURSOR) { s.className = "cur"; f = theme.cursorText; b = theme.cursor; }
+  if (flags & CURSOR) { s.classList.add("cur"); f = theme.cursorText; b = theme.cursor; }
   if (f !== theme.fg) s.style.color = f;
   if (b) s.style.background = b;
   if (flags & BOLD) s.style.fontWeight = "bold";
@@ -67,6 +70,8 @@ function span([text, fg, bg, flags], theme, pal) {
   if (flags & INVISIBLE) s.style.color = "transparent";
   const deco = [flags & UNDERLINE ? "underline" : "", flags & STRIKE ? "line-through" : ""].join(" ").trim();
   if (deco) s.style.textDecoration = deco;
+  const to = link === undefined ? null : href && hrefToken(href);
+  if (to) { s.classList.add("olink"); s.dataset.href = href; s.title = to.value; }   // its hover names where it goes, as it opens
   return s;
 }
 
@@ -98,7 +103,7 @@ function markEdge(el, fromEnd, cls) {
 export function lineRec(data, theme, pal) {
   const el = document.createElement("div");
   el.className = data.e ? "ln eol" : "ln";
-  for (const run of data.r) el.append(span(run, theme, pal));
+  for (const run of data.r) el.append(span(run, theme, pal, data.h?.[run[4]] ?? null));
   const txt = el.textContent.replace(/[\ufe0e\ufe0f]/g, "").replace(/\s+$/, "");
   markEdge(el, false, "lead");
   if (data.e) markEdge(el, true, "tail");
