@@ -94,6 +94,13 @@ export async function webScreen(browser, name) {
       check("AC-06 mouse: a click, a drag, a right click and the wheel go to the program with 0-based cells",
         got.filter((e) => !e.startsWith("move")).join() === ["press:0@10,1", "release:0@10,1", "press:0@10,1", "release:0@14,1", "press:2@10,1",
           "release:2@10,1", "wheelup:0@10,1", "wheeldown:0@10,1"].join() && got.includes("move:0@14,1") && shift?.mods?.shift === false, JSON.stringify(got));
+      await page.click("#filter");                  // the keys elsewhere, then a click on the program
+      await page.mouse.click(a.x, a.y);
+      const n5 = sent.filter((m) => m.t === "in").length;
+      await page.keyboard.type("q");
+      await pause(page);
+      const keys = sent.filter((m) => m.t === "in").slice(n5).map((m) => m.data).join("");
+      check("AC-06 mouse: a click on the program gives the terminal the keys (OpenCode took no typing)", keys === "q", JSON.stringify(keys));
       const n4 = mice().length;
       await page.keyboard.down("Shift");
       await page.mouse.click(a.x, a.y);

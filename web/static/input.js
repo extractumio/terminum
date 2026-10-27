@@ -210,9 +210,10 @@ export class Input {
       if (image) this.options.pasteImage(image);
       else this.paste(e.clipboardData.getData("text/plain"));
     });
-    // With a mouse, a click that does not end a text selection gives the terminal the keyboard.
+    // With a mouse, a click that does not end a text selection gives the terminal the keyboard; on
+    // pointerup, as a program's click (AC-06) cancels its press and with it the browser's mouseup.
     const mouse = matchMedia("(hover: hover) and (pointer: fine)");
-    this.term.addEventListener("mouseup", () => { if (mouse.matches && !String(getSelection())) this.focus(); });
+    this.term.addEventListener("pointerup", (e) => { if (e.pointerType === "mouse" && mouse.matches && !String(getSelection())) this.focus(); });
     // and moves the cursor there, as a tap does (⌥-click with any pointer); ⌘-click opens a link
     this.term.addEventListener("click", (e) => {
       if (e.button || e.metaKey || e.ctrlKey || e.shiftKey || !(mouse.matches || e.altKey) || String(getSelection()) || inWidget(e)) return;
