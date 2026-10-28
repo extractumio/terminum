@@ -28,7 +28,7 @@ TERMINUMD = REPO / "terminumd"
 TOOLCHAIN = Path(os.environ.get("TM_TOOLCHAIN") or REPO / ".toolchain")
 DIST = REPO / "dist/agents"
 ZIG = "0.15.2"            # the ziglang wheel (zig as linker for the Linux targets)
-ZIGBUILD = "0.23.4"       # cargo-zigbuild
+ZIGBUILD = "0.24.0"       # cargo-zigbuild (0.24 drops rustc's -Wl,-O1, which zig 0.12+ warns about)
 TARGETS = {"macos-aarch64": "aarch64-apple-darwin", "macos-x86_64": "x86_64-apple-darwin",
            "linux-x86_64": "x86_64-unknown-linux-musl", "linux-aarch64": "aarch64-unknown-linux-musl"}
 
@@ -70,8 +70,17 @@ def toolchain(platforms):
         if not (TOOLCHAIN / "venv/bin/python3").exists():
             run([sys.executable, "-m", "venv", str(TOOLCHAIN / "venv")], cwd=REPO)
         run([str(TOOLCHAIN / "venv/bin/python3"), "-m", "pip", "install", "--quiet", f"ziglang=={ZIG}"], cwd=REPO)
-        if not (TOOLCHAIN / "bin/cargo-zigbuild").exists():
-            run(["cargo", "install", "--locked", "cargo-zigbuild", "--version", ZIGBUILD, "--root", str(TOOLCHAIN)], cwd=REPO)
+        if zigbuild_version() != ZIGBUILD:  # missing, or an older pin kept in the toolchain's folder
+            run(["cargo", "install", "--locked", "--force", "cargo-zigbuild", "--version", ZIGBUILD, "--root", str(TOOLCHAIN)], cwd=REPO)
+
+
+def zigbuild_version():
+    """The version of the toolchain's cargo-zigbuild, or None when there is none."""
+    exe = TOOLCHAIN / "bin/cargo-zigbuild"
+    if not exe.exists():
+        return None
+    r = subprocess.run([str(exe), "--version"], capture_output=True, text=True)
+    return r.stdout.split()[-1] if r.returncode == 0 and r.stdout.split() else None
 
 
 def mac_platform():
@@ -109,8 +118,8 @@ def build(platforms, build_id=None):
         if not dest.is_file() or not stamp.is_file() or stamp.read_text().strip() != bid:
             target = TARGETS[p]
             if p.startswith("linux-"):  # the same way on the Mac and on the Linux runner
-                if not (TOOLCHAIN / "bin/cargo-zigbuild").exists():
-                    raise Failed("the Linux toolchain is missing: run make toolchain")
+                if zigbuild_version() != ZIGBUILD:
+                    raise Failed(f"the Linux toolchain is missing or not cargo-zigbuild {ZIGBUILD}: run make toolchain")
                 run(["cargo", "zigbuild", "--locked", "--release", "--target", target], env=env)
             elif native().startswith("macos-"):
                 run(["cargo", "build", "--locked", "--release", "--target", target], env=env)

@@ -143,7 +143,7 @@ class LinuxBuildTest(unittest.TestCase):
     """AC-08: a package's Linux terminumd names the package's build (its installer checks it
     against BUILD), whatever TM_BUILD the shell has and whatever an earlier build cached."""
 
-    def build(self, root, build_id, says=None):
+    def build(self, root, build_id, says=None, zigbuild=None):
         """agents.build of linux-x86_64 on a Mac, cargo stubbed: the binary it makes holds the
         agent id and the build it was given in TM_BUILD (or `says`); returns (path, cargo runs)."""
         agents, target = package.agents, root / "target"
@@ -155,7 +155,9 @@ class LinuxBuildTest(unittest.TestCase):
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(f"\0{env['TM_AGENT_ID']}\0{says or env['TM_BUILD']}\0".encode())
         (root / "tc/bin").mkdir(parents=True, exist_ok=True)
-        (root / "tc/bin/cargo-zigbuild").write_text("")
+        stub = root / "tc/bin/cargo-zigbuild"   # it names its version, as `cargo-zigbuild --version` does
+        stub.write_text(f"#!/bin/sh\necho cargo-zigbuild {zigbuild or agents.ZIGBUILD}\n")
+        stub.chmod(0o755)
         with mock.patch.object(agents, "agent_id", return_value="aid1"), mock.patch.object(agents, "run", side_effect=cargo), \
              mock.patch.object(agents, "DIST", root / "dist"), mock.patch.object(agents, "TERMINUMD", root), \
              mock.patch.object(agents, "TOOLCHAIN", root / "tc"), mock.patch.object(agents, "native", return_value="macos-aarch64"), \
@@ -173,6 +175,12 @@ class LinuxBuildTest(unittest.TestCase):
             self.assertEqual(self.build(root, "v1.2.3")[1], [], "the same build: the cached one")
             with self.assertRaises(package.agents.Failed):
                 self.build(root, "v1.2.4", says="checkout-id")   # one that names another build is never packed
+
+    def test_an_older_cargo_zigbuild_is_refused_until_make_toolchain(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(package.agents.Failed) as e:
+                self.build(Path(tmp), None, zigbuild="0.23.4")   # warns of rustc's -Wl,-O1 under zig 0.12+
+            self.assertIn("make toolchain", str(e.exception))
 
     def test_a_package_asks_for_its_own_build(self):
         with mock.patch.object(package, "build_macos", return_value={}), \
