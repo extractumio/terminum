@@ -119,24 +119,11 @@ pub fn flush(app: &Shared) {
     }
 }
 
-/// A server's list was read (its pane `keys`): its plans stay only while it is the server they
-/// were made in, its panes' notes show only then; a gone pane's old notes go (notes.rs).
-pub async fn seen(app: &Shared, server: &crate::tmux::Server, keys: &[String]) {
+/// A server's list was read: its plans stay only while it is the server they were made in.
+pub async fn seen(app: &Shared, server: &crate::tmux::Server) {
     let Some(identity) = server.identity().await else { return };
     if app.plans.seen(&server.key(""), &identity) {
         save(app);
-    }
-    if app.cfg.agent {
-        return;
-    }
-    let (a, prefix) = (app.clone(), server.key(""));
-    let live: std::collections::HashSet<String> = keys.iter().cloned().collect();
-    let r = tokio::task::spawn_blocking(move || {
-        a.notes.seen(&prefix, &identity)?;
-        a.notes.sweep(&[prefix], &live, crate::auth::store::unix_now())
-    }).await;
-    if let Ok(Err(e)) = r {
-        tracing::warn!(event = "notes.unsaved", error = %e);
     }
 }
 

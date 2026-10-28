@@ -12,6 +12,7 @@
 mod activation;
 mod agent;
 mod agentapi;
+mod agentmarks;
 mod api_fs;
 mod app;
 mod attach;
@@ -28,7 +29,6 @@ mod listing;
 mod looks;
 mod manager;
 mod midi;
-mod notes;
 mod ops;
 mod page;
 mod release;
@@ -113,7 +113,6 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
         plans: plans::Plans::load(&dir),
-        notes: notes::Notes::load((!cfg.agent).then_some(dir.as_path())),
         cfg,
     })
 }
@@ -221,6 +220,7 @@ async fn serve() {
     let cfg = Config { port: env.port, agent: false, service, text_max: env.text_max,
         history: env.history as i64, dir: dir.clone(), home: home.clone(), agent_token: String::new() };
     let app = build_app(cfg, &env, looks, link, &env.tmux_socket);
+    agentmarks::import_notes(&mut app.bookmarks.lock(), &dir);   // 0.23's notes are agents' bookmarks now (AC-98)
     page::bookmarks::adopt(&app);   // a file before version 3: its bookmarks take their projects
     tracing::info!(event = "start", port = env.port, pid = std::process::id(), build = config::build_id(), socket = %env.tmux_socket);
     tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());

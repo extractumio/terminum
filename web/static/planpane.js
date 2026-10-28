@@ -1,23 +1,25 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Plan pane (AC-97, AC-98): the shown session's plan and its notes for the user, modal as the
+// The Plan pane (AC-97, AC-98): the shown session's plan and how many records its agent kept for
+// the user (its bookmarks and reminders, AC-98; a press opens them), modal as the
 // reminders' pane (fabpane.js). Opened by the header's Plan button (#curplan), the progress circle
 // in the floating column (#planfab) or a row's percent (a "planopen" event after the row's session is shown). It asks terminumd {"t":"plan"} on
 // opening and again on {"t":"plannew"} of its key; it closes when another session is shown. Every
 // text the agent wrote goes in as text (el's textContent): never HTML or Markdown.
 import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
-import { armed, el, INSERT } from "./marks.js";
-import { ageText, clock, etaLine, noteChat, orderNotes, pctText, rowTitle, sourceText, statusIcon } from "./plans.js";
+import { el } from "./marks.js";
+import { ageText, clock, etaLine, pctText, rowTitle, sourceText, statusIcon } from "./plans.js";
 
 const $ = (id) => document.getElementById(id);
 const now = () => Date.now() / 1000;
 export const EMPTY = "No plan: the agent has not sent one for this session.";
 const STATUS = { completed: "completed", in_progress: "in progress", pending: "pending", blocked: "blocked" };
 
-/** send(msg) to terminumd; sid(): the shown pane's key; toChat(text): pasted into its input, no Enter. */
-export function planPane({ send, sid, toChat }) {
+/** send(msg) to terminumd; sid(): the shown pane's key; records(): {n, open()}, its agent's open
+ *  records (marks.js agentRecords). */
+export function planPane({ send, sid, records }) {
   const fab = $("curplan"), ring = $("planfab");
-  let of = null, shown = null, waiting = false, acted = false;   // the key the pane shows; the shown row (layout); asked, no answer yet; a note act sent, no answer yet
+  let of = null, shown = null, waiting = false;   // the key the pane shows; the shown row (layout); asked, no answer yet
   const pane = fabPane({ fab, pane: $("planpane"), close: $("planclose"), onToggle: (on) => {
     of = on ? sid() : null;
     ring.setAttribute("aria-expanded", String(on));
@@ -31,13 +33,13 @@ export function planPane({ send, sid, toChat }) {
   /** The header's button and the column's progress circle for the shown row (item: a layout row or null). */
   function header(item) {
     shown = item;
-    const plan = item?.plan ?? null, notes = item?.notes ?? 0;
+    const plan = item?.plan ?? null, notes = item ? records().n : 0;
     $("planmenu").hidden = !item;                    // the header ⋯ menu's entry, for any shown session
     if (pane.open() && sid() !== of) pane.toggle(false);
     else if (pane.open() && waiting) ask();          // asked while terminumd was away (a restart): its next layout asks again
-    fab.hidden = !plan && !notes && !item?.agent;    // notes alone, or a coding agent without a plan yet, still open the pane
-    const said = notes ? `${notes} note${notes > 1 ? "s" : ""}` : "";
-    fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Notes: ${said}` : "Plan and Notes: no plan yet";
+    fab.hidden = !plan && !notes && !item?.agent;    // records alone, or a coding agent without a plan yet, still open the pane
+    const said = notes ? `${notes} from its agent` : "";
+    fab.title = plan ? `Plan: ${rowTitle(plan, now())}${said && ` · ${said}`}` : said ? `Kept: ${said}` : "Plan: none yet";
     fab.setAttribute("aria-label", fab.title);
     const pct = plan ? Math.round(Math.max(0, Math.min(100, plan.pct ?? 0))) : 0;
     $("curplanp").textContent = pct ? `${pct}%` : "";   // 0%: nothing, the icon alone
@@ -61,82 +63,83 @@ export function planPane({ send, sid, toChat }) {
     if (had !== !!plan) document.dispatchEvent(new Event("planfab"));   // shown or gone: the column placed again
   }
   setInterval(() => { if (shown) header(shown); }, 60_000);   // the age moves on without a message
+  let last = null;                                   // the plan drawn: drawn again when the agent's records change
+  document.addEventListener("marks", () => { if (shown) header(shown); if (pane.open() && last) draw(...last); });   // its agent's records changed (marks.js)
 
   function onMessage(m) {
     if (!pane.open() || m.key !== of) return;
     if (m.t === "plannew") return void ask();
-    waiting = false; acted = false;
-    draw(m.plan, orderNotes(m.notes), m.hooks);
+    waiting = false;
+    last = [m.plan, m.hooks];
+    draw(m.plan, m.hooks);
   }
 
-  /** terminumd's refusal of a note act (an {"t":"error"} of the pane's key): shown in the pane, true when it was. */
-  function error(m) {
-    if (!pane.open() || !acted || (m.sid && m.sid !== of)) return false;
-    acted = false;
-    $("planbody").querySelector(".plerr")?.remove();
-    const e = el("p", "plerr", m.msg);
-    e.setAttribute("role", "alert");
-    $("planbody").prepend(e);
-    return true;
-  }
-  const note = (id, act) => { acted = true; send({ t: "note", key: of, id, act }); };
+  // a section's small caps label (UI-GUIDELINES §2: one label style for every section)
+  const section = (text) => el("h4", "plsec", text);
 
-  function draw(p, notes, hooks) {
+  function draw(p, hooks) {
     const body = [];
     if (hooks === false) body.push(el("p", "plmeta plhooks", "terminum's hooks are not running in this session (Codex: trust them in /hooks)."));
     if (!p) body.push(el("p", "plmeta plempty", EMPTY));
     else {
       if (p.finished) body.push(el("p", "plmeta plfinished", `Finished session (agent exited ${clock(p.finished_at ?? p.updated)})`));
       if (p.title) body.push(el("h3", "pltitle", p.title));
-      if (p.doing) body.push(el("p", "pldoing", p.doing));
-      const ul = el("ul", "plitems");
-      for (const it of p.items ?? []) {
-        const li = el("li", `plitem ${it.status ?? "pending"}`);
-        const mark = el("span", "plmark", statusIcon(it.status));
-        mark.title = STATUS[it.status] ?? "pending";
-        mark.setAttribute("aria-label", mark.title);
-        li.append(mark, el("span", "pltext", it.text));
-        ul.append(li);
+      if (p.doing) {                                  // what it does now, set apart
+        const now = el("div", "plnow");
+        now.append(el("span", "plnowlabel", "Now"), el("p", "pldoing", p.doing));
+        body.push(now);
       }
-      body.push(ul);
+      // the progress: done of all, the percent, a bar, the agent's ETA under it
+      const pct = Math.round(Math.max(0, Math.min(100, p.pct ?? 0)));
+      const prog = el("div", "plprog"), head = el("div", "plproghead");
+      head.append(el("span", "plcount", `${p.done} of ${p.total} done`), el("span", "plpctv", `${pct}%`));
+      const bar = el("div", "plbar"), fill = el("span", "plbarfill");
+      fill.style.width = `${pct}%`;
+      bar.setAttribute("role", "progressbar");
+      bar.setAttribute("aria-valuemin", "0"); bar.setAttribute("aria-valuemax", "100"); bar.setAttribute("aria-valuenow", String(pct));
+      bar.setAttribute("aria-label", `${p.done} of ${p.total} done`);
+      bar.append(fill);
+      prog.append(head, bar);
+      if (etaLine(p)) prog.append(el("p", "plmeta pleta", `ETA ${etaLine(p)}`));
+      body.push(prog);
+      if ((p.items ?? []).length) {
+        body.push(section("Steps"));
+        const ul = el("ul", "plitems");
+        for (const it of p.items) {
+          const li = el("li", `plitem ${it.status ?? "pending"}`);
+          const mark = el("span", "plmark", statusIcon(it.status));
+          mark.title = STATUS[it.status] ?? "pending";
+          mark.setAttribute("aria-label", mark.title);
+          li.append(mark, el("span", "pltext", it.text));
+          ul.append(li);
+        }
+        body.push(ul);
+      }
       if (p.partial) body.push(el("p", "plpartial", "partial: some updates were missed"));
-      const meta = [`${p.done} of ${p.total} · ${Math.round(p.pct ?? 0)}%`, etaLine(p) && `ETA ${etaLine(p)}`,
-        `updated ${ageText(p.updated, now())} (${clock(p.updated)})`, sourceText(p.source)].filter(Boolean);
-      for (const line of meta) body.push(el("p", "plmeta", line));
+      const foot = el("div", "plfoot");
+      foot.append(el("p", "plmeta", `Updated ${ageText(p.updated, now())} (${clock(p.updated)})`), el("p", "plmeta", sourceText(p.source)));
+      body.push(foot);
     }
-    body.push(el("h3", "plnoteshead", notes.length ? `Notes (${notes.filter((n) => n.status === "open").length} open)` : "No notes"));
-    const list = el("ul", "plnotes");
-    for (const n of notes) list.append(noteItem(n));
-    body.push(list);
+    // what its agent kept for the user: its bookmarks and reminders (AC-98)
+    const { n, open } = records();
+    body.push(section("For you"));
+    const kept = el("p", "plmeta plkept", n ? `${n} kept for you by the agent: ` : "Nothing kept for you by the agent.");
+    if (n) {
+      const b = el("button", "linkish", n > 1 ? "show them" : "show it");
+      b.type = "button";
+      b.onclick = () => { pane.toggle(false); open(); };
+      kept.append(b);
+    }
+    body.push(kept);
     const held = $("planpane").contains(document.activeElement);   // a pressed Done goes with the redraw: the pane keeps the keys (Esc)
     $("planbody").replaceChildren(...body);
     if (held && !$("planpane").contains(document.activeElement)) $("planpane").focus({ preventScroll: true });
     place();
   }
 
-  function noteItem(n) {
-    const li = el("li", `plnote ${n.status === "open" ? "open" : "done"}`);
-    li.dataset.id = String(n.id);
-    const head = el("div", "plnotehead");
-    head.append(el("span", `plkind ${n.kind}`, n.kind), el("span", "plwhen", ageText(n.at, now())));
-    li.append(head, el("p", "plnotetext", n.text));
-    if (n.file) li.append(el("p", "plfile", n.file));
-    const acts = el("div", "rmacts placts");
-    const act = (label, fn, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; acts.append(b); return b; };
-    act(INSERT, () => { pane.toggle(false); toChat(noteChat(n)); }, "tochat");
-    const del = el("button", "del", "Delete");                  // asks again: a second press deletes it
-    del.type = "button";
-    armed(del, () => ["Delete"], () => note(n.id, "delete"));
-    acts.append(del);
-    if (n.status === "open") act("Done", () => note(n.id, "done"), "primary");
-    else act("Reopen", () => note(n.id, "open"));
-    li.append(acts);
-    return li;
-  }
-
   $("planclose").replaceChildren(icon("x", 16));
   new MutationObserver(place).observe($("status").parentElement, { subtree: true, attributes: true, attributeFilter: ["hidden"] });   // a banner shown or gone moves it
-  return { header, onMessage, error, place };
+  return { header, onMessage, place };
   /** Placed by fabpane; as a phone's sheet, its top at the header's bottom. */
   function place() {
     if (!pane.open()) return;

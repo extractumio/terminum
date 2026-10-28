@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The one source of the plan and notes rules that `terminum mcp` (cli/mcp.rs), terminumd's
-//! /agent (agentapi.rs), the notes (notes.rs) and the hooks' plan ops (cli/hookplan.rs) share:
-//! words, limits and the cleaning of model text. Lengths count characters after `clean`.
+//! The one source of the plan rules that `terminum mcp` (cli/mcp.rs), terminumd's /agent
+//! (agentapi.rs), agents' records (agentmarks.rs) and the hooks' plan ops (cli/hookplan.rs)
+//! share: words, limits and the cleaning of model text. Lengths count characters after `clean`.
 
 /// An item's statuses.
 pub const STATUSES: [&str; 4] = ["pending", "in_progress", "completed", "blocked"];
-/// A note's kinds and statuses.
-pub const KINDS: [&str; 4] = ["bug", "deferred", "followup", "question"];
-pub const NOTE_STATUSES: [&str; 2] = ["open", "done"];
 /// The answer to a call from outside a terminum pane.
 pub const NOT_IN_PANE: &str = "This session does not run in a terminum pane; do not call terminum's tools again.";
 
@@ -17,10 +14,6 @@ pub const ITEM_TEXT: usize = 200;
 pub const DOING: usize = 120;
 pub const TITLE: usize = 80;
 pub const ETA_MOST: u64 = 1440;
-/// Notes a call, a note's text, its file.
-pub const NOTES_MOST: usize = 20;
-pub const NOTE_TEXT: usize = 1000;
-pub const NOTE_FILE: usize = 300;
 
 /// Unicode bidi and format controls that reorder text on screen (U+200E/F, U+202A–202E,
 /// U+2066–2069).

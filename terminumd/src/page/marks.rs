@@ -100,6 +100,7 @@ fn new_mark(app: &Shared, page: &Page, msg: &Value) -> Result<bm::Item, bm::Mark
         remind: msg["remind"] == true,
         dir: project_of(&item).1,
         project,
+        ..NewMark::default()
     };
     app.bookmarks.lock().add(new)
 }
@@ -137,7 +138,9 @@ async fn locate(app: &Shared, page: &Page, id: &str) {
         page.send_json(&bm::unlocated(id, bm::ELSEWHERE));
         return;
     }
-    let Some(found) = search(app, page, id, &item.text, Some(item.n)).await else { return };
+    // an agent's record (AC-98) is found by its title, which the agent's transcript of its call shows
+    let (text, hint) = if item.by.is_some() { (&item.note, Some(item.n).filter(|n| *n >= 0)) } else { (&item.text, Some(item.n)) };
+    let Some(found) = search(app, page, id, text, hint).await else { return };
     if let Some(f) = found.filter(|f| f.n != item.n) {
         // where to look first next time; the marks move there
         if let Ok(moved) = app.bookmarks.lock().set_n(id, f.n) {

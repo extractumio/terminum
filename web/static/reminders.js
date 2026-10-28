@@ -10,6 +10,7 @@
 import { fabPane } from "./fabpane.js";
 import { icon } from "./icons.js";
 import { armed, chatText, el, INSERT, openReminder, quote, when } from "./marks.js";
+import { kindMark } from "./marknav.js";
 import { markdownInto } from "./widgetui.js";
 
 const $ = (id) => document.getElementById(id);
@@ -48,10 +49,12 @@ export function reminders({ marks, send }) {
     for (const item of all) {
       const li = el("li", "rmitem" + (item.due ? " due" : ""));
       const head = el("div", "rmhead");
-      head.append(el("span", "rmwhere", [marks.alive(item.sid) ?? `${item.title} (closed)`, item.host].filter(Boolean).join(" · ")),
-        el("span", "rmwhen", item.due ? "up now" : when(item.at)));
+      const where = el("span", "rmwhere", [marks.alive(item.sid) ?? `${item.title} (closed)`, item.host].filter(Boolean).join(" · "));
+      if (item.by) where.prepend(kindMark(item));      // an agent's record (AC-98)
+      head.append(where, el("span", "rmwhen", item.due ? "up now" : when(item.at)));
       const body = el("div", "markdown");
-      const md = (item.note ? item.note + "\n\n" : "") + quote(item.text);
+      // an agent's record is its own Markdown (raw HTML off, as rendered output); the user's text is a quote
+      const md = (item.note ? item.note + "\n\n" : "") + (item.by ? item.text : quote(item.text));
       drawing.push(markdownInto(body, md));
       const acts = el("div", "rmacts");
       const act = (label, fn, cls = "") => { const b = el("button", cls, label); b.type = "button"; b.onclick = fn; acts.append(b); };

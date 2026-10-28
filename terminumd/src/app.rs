@@ -91,8 +91,6 @@ pub struct App {
     pub turns: crate::page::turns::Turns,
     /// the panes' session plans (AC-97)
     pub plans: crate::plans::Plans,
-    /// notes coding agents left for the user (AC-97)
-    pub notes: crate::notes::Notes,
 }
 
 pub type Shared = Arc<App>;

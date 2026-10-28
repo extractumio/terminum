@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { ageText, etaLine, noteChat, orderNotes, pctText, rowTitle, sourceText, statusIcon } from "../static/plans.js";
+import { ageText, etaLine, pctText, rowTitle, sourceText, statusIcon } from "../static/plans.js";
 
 const now = 1_800_000_000;
 const plan = { done: 3, total: 7, pct: 42.857, eta: null, updated: now - 120, stale: false, partial: false };
@@ -47,15 +47,3 @@ test("source", () => {
   assert.equal(sourceText("mcp"), "reported through terminum's MCP");
 });
 
-test("notes: open first, newest first; input not changed", () => {
-  const notes = [{ id: 1, status: "done", at: 9 }, { id: 2, status: "open", at: 1 }, { id: 3, status: "open", at: 5 }];
-  assert.deepEqual(orderNotes(notes).map((n) => n.id), [3, 2, 1]);
-  assert.deepEqual(notes.map((n) => n.id), [1, 2, 3]);
-  assert.deepEqual(orderNotes(undefined), []);
-});
-
-test("Insert into chat text: kind and text, file when set, no newline at end", () => {
-  assert.equal(noteChat({ kind: "bug", text: "<b>x</b>" }), "bug: <b>x</b>");
-  assert.equal(noteChat({ kind: "question", text: "Why?", file: "src/a.rs" }), "question: Why?\n(src/a.rs)");
-  assert.ok(!noteChat({ kind: "bug", text: "x" }).endsWith("\n"));
-});

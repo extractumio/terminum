@@ -40,3 +40,4 @@ body.wide :is(#remindfab, #remindpane) { grid-row: 1 / -1; }
 #markkind { align-self: flex-start; }
 #markkind button[aria-pressed="true"] { background: var(--surface-4); color: var(--t-fg); font-weight: 600; }
 #markbox:has(#markkind [data-kind="reminder"][aria-pressed="true"]) { --key-primary-fill: var(--remind); --key-primary-ink: var(--remind-ink); }
+.rmwhere .agmark { display: inline-flex; vertical-align: -2px; margin-right: 5px; }

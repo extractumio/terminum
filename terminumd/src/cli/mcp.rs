@@ -20,15 +20,15 @@ const MAX_LINE: usize = 1 << 20;
 const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_VERSION: &str = "2025-06-18";
 
-pub const INSTRUCTIONS: &str = "terminum shows the user your plan and progress. Keep a plan: your own plan tool \
-(TaskCreate/TaskUpdate, update_plan), else update_session_plan with the whole list. Call \
-update_session_plan with doing (the current step) and eta_minutes as a long task starts, at each step \
-and at least every 10 minutes of work. Only the main agent calls update_session_plan; subagents report \
-to it. Record bugs, deferred work and follow-ups you leave with add_notes_for_user. If a tool says you \
-are not in terminum, stop calling.";
+pub const INSTRUCTIONS: &str = "terminum shows the user your plan and keeps what you hand them. Keep a plan: your \
+own plan tool (TaskCreate/TaskUpdate, update_plan), else update_session_plan; send doing and eta_minutes at each step \
+and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. Whenever you tell the \
+user a final report, a finding outside the task, a next step, deferred work or a question, also hand it to \
+add_notes_for_user. If a tool says you are not in terminum, stop calling.";
 
 pub use crate::plans::rules::NOT_IN_PANE;
-use crate::plans::rules::{self, KINDS, NOTE_STATUSES, STATUSES};
+use crate::agentmarks::{self as marks, KINDS};
+use crate::plans::rules::{self, STATUSES};
 pub const DOWN: &str = "terminum is not running; go on without it.";
 
 pub const TOOLS: [&str; 4] = ["update_session_plan", "get_session_plan", "add_notes_for_user", "update_notes_for_user"];
@@ -273,31 +273,41 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
         }
         "get_session_plan" => {}
         "add_notes_for_user" => {
-            let notes = list(args, "notes", 1, rules::NOTES_MOST, "give 1–20 notes")?;
+            let notes = list(args, "notes", 1, marks::RECORDS_MOST, "give 1–20 records")?;
             let mut kept = Vec::new();
             for (i, n) in notes.iter().enumerate() {
                 let at = format!("notes[{i}].");
-                let kind = one_of(n, "kind", &KINDS, &at)?.ok_or_else(|| format!("{at}kind is required: one of {}", KINDS.join(", ")))?;
                 let mut note = Map::new();
-                note.insert("kind".into(), json!(kind));
-                note.insert("text".into(), json!(need_text(n, "text", rules::NOTE_TEXT, &at)?));
-                put(&mut note, "file", opt_text(n, "file", rules::NOTE_FILE, &at)?);
+                note.insert("title".into(), json!(need_text(n, "title", marks::TITLE, &at)?));
+                note.insert("text".into(), json!(need_text(n, "text", marks::TEXT, &at)?));
+                put(&mut note, "kind", one_of(n, "kind", &KINDS, &at)?);
+                put(&mut note, "file", opt_text(n, "file", marks::FILE, &at)?);
+                match n.get("remind") {
+                    None | Some(Value::Null) => {}
+                    Some(Value::Bool(b)) => { note.insert("remind".into(), json!(b)); }
+                    Some(other) => return Err(format!("{at}remind {other} must be true or false")),
+                }
                 kept.push(Value::Object(note));
             }
             out.insert("notes".into(), Value::Array(kept));
         }
         "update_notes_for_user" => {
             let id = match args.get("id") {
-                Some(Value::String(s)) if !s.is_empty() && s.chars().count() <= 64 => json!(s),
-                Some(n @ Value::Number(_)) if n.is_u64() => n.clone(),
-                _ => return Err("id is required: a note's id as add_notes_for_user answered it".into()),
+                Some(Value::String(s)) if !s.trim().is_empty() && s.chars().count() <= 64 => json!(s.trim()),
+                Some(n @ Value::Number(_)) if n.is_u64() => json!(n.to_string()),
+                _ => return Err("id is required: a record's id as add_notes_for_user answered it".into()),
             };
             out.insert("id".into(), id);
-            put(&mut out, "status", one_of(args, "status", &NOTE_STATUSES, "")?);
-            put(&mut out, "text", opt_text(args, "text", rules::NOTE_TEXT, "")?);
-            put(&mut out, "kind", one_of(args, "kind", &KINDS, "")?);
+            put(&mut out, "status", one_of(args, "status", &marks::STATUSES, "")?);
+            put(&mut out, "title", opt_text(args, "title", marks::TITLE, "")?);
+            put(&mut out, "text", opt_text(args, "text", marks::TEXT, "")?);
+            match args.get("remind") {
+                None | Some(Value::Null) => {}
+                Some(Value::Bool(b)) => { out.insert("remind".into(), json!(b)); }
+                Some(other) => return Err(format!("remind {other} must be true or false")),
+            }
             if out.len() == 1 {
-                return Err("nothing to change: give status (open, done), text or kind".into());
+                return Err("nothing to change: give status (open, done), title, text or remind".into());
             }
         }
         other => return Err(format!("unknown tool {other}")),
@@ -317,31 +327,37 @@ pub fn tools() -> Value {
         tool("update_session_plan", "Update the session's plan",
             "Store this session's plan, which terminum shows to the user. Send the whole plan each call, never a patch: \
 every item with status pending, in_progress, completed or blocked. doing: the current step. eta_minutes: your estimate \
-of the minutes left (1-1440). With your own plan tool (TaskCreate/TaskUpdate, update_plan) its items count; this call \
-then stores doing, eta_minutes and title.",
+of the minutes left. With your own plan tool its items count; this call then stores doing, eta_minutes and title.",
             json!({
                 "items": {"type": "array", "minItems": 1, "maxItems": 50, "description": "The whole plan, in order.",
                     "items": {"type": "object", "required": ["text", "status"], "properties": {
                         "text": {"type": "string", "minLength": 1, "maxLength": 200},
                         "status": {"type": "string", "enum": STATUSES}}}},
                 "doing": {"type": "string", "maxLength": 120, "description": "The current step."},
-                "eta_minutes": {"type": "integer", "minimum": 1, "maximum": 1440, "description": "Minutes until the plan is done, your estimate."},
+                "eta_minutes": {"type": "integer", "minimum": 1, "maximum": 1440},
                 "title": {"type": "string", "maxLength": 80}}),
             json!(["items"])),
         tool("get_session_plan", "Get the session's plan",
-            "This session's plan as terminum stores it, one line an item: [x] completed, [>] in progress, [ ] pending, [!] blocked.",
+            "This session's plan as terminum stores it: [x] completed, [>] in progress, [ ] pending, [!] blocked.",
             json!({}), json!([])),
-        tool("add_notes_for_user", "Add notes for the user",
-            "Leave notes for the user in terminum: bugs, deferred work, follow-ups or questions you will not handle now. \
-1-20 notes a call; answers their ids.",
-            json!({"notes": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object", "required": ["kind", "text"],
-                "properties": {"kind": notes, "text": {"type": "string", "minLength": 1, "maxLength": 1000},
-                    "file": {"type": "string", "maxLength": 300, "description": "The file it is about."}}}}}),
+        tool("add_notes_for_user", "Hand the user records to keep",
+            "Keep for the user, instead of only printing it, what must not get lost in the scroll: a final report, a next \
+step, a gap or bug seen elsewhere, deferred work, a question. A bookmark of this session; remind: true only if the user \
+must act or decide (a blocker, a question, a risky leftover): it comes up at each turn end until resolved. When unsure, \
+a bookmark.",
+            json!({"notes": {"type": "array", "minItems": 1, "maxItems": 20, "items": {"type": "object", "required": ["title", "text"],
+                "properties": {"title": {"type": "string", "minLength": 1, "maxLength": 120, "description": "One line: what it is about."},
+                    "text": {"type": "string", "minLength": 1, "maxLength": 2000,
+                        "description": "Markdown readable without this chat: what, where (files, paths), why, next step."},
+                    "remind": {"type": "boolean"},
+                    "kind": notes, "file": {"type": "string", "maxLength": 300}}}}}),
             json!(["notes"])),
-        tool("update_notes_for_user", "Update a note for the user",
-            "Change one of this session's notes by the id add_notes_for_user answered: status open or done, a new text or kind.",
-            json!({"id": {"type": ["string", "integer"]}, "status": {"type": "string", "enum": NOTE_STATUSES},
-                "text": {"type": "string", "minLength": 1, "maxLength": 1000}, "kind": notes}),
+        tool("update_notes_for_user", "Update a record kept for the user",
+            "Change a record add_notes_for_user answered by id: status done (a reminder resolved, a bookmark deleted) or open, \
+a new title, text or remind.",
+            json!({"id": {"type": "string"}, "status": {"type": "string", "enum": marks::STATUSES},
+                "title": {"type": "string", "minLength": 1, "maxLength": 120}, "text": {"type": "string", "minLength": 1, "maxLength": 2000},
+                "remind": {"type": "boolean"}}),
             json!(["id"])),
     ])
 }

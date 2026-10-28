@@ -178,11 +178,6 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);
-  if (item.notes) {                                // the agent's open notes for the user (AC-98)
-    const n = el("span", "notes", String(item.notes));
-    n.title = `${item.notes} open note${item.notes > 1 ? "s" : ""} from its agent`;
-    st.append(n);
-  }
   if (item.subagents) {
     const n = el("span", "subs", String(item.subagents));
     n.title = `${item.subagents} subagent${item.subagents > 1 ? "s" : ""} running`;

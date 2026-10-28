@@ -155,6 +155,15 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   made outside projects, only in their own session. Once their project is gone (deleted, or its
   last session closed), or a session outside projects closes, they wait under Bookmarks /
   Reminders below the sessions (Open all).
+- **Going through them**: the bookmarks' button (its count: bookmarks and open reminders) lists the
+  session's bookmarks and reminders, top to bottom. Press one, or ↑ ↓ on a computer, and the session
+  goes there while the list stays open; ✓ (or Delete) settles one, a reminder resolved and a bookmark
+  deleted, with Undo for 5 seconds; Enter or Esc closes the list. The bar over the terminal has the
+  same Done.
+- **Kept by the agent**: a coding agent hands you what must not get lost in the scroll (a final
+  report, a next step, a gap it saw elsewhere, deferred work, a question) as the session's
+  bookmarks, with its mark; a reminder when you must act or decide. Each is written to read without
+  the chat; Open goes to where it was made, Insert into chat pastes its title and text.
 - **The view** is the pane sized to the browser window you use (in front, or the phone in your
   hand), from 45×14 (an iPhone in portrait) to 240×70 cells; a pane of another width re-flows to
   the window (a full-screen program is scaled to fit). The menu has 20 color schemes (one for every browser, kept in settings.json),
@@ -207,22 +216,20 @@ where it is:
 - **The Plan pane**: press the percent on a row (it shows that session), the progress circle
   or the header's Plan button; by keyboard, Tab to the Plan button and press Enter or Space; Esc or × closes
   it. It shows the plan's title, the current step, the items, the agent's ETA ("~17:40 (agent's
-  estimate, given 16:55)") and when it was updated, then the notes. Everything the agent wrote is
-  shown as plain text.
+  estimate, given 16:55)") and when it was updated, then how many records the agent kept for you
+  (a press shows them: the bookmarks' list). The plan's text is shown as plain text.
 - **"No plan: the agent has not sent one for this session."**: the agent made no plan yet. Claude
   Code makes tasks only for longer, multi-step work (or when asked: "make a plan with tasks");
   terminum's MCP tools report one too (update_session_plan). A session started before terminum's
   hooks were installed reports nothing until it is restarted.
 - **Marks**: ✓ completed, ▶ in progress, ○ pending, ⚠ blocked. "partial: some updates were
   missed" means an update named an item terminum never saw; the next whole list heals it.
-- **Notes for you**: bugs, deferred work, follow-ups and questions the agent left, under the
-  plan: Done (Reopen undoes it), Delete (asks once), Insert into chat (pastes the note into the
-  pane's input, never Enter). Notes of a project's session show in every session of the project.
 - **How agents feed it**: their own plan tool, read from their hooks (Claude Code's tasks and
   TodoWrite, Codex's update_plan where it has one), and terminum's MCP server `terminum mcp`
   (update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user): the
-  current step, an ETA in minutes, and the plan itself for an agent without a plan tool (Codex
-  0.164 has none). A new agent session in the pane starts with no plan.
+  current step, an ETA in minutes, the plan itself for an agent without a plan tool (Codex
+  0.164 has none), and the records it keeps for you (Kept by the agent, above). A new agent
+  session in the pane starts with no plan.
 - **The reminder**: when a working agent has not updated its plan for 10–30 minutes (by the
   turn's length), terminum asks it once through the hook's answer (Claude Code: a synchronous
   PostToolBatch hook; Codex: its PostToolUse); nothing is typed into the pane, and an idle,
@@ -248,8 +255,9 @@ where it is:
   after the fact, delete Codex's block between `# >>> terminum: MCP server …` and `# <<<
   terminum` in `~/.codex/config.toml` and run `terminum hooks install` with the build you kept.
 - **A host's agents do not show**: see Remote hosts below.
-- **Stored where**: `~/.terminum/state/plans.json` and `~/.terminum/state/notes.json`. To clear
-  them, stop terminumd first (`launchctl bootout gui/$(id -u)/io.terminum.terminumd`; on Linux
+- **Stored where**: plans in `~/.terminum/state/plans.json`, the agent's records with your
+  bookmarks in `~/.terminum/state/web-bookmarks.json` (0.23's `notes.json` is imported once and kept
+  as `notes.json.imported`). To clear the plans, stop terminumd first (`launchctl bootout gui/$(id -u)/io.terminum.terminumd`; on Linux
   `systemctl --user stop io.terminum.terminumd`), remove the files, then `terminum restart`;
   terminals live in tmux and are not touched.
 

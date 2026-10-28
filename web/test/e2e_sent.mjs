@@ -214,7 +214,7 @@ export async function webSent(browser, name) {
       await page.keyboard.press("Escape");                            // the document, then the list's window
       await page.keyboard.press("Escape");
       check("projects: a session shows its project's bookmarks made in its other sessions, also one whose session closed (the project lives), none of another project or another session outside it",
-        pane.join() === "from the tests session,from a closed session:closed" && head === "Bookmarks of Work", JSON.stringify({ pane, head }));
+        pane.join() === "from the tests session,from a closed session:closed" && head === "Bookmarks and reminders of Work", JSON.stringify({ pane, head }));
       check("projects: the list below the sessions holds only those no session shows, orphaned or out of reach; Reminders lists the reminders",
         list.join() === "host one:out of reach,orphan one:orphaned" && rem.join() === "orphan reminder", JSON.stringify({ list, rem }));
       check("projects: Open all shows them as one document, full screen", docOpen.open && docOpen.h.join() === "orphan reminder" && docOpen.full, JSON.stringify(docOpen));

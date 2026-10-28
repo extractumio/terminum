@@ -158,7 +158,7 @@ RPC = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolV
        {"jsonrpc": "2.0", "method": "notifications/initialized"},
        {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "update_session_plan", "arguments": {
            "items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}}},
-       {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "add_notes_for_user", "arguments": {"notes": [{"kind": "deferred", "text": "host note"}]}}},
+       {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "add_notes_for_user", "arguments": {"notes": [{"title": "host note", "text": "A host note.", "kind": "deferred"}]}}},
        {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "get_session_plan", "arguments": {}}}]
 
 
@@ -227,8 +227,10 @@ def main():
         check(f"[{v}] AC-99 MCP in the host's pane: initialize is terminum's, the plan's doing/ETA kept, the note added",
               (answers.get(1) or {}).get("result", {}).get("serverInfo", {}).get("name") == "terminum" and "ETA" in text(2)
               and "Checking the host" in text(4) and 3 in answers and not answers[3].get("error") and not answers[3]["result"].get("isError"), out[:1500])
-        row = row_until(ws, "devbox", lambda it: it.get("plan", {}).get("eta") and it.get("notes"))
-        check(f"[{v}] AC-99 the host row has the ETA and the note", row is not None, row)
+        row = row_until(ws, "devbox", lambda it: it.get("plan", {}).get("eta"))
+        marks = os.path.join(t.app, "web-bookmarks.json")
+        kept = [i for i in json.load(open(marks)).get("items", []) if i.get("by")] if os.path.exists(marks) else []
+        check(f"[{v}] AC-99 the host row has the ETA, and the agent's note is its bookmark on the Mac (AC-98)", row is not None and any(i.get("note") == "host note" for i in kept), [row, kept])
 
         # refused forward: alexb's sshd allows only local stream forwards
         st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refuser", "recipe": f"alexb@127.0.0.1 -p {BOB_PORT} -i {work}/key", "files": True})

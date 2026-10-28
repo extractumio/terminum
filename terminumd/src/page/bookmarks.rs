@@ -83,6 +83,14 @@ pub struct Item {
     /// shows only in the list below the sessions, and a reminder comes up no more
     #[serde(skip_serializing_if = "Option::is_none")]
     pub orphaned: Option<i64>,
+    /// the coding agent that made it (AC-98: claude, codex, or agent when not known); none: the user
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// an agent's kind of record (bug, deferred, followup, question, report) and the file it is about
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
 }
 
 impl Item {
@@ -107,6 +115,9 @@ pub struct NewMark {
     pub remind: bool,
     pub dir: Option<String>,
     pub project: Option<String>,
+    pub by: Option<String>,
+    pub kind: Option<String>,
+    pub file: Option<String>,
 }
 
 pub use super::bookmarks_find::{find, located, near, needs_whole, unlocated};
@@ -193,6 +204,9 @@ fn clean_stored(it: &Value) -> Result<Item, String> {
         dir: truthy(it.get("dir")),
         project: truthy(it.get("project")),
         orphaned: opt("orphaned").map(|v| int("orphaned", v)).transpose()?,
+        by: truthy(it.get("by")),
+        kind: truthy(it.get("kind")),
+        file: truthy(it.get("file")),
     })
 }
 
@@ -272,14 +286,32 @@ impl Store {
 
     /// A new bookmark, saved; nothing is kept when it cannot be saved.
     pub fn add(&mut self, new: NewMark) -> Result<Item, MarkError> {
+        Ok(self.add_all(vec![new])?.remove(0))
+    }
+
+    /// New bookmarks, saved once: all or none. The user's are MAX_ITEMS at most; an agent's
+    /// (`by`) never count against them (agentmarks.rs keeps its own limits).
+    pub fn add_all(&mut self, new: Vec<NewMark>) -> Result<Vec<Item>, MarkError> {
         if let Some(b) = &self.broken {
             return err(format!("Not saved: {b}."));
         }
-        if self.items.len() >= MAX_ITEMS {
+        let users = new.iter().filter(|n| n.by.is_none()).count();
+        if users > 0 && self.items.iter().filter(|i| i.by.is_none()).count() + users > MAX_ITEMS {
             return err(format!("{MAX_ITEMS} bookmarks are kept at most: delete some first (a session's bookmarks' button, or Bookmarks / Reminders below the sessions)."));
         }
+        let before = self.items.len();
+        let made: Vec<Item> = new.into_iter().map(Self::item).collect();
+        self.items.extend(made.iter().cloned());
+        if let Err(e) = self.save() {
+            self.items.truncate(before);
+            return Err(e);
+        }
+        Ok(made)
+    }
+
+    fn item(new: NewMark) -> Item {
         let at = crate::auth::store::unix_now() as i64;
-        let item = Item {
+        Item {
             id: new_id(),
             key: new.key,
             created: new.created,
@@ -295,16 +327,13 @@ impl Store {
             dir: new.dir,
             project: new.project,
             orphaned: None,
-        };
-        self.items.push(item.clone());
-        if let Err(e) = self.save() {
-            self.items.pop();
-            return Err(e);
+            by: new.by,
+            kind: new.kind,
+            file: new.file,
         }
-        Ok(item)
     }
 
-    fn change(&mut self, id: &str, edit: impl FnOnce(&mut Item)) -> Result<Item, MarkError> {
+    pub(crate) fn change(&mut self, id: &str, edit: impl FnOnce(&mut Item)) -> Result<Item, MarkError> {
         let Some(k) = self.items.iter().position(|i| i.id == id) else { return err(DELETED) };
         let old = self.items[k].clone();
         edit(&mut self.items[k]);

@@ -51,7 +51,7 @@ def mcp_lines(n0=1):
     return [{"jsonrpc": "2.0", "id": n0, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "1"}}},
             {"jsonrpc": "2.0", "method": "notifications/initialized"},
             call(n0 + 1, "update_session_plan", {"items": [{"text": "one", "status": "completed"}], "doing": "Checking the host", "eta_minutes": 30}),
-            call(n0 + 2, "add_notes_for_user", {"notes": [{"kind": "bug", "text": "host parser drops a BOM"}]})]
+            call(n0 + 2, "add_notes_for_user", {"notes": [{"title": "host parser drops a BOM", "text": "The host's parser drops a BOM.", "kind": "bug"}]})]
 
 
 def in_pane(sock, target, cmd, done, timeout=20):
@@ -159,9 +159,11 @@ def main():
         ws.send({"t": "plan", "key": key})
         plan = ws.until(lambda m: m["t"] == "plan" and m.get("key") == key, 10) or {}
         p = plan.get("plan") or {}
-        check("AC-99 the host's row has the plan 1 of 3, doing, an ETA, the note",
+        check("AC-99 the host's row has the plan 1 of 3, doing, an ETA",
               key.startswith("tmux:devbox:default:%") and p.get("done") == 1 and p.get("total") == 3 and p.get("doing") == "Checking the host"
-              and p.get("eta") and any("BOM" in json.dumps(n) for n in plan.get("notes") or []), plan)
+              and p.get("eta"), plan)
+        kept = [i for i in json.load(open(os.path.join(t.app, "web-bookmarks.json"))).get("items", []) if i.get("by")] if os.path.exists(os.path.join(t.app, "web-bookmarks.json")) else []
+        check("AC-99 AC-98 the host agent's record is a bookmark of its pane on the Mac", any(i.get("note") == "host parser drops a BOM" and i.get("key") == key for i in kept), kept)
         metas = [json.load(open(m)) | {"_dir": os.path.dirname(m)} for m in glob.glob(os.path.join(t.home, "sessions", "*", "meta.json"))]
         kept = [m for m in metas if "plan the host check" in open(os.path.join(m["_dir"], "sent.jsonl")).read()] if metas else []
         check("AC-99 the sent history keeps the prompt under the host, not local", kept and all(m.get("host") == "devbox" for m in kept), metas)

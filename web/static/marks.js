@@ -11,10 +11,12 @@ import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, railBox, railSlots } from "./marktext.js";
 import { floats, FOLDED } from "./fold.js";
+import { kindMark, MarkNav } from "./marknav.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the Mac to keep a bookmark
 const ARMED = 3000;            // ms a Delete pressed once waits for the second press
+const MOUSE = globalThis.matchMedia?.("(hover: hover) and (pointer: fine)");   // none in node (unit tests)
 // the floating buttons at the terminal's top right, top down: the plan's progress (while there is a plan,
 // planpane.js), the plain ones, then the colored ones together; where the keyboard's buttons float (a
 // phone, a narrow window) they fold under ⟨…⟩ (fold.js)
@@ -37,8 +39,9 @@ export const quote = (text) => text.split("\n").map((l) => `> ${l}`).join("\n");
 
 /** The label of the button that pastes into the shown pane's input, one look everywhere (.tochat). */
 export const INSERT = "Insert into chat";
-/** What Insert into chat pastes for a bookmark or a reminder: the note, under it its text quoted. */
-export const chatText = (item) => (item.note ? `${item.note}\n\n` : "") + quote(item.text);
+/** What Insert into chat pastes for a bookmark or a reminder: the note, under it its text quoted
+ *  (an agent's record, AC-98: its text as it wrote it). */
+export const chatText = (item) => (item.note ? `${item.note}\n\n` : "") + (item.by ? item.text : quote(item.text));
 
 // Delete asks again: a second press within 3 s deletes.
 export function armed(button, label, act) {
@@ -92,6 +95,7 @@ export class Marks {
     // a press anywhere else closes it
     document.addEventListener("pointerdown", (e) => { if (!$("markpane").hidden && !e.target.closest("#markpane, #marksfab")) this.togglePane(false); });
     new ResizeObserver(() => this.drawRail()).observe(term);
+    this.nav = new MarkNav(this);      // the pane's list: going through them, ✓ (marknav.js)
   }
 
   /** Every message from the bridge (after app.js dropped those of another pane). */
@@ -151,9 +155,10 @@ export class Marks {
   /** The shown pane's project, terminumd's (none outside projects). */
   hereProject() { this.here(); return this.projects().find((p) => p.id === this.hereOf.project) ?? null; }
   busy() { return $("markbox").open || $("askbox").open; }   // a dialog of theirs (Ask: ask.js) has the keys
-  changed() { this.rev = (this.rev ?? 0) + 1; this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); }
-  /** The shown session's own bookmarks it shows (not orphaned), top to bottom: its marks and the bar's steps. */
-  mine() { return this.here().filter((i) => i.sid === this.sid()).sort((a, b) => a.n - b.n); }
+  changed() { this.rev = (this.rev ?? 0) + 1; this.drawRail(); this.drawList(); this.drawPane(); this.onChange(); document.dispatchEvent(new Event("marks")); }
+  /** The shown session's own bookmarks it shows (not orphaned), top to bottom: its marks and the bar's steps
+   *  (an agent's record once its place was found, AC-98). */
+  mine() { return this.here().filter((i) => i.sid === this.sid() && i.n >= 0).sort((a, b) => a.n - b.n); }
 
   // ---------- the dialog ----------
 
@@ -210,6 +215,7 @@ export class Marks {
     $("mbprev").hidden = $("mbnext").hidden = !(i >= 0 && mine.length > 1);
     $("markbar").style.top = `${this.term.offsetTop + 8}px`;
     $("markbar").hidden = false;
+    this.nav.bar(item);
   }
   hideBar() { this.shown = null; $("markbar").hidden = true; this.jumper.clear(); }
   step(d) {
@@ -226,18 +232,21 @@ export class Marks {
     return this.jumper.go({ id: `sent:${Math.random().toString(36).slice(2)}`, sid: this.sid(), text, n, prompt, find: true });
   }
 
-  /** Shows item's pane and brings its text into view; the bar says how it went. */
+  /** Shows item's pane and brings its text into view (an agent's record: its title, where its call
+   *  was printed, AC-98); the bar says how it went. */
   async jump(item) {
-    if (item.orphaned) return this.showBar(item, "Its project or its session is gone: here is what was selected.");
-    if (this.alive(item.sid) === null) return this.showBar(item, "Its session is not open now: here is what was selected.");
+    const what = item.by ? "here it is" : "here is what was selected";
+    if (item.orphaned) return this.showBar(item, `Its project or its session is gone: ${what}.`);
+    if (this.alive(item.sid) === null) return this.showBar(item, `Its session is not open now: ${what}.`);
     const other = item.sid !== this.sid();
     const opened = other ? this.jumper.wait((m) => m.t === "hist" && m.mode === "reset" && m.sid === item.sid) : null;
     this.pick(item.sid);
     if (opened) { try { await opened; } catch (e) { return this.showBar(item, e.message); } }
     this.showBar(item);
-    const r = await this.jumper.go(item);
+    const r = await this.jumper.go(item.by ? { ...item, text: item.note } : item);
     if (r.cancelled || this.shown?.id !== item.id) return;
-    if (r.why) this.showBar(item, r.gone ? `${r.why} Here is what was selected.` : `Could not bring it into view: ${r.why}`);
+    const gone = item.by ? "Where it was made is no longer in this session's history: here it is." : `${r.why} Here is what was selected.`;
+    if (r.why) this.showBar(item, r.gone ? gone : `Could not bring it into view: ${r.why}`);
     else if (r.note) this.showBar(item, r.note);
   }
 
@@ -317,7 +326,10 @@ export class Marks {
     for (const item of items) {
       const li = el("li"), b = el("button", "mkitem");
       b.type = "button";
-      b.append(el("span", "note" + (item.note ? "" : " quiet"), item.note || firstLine(item.text)));
+      const title = el("span", "note" + (item.note ? "" : " quiet")), mark = kindMark(item);
+      if (mark) title.append(mark);
+      title.append(item.note || firstLine(item.text));
+      b.append(title);
       if (item.note) b.append(el("span", "snip", firstLine(item.text)));
       // an open session by its name now (it may have been renamed since), a closed one by its last
       const now = this.alive(item.sid);
@@ -348,14 +360,15 @@ export class Marks {
    *  the keyboard's buttons float, ⟨…⟩ stands first and the column, Attach in it (only there), under
    *  it, shown while it is unfolded (fold.js). */
   placeFab() {
-    const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind).length;
+    // the bookmarks' pane lists its bookmarks and open reminders (marknav.js): the button counts them
+    const term = this.term, here = this.sid() ? this.here() : [], n = here.filter((b) => !b.remind || openReminder(b)).length;
     const shown = !!this.sid() && !term.hidden && term.clientHeight > 0 && !!this.view.theme;
     for (const id of PLAIN) $(id).hidden = !shown;
     $("marksfab").hidden = !(shown && n > 0);
     $("remindfab").hidden = !shown || !here.some(openReminder);
     $("planfab").hidden = !shown || !("pct" in $("planfab").dataset);
     $("marksfabn").textContent = String(n);
-    $("marksfab").setAttribute("aria-label", `Bookmarks of this ${this.hereProject() ? "project" : "session"}: ${n}`);
+    $("marksfab").setAttribute("aria-label", `Bookmarks and reminders of this ${this.hereProject() ? "project" : "session"}: ${n}`);
     if (!shown) this.search.toggle(false);
     if ($("marksfab").hidden) this.togglePane(false);
     if (!shown) return;
@@ -375,17 +388,15 @@ export class Marks {
   placePane() { if (!placeModal($("markpane"), () => this.togglePane(false))) placeBeside($("marksfab"), $("markpane")); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {
+    const had = $("markpane").contains(document.activeElement);
     $("markpane").hidden = !open;
     this.paneSid = open ? this.sid() : null;
     $("marksfab").setAttribute("aria-expanded", String(open));
-    if (open) { this.search.toggle(false); this.drawPane(); this.placePane(); }
+    // a computer's keys go to the list while it is open (↑ ↓, ✓: marknav.js), back to the terminal after
+    if (open) { this.search.toggle(false); this.drawPane(); this.placePane(); if (MOUSE?.matches) $("markpane").focus({ preventScroll: true }); }
+    else if (had) $("kbd").focus({ preventScroll: true });
   }
-  drawPane() {
-    if ($("markpane").hidden) return;
-    // this session's top to bottom (by line), then the project's other sessions', newest first
-    const own = (b) => b.sid === this.sid(), here = this.here().filter((b) => !b.remind);
-    const mine = [...here.filter(own).sort((a, b) => a.n - b.n), ...here.filter((b) => !own(b)).sort((a, b) => b.at - a.at)];
-    const project = this.hereProject();
-    $("markpane").replaceChildren(el("h2", "", project ? `Bookmarks of ${project.name}` : "Bookmarks of this session"), this.listOf(mine, mine.some((b) => b.sid !== this.sid())));
-  }
+  drawPane() { this.nav.draw(); }
+  /** The shown session's open records from its coding agent (AC-98), and a way to them: the Plan pane says so. */
+  agentRecords() { return { n: this.here().filter((b) => b.by && (!b.remind || openReminder(b))).length, open: () => this.togglePane(true) }; }
 }

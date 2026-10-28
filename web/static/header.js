@@ -25,8 +25,8 @@ export function headerParts(group, item, follow = following()) {
 }
 
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
-export function pageHeader({ copy, renaming, setAgent, send, sid, toChat }) {
-  const plan = planPane({ send, sid, toChat });   // the shown session's plan (AC-97): its progress here, its pane
+export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, records }) {
+  const plan = planPane({ send, sid, toChat, records });   // the shown session's plan (AC-97): its progress here, its pane
   function show(found) {
     $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
     $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));

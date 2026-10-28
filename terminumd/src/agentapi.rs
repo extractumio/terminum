@@ -7,18 +7,21 @@ use axum::extract::State;
 use axum::Json;
 use serde_json::{json, Value};
 
+use parking_lot::Mutex;
+
+use crate::agentmarks::{self, Place, Record, Told};
 use crate::app::Shared;
-use crate::notes::{New, Notes, Scope};
+use crate::page::bookmarks::Store;
 use crate::plans::{Plans, Update};
 
 use crate::plans::rules::{self, NOT_IN_PANE, STATUSES};
 
-/// The caller: its pane key, notes scope, agent and session; whether terminumd has a hook
+/// The caller: its pane key, where its records go (AC-98), agent and session; whether terminumd has a hook
 /// event of the pane, and whether the call's own session (Codex's _meta.sessionId) is another
 /// than the hooked one (a subagent's).
 pub struct Caller {
     pub key: String,
-    pub scope: Scope,
+    pub place: Place,
     pub agent: String,
     pub session: Option<String>,
     pub hooks: bool,
@@ -35,7 +38,8 @@ pub const OTHER_SESSION: &str = "Not applied: this call comes from another sessi
 pub enum Changed {
     Nothing,
     Plan,
-    Notes,
+    /// the bookmarks and reminders an agent made or changed (AC-98)
+    Marks(Vec<Told>),
 }
 
 pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
@@ -57,20 +61,25 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let main = hooked.as_ref().map(|(_, s)| s.clone()).filter(|s| !s.is_empty());
     let other = matches!((&main, &asked), (Some(m), Some(a)) if !a.is_empty() && m != a);
     let (hooks, session) = (hooked.is_some(), main.or(asked));
-    let caller = Caller { scope: crate::notes::scope_of(&app, &key), agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
+    let caller = Caller { place: place_of(&app, &key), agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
-    let (a, key, scope) = (app.clone(), caller.key.clone(), caller.scope.clone());
+    let (a, key) = (app.clone(), caller.key.clone());
     let done = tokio::task::spawn_blocking(move || {
         let working = a.hooks.working(&caller.key);
-        run(&a.plans, &a.notes, &caller, &tool, &args, working, crate::auth::store::unix_now())
+        run(&a.plans, &a.bookmarks, &caller, &tool, &args, working, crate::auth::store::unix_now())
     }).await;
     let Ok((text, error, changed)) = done else { return answer("terminum could not answer the call.", true) };
-    match changed {
+    match &changed {
         Changed::Plan => {
             crate::plans::save(&app);
             crate::page::plans::tell(&app.pages, std::slice::from_ref(&key));
         }
-        Changed::Notes => crate::page::plans::tell(&app.pages, &crate::page::plans::keys_of(&app, &scope)),
+        Changed::Marks(told) => for t in told {
+            match t {
+                Told::Mark(item) => crate::page::marks::tell_mark(&app, item),
+                Told::Unmark(id) => app.pages.tell(&json!({"t": "unmark", "id": id}).to_string()),
+            }
+        },
         Changed::Nothing => {}
     }
     if changed != Changed::Nothing {
@@ -79,18 +88,26 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     answer(&text, error)
 }
 
+/// Where pane `key`'s records go: its project, its row's title, host and folder, as a bookmark
+/// the user makes there (page/marks.rs).
+fn place_of(app: &Shared, key: &str) -> Place {
+    let item = crate::page::marks::find_item(&app.layout.read(), key).unwrap_or_default();
+    let (host, dir) = crate::page::marks::project_of(&item);
+    Place { key: key.to_string(), project: app.projects.lock().of(key).map(|p| p.id.clone()), title: item["title"].as_str().unwrap_or("").to_string(), host, dir }
+}
+
 fn answer(text: &str, error: bool) -> Json<Value> {
     Json(json!({"text": text, "error": error}))
 }
 
 /// One tool call: (answer, is an error, what changed).
-pub fn run(plans: &Plans, notes: &Notes, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, Changed) {
+pub fn run(plans: &Plans, marks: &Mutex<Store>, c: &Caller, tool: &str, args: &Value, working: bool, now: u64) -> (String, bool, Changed) {
     let r = match tool {
         "update_session_plan" if c.other => Err(OTHER_SESSION.to_string()),
         "update_session_plan" => update_plan(plans, c, args, now).map(|t| (t, Changed::Plan)),
         "get_session_plan" => Ok((plan_text(plans, &c.key, working, now), Changed::Nothing)),
-        "add_notes_for_user" => add_notes(notes, c, args, now).map(|t| (t, Changed::Notes)),
-        "update_notes_for_user" => update_note(notes, c, args, now).map(|t| (t, Changed::Notes)),
+        "add_notes_for_user" => add_notes(marks, c, args).map(|(t, told)| (t, Changed::Marks(told))),
+        "update_notes_for_user" => agentmarks::update(&mut marks.lock(), &c.place, args).map(|(t, told)| (t, Changed::Marks(told))),
         other => Err(format!("unknown tool {other}: update_session_plan, get_session_plan, add_notes_for_user, update_notes_for_user")),
     };
     let r = r.map(|(t, ch)| match tool {
@@ -171,31 +188,16 @@ pub fn plan_text(plans: &Plans, key: &str, working: bool, now: u64) -> String {
     out.join("\n")
 }
 
-fn add_notes(notes: &Notes, c: &Caller, args: &Value, now: u64) -> Result<String, String> {
-    let list = args["notes"].as_array().ok_or("notes is required: a list of 1–20 notes")?;
-    let mut new = Vec::new();
+fn add_notes(marks: &Mutex<Store>, c: &Caller, args: &Value) -> Result<(String, Vec<Told>), String> {
+    let list = args["notes"].as_array().ok_or("notes is required: a list of 1–20 records")?;
+    let mut records = Vec::new();
     for (i, n) in list.iter().enumerate() {
         let s = |k: &str| n[k].as_str().map(str::to_string);
-        new.push(New { kind: s("kind").ok_or_else(|| format!("notes[{i}].kind is required"))?,
-                       text: s("text").ok_or_else(|| format!("notes[{i}].text is required"))?, file: s("file") });
+        records.push(Record { title: s("title").ok_or_else(|| format!("notes[{i}].title is required"))?,
+                              text: s("text").ok_or_else(|| format!("notes[{i}].text is required"))?,
+                              remind: n["remind"] == true, kind: s("kind"), file: s("file") });
     }
-    let ids = notes.add(&c.scope, c.session.as_deref().unwrap_or(""), new, now)?;
-    let ids: Vec<String> = ids.iter().map(u64::to_string).collect();
-    Ok(format!("Notes stored for the user, ids: {}.", ids.join(", ")))
-}
-
-fn update_note(notes: &Notes, c: &Caller, args: &Value, now: u64) -> Result<String, String> {
-    let id = match &args["id"] {
-        Value::Number(n) => n.as_u64(),
-        Value::String(s) => s.trim().parse().ok(),
-        _ => None,
-    }.ok_or("id is required: a note's id as add_notes_for_user answered it")?;
-    let (status, text, kind) = (args["status"].as_str(), args["text"].as_str(), args["kind"].as_str());
-    if status.is_none() && text.is_none() && kind.is_none() {
-        return Err("nothing to change: give status (open, done), text or kind".into());
-    }
-    notes.update(&c.scope, id, status, text, kind, now)?;
-    Ok(format!("Note {id} updated."))
+    agentmarks::add(&mut marks.lock(), &c.place, &c.agent, records)
 }
 
 #[cfg(test)]

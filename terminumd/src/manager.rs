@@ -136,7 +136,7 @@ async fn read_server(app: &Shared, server: Arc<Server>, home: &str, keys: bool) 
             };
             crate::page::projects::seen(app, &server, &read.keys).await;   // closed panes leave their projects (AC-92)
             crate::page::unread::seen(app, &server).await;                 // a tmux started anew takes its marks (AC-93)
-            crate::plans::seen(app, &server, &read.keys).await;            // and its plans and notes (AC-97)
+            crate::plans::seen(app, &server).await;                        // and its plans (AC-97)
             // a gone pane's plan, or one whose program changed, is archived (AC-97)
             let changed: Vec<String> = app.hooks.take_changed().into_iter().filter(|k| app.plans.session(k, None)).collect();
             if app.plans.retain(&server.key(""), &read.keys) | !changed.is_empty() {
@@ -183,13 +183,7 @@ pub async fn refresh(app: &Shared) {
     let ids = app.tmux.all().into_iter().filter_map(|s| s.identity_known().map(|i| (s.id(), i))).collect();
     layout::once_each(&mut groups, &ids);
     crate::page::unread::mark(app, &mut groups, complete);
-    // a gone project's notes show with their own pane again (AC-98)
-    let a = app.clone();
-    let _ = tokio::task::spawn_blocking(move || {
-        let ids: Vec<String> = a.projects.lock().list().iter().map(|p| p.id.clone()).collect();
-        a.notes.rescope(&ids.iter().map(String::as_str).collect::<Vec<_>>())
-    }).await.map_err(|e| e.to_string()).and_then(|r| r).map_err(|e| tracing::warn!(event = "notes.unsaved", error = %e));
-    crate::page::plans::mark(app, &mut groups);                      // plans and notes on the rows (AC-97, AC-98)
+    crate::page::plans::mark(app, &mut groups);                      // plans on the rows (AC-97)
     let ended = {
         let mut last = app.layout.write();
         if last.as_array() != Some(&groups) {

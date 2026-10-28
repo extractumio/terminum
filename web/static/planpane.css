@@ -6,7 +6,6 @@
 .item .plpct.stale, .item .pltrack.stale, #planfab.stale { opacity: .5; }
 .item .pltrack { display: block; height: 2px; margin-top: 3px; border-radius: 1px; background: color-mix(in srgb, currentColor 15%, transparent); overflow: hidden; }
 .item .pltrack .plfill { display: block; height: 100%; width: var(--pct, 0%); background: currentColor; opacity: .6; }
-.item .notes { font-size: var(--fs-micro); line-height: 1; color: var(--muted-text); font-variant-numeric: tabular-nums; }
 /* the header's Plan button: a key as ✎ (controls.css), right of it (10 px: the title line's 8 and 2; on a phone 4 px, style.css),
    its icon and the percent ("100%" fits: one width with a percent, the icon's alone without) */
 #curplan { flex: none; height: var(--icon-key-sm); min-width: var(--icon-key-sm); margin: -3px 0 -3px 2px; padding: 0 5px; display: inline-flex;
@@ -32,27 +31,44 @@
 #planfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
 @media (max-width: 860px), (pointer: coarse) { #planfabt { font-size: 11px; } }
 
-#planpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 70%; overflow: auto; padding: var(--sp-2);
+#planpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 70%; overflow: auto; padding: var(--sp-2) var(--sp-2) var(--sp-3);
   border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
 #planpane .sphead { display: flex; align-items: center; }
-#planpane h2 { flex: 1; margin: 0 4px; font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted-text); }
-#planbody { padding: 0 4px; overflow-wrap: anywhere; }
-#planbody h3 { margin: var(--sp-2) 0 4px; font-size: var(--fs-label); font-weight: var(--fw-head); }
-.pldoing { margin: 0 0 var(--sp-2); }
-.plmeta, .plpartial, .plfile, .plwhen { margin: 2px 0; font-size: var(--fs-meta); color: var(--muted-text); }
+#planpane h2 { flex: 1; margin: 0 var(--sp-1); font-size: var(--fs-micro); font-weight: var(--fw-head); letter-spacing: .06em; text-transform: uppercase; color: var(--muted-text); }
+/* the pane: a title, what it does now, the progress, the steps, when and from where, what was kept for you */
+#planbody { padding: 0 var(--sp-1); overflow-wrap: anywhere; line-height: 1.4; }
+.pltitle { margin: var(--sp-1) 0 var(--sp-3); font-size: var(--fs-title); font-weight: var(--fw-head); line-height: 1.3; }
+.plnow { margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3); border-radius: var(--r-md); background: var(--surface-2);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--t-fg) 60%, transparent); }
+.plnowlabel { display: block; margin-bottom: 2px; font-size: var(--fs-micro); font-weight: var(--fw-head); letter-spacing: .06em; text-transform: uppercase; color: var(--muted-text); }
+.pldoing { margin: 0; font-size: var(--fs-small); }
+.plprog { margin: 0 0 var(--sp-3); }
+.plproghead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); margin-bottom: 6px;
+  font-size: var(--fs-label); font-weight: var(--fw-head); font-variant-numeric: tabular-nums; }
+.plpctv { color: var(--muted-text); }
+.plbar { height: 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--t-fg) 16%, transparent); overflow: hidden; }
+.plbarfill { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--t-fg) 72%, transparent); }
+.pleta { margin-top: 6px; }
+.plsec { margin: var(--sp-3) 0 var(--sp-1); font-size: var(--fs-micro); font-weight: var(--fw-head); letter-spacing: .06em; text-transform: uppercase; color: var(--muted-text); }
+.plmeta, .plpartial { margin: 2px 0; font-size: var(--fs-meta); color: var(--muted-text); }
 .plpartial { font-style: italic; }
 .plerr { margin: 2px 0 var(--sp-2); color: var(--danger-text); font-weight: var(--fw-head); }
-.plitems, .plnotes { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
-.plitem { display: flex; gap: 8px; align-items: baseline; }
-.plitem .plmark { flex: none; width: 1.2em; text-align: center; color: var(--muted-text); }
+/* the steps: a mark in a round badge, the text hanging beside it; the one in progress set on a tint. The pane's
+   structure is in the theme's text color, never the accent (the cursor's color, which a theme may set near its background) */
+.plitems { list-style: none; margin: 0 calc(-1 * var(--sp-1)); padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.plitem { display: flex; gap: 10px; align-items: flex-start; padding: 5px var(--sp-1); border-radius: var(--r-md); font-size: var(--fs-small); }
+.plitem .plmark { flex: none; width: 18px; height: 18px; margin-top: 0; display: grid; place-items: center; border-radius: 50%;
+  font-size: 10px; line-height: 1; color: var(--muted-text); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--muted-text) 55%, transparent); }
+.plitem .pltext { min-width: 0; padding-top: 0; }
+.plitem.completed .plmark { color: var(--t-fg); background: color-mix(in srgb, var(--ok-fill) 70%, transparent); box-shadow: none; }
 .plitem.completed .pltext { color: var(--muted-text); }
+.plitem.in_progress { background: color-mix(in srgb, var(--t-fg) 9%, transparent); }
+.plitem.in_progress .plmark { color: var(--t-bg); background: var(--t-fg); box-shadow: none; font-size: 8px; }
 .plitem.in_progress .pltext { font-weight: var(--fw-head); }
-.plnotes { gap: var(--sp-2); }
-.plnote { padding: var(--sp-2); border-radius: var(--r-md); background: var(--surface-1); }
-.plnote.done { opacity: .7; }
-.plnotehead { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
-.plkind { font-size: var(--fs-meta); font-weight: var(--fw-head); color: var(--muted-text); text-transform: uppercase; }
-.plnotetext { margin: 4px 0; white-space: pre-wrap; }
+.plitem.pending .plmark { color: transparent; }   /* the ring alone (its label says pending) */
+.plitem.blocked .plmark { color: #fff; background: var(--warn-fill); box-shadow: none; }
+.plfoot { margin-top: var(--sp-3); padding-top: var(--sp-2); border-top: 1px solid color-mix(in srgb, var(--t-fg) 14%, transparent); }
+.plfoot .plmeta { margin: 0; font-size: var(--fs-micro); }
 body:not([data-shown="term"]) #planpane { display: none !important; }
 
 /* a phone or a narrow window (placeModal's sheet): full width under the header (--plan-top: planpane.js),
@@ -61,3 +77,7 @@ body:not([data-shown="term"]) #planpane { display: none !important; }
   max-height: calc(var(--app-h, 100dvh) - var(--plan-top, 0px)) !important; border-radius: 0; }
 .plempty { white-space: normal; }
 .plfinished { font-weight: 600; }
+/* what the agent kept for the user (AC-98): a press opens its session's bookmarks and reminders */
+.plkept { margin-top: 0; font-size: var(--fs-small); color: var(--t-fg); }
+.plkept button { all: unset; cursor: pointer; color: var(--t-fg); font-weight: var(--fw-head); text-decoration: underline; text-underline-offset: 2px; }
+.plkept button:focus-visible { outline: 2px solid var(--t-fg); outline-offset: 2px; border-radius: 2px; }

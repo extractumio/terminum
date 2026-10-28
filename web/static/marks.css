@@ -138,3 +138,18 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
 #term { position: relative; }
 #markline { position: absolute; width: 6px; pointer-events: none; z-index: 1; opacity: .6;
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23ff9f1a' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y; }
+
+/* the session's pane goes through its bookmarks and reminders (marknav.js): the chosen one, ✓, Undo */
+#markpane:focus { outline: none; }
+#markpane .mknav li.chosen .mkitem { background: var(--surface-4); }
+#markpane .mknav li.remind::before { background: var(--remind); }
+#markpane .mkdone { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
+#markpane li.pending .mkitem { opacity: .5; text-decoration: line-through; }
+#markpane .mkdonetext { align-self: center; font-size: 11.5px; color: var(--muted); }
+#markpane .mkundo { margin: var(--sp-1); font-size: 12px; }
+#markpane .mkhint { margin: 4px 6px 2px; font-size: 11px; color: var(--muted); }
+@media (hover: none) { #markpane .mkhint { display: none; } }
+:is(#marklist, #markpane, #remindpane) .note :is(.agmark, .mkbell) { display: inline-flex; vertical-align: -2px; margin-right: 5px; }
+:is(#marklist, #markpane) .mkbell { color: var(--remind); }
+#mbdone.pending { --key-fill: var(--surface-4); }
+#markpane li.pending { align-items: center; }

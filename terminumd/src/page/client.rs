@@ -73,7 +73,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "files" => files(app, page).await,
         "size" | "mouse" => super::sizing::handle(app, page, t, &msg).await,
         "new" | "newsession" | "split" | "clone" | "rename" | "renamegroup" | "reorder" | "move" | "kill" => super::sessions::handle(app, page, t, &msg).await,
-        "plan" | "note" => super::plans::handle(app, page, t, &msg).await,
+        "plan" => super::plans::handle(app, page, &msg).await,
         "project" => super::projects::handle(app, page, &msg).await,
         "quick" | "quickside" => super::quick::handle(app, page, t, &msg).await,
         // a host's ssh, helper copy and install take up to minutes: the page's loop goes on (it waits for the answer)

@@ -216,7 +216,7 @@ export async function webMarks(browser, name = "") {
     head: document.querySelector("#markpane h2")?.textContent }));
   await pressFab(page, "#marksfab");
   check(`${at} a renamed session keeps its bookmarks (marks, strip, count); outside projects its pane lists its own`,
-    renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.listed) && renamed.listed >= 6 && renamed.head === "Bookmarks of this session", JSON.stringify(renamed));
+    renamed.rail >= 4 && renamed.strip && renamed.fab === String(renamed.listed) && renamed.listed >= 6 && renamed.head === "Bookmarks and reminders of this session", JSON.stringify(renamed));
 
   // the way back: into older lines not loaded, found by its text (its line moved)
   await page.click('#msgrail .dot[title*="Bookmark: ask about the retry loop"]');
@@ -382,7 +382,7 @@ export async function webMarks(browser, name = "") {
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
   check(`${at} a bookmark of the project made in another session shows that session and its text`, m?.text === "the retry loop never resets" && inView(m)
-    && head === "Bookmarks of Work" && await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id === "S1"), JSON.stringify({ m, head }));
+    && head === "Bookmarks and reminders of Work" && await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id === "S1"), JSON.stringify({ m, head }));
   say({ t: "projects", items: [] });                // the project gone (deleted, or its last session closed): terminumd orphans its bookmark
   say({ t: "mark", item: { ...ITEMS[0], project: "P", orphaned: at0 + 10 } });
   await page.waitForFunction(() => document.getElementById("markcount").textContent === "2");

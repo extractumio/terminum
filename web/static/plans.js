@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Plans and notes (AC-97, AC-98): the pure texts of a plan's row, header and pane. Times are
+// Plans (AC-97): the pure texts of a plan's row, header and pane. Times are
 // terminumd's unix seconds; `now` is the page's (seconds). Nothing here touches the DOM.
 
 const ICONS = { completed: "✓", in_progress: "▶", pending: "○", blocked: "⚠" };
@@ -40,9 +40,3 @@ export function etaLine(plan) {
 
 /** Where the plan came from. */
 export const sourceText = (source) => (source === "mcp" ? "reported through terminum's MCP" : "from the agent's plan tool");
-
-/** Open notes first, newest first (terminumd sends them so; kept if it does not). */
-export const orderNotes = (notes) => [...(notes ?? [])].sort((a, b) => Number(b.status === "open") - Number(a.status === "open") || b.at - a.at);
-
-/** What Insert into chat pastes for a note: its kind, then its text (no Enter). */
-export const noteChat = (note) => `${note.kind}: ${note.text}${note.file ? `\n(${note.file})` : ""}`;

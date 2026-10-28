@@ -27,13 +27,13 @@ export async function webPlansFind(browser, name) {
 
     const head = await q(page, () => { const b = document.getElementById("curplan"), r = b.getBoundingClientRect();
       return { hidden: b.hidden, title: b.title, w: r.width, ring: document.getElementById("planfab").hidden }; });
-    check("AC-97 a coding agent's row without a plan shows the header's Plan button (no plan yet), no progress circle", !head.hidden && head.title === "Plan and Notes: no plan yet" && head.w > 0
+    check("AC-97 a coding agent's row without a plan shows the header's Plan button (no plan yet), no progress circle", !head.hidden && head.title === "Plan: none yet" && head.w > 0
       && head.ring, JSON.stringify(head));
 
     await page.click("#curplan");
     await pause(page, 300);
     const empty = await paneText(page);
-    check("AC-97 the Plan pane without a plan says the agent sent none, then the notes", empty === "No plan: the agent has not sent one for this session.No notes", empty);
+    check("AC-97 the Plan pane without a plan says the agent sent none, then that it kept nothing (AC-98)", empty === "No plan: the agent has not sent one for this session.For youNothing kept for you by the agent.", empty);
     await page.keyboard.press("Escape");
     await pause(page, 200);
 
@@ -66,7 +66,7 @@ export async function webPlansFind(browser, name) {
     const fin = await paneText(page);
     const rowPct = await q(page, (c) => !!document.querySelector(`.item[data-id="${c}"] .plpct`), C);
     check("AC-97 a plan whose agent exited shows marked Finished session (agent exited hh:mm), its items kept",
-      /^Finished session \(agent exited \d\d:\d\d\)Old work✓done item/.test(fin ?? ""), fin);
+      /^Finished session \(agent exited \d\d:\d\d\)Old work1 of 1 done100%Steps✓done item/.test(fin ?? ""), fin);
     check("AC-97 the row shows no percent for a finished plan", !rowPct, String(rowPct));
     await page.keyboard.press("Escape");
 

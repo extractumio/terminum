@@ -2,8 +2,8 @@
 // The Plan pane's UI checklist (docs/UI-GUIDELINES.md §6, AC-97, AC-98) at one size: a light theme's
 // contrast (the percent, the track, the header's progress, the pane's text), --size 10 and 20, the
 // keyboard (Tab, a focus ring, Enter, Esc gives focus back), a long title, doing and session name at
-// the 300 px sidebar and at 390 px, the empty state, terminumd's refusal of a note act shown in the
-// pane, `hooks: false` said, and the pane with a banner and a toast. Called by e2e_plans.mjs.
+// the 300 px sidebar and at 390 px, the empty state, `hooks: false` said, and the pane with a banner
+// and a toast. Called by e2e_plans.mjs.
 import { check } from "./check.mjs";
 import { drawn, group, item, openPage, pause, THEME } from "./fake.mjs";
 
@@ -36,13 +36,11 @@ export async function planLook(browser, name, size, device) {
   const now = Math.floor(Date.now() / 1000);
   const plan = { done: 3, total: 7, pct: 43, eta: now + 3600, updated: now - 300, stale: false, partial: false };
   let reply = { plan: { title: TITLE, doing: DOING, items: [{ text: "one", status: "completed" }, { text: "two", status: "in_progress" }],
-    done: 1, total: 2, pct: 50, eta: null, eta_given: null, updated: now - 60, source: "hooks", partial: false, agent: "codex" },
-  notes: [{ id: 1, kind: "bug", text: "a note", file: null, status: "open", at: now - 60, done_at: null }], hooks: false };
-  const f = await openPage(browser, { device, layout: [group("main", [item(A, LONG, { plan, notes: 1 }), item(B, LONG + "-2", { index: "2", plan })])],
+    done: 1, total: 2, pct: 50, eta: null, eta_given: null, updated: now - 60, source: "hooks", partial: false, agent: "codex" }, hooks: false };
+  const f = await openPage(browser, { device, layout: [group("main", [item(A, LONG, { plan }), item(B, LONG + "-2", { index: "2", plan })])],
     hook: (m, say) => {
       if (m.t === "sub") say({ t: "theme", sid: m.id, theme: LIGHT });
       if (m.t === "plan") say({ t: "plan", key: m.key, ...reply });
-      if (m.t === "note") say({ t: "error", msg: "no note 1 in this session", sid: m.key });
     } });
   const { page } = f;
   await drawn(page);
@@ -92,7 +90,7 @@ export async function planLook(browser, name, size, device) {
   // the pane's text on the light theme, the long title and doing wrap inside it, hooks: false said
   const pane = await page.evaluate((hooks) => {
     const p = document.getElementById("planpane"), r = p.getBoundingClientRect(), b = document.getElementById("planbody");
-    const inside = [...b.querySelectorAll(".pltitle, .pldoing, .plmeta, .pltext, .plnotetext")].every((e) => { const q = e.getBoundingClientRect(); return q.left >= r.left - 1 && q.right <= r.right + 1; });
+    const inside = [...b.querySelectorAll(".pltitle, .pldoing, .plmeta, .pltext")].every((e) => { const q = e.getBoundingClientRect(); return q.left >= r.left - 1 && q.right <= r.right + 1; });
     return { title: __ratio(b.querySelector(".pltitle")), doing: __ratio(b.querySelector(".pldoing")), meta: Math.min(...[...b.querySelectorAll(".plmeta")].map((e) => __ratio(e))),
       head: __ratio(p.querySelector("h2")), inside, sideways: p.scrollWidth > p.clientWidth + 1, hooks: [...b.querySelectorAll(".plhooks")].map((e) => e.textContent).join() === hooks,
       inView: r.left >= -1 && r.right <= innerWidth + 1 };
@@ -100,14 +98,6 @@ export async function planLook(browser, name, size, device) {
   check(`${at} light theme: the pane's title, doing, meta and heading ≥ 4.5:1`, Math.min(pane.title, pane.doing, pane.meta, pane.head) >= 4.5, JSON.stringify(pane));
   check(`${at} an 80-character title and a 120-character doing wrap inside the pane, no sideways scroll`, pane.inside && !pane.sideways && pane.inView, JSON.stringify(pane));
   check(`${at} the plan's hooks: false is said in one line`, pane.hooks, JSON.stringify(pane));
-
-  // terminumd refuses a note act: the pane says why, not a banner behind it
-  await page.click('.plnote[data-id="1"] .placts .primary');
-  await pause(page, 200);
-  const err = await page.evaluate(() => ({ pane: document.querySelector("#planbody .plerr")?.textContent, role: document.querySelector("#planbody .plerr")?.getAttribute("role"),
-    banner: [...document.querySelectorAll("#status, .banner")].some((e) => e.offsetParent && /no note 1/.test(e.textContent)), ratio: __ratio(document.querySelector("#planbody .plerr")) }));
-  check(`${at} terminumd's refusal of a note act shows in the pane (role alert, ≥ 4.5:1 on light), not as a banner`,
-    err.pane === "no note 1 in this session" && err.role === "alert" && !err.banner && err.ratio >= 4.5, JSON.stringify(err));
 
   // with a banner and a toast: they do not cover each other
   await page.evaluate(() => import("/banners.js").then((b) => b.banner("status", "tmux is gone: a long banner to check the pane does not cover it")));
@@ -139,12 +129,12 @@ export async function planLook(browser, name, size, device) {
   const back = await page.evaluate(() => ({ open: !document.getElementById("planpane").hidden, focus: document.activeElement?.id }));
   check(`${at} Esc closes the pane and gives the focus back to the header's Plan button`, !back.open && back.focus === "curplan", JSON.stringify(back));
 
-  // the empty state: no plan, no notes
-  reply = { plan: null, notes: [] };
+  // the empty state: no plan, nothing kept by the agent
+  reply = { plan: null };
   await page.click("#curplan", { timeout: 5000 });
   await pause(page, 250);
   const empty = await page.evaluate(() => [...document.querySelectorAll("#planbody p, #planbody h3")].map((e) => e.textContent));
-  check(`${at} the empty state: "No plan: …" and "No notes", no hooks line`, empty.some((t) => t.startsWith("No plan: ")) && empty.includes("No notes") && empty.length === 2, JSON.stringify(empty));
+  check(`${at} the empty state: "No plan: …" and nothing kept by the agent, no hooks line`, empty.some((t) => t.startsWith("No plan: ")) && empty.includes("Nothing kept for you by the agent.") && empty.length === 2, JSON.stringify(empty));
   check(`no page errors (plans look) ${size}`, !f.errors.length, f.errors.join(" | "));
   await f.close();
 }

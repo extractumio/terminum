@@ -132,8 +132,15 @@ fn tools_list_has_four_tools_with_schemas_and_hints() {
     let d = tools[0]["description"].as_str().unwrap();
     assert!(d.contains("whole plan") && d.contains("pending, in_progress, completed or blocked") && d.contains("minutes"));
     let notes = &tools[2]["inputSchema"]["properties"]["notes"];
-    assert_eq!((notes["maxItems"].clone(), notes["items"]["properties"]["kind"]["enum"].clone()), (json!(20), json!(["bug", "deferred", "followup", "question"])));
-    assert_eq!((notes["items"]["properties"]["text"]["maxLength"].clone(), notes["items"]["properties"]["file"]["maxLength"].clone()), (json!(1000), json!(300)));
+    assert_eq!((notes["maxItems"].clone(), notes["items"]["properties"]["kind"]["enum"].clone()), (json!(20), json!(["bug", "deferred", "followup", "question", "report"])));
+    assert_eq!(notes["items"]["required"], json!(["title", "text"]));
+    assert_eq!((notes["items"]["properties"]["title"]["maxLength"].clone(), notes["items"]["properties"]["text"]["maxLength"].clone(), notes["items"]["properties"]["file"]["maxLength"].clone()),
+               (json!(120), json!(2000), json!(300)));
+    assert_eq!(notes["items"]["properties"]["remind"]["type"], "boolean");
+    let d = tools[2]["description"].as_str().unwrap();
+    for w in ["final report", "a next step", "deferred work", "a question", "remind: true", "must act or decide", "When unsure, a bookmark"] {
+        assert!(d.contains(w), "{w}");
+    }
     assert_eq!(tools[3]["inputSchema"]["required"], json!(["id"]));
     assert_eq!(tools[3]["inputSchema"]["properties"]["status"]["enum"], json!(["open", "done"]));
 }
@@ -150,8 +157,8 @@ fn a_call_goes_to_terminumd_with_the_pane_and_only_known_fields() {
                  "doing": "Run the tests", "eta_minutes": 45}}));
     let (r, sent) = tool("get_session_plan", json!({}), &in_pane(), Ok((200, Some(json!({"text": "[x] a", "error": true})))));
     assert_eq!((r["isError"].clone(), sent.unwrap()["args"].clone()), (json!(true), json!({})), "terminumd's error flag kept");
-    let (_, sent) = tool("add_notes_for_user", json!({"notes": [{"kind": "bug", "text": "The parser drops a BOM", "file": "src/parse.rs"}]}), &in_pane(), Ok((200, Some(json!({"text": "n1"})))));
-    assert_eq!(sent.unwrap()["args"], json!({"notes": [{"kind": "bug", "text": "The parser drops a BOM", "file": "src/parse.rs"}]}));
+    let (_, sent) = tool("add_notes_for_user", json!({"notes": [{"title": "BOM", "text": "The parser drops a BOM", "kind": "bug", "file": "src/parse.rs", "remind": true, "x": 1}]}), &in_pane(), Ok((200, Some(json!({"text": "n1"})))));
+    assert_eq!(sent.unwrap()["args"], json!({"notes": [{"title": "BOM", "text": "The parser drops a BOM", "kind": "bug", "file": "src/parse.rs", "remind": true}]}));
     let (_, sent) = tool("update_notes_for_user", json!({"id": "n1", "status": "done"}), &in_pane(), Ok((200, Some(json!({"text": "ok"})))));
     assert_eq!(sent.unwrap()["args"], json!({"id": "n1", "status": "done"}));
 }
@@ -174,7 +181,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
         for t in TOOLS {
             let args = match t {
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
-                "add_notes_for_user" => json!({"notes": [{"kind": "bug", "text": "a"}]}),
+                "add_notes_for_user" => json!({"notes": [{"title": "t", "text": "a"}]}),
                 "update_notes_for_user" => json!({"id": 1, "status": "done"}),
                 _ => json!({}),
             };
@@ -226,21 +233,25 @@ fn update_session_plan_is_checked_before_it_goes() {
 
 #[test]
 fn notes_are_checked_before_they_go() {
-    let note = |k: &str, t: &str| json!({"kind": k, "text": t});
-    assert!(refused("add_notes_for_user", json!({"notes": []})).contains("1–20 notes"));
+    let note = |k: &str, t: &str| json!({"title": "t", "kind": k, "text": t});
+    assert!(refused("add_notes_for_user", json!({"notes": []})).contains("1–20 records"));
     assert!(refused("add_notes_for_user", json!({"notes": vec![note("bug", "a"); 21]})).contains("at most 20"));
     let k = refused("add_notes_for_user", json!({"notes": [note("todo", "a")]}));
-    assert!(k.contains("notes[0].kind") && k.contains("bug, deferred, followup, question"), "{k}");
-    assert!(refused("add_notes_for_user", json!({"notes": [note("bug", &"x".repeat(1001))]})).contains("over 1000"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"kind": "bug", "text": "a", "file": "f".repeat(301)}]})).contains("file is over 300"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"kind": "bug"}]})).contains("text is required"));
+    assert!(k.contains("notes[0].kind") && k.contains("bug, deferred, followup, question, report"), "{k}");
+    assert!(refused("add_notes_for_user", json!({"notes": [note("bug", &"x".repeat(2001))]})).contains("over 2000"));
+    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "x".repeat(121), "text": "a"}]})).contains("title is over 120"));
+    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t", "text": "a", "file": "f".repeat(301)}]})).contains("file is over 300"));
+    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t"}]})).contains("text is required"));
+    assert!(refused("add_notes_for_user", json!({"notes": [{"text": "a"}]})).contains("title is required"));
+    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t", "text": "a", "remind": "yes"}]})).contains("true or false"));
     assert!(refused("update_notes_for_user", json!({"status": "done"})).contains("id is required"));
     assert!(refused("update_notes_for_user", json!({"id": -1, "status": "done"})).contains("id is required"));
     assert!(refused("update_notes_for_user", json!({"id": "n1"})).contains("nothing to change"));
     assert!(refused("update_notes_for_user", json!({"id": "n1", "status": "closed"})).contains("open, done"));
-    assert!(refused("update_notes_for_user", json!({"id": "n1", "kind": "idea"})).contains("bug, deferred, followup, question"));
+    assert!(refused("update_notes_for_user", json!({"id": "n1", "remind": 1})).contains("true or false"));
     assert!(checked("add_notes_for_user", &json!({"notes": vec![note("question", "a"); 20]})).is_ok());
-    assert_eq!(checked("update_notes_for_user", &json!({"id": 4, "text": "new", "kind": "followup"})).unwrap(), json!({"id": 4, "text": "new", "kind": "followup"}));
+    assert_eq!(checked("update_notes_for_user", &json!({"id": "aB3", "text": "new", "remind": false, "kind": "x"})).unwrap(), json!({"id": "aB3", "text": "new", "remind": false}),
+               "only the fields it takes");
 }
 
 #[test]
@@ -271,7 +282,7 @@ fn lengths_count_after_cleaning_and_eta_is_an_integer() {
     assert_eq!(sent.unwrap()["args"]["items"][0]["text"], "x".repeat(200), "{r}");
     assert!(refused("update_session_plan", json!({"items": [{"text": "\u{2066}\u{7}", "status": "pending"}]})).contains("empty"));
     assert!(refused("update_session_plan", json!({"items": [{"text": "a", "status": "pending"}], "eta_minutes": 30.0})).contains("whole number"));
-    assert!(refused("add_notes_for_user", json!({"notes": [{"kind": "bug", "text": "x".repeat(1001)}]})).contains("over 1000"));
+    assert!(refused("add_notes_for_user", json!({"notes": [{"title": "t", "text": "x".repeat(2001)}]})).contains("over 2000"));
 }
 
 #[test]
@@ -309,4 +320,16 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS);
     let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
     assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 4);
+}
+
+/// What every session in a terminum pane pays for terminum's tools stays small (the owner
+/// asked for compact descriptions): the instructions within 512 characters, each tool's
+/// description within 500, all four tools' JSON within 3,200.
+#[test]
+fn the_tools_stay_compact() {
+    let t = tools();
+    let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
+    eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
+    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 3200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
+    assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
 }

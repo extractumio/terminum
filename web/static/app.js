@@ -294,7 +294,7 @@ function onMessage(m) {
     case "hostadded": case "hostagents": tools.hostAnswer(m); break;
     case "tmuxadded": tools.tmuxAdded(); break;
     case "tmuxsessions": tools.tmuxChoices(m); break;
-    case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg) && !showCurrent.plan.error(m)) status(m.msg); break;   // empty: tmux is back
+    case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
     case "stall": tools.showStall(m); break;
@@ -369,7 +369,7 @@ function toggleGroup(key) {
 
 // The header (header.js): the title, then the folder with its Copy, the window, what runs there.
 const showCurrent = pageHeader({ copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => view.setAgent(a),
-  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text) });
+  send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), records: () => bookmarks.agentRecords() });
 
 function select(id, force = false) {
   if (id === st.sid && !force && view.screen.length) return;

@@ -15,6 +15,8 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.1 | 2026-10-28 | Owner: the Plan pane was cramped, its lines one after another at one size. It is laid out in sections: a larger title, "Now" with the current step set apart, the progress as "3 of 9 done", its percent and a bar with the ETA under it, "Steps" with each mark in a round badge and the step in progress tinted, a rule before when it was updated and its source, "For you" with what the agent kept; in the theme's text color, never the cursor's (AC-97). |
+| 0.6.0 | 2026-10-28 | Owner: a coding agent hands the user what must not get lost in the terminal's scroll (a final report, a next step, a gap seen elsewhere, deferred work, a question) through add_notes_for_user, now kept as the session's bookmarks, or reminders when the user must act or decide; the 0.23 notes (the Plan pane's list) are such records, imported once (AC-98). The bookmarks' pane goes through a session's bookmarks and reminders: by line, a press or ↑ ↓ jumps with the pane kept open, ✓ or Delete settles one with Undo for 5 s, Enter closes it; the bar has Done (AC-33). Pragmatic review applied: one tool, not a second beside the notes; a final report always a bookmark, when unsure a bookmark; agents' records limited on their own (50 open a scope, 500 in all), never the user's 300; a repeat by title not kept twice; text cleaned and redacted; Markdown with raw HTML off (0.5.0 had agent text as plain text: a self-contained report needs lists and code). Changed from the review: the record's place is found by its title where the agent's call was printed (the owner asked to jump to it), not dropped. The MCP tools' instructions 493 characters (511), all four tools' JSON 3,184 (2,858). |
 | 0.5.9 | 2026-10-27 | Owner: no question mark and no waiting line for a Claude Code session waiting on its question (AskUserQuestion) in a pane its agent team's panes made narrow: past the hooks' 2 minutes the screen decides, and Claude Code broke its footer over rows ("Enter to select · ↑/↓" / "to navigate · Esc to" / "cancel"), so "Esc to cancel" was not found. The words that say it waits are read as one line (AC-39). |
 | 0.5.8 | 2026-10-27 | Owner: the image buttons after a row as wide as the view stood alone on the line below it; they go on with the row's last word (a word joiner, generated, never copied) (AC-31). A path of 84 characters or more in a row of output shows its first 36 and last 40 with "[...]" between; a click on "[...]" shows it whole for as long as the page is open; copying, ⌘-click and its underline take it whole (AC-35). |
 | 0.5.7 | 2026-10-27 | Owner: the reminders of sessions waiting for an answer were cards at the terminal's top right; now each is a line across the terminal's whole width at its top under the banners, one under another, its ? in the waiting yellow on a faint tint, its text cut by an ellipsis (AC-39). |
@@ -141,7 +143,7 @@ Open questions:
 | AC-90 | [SHOULD / P1] | Every message or command the user sends in a pane is kept per project (its host and folder) and read back as Markdown from a button under the magnifier: the last first, older and newer. |
 | AC-91 | [SHOULD / P1] | A bookmark can be a reminder: a pale fuchsia button comes up, its count filled, over every session when its session's coding agent ends a turn, until pressed; its pane shows the open reminders as Markdown; Close puts one down until the next turn's end, Resolve ends it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
-| AC-98 | [SHOULD / P1] | A coding agent leaves notes for the user (bugs, deferred work, follow-ups, questions) through terminum's MCP tools; the Plan pane lists them with Done, Reopen, Delete and Insert into chat. |
+| AC-98 | [SHOULD / P1] | A coding agent hands the user what must not get lost in the terminal's scroll (a final report, a next step, a gap seen elsewhere, deferred work, a question) through terminum's MCP tool: kept as its session's bookmarks, or reminders when the user must act; self-contained, found where the call was printed. |
 | AC-40 | [MUST / P0] | In a coding agent's input box on a phone, a tap puts the cursor on the character under it, ↑ and ↓ move by the page's lines, a slide moves the cursor, held delete deletes words, the box is a panel above the keyboard with its status lines behind ⓘ, and the cursor is drawn in the box when the agent left it below the footer. |
 
 ## 5. BDD scenarios
@@ -258,6 +260,16 @@ Scenario: AC-33 happy path — marks, the way back, the lists
   Then its note and, under it after a blank line, its text quoted ("> " a line) are pasted into the shown pane's input as one paste, no Enter; on a computer the terminal takes the keys, a phone's keyboard stays as it was
   When the user opens "Bookmarks / Reminders" at the list's foot (an orange bookmark's icon; on a computer "Bookmarks / Reminders" with a pink bell before "Reminders", on a phone both icons in one blob; the count of those it lists)
   Then a large window opens on the right (the whole width on a phone; × or Esc closes it) and the bookmarks no session shows are listed newest first with their session's title: "orphaned" (its project or session gone) or "out of reach" (its session not listed now, its host unreachable); picking one closes the window and shows its text and note, or that session and the bookmark when it is listed
+
+Scenario: AC-33 happy path — going through a session's bookmarks and reminders
+  When the user presses the bookmarks' button
+  Then its pane lists the session's bookmarks and open reminders together, its own in the session's order (top to bottom), the project's others' after, newest first: a reminder with a pink bell, an agent's (AC-98) with its agent's mark, each its title (or its text's start), its text's first line and time; on a computer the list has the keys
+  When the user presses an entry, or moves to it with ↑ or ↓
+  Then the session goes to its place as a mark's press does, and the pane stays open with that entry chosen, so the next press goes on; Enter or Esc closes the pane, the view staying where it went
+  When the user presses an entry's ✓ (or Delete or ⌫ on the chosen one)
+  Then it is done at once in the list: struck through, "Resolved" or "Deleted" and Undo in its place for 5 s; only after it terminumd is told (a page closed meanwhile does nothing)
+  And the bar after a jump has Done (the same, its Undo in its place) before Insert into chat, Edit and Delete, and ↑ ↓ to the entry above or below
+  And the bookmarks' button counts its bookmarks and open reminders; on a computer the pane says "↑ ↓ go through them · ✓ or Delete: done · Enter: close"
 
 Scenario: AC-33 happy path — by project or session
   Given a bookmark made in a session of the project "iQuantize" (AC-92)
@@ -563,12 +575,12 @@ Scenario: AC-97 happy path — the agent's own plan
 
 Scenario: AC-97 happy path — the Plan pane
   When the user presses the percent, the column's progress circle or the header's Plan button
-  Then the Plan pane opens (modal, as the reminders' pane): the title, the current step ("doing"), the items marked ✓ ▶ ○ ⚠ (completed, in progress, pending, blocked), the ETA "~17:40 (agent's estimate, given 16:55)", "updated 2 min ago" (terminumd's times, aged by the browser's clock), then the notes (AC-98)
+  Then the Plan pane opens (modal, as the reminders' pane), laid out in sections: the plan's title (15 px, 600); "Now" and the current step ("doing") on a raised strip with a bar at its left; the progress, "3 of 9 done" and "33%" over a bar filled to it, the ETA "~17:40 (agent's estimate, given 16:55)" under it; "Steps", each item with its mark in a round badge (✓ on green, ▶ on the text color with its row tinted, an empty ring pending, ⚠ on amber) and its text hanging beside it; under a rule "Updated 2 min ago (16:57)" and where the plan came from (terminumd's times, aged by the browser's clock); "For you" and how many records its agent kept for the user ("2 kept for you by the agent: show them", a press opening the bookmarks' pane; "Nothing kept for you by the agent.", AC-98)
   And every text the agent wrote is kept without control or bidi characters (U+202A–U+202E, U+2066–U+2069) and shown as plain text (never Markdown or HTML: "<b>x</b>" reads as typed); on a phone the pane is full-width under the header, its buttons at least 44 px
 
 Scenario: AC-97 happy path — found before a plan
   Given a pane runs a coding agent that has made no plan yet
-  Then the header shows a Plan button (its icon alone, right of ✎, its hover "Plan and Notes: no plan yet"), and the column no progress circle; a row's menu and the header's ⋯ menu have "Plan and Notes…" for any session
+  Then the header shows a Plan button (its icon alone, right of ✎, its hover "Plan: none yet"), and the column no progress circle; a row's menu and the header's ⋯ menu have "Plan and Notes…" for any session
   And the Plan pane without a plan says "No plan: the agent has not sent one for this session.", then the notes
 
 Scenario: AC-97 edge — the agent exited
@@ -635,34 +647,40 @@ Scenario: AC-97 happy path — kept current by an install or upgrade of terminum
   Then a "Warning: …; run terminum hooks install" line is said and the install or upgrade still succeeds; `terminum status`, `open` and `install` say in one line that the agent has terminum's hooks without its MCP server, naming `terminum hooks install`
 ```
 
-### AC-98 — Notes for the user [SHOULD / P1]
+### AC-98 — The agent's bookmarks and reminders [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-98 happy path — the agent leaves notes
-  When the agent calls add_notes_for_user {notes: [{kind: "bug", text: "The parser drops a BOM", file: "src/parse.rs"}, {kind: "deferred", text: "Paging of the list"}]}
-  Then terminumd keeps them in `state/notes.json` under the scope a bookmark of the session would have (its project, else the session, AC-33) and answers their ids; the Plan pane lists them (kind, text, file) as plain text under the plan
-  When the agent calls update_notes_for_user {id, status: "done"} or with a new text or kind
-  Then that note changes; a note of another scope is not found
-  When the session joins a project
-  Then the notes it left before stay shown on its row with the project's
+Scenario: AC-98 happy path — the agent hands the user a record instead of printing it
+  Given the coding agent finds a next step, a gap or a bug in another part of the project, deferred work, a question only the user can answer, or ends with a final report
+  When it calls add_notes_for_user {notes: [{title: "Final report: retry loop fixed", text: "<Markdown: what changed, files, why, how checked, next step>", kind: "report"}, {title: "Decide: rename the API to fetch_all?", text: "…", kind: "question", remind: true}]}
+  Then terminumd keeps each as a bookmark of the agent's pane (AC-33) marked made by the agent (claude or codex): its title the bookmark's note, its text the body, its kind and file kept; one with remind true is a reminder (AC-91) and comes up when the turn ends
+  And it answers each record's id, and for a reminder that it comes up at each turn end until the user resolves it
+  And it is scoped as a bookmark the user makes there (its project, else its session), its title and text cleaned (control and bidi characters dropped) and redacted (`sent::redact`) before they are kept
+  And its place is where the agent's call was printed: the pane's newest history line then, and its title, which the agent's transcript of the call shows; Open looks for the title nearest that line (AC-33's search), and where it is no longer in the history it shows the record with "Where it was made is no longer in this session's history."
+  And the tool's description says what it covers and the rule: a final report, findings and deferred work are bookmarks; remind only when the user must act or decide (a blocker, a question, a risky leftover, a step only the user can take); when unsure, a bookmark; each record readable without the chat (what, where: files and paths, why, next step)
 
-Scenario: AC-98 happy path — the user acts
-  When the user presses Done on a note
-  Then it is marked done (Reopen opens it again); Delete asks once and removes it; Insert into chat pastes its text into the shown pane's input through the paste path (control characters dropped), never Enter
+Scenario: AC-98 happy path — shown with the user's
+  Then it is listed with the user's bookmarks and reminders (AC-33, AC-91), its agent's mark before its title, its text as Markdown with raw HTML off (as rendered output, AC-31), never quoted; Insert into chat pastes its title, a blank line, its text
+  And the Plan pane (AC-97) says how many open records the agent left, a press opening the session's bookmarks' pane
 
-Scenario: AC-98 edge — limits and restarts
-  When a scope holds 100 open notes
-  Then add_notes_for_user answers an error naming the limit, nothing added; a call carries 1–20 notes of at most 1000 characters each (file at most 300), kinds bug, deferred, followup or question
-  When terminumd restarts
-  Then the notes come back; a note's text is redacted (`sent::redact`) before it is kept; at most 500 done notes are kept, the oldest done dropped first; an open note shown nowhere (its tmux server started anew, or its pane gone and in no project) goes once 30 days old; at most 2000 notes in all (the oldest done go first, then the oldest shown nowhere); a row's open count is read in one pass of the notes per list
-  When the tmux server restarts (a reboot) and a new pane takes an old pane's id
-  Then the old pane's notes are kept in notes.json but not shown on the new pane, nor found by its agent
+Scenario: AC-98 happy path — the agent updates one
+  When the agent calls update_notes_for_user {id, status: "done"} (or a new title, text or remind)
+  Then a reminder is resolved, a bookmark deleted (open reopens a resolved reminder); only a record an agent made in the caller's scope is found
+
+Scenario: AC-98 edge — limits, repeats, the notes of 0.23
+  When a scope holds 50 open records of agents (bookmarks and unresolved reminders)
+  Then the call answers an error naming the limit and nothing is added; agents' records never count against the user's 300 bookmarks; at most 500 in all
+  When a record of the same title (letter case aside) is open in the scope
+  Then it is not added again; the answer names its id (an agent repeats itself after its context is compacted)
+  And a call carries 1–20 records: title 1–120 characters, text 1–2000, kind bug, deferred, followup, question or report, file at most 300
+  When terminumd starts with the notes.json of 0.23 (the Plan pane's notes)
+  Then its open notes become agents' bookmarks of their scopes once (title: the text's first line, cut to 120), and the file is kept as notes.json.imported
 
 Scenario: AC-98 failure — not kept
   When the call is made outside a terminum pane or terminumd is down
   Then it answers the same errors as AC-97's tools
-  When notes.json cannot be written
-  Then the tool answers an error and terminumd's log says why; the Page's Done or Delete says why where it was pressed
+  When web-bookmarks.json cannot be written
+  Then the tool answers an error and nothing is kept
 ```
 
 ### AC-40 — Editing a coding agent's input on a phone [MUST / P0]
@@ -940,3 +958,5 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.5.7 (2026-10-27) — AC-39 `web/test/e2e_look.mjs` (Chromium and WebKit, a computer: a waiting session's line spans the terminal's width at its top under the banners, one line with an ellipsis, no shadow, over no floating button), `e2e_app.mjs` (its words, ×, a click opens the session) → `node web/test/e2e_all.mjs` PASS 1447.
 - [x] 0.5.8 (2026-10-27) — AC-35, AC-31 `web/test/e2e_pathfold.mjs` (Chromium and WebKit, 1200×800 and 390×844: a 109-character path shows its first 36 and last 40 with "[...]", a short one whole; a copy of the row has the whole path; ⌘-click on its shown end opens the whole path; a click or a tap on "[...]" shows it whole, types nothing, and a redraw of its row keeps it whole; the image buttons after a row of 80 columns in an 80-column view stay on its last word's line, alone on the next line before the fix) → `node web/test/e2e_all.mjs`.
 - [x] 0.5.9 (2026-10-27) — AC-39 `cargo test tmux::agentstate` (a question's footer wrapped at 22 columns is waiting; failed before the fix). Claude Code 2.1.311 in a private tmux, a question open: its hooks sent PreToolUse (AskUserQuestion) and a permission_prompt notice, then nothing for 2.5 minutes (no idle_prompt), and at 22 columns its footer reads "Enter to select · ↑/↓" / "to navigate · Esc to" / "cancel". Not checked: the owner's session itself.
+- [x] 0.6.0 (2026-10-28) — AC-98 `cargo test agentmarks` (records are the agent's bookmarks and reminders of its pane, its title the note; a repeat by title kept once; text cleaned and redacted; 50 open a scope, the user's 300 apart; done resolves a reminder and deletes a bookmark, a reminder made a bookmark and done deleted, an unknown status refused, the pane's own records still the agent's after it joins a project; 0.23's notes imported once, a second import keeps nothing twice), `cargo test cli::mcp` (the schema, the description's rule, instructions within 512, all four tools within 3,200 characters), `web/test/e2e_marknav.mjs` (Chromium and WebKit: the pane's order, marks and bells, the keys, a press kept open, ✓ and Delete with Undo, terminumd told after 5 s, the bar's Done, an agent's record found where its call was printed, Markdown in the reminders' pane, Insert into chat unquoted), `e2e_plans.mjs`, `e2e_liveplans.mjs` in `e2e_live.mjs` (the real `terminum mcp`: a bookmark and a reminder in web-bookmarks.json, the bookmarks' pane, ✓ through terminumd), `scripts/e2e_remote_agents.py` 21/21 → `make test` (cargo 633, web units 38 + 136), `node web/test/e2e_all.mjs` PASS 1485, `node web/test/e2e_live.mjs` PASS 177, `scripts/e2e_remote.py` 32/32, `scripts/security_check.sh` PASS. Real cases: Claude Code 2.1.311 (Opus 5.5), interactive, in a private tmux under a private terminumd, four tasks naming neither terminum nor its tools, two runs with the final instructions: a final report kept as a bookmark both times; a decision only the user can take kept both times (a reminder once, a bookmark once); findings outside the task (a bug, a typo) kept in both of those sessions; a routine fix: no call; a session asked only to read a buggy file said the bug in its answer and kept nothing (both runs). Each record's title stood on the screen where its call was printed (12 of 12). Reviewed by the pragmatic agent before (design: one tool, not two; limits apart from the user's; when unsure a bookmark) and after (a second import, a resolved bookmark state, a project's own records: fixed; a page closed within Undo's 5 s: told at once; a short title found at another place: noted).
+- [x] 0.6.1 (2026-10-28) — AC-97 `e2e_plans.mjs`, `e2e_planslook.mjs` (light theme ≥ 4.5:1, an 80-character title and a 120-character doing inside the pane, --size 10 and 20), `e2e_plansfind.mjs` → `node web/test/e2e_all.mjs` PASS 1485; looked at in Chromium on a dark and a light theme, 1200×860 and 390×844, with a nine-step plan.

@@ -1,18 +1,17 @@
 use super::*;
-use crate::testutil::fresh_dir;
 
 fn caller(project: Option<&str>) -> Caller {
     let key = "tmux:local:t:%1".to_string();
-    Caller { scope: Scope { key: key.clone(), project: project.map(String::from) }, agent: "claude".into(), session: Some("s1".into()), key, hooks: true, other: false }
+    Caller { place: Place { key: key.clone(), project: project.map(String::from), ..Place::default() }, agent: "claude".into(), session: Some("s1".into()), key, hooks: true, other: false }
 }
 
-fn go(plans: &Plans, notes: &Notes, c: &Caller, tool: &str, args: Value) -> (String, bool, Changed) {
+fn go(plans: &Plans, notes: &Mutex<Store>, c: &Caller, tool: &str, args: Value) -> (String, bool, Changed) {
     run(plans, notes, c, tool, &args, false, 1_000_000)
 }
 
 #[test]
 fn update_and_get_plan() {
-    let (p, n, c) = (Plans::default(), Notes::load(None), caller(None));
+    let (p, n, c) = (Plans::default(), Mutex::new(Store::memory()), caller(None));
     assert_eq!(go(&p, &n, &c, "get_session_plan", json!({})).0, "No plan yet.");
     let items = json!([{"text": "read", "status": "completed"}, {"text": "write", "status": "in_progress"},
                        {"text": "test", "status": "pending"}, {"text": "ship", "status": "blocked"}]);
@@ -27,7 +26,7 @@ fn update_and_get_plan() {
 
 #[test]
 fn plan_items_not_taken_when_the_agents_tool_feeds_it() {
-    let (p, n, c) = (Plans::default(), Notes::load(None), caller(None));
+    let (p, n, c) = (Plans::default(), Mutex::new(Store::memory()), caller(None));
     p.hook(&c.key, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "own", "status": "pending"}]}), 1);
     let (t, err, _) = go(&p, &n, &c, "update_session_plan", json!({"items": [{"text": "x", "status": "completed"}], "doing": "d"}));
     assert!(!err && t.contains("not taken") && t.contains("0 of 1 completed"), "{t}");
@@ -37,7 +36,7 @@ fn plan_items_not_taken_when_the_agents_tool_feeds_it() {
 
 #[test]
 fn plan_validation() {
-    let (p, n, c) = (Plans::default(), Notes::load(None), caller(None));
+    let (p, n, c) = (Plans::default(), Mutex::new(Store::memory()), caller(None));
     let bad = [
         (json!({}), "items is required"),
         (json!({"items": []}), "whole plan"),
@@ -58,41 +57,33 @@ fn plan_validation() {
 }
 
 #[test]
-fn notes_add_and_update_in_scope() {
-    let (p, n) = (Plans::default(), Notes::load(None));
+fn records_add_and_update_in_scope() {
+    let (p, n) = (Plans::default(), Mutex::new(Store::memory()));
     let c = caller(Some("p1"));
-    let (t, err, ch) = go(&p, &n, &c, "add_notes_for_user", json!({"notes": [{"kind": "bug", "text": "a"}, {"kind": "deferred", "text": "b", "file": "x.rs"}]}));
-    assert!(!err && ch == Changed::Notes && t.ends_with("ids: 1, 2."), "{t}");
-    let (t, err, _) = go(&p, &n, &c, "update_notes_for_user", json!({"id": "2", "status": "done"}));
-    assert!(!err && t == "Note 2 updated.", "{t}");
+    let (t, err, ch) = go(&p, &n, &c, "add_notes_for_user", json!({"notes": [{"title": "Report", "text": "a"}, {"title": "Decide", "text": "b", "remind": true, "kind": "question"}]}));
+    let ids: Vec<String> = n.lock().all().iter().map(|i| i.id.clone()).collect();
+    assert!(!err && matches!(&ch, Changed::Marks(t) if t.len() == 2) && t.contains(&format!("bookmark {} \"Report\"", ids[0])), "{t}");
+    assert_eq!(n.lock().all()[1].project.as_deref(), Some("p1"));
+    let (t, err, _) = go(&p, &n, &c, "update_notes_for_user", json!({"id": ids[1], "status": "done"}));
+    assert!(!err && t == format!("Reminder {} updated (resolved).", ids[1]), "{t}");
     let other = caller(None);
-    let (t, err, _) = go(&p, &n, &other, "update_notes_for_user", json!({"id": 1, "status": "done"}));
-    assert!(err && t.contains("no note 1"), "{t}");
-    assert!(go(&p, &n, &c, "update_notes_for_user", json!({"id": 1})).1);
+    let (t, err, _) = go(&p, &n, &other, "update_notes_for_user", json!({"id": ids[0], "status": "done"}));
+    assert!(err && t.contains("No record"), "{t}");
+    assert!(go(&p, &n, &c, "update_notes_for_user", json!({"id": ids[0]})).1);
     assert!(go(&p, &n, &c, "update_notes_for_user", json!({"status": "done"})).1);
-    assert!(go(&p, &n, &c, "add_notes_for_user", json!({"notes": [{"kind": "idea", "text": "a"}]})).1);
-    assert!(go(&p, &n, &c, "add_notes_for_user", json!({"notes": [{"kind": "bug"}]})).1);
+    assert!(go(&p, &n, &c, "add_notes_for_user", json!({"notes": [{"title": "t"}]})).1);
     assert!(go(&p, &n, &c, "add_notes_for_user", json!({})).1);
 }
 
 #[test]
-fn notes_persist_through_the_tool() {
-    let dir = fresh_dir("agentapi-notes");
-    let (p, c) = (Plans::default(), caller(None));
-    go(&p, &Notes::load(Some(&dir)), &c, "add_notes_for_user", json!({"notes": [{"kind": "question", "text": "q"}]}));
-    assert_eq!(Notes::load(Some(&dir)).list(&c.scope)[0].text, "q");
-    let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
 fn unknown_tool() {
-    let (t, err, ch) = go(&Plans::default(), &Notes::load(None), &caller(None), "rm_rf", json!({}));
+    let (t, err, ch) = go(&Plans::default(), &Mutex::new(Store::memory()), &caller(None), "rm_rf", json!({}));
     assert!(err && t.starts_with("unknown tool rm_rf") && ch == Changed::Nothing, "{t}");
 }
 
 #[test]
 fn a_call_of_an_unknown_agent_after_a_restart_keeps_the_plan() {
-    let (p, n) = (Plans::default(), Notes::load(None));
+    let (p, n) = (Plans::default(), Mutex::new(Store::memory()));
     let c = caller(None);
     p.hook(&c.key, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "a"}]}), 999_000);
     let restarted = Caller { agent: crate::plans::UNKNOWN.into(), session: None, ..caller(None) };
@@ -104,7 +95,7 @@ fn a_call_of_an_unknown_agent_after_a_restart_keeps_the_plan() {
 
 #[test]
 fn without_hook_events_the_plan_answers_say_hooks_are_off() {
-    let (p, n) = (Plans::default(), Notes::load(None));
+    let (p, n) = (Plans::default(), Mutex::new(Store::memory()));
     let c = Caller { hooks: false, agent: crate::plans::UNKNOWN.into(), ..caller(None) };
     let items = json!([{"text": "a", "status": "pending"}]);
     let (t, err, _) = go(&p, &n, &c, "update_session_plan", json!({"items": items}));
@@ -119,7 +110,7 @@ fn without_hook_events_the_plan_answers_say_hooks_are_off() {
 
 #[test]
 fn another_sessions_plan_update_is_not_applied() {
-    let (p, n, c) = (Plans::default(), Notes::load(None), caller(None));
+    let (p, n, c) = (Plans::default(), Mutex::new(Store::memory()), caller(None));
     go(&p, &n, &c, "update_session_plan", json!({"items": [{"text": "main", "status": "in_progress"}], "doing": "main step"}));
     let sub = Caller { other: true, ..caller(None) };
     let (t, err, ch) = go(&p, &n, &sub, "update_session_plan", json!({"items": [{"text": "sub", "status": "pending"}], "doing": "sub step", "eta_minutes": 5}));
