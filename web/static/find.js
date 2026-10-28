@@ -4,6 +4,7 @@
 // says how many, goes to the first and steps to the next and the one before, each brought into
 // view as a bookmark is (markjump.js: older lines loaded, folds opened, widgets' text) and marked;
 // every match is a white mark on the terminal's edge. A second press on the magnifier closes it.
+import { unfoldAt } from "./pathfold.js";
 import { placeBeside } from "./fabpane.js";
 import { Jumper } from "./markjump.js";
 import { railBox, railSlots } from "./marktext.js";
@@ -20,7 +21,7 @@ export class Find {
     this.jumper = new Jumper({ view, widgets, term, send, sid, exact: true,
       marker: (at) => {
         document.querySelector(".find-at")?.classList.remove("find-at");
-        if (at instanceof Range) { if (hl && typeof Highlight !== "undefined") hl.set("find", new Highlight(at)); return; }
+        if (at instanceof Range) { unfoldAt(at); if (hl && typeof Highlight !== "undefined") hl.set("find", new Highlight(at)); return; }   // a hidden middle of a path shown (pathfold.js)
         hl?.delete("find");
         at?.classList.add("find-at");                                 // its row, when the text is not found on it
       } });

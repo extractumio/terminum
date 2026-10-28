@@ -6,6 +6,7 @@
 // looked at, after a redraw and when scrolling settles; a browser without the API shows none.
 // A path is underlined only when its file is there (panefiles.js), as only then it opens.
 import { tokens } from "./links.js";
+import { bindFolds } from "./pathfold.js";
 import { continues, joinedText } from "./rowtext.js";
 
 const NEAR = 1;                 // screens above and below the visible one
@@ -29,6 +30,7 @@ export function nearRows(term, boxes) {
 }
 
 export function linkMarks(term, boxes, files) {
+  bindFolds(term);                                // a long path's "[...]" shows it whole (pathfold.js)
   if (!globalThis.CSS?.highlights || typeof Highlight === "undefined") return () => {};
   let timer = 0;
   const later = (ms = 120) => { clearTimeout(timer); timer = setTimeout(mark, ms); };

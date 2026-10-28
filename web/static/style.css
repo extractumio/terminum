@@ -267,6 +267,13 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #term .c1, #term .c2 { display: inline-block; text-align: center; white-space: pre; }
 #term .c1 { width: 1ch; }
 #term .c2 { width: 2ch; }
+/* a long path's middle hidden behind "[...]" until clicked (pathfold.js); whole where text is
+   edited or laid out as a grid */
+#term .pmid:not(.open), #term .pfold.open { display: none; }
+#term .pfold { color: var(--accent); cursor: pointer; }
+#term .pfold::before { content: "[...]"; }
+#term :is(.inbox, .foot) .pmid, #term.fullscreen .pmid { display: inline; }
+#term :is(.inbox, .foot) .pfold, #term.fullscreen .pfold { display: none; }
 #term ::selection { background: var(--sel); color: var(--selfg); }
 #term:not(.focused) .cur { background: transparent !important; color: inherit !important;
   outline: 1px solid var(--accent); outline-offset: -1px; }

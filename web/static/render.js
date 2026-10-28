@@ -4,6 +4,7 @@
 // Plain DOM text keeps the browser's own selection, copy, scrolling and wrapping, also on iOS.
 
 import { hrefToken } from "./links.js";
+import { foldPaths } from "./pathfold.js";
 
 const BOLD = 1, FAINT = 2, ITALIC = 4, UNDERLINE = 8, STRIKE = 16, INVERSE = 32, INVISIBLE = 64,
   CURSOR = 256;
@@ -107,6 +108,7 @@ export function lineRec(data, theme, pal) {
   const txt = el.textContent.replace(/[\ufe0e\ufe0f]/g, "").replace(/\s+$/, "");
   markEdge(el, false, "lead");
   if (data.e) markEdge(el, true, "tail");
+  foldPaths(el);
   const bare = txt.trim();
   if (KEY_HINT.test(bare)) el.classList.add("keyhint");
   if (LABELLED.test(bare) && !RULE.test(bare)) el.classList.add("rule", "labelled");   // a rule all the same

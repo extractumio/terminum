@@ -77,8 +77,10 @@ img.diagram { display: block; margin: 0 auto; max-width: 100%; max-height: var(-
 .tok-emphasis { font-style: italic; } .tok-strong { font-weight: 700; } .tok-strikethrough { text-decoration: line-through; }
 .tok-link, .tok-url { text-decoration: underline; }
 
-/* image buttons after a row's text, and the images opened below it */
+/* image buttons after a row's text, and the images opened below it; a word joiner (U+2060, never
+   copied: generated) keeps them on the line of the row's last word, never alone on a line below it */
 .wgi { white-space: nowrap; margin-left: .6ch; -webkit-user-select: none; user-select: none; }
+.wgi::before { content: "\2060"; }
 .wgi button { padding: 0 4px; min-height: 0; height: 1.25em; vertical-align: -0.2em; background: var(--surface-2); color: var(--accent); }
 /* as wide as the terminal (a row is only as wide as its text), so an image is centered in the view */
 .figs { display: block; box-sizing: border-box; width: var(--wg-tw, 100%); white-space: normal; text-align: center; }
