@@ -240,3 +240,12 @@ fn the_cache_stays_small() {
     assert!(s.known.len() <= KEEP);
     assert_eq!(s.last(&format!("k{KEEP}")), Some(Done), "the newest is kept");
 }
+
+/// A question in a narrow pane (a window split with an agent team's panes): Claude Code breaks
+/// its footer over rows ("Esc to" / "cancel"), which still says it waits.
+#[test]
+fn a_question_wrapped_in_a_narrow_pane_waits() {
+    let r = rows(&["  4. Don't push", "     Commit and deploy", "     only.", "  5. Type something.", "──────────────────────",
+                   "  6. Chat about this", "Enter to select · ↑/↓", "to navigate · Esc to", "cancel"]);
+    assert_eq!(state_of("✳ A coding app", &r), Waiting);
+}

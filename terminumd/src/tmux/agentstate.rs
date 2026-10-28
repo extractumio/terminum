@@ -252,7 +252,9 @@ pub fn read(title: &str, rows: &[String]) -> (State, bool) {
     let tail = rows[rows.len().saturating_sub(ROWS)..].join("\n");
     // a question near the bottom; with Claude Code's input box there, only under it (its footer)
     let ask_from = rows.len().saturating_sub(ASK_ROWS).max(claude_box(&rows).map_or(0, |b| b + 1));
-    if codex_asks(title) || any_of(&rows[ask_from..].join("\n"), &WAITING) {
+    // its words as one line: a narrow pane breaks them over rows ("Esc to" / "cancel")
+    let asked = rows[ask_from..].join(" ").split_whitespace().collect::<Vec<_>>().join(" ");
+    if codex_asks(title) || any_of(&asked, &WAITING) {
         return (State::Waiting, false);
     }
     let chars: Vec<char> = tail.chars().collect();
