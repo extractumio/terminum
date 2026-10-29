@@ -52,6 +52,10 @@ export async function webMarkNav(browser, name) {
       title: document.querySelector("#markpane .mkvtitle")?.textContent, pre: body?.querySelector("pre")?.textContent.trim() ?? null,
       strong: body?.querySelector("strong")?.textContent ?? null, items: body ? body.querySelectorAll("li").length : 0,
       acts: [...document.querySelectorAll("#markpane .mkvacts button")].map((b) => b.textContent.trim()),
+      // Show in terminal at the actions' left edge; Resolve and Quote in chat together at their right edge
+      place: (() => { const box = document.querySelector("#markpane .mkvacts"), [go, done, chat] = box ? [...box.querySelectorAll("button")].map((b) => b.getBoundingClientRect()) : [];
+        if (!chat) return {}; const pad = parseFloat(getComputedStyle(box).paddingLeft), r = box.getBoundingClientRect();
+        return { left: Math.abs(go.left - r.left - pad) < 1.5, right: Math.abs(r.right - parseFloat(getComputedStyle(box).paddingRight) - chat.right) < 1.5 && chat.left - done.right < 16 && done.left - go.right > 16 }; })(),
       wrap: body?.querySelector("pre") ? getComputedStyle(body.querySelector("pre")).whiteSpace : null,
       tall: Math.round(document.getElementById("term").getBoundingClientRect().height - document.getElementById("markpane").getBoundingClientRect().height) };
   });
@@ -64,7 +68,8 @@ export async function webMarkNav(browser, name) {
   const next = await view();
   check(`AC-33 ${at} the pane, as tall as the terminal less 28 px, shows the first one's content at once beside the list (a bookmark: the terminal's text exactly, its long lines wrapped); a press or ↓ shows another, an agent's record as Markdown; nothing jumps; three actions`,
     shown.open && shown.chosen === "B" && shown.title === "first by line" && shown.pre === "out 100 lorem ipsum" && next.chosen === "R" && next.title.includes("Final report: retry loop fixed")
-    && next.strong === "Fixed" && next.items === 2 && !sent.slice(from).some((m) => m.t === "locate") && shown.acts.join() === "Show in terminal,Done,Quote in chat"
+    && next.strong === "Fixed" && next.items === 2 && !sent.slice(from).some((m) => m.t === "locate") && shown.acts.join() === "Show in terminal,Resolve,Quote in chat"
+    && shown.place.left && shown.place.right
     && shown.wrap === "pre-wrap" && shown.tall === 28, JSON.stringify({ shown, next }));
 
   // Enter: shown in the terminal, found by its title where its call was printed; the pane closes, the terminal has the keys
@@ -83,7 +88,7 @@ export async function webMarkNav(browser, name) {
   const barUndo = await page.evaluate(() => document.getElementById("mbdone").textContent);
   await page.click("#mbdone");
   const barBack = await page.evaluate(() => document.getElementById("mbdone").textContent);
-  check(`AC-33 ${at} the bar's ✓ Done turns into Undo, and back`, barUndo === "Undo" && barBack === "Done", JSON.stringify({ barUndo, barBack }));
+  check(`AC-33 ${at} the bar's ✓ Resolve turns into Undo, and back`, barUndo === "Undo" && barBack === "Resolve", JSON.stringify({ barUndo, barBack }));
   from = sent.length;
   await page.click("#mbsend");
   await page.waitForTimeout(200);

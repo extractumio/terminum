@@ -3,9 +3,9 @@
 // navigator, the list at its left (the session's own top to bottom, its project's others' after,
 // newest first), the chosen one's content at its right, rendered as the terminal renders Markdown
 // (an agent's record, AC-98, its own Markdown; the user's, the terminal's text as it was). A press
-// or ↑ ↓ chooses one; Show in terminal (Enter) brings it into view, Quote in chat pastes it, Done
+// or ↑ ↓ chooses one; Show in terminal (Enter) brings it into view, Quote in chat pastes it, Resolve
 // (or Delete, ⌫) settles it at once in the list, a reminder resolved and a bookmark deleted, with
-// Undo for 5 s: only then terminumd is told. The bar after a jump has the same Done.
+// Undo for 5 s: only then terminumd is told. The bar after a jump has the same Resolve.
 import { icon } from "./icons.js";
 import { chatText, el, INSERT, openReminder, when } from "./marks.js";
 import { agentMark } from "./nav.js";
@@ -65,9 +65,15 @@ export class MarkNav {
     const others = all.some((b) => b.sid !== this.m.sid());
     const ul = el("ul", "mknav");
     for (const item of all) ul.append(this.row(item, others));
-    const head = el("h2", "", project ? `Bookmarks and reminders of ${project.name}` : "Bookmarks and reminders of this session");
-    const hint = el("p", "mkhint", "↑ ↓ choose · Enter: show in terminal · Delete: done · Esc: close");
-    if (!all.length) return pane.replaceChildren(head, el("p", "empty", "None here."));
+    // a head as View's (panewin.css): the title, × at the right
+    const head = el("div", "pwhead");
+    const close = el("button", "icon");
+    Object.assign(close, { type: "button", title: "Close (Esc)", onclick: () => this.m.togglePane(false) });
+    close.setAttribute("aria-label", "Close");
+    close.append(icon("x", 16));
+    head.append(el("h2", "pwtitle", project ? `Bookmarks and reminders of ${project.name}` : "Bookmarks and reminders of this session"), close);
+    const hint = el("p", "mkhint", "↑ ↓ choose · Enter: show in terminal · Delete: resolve · Esc: close");
+    if (!all.length) return pane.replaceChildren(head, el("p", "empty pwbody", "None here."));
     const cols = el("div", "mkcols");
     cols.append(ul, this.view.box);
     pane.replaceChildren(head, cols, hint);
@@ -81,7 +87,7 @@ export class MarkNav {
     const act = (cls, label, fn, title) => { const b = el("button", cls, label); b.type = "button"; b.title = title; b.onclick = fn; acts.append(b); return b; };
     const item = () => this.entries().find((b) => b.id === this.chosen);
     act("mkvgo", "Show in terminal", () => { const it = item(); if (it) { this.m.togglePane(false); void this.m.jump(it); } }, "Bring it into view in the terminal (Enter)");
-    const done = act("mkvdone", "Done", () => { const it = item(); if (it) (this.pending.has(it.id) ? this.undo(it.id) : this.done(it)); }, "");
+    const done = act("mkvdone", "Resolve", () => { const it = item(); if (it) (this.pending.has(it.id) ? this.undo(it.id) : this.done(it)); }, "");
     act("tochat", INSERT, () => { const it = item(); if (it) { this.m.togglePane(false); this.m.toChat(chatText(it)); } }, "Paste its note and its text quoted into the input, no Enter");
     box.append(head, body, acts);
     return { box, head, body, done };
@@ -91,7 +97,7 @@ export class MarkNav {
   show(item, others) {
     const { head, body, done } = this.view;
     const pending = this.pending.has(item.id);
-    done.replaceChildren(...(pending ? ["Undo"] : [icon("check", 14), "Done"]));
+    done.replaceChildren(...(pending ? ["Undo"] : [icon("check", 14), "Resolve"]));
     done.classList.toggle("pending", pending);
     done.title = pending ? "Take it back" : item.remind ? "Resolve this reminder (Undo for 5 s; Delete)" : "Delete this bookmark (Undo for 5 s; Delete)";
     const key = `${item.id}\n${item.note}\n${item.text}`;
@@ -169,15 +175,15 @@ export class MarkNav {
     if (this.m.shown?.id !== id) return;
     const on = this.pending.has(id);
     $("mbdone").classList.toggle("pending", on);
-    $("mbdone").replaceChildren(...(on ? ["Undo"] : [icon("check", 14), "Done"]));
+    $("mbdone").replaceChildren(...(on ? ["Undo"] : [icon("check", 14), "Resolve"]));
   }
 
   /** The bar shows `item`: its ✓ as its pending state says. */
   bar(item) {
     const on = this.pending.has(item.id);
     $("mbdone").classList.toggle("pending", on);
-    $("mbdone").replaceChildren(...(on ? ["Undo"] : [icon("check", 14), "Done"]));
-    $("mbdone").title = item.remind ? "Done: resolve this reminder (Undo for 5 s)" : "Done: delete this bookmark (Undo for 5 s)";
+    $("mbdone").replaceChildren(...(on ? ["Undo"] : [icon("check", 14), "Resolve"]));
+    $("mbdone").title = item.remind ? "Resolve this reminder (Undo for 5 s)" : "Resolve: delete this bookmark (Undo for 5 s)";
   }
 
   key(e) {

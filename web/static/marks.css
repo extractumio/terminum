@@ -15,12 +15,8 @@ body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibi
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
-/* as wide as View's window (style.css #filewin), its texts in the terminal's font and size (--term-px: marks.js) */
-#markpane { position: absolute; z-index: 8; width: min(820px, calc(100% - 32px)); overflow: auto; padding: var(--sp-1); border-radius: var(--r-lg);
-  --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
-#markpane h2 { margin: 4px 6px 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
-#markpane :is(.note, .snip) { font-family: var(--term-font); font-size: var(--term-px, var(--size)); line-height: 1.35; }
-#markpane .meta { font-size: 12px; }
+/* the bookmarks' pane is a window as View's (panewin.css), its texts in View's type */
+#markpane .meta { font-size: var(--fs-meta); }
 /* nearly round, never quite: the outline drifts slowly */
 @keyframes blob {
   0%, 100% { border-radius: 58% 42% 52% 48% / 46% 56% 44% 54%; }
@@ -143,25 +139,24 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23ff9f1a' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y; }
 
 /* the session's pane goes through its bookmarks and reminders (marknav.js): the chosen one, ✓, Undo */
-#markpane:focus { outline: none; }
 #markpane .mknav li.chosen .mkitem { background: var(--surface-4); }
 #markpane .mknav li.remind::before { background: var(--remind); }
 #markpane li.pending .mkitem { opacity: .5; text-decoration: line-through; }
 #markpane .mkdonetext { align-self: center; font-size: 11.5px; color: var(--muted); }
 #markpane .mkundo { margin: var(--sp-1); font-size: 12px; }
-#markpane .mkhint { margin: 4px 6px 2px; font-size: 11px; color: var(--muted); }
+#markpane .mkhint { flex: none; margin: 0; padding: 8px 22px 12px; font-size: var(--fs-micro); color: var(--muted-text); }
 @media (hover: none) { #markpane .mkhint { display: none; } }
 /* a navigator: the list at the left, the chosen one's content at the right (on a phone under it) */
-#markpane:not([hidden]) { display: flex; flex-direction: column; height: min(80%, 620px); }   /* down to the terminal's end: marks.js placePane */
-#markpane .mkcols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 36%) minmax(0, 1fr); gap: var(--sp-2); }
+#markpane .mkcols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 36%) minmax(0, 1fr); gap: var(--sp-2); padding: 0 12px; }
 #markpane .mknav { overflow: auto; }
 #markpane .mkview { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--r-md); background: var(--surface-1); }
-#markpane .mkvhead { display: flex; flex-direction: column; gap: 2px; padding: var(--sp-2) var(--sp-3) 0; }
-#markpane .mkvtitle { font: 600 var(--term-px, var(--size))/1.35 var(--term-font); overflow-wrap: anywhere; }
+#markpane .mkvhead { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 0; }   /* 16 px in: the list takes the window's left */
+#markpane .mkvtitle { font-size: 1.18em; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
 #markpane .mkvtitle :is(.agmark, .mkbell) { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
-#markpane .mkvmeta { font-size: 12px; color: var(--muted-text); }
+#markpane .mkvmeta { font-size: var(--fs-meta); color: var(--muted-text); }
 #markpane .mkvbody { flex: 1; min-height: 0; overflow: auto; }
-#markpane .mkvacts { display: flex; flex-wrap: wrap; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3) var(--sp-3); }
+#markpane .mkvacts { display: flex; flex-wrap: wrap; gap: var(--key-gap); padding: 10px 16px 16px; }
+#markpane .mkvacts .mkvdone { margin-left: auto; }   /* Show in terminal at the left, Resolve and Quote in chat at the right */
 #markpane .mkvacts .mkvdone.pending { --key-fill: var(--surface-4); }
 #markpane[data-sheet] { height: auto; }
 #markpane[data-sheet] .mkcols { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 35%) minmax(0, 1fr); height: 70vh; }

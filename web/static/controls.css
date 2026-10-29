@@ -49,7 +49,7 @@
 :is(#quick .qbar .icon, #rename, .mkdel) { --ik: var(--icon-key-sm); }
 :is(.grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone) { --ik: var(--icon-key-list); }
 /* icon keys side by side keep their distance */
-:is(#tools, .grp h2 .acts, .sphead, #findbox, .mbnav, .qbar, .dhead, #renamebox, .stepper) { gap: var(--icon-gap); }
+:is(#tools, .grp h2 .acts, #findbox, .mbnav, .qbar, .dhead, #renamebox, .stepper) { gap: var(--icon-gap); }
 
 /* ---- a segmented control: a shallow track, the chosen segment a key in it ---- */
 .seg { padding: var(--sp-0); gap: var(--sp-0); border-radius: var(--key-r); background: var(--field-fill); box-shadow: var(--m-groove); }
@@ -66,12 +66,11 @@
 :is(.field, .search) :focus-visible { outline: none; }   /* a wrapper field (.search, .lead) is lit for its input */
 
 /* ---- panes and dialogs: their edges and a shadow that shades what is around them ---- */
-:is(#menu, #hostmenu, #rowmenu, #updmenu, #sentpane, #remindpane, #markpane, #findbox, #markbar, .footform) {
+:is(#menu, #hostmenu, #rowmenu, #updmenu, #findbox, #markbar, .footform) {   /* the floating buttons' windows: View's (panewin.css) */
   box-shadow: var(--pane-shadow); }
 dialog.dlg, #marksdlg { box-shadow: var(--dialog-shadow); }
 dialog::backdrop, #panescrim { background: var(--scrim); }
 #panescrim { position: fixed; inset: 0; z-index: 7; }   /* under an open pane (8), over the floating buttons (6) */
-:is(#sentpane, #remindpane):focus { outline: none; }   /* focused to take the keys, not to be pointed at */
 :is(#sentfab, #remindfab, #planfab)[aria-expanded="true"] { z-index: 8; }   /* over the shade: pressed again, it closes its pane */
 
 /* a dialog (dialog.dlg) and a list foot's form (.footform) are one kind: a head (its title, × in the

@@ -31,22 +31,18 @@
 #planfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--t-fg); }
 @media (max-width: 860px), (pointer: coarse) { #planfabt { font-size: 11px; } }
 
-#planpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 70%; overflow: auto; padding: var(--sp-2) var(--sp-2) var(--sp-3);
-  border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
-#planpane .sphead { display: flex; align-items: center; }
-#planpane h2 { flex: 1; margin: 0 var(--sp-1); font-size: var(--fs-micro); font-weight: var(--fw-head); letter-spacing: .06em; text-transform: uppercase; color: var(--muted-text); }
-/* the pane: a title, what it does now, the progress, the steps, when and from where, what was kept for you */
-#planbody { padding: 0 var(--sp-1); overflow-wrap: anywhere; line-height: 1.4; }
-.pltitle { margin: var(--sp-1) 0 var(--sp-3); font-size: var(--fs-title); font-weight: var(--fw-head); line-height: 1.3; }
+/* the pane, a window as View's (panewin.css): a title, what it does now, the progress, the steps, when and
+   from where, what was kept for you; its text in View's type, labels and times in the small muted one */
+.pltitle { margin: 0 0 var(--sp-3); font-size: 1.18em; font-weight: var(--fw-head); line-height: 1.3; }
 /* "Now": a gray pill inside the box at its left, as a row's folder bar (style.css .pbar), never a stripe along its rounded edge */
 .plnow { position: relative; margin: 0 0 var(--sp-3); padding: var(--sp-2) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 10px); border-radius: var(--r-md); background: var(--surface-2); }
 .plnow::before { content: ""; position: absolute; left: 9px; top: 9px; bottom: 9px; width: 4px; border-radius: 2px;
   background: var(--muted); box-shadow: 0 0 0 1px color-mix(in srgb, var(--t-bg) 70%, transparent); }
 .plnowlabel { display: block; margin-bottom: 2px; font-size: var(--fs-micro); font-weight: var(--fw-head); letter-spacing: .06em; text-transform: uppercase; color: var(--muted-text); }
-.pldoing { margin: 0; font-size: var(--fs-small); }
+.pldoing { margin: 0; }
 .plprog { margin: 0 0 var(--sp-3); }
 .plproghead { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); margin-bottom: 6px;
-  font-size: var(--fs-label); font-weight: var(--fw-head); font-variant-numeric: tabular-nums; }
+  font-weight: var(--fw-head); font-variant-numeric: tabular-nums; }
 .plpctv { color: var(--muted-text); }
 .plbar { height: 6px; border-radius: var(--r-pill); background: color-mix(in srgb, var(--t-fg) 16%, transparent); overflow: hidden; }
 .plbarfill { display: block; height: 100%; border-radius: inherit; background: color-mix(in srgb, var(--t-fg) 72%, transparent); }
@@ -58,8 +54,9 @@
 /* the steps: a mark in a round badge, the text hanging beside it; the one in progress set on a tint. The pane's
    structure is in the theme's text color, never the accent (the cursor's color, which a theme may set near its background) */
 .plitems { list-style: none; margin: 0 calc(-1 * var(--sp-1)); padding: 0; display: flex; flex-direction: column; gap: 1px; }
-.plitem { display: flex; gap: 10px; align-items: flex-start; padding: 5px var(--sp-1); border-radius: var(--r-md); font-size: var(--fs-small); }
-.plitem .plmark { flex: none; width: 18px; height: 18px; margin-top: 0; display: grid; place-items: center; border-radius: 50%;
+.plitem { display: flex; gap: 10px; align-items: flex-start; padding: 3px var(--sp-1); border-radius: var(--r-md); }
+.plitem .plmark { flex: none; width: 18px; height: 18px; margin-top: 4px;   /* its middle on the first line's (16 px at 1.65) */
+  display: grid; place-items: center; border-radius: 50%;
   font-size: 10px; line-height: 1; color: var(--muted-text); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--muted-text) 55%, transparent); }
 .plitem .pltext { min-width: 0; padding-top: 0; }
 .plitem.completed .plmark { color: var(--t-fg); background: color-mix(in srgb, var(--ok-fill) 70%, transparent); box-shadow: none; }
@@ -80,6 +77,6 @@ body:not([data-shown="term"]) #planpane { display: none !important; }
 .plempty { white-space: normal; }
 .plfinished { font-weight: 600; }
 /* what the agent kept for the user (AC-98): a press opens its session's bookmarks and reminders */
-.plkept { margin-top: 0; font-size: var(--fs-small); color: var(--t-fg); }
+.plkept { margin-top: 0; color: var(--t-fg); }
 .plkept button { all: unset; cursor: pointer; color: var(--t-fg); font-weight: var(--fw-head); text-decoration: underline; text-underline-offset: 2px; }
 .plkept button:focus-visible { outline: 2px solid var(--t-fg); outline-offset: 2px; border-radius: 2px; }

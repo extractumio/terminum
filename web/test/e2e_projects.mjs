@@ -296,11 +296,12 @@ export async function webProjects(browser, name) {
   await page.click("#sentfab");
   await pause(page, 200);
   const sentRing = await page.evaluate(() => getComputedStyle(document.getElementById("sentfab")).boxShadow);
-  const sentLevel = await page.evaluate(() => { const r = (e) => e.getBoundingClientRect(), f = r(document.getElementById("sentfab")), h = r(document.querySelector("#sentpane .sphead"));
-    return Math.round(f.top + f.height / 2) - Math.round(h.top + h.height / 2); });
+  // the sent pane is a window as View's (e2e_panewin.mjs): 14 px left of the floating buttons, 12 px under the terminal's top
+  const sentLevel = await page.evaluate(() => { const r = (e) => e.getBoundingClientRect(), f = r(document.getElementById("sentfab")), p = r(document.getElementById("sentpane")), t = r(document.getElementById("term"));
+    return { gap: Math.round(f.left - p.right), top: Math.round(p.top - t.top) }; });
   await page.click("#sentfab");
-  check("the search's magnifier stays in sight while its field is open, ringed as the sent history's button; the field and the sent pane 14 px left of their buttons, their first row level with them",
-    magnifier.open && magnifier.seen === "visible" && magnifier.ring === sentRing && magnifier.ring !== "none" && Math.abs(magnifier.level) <= 1 && magnifier.gap === 14 && magnifier.others === "visible" && Math.abs(sentLevel) <= 1,
+  check("the search's magnifier stays in sight while its field is open, ringed as the sent history's button; the field 14 px left of its button, level with it; the sent pane a window 14 px left of the buttons, 12 px under the terminal's top",
+    magnifier.open && magnifier.seen === "visible" && magnifier.ring === sentRing && magnifier.ring !== "none" && Math.abs(magnifier.level) <= 1 && magnifier.gap === 14 && magnifier.others === "visible" && sentLevel.gap === 14 && sentLevel.top === 12,
     JSON.stringify({ magnifier, sentRing, sentLevel }));
   check("no page errors", !f.errors.length, f.errors.join(" | "));
   await f.close();

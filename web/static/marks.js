@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { placeModal } from "./fabpane.js";
+import { placeModal, placeWindow } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, railBox, railSlots } from "./marktext.js";
@@ -387,15 +387,8 @@ export class Marks {
     if (!$("markpane").hidden) this.placePane();
   }
   placePane() {
-    $("markpane").style.setProperty("--term-px", getComputedStyle($("term")).fontSize);   // its texts at the terminal's size (marks.css)
     if (placeModal($("markpane"), () => this.togglePane(false))) { for (const p of ["height", "width"]) $("markpane").style.removeProperty(p); return; }
-    // as tall as the terminal, as View's window (12 px from its top, 16 from its end), left of the floating buttons, 820 px at most
-    const pane = $("markpane"), area = pane.offsetParent?.getBoundingClientRect(), t = $("term").getBoundingClientRect();
-    const fab = $("marksfab").getBoundingClientRect(), right = (fab.width ? fab.left : t.right) - 14, left = Math.max(t.left + 16, right - 820);
-    if (!area) return;
-    Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(t.top + 12 - area.top)}px`,
-      width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.height - 28))}px` });
-    delete pane.dataset.under;
+    placeWindow($("markpane"), $("marksfab"));      // a window as View's (fabpane.js)
   }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {

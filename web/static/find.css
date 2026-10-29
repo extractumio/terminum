@@ -26,20 +26,14 @@ body:has(#findbox[data-under]:not([hidden])) :is(#splitfab, #sentfab) { visibili
 body:not([data-shown="term"]) :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #askfab, #attachfab, #sentpane), body:not([data-shown="term"]) #findbox, body:not([data-shown="term"]) #findrail { display: none !important; }
 body.wide :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #askfab, #attachfab, #sentpane), body.wide #findbox, body.wide #findrail { grid-row: 1 / -1; }
 @media (prefers-reduced-motion: reduce) { :is(#foldfab, #findfab, #splitfab, #sentfab, #attachfab) { animation: none; } }
-/* the sent history's pane, left of its button: where, which of how many, ↑ ↓, Copy, ×; the text as Markdown */
-#sentpane { position: absolute; z-index: 8; width: min(520px, calc(100% - 24px)); max-height: 60%; overflow: auto; padding: var(--sp-2);
-  border-radius: var(--r-lg); --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
-#sentpane .sphead { display: flex; align-items: center; gap: 2px; }
-#spwhere { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left;
-  font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted); padding-left: 4px; }
-#sppos { flex: 0 0 auto; padding: 0 6px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
-#spmeta { margin: 2px 4px 8px; font-size: var(--fs-meta); color: var(--muted); }
+/* the sent history's pane, a window as View's (panewin.css): its folder as the title (its end in sight),
+   which of how many, ↑ ↓, Copy, ×; the time and agent, the text as Markdown; Jump to message, Insert into chat */
+#spwhere { direction: rtl; text-align: left; }
+#sppos { flex: 0 0 auto; padding: 0 2px; font-size: var(--fs-meta); font-weight: 400; color: var(--muted-text); font-variant-numeric: tabular-nums; }
+#spmeta { margin: 0 0 10px; }
 #spmeta:empty { display: none; }
-#spbody { padding: 0 4px 4px; font: var(--md-size, 14px)/var(--lh-prose) -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; overflow-wrap: anywhere; }
-#spbody.quiet { color: var(--muted); font-size: var(--fs-small); }
-#sentpane .spacts { position: sticky; bottom: calc(-1 * var(--sp-2)); display: flex; justify-content: flex-end; gap: var(--key-gap);
-  margin: 0 calc(-1 * var(--sp-2)) calc(-1 * var(--sp-2)); padding: var(--sp-2); background: var(--chrome-2); }
-#spwhy { margin: 6px 4px 0; font-size: var(--fs-small); color: var(--muted); }
+#spbody.quiet { color: var(--muted-text); }
+#spwhy { margin: 10px 0 0; font-size: var(--fs-small); color: var(--muted-text); }
 #spwhy.err { color: var(--danger-text); }
 
 /* a phone's floating keyboard and hot keys buttons: the same nearly round, drifting shape */

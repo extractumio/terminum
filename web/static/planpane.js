@@ -148,6 +148,9 @@ export function planPane({ send, sid, records }) {
     const below = Math.round(Math.max($("bar").getBoundingClientRect().bottom, ...shown.map((b) => b.getBoundingClientRect().bottom)));
     if ("sheet" in p.dataset) return void p.style.setProperty("--plan-top", `${below}px`);
     const top = p.getBoundingClientRect().top;                     // beside its button, under the banners shown (UI-GUIDELINES §6)
-    if (shown.length && top < below + 8) p.style.top = `${p.offsetTop + below + 8 - Math.round(top)}px`;
+    if (!shown.length || top >= below + 8) return;
+    const down = below + 8 - Math.round(top);                      // its end stays the window's (placeWindow)
+    p.style.top = `${p.offsetTop + down}px`;
+    p.style.height = `${Math.max(160, p.offsetHeight - down)}px`;
   }
 }

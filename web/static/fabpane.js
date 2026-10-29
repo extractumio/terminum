@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// A floating button's pane (the sent history's, the reminders'): modal, the page shaded behind it
-// (#panescrim, controls.css): it takes the keys while open; Esc, its ×, its button or a press
-// outside it close it, and the keys go back where they were. placeBeside also places the
-// bookmarks' pane and find's field: left of their button, the first row centered on it, or under
-// it where the view is too narrow (then `data-under` is set: the buttons below make way).
+// A floating button's pane (the sent history's, the reminders', the plan's): modal, the page shaded
+// behind it (#panescrim, controls.css): it takes the keys while open; Esc, its ×, its button or a
+// press outside it close it, and the keys go back where they were. On a computer it is a window as
+// View's (placeWindow, as the bookmarks' pane is); placeBeside places find's field: left of its
+// button, centered on it, or under it where the view is too narrow (then `data-under` is set).
 
 import { floats } from "./fold.js";   // a phone or a narrow window
 
@@ -76,6 +76,22 @@ function shadeUnder(el, close, focus) {
   if (focus && !el.contains(document.activeElement)) el.querySelector("button:not(:disabled), input, textarea, [tabindex]")?.focus({ preventScroll: true });
 }
 
+const COLUMN = ["findfab", "marksfab", "sentfab"];   // the floating column, one of them shown with the terminal
+
+/** On a computer `pane` is a window as View's (style.css #filewin, panewin.css): 12 px under the
+ *  terminal's top and 16 px over its end, its right edge 14 px left of `fab` (or of the floating
+ *  column when `fab` is not in it; the terminal's edge without one), 820 px wide at most, 16 px in
+ *  from the terminal's left. */
+export function placeWindow(pane, fab) {
+  const area = pane.offsetParent?.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
+  if (pane.hidden || !area) return;
+  const b = [fab, ...COLUMN.map((id) => document.getElementById(id))].find((e) => e?.offsetWidth && e.getBoundingClientRect().left > t.left + t.width / 2)?.getBoundingClientRect();
+  const right = (b ? b.left : t.right) - 14, left = Math.max(t.left + 16, right - 820);
+  Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(t.top + 12 - area.top)}px`,
+    width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.height - 28))}px` });
+  delete pane.dataset.under;
+}
+
 /** Places `pane` beside `fab` (nothing while it is hidden). */
 export function placeBeside(fab, pane) {
   if (pane.hidden) return;
@@ -122,7 +138,12 @@ export function fabPane({ fab, pane, close, onToggle }) {
     onToggle(on);
     place();
   }
-  const place = () => { if (!pane.hidden && !placeModal(pane)) placeBeside(fab, pane); };
+  // a window as View's on a computer, a sheet elsewhere (its window's size let go)
+  const place = () => {
+    if (pane.hidden) return;
+    if (placeModal(pane)) for (const p of ["width", "height"]) pane.style.removeProperty(p);
+    else placeWindow(pane, fab);
+  };
   fab.addEventListener("click", () => toggle());
   fab.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   close.addEventListener("click", () => toggle(false));
