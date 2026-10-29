@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-56 checks for e2e_panel.mjs: the output widgets of the whole web app (the real page files,
 // under the page's own CSP) against a fake bridge: a README printed by cat as Markdown, fenced
-// code highlighted, a Mermaid diagram and an image in the history, the full-screen viewer, Raw,
+// code highlighted, a Mermaid diagram in the history, an image's path, the full-screen viewer, Raw,
 // Copy, the reader's place, a renderer that does not load. The renderers are ui/dist's, as fbd
 // serves them through the /fb proxy. Alone: node web/test/e2e_widgets.mjs [chromium|webkit].
 
@@ -104,7 +104,7 @@ const act = (page, kind, what) => page.evaluate(([kind, what]) => {
 }, [kind, what]);
 
 export async function webWidgets(browser, name = "") {
-  const { page, errors, sent, say } = await open(browser);
+  const { page, errors, say } = await open(browser);
   const at = `AC-56 web app${name}:`;
   await page.waitForFunction(() => {
     const hosts = [...document.querySelectorAll("#term .ln.wg-host")];
@@ -157,45 +157,27 @@ export async function webWidgets(browser, name = "") {
   await page.keyboard.press("Escape");
   check(`${at} Esc closes the viewer`, await page.evaluate(() => document.getElementById("zoom").hidden));
 
-  // an image path: a button after it; the image below the row, at most half the terminal
+  // an image file named in the output (there in the pane's folder) is a path as any other: its
+  // underline, no button after it, nothing below its row (AC-31 0.6.11)
   await page.evaluate(() => { const t = document.getElementById("term"); t.scrollTop = t.scrollHeight; });
-  await page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.shadowRoot?.querySelectorAll(".wgi button").length === 2));
-  const clickedAt = await page.evaluate(() => {
-    const row = [...document.querySelectorAll("#screen .ln")].find((el) => el.shadowRoot?.querySelector(".wgi"));
-    row.shadowRoot.querySelector(".wgi button").click();
-    return row.getBoundingClientRect().top;
+  await page.waitForFunction(() => CSS.highlights?.get("lnk")?.size, null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(500);
+  const imgs = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll("#screen .ln")], saved = rows.find((el) => el.textContent.startsWith("Saved"));
+    const lnk = [...(CSS.highlights?.get("lnk") ?? [])].filter((r) => r.startContainer.parentElement?.closest(".ln") === saved)
+      .map((r) => { const t = new Range(); t.setStart(r.startContainer, r.startOffset); t.setEnd(r.endContainer, r.endOffset); return t.toString(); });
+    return { lnk, added: rows.filter((el) => el.shadowRoot && !el.classList.contains("wg-host") && !el.classList.contains("wg-fold")).length, shadow: !!saved.shadowRoot,
+      h: Math.round(saved.getBoundingClientRect().height), h0: Math.round(rows[0].getBoundingClientRect().height) };
   });
-  await page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.shadowRoot?.querySelector("figure img")?.naturalWidth));
-  const opened = await page.evaluate(() => {
-    const row = [...document.querySelectorAll("#screen .ln")].find((el) => el.shadowRoot?.querySelector("figure"));
-    const f = row.shadowRoot.querySelector("figure").getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
-    return { rowAt: row.getBoundingClientRect().top, figH: f.height, inSight: f.bottom <= t.bottom + 1 };
-  });
-  check(`${at} the line whose image was opened stays on screen, moved only as much as the image below it needs to be in sight`,
-    opened.inSight && clickedAt - opened.rowAt >= -1 && clickedAt - opened.rowAt <= opened.figH + 10, JSON.stringify({ clickedAt, ...opened }));
-  const fig = await page.evaluate(() => {
-    const f = [...document.querySelectorAll("#screen .ln")].map((el) => el.shadowRoot?.querySelector("figure")).find(Boolean);
-    const img = f.querySelector("img"), t = document.getElementById("term");
-    return { src: img.getAttribute("src"), cap: f.querySelector("figcaption").textContent, w: img.getBoundingClientRect().width,
-      h: img.getBoundingClientRect().height, tw: t.clientWidth, th: t.clientHeight };
-  });
-  check(`${at} the image button shows the file below its row, read through the Files proxy (shown from a blob:, the sign-in never in an address), named in full`,
-    fig.src.startsWith("blob:") && fig.cap === "/tmp/shots/shot.png", JSON.stringify(fig));
-  check(`${at} … fitted to half the terminal's width and height at most`, fig.w <= fig.tw / 2 + 1 && fig.h <= fig.th / 2 + 1 && fig.w > 0, JSON.stringify(fig));
-  check(`${at} … asking the pane's folder (a relative path is taken from it)`, sent.some((m) => m.t === "files"));
+  check(`${at} an image file named in the output is a path as any other: underlined, no button after it, nothing below its row, its row one line high`,
+    imgs.lnk.includes("/tmp/shots/shot.png") && !imgs.shadow && imgs.added === 0 && imgs.h === imgs.h0, JSON.stringify(imgs));
   const layout = await page.evaluate(() => {
     const t = document.getElementById("term"), cs = getComputedStyle(t), r = t.getBoundingClientRect();
     const left = r.left + parseFloat(cs.paddingLeft), right = r.right - parseFloat(cs.paddingRight) - (t.offsetWidth - t.clientWidth);
-    const img = [...document.querySelectorAll("#screen .ln")].map((el) => el.shadowRoot?.querySelector("figure img")).find(Boolean).getBoundingClientRect();
     const md = [...document.querySelectorAll("#term .ln.wg-host")].map((h) => h.shadowRoot.querySelector('.wg[data-kind="markdown"]')).find(Boolean).getBoundingClientRect();
-    return { imgOff: Math.round((img.left + img.right) / 2 - (left + right) / 2), mdW: Math.round(md.width), termW: Math.round(right - left) };
+    return { mdW: Math.round(md.width), termW: Math.round(right - left) };
   });
-  check(`${at} an opened image is centered across the terminal, and a Markdown widget is as wide as it`,
-    Math.abs(layout.imgOff) <= 1 && Math.abs(layout.mdW - layout.termW) <= 2, JSON.stringify(layout));
-
-  const buttons = await page.evaluate(() => [...document.querySelectorAll("#screen .ln")].map((el) => [el.textContent.trim(), el.shadowRoot?.querySelectorAll(".wgi button").length ?? 0]));
-  check(`${at} no image button for a file that is not there, nor in a row of a drawn table`,
-    buttons.find(([t]) => t.startsWith("Not there"))?.[1] === 0 && buttons.find(([t]) => t.startsWith("│"))?.[1] === 0, JSON.stringify(buttons));
+  check(`${at} a Markdown widget is as wide as the terminal`, Math.abs(layout.mdW - layout.termW) <= 2, JSON.stringify(layout));
 
   // the screen moves on: the code widget follows its rows without being drawn again
   const before = await page.evaluate(() => (window.codeWg = document.querySelector("#screen .ln.wg-host").shadowRoot.querySelector(".wg")) && 1);
@@ -387,15 +369,13 @@ export async function webWidgets(browser, name = "") {
   const dir = "/tmp/" + "deep-folder-name-".repeat(5) + "x", long = `${dir}/drill-results.png`;
   const cut = 78, broken = await open(browser, { screen: ["Here it is:", `  ${long.slice(0, cut)}`, `  ${long.slice(cut)}`, "done"],
     files: { [dir]: ["drill-results.png"] } });
-  await broken.page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.shadowRoot?.querySelector(".wgi button")), null, { timeout: 8000 }).catch(() => {});
-  await broken.page.waitForFunction(() => CSS.highlights?.get("lnk")?.size, null, { timeout: 8000 }).catch(() => {});   // links after image buttons
+  await broken.page.waitForFunction(() => CSS.highlights?.get("lnk")?.size, null, { timeout: 8000 }).catch(() => {});
   // measured while the terminal is in sight: the file opened below takes its place (View), and the
   // underlines of a hidden terminal are dropped as soon as they are looked at again
   const glue = await broken.page.evaluate(() => {
     const rows = [...document.querySelectorAll("#screen .ln")];
-    const btn = rows.map((el) => el.shadowRoot?.querySelector(".wgi button")).find(Boolean);
     const lnk = [...(CSS.highlights?.get("lnk") ?? [])].map((r) => [rows.indexOf(r.startContainer.parentElement.closest(".ln")), rows.indexOf(r.endContainer.parentElement.closest(".ln"))]);
-    return { glue: rows[1].classList.contains("glue"), path: btn?.dataset.path, lnk };
+    return { glue: rows[1].classList.contains("glue"), lnk, shadow: rows.filter((el) => el.shadowRoot).length };
   });
   const second = await broken.page.evaluate(() => {
     const row = [...document.querySelectorAll("#screen .ln")][2], walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
@@ -421,8 +401,8 @@ export async function webWidgets(browser, name = "") {
   await broken.page.evaluate(() => { window.copied = []; document.addEventListener("copy", (e) => window.copied.push(e.clipboardData?.getData("text/plain"))); });
   await broken.page.keyboard.press(process.platform === "darwin" ? "Meta+C" : "Control+C");
   const copiedLong = await broken.page.evaluate(() => window.copied.at(-1));
-  check(`${at} a path the program broke at the row's edge is one path again: its image button, one underline, a click on its second half, copied without a space`,
-    glue.glue && glue.path === long && glue.lnk.some(([a, b]) => a === 1 && b === 2) && openedLong === long && copiedLong?.trim() === long,
+  check(`${at} a path the program broke at the row's edge is one path again: one underline (no button after it), a click on its second half, copied without a space`,
+    glue.glue && glue.shadow === 0 && glue.lnk.some(([a, b]) => a === 1 && b === 2) && openedLong === long && copiedLong?.trim() === long,
     JSON.stringify({ glue, openedLong, copiedLong }));
   await broken.page.close();
   // a tool's output Claude Code cut by characters at cols - 5 (measured): one path again, though shorter than the row

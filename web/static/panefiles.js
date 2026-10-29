@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The files a pane's output names (AC-35, AC-52, AC-56): where a printed path is (a relative one from
 // the folder its coding agent works in, as its hooks said, then from the pane's; "~" from its home;
-// on its host), whether a file is there, and an image's URL through the Files proxy.
-// Only a file that is there gets an underline, a click or an image button. A file is looked up by
+// on its host) and whether a file is there.
+// Only a file that is there gets an underline or a click. A file is looked up by
 // listing its folder through the proxy (nothing is read): one page answers every name of a
 // folder of up to 500 entries; a larger one is asked by name.
 import { absolutePath } from "./links.js";
@@ -17,12 +17,11 @@ const KEPT = 3000;           // answers kept, the oldest go first
 const SAY_EVERY = 250;       // ms between two "files turned up" (the page marks links again)
 
 /** paneInfo(): the shown pane's {cwd, home, host, agent} or {error}, null when the Mac does not answer.
- *  fetchJson(url): the answer's JSON, null when it failed (tests give their own); load(url):
- *  an image's {url} to show (a blob: address, fetched with the sign-in) or {error}. */
-export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null), load = async (url) => ({ url })) {
+ *  fetchJson(url): the answer's JSON, null when it failed (tests give their own). */
+export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => (r.ok ? r.json() : null), () => null)) {
   let pane = null, paneAt = -Infinity, asking = null;
   let found = new Map();     // host\npath -> {ok, at, tries, pending}
-  const queue = [[], []];    // [images, text paths]: folders to list, {host, dir, names: Set}
+  const queue = [];          // folders to list, {host, dir, names: Set}
   const listeners = new Set();
   let busy = 0, gen = 0, saying = 0, soon = 0;
 
@@ -79,7 +78,7 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
   }
   function next() {
     while (busy < AT_ONCE) {
-      const job = queue[0].pop() ?? queue[1].pop();
+      const job = queue.pop();
       if (!job) return;
       const mine = gen;
       busy++;
@@ -93,17 +92,16 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
       });
     }
   }
-  function enqueue(place, urgent) {
+  function enqueue(place) {
     const k = keyOf(place.host, place.path);
     found.set(k, { ...(found.get(k) ?? { ok: false, tries: 0 }), pending: true });           // asked: not again meanwhile
-    const q = queue[urgent ? 0 : 1];
-    let job = q.find((j) => j.dir === place.dir && j.host === place.host);
-    if (job) q.splice(q.indexOf(job), 1);
+    let job = queue.find((j) => j.dir === place.dir && j.host === place.host);
+    if (job) queue.splice(queue.indexOf(job), 1);
     else job = { host: place.host, dir: place.dir, names: new Set() };
     job.names.add(place.name);
-    q.push(job);                                                     // the newest first
-    if (q.length > QUEUED) {                                         // the oldest dropped: asked anew when marked again
-      const old = q.shift();
+    queue.push(job);                                                 // the newest first
+    if (queue.length > QUEUED) {                                     // the oldest dropped: asked anew when marked again
+      const old = queue.shift();
       for (const n of old.names) found.delete(keyOf(old.host, old.dir === "/" ? `/${n}` : `${old.dir}/${n}`));
     }
     soon ||= setTimeout(() => { soon = 0; next(); }, 0);             // once the marking pass named all it sees
@@ -111,8 +109,8 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
 
   /** "yes": its file is there; "no": not, or not known yet; or {error}: the pane's folder is not
    *  known (a click says why). Asked in the background when not known (listeners hear when one
-   *  turns out to be there). urgent: before text paths (an image button). */
-  function state(value, urgent = false) {
+   *  turns out to be there). */
+  function state(value) {
     refresh();
     if (!pane) return "no";
     if (pane.error) return { error: pane.error };
@@ -121,29 +119,18 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     for (const place of places) {
       const k = known(place);
       const stale = !k || (!k.pending && performance.now() - k.at > (k.ok ? KEEP_FOUND : AGAIN[Math.min(AGAIN.length, k.tries) - 1]));
-      if (stale) enqueue(place, urgent);
+      if (stale) enqueue(place);
     }
     return foundAt(value) ? "yes" : "no";
   }
   return {
     state,
     /** Whether the file a printed path names is there, as far as known now. */
-    there: (value, urgent = false) => state(value, urgent) === "yes",
+    there: (value) => state(value) === "yes",
     /** The absolute path of the file a printed path names, where it is there; null when none is known. */
     pathOf: (value) => foundAt(value)?.path ?? null,
     /** Another pane is shown: its folder and files are asked again. */
-    forget() { gen++; pane = null; paneAt = -Infinity; asking = null; found = new Map(); queue[0].length = queue[1].length = 0; },
-    /** {url, path} of the image a printed path names, or {error}. */
-    async resolve(value) {
-      if (!pane || performance.now() - paneAt > PANE_FOR) { paneAt = -Infinity; await refresh(); }
-      if (!pane) return { error: "terminum's server does not answer" };
-      if (pane.error) return { error: pane.error };
-      const place = foundAt(value) ?? placesOf(value)[0];
-      if (!place) return { error: "this session's folder is not known" };
-      // an <img> sends no header: the file is fetched with it and shown from a blob: (signin.js blobUrl)
-      const got = await load(`/fb/api/raw?${query({ path: place.path }, place.host)}`);
-      return got.url ? { url: got.url, path: place.path } : { error: got.error ?? "not loaded" };
-    },
+    forget() { gen++; pane = null; paneAt = -Infinity; asking = null; found = new Map(); queue.length = 0; },
     /** fn() when files turned out to be there or the pane's folder changed (at most every 250 ms). */
     listen(fn) { listeners.add(fn); },
   };

@@ -12,7 +12,7 @@ configuration. The overview is in the [README](../README.md).
 - **The page** (`web/static`): the session list (tmux sessions, windows, panes; coding agents'
   states), the terminal in **Wrap**, **Grid** or **Fit**, **Screen mode** for full-screen
   programs (the pane is sized to the view, keys and the mouse reach the program), widgets for
-  code, Markdown, diagrams and images in the output, folds, bookmarks, search, hot keys for
+  code, Markdown, diagrams and tables in the output, folds, bookmarks, search, hot keys for
   phones, paste and upload of files.
 - **The Files panel** (`ui/`): the tree of the shown pane's folder, a viewer and editor with
   highlighting and rendered Markdown (its ```mermaid fences drawn as diagrams, "Source" shows

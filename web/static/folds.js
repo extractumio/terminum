@@ -24,7 +24,7 @@ export class Folds {
     this.items = new Map();      // first line -> {n, to, label}, as the bridge told
     this.open = new Set();       // first lines of folds the user opened
     this.hosts = new Map();      // first row -> {f, rows, open}: as drawn
-    this.rows = new WeakSet();   // rows of a fold (no widget, no image button there)
+    this.rows = new WeakSet();   // rows of a fold (no widget there)
     this.waiting = new Map();    // first line -> "show" | "again" | {resolve, reject}: its lines are asked for
     this.onScreen = [];          // the screen's: [from row, to row, label]
     this.yielded = new Set();    // folds given way to rendered output over their lines (giveWay)

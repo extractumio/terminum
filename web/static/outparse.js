@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What in a terminal's output becomes a widget (AC-56): a file printed by a command (cat, bat…),
-// fenced code, a Markdown document, a Mermaid diagram, a drawn table, and image files named in it. Pure: rows
+// fenced code, a Markdown document, a Mermaid diagram and a drawn table. Pure: rows
 // are {text, eol, styled}, as term.js knows them; widgets.js draws what this finds. A wrong
 // widget hides real output and a missed one costs nothing, so the rules ask for clear signs.
 import { boxLine, drawnTable, tableMarkdown, tableTop } from "./drawntable.js";
 import { diffTable } from "./difftable.js";
-import { tokens } from "./links.js";
 
 const MAX_LINES = 2000;      // a longer region stays plain text (rendering it would cost more than it gives)
 const GAP = 6;               // the most lines of plain prose between two Markdown signs of one document
-const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif)$/i;
 
 const FENCE = /^(\s*)(`{3,}|~{3,})\s*([\w#+.-]*)[^`]*$/;
 const HEADING = /^#{1,6}\s+(?!-\*-)\S/;          // not "# -*- coding: utf-8 -*-"
@@ -291,7 +289,3 @@ function markdownRun(lines, i) {
   return { ok: true, to, open };
 }
 
-/** Image files named in a line's text: [{value, start, end}], as links.js finds paths. */
-export function imagePaths(text) {
-  return tokens(text).filter((t) => t.kind === "path" && IMAGE.test(t.value)).map(({ value, start, end }) => ({ value, start, end }));
-}

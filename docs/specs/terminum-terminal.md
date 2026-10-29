@@ -6,7 +6,7 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.10 |
+| Version | 0.6.11 |
 | Date | 2026-10-29 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.11 | 2026-10-29 | Owner: "remove the image icons": the image buttons after an image file named in the output (a row of the user's prompt in Claude Code naming three screenshots had three, each alone on a line below its row) are gone, with the image opened below its row; an image opens from Files or View (AC-31). |
 | 0.6.10 | 2026-10-29 | Owner: a session showed done while its turn line said "· 1 shell still running" (its turn over at 16:46, done ten minutes on by BACKGROUND_LIMIT, and nothing said the shell went on). Done stays done after the ten minutes (its turn ended, unread, reminders), and its row and the header show a quiet terminal mark, "Done; a shell, a monitor or a task it started still runs", while Claude Code's footer counts one; the mark goes with the count (AC-39). |
 | 0.6.9 | 2026-10-29 | Owner: the panes the floating buttons open (Bookmarks, Reminders, Sent, Plan) each had their own size, place, chrome, type and keys; on a computer each is now a window as View's: 12 px under the terminal's top and 16 px over its end, 820 px wide at most, left of the floating buttons, View's chrome, corners and shadow, View's head (a 14 px title, its keys 24 px, × at the right), its text in View's Markdown type (16 px, 1.65 line height, 22 px in from its sides), its actions at its foot, the first at the left and the others at the right. Find's field stays as it is. The bookmarks' titles and texts in the terminal's font (0.6.3) are now in View's type, a bookmark's own text still in a code block (AC-33, AC-90, AC-91, AC-97). |
 | 0.6.8 | 2026-10-29 | Owner: the bookmarks' navigator's Done is Resolve (the bar's too: it resolves a reminder, deletes a bookmark), and its actions are laid out as Show in terminal at the left, Resolve and Quote in chat together at the right (AC-33). |
@@ -96,7 +97,7 @@ Change log:
 
 **Who it affects.** Users of coding agents (Claude Code, Codex) and long-running commands who read and answer from a Mac, a tablet or a phone.
 
-**Expected outcome.** The terminal view renders what the output is (code, Markdown, diagrams, images), folds what nobody reads twice, remembers places as bookmarks, searches the whole loadable history, opens paths and links, takes pasted images and files, copies text cleanly on every device, shows an agent's state in the list and reminds when it waits, and lets the user edit the agent's input with taps and arrows as in a text field. The looks and behavior are iterm-enhancer's web app's; the source of screens and history is tmux through terminumd.
+**Expected outcome.** The terminal view renders what the output is (code, Markdown, diagrams), folds what nobody reads twice, remembers places as bookmarks, searches the whole loadable history, opens paths and links, takes pasted images and files, copies text cleanly on every device, shows an agent's state in the list and reminds when it waits, and lets the user edit the agent's input with taps and arrows as in a text field. The looks and behavior are iterm-enhancer's web app's; the source of screens and history is tmux through terminumd.
 
 **Scenario, before and after.**
 - Before: Alex scrolls 4,000 lines on a phone to find the table Claude printed an hour ago, reads its Markdown source with `|---|`, and taps three times to get the cursor into the right word of a long prompt.
@@ -109,6 +110,7 @@ In scope:
 
 Out of scope (explicit):
 - Rendering by the terminal of inline images or sixel (core §2).
+- An image file named in the output shown in the terminal (a button after its path, the image below its row): removed in 0.6.11 at the owner's request; it opens from Files or View.
 - Editing a file from the terminal view (the Files panel's View does that, `terminum-files.md`).
 - Programs' own mouse handling outside Screen mode (core AC 06).
 - Plans and notes (AC-97, AC-98) in v1: an MCP tool listing other sessions (get_other_sessions), the agent deleting notes (delete_notes_for_user: the user deletes); panes of remote hosts are specified in terminum-remote.md AC 99 (coding agents' progress on a host).
@@ -140,7 +142,7 @@ Open questions:
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-31 | [SHOULD / P1] | In the terminal, a file printed by a command, a fenced block, a Markdown document, a Mermaid diagram, a table drawn with rules and an image file named in the output are widgets: rendered in place with Raw, Copy and a full-screen viewer, while the text, selection and copying stay as they were. |
+| AC-31 | [SHOULD / P1] | In the terminal, a file printed by a command, a fenced block, a Markdown document, a Mermaid diagram and a table drawn with rules are widgets: rendered in place with Raw, Copy and a full-screen viewer, while the text, selection and copying stay as they were. |
 | AC-32 | [SHOULD / P1] | Diffs, written files, long tool output, blank runs, encoded data, repeated and similar lines in the history are folded into one line each with Show and Copy, found by terminumd before the page sees them. |
 | AC-33 | [SHOULD / P1] | A selection in the terminal becomes a bookmark with a note, kept on the Mac for every signed-in client; marks on the terminal's edge and a list bring the text back into view, also in older, folded or rendered lines; a bookmark whose lines are gone keeps its text. |
 | AC-34 | [SHOULD / P1] | The shown pane's whole loadable history is searched by terminumd: the count, the first match in view and marked, next and previous, every match a mark on the edge. |
@@ -184,20 +186,15 @@ Scenario: AC-31 happy path — a Markdown table in an agent's diff
   Given Claude Code shows its edit of a Markdown file as numbered diff rows ("  7 - | Version | 0.11.1 |", "  7 + | Version | 0.12.0 |")
   When two of the rows in a row or more are table rows
   Then they are drawn as a table widget: the header from the row above a "|---|" when the diff shows it, a removed row struck, an added row tinted; Raw shows the diff as it is
-Scenario: AC-31 happy path — an image named in the output
-  When a row names an image file (png, jpg, jpeg, gif, webp, svg, bmp, ico, avif) that exists in the pane's folder on the pane's host (its folder listed by name, nothing read; looked for again after 10 s)
-  Then a small image button stands after the row's text, on the line of its last word (a row as wide as the view: the word goes on with the buttons, never the buttons alone on a line below it) (rows within a screen of the view only; not in a drawn box, an agent's input box or its footer)
-  When the user presses it
-  Then the image is read through the Files API on the pane's host and shown centered below the row within half the terminal's width and height, with its path and ×; the row stays where it was on screen; a click opens the viewer; a file that is not an image says why
-
 Scenario: AC-31 happy path — the viewer
-  When the viewer opens an image or a diagram
-  Then it covers the window fitted (a photo never past its pixels), with −, +, Fit and × at the top right; pinch, drag, wheel and double tap zoom and move; Esc or × closes it and the terminal has the keys again on a computer
+  When the viewer opens a diagram
+  Then it covers the window fitted, with −, +, Fit and × at the top right; pinch, drag, wheel and double tap zoom and move; Esc or × closes it and the terminal has the keys again on a computer
 
 Scenario: AC-31 edge — the terminal stays the terminal
   Then rows' text does not change: a selection across a widget copies the region's lines; link underlines, cursor taps and the agent's input box work as before; output a program colored itself (bat, glow, delta, an agent's own rendering) is never a widget
-  And a region on the screen becomes a widget once unchanged for 150 ms and stays one while the screen changes below it; the cursor's row and below are never part of one, nor an agent's input box; streaming output is looked at every 100 ms at most and never further back than 2000 lines; in the history only regions within two screens of the view are drawn (a 10,000-line chat loads as fast as without widgets); at most 150 widgets and 50 open images are kept
-  And a widget acted on in sight keeps its line in place; one changing by itself keeps the first line wholly in sight in place; following the output, the view stays at its end; nothing grows after placement (images and diagrams go in once decoded, widgets once their stylesheet is in)
+  And a region on the screen becomes a widget once unchanged for 150 ms and stays one while the screen changes below it; the cursor's row and below are never part of one, nor an agent's input box; streaming output is looked at every 100 ms at most and never further back than 2000 lines; in the history only regions within two screens of the view are drawn (a 10,000-line chat loads as fast as without widgets); at most 150 widgets are kept
+  And a widget acted on in sight keeps its line in place; one changing by itself keeps the first line wholly in sight in place; following the output, the view stays at its end; nothing grows after placement (diagrams go in once decoded, widgets once their stylesheet is in)
+  And an image file named in the output is a path as any other (its underline, a click opens it in View): no button after it, nothing shown below its row, on no row (a wrapped one, the agent's echo of the user's prompt)
 
 Scenario: AC-31 failure — the renderer cannot be loaded or a diagram does not parse
   When "/fb/renderers.js" does not load
@@ -901,7 +898,7 @@ Trace record (`logs/trace-*.jsonl`): `{"at": 1792003600123, "k": 17, "kind": "ch
 | Limit | Value | When exceeded |
 |---|---|---|
 | Widget region | 2000 lines | stays text |
-| Widgets kept, images open | 150, 50 | drawn again when shown; an image closes |
+| Widgets kept | 150 | drawn again when shown |
 | Unfold | 20,000 lines, a told fold | refused with why |
 | Bookmarks | 300; text 2000, note 1000 characters | refused with why; a longer text is cut |
 | Search | 2000 matches told; 200 characters | "2000+"; refused inline |
@@ -917,7 +914,7 @@ Trace record (`logs/trace-*.jsonl`): `{"at": 1792003600123, "k": 17, "kind": "ch
 
 - Terminal output reaches only the panel's Markdown rules (raw HTML off, `http(s)`, `mailto` and relative links only, no image loaded) and Mermaid `securityLevel: "strict"` without HTML labels; a diagram is an image element of its SVG; an unfenced diagram is drawn only on the user's press.
 - Folded lines are sent only for a fold terminumd itself told of; the page cannot name other lines.
-- An image button or a path's underline lists the file's folder through the Files API on the pane's host (at most 4 at once); nothing is read until the user opens it.
+- A path's underline lists the file's folder through the Files API on the pane's host (at most 4 at once); nothing is read until the user opens it.
 - Bookmarks hold selected terminal text: kept 0600, sent only over a signed-in WebSocket, shown as text; terminumd stamps the pane, key, title and host.
 - Pasted files: 0600 in a 0700 folder; the name is terminumd's; the path is pasted quoted; no Enter.
 - Traces: `?trace=1` holds no content; `?trace=2` stays in the page.
@@ -1000,3 +997,4 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.6.8 (2026-10-29) — AC-33 `web/test/e2e_marknav.mjs` (Chromium and WebKit, wide and phone: the actions read Show in terminal, Resolve, Quote in chat; Show in terminal at their left edge, Quote in chat at their right edge with Resolve beside it; the bar's Resolve turns into Undo and back) → pass.
 - [x] 0.6.9 (2026-10-29) — AC-33, AC-90, AC-91, AC-97 measured and looked at in WebKit, 1400×900 against View's window over a private terminumd (12 px under the terminal's top, 16 px over its end, a 36 px head with its title 14 px 600 12 px in, Markdown 16 px, 1.65, 22 px in): Bookmarks, Reminders, Sent and Plan each 632 × 804 at 16, 12, 72, 16 px from the terminal's left, top, right and end, their heads 36 px 14 px 600 with 24 px keys, their text 16 px, 1.65; on a phone each a centered sheet; `node web/test/e2e_all.mjs` (the panes' checks webMarkNav, webSent, webPlans, webPlansFind, webMarks, webNotes, webSheets, webMotion, webPhoneRow 497/497, then all) → pass.
 - [x] 0.6.10 (2026-10-29) — AC-39 `cargo test tmux::agentstate` (the screen's limit gives done and the mark, the mark kept between reads and gone with the shell; a Stop's footer: working, marked, agents, nothing, not read; a closed pane forgotten); `web/test/e2e_rows.mjs` (Chromium and WebKit, wide and phone: done with a shell running shows a 14 px terminal mark with its title in the row and the header, none when only done or while working); a private terminumd and tmux with Claude Code stand-ins showing "1 shell" for 680 s, one read from its screen, one through a hook's Stop: working to 600 s, done and marked at 603 s, unread at 613 s, the mark gone at 682 s, the session done (6/6, twice); `make test` (646), `node web/test/e2e_all.mjs` 1503/1503, `ui/test/e2e_panel.mjs` 160, `scripts/e2e_hooks.py` 32/32, `scripts/e2e_agentstate.py` 11/11, `scripts/security_check.sh` → pass. Pragmatic review: a failed footer read leaves the mark as it was, one rule for a Stop's footer (`after_stop`) with its test, closed panes forgotten, one lock per pass; applied.
+- [x] 0.6.11 (2026-10-29) — AC-31 `web/test/e2e_widgets.mjs` and `e2e_pathfold.mjs` (Chromium and WebKit): an image file named in the output and there in the pane's folder is underlined as a path, its row has no shadow root and stays one line high, no row has one but widgets and folds; a path the program broke at the row's edge the same; `node web/test/e2e_all.mjs webWidgets webPathFold` 98/98; `make test` pass (646 Rust, page 137); `ui/test/e2e_panel.mjs` 160; review (pragmatic) applied: a stale "50 open images" limit, comments, stronger negative checks.

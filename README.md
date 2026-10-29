@@ -50,7 +50,7 @@ lives in tmux, so nothing is lost when you close a tab, switch devices or reboot
   a viewer and an editor with highlighting; create, rename, move to Trash. It works the same in
   an ssh session: browse and edit the server's files next to its terminal, with no sftp client
   or remote editor to set up.
-- **Rich output.** Markdown, code, Mermaid diagrams, images and links rendered right inside the
+- **Rich output.** Markdown, code, Mermaid diagrams, tables and links rendered right inside the
   terminal output, with folds for long blocks.
 - **Many projects, one list.** Sessions grouped into colored projects, ⌘[ / ⌘] to go back and
   forth between sessions, search through the history, 20 color schemes.

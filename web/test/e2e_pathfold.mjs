@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-35 for e2e_all.mjs: a long path in the output is shown short, "[...]" between its start and
 // its end; copying and ⌘-click take it whole; a click on "[...]" shows it whole for good. AC-31:
-// the image buttons after a full row stay on its last word's line, never alone below it.
+// a full row naming an image file has nothing after it, no line below it.
 import { check } from "./check.mjs";
 import { open } from "./e2e_widgets.mjs";
 
@@ -74,19 +74,19 @@ export async function webPathFold(browser, name) {
       opened[0].folds === 0 && opened[0].hidden === "" && again[0].folds === 0 && again[0].hidden === "" && f.sent.filter((m) => m.t === "in").length === before,
       JSON.stringify({ opened: opened[0], again: again[0] }));
 
-    // AC-31: a row as wide as the view: its image buttons stay on its last word's line
+    // AC-31 0.6.11: a row as wide as the view naming an image file that is there: nothing after it, no line below it
     if (size === "1200×800") {
-      await page.waitForFunction(() => [...document.querySelectorAll("#screen .ln")].some((el) => el.shadowRoot?.querySelector(".wgi button")), null, { timeout: 8000 }).catch(() => {});
-      const btn = await page.evaluate(() => {
-        const row = [...document.querySelectorAll("#screen .ln")].find((el) => el.shadowRoot?.querySelector(".wgi button") && el.textContent.startsWith("Saved"));
-        if (!row) return null;
-        const b = row.shadowRoot.querySelector(".wgi button").getBoundingClientRect(), r = new Range();
-        r.selectNodeContents(row);
-        const last = [...r.getClientRects()].filter((x) => x.width).at(-1);
-        return { button: Math.round(b.top), lastWord: Math.round(last.top), right: Math.round(last.right), left: Math.round(b.left) };
+      const onSaved = () => [...(CSS.highlights?.get("lnk") ?? [])].some((r) => r.startContainer.parentElement?.closest(".ln")?.textContent.startsWith("Saved"));
+      await page.waitForFunction(onSaved, null, { timeout: 8000 }).catch(() => {});   // its file found: when a button would have come
+      await page.waitForTimeout(300);
+      const saved = await page.evaluate(() => {
+        const rows = [...document.querySelectorAll("#screen .ln")], row = rows.find((el) => el.textContent.startsWith("Saved"));
+        const found = [...(CSS.highlights?.get("lnk") ?? [])].some((r) => r.startContainer.parentElement?.closest(".ln") === row);
+        return row && { found, shadow: !!row.shadowRoot, added: rows.filter((el) => el.shadowRoot && !el.classList.contains("wg-host") && !el.classList.contains("wg-fold")).length,
+          h: Math.round(row.getBoundingClientRect().height), h0: Math.round(rows[1].getBoundingClientRect().height) };
       });
-      check(`AC-31 ${at} the image buttons after a row as wide as the view go on with its last word, never alone on a line below it`,
-        !!btn && Math.abs(btn.button - btn.lastWord) <= 4 && btn.left >= btn.right, JSON.stringify(btn));
+      check(`AC-31 ${at} a row as wide as the view naming an image file has nothing after it and no line below it`,
+        !!saved && saved.found && !saved.shadow && saved.added === 0 && saved.h === saved.h0, JSON.stringify(saved));
     }
     // a found text in a folded path's hidden middle shows that path whole (find.js marks it through unfoldAt)
     const found = await page.evaluate(async () => {

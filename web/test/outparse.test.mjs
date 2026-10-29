@@ -1,8 +1,8 @@
 // The web app's output widgets (AC-56): which parts of a terminal's output become code,
-// Markdown, a Mermaid diagram or an image button.
+// Markdown, a Mermaid diagram or a table.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { imagePaths, logicalLines, regions, scan } from "../static/outparse.js";
+import { logicalLines, regions, scan } from "../static/outparse.js";
 
 // One row per line, every one with a hard end.
 const rows = (text) => text.split("\n").map((t) => ({ text: t, eol: true }));
@@ -66,12 +66,6 @@ test("rows iTerm wrapped are one line; region rows are rows", () => {
   const wrapped = [{ text: "```js", eol: true }, { text: "const long = ", eol: false }, { text: "1;", eol: true }, { text: "```", eol: true }];
   assert.deepEqual(logicalLines(wrapped).map((l) => l.text), ["```js", "const long = 1;", "```"]);
   assert.deepEqual(regions(wrapped).map(({ from, to, text }) => ({ from, to, text })), [{ from: 0, to: 3, text: "const long = 1;" }]);
-});
-
-test("image files named in a line", () => {
-  assert.deepEqual(imagePaths("Saved /tmp/shot.png and ./b.JPG, not c.txt"), [
-    { value: "/tmp/shot.png", start: 6, end: 19 }, { value: "./b.JPG", start: 24, end: 31 }]);
-  assert.deepEqual(imagePaths("see https://devbox.example/a.png"), []);
 });
 
 test("output a program colored itself is rendered already: bat, glow, a coding agent", () => {

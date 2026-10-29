@@ -2,8 +2,8 @@
 // The text of rows that go on into each other, as the page joins them (AC-52): a row iTerm
 // wrapped goes on at once, a re-joined hard end stands for a space, and a word the program broke
 // at the row's edge ("glue", term.js) goes on with neither a space nor the next row's indentation
-// nor the padding after it. The underline (linkmarks.js), a click (termlinks.js) and the image
-// buttons (widgets.js) read the same text, so they find the same paths.
+// nor the padding after it. The underline (linkmarks.js) and a click (termlinks.js) read
+// the same text, so they find the same paths.
 
 /** A row continues on the next one when the program wrapped it (no hard end) or the page
  *  re-joined it (term.js); a re-joined hard end stood for a space. */

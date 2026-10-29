@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The output widgets of the terminal view (AC-56): code, Markdown and Mermaid regions of the
-// output (outparse.js) drawn as widgets, and a button after each image file named in it. A
-// widget is a shadow root on its region's first row (widgetui.js); in its rendered form the
-// region's other rows are hidden (wg-hid), in Raw they show as before. Nothing is added to the
+// output (outparse.js) drawn as widgets. A widget is a shadow root on its region's first row
+// (widgetui.js); in its rendered form the region's other rows are hidden (wg-hid), in Raw they
+// show as before. Nothing is added to the
 // history's or the screen's children: term.js counts them as rows and blocks.
 import { Folds } from "./folds.js";
 import { nearRows } from "./linkmarks.js";
-import { joinedText } from "./rowtext.js";
-import { imagePaths, scan } from "./outparse.js";
-import { figure, hostOf, imageButtons, loadImage, loadStyles, regionWidget, zoomDiagram, zoomImage } from "./widgetui.js";
+import { scan } from "./outparse.js";
+import { hostOf, loadStyles, regionWidget, zoomDiagram } from "./widgetui.js";
 
 const STEADY = 150;          // ms a region on the screen stays as it is before it is rendered
 const CACHED = 150;          // rendered widgets kept, the least recently shown go first
-const IMAGES_OPEN = 50;      // images kept open
 const THROTTLE = 100;        // ms between scans of streaming output
 const NEAR = 2;              // screens above and below the view whose history regions are drawn
-const BOXED = /^\s*[│┃║]|[│┃║]\s*$/;   // a row of a drawn box or table: an image would open inside it
 
 // FNV-1a: a region is known by its kind, language and text
 function hash(s) {
@@ -43,17 +40,13 @@ function dark(bg = "") {
 }
 
 export class Widgets {
-  /** view: the TermView; boxes: #hist and #screen; files: the pane's files (panefiles.js:
-   *  an image's URL, whether a file is there); copy(text);
-   *  send(msg) to the bridge (folded lines); notify(text); onZoomClosed(): the viewer closed. */
-  constructor({ view, term, boxes, files, copy, send, notify, onZoomClosed }) {
-    Object.assign(this, { view, term, boxes, files, copy, onZoomClosed });
-    files.listen(() => this.markImages());       // an image file turned out to be there
+  /** view: the TermView; boxes: #hist and #screen; copy(text); send(msg) to the bridge (folded lines); notify(text); onZoomClosed(): the viewer closed. */
+  constructor({ view, term, boxes, copy, send, notify, onZoomClosed }) {
+    Object.assign(this, { view, term, boxes, copy, onZoomClosed });
     this.modes = new Map();      // region key -> "raw" or "on", as the user chose
     this.cache = new Map();      // region key + theme -> its widget element
     this.sources = new WeakMap(); // widget -> its region's source text (for Copy)
     this.seen = new Map();       // key of a screen region -> when it was first seen as it is
-    this.images = new Map();     // image key -> {url, path, error} of an open image
     this.lastScan = 0;
     this.styled = false;         // widgets wait for their style sheet
     this.reset();
@@ -62,7 +55,7 @@ export class Widgets {
     loadStyles().then(() => { this.styled = true; this.keepPlace(() => this.update(true)); });
     // scrolled, or shown again (Files, View), or another size: regions come near the view
     let timer = 0;
-    const near = () => { clearTimeout(timer); timer = setTimeout(() => { this.markImages(); if (this.far) this.keepPlace(() => this.update(false, true)); }, 150); };
+    const near = () => { clearTimeout(timer); timer = setTimeout(() => { if (this.far) this.keepPlace(() => this.update(false, true)); }, 150); };
     // following the output: as the user left it (a size change or a widget growing is not a scroll away)
     this.following = true;
     term.addEventListener("scroll", () => { this.following = view.atBottom(); near(); }, { passive: true });
@@ -82,7 +75,6 @@ export class Widgets {
     this.final = [];             // history regions that no longer change: {rows, key, region}
     this.settledN = null;        // the history line the next scan starts at (null: its first)
     this.hosts = new Map();      // a region's first row -> {key, raw, rows, live}: what is attached
-    this.imageHosts = new Set();
     this.folds?.reset();
     this.pin = null;             // a bookmark held in view (AC-57) was of the last pane
     clearTimeout(this.steady); clearTimeout(this.later);
@@ -96,17 +88,10 @@ export class Widgets {
     [["kw", 13], ["str", 10], ["num", 11], ["fn", 12], ["type", 14], ["tag", 9]].forEach(([k, i]) => { if (pal[i]) s.setProperty(`--tk-${k}`, pal[i]); });
   }
 
-  /** The largest an image in the history is: half the terminal's width and height; it is
-   *  centered across the terminal's width. */
+  /** The tallest a diagram in the history is: half the terminal's height. */
   sizes() {
-    const t = this.term, s = t.style, cs = getComputedStyle(t);
-    const inner = t.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    const tw = `${Math.round(inner)}px`, w = `${Math.round(t.clientWidth / 2)}px`, h = `${Math.round(t.clientHeight / 2)}px`;
-    if (!t.clientHeight || (s.getPropertyValue("--wg-tw") === tw && s.getPropertyValue("--wg-ih") === h)) return;
-    s.setProperty("--wg-tw", tw);                  // the terminal's text width: images are centered across it
-    s.setProperty("--wg-iw", w);
-    s.setProperty("--wg-ih", h);
-    s.setProperty("--wg-dh", h);
+    const t = this.term, h = `${Math.round(t.clientHeight / 2)}px`;
+    if (t.clientHeight && t.style.getPropertyValue("--wg-dh") !== h) t.style.setProperty("--wg-dh", h);
   }
 
   /** After the history or the screen changed (term.js, inside its keepBottom). full: the rows
@@ -119,8 +104,6 @@ export class Widgets {
     this.folds.apply();                           // at once: a folded line not sent is an empty row
     if (!this.styled) return;
     clearTimeout(this.later);
-    // the screen drew a row with image buttons again: they come back now, not a moment later
-    if ([...this.imageHosts].some((el) => !el.isConnected)) this.markImages(true);
     const wait = this.lastScan + THROTTLE - performance.now();
     const torn = [...this.hosts.values()].some((h) => h.live && h.rows.some((el) => !el.isConnected));
     if (!full && !now && wait > 0 && !torn) { this.later = setTimeout(() => this.keepPlace(() => this.update()), wait); return; }
@@ -159,7 +142,6 @@ export class Widgets {
     this.apply([...this.final, ...live.filter((l) => at - this.seen.get(l.key) >= STEADY || this.cache.has(this.cacheKey(l.key)))]);
     clearTimeout(this.steady);
     if (live.some((l) => !this.cache.has(this.cacheKey(l.key)))) this.steady = setTimeout(() => this.keepPlace(() => this.update(false, true)), STEADY);
-    this.markImages();
   }
 
   cacheKey(key) { return `${key}:${this.dark ? "d" : "l"}`; }
@@ -236,7 +218,7 @@ export class Widgets {
   }
 
   /** Runs fn, a change to the page, keeping the reader's place: `row` where it is on screen
-   *  (the row the user acted on: an image opened under it, Raw, Markdown; `user` false: a widget
+   *  (the row the user acted on: Raw, Markdown; `user` false: a widget
    *  that changed by itself, kept unless the user follows the output); else the end while
    *  following the output, else the first row wholly in sight. Not while text is selected or a
    *  finger is down: the page must not change under them. */
@@ -287,82 +269,5 @@ export class Widgets {
     if (act === "fold") return this.keepPlace(() => this.folds.toggle(root.host), root.host);
     if (act === "foldcopy") return this.folds.copyOf(root.host);
     if (act === "zoom") return zoomDiagram(b, this.onZoomClosed);
-    if (act === "zoomimg") return zoomImage(b, this.onZoomClosed);
-    if (act === "img") return this.openImage(root.host, b.dataset.path);
-    if (act === "unimg") {
-      const fig = b.closest("figure");
-      this.dropImage(this.imageKey(root.host, fig.dataset.path));
-      this.keepPlace(() => fig.remove(), root.host);
-    }
-  }
-
-
-  imageKey(row, path) { return `${hash(row.textContent)}:${path}`; }
-
-  /** An open image closed: its blob: address goes with it (panefiles.js resolve). */
-  dropImage(key) {
-    const url = this.images.get(key)?.url;
-    if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
-    this.images.delete(key);
-  }
-
-  async openImage(row, path) {
-    const k = this.imageKey(row, path);
-    if (this.images.has(k)) return;
-    this.images.set(k, { pending: true });
-    let got;
-    try { got = await loadImage(await this.files.resolve(path)); } catch (e) { got = { error: e.message || String(e) }; }
-    this.images.set(k, got);
-    for (const key of [...this.images.keys()].slice(0, Math.max(0, this.images.size - IMAGES_OPEN))) this.dropImage(key);
-    this.keepPlace(() => this.markImages(true), row);           // the line clicked stays where it is
-    // ... unless the image would open out of sight: then just enough to show it
-    const fig = row.isConnected && [...(row.shadowRoot?.querySelectorAll("figure") ?? [])].find((f) => f.dataset.path === path);
-    if (fig) {
-      const t = this.term.getBoundingClientRect(), b = fig.getBoundingClientRect().bottom;
-      if (b > t.bottom) this.term.scrollTop += Math.min(b - t.bottom + 8, row.getBoundingClientRect().top - t.top);
-      this.following = this.view.atBottom();
-      this.view.updateBottom();
-    }
-  }
-
-  /** The image buttons of the rows near the view (a long listing of image files would
-   *  otherwise give thousands of rows a shadow root), and the images open there. */
-  markImages(now = false) {
-    if (!this.styled) return;
-    if (!now) { clearTimeout(this.imgTimer); this.imgTimer = setTimeout(() => this.keepPlace(() => this.markImages(true)), 60); return; }
-    const rows = nearRows(this.term, this.boxes), hosts = new Set();
-    let line = [];
-    const flush = () => {
-      const last = line.at(-1);
-      // a word the program broke at the row's edge is one again (rowtext.js)
-      const text = joinedText(line).text.replace(/[︎️]/g, "");
-      line = [];
-      // not a widget's own row, a drawn table's or an agent's input box and footer
-      if (!last || this.hosts.has(last) || this.folds.has(last) || last.closest(".inbox, .foot") || BOXED.test(text)) return;
-      const paths = imagePaths(text).filter((p) => this.files.there(p.value, true));   // a button only for one that opens; asked first
-      if (!paths.length) return;
-      hosts.add(last);
-      const root = hostOf(last, this.click);
-      const want = paths.map((p) => p.value).join("\n");
-      let [span, figs] = [root.querySelector(".wgi"), root.querySelector(".figs")];
-      if (span?.dataset.paths !== want) {
-        [span, figs] = imageButtons(paths);
-        span.dataset.paths = want;
-        root.replaceChildren(document.createElement("slot"), span, figs);
-      }
-      for (const p of paths) {
-        const got = this.images.get(this.imageKey(last, p.value));
-        const shown = [...figs.children].find((f) => f.dataset.path === p.value);
-        if (got && !got.pending && !shown) figs.append(figure(p.value, got));
-        if (!got && shown) shown.remove();
-      }
-    };
-    for (const el of rows) {
-      line.push(el);
-      if (el.classList.contains("eol") && !el.classList.contains("glue")) flush();   // a line goes on only over a broken word
-    }
-    flush();
-    for (const el of this.imageHosts) if (!hosts.has(el) && !this.hosts.has(el) && !this.folds.has(el)) el.shadowRoot?.replaceChildren(document.createElement("slot"));
-    this.imageHosts = hosts;
   }
 }

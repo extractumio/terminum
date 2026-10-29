@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-import { blobUrl } from "./signin.js";                // first: it signs every request the page makes
+import "./signin.js";                                // first: it signs every request the page makes
 import { connection } from "./conn.js";
 import { ringColor } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
@@ -112,9 +112,9 @@ const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term")
 copyButton($("copyfab"), $("term"), (text) => input.copySelection(text));
 quietSelection($("term"), touch, { hold: (on) => view.hold(on) });                   // no iOS menu over a selection: the page's Copy, [+], Ask (AC-37)
 
-// The files the output names, on the pane's host: a path is a link, an image gets a button, only
+// The files the output names, on the pane's host: a path is a link only
 // when its file is there (relative paths from the pane's folder, as a click takes them).
-const shownFiles = paneFiles(() => views.paneInfo(), undefined, blobUrl);
+const shownFiles = paneFiles(() => views.paneInfo());
 // Addresses and paths get a dotted underline (linkmarks.js).
 const marks = linkMarks($("term"), [$("hist"), $("screen")], shownFiles);
 const asked = askedMarks({ term: $("term"), boxes: [$("hist"), $("screen")], view, send, sid: () => st.sid });
@@ -170,9 +170,8 @@ const placeKbd = kbdPlacer({ touch, mouseOn: () => sizing.mouseOn() });
 view.onDrawn = () => { placeKbd(); marks(); asked.redraw(); trace.drawn(); };
 new ResizeObserver(() => placeKbd()).observe($("term"));   // a banner above it moved the terminal: the field follows, never over the banner
 
-// Code, Markdown and diagrams in the output as widgets, images named in it behind a button
-// (AC-56), read through the Files proxy on the pane's host.
-const widgets = new Widgets({ view, term: $("term"), boxes: [$("hist"), $("screen")], files: shownFiles,
+// Code, Markdown and diagrams in the output as widgets (AC-56).
+const widgets = new Widgets({ view, term: $("term"), boxes: [$("hist"), $("screen")],
   copy: (text) => input.copySelection(text), send, notify: (text) => toast(text, 3000), onZoomClosed: () => focusTerminal() });
 // none over a full-screen program, nor when settings.json turned them off
 const widgetsOn = () => !sizing.fullscreen() && settings.page().widgets !== false;

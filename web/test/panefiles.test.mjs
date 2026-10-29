@@ -93,5 +93,4 @@ test("a relative path is found from the folder the coding agent works in, then f
   assert.equal(files.pathOf("docs/guide.md"), "/Users/alex/p/docs/guide.md");
   assert.equal(files.there("shots/none.png"), false);
   assert.equal(files.pathOf("shots/none.png"), null);
-  assert.equal((await files.resolve("shots/row.png")).path, "/Users/alex/p/worktrees/fix/shots/row.png", "an image from where it is");
 });
