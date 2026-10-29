@@ -58,7 +58,7 @@ const dropFiles = (page, files) => page.evaluate((files) => {
   for (const type of ["dragover", "drop"]) document.getElementById("term").dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
 }, files);
 const dropFile = (page, fname, size, mtime) => dropFiles(page, [[fname, size, mtime]]);
-const NOT_OWN = "Their own paths were not found: Their files were not found on this Mac (a drag from a browser or Mail has none).";
+const NOT_OWN = "Their own paths were not found: the drag held no file on this Mac's disk (a drag from Mail, a browser or an app's window has none).";
 
 /** Files dropped (AC-36): on this Mac's pane their own paths, at any size, when the drag pasteboard
  *  has them (`drag`: the stub's answer); else uploaded, a file over 100 MB not sent, the page saying why. */
@@ -76,7 +76,16 @@ export async function liveDrop(page, { home, work, drag }) {
   await page.keyboard.press("Control+U");
   check("AC-36 two files dropped from Finder on a pane of this Mac put their own paths (one over 100 MB), nothing uploaded",
     pasted && shots(home).length === none, JSON.stringify({ pasted, uploaded: shots(home).length - none }));
-  // the pasteboard holds another drag's paths: copies uploaded, the toast saying why first
+  // the pasteboard holds an earlier drag's paths: a copy uploaded, the toast naming the case first
+  await dropFile(page, "Other Notes.txt", 5, 1_792_000_000_000);
+  const earlier = await page.waitForFunction(() => document.getElementById("toast").innerText.startsWith("Their own paths"), null, { timeout: 5000 })
+    .then(() => page.evaluate(() => document.getElementById("toast").innerText)).catch(() => "");
+  const copied = await page.waitForFunction(() => document.getElementById("screen").innerText.includes("Other_Notes.txt"), null, { timeout: 5000 })
+    .then(() => true).catch(() => false);   // the copy's path typed before the line is cleared
+  await page.keyboard.press("Control+U");
+  check("AC-36 a file not among the drag's files is uploaded, the toast saying so and naming what the drag held",
+    copied && earlier.startsWith("Their own paths were not found: Other Notes.txt is not among the files the drag held (it held 2, Drums Initial.zip first), perhaps an earlier drag's.") && !earlier.includes("?."), JSON.stringify({ copied, earlier }));
+  // the drag held no file (Mail, a browser): copies uploaded, the toast saying why first
   fs.writeFileSync(drag, "[]");
 
   // 22 MB (the owner's zip was refused at the old 20 MB): uploaded, its path pasted
