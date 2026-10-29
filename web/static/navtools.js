@@ -205,7 +205,12 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
       act("Remove", "remove", `Remove ${g.host}? Its tmux sessions on the host keep running; terminum stops showing them.`));
     const r = button.getBoundingClientRect();
     box.hidden = false;
-    if (!placeModal(box, hideHostMenu)) { box.style.top = `${r.bottom + 4}px`; box.style.left = `${Math.max(8, r.right - 180)}px`; }
+    if (!placeModal(box, hideHostMenu)) {   // under its button, above it where the window ends first, always inside the window
+      const h = box.offsetHeight;
+      const top = r.bottom + 4 + h <= innerHeight - 8 ? r.bottom + 4 : r.top - 4 - h;
+      box.style.top = `${Math.max(8, Math.min(top, innerHeight - h - 8))}px`;
+      box.style.left = `${Math.max(8, r.right - 180)}px`;
+    }
     button.setAttribute("aria-expanded", "true");
   }
   function hideHostMenu() {

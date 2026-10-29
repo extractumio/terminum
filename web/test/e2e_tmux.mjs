@@ -134,6 +134,29 @@ export async function webTmux(browser, name) {
         && failed.label === "devbox" && failed.state === WHY && failed.lines >= 2 && failed.inside, JSON.stringify({ seen, failed }));
     await headClick(page, '#sessions .grp[data-wid="devbox/terminum"]', '.hostbtn');
     const offered = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
+    if (!phone) {   // a window that ends under the button: the menu opens above it, whole (a phone's is a sheet)
+      await page.click('#hostmenu button[data-action="retry"]');
+      const was = page.viewportSize();
+      // the window shortened until the button, still in the list's view (a click scrolls nothing), has no room for the menu under it
+      const room = () => page.evaluate(() => { const b = document.querySelector('#sessions .grp[data-wid="devbox/terminum"] .hostbtn').getBoundingClientRect(),
+        l = document.getElementById("sessions").getBoundingClientRect();
+        return b.top >= l.top && b.bottom <= l.bottom ? innerHeight - b.bottom : -1; });
+      for (let h = was.height; h >= 240; h -= 8) {
+        await page.setViewportSize({ width: was.width, height: h });
+        await pause(page, 60);
+        const left = await room();
+        if (left >= 0 && left < 100) break;
+      }
+      await headClick(page, '#sessions .grp[data-wid="devbox/terminum"]', '.hostbtn');
+      const placed = await page.evaluate(() => { const m = document.getElementById("hostmenu").getBoundingClientRect(), b = document.querySelector('#sessions .grp[data-wid="devbox/terminum"] .hostbtn').getBoundingClientRect();
+        return { top: m.top, bottom: m.bottom, win: innerHeight, above: m.bottom <= b.top, b: [b.top, b.bottom], items: document.getElementById("hostmenu").children.length }; });
+      await page.keyboard.press("Escape");
+      await page.setViewportSize(was);
+      await pause(page, 200);
+      check("AC-81 host group: its menu near the window's end opens above its button, whole inside the window",
+        placed.top >= 8 && placed.bottom <= placed.win - 8 && placed.above, JSON.stringify(placed));
+      await headClick(page, '#sessions .grp[data-wid="devbox/terminum"]', '.hostbtn');
+    }
     await page.click('#hostmenu button[data-action="retry"]');
     await pause(page, 100);
     const retry = last("hostaction");

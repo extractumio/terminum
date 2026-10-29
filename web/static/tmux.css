@@ -13,8 +13,9 @@
   border-radius: var(--blob-b); background: var(--sev); }
 .grp.reconnecting .gstate { --sev: var(--waiting); }
 .grp.failed .gstate { --sev: var(--danger); color: var(--danger-text); }
-#hostmenu { position: fixed; z-index: 31; width: 180px; display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--r-lg);
+#hostmenu { position: fixed; z-index: 31; width: 180px; max-height: calc(100vh - 16px); overflow-y: auto; display: flex; flex-direction: column; padding: var(--sp-1); border-radius: var(--r-lg);
   --fill: var(--chrome-2); box-shadow: var(--shadow-far); }
+#hostmenu > * { flex: none; }   /* a short window scrolls the menu, never squeezes its items */
 #hostmenu[hidden] { display: none; }
 #hostmenu button[data-action="remove"] { color: var(--danger-text); }
 
