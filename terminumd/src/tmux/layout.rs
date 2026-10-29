@@ -252,9 +252,9 @@ async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, en
             }
         }
     }
-    let (mut out, seen) = screen_states(server, states, &read, now).await;
+    // the screens and the stopped panes' footers asked at once: one round trip over ssh, not two
+    let ((mut out, seen), footers) = tokio::join!(screen_states(server, states, &read, now), background(server, &ended));
     behind.extend(seen);
-    let footers = background(server, &ended).await;
     let mut busy = HashSet::new();
     {
         let mut g = states.lock();

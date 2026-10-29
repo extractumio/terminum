@@ -44,11 +44,11 @@ export async function webRows(browser, name) {
       const counts = [...document.querySelectorAll("#sessions h2 .count")].map((c) => [c.textContent, Math.round(c.getBoundingClientRect().right)]);
       const on = document.querySelector('#sessions .item[data-id$="%1"]');
       const bg = (e) => e && { title: e.title, svg: Math.round(e.querySelector("svg")?.getBoundingClientRect().width ?? 0) };
-      const marks = { row: bg(on.querySelector(".st .bgwork")), head: bg(document.querySelector("#curstate .bgwork")),
-        others: document.querySelectorAll("#sessions .bgwork").length };
+      const marks = { row: bg(on.querySelector(".st .state.background")), head: bg(document.querySelector("#curstate .state.background")),
+        others: document.querySelectorAll("#sessions .state.background").length };
       return { bars: tops.map((t) => left(t.querySelector(".pbar"))), waves: waves.map((w) => [Math.round(w.getBoundingClientRect().width), left(w) >= bar.getBoundingClientRect().right, w.getBoundingClientRect().right <= text.getBoundingClientRect().left]),
         counts, tile: [cs.backgroundColor, getComputedStyle(tile.querySelector("svg")).color, parseFloat(cs.borderTopLeftRadius) > 0],
-        hourglass: !!document.querySelector("#sessions .state.working, #curstate .state"), busy: !!document.querySelector('#sessions .item[data-id$="%6"] .pbar.busy'),
+        hourglass: !!document.querySelector("#sessions .state.working, #curstate .state:not(.background)"), busy: !!document.querySelector('#sessions .item[data-id$="%6"] .pbar.busy'),
         marks, on: [on.classList.contains("on"), getComputedStyle(on).backgroundColor],
         groups: [...document.querySelectorAll("#sessions section.grp")].map((s) => [Number(/(\d+)\)$/.exec(s.style.getPropertyValue("--proj"))?.[1]), getComputedStyle(s).backgroundColor]) };
     });

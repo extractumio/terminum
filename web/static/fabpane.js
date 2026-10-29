@@ -82,7 +82,7 @@ const COLUMN = ["findfab", "marksfab", "sentfab"];   // the floating column, one
  *  terminal's top and 16 px over its end, its right edge 14 px left of `fab` (or of the floating
  *  column when `fab` is not in it; the terminal's edge without one), 820 px wide at most, 16 px in
  *  from the terminal's left. */
-export function placeWindow(pane, fab) {
+function placeWindow(pane, fab) {
   const area = pane.offsetParent?.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
   if (pane.hidden || !area) return;
   const b = [fab, ...COLUMN.map((id) => document.getElementById(id))].find((e) => e?.offsetWidth && e.getBoundingClientRect().left > t.left + t.width / 2)?.getBoundingClientRect();
@@ -90,6 +90,14 @@ export function placeWindow(pane, fab) {
   Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(t.top + 12 - area.top)}px`,
     width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.height - 28))}px` });
   delete pane.dataset.under;
+}
+
+/** A floating button's pane: a window as View's on a computer (placeWindow), a sheet elsewhere
+ *  (placeModal, its window's size let go; `close` takes a press on its shade). Nothing while hidden. */
+export function placePane(pane, fab, close) {
+  if (pane.hidden) return;
+  if (placeModal(pane, close)) for (const p of ["width", "height"]) pane.style.removeProperty(p);
+  else placeWindow(pane, fab);
 }
 
 /** Places `pane` beside `fab` (nothing while it is hidden). */
@@ -138,12 +146,7 @@ export function fabPane({ fab, pane, close, onToggle }) {
     onToggle(on);
     place();
   }
-  // a window as View's on a computer, a sheet elsewhere (its window's size let go)
-  const place = () => {
-    if (pane.hidden) return;
-    if (placeModal(pane)) for (const p of ["width", "height"]) pane.style.removeProperty(p);
-    else placeWindow(pane, fab);
-  };
+  const place = () => placePane(pane, fab);
   fab.addEventListener("click", () => toggle());
   fab.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   close.addEventListener("click", () => toggle(false));

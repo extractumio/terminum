@@ -31,6 +31,12 @@ export function kindMark(item) {
   return null;
 }
 
+/** A Resolve key as its item's state says: Undo while pending, else ✓ Resolve. */
+function resolveKey(b, pending) {
+  b.replaceChildren(...(pending ? ["Undo"] : [icon("check", 14), "Resolve"]));
+  b.classList.toggle("pending", pending);
+}
+
 export class MarkNav {
   /** marks: marks.js's Marks (here, sid, jump, send, togglePane, shown, hideBar). */
   constructor(marks) {
@@ -97,8 +103,7 @@ export class MarkNav {
   show(item, others) {
     const { head, body, done } = this.view;
     const pending = this.pending.has(item.id);
-    done.replaceChildren(...(pending ? ["Undo"] : [icon("check", 14), "Resolve"]));
-    done.classList.toggle("pending", pending);
+    resolveKey(done, pending);
     done.title = pending ? "Take it back" : item.remind ? "Resolve this reminder (Undo for 5 s; Delete)" : "Delete this bookmark (Undo for 5 s; Delete)";
     const key = `${item.id}\n${item.note}\n${item.text}`;
     if (key === this.drawn) return;
@@ -172,17 +177,12 @@ export class MarkNav {
   /** The list and the bar's ✓ after a change of what is pending. */
   sync(id) {
     this.draw();
-    if (this.m.shown?.id !== id) return;
-    const on = this.pending.has(id);
-    $("mbdone").classList.toggle("pending", on);
-    $("mbdone").replaceChildren(...(on ? ["Undo"] : [icon("check", 14), "Resolve"]));
+    if (this.m.shown?.id === id) this.bar(this.m.shown);
   }
 
   /** The bar shows `item`: its ✓ as its pending state says. */
   bar(item) {
-    const on = this.pending.has(item.id);
-    $("mbdone").classList.toggle("pending", on);
-    $("mbdone").replaceChildren(...(on ? ["Undo"] : [icon("check", 14), "Resolve"]));
+    resolveKey($("mbdone"), this.pending.has(item.id));
     $("mbdone").title = item.remind ? "Resolve this reminder (Undo for 5 s)" : "Resolve: delete this bookmark (Undo for 5 s)";
   }
 

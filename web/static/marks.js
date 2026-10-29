@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { placeModal, placeWindow } from "./fabpane.js";
+import { placeModal, placePane } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, railBox, railSlots } from "./marktext.js";
@@ -386,10 +386,7 @@ export class Marks {
     this.search.place();
     if (!$("markpane").hidden) this.placePane();
   }
-  placePane() {
-    if (placeModal($("markpane"), () => this.togglePane(false))) { for (const p of ["height", "width"]) $("markpane").style.removeProperty(p); return; }
-    placeWindow($("markpane"), $("marksfab"));      // a window as View's (fabpane.js)
-  }
+  placePane() { placePane($("markpane"), $("marksfab"), () => this.togglePane(false)); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {
     const had = $("markpane").contains(document.activeElement);

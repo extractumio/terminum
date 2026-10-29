@@ -107,7 +107,6 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .s .ag-opencode { color: color-mix(in srgb, #a9c4ff 60%, var(--t-fg)); }   /* pale blue */
 .item .st { display: grid; place-items: center; padding-top: 2px; }
 .item .st .subs { font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* subagents running (hooks) */
-.bgwork { display: grid; place-items: center; color: var(--muted); }   /* done, a shell of its still running (AC-39): quiet */
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
 #sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }
 .item.child { padding-top: 4px; padding-bottom: 4px; }
@@ -120,6 +119,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .state.waiting { color: #1a1b26; background: var(--waiting); border-radius: 50%; box-shadow: 0 0 0 2px color-mix(in srgb, var(--waiting) 35%, transparent), 0 0 10px var(--waiting);
   animation: ask 1s steps(2, jump-none) infinite; }
 .state.failed { color: var(--danger); }
+.state.background { color: var(--muted); }                 /* done, a shell of its still running (AC-39): quiet */
 @keyframes ask { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .state.waiting { animation: none; } }
 

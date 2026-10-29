@@ -63,8 +63,8 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
 
   // The paths saved are pasted; a failure stops the rest and stays on screen. `why`: why the
   // files' own paths were not taken, said first (never a silent fallback).
-  async function send(list, what, why = "", from = sid()) {
-    const said = why ? `${why} ` : "";
+  async function send(list, what, why = "") {
+    const from = sid(), said = why ? `${why} ` : "";
     if (!from) return toast("Open a session first.");
     const paths = [];
     let error = null;
@@ -112,7 +112,7 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
       why = `Their own paths were not found: ${own.why.replace(/\.$/, "")}.`;
     }
     if (got.some((g) => g.dir)) return toast(`${why} A folder cannot be uploaded: drop its files.`.trim(), 6000);
-    return send(got.map(({ file }) => [file, fileUrl(file)]), "file", why, sid());
+    return send(got.map(({ file }) => [file, fileUrl(file)]), "file", why);
   }
 
   const fileUrl = (f) => `/upload?name=${encodeURIComponent(f.name)}&sid=`;
