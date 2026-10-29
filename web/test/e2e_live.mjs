@@ -32,6 +32,9 @@ const tmp = fs.mkdtempSync("/tmp/tml-");
 const HOME = path.join(tmp, "h"), APP = path.join(tmp, "a"), WORK = fs.realpathSync(fs.mkdtempSync("/tmp/tmlw-"));
 fs.mkdirSync(HOME);
 for (const f of ["alpha.txt", "beta.md"]) fs.writeFileSync(path.join(WORK, f), `${f}\n`);
+// macOS's drag pasteboard played by a stub (dragged.rs runs TM_OSASCRIPT): it answers drag.json, else no paths; the user's own drag is never read
+const DRAG = path.join(tmp, "drag.json"), OSASCRIPT = path.join(tmp, "osascript");
+fs.writeFileSync(OSASCRIPT, `#!/bin/sh\ncat '${DRAG}' 2>/dev/null || echo '[]'\n`, { mode: 0o755 });
 const UI_BUILD = fs.readFileSync(path.join(ROOT, "ui/.build-id"), "utf8").trim();
 const tmux = (...a) => { try { return execFileSync("tmux", ["-L", SOCKET, ...a], { encoding: "utf8", timeout: 5000 }).trim(); } catch { return ""; } };   // a hung server answers nothing, never holds the run
 /** The pids of this test's tmux server and terminumd's control clients, noted while they answer:
@@ -71,7 +74,7 @@ const onSocket = (method, p, body) => new Promise((resolve, reject) => {
 });
 async function start() {
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
-  const env = { ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: "warn", TM_BUILD_ID: UI_BUILD };
+  const env = { ...process.env, TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {
@@ -113,7 +116,7 @@ async function wide(browser, name) {
   await page.keyboard.press("Enter");
   await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("live-42"), null, { timeout: 5000 }));
   await livePaste(page, { home: HOME, name });
-  await liveDrop(page, { home: HOME });
+  await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
   const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
   await liveQuick(page, { tmux, work: WORK });

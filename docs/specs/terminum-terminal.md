@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.6 |
-| Date | 2026-10-28 |
+| Version | 0.6.7 |
+| Date | 2026-10-29 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.7 | 2026-10-29 | Owner: two zips dragged from Finder (a Dropbox folder) onto a pane of this Mac were uploaded as copies and one refused ("larger than the 100 MB an upload may be"); a drop on a pane of this Mac in this Mac's browser pastes the files' own paths, one per line in a coding agent's box, nothing uploaded at any size, folders too. A browser never gives a page a dropped file's path: terminumd reads the drag's paths from macOS's drag pasteboard and takes them only when they are the files dropped (by name and kind, a file by size and time). 0.3.22's search of the disk by name, size and time was withdrawn at the owner's word; this reads no disk but the paths' own times and sizes. Pragmatic review applied: the drag pasteboard, not Finder's selection (it is the front window's only, and needs Automation, which an ad hoc build asks again for after each upgrade); a fallback says why; a path with a control character refuses the drop; a path is taken once. The over-100 MB message says how to copy a path in Finder (AC-36). |
 | 0.6.6 | 2026-10-28 | Owner: the bookmarks' navigator as tall as the terminal (it started level with its button), and a record's long lines wrap (a code block scrolled sideways) (AC-33). |
 | 0.6.5 | 2026-10-28 | Owner: a finished plan stayed at 100% on its row for good, also for the next requests (local:11: 9 of 9 done 12.7 h before, a new request 100% from its start); a finished plan is archived when the next request starts, and leaves the row 10 minutes after its last update once its turn is over (AC-97). |
 | 0.6.4 | 2026-10-28 | Owner: the bookmarks' pane had too many buttons (a press jumped and opened the bar's seven); it is a navigator: the list at the left, the chosen one's content at the right rendered as Markdown by the file viewer's renderer (the user's bookmark as the terminal's text in a code block), Show in terminal, Done, Quote in chat; no ✓ on each row. "Insert into chat" of a bookmark or a reminder is "Quote in chat" and quotes an agent's record too (it was pasted as written); the sent history keeps Insert into chat (AC-33, AC-98). |
@@ -366,6 +367,13 @@ Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
   Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together, one per line in a coding agent's box (with bracketed paste on), else separated by spaces (in a shell each line would run as a command of its own at Enter); the terminal is outlined while files are held over it; a folder is refused; a drop never makes the browser open the file
 
+Scenario: AC-36 happy path — files dropped from Finder on a pane of this Mac
+  Given the page is open in this Mac's browser (http://127.0.0.1:48080, not through tailscale serve) and the shown pane's shell runs on this Mac
+  When the user selects "Drums Initial.zip" and "Drums Grade 1.zip" (230 MB) in Finder and drops them on the page
+  Then terminumd reads the drag's file paths from macOS's drag pasteboard (`osascript -l JavaScript`: no Apple Events, so no Automation prompt; 3 s at most) and takes them only when each item dropped is one of them, by its name and kind, a file also by its size and its time within 2 s, each path taken once
+  And the page pastes those paths as an upload's paths are pasted (shell-quoted, one per line in a coding agent's box, else separated by spaces), no Enter: nothing is uploaded, at any size, and a dropped folder is put as its path
+  But when they are not the files dropped (a drag from a browser or Mail has no file on disk, the pasteboard holds an earlier drag's, a path holds a control character, osascript does not answer) the page uploads copies as below, its toast first saying "Their own paths were not found: <why>"; a host's pane and a page on another device (through tailscale serve: `/api/os` is refused there) always upload
+
 Scenario: AC-36 happy path — drag from Files
   When the user drags a file or a folder from the Files panel (docked, in its window or its own tab) onto the terminal
   Then its absolute path is pasted at the input's cursor shell-quoted, as an upload's path is (nothing uploaded: it is where the pane runs), no Enter; a row of the selection drags every selected row, its own path first, the others as they were selected, separated by spaces; the terminal is outlined while they are held over it
@@ -373,7 +381,7 @@ Scenario: AC-36 happy path — drag from Files
 
 Scenario: AC-36 failure — refused or failed
   When the image is of another type, its bytes do not match, it is over 100 MB, or a third upload starts
-  Then nothing is typed and a toast says why ("Two uploads are running already"); a file over 100 MB is not sent, the page saying "<name> is larger than the 100 MB an upload may be: type or paste the path to the file instead." (a browser never gives a page a file's path), and terminumd's own "too large" answer says the same, never the server's raw text
+  Then nothing is typed and a toast says why ("Two uploads are running already"); a file over 100 MB is not sent, the page saying "<name> is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it)." (a browser never gives a page a file's path), and terminumd's own "too large" answer says the same, never the server's raw text
   When the pane's host has no helper, or ssh fails or takes longer than 30 s plus 1 s per 256 KB
   Then nothing is typed, the toast says to enable the host or shows ssh's message, no partial file is left under the name; when one of several files fails, the rest are not sent and the saved paths are pasted
 ```
@@ -976,3 +984,4 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.6.2 (2026-10-28) — AC-31 `node --test web/test/outparse.test.mjs` 28/28 (a box table across the history's end, a row of it drawn over and 10 lines after it: settled at its top rule, 66 before the fix; the next scan from there finds it whole with its head); AC-36 `node --test web/test/upload.test.mjs` (one per line, else spaces), `web/test/e2e_phonerow.mjs` (Attach's two files one per line inside the bracketed paste of an agent's pane); `node web/test/e2e_all.mjs` 1489/1489 → pass. Not verified: the owner's pane on ai4 (ssh refused from here) and a real drop from Finder (a drop is synthesized in the browser checks).
 - [x] 0.6.4 (2026-10-28) — AC-33, AC-98 `web/test/e2e_marknav.mjs` (Chromium and WebKit: the first one shown at once, a bookmark's text in a code block, an agent's report as Markdown (bold, a list of 2); a press or ↓ shows another and nothing is located; Enter closes the pane, finds the agent's call by its title and gives the terminal the keys; Done and Delete with Undo, told after 5 s; the view's and the bar's Quote in chat paste the text quoted), `e2e_marks.mjs`, `e2e_sent.mjs` (Quote in chat looks as the sent history's Insert into chat), `e2e_liveplans.mjs`; AC-97 the Now pill looked at; looked at: the navigator wide (Chromium, WebKit) and on a phone (WebKit), the pane 688 px in a 1400 px window as View's, its titles 13 px TermFont as the terminal; `node web/test/e2e_all.mjs` 1493/1493, `make test` → pass. Not verified: a real iPhone.
 - [x] 0.6.6 (2026-10-28) — AC-97 `cargo test plans` 26/26 (a finished plan: 100% while its turn works and 10 minutes after its last update, then gone from the row, the Plan pane keeping it; the next request archives it and starts with none, not as an exited session's; a plan with an item open stays across requests); AC-33 `web/test/e2e_marknav.mjs` (the navigator as tall as the terminal less 28 px, a code block's lines wrapped: pre-wrap); looked at: a 150-character Cyrillic line wrapped wide and on a phone; `make test` (637), `node web/test/e2e_all.mjs` 1493/1493 → pass.
+- [x] 0.6.7 (2026-10-29) — AC-36 `cargo test dragged` 3/3 (same names told apart by size, a folder by its kind, the drop's order, 2 s at most, a path taken once, one missing refuses all, a control character or a relative path refuses the drop, a name matched composed and the path given as the disk has it), `cargo test checks` (`/api/os/dropped` refused through a proxy); `web/test/e2e_live.mjs` (Chromium and WebKit, a private terminumd and tmux, the drag pasteboard a stub: two files dropped on a shell pane of this Mac, one over 100 MB, put their own quoted paths, nothing uploaded; with another drag's paths a 22 MB file is uploaded and the toast says why, a file over 100 MB is not sent, the toast saying why and how to copy its path); the endpoint's JXA run on this Mac's real drag pasteboard gave each file's path and composed name; `node web/test/e2e_all.mjs` → pass. Not verified: a real drop from Finder in Safari and Chrome (synthesized in the browser checks), the 3 s timeout, macOS 26's pasteboard privacy.

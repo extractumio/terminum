@@ -6,7 +6,7 @@ import { test } from "node:test";
 import { draggedPaths, pathList, tooLarge } from "../static/upload.js";
 
 test("over 100 MB: said in words, the file's path to be given instead", () => {
-  assert.equal(tooLarge("a.zip"), "a.zip is larger than the 100 MB an upload may be: type or paste the path to the file instead.");
+  assert.equal(tooLarge("a.zip"), "a.zip is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it).");
 });
 
 test("rows dragged from Files: absolute paths with their host; anything else carries nothing", () => {

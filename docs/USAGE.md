@@ -194,9 +194,12 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   two taps select a word. Dialogs and menus open centered.
 - **A screenshot** pasted into the terminal (⌘V) is saved in `~/.terminum/tmp` (on a host, in the
   host's `~/.terminum/tmp`) and its path is pasted: Claude Code takes it as an image.
-- **A file dropped** on the page (or picked with Upload) is uploaded as a screenshot is and its
-  path pasted, up to 100 MB; give a larger file by its path (a browser never tells a page where a
-  dropped file is).
+- **Files and folders dropped from Finder** on a session of this Mac, in this Mac's browser, put
+  their own paths at the input, quoted, one per line in a coding agent's box, without Enter;
+  nothing is uploaded, at any size (terminumd reads the drag's paths from macOS's drag pasteboard).
+- **A file dropped** anywhere else (a host's session, a phone, a drag from a browser or Mail), or
+  picked with Upload, is uploaded as a screenshot is and its path pasted, up to 100 MB; give a
+  larger file by its path (in Finder ⌥⌘C copies it).
 - **Files and folders dragged from Files** onto the terminal put their paths at the input, quoted,
   without Enter; nothing is uploaded. Drag a selected row to put every selected row's path.
 - **Files dragged from Finder onto the Files tree** upload into the folder under the pointer (a

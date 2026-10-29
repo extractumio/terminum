@@ -5,15 +5,18 @@
 // a file by its path. Dropped files go one at a time (the bridge takes two at once) and their
 // paths are pasted together, one per line in a coding agent's box; so do picked ones. A file over
 // the limit is not sent: the page says to give its path instead (a browser never gives a page a
-// file's path).
+// file's path). A drop on a pane of this Mac in this Mac's browser puts the files' own paths
+// instead, nothing uploaded at any size: terminumd finds them on macOS's drag pasteboard (dragged.rs).
 import { shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
 const TAKEN = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_BYTES = 100 << 20;            // terminumd's upload limit (page/upload.rs MAX_BYTES)
+// this Mac's own browser: /api/os answers it alone (the loopback listener answers only to 127.0.0.1)
+const AT_MAC = typeof location !== "undefined" && location.hostname === "127.0.0.1";
 
 /** Why a file over the upload limit was not sent. */
-export const tooLarge = (name) => `${name} is larger than the 100 MB an upload may be: type or paste the path to the file instead.`;
+export const tooLarge = (name) => `${name} is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it).`;
 
 /** The image as terminumd takes it: as it is, else drawn into a PNG (TIFF from Preview, HEIC). */
 export async function asTaken(blob) {
@@ -58,22 +61,23 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
     return { path: m.path };
   }
 
-  // The paths saved are pasted; a failure stops the rest and stays on screen.
-  async function send(list, what) {
-    const from = sid();
+  // The paths saved are pasted; a failure stops the rest and stays on screen. `why`: why the
+  // files' own paths were not taken, said first (never a silent fallback).
+  async function send(list, what, why = "", from = sid()) {
+    const said = why ? `${why} ` : "";
     if (!from) return toast("Open a session first.");
     const paths = [];
     let error = null;
     for (const [i, [blob, url]] of list.entries()) {
       if (blob.size > MAX_BYTES) { error = tooLarge(blob.name ?? `The ${what}`); break; }   // not sent at all
-      toast(list.length > 1 ? `Uploading ${i + 1} of ${list.length}…` : `Uploading the ${what}…`, 60000);
+      toast(said + (list.length > 1 ? `Uploading ${i + 1} of ${list.length}…` : `Uploading the ${what}…`), 60000);
       ({ path: paths[i], error } = await save(blob, what, url, from));
       if (error) { paths.pop(); break; }
     }
     if (paths.length && sid() !== from) return toast(`The ${what} was saved, but another session is shown now: nothing was pasted.`, 6000);
     if (paths.length) paste(pathList(paths, lines()));
-    if (!error) return hideToast();
-    toast(list.length > 1 ? `${paths.length} of ${list.length} uploaded (their paths pasted); ${list[paths.length][0].name}: ${error} The rest were not sent.` : error, 8000);
+    if (!error) return why ? toast(`${said}Copies were uploaded and their paths pasted.`, 6000) : hideToast();
+    toast(said + (list.length > 1 ? `${paths.length} of ${list.length} uploaded (their paths pasted); ${list[paths.length][0].name}: ${error} The rest were not sent.` : error), 8000);
   }
 
   function putPaths(got) {
@@ -82,6 +86,33 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
     const on = host() ?? null;
     if (got.host !== on) return toast(`These files are on ${got.host ?? "this Mac"}; the session runs on ${on ?? "this Mac"}: nothing was put.`, 6000);
     paste(got.paths.map(shellWord).join(" "));
+  }
+
+  /** The dropped files' own paths ({file, dir} each) from terminumd: {paths} in their order, or {why}. */
+  async function ownPaths(from, got) {
+    // names composed (NFC), as terminumd has the disk's names (dragged.rs)
+    const files = got.map(({ file, dir }) => ({ name: file.name.normalize("NFC"), size: dir ? 0 : file.size, mtime: file.lastModified, dir }));
+    const r = await fetch("/api/os/dropped", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sid: from, files }) })
+      .catch(() => null);
+    const m = r ? await r.json().catch(() => ({})) : {};
+    if (r?.ok && Array.isArray(m.paths) && m.paths.length === files.length) return { paths: m.paths };
+    return { why: m.message ?? (r ? `terminumd answered ${r.status}` : "the Mac does not answer") };
+  }
+
+  // Dropped files: on a pane of this Mac in its browser their own paths, else copies uploaded (AC-36).
+  async function dropped(got) {
+    let why = "";
+    if (AT_MAC && !host()) {
+      const from = sid();
+      if (!from) return toast("Open a session first.");
+      toast("Finding the files…", 60000);
+      const own = await ownPaths(from, got);
+      if (sid() !== from) return toast("Another session is shown now: nothing was pasted.", 6000);
+      if (own.paths) { hideToast(); return paste(pathList(own.paths, lines())); }
+      why = `Their own paths were not found: ${own.why.replace(/\.$/, "")}.`;
+    }
+    if (got.some((g) => g.dir)) return toast(`${why} A folder cannot be uploaded: drop its files.`.trim(), 6000);
+    return send(got.map(({ file }) => [file, fileUrl(file)]), "file", why, sid());
   }
 
   const fileUrl = (f) => `/upload?name=${encodeURIComponent(f.name)}&sid=`;
@@ -110,10 +141,11 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
         e.preventDefault();
         target.classList.remove("dropping");
         if (k === "paths") return putPaths(draggedPaths(e.dataTransfer.getData(PATHS)));
-        const items = [...e.dataTransfer.items].filter((it) => it.kind === "file");
-        if (items.some((it) => it.webkitGetAsEntry?.()?.isDirectory)) return toast("A folder cannot be uploaded: drop its files.", 6000);
-        const files = items.map((it) => it.getAsFile()).filter(Boolean);
-        if (files.length) void send(files.map((f) => [f, fileUrl(f)]), "file");
+        // read now: the drop's items are gone once the event is over
+        const got = [...e.dataTransfer.items].filter((it) => it.kind === "file")
+          .map((it) => { const entry = it.webkitGetAsEntry?.(), dir = !!entry?.isDirectory;   // a folder may come with no File
+            return { file: it.getAsFile() ?? (dir ? { name: entry.name, size: 0, lastModified: 0 } : null), dir }; }).filter((g) => g.file);
+        if (got.length) void dropped(got);
       });
     },
   };

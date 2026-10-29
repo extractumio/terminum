@@ -51,7 +51,7 @@ fn ac09_outline_requests_without_a_sign_in_or_from_elsewhere_are_refused() {
                    Err((415, "bad_content_type")), "{path}");
     }
     // POST /fb/api/os/reveal through tailscale serve → 403 not_here, signed in or not
-    for path in ["/api/os/reveal", "/fb/api/os/reveal", "/fb/api/terminal/insert", "/fb/api/os", "//fb/api/os/open"] {
+    for path in ["/api/os/reveal", "/api/os/dropped", "/fb/api/os/reveal", "/fb/api/terminal/insert", "/fb/api/os", "//fb/api/os/open"] {
         for signed in [true, false] {
             let h = tailnet(&[("origin", TS_PAGE), ("content-type", "application/json")]);
             assert_eq!(ask(&L, "POST", path, &h, signed), Err((403, "not_here")), "{path}");

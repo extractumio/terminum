@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // AC-36 against a real private terminumd (e2e_live.mjs): a screenshot pasted into the
 // terminal is uploaded to ~/.terminum/tmp, never typed as text, and its path is pasted into
-// the shell, which then has it as one word; a file over 100 MB is not sent: the page says why.
+// the shell, which then has it as one word; files dropped from Finder put their own paths; a file
+// over 100 MB not found so is not sent: the page says why.
 import fs from "node:fs";
 import path from "node:path";
 import { check, within } from "./check.mjs";
@@ -50,15 +51,34 @@ async function pasteInto(page, home, b64, type, name, tag) {
   }, tag, { timeout: 5000 }).then((h) => h.jsonValue()).catch(() => null);
 }
 
-/** A drop of one file of `size` bytes named `fname`, modified at `mtime` (ms), on the page. */
-const dropFile = (page, fname, size, mtime) => page.evaluate(([fname, size, mtime]) => {
+/** A drop on the page of files [name, size in bytes, modified at (ms)]. */
+const dropFiles = (page, files) => page.evaluate((files) => {
   const dt = new DataTransfer();
-  dt.items.add(new File([new Uint8Array(size)], fname, { lastModified: mtime }));
+  for (const [fname, size, mtime] of files) dt.items.add(new File([new Uint8Array(size)], fname, { lastModified: mtime }));
   for (const type of ["dragover", "drop"]) document.getElementById("term").dispatchEvent(new DragEvent(type, { dataTransfer: dt, bubbles: true, cancelable: true }));
-}, [fname, size, mtime]);
+}, files);
+const dropFile = (page, fname, size, mtime) => dropFiles(page, [[fname, size, mtime]]);
+const NOT_OWN = "Their own paths were not found: Their files were not found on this Mac (a drag from a browser or Mail has none).";
 
-/** A file over 100 MB dropped (AC-36): not sent, the page says to give its path. */
-export async function liveDrop(page, { home }) {
+/** Files dropped (AC-36): on this Mac's pane their own paths, at any size, when the drag pasteboard
+ *  has them (`drag`: the stub's answer); else uploaded, a file over 100 MB not sent, the page saying why. */
+export async function liveDrop(page, { home, work, drag }) {
+  // two files dragged from Finder, one over 100 MB: their own paths, nothing uploaded
+  const own = [path.join(work, "Drums Initial.zip"), path.join(work, "Drums Grade 1.zip")];
+  fs.writeFileSync(own[0], "PK");
+  fs.writeFileSync(own[1], ""); fs.truncateSync(own[1], (100 << 20) + 1);
+  fs.writeFileSync(drag, JSON.stringify(own.map((p) => [p, path.basename(p)])));   // [path, its name composed], as dragged.rs reads it
+  const at = own.map((p) => [path.basename(p), fs.statSync(p).size, Math.round(fs.statSync(p).mtimeMs)]);
+  const none = shots(home).length;
+  await dropFiles(page, at);
+  const pasted = await page.waitForFunction((want) => document.getElementById("screen").innerText.replace(/\n/g, "").includes(want),
+    own.map((p) => `'${p}'`).join(" "), { timeout: 5000 }).then(() => true).catch(() => false);
+  await page.keyboard.press("Control+U");
+  check("AC-36 two files dropped from Finder on a pane of this Mac put their own paths (one over 100 MB), nothing uploaded",
+    pasted && shots(home).length === none, JSON.stringify({ pasted, uploaded: shots(home).length - none }));
+  // the pasteboard holds another drag's paths: copies uploaded, the toast saying why first
+  fs.writeFileSync(drag, "[]");
+
   // 22 MB (the owner's zip was refused at the old 20 MB): uploaded, its path pasted
   const was = shots(home).length;
   await dropFile(page, "Cat Package.zip", 22 << 20, 1_792_000_000_000);
@@ -68,13 +88,15 @@ export async function liveDrop(page, { home }) {
   await page.waitForTimeout(300);
   const typed = await page.evaluate(() => document.getElementById("screen").innerText.includes("Package.zip"));
   await page.keyboard.press("Control+U");
-  check("AC-36 a 22 MB file dropped is uploaded (100 MB at most) and its path pasted", size === 22 << 20 && typed, JSON.stringify({ saved, size, typed }));
+  const why = await page.evaluate(() => document.getElementById("toast").innerText);
+  check("AC-36 a 22 MB file not on the drag pasteboard is uploaded (100 MB at most), its path pasted, the toast saying why",
+    size === 22 << 20 && typed && why.startsWith(NOT_OWN), JSON.stringify({ saved, size, typed, why }));
   const before = shots(home).length;
   await dropFile(page, "Big Package.zip", (100 << 20) + 1, 1_792_000_000_000);
   await page.waitForTimeout(800);
   const said = await page.evaluate(() => document.getElementById("toast").innerText);
   check("AC-36 a file over 100 MB is not sent: the page says to give its path instead",
-    said === "Big Package.zip is larger than the 100 MB an upload may be: type or paste the path to the file instead." && shots(home).length === before, said);
+    said === `${NOT_OWN} Big Package.zip is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it).` && shots(home).length === before, said);
 }
 
 export async function livePaste(page, { home, name }) {

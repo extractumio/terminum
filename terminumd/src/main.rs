@@ -19,6 +19,7 @@ mod attach;
 mod auth;
 mod cli;
 mod config;
+mod dragged;
 mod events;
 mod files;
 mod folders;
