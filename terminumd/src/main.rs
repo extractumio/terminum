@@ -26,6 +26,7 @@ mod hosts;
 mod hotkeys;
 mod http;
 mod listing;
+mod listing_sort;
 mod looks;
 mod manager;
 mod midi;

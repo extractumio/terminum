@@ -3,7 +3,7 @@
 // that act on the Mac itself (Finder, apps, typing into its terminal, a host's helper) are
 // left out; terminumd refuses them there anyway.
 
-import { apiOrToast, AT_MAC, dirname, scope, SERVER_APPS, type TermState } from "./api";
+import { apiOrToast, AT_MAC, dirname, scope, SERVER_APPS, SORTS, type Sort, type TermState } from "./api";
 import { hostEntries, hostMenu } from "./host-offer";
 import { menu, type MenuEntry } from "./dialogs";
 import type { Tree } from "./tree";
@@ -18,6 +18,9 @@ export interface MenuDeps {
   copy(text: string): void;
   relative(path: string): string;
   terminal(action: "insert" | "cd", body: object): unknown;
+  /** the tree's order, and a new one chosen (AC-52) */
+  sort(): Sort;
+  setSort(sort: Sort): void;
 }
 
 export async function contextMenu(path: string | null, isDir: boolean, ev: MouseEvent, d: MenuDeps) {
@@ -45,12 +48,15 @@ export async function contextMenu(path: string | null, isDir: boolean, ev: Mouse
     ...(atMac ? ["-" as const, { id: "insert", label: "Insert Path in Terminal" }, { id: "cd", label: "Open Terminal Here", disabled: many }] : []),
   );
   else if (atMac) entries.push("-", ...(macFiles ? [{ id: "reveal", label: "Reveal in Finder" }] : []), { id: "cd", label: "Open Terminal Here" });
+  entries.push("-", { id: "sorting", label: "Sorting", sub: SORTS.map((s) => ({ id: `sort-${s.id}`, label: s.label, checked: d.sort() === s.id })) });
   const remote = d.term().remote;
   if (atMac) entries.push(...hostEntries(remote));
   const host = scope;
   const choice = await menu(ev.clientX, ev.clientY, entries);
   if (choice && d.switchedSince(host)) return;
   if (choice?.startsWith("host-") && remote) return void hostMenu(choice, remote);
+  const sort = SORTS.find((s) => choice === `sort-${s.id}`);
+  if (sort) return d.setSort(sort.id);
   switch (choice) {
     case "new-file": return void tree.startCreate(dir, "file");
     case "new-folder": return void tree.startCreate(dir, "folder");

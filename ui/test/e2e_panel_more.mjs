@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // More checks for e2e_panel.mjs: the page's View (`/fb/?view=`), the panel inside a page that
-// receives its files as messages (AC-70), and a host's files offer (AC 83).
+// receives its files as messages (AC-70), a host's files offer (AC 83), the tree's Sorting (AC-52).
 
-import { check, within } from "./e2e_harness.mjs";
+import fs from "node:fs";
+import { base, check, SB, within } from "./e2e_harness.mjs";
 
 /** AC-70 the View alone: renders the file, no tree, no secret in its URL, a path bar. */
 export async function viewerTools(context, base, SB, errors) {
@@ -91,4 +92,60 @@ export async function hostOffer(context, url) {
   check("AC 83 the menu can enable it later", !!(await hp.$('.ctx .mi:has-text("Browse Files of devbox.example")')));
   await hp.keyboard.press("Escape");
   await hp.close();
+}
+
+/** AC-52 Sorting › Recent First, Alphabetical, By Extension in the context menu, folders first in
+ *  each, kept in the prefs; a finger held on a row opens the menu, a tap opens Sorting. */
+export async function panelSort(page, { row, H }) {
+  const dir = `${SB}/sorted`, now = Date.now() / 1000;
+  fs.mkdirSync(`${dir}/adir`, { recursive: true });
+  fs.mkdirSync(`${dir}/zdir`);
+  for (const [name, ago] of [["b.txt", 10], ["a.md", 300], ["C.rs", 100], ["Makefile", 200], ["adir", 5], ["zdir", 1000]]) {
+    if (!name.endsWith("dir")) fs.writeFileSync(`${dir}/${name}`, name);
+    fs.utimesSync(`${dir}/${name}`, now - ago, now - ago);
+  }
+  const order = () => page.$$eval(`#tree .row[data-p^="${dir}/"]`, (rows) =>
+    rows.sort((a, b) => a.dataset.i - b.dataset.i).map((r) => r.dataset.p.split("/").pop()).join(" "));
+  const shows = async (want) => {                     // true once the rows are in that order, else the order they are in
+    for (const end = Date.now() + 5000; Date.now() < end; await page.waitForTimeout(100)) if ((await order()) === want) return true;
+    return order();
+  };
+  await page.waitForSelector(row("sorted"));
+  await page.click(row("sorted"));
+  const byName = "adir zdir a.md b.txt C.rs Makefile";
+  const first = await shows(byName);
+  await page.click(row("sorted/a.md"), { button: "right" });
+  await page.hover('.ctx .mi:has-text("Sorting")');
+  await page.waitForSelector(".ctx + .ctx, .ctx ~ .ctx");
+  const sub = await page.$$eval(".ctx", (m) => m.length === 2 && [...m[1].querySelectorAll(".mi")].map((i) => `${i.getAttribute("aria-checked") === "true" ? "✓" : ""}${i.textContent.replace("✓", "")}`).join(", "));
+  await page.click('.ctx .mi:has-text("By Extension")');
+  const byExt = await shows("adir zdir Makefile a.md C.rs b.txt");
+  const saved = await (await fetch(`${base}/fb/api/prefs`, { headers: H() })).json();
+  check("AC-52 Sorting › in the context menu: Recent First, Alphabetical (checked), By Extension; By Extension orders by it, folders first, names without one first; kept in the prefs",
+    first === true && sub === "Recent First, ✓Alphabetical, By Extension" && byExt === true && saved.sort === "ext", JSON.stringify({ first, sub, byExt, saved }));
+  // a finger held on a row: the menu, kept when the finger lifts; a tap on Sorting opens it
+  const touch = (type) => page.$eval(row("sorted/b.txt"), (el, type) => {
+    const r = el.getBoundingClientRect(), at = { clientX: r.left + 30, clientY: r.top + 5, bubbles: true, pointerType: "touch", isPrimary: true };
+    el.dispatchEvent(new PointerEvent(type, at));
+    if (type === "pointerup") el.dispatchEvent(new MouseEvent("click", at));
+  }, type);
+  await touch("pointerdown");
+  await page.waitForTimeout(700);
+  await touch("pointerup");
+  const held = await page.$$eval(".ctx", (m) => m.length);
+  await page.click('.ctx .mi:has-text("Sorting")');
+  await page.click('.ctx .mi:has-text("Recent First")');
+  const recent = await shows("adir zdir b.txt C.rs Makefile a.md");
+  const chosen = await page.$eval("#tree .row.sel", (r) => r.dataset.p.split("/").pop()).catch(() => null);
+  check("AC-52 a finger held on a row opens the menu (its lift no click), a tap on Sorting its choices; Recent First: folders, then files, newest first",
+    held === 1 && recent === true && chosen === "b.txt", JSON.stringify({ held, recent, chosen }));
+  await page.click(row("sorted/a.md"), { button: "right" });
+  await page.hover('.ctx .mi:has-text("Sorting")');
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
+  const keyed = await shows(byName);
+  check("AC-52 → opens Sorting from the keyboard, ↓ ↩ chooses Alphabetical again", keyed === true, String(keyed));
+  await page.click(row("sorted"));
+  fs.rmSync(dir, { recursive: true });
 }

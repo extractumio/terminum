@@ -141,6 +141,13 @@ export const within = async (name, fn, ms = 5000) => {
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }
 };
 
+/** Polls `ok()` until it holds, else throws when `ms` passed. */
+export async function waitFor(ok, ms = 4000) {
+  for (const end = Date.now() + ms; !ok(); await new Promise((r) => setTimeout(r, 100))) {
+    if (Date.now() > end) throw new Error("timed out");
+  }
+}
+
 export function cleanup() {
   server.kill();
   try { tmux("kill-server"); } catch { /* gone */ }

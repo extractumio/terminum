@@ -102,8 +102,12 @@ export interface FileView {
   path: string; size: number; etag: string; binary: boolean; mime: string | null;
   truncated: boolean; utf8: boolean; writable: boolean; text?: string;
 }
-export interface Prefs { hidden: boolean; split: number }
-export const DEFAULT_PREFS: Prefs = { hidden: true, split: 0.5 };
+/** The tree's order (AC-52), folders first in each: terminumd sorts, the tree pages it. */
+export type Sort = "name" | "recent" | "ext";
+export const SORTS: { id: Sort; label: string }[] = [
+  { id: "recent", label: "Recent First" }, { id: "name", label: "Alphabetical" }, { id: "ext", label: "By Extension" }];
+export interface Prefs { hidden: boolean; split: number; sort: Sort }
+export const DEFAULT_PREFS: Prefs = { hidden: true, split: 0.5, sort: "name" };
 
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public body: any) { super(message); }

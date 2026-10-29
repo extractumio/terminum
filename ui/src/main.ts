@@ -5,7 +5,7 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isUnder, proofRefusal, PROXIED, scope, setScope, toast,
+  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isUnder, proofRefusal, PROXIED, scope, setScope, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
 import { renderOffer } from "./host-offer";
@@ -14,7 +14,7 @@ import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_C
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
 import { Tree, type EditMode } from "./tree";
-import { bindDrag } from "./tree-drag";
+import { bindDrag, bindHold } from "./tree-drag";
 import { bindDrop } from "./tree-drop";
 import { Viewer } from "./viewer";
 import { PathBar } from "./viewer-path";
@@ -276,11 +276,13 @@ const tree = new Tree($("tree"), {
   context: (p, isDir, ev) => void contextMenu(p, isDir, ev, {
     tree, term: () => term, switchedSince, open: openFile, openWindow, trash: () => void trashSelected(),
     copy: (t) => void copyPaths(t), relative, terminal,
+    sort: () => prefs.sort, setSort: (s) => { prefs.sort = s; tree.setSort(s); savePrefs(); },
   }),
   commit,
   notify: toast,
 });
 // a row dragged onto the page's terminal puts its path at the input; a selected one, the selection's (AC-36)
+bindHold($("tree"));
 bindDrag($("tree"), (p) => (tree.selected.has(p) ? [p, ...[...tree.selected].filter((q) => q !== p)] : [p]), () => scope);
 // files dragged from Finder upload into the folder under the pointer, by the tree's host (AC-95)
 bindDrop($("tree"), { root: () => tree.root?.path ?? null, host: () => scope, readOnly: (d) => tree.readOnly(d), mark: (d) => tree.setDrop(d), toast });
@@ -407,6 +409,8 @@ if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page
   prefs = { ...DEFAULT_PREFS, ...(saved ?? {}) };
   setSplit(prefs.split);
   tree.showHidden = prefs.hidden;
+  if (!SORTS.some((s) => s.id === prefs.sort)) prefs.sort = DEFAULT_PREFS.sort;   // a newer build's, or none
+  tree.sort = prefs.sort;
   $("hidden").classList.toggle("on", !prefs.hidden);
   tree.themeChanged();
   void stream.connect();

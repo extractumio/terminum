@@ -4,7 +4,7 @@
 // below the rows: the root), the files are saved there, a name taken asks and Keep Both saves the
 // next number, nothing written over. Run by e2e_panel.mjs on its page.
 import fs from "node:fs";
-import { check, SB } from "./e2e_harness.mjs";
+import { check, SB, waitFor } from "./e2e_harness.mjs";
 
 /** Dispatches `type` with files `names` (their text "hello <name>") on `sel`; then the marked rows and the line over the tree.
  *  The row is found and the event sent in one go, again while the panel did not take it: the tree
@@ -43,7 +43,7 @@ export async function panelDrop(page, { row }) {
       && overRoot.note?.endsWith("(the root)") && overRoot.marked.includes(`${SB}/docs`), JSON.stringify({ overFile, overDir, overRoot }));
 
   await drag(page, row("data/pkg.json"), ["note.txt", "two.txt"], "drop");
-  const saved = await waitFor(() => fs.existsSync(`${SB}/data/two.txt`));
+  const saved = await waitFor(() => fs.existsSync(`${SB}/data/two.txt`)).then(() => true, () => false);
   const toast = await page.evaluate(() => document.getElementById("toast")?.textContent ?? "");
   const after = await page.evaluate(() => ({ marked: document.querySelectorAll("#tree .row.drop").length, note: !document.querySelector(".dropnote")?.hidden }));
   check("AC-95 dropped, each is saved in that folder with its bytes, the tree shows them, a toast says so; the marks go",
@@ -54,15 +54,10 @@ export async function panelDrop(page, { row }) {
   await drag(page, row("data"), ["note.txt"], "drop");
   const asked = await page.waitForSelector(".modal .btn.primary", { timeout: 3000 }).then(() => page.$eval(".modal .mtitle", (e) => e.textContent), () => null);
   await page.click(".modal .btn.primary");
-  const both = await waitFor(() => fs.existsSync(`${SB}/data/note 2.txt`));
+  const both = await waitFor(() => fs.existsSync(`${SB}/data/note 2.txt`)).then(() => true, () => false);
   check("AC-95 a name taken asks; Keep Both saves it as \"note 2.txt\", the file there kept as it was",
     asked === "“note.txt” is in data already" && both && fs.readFileSync(`${SB}/data/note.txt`, "utf8") === "mine" && fs.readFileSync(`${SB}/data/note 2.txt`, "utf8") === "hello note.txt",
     JSON.stringify({ asked, both }));
   for (const f of ["note.txt", "note 2.txt", "two.txt"]) fs.rmSync(`${SB}/data/${f}`);
   await page.click(row("data"));                         // folded again: the rows below stay in sight
-}
-
-async function waitFor(ok, ms = 4000) {
-  for (const end = Date.now() + ms; !ok(); await new Promise((r) => setTimeout(r, 100))) if (Date.now() > end) return false;
-  return true;
 }

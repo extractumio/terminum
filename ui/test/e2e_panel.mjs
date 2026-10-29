@@ -15,9 +15,9 @@ import path from "node:path";
 import { slack } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
 import { layoutTools } from "./e2e_layout.mjs";
-import { diagrams, embedTools, hostOffer, viewerTools } from "./e2e_panel_more.mjs";
+import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
 import {
-  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, within, wsKey,
+  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, waitFor, within, wsKey,
 } from "./e2e_harness.mjs";
 import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
@@ -247,6 +247,7 @@ try {
 
   await panelMedia(page, { row });   // AC-64 PDFs, videos, sounds; AC-94 data files
   await panelDrop(page, { row });    // AC-95 files dropped from Finder on the tree
+  await panelSort(page, { row, H });  // AC-52 Sorting in the context menu, a finger held too
 
   // AC-55 per-pane memory: the page shows another pane, then this one again, then reloads
   await page.waitForTimeout(600);                      // the workspace write is debounced
@@ -490,11 +491,4 @@ function putRaw(p, body) {
     req.on("error", (e) => setTimeout(() => reject(e), 1000));   // a reset after the answer is ignored
     req.end(body);
   });
-}
-
-/** Polls `ok()` until it holds or `ms` passed. */
-async function waitFor(ok, ms) {
-  for (const end = Date.now() + ms; !ok(); await new Promise((r) => setTimeout(r, 100))) {
-    if (Date.now() > end) throw new Error("timed out");
-  }
 }

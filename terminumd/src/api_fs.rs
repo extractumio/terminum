@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 
 use crate::http::{abs, blocking, err, op_err, ApiResult};
 use crate::ops::{self, OpError};
-use crate::{files, listing, Shared};
+use crate::{files, listing, listing_sort, Shared};
 
 #[derive(Deserialize)]
 pub struct LsQuery {
@@ -27,6 +27,8 @@ pub struct LsQuery {
     filter: String,
     #[serde(default = "yes")]
     hidden: bool,
+    #[serde(default)]
+    sort: listing_sort::Sort,
     locate: Option<String>,
 }
 fn page_max() -> usize {
@@ -38,7 +40,7 @@ fn yes() -> bool {
 
 pub async fn ls(State(app): State<Shared>, Query(q): Query<LsQuery>) -> ApiResult {
     let path = abs(&q.path)?;
-    let mut page = app.cache.page(&path, q.offset, q.limit, &q.filter, q.hidden, q.locate.as_deref()).await;
+    let mut page = app.cache.page(&path, q.offset, q.limit, &q.filter, q.hidden, q.sort, q.locate.as_deref()).await;
     page.writable = blocking(move || app.roots.allows(&path)).await?;
     Ok(Json(page).into_response())
 }

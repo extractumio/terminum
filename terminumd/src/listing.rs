@@ -9,12 +9,14 @@ use std::fs;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering as AO};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use serde::Serialize;
 use tokio::sync::watch;
+
+use crate::listing_sort::{self, Sort};
 
 pub const PAGE_MAX: usize = 500;
 const READ_WAIT: Duration = Duration::from_secs(15);
@@ -36,7 +38,7 @@ impl Kind {
             Kind::LinkDir => "L",
         }
     }
-    fn is_dir(self) -> bool {
+    pub fn is_dir(self) -> bool {
         matches!(self, Kind::Dir | Kind::LinkDir)
     }
 }
@@ -54,10 +56,14 @@ pub struct Listing {
     bytes: usize,
     /// last filtered view, so paging through a filtered 500K folder does not re-filter
     filtered: Mutex<Option<Filtered>>,
+    /// the orders besides by name (listing_sort.rs): made once each when first asked for, a
+    /// caller of another order (or of the name order) never waiting for one being made
+    recent: OnceLock<Arc<Vec<u32>>>,
+    by_ext: OnceLock<Arc<Vec<u32>>>,
 }
 
-/// A filter, whether hidden entries count, and the indexes of the entries it keeps.
-type Filtered = (String, bool, Arc<Vec<u32>>);
+/// A filter, whether hidden entries count, the order, and the indexes of the entries it keeps in it.
+type Filtered = (String, bool, Sort, Arc<Vec<u32>>);
 
 type ReadResult = Result<Arc<Listing>, String>;
 
@@ -167,7 +173,7 @@ fn read_dir_sorted(path: &Path, generation: u64) -> Result<Listing, String> {
         entries.push(Entry { name, kind });
     }
     entries.sort_unstable_by(|a, b| b.kind.is_dir().cmp(&a.kind.is_dir()).then_with(|| natural_cmp(&a.name, &b.name)));
-    Ok(Listing { entries, dir_mtime: mtime_ns(&meta), generation, read_at: Instant::now(), bytes, filtered: Mutex::new(None) })
+    Ok(Listing { entries, dir_mtime: mtime_ns(&meta), generation, read_at: Instant::now(), bytes, filtered: Mutex::new(None), recent: OnceLock::new(), by_ext: OnceLock::new() })
 }
 
 fn entry_name(name: std::ffi::OsString) -> Result<Box<str>, String> {
@@ -304,7 +310,8 @@ impl Cache {
         }
     }
 
-    pub async fn page(self: &Arc<Self>, path: &Path, offset: usize, limit: usize, filter: &str, hidden: bool, locate: Option<&str>) -> Page {
+    #[allow(clippy::too_many_arguments)]
+    pub async fn page(self: &Arc<Self>, path: &Path, offset: usize, limit: usize, filter: &str, hidden: bool, sort: Sort, locate: Option<&str>) -> Page {
         let limit = limit.clamp(1, PAGE_MAX);
         let p = path.to_string_lossy().to_string();
         let empty = |status, error| Page { path: p.clone(), status, total: 0, offset, writable: false, generation: 0, entries: vec![], error, located: None };
@@ -315,30 +322,43 @@ impl Cache {
         };
         // filtering and per-row stat() can block on slow volumes: keep them off the async workers
         let (path, filter, locate) = (path.to_path_buf(), filter.to_string(), locate.map(str::to_string));
-        tokio::task::spawn_blocking(move || Self::build_page(&listing, &path, offset, limit, &filter, hidden, locate.as_deref()))
+        tokio::task::spawn_blocking(move || Self::build_page(&listing, &path, offset, limit, &filter, hidden, sort, locate.as_deref()))
             .await
             .unwrap_or_else(|_| empty("error", Some("internal error".into())))
     }
 
-    fn build_page(listing: &Listing, path: &Path, offset: usize, limit: usize, filter: &str, hidden: bool, locate: Option<&str>) -> Page {
+    /// The entries' indexes in `sort`'s order; None: name order, the listing's own.
+    fn order(listing: &Listing, path: &Path, sort: Sort) -> Option<Arc<Vec<u32>>> {
+        let cell = match sort {
+            Sort::Name => return None,
+            Sort::Recent => &listing.recent,
+            Sort::Ext => &listing.by_ext,
+        };
+        Some(cell.get_or_init(|| Arc::new(listing_sort::order(&listing.entries, path, sort).unwrap_or_default())).clone())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn build_page(listing: &Listing, path: &Path, offset: usize, limit: usize, filter: &str, hidden: bool, sort: Sort, locate: Option<&str>) -> Page {
         let p = path.to_string_lossy().to_string();
         let filter_lc = filter.to_lowercase();
+        let order = Self::order(listing, path, sort);
         let view: Option<Arc<Vec<u32>>> = if filter_lc.is_empty() && hidden {
-            None
+            order
         } else {
             let mut cached = listing.filtered.lock();
             match cached.as_ref() {
-                Some((f, h, v)) if *f == filter_lc && *h == hidden => Some(v.clone()),
+                Some((f, h, s, v)) if *f == filter_lc && *h == hidden && *s == sort => Some(v.clone()),
                 _ => {
-                    let v: Vec<u32> = listing
-                        .entries
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, e)| (hidden || !e.name.starts_with('.')) && (filter_lc.is_empty() || e.name.to_lowercase().contains(&filter_lc)))
-                        .map(|(i, _)| i as u32)
-                        .collect();
+                    let keep = |&i: &u32| {
+                        let e = &listing.entries[i as usize];
+                        (hidden || !e.name.starts_with('.')) && (filter_lc.is_empty() || e.name.to_lowercase().contains(&filter_lc))
+                    };
+                    let v: Vec<u32> = match &order {
+                        Some(o) => o.iter().copied().filter(keep).collect(),
+                        None => (0..listing.entries.len() as u32).filter(keep).collect(),
+                    };
                     let v = Arc::new(v);
-                    *cached = Some((filter_lc.clone(), hidden, v.clone()));
+                    *cached = Some((filter_lc.clone(), hidden, sort, v.clone()));
                     Some(v)
                 }
             }
@@ -397,7 +417,7 @@ mod tests {
     fn errors_and_empty_folders_are_evicted_with_their_slot_overhead() {
         let c = Cache::new(1);
         c.slots.lock().insert(PathBuf::from("/missing"), (Slot::Done(Err("missing".into()), Instant::now()), Instant::now()));
-        let empty = Listing { entries: vec![], dir_mtime: 0, generation: 1, read_at: Instant::now(), bytes: 0, filtered: Mutex::new(None) };
+        let empty = Listing { entries: vec![], dir_mtime: 0, generation: 1, read_at: Instant::now(), bytes: 0, filtered: Mutex::new(None), recent: OnceLock::new(), by_ext: OnceLock::new() };
         c.slots.lock().insert(PathBuf::from("/empty"), (Slot::Done(Ok(Arc::new(empty)), Instant::now()), Instant::now()));
         assert!(c.stats().0 > 1);
         c.evict();
@@ -420,20 +440,40 @@ mod tests {
         }
         fs::write(dir.join(".hidden"), b"").unwrap();
         let c = Cache::new(64 << 20);
-        let p = c.page(&dir, 0, 3, "", true, Some("f10.txt")).await;
+        let p = c.page(&dir, 0, 3, "", true, Sort::Name, Some("f10.txt")).await;
         assert_eq!(p.total, 1202);
         assert_eq!(p.entries[0].n, "sub");
         assert_eq!(p.entries[1].n, ".hidden");
         assert_eq!(p.entries[2].n, "f0.txt");
         assert_eq!(p.entries[2].s, Some(1));
         assert_eq!(p.located, Some(2 + 10)); // sub, .hidden, f0..f9, then f10
-        let beyond = c.page(&dir, usize::MAX, 500, "", true, None).await;
+        let beyond = c.page(&dir, usize::MAX, 500, "", true, Sort::Name, None).await;
         assert_eq!(beyond.status, "ready");
         assert!(beyond.entries.is_empty());
-        let p = c.page(&dir, 0, 500, "f119", false, None).await;
+        let p = c.page(&dir, 0, 500, "f119", false, Sort::Name, None).await;
         assert_eq!(p.total, 11); // f119, f1190..f1199
-        let p = c.page(&dir.join("missing"), 0, 10, "", true, None).await;
+        let p = c.page(&dir.join("missing"), 0, 10, "", true, Sort::Name, None).await;
         assert_eq!(p.status, "error");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn pages_filter_and_locate_follow_the_order() {
+        let dir = std::env::temp_dir().join(format!("tm-ls-sort-{}", std::process::id()));
+        fs::create_dir_all(dir.join("sub")).unwrap();
+        for n in ["b.txt", "a.md", "c.rs", "d.txt", ".env"] { fs::write(dir.join(n), b"x").unwrap(); }
+        let c = Cache::new(64 << 20);
+        let names = |p: &Page| p.entries.iter().map(|r| r.n.clone()).collect::<Vec<_>>();
+        let p = c.page(&dir, 0, 10, "", true, Sort::Ext, Some("b.txt")).await;
+        assert_eq!(names(&p), ["sub", ".env", "a.md", "c.rs", "b.txt", "d.txt"]);
+        assert_eq!(p.located, Some(4));
+        let p = c.page(&dir, 1, 2, "", false, Sort::Ext, Some("c.rs")).await;
+        assert_eq!((names(&p), p.total, p.located), (vec!["a.md".into(), "c.rs".into()], 5, Some(2)), "hidden left out, a page of the order");
+        let p = c.page(&dir, 0, 10, "t", true, Sort::Ext, None).await;
+        assert_eq!(names(&p), ["b.txt", "d.txt"], "filtered in the order");
+        let p = c.page(&dir, 0, 10, "t", true, Sort::Name, None).await;
+        assert_eq!(names(&p), ["b.txt", "d.txt"]);
+        assert_eq!(names(&c.page(&dir, 0, 10, "", true, Sort::Name, None).await), ["sub", ".env", "a.md", "b.txt", "c.rs", "d.txt"]);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

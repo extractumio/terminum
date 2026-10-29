@@ -75,7 +75,8 @@ button.icon.on { color: var(--accent); }
 .filter:focus { box-shadow: var(--field-focus-edge); }
 
 /* ── tree ───────────────────────────────────────────────── */
-#tree { flex: 1 1 auto; overflow: auto; position: relative; outline: none; min-height: 60px; }
+#tree { flex: 1 1 auto; overflow: auto; position: relative; outline: none; min-height: 60px;
+  -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }   /* a finger held opens the menu (tree-drag.ts) */
 #app.has-tabs #tree { flex: 0 0 var(--split); }
 #tree .spacer { width: 1px; }
 #tree .rows { position: absolute; top: 0; left: 0; right: 0; will-change: transform; }
@@ -271,6 +272,9 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .ctx .mi.danger:not(.hot) { color: var(--bad); }
 .ctx .mi.off { opacity: .4; }
 .ctx kbd { font: .85em var(--ui); opacity: .65; }
+.ctx .mi .lb { flex: 1; }
+.ctx .mi .ck { display: inline-block; width: 1.3em; }
+.ctx .mi .more { opacity: .65; margin-right: -2px; }
 .ctx .sep { height: 1px; background: var(--line); margin: 4px 6px; }
 
 /* ── viewer window (AC-26): tabs and editor only ─────────── */

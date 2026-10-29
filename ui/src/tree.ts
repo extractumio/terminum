@@ -4,7 +4,7 @@
 // are spliced into their parent by index (row arithmetic in tree-rows.ts, row HTML in
 // tree-render.ts, "expand all" in tree-expand.ts).
 
-import { api, basename, dirname, isDirKind, isUnder, join, rebase, type Page } from "./api";
+import { api, basename, dirname, isDirKind, isUnder, join, rebase, type Page, type Sort } from "./api";
 import { rowHtml, type RowView } from "./tree-render";
 import { PAGE, indexOf, rowAt, rowsOf, type DirNode, type RowDesc, type RowsHost } from "./tree-rows";
 import { expandAll, summary } from "./tree-expand";
@@ -30,6 +30,7 @@ export class Tree {
   expanded = new Set<string>();
   selected = new Set<string>();
   showHidden = true;
+  sort: Sort = "name";
   private cursor = -1;               // row index of the keyboard cursor
   private anchor = -1;               // row index where a ⇧-range starts
   private filter = "";
@@ -103,6 +104,8 @@ export class Tree {
     if (!show) for (const p of this.selected) if (this.isHiddenPath(p)) this.selected.delete(p);
     this.reload();
   }
+
+  setSort(sort: Sort) { this.sort = sort; this.reload(); }
 
   /** Re-read everything (keeps expanded, selection and scroll). */
   reload() {
@@ -219,7 +222,7 @@ export class Tree {
   }
 
   private query(extra: Record<string, string | number | boolean | undefined>) {
-    return { hidden: this.showHidden, filter: this.filter || undefined, limit: PAGE, ...extra };
+    return { hidden: this.showHidden, filter: this.filter || undefined, sort: this.sort === "name" ? undefined : this.sort, limit: PAGE, ...extra };
   }
 
   private async load(n: DirNode, page: number, force = false): Promise<void> {

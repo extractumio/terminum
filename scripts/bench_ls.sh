@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 # bench_ls.sh DIR [RUNS] — AC-52 (terminum-files.md): the cold first page of a large folder
-# (not in terminumd's cache) and cached random pages, p95. Runs a private terminumd on port
+# (not in terminumd's cache) and cached random pages, p95; SORT=recent or ext: in that order. Runs a private terminumd on port
 # 47899 with its own home, state and tmux socket, so the installed one is not disturbed.
 set -euo pipefail
 dir=$(cd "${1:?dir}" && pwd -P); runs=${2:-10}
@@ -11,7 +11,7 @@ tsock=tm-bench-$$
 pid=""
 trap '[ -n "$pid" ] && kill $pid 2>/dev/null; tmux -L "$tsock" kill-server 2>/dev/null; rm -rf "$home"' EXIT
 export TM_PORT=47899 TM_HOME=$home TM_APP_DIR=$home/state TM_TMUX_SOCKET=$tsock TM_LOG=warn
-url="http://127.0.0.1:47899/fb/api/ls?path=$dir"
+url="http://127.0.0.1:47899/fb/api/ls?path=$dir${SORT:+&sort=$SORT}"
 signin() { # a password over the socket (as `terminum password`), then the sign-in /auth/login gives for it
   curl -s -o /dev/null --unix-socket "$TM_APP_DIR/terminumd.sock" -X POST -H 'Content-Type: application/json' \
        -d '{"password":"bench password"}' http://localhost/password
