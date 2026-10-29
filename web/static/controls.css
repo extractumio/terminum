@@ -7,21 +7,21 @@
 
 /* ---- keys: a text button, matte and a little raised; a press sinks it (shapes.css: --m-*) ---- */
 :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-  #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #findbox .primary, #login button, #backterm) {
+  #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #markpane .mkvacts button, #findbox .primary, #login button, #backterm) {
   height: var(--key-h); padding: 0 var(--key-px); border-radius: var(--key-r); display: inline-flex; align-items: center;
   gap: var(--sp-2); white-space: nowrap; font-weight: var(--key-weight); color: var(--kc, var(--key-ink));
   background-color: var(--kf, var(--key-fill)); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
 @media (hover: hover) {
   :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-    #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #backterm):not(:disabled, .primary):hover {
+    #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #markpane .mkvacts button, #backterm):not(:disabled, .primary):hover {
     background-color: var(--key-fill-hover); }
 }
 /* a press sinks a key into the panel */
 :is(dialog.dlg .actions button, .footform .actions button, .footform .row button, .footbtn,
-  #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #findbox .primary, #login button, #backterm):active:not(:disabled) {
+  #sentpane .spacts button, .tochat, #markbar button:not(.icon), .rmacts button, #markpane .mkvacts button, #findbox .primary, #login button, #backterm):active:not(:disabled) {
   box-shadow: var(--m-well); }
 /* the keys at a pane's foot (Insert into chat and its neighbours): one size in every pane */
-:is(.tochat, #sentpane .spacts button, .rmacts button, #markbar button:not(.icon)) { font-size: var(--fs-label); }
+:is(.tochat, #sentpane .spacts button, .rmacts button, #markpane .mkvacts button, #markbar button:not(.icon)) { font-size: var(--fs-label); }
 /* the primary verb: its container's hue (--key-primary-fill: the accent, Ask's, the bookmark's, a reminder's, danger's);
    through --kf and --kc, so no selector's weight decides it */
 :is(dialog.dlg, .footform, #findbox, .rmacts) .primary, #login button {

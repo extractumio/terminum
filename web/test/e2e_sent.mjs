@@ -153,19 +153,19 @@ export async function webSent(browser, name) {
     await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
     const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
       acts: [...document.querySelectorAll(".rmacts button")].map((b) => b.textContent), due: document.getElementById("remindfab").classList.contains("due") }));
-    check("reminders: pressed, it is marked no more; its note as Markdown, its text quoted, Open, Insert into chat, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
-      && pane.acts.join() === "Open,Insert into chat,Close,Delete,Resolve" && !pane.due, JSON.stringify(pane));
+    check("reminders: pressed, it is marked no more; its note as Markdown, its text quoted, Open, Quote in chat, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
+      && pane.acts.join() === "Open,Quote in chat,Close,Delete,Resolve" && !pane.due, JSON.stringify(pane));
     await page.click(".rmacts .primary");
     await pause(page, 100);
     check("reminders: Resolve tells terminumd", sent.some((m) => m.t === "remind" && m.id === "R1" && m.action === "resolve"));
     const before = sent.length;
     const looks = await page.evaluate(() => { const cs = (e) => { const s = getComputedStyle(e); return [s.height, s.backgroundColor, s.fontSize, s.borderRadius].join(); };
       return [cs(document.querySelector(".rmacts .tochat")), cs(document.getElementById("spinsert")), cs(document.getElementById("mbsend"))]; });
-    check("Insert into chat looks the same on a reminder, the sent history and a bookmark's bar", new Set(looks).size === 1, JSON.stringify(looks));
-    await page.click('.rmacts button:text-is("Insert into chat")');
+    check("Quote in chat (a reminder, a bookmark's bar) looks as the sent history's Insert into chat", new Set(looks).size === 1, JSON.stringify(looks));
+    await page.click('.rmacts button:text-is("Quote in chat")');
     await pause(page, 100);
     const pasted = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
-    check("reminders: Insert into chat pastes its note and, under it, its text quoted into the input, no Enter; the pane closes",
+    check("reminders: Quote in chat pastes its note and, under it, its text quoted into the input, no Enter; the pane closes",
       pasted.includes("**check** the retry\r\r> reminder text here") && !/reminder text here\r$/.test(pasted.replace(/\x1b\[201~$/, ""))
       && await page.evaluate(() => document.getElementById("remindpane").hidden), JSON.stringify(pasted));
     if (size === "1400×900") {

@@ -14,6 +14,8 @@ use serde_json::Value;
 
 /// Plans archived kept at most.
 const ARCHIVED: usize = 50;
+/// A finished plan stays on its row this long after its last update once its turn is over.
+const FINISHED_SHOWN: u64 = 600;
 /// A turn with no plan is reminded once it has worked this long.
 const NO_PLAN_AFTER: u64 = 600;
 /// The reminder's threshold: a sixth of the turn so far, within these.
@@ -61,6 +63,10 @@ impl Plan {
 
     fn done(&self) -> usize {
         self.items.iter().filter(|i| i.status == "completed").count()
+    }
+    /// Every item completed.
+    fn finished(&self) -> bool {
+        !self.items.is_empty() && self.done() == self.items.len()
     }
 }
 
@@ -188,9 +194,13 @@ impl Plans {
         other
     }
 
-    /// A turn began (UserPromptSubmit).
+    /// A turn began (UserPromptSubmit). A finished plan was the last request's: archived, the
+    /// new request starts without one (it showed 100% from the start).
     pub fn turn(&self, key: &str, agent: &str, session: Option<&str>, now: u64) {
         let mut cur = self.cur.lock();
+        if cur.get(key).is_some_and(Plan::finished) {
+            self.archive_one(&mut cur, key);
+        }
         self.entry(&mut cur, key, agent, session, now).turn_started = Some(now);
     }
 
@@ -298,10 +308,13 @@ impl Plans {
         Some(text)
     }
 
-    /// The row's summary of the pane's plan; None without items. Stale only while the pane
-    /// works (`working`: its hooks say so).
+    /// The row's summary of the pane's plan; None without items, and for a finished one whose
+    /// turn is over FINISHED_SHOWN after its last update (it stayed at 100% for good). Stale
+    /// only while the pane works (`working`: its hooks say so).
     pub fn row(&self, key: &str, working: bool, now: u64) -> Option<Row> {
-        self.cur.lock().get(key).and_then(|p| row(p, working, now))
+        self.cur.lock().get(key)
+            .filter(|p| working || !p.finished() || now.saturating_sub(p.updated) < FINISHED_SHOWN)
+            .and_then(|p| row(p, working, now))
     }
 
     pub fn details(&self, key: &str, working: bool, now: u64) -> Option<Details> {

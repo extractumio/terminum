@@ -117,8 +117,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const rec = (id) => (stored() ?? []).find((i) => i.id === id) ?? null;
     check("AC-98 terminumd keeps them in web-bookmarks.json as the agent's, the reminder a reminder", rec(bug)?.by === "claude" && rec(bug)?.kind === "bug" && rec(later)?.remind === true,
       JSON.stringify([rec(bug), rec(later)]));
-    await page.click(`#markpane li[data-id="${bug}"] .mkdone`);
-    await page.click(`#markpane li[data-id="${later}"] .mkdone`);
+    for (const id of [bug, later]) { await page.click(`#markpane li[data-id="${id}"] .mkitem`); await page.click("#markpane .mkvdone"); }
     await within("AC-33 ✓ settles them through terminumd after 5 s: the bookmark deleted, the reminder resolved", () => until(() => ({ b: rec(bug), r: rec(later) }),
       ({ b, r }) => b === null && !!r?.resolved, 9000));
     await page.keyboard.press("Escape");

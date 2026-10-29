@@ -313,6 +313,20 @@ test("a long drawn table is one widget with its head: never a widget from a row 
   assert.deepEqual(found(table.slice(1).join("\n")).map(({ kind, from }) => [kind, from]), [["table", 0]]);
 });
 
+test("a drawn table across the history's end: settled at its top rule, never at its head row on the screen", () => {
+  // Claude Code redraws (Ask typed into its box): a frame with a row drawn over, the screen
+  // beginning at the table's head row; the next scan, from settled, finds it whole with its top
+  const table = boxTable(RESULTS), lead = "x\n".repeat(30);
+  const over = [...table.slice(0, 11), table[11].slice(0, 20), ...table.slice(5), "", "✻ Thinking…", ..."abcdefghij"];
+  const first = scan(rows(lead + over.join("\n")), undefined, 31);
+  assert.deepEqual(first.found, []);
+  assert.ok(first.settled <= 30, `settled at its top rule, not at the screen's first row (${first.settled})`);
+  const later = rows(lead + table.join("\n") + "\n\n✻ Done").slice(first.settled);
+  assert.deepEqual(scan(later).found.map(({ from, table: t }) => [from + first.settled, t.head[0], t.rows.length]), [[30, "Набор", 11]]);
+  // nothing on the screen is settled, a box or not
+  assert.equal(scan(rows("x\n".repeat(40)), undefined, 10).settled, 10);
+});
+
 test("a Markdown document ends before a drawn table, which is a widget of its own", () => {
   const text = "## Plan\n\n- read **a**\n- write `b`\n" + CLAUDE_TABLE.slice(2, 10).join("\n");
   assert.deepEqual(found(text).map((r) => r.kind), ["markdown", "table"]);

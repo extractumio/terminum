@@ -122,8 +122,8 @@ fn post_tool_reminds_and_records_it() {
 #[test]
 fn a_finished_plan_or_one_updated_this_turn_is_not_reminded() {
     let p = Plans::default();
-    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "a", "status": "completed"}]}), T0);
-    p.turn(K, "claude", Some("s1"), T0 + 3600);
+    p.turn(K, "claude", Some("s1"), T0 + 3600);                  // finished in its turn (the next request archives it)
+    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "a", "status": "completed"}]}), T0 + 3600);
     assert_eq!(p.post_tool(K, true, T0 + 3600 + 5000), None, "every item completed: nothing to update");
     p.hook(K, "claude", Some("s1"), &json!({"op": "add", "id": "9", "text": "b"}), T0 + 3600 + 5000);
     p.turn(K, "claude", Some("s1"), T0 + 99_000);
@@ -134,8 +134,8 @@ fn a_finished_plan_or_one_updated_this_turn_is_not_reminded() {
 #[test]
 fn the_row_is_stale_as_the_reminder_judges_it() {
     let p = Plans::default();
-    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "a", "status": "completed"}]}), T0);
-    p.turn(K, "claude", Some("s1"), T0 + 3600);
+    p.turn(K, "claude", Some("s1"), T0 + 3600);                  // finished in its turn (the next request archives it)
+    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "a", "status": "completed"}]}), T0 + 3600);
     assert!(!p.row(K, true, T0 + 3600 + 5000).unwrap().stale, "every item completed: never stale");
     p.hook(K, "claude", Some("s1"), &json!({"op": "add", "id": "9", "text": "b"}), T0 + 3600 + 5000);
     p.turn(K, "claude", Some("s1"), T0 + 99_000);
@@ -193,4 +193,22 @@ fn the_last_archived_plan_shows_until_a_new_one() {
     assert!(p.last_archived("tmux:local:x:%9", T0).is_none(), "another pane's");
     p.hook(K, "claude", Some("s2"), &json!({"op": "add", "id": "1", "text": "b"}), T0 + 9);
     assert!(p.last_archived(K, T0 + 9).is_none(), "a new session's plan replaces it");
+}
+
+#[test]
+fn a_finished_plan_leaves_with_the_next_request_and_its_row_after_its_turn() {
+    let p = Plans::default();
+    p.turn(K, "claude", Some("s1"), T0);
+    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "a", "status": "completed"}, {"text": "b", "status": "completed"}]}), T0 + 10);
+    assert_eq!(p.row(K, true, T0 + 5000).map(|r| r.pct), Some(100), "working: shown at 100%");
+    assert_eq!(p.row(K, false, T0 + 10 + FINISHED_SHOWN - 1).map(|r| r.pct), Some(100), "just finished: shown a while");
+    assert_eq!(p.row(K, false, T0 + 10 + FINISHED_SHOWN), None, "its turn over: gone from the row");
+    assert_eq!(p.details(K, false, T0 + 10 + FINISHED_SHOWN).map(|d| d.row.pct), Some(100), "the Plan pane still has it");
+    p.turn(K, "claude", Some("s1"), T0 + 9000);
+    assert_eq!((p.row(K, true, T0 + 9000), p.archived()), (None, 1), "the next request starts without it, archived");
+    assert!(p.last_archived(K, T0 + 9000).is_none(), "not shown as an exited session's");
+    // one not finished stays across requests
+    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "c", "status": "completed"}, {"text": "d", "status": "pending"}]}), T0 + 9010);
+    p.turn(K, "claude", Some("s1"), T0 + 20000);
+    assert_eq!((p.row(K, false, T0 + 20000).map(|r| r.pct), p.archived()), (Some(50), 1));
 }

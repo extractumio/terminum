@@ -3,8 +3,9 @@
 // (a phone's row under the input), files dropped on the page. Each is saved where the pane's shell runs (this Mac or its host), keeping
 // a file's name, and its path is pasted as text without Enter: programs such as Claude Code take
 // a file by its path. Dropped files go one at a time (the bridge takes two at once) and their
-// paths are pasted together; so do picked ones. A file over the limit is not sent: the page says
-// to give its path instead (a browser never gives a page a file's path).
+// paths are pasted together, one per line in a coding agent's box; so do picked ones. A file over
+// the limit is not sent: the page says to give its path instead (a browser never gives a page a
+// file's path).
 import { shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
@@ -38,8 +39,13 @@ export function draggedPaths(raw) {
   return paths.length ? { host: typeof m.host === "string" ? m.host : null, paths } : null;
 }
 
-/** sid(): the shown pane; host(): its host (null: this Mac); paste(text) at its input. */
-export function uploads({ sid, host = () => null, paste, toast, hideToast }) {
+/** Paths as pasted: one per line (`lines`), else separated by spaces. */
+export const pathList = (paths, lines) => paths.map(shellWord).join(lines ? "\n" : " ");
+
+/** sid(): the shown pane; host(): its host (null: this Mac); paste(text) at its input; lines():
+ *  paths one per line: a coding agent's box with a bracketed paste (in a shell the lines would
+ *  run as one command each at Enter). */
+export function uploads({ sid, host = () => null, paste, lines = () => false, toast, hideToast }) {
   /** Saves one file: {path} or {error}. */
   async function save(blob, what, url, from) {
     const r = await fetch(url + encodeURIComponent(from), { method: "POST", headers: { "Content-Type": blob.type || "application/octet-stream" }, body: blob })
@@ -65,7 +71,7 @@ export function uploads({ sid, host = () => null, paste, toast, hideToast }) {
       if (error) { paths.pop(); break; }
     }
     if (paths.length && sid() !== from) return toast(`The ${what} was saved, but another session is shown now: nothing was pasted.`, 6000);
-    if (paths.length) paste(paths.map(shellWord).join(" "));
+    if (paths.length) paste(pathList(paths, lines()));
     if (!error) return hideToast();
     toast(list.length > 1 ? `${paths.length} of ${list.length} uploaded (their paths pasted); ${list[paths.length][0].name}: ${error} The rest were not sent.` : error, 8000);
   }

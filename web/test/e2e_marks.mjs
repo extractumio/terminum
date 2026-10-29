@@ -116,7 +116,8 @@ const inView = (m) => m && m.top >= 0 && m.top < m.h;
 /** Brings the shown session's bookmark noted `text` into view from its pane (the top right button). */
 async function fromPane(page, text) {
   if (await page.evaluate(() => document.getElementById("markpane").hidden)) await pressFab(page, "#marksfab");
-  await page.click(`#markpane .mkitem:has-text("${text}")`);
+  await page.click(`#markpane .mkitem:has-text("${text}")`);   // chosen: shown beside the list
+  await page.click("#markpane .mkvgo");                          // Show in terminal
 }
 
 async function selectRow(page, text) {
@@ -230,7 +231,7 @@ export async function webMarks(browser, name = "") {
   await page.click("#mbsend");
   await page.waitForTimeout(100);
   const pasted = sent.slice(before).filter((x) => x.t === "in").map((x) => x.data).join("");
-  check(`${at} Insert into chat pastes the note and, under it, the text quoted into the input, no Enter`,
+  check(`${at} Quote in chat pastes the note and, under it, the text quoted into the input, no Enter`,
     pasted.includes("ask about the retry loop\r\r> ") && pasted.includes("the retry loop never resets") && !pasted.replace(/\x1b\[201~$/, "").endsWith("\r"), JSON.stringify(pasted));
   check(`${at} the text keeps its look; a wavy line on its left from its first row to its last marks it`, m?.line === true
     && await page.evaluate(() => !CSS.highlights?.has("bookmark") && getComputedStyle(document.getElementById("markline")).backgroundImage.includes("svg")), JSON.stringify(m));
@@ -379,6 +380,7 @@ export async function webMarks(browser, name = "") {
   await pressFab(page, "#marksfab");
   const head = await page.textContent("#markpane h2");
   await page.click('#markpane .mkitem:has-text("ask about the retry loop")');
+  await page.click("#markpane .mkvgo");
   await page.waitForFunction(() => document.getElementById("markline")?.range?.toString().includes("retry loop"), null, { timeout: 8000 }).catch(() => {});
   m = await marked(page);
   check(`${at} a bookmark of the project made in another session shows that session and its text`, m?.text === "the retry loop never resets" && inView(m)

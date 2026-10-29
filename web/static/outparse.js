@@ -105,8 +105,9 @@ export const regions = (rows, end) => scan(rows, end).found;
 
 /** regions(), and `settled`: the first row whose regions may still change as rows are added
  *  after `end` (a fence or a file not finished, a document that may go on); scanning again from
- *  there finds the same regions after it. */
-export function scan(rows, end = rows.length) {
+ *  there finds the same regions after it. `changes`: the first row that may change (the
+ *  screen's first): settled is never after it, nor inside a drawn box there (AC-31). */
+export function scan(rows, end = rows.length, changes = rows.length) {
   const lines = joinTableRows(logicalLines(rows.slice(0, end)));
   const next = rows[end]?.text ?? null;                           // the cursor's row
   const found = [];
@@ -173,7 +174,8 @@ export function scan(rows, end = rows.length) {
   }
   // a region near the end may still grow (a document, a diagram), the last line too (no hard end);
   // but no further back than a region can be long: a scan never grows with the history
-  open = Math.max(Math.min(open, Math.max(0, lines.length - GAP - 2)), lines.length - MAX_LINES);
+  const moving = lines.findIndex((l) => l.to >= changes);
+  open = Math.max(Math.min(open, Math.max(0, lines.length - GAP - 2), moving < 0 ? lines.length : moving), lines.length - MAX_LINES);
   // nor inside a drawn box (a table not whole yet, or off its grid): the next scan, from there,
   // would take a row of it for a head (AC-31)
   while (open > Math.max(0, lines.length - MAX_LINES) && open < lines.length && boxLine(lines[open].text) && boxLine(lines[open - 1].text)) open--;

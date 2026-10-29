@@ -6,7 +6,7 @@
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
-import { placeBeside, placeModal } from "./fabpane.js";
+import { placeModal } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
 import { loose, railBox, railSlots } from "./marktext.js";
@@ -37,11 +37,12 @@ export const openReminder = (i) => !!i.remind && !i.resolved;
 /** The selected text as a Markdown quote, its lines kept. */
 export const quote = (text) => text.split("\n").map((l) => `> ${l}`).join("\n");
 
-/** The label of the button that pastes into the shown pane's input, one look everywhere (.tochat). */
-export const INSERT = "Insert into chat";
-/** What Insert into chat pastes for a bookmark or a reminder: the note, under it its text quoted
- *  (an agent's record, AC-98: its text as it wrote it). */
-export const chatText = (item) => (item.note ? `${item.note}\n\n` : "") + (item.by ? item.text : quote(item.text));
+/** The label of the button that pastes a bookmark or a reminder into the shown pane's input, as a
+ *  quote (the sent history's pastes a message as sent: "Insert into chat"); one look everywhere (.tochat). */
+export const INSERT = "Quote in chat";
+/** What Quote in chat pastes for a bookmark or a reminder: the note, under it its text quoted
+ *  (an agent's record, AC-98, too). */
+export const chatText = (item) => (item.note ? `${item.note}\n\n` : "") + quote(item.text);
 
 // Delete asks again: a second press within 3 s deletes.
 export function armed(button, label, act) {
@@ -385,7 +386,17 @@ export class Marks {
     this.search.place();
     if (!$("markpane").hidden) this.placePane();
   }
-  placePane() { if (!placeModal($("markpane"), () => this.togglePane(false))) placeBeside($("marksfab"), $("markpane")); }
+  placePane() {
+    $("markpane").style.setProperty("--term-px", getComputedStyle($("term")).fontSize);   // its texts at the terminal's size (marks.css)
+    if (placeModal($("markpane"), () => this.togglePane(false))) { for (const p of ["height", "width"]) $("markpane").style.removeProperty(p); return; }
+    // as tall as the terminal, as View's window (12 px from its top, 16 from its end), left of the floating buttons, 820 px at most
+    const pane = $("markpane"), area = pane.offsetParent?.getBoundingClientRect(), t = $("term").getBoundingClientRect();
+    const fab = $("marksfab").getBoundingClientRect(), right = (fab.width ? fab.left : t.right) - 14, left = Math.max(t.left + 16, right - 820);
+    if (!area) return;
+    Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(t.top + 12 - area.top)}px`,
+      width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.height - 28))}px` });
+    delete pane.dataset.under;
+  }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {
     const had = $("markpane").contains(document.activeElement);

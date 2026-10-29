@@ -1,18 +1,28 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Going through a session's bookmarks and reminders (AC-33): the bookmarks' button's pane lists
-// them together, the session's own top to bottom, its project's others' after, newest first. A
-// press (or ↑ ↓ in the pane) brings one into view and keeps the pane open on it, so the next goes
-// on; Enter or Esc closes it. ✓ (or Delete, ⌫) settles one at once in the list, a reminder
-// resolved and a bookmark deleted, with Undo there for 5 s: only then terminumd is told. The bar
-// after a jump has the same ✓. An agent's record (AC-98) shows its agent's mark.
+// Going through a session's bookmarks and reminders (AC-33): the bookmarks' button's pane is a
+// navigator, the list at its left (the session's own top to bottom, its project's others' after,
+// newest first), the chosen one's content at its right, rendered as the terminal renders Markdown
+// (an agent's record, AC-98, its own Markdown; the user's, the terminal's text as it was). A press
+// or ↑ ↓ chooses one; Show in terminal (Enter) brings it into view, Quote in chat pastes it, Done
+// (or Delete, ⌫) settles it at once in the list, a reminder resolved and a bookmark deleted, with
+// Undo for 5 s: only then terminumd is told. The bar after a jump has the same Done.
 import { icon } from "./icons.js";
-import { el, openReminder, when } from "./marks.js";
+import { chatText, el, INSERT, openReminder, when } from "./marks.js";
 import { agentMark } from "./nav.js";
+import { markdownView } from "./widgetui.js";
 
 const $ = (id) => document.getElementById(id);
 const UNDO = 5000;             // ms a ✓ waits before terminumd is told
 const MOUSE = globalThis.matchMedia?.("(hover: hover) and (pointer: fine)");   // none in node (unit tests)
 const firstLine = (text, max = 90) => { const l = text.trim().split("\n")[0]; return l.length > max ? `${l.slice(0, max)}…` : l; };
+
+/** A record's content as Markdown: an agent's as it wrote it, the user's selection in a fence (the
+ *  terminal's text exactly), longer than any run of backticks in it. */
+export function recordMarkdown(item) {
+  if (item.by) return item.text;
+  const fence = "`".repeat(Math.max(3, ...[...item.text.matchAll(/`+/g)].map((m) => m[0].length + 1)));
+  return `${fence}text\n${item.text}\n${fence}`;
+}
 
 /** The mark before an entry's title: an agent's for its record, a bell for a reminder, none else. */
 export function kindMark(item) {
@@ -27,6 +37,8 @@ export class MarkNav {
     this.m = marks;
     this.pending = new Map();      // id -> timer: settled in the list, terminumd told when it fires
     this.chosen = null;            // the entry the pane is on
+    this.drawn = "";               // what the view shows: its entry's id and text
+    this.view = this.makeView();
     const pane = $("markpane");
     pane.tabIndex = -1;
     pane.addEventListener("keydown", (e) => this.key(e));
@@ -49,12 +61,50 @@ export class MarkNav {
     const pane = $("markpane");
     if (pane.hidden) return;
     const all = this.entries(), project = this.m.hereProject();
+    if (!all.some((b) => b.id === this.chosen)) this.chosen = all[0]?.id ?? null;   // something is shown at once
+    const others = all.some((b) => b.sid !== this.m.sid());
     const ul = el("ul", "mknav");
-    for (const item of all) ul.append(this.row(item, all.some((b) => b.sid !== this.m.sid())));
+    for (const item of all) ul.append(this.row(item, others));
     const head = el("h2", "", project ? `Bookmarks and reminders of ${project.name}` : "Bookmarks and reminders of this session");
-    const hint = el("p", "mkhint", "↑ ↓ go through them · ✓ or Delete: done · Enter: close");
-    pane.replaceChildren(head, all.length ? ul : el("p", "empty", "None here."), hint);
+    const hint = el("p", "mkhint", "↑ ↓ choose · Enter: show in terminal · Delete: done · Esc: close");
+    if (!all.length) return pane.replaceChildren(head, el("p", "empty", "None here."));
+    const cols = el("div", "mkcols");
+    cols.append(ul, this.view.box);
+    pane.replaceChildren(head, cols, hint);
+    this.show(all.find((b) => b.id === this.chosen), others);
     pane.querySelector(".chosen")?.scrollIntoView({ block: "nearest" });
+  }
+
+  /** The view at the right: its head (title, where and when), its content, three actions. */
+  makeView() {
+    const box = el("section", "mkview"), head = el("div", "mkvhead"), body = el("div", "mkvbody"), acts = el("div", "mkvacts");
+    const act = (cls, label, fn, title) => { const b = el("button", cls, label); b.type = "button"; b.title = title; b.onclick = fn; acts.append(b); return b; };
+    const item = () => this.entries().find((b) => b.id === this.chosen);
+    act("mkvgo", "Show in terminal", () => { const it = item(); if (it) { this.m.togglePane(false); void this.m.jump(it); } }, "Bring it into view in the terminal (Enter)");
+    const done = act("mkvdone", "Done", () => { const it = item(); if (it) (this.pending.has(it.id) ? this.undo(it.id) : this.done(it)); }, "");
+    act("tochat", INSERT, () => { const it = item(); if (it) { this.m.togglePane(false); this.m.toChat(chatText(it)); } }, "Paste its note and its text quoted into the input, no Enter");
+    box.append(head, body, acts);
+    return { box, head, body, done };
+  }
+
+  /** `item` in the view: its content drawn again only when it changed (a list redraw keeps it). */
+  show(item, others) {
+    const { head, body, done } = this.view;
+    const pending = this.pending.has(item.id);
+    done.replaceChildren(...(pending ? ["Undo"] : [icon("check", 14), "Done"]));
+    done.classList.toggle("pending", pending);
+    done.title = pending ? "Take it back" : item.remind ? "Resolve this reminder (Undo for 5 s; Delete)" : "Delete this bookmark (Undo for 5 s; Delete)";
+    const key = `${item.id}\n${item.note}\n${item.text}`;
+    if (key === this.drawn) return;
+    this.drawn = key;
+    const title = el("span", "mkvtitle" + (item.note ? "" : " quiet"));
+    const mark = kindMark(item);
+    if (mark) title.append(mark);
+    title.append(item.note || firstLine(item.text));
+    const now = this.m.alive(item.sid), theirs = others && item.sid !== this.m.sid();
+    head.replaceChildren(title, el("span", "mkvmeta", [theirs && (now ?? `${item.title} (closed)`), item.host, when(item.at)].filter(Boolean).join(" · ")));
+    body.scrollTop = 0;
+    void markdownView(body, recordMarkdown(item));
   }
 
   row(item, others) {
@@ -68,7 +118,6 @@ export class MarkNav {
     if (mark) title.append(mark);
     title.append(item.note || firstLine(item.text));
     b.append(title);
-    if (item.note) b.append(el("span", "snip", firstLine(item.text)));
     // another session's: by its name now, a closed one by its last and "closed" (as marks.js listOf)
     const now = this.m.alive(item.sid), theirs = others && item.sid !== this.m.sid();
     const meta = el("span", "meta", (theirs ? [now ?? item.title, when(item.at)] : [when(item.at)]).join(" · "));
@@ -81,24 +130,14 @@ export class MarkNav {
       undo.type = "button";
       undo.onclick = (e) => { e.stopPropagation(); this.undo(item.id); };
       li.append(el("span", "mkdonetext", item.remind ? "Resolved" : "Deleted"), undo);
-    } else {
-      const done = el("button", "mkdone");
-      done.type = "button";
-      done.title = item.remind ? "Done: resolve this reminder" : "Done: delete this bookmark";
-      done.setAttribute("aria-label", done.title);
-      done.append(icon("check", 14));
-      done.onclick = (e) => { e.stopPropagation(); this.done(item); };
-      li.append(done);
     }
     return li;
   }
 
-  /** Brings `item` into view; the pane stays open on it, with the keys on a computer (showing a
-   *  session gives the terminal the keys: app.js pick). */
+  /** Shows `item` in the view; the keys stay the pane's on a computer. */
   choose(item) {
     this.chosen = item.id;
     this.draw();
-    void this.m.jump(item);
     if (MOUSE?.matches && !$("markpane").hidden) $("markpane").focus({ preventScroll: true });
   }
 
@@ -152,10 +191,10 @@ export class MarkNav {
       e.preventDefault();
       const item = all[i];
       this.pending.has(item.id) ? this.undo(item.id) : this.done(item);
-    } else if (e.key === "Enter") {
+    } else if (e.key === "Enter" && i >= 0) {
       e.preventDefault();
-      if (i < 0 && all.length) return this.choose(all[0]);
       this.m.togglePane(false);
+      void this.m.jump(all[i]);
     }
   }
 }

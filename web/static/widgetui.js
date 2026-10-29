@@ -55,6 +55,17 @@ export function hostOf(el, onClick) {
   return root;
 }
 
+/** `md` drawn into `host`'s shadow root as a Markdown widget's body (widgets.css), its links the
+ *  page's as a widget's: the bookmarks' navigator shows a record as the terminal shows Markdown. */
+export async function markdownView(host, md) {
+  const styled = loadStyles();                    // makes the sheet the root adopts
+  const root = hostOf(host, () => {});
+  await styled;
+  let body = root.querySelector(".body");
+  if (!body) root.append(body = Object.assign(document.createElement("div"), { className: "body markdown wrap" }));   // long lines wrap (widgets.css)
+  await markdownInto(body, md);
+}
+
 /** The event came from inside a widget (its taps are not the terminal's). */
 export const inWidget = (e) => e.composedPath?.().some((n) => n instanceof Element && n.hasAttribute("data-wg"));
 

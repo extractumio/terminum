@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// Why a file over 100 MB is not uploaded; what rows dragged from Files carry (upload.js, AC-36).
+// Why a file over 100 MB is not uploaded; what rows dragged from Files carry; how saved paths are
+// pasted (upload.js, AC-36).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { draggedPaths, tooLarge } from "../static/upload.js";
+import { draggedPaths, pathList, tooLarge } from "../static/upload.js";
 
 test("over 100 MB: said in words, the file's path to be given instead", () => {
   assert.equal(tooLarge("a.zip"), "a.zip is larger than the 100 MB an upload may be: type or paste the path to the file instead.");
@@ -13,4 +14,11 @@ test("rows dragged from Files: absolute paths with their host; anything else car
   assert.deepEqual(draggedPaths(JSON.stringify({ host: "devbox", paths: ["/srv/x"] })), { host: "devbox", paths: ["/srv/x"] });
   assert.deepEqual(draggedPaths(JSON.stringify({ paths: ["rel/x", "/ok", "/new\nline", "/esc\x1b[D", 7] })), { host: null, paths: ["/ok"] }, "relative, control characters, not text: dropped");
   for (const raw of ["", "not json", "{}", JSON.stringify({ paths: [] }), JSON.stringify({ paths: "/a" })]) assert.equal(draggedPaths(raw), null, raw);
+});
+
+test("saved paths: one per line (a coding agent's box), else separated by spaces", () => {
+  const paths = ["/Users/alex/.terminum/tmp/a.png", "/Users/alex/.terminum/tmp/b c.txt"];
+  assert.equal(pathList(paths, true), "/Users/alex/.terminum/tmp/a.png\n'/Users/alex/.terminum/tmp/b c.txt'");
+  assert.equal(pathList(paths, false), "/Users/alex/.terminum/tmp/a.png '/Users/alex/.terminum/tmp/b c.txt'");
+  assert.equal(pathList(paths.slice(0, 1), true), paths[0], "one path: no line end after it");
 });

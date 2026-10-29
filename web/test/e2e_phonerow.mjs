@@ -75,9 +75,10 @@ export async function webPhoneRow(browser, name) {
   await page.waitForFunction(() => document.getElementById("toast").hidden, null, { timeout: 5000 }).catch(() => {});
   await page.waitForTimeout(200);
   const typed = f.sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
-  check("AC-18 a phone: Attach takes several files, uploads each and types their paths at the cursor, without Enter",
+  // one per line in the bracketed paste (AC-36): a new line there is no Enter
+  check("AC-18 a phone: Attach takes several files, uploads each and types their paths at the cursor, one per line, without Enter",
     chooser.isMultiple() && JSON.stringify(posted) === JSON.stringify(["a.png", "notes b.txt"])
-    && typed.includes("/Users/alex/api/a.png '/Users/alex/api/notes b.txt'") && !typed.includes("\r"), JSON.stringify({ posted, typed }));
+    && typed === "\x1b[200~/Users/alex/api/a.png\r'/Users/alex/api/notes b.txt'\x1b[201~", JSON.stringify({ posted, typed }));
 
   // the input's menu (a finger held still and lifted; a CDP touch screen) where the page may read the clipboard
   // unasked (a permission given): an empty one has no Paste; a full one's Paste pastes it
