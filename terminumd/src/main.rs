@@ -41,6 +41,7 @@ mod lastlines;
 mod links;
 mod restore;
 mod restore_srv;
+mod restore_lines;
 mod routes;
 mod runlink;
 mod screen;

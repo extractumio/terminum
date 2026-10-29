@@ -176,3 +176,16 @@ fn tmux_rows_parse_and_its_default_title_is_ignored() {
     assert_ne!(i.title, p.host_name);
     assert!(!i.sub.contains(&p.host_name));
 }
+
+#[test]
+fn ac15_a_restored_pane_shows_its_agents_title_while_a_shell_runs_there() {
+    let p = PaneFields { restored_title: "Fix the login form".into(), ..pane("bash", true, "mac (10.0.0.9) — /Users/alex/api", "bash", "/Users/alex/api") };
+    assert_eq!(item(&p, 1, 1, HOME).title, "Fix the login form", "over the shell's own title");
+    let named = PaneFields { automatic_rename: false, window_name: "api".into(), ..p.clone() };
+    assert_eq!(item(&named, 1, 1, HOME).title, "api", "a window the user named keeps its name");
+    let agent = PaneFields { command: "2.1.312".into(), pane_title: "\u{2733} A new talk".into(), ..p };
+    assert_eq!(item(&agent, 1, 1, HOME).title, "A new talk", "a coding agent running again titles it itself");
+    let line = "main\t1\t@1\tbash\t1\t%3\t0\tt\tbash\t/tmp\t0\t1\tmac\t\t\t$1";
+    assert_eq!(parse_list_panes(line).map(|p| p.restored_title), Some(String::new()), "16 fields: none");
+    assert_eq!(parse_list_panes(&format!("{line}\tOld talk")).map(|p| p.restored_title), Some("Old talk".into()));
+}

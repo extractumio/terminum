@@ -19,7 +19,7 @@ import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, results, summary, tmux_on  # noqa: E402
+from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
 
 PORT, SOCKET = 47971, "tm-test-last"
 tmux = partial(tmux_on, SOCKET)
@@ -52,6 +52,9 @@ def main():
         tmux("send-keys", "-t", api, "seq -f 'ended-%g' 1 400", "Enter")
         prog = tmux("new-window", "-t", "main:", "-n", "prog", "-P", "-F", "#{pane_id}").strip()
         tmux("send-keys", "-t", prog, "seq -f 'under-%g' 1 5; printf '\\033[?1049h\\033[H%s-%s' PROGRAM SCREEN; sleep 600", "Enter")
+        # a coding agent's pane: its marked title names its row (AC-15)
+        talk = tmux("new-window", "-t", "main:", "-P", "-F", "#{pane_id}").strip()
+        tmux("send-keys", "-t", talk, "printf '\\033]2;\\342\\234\\263 Fix the login form\\033\\\\'; sleep 600", "Enter")
         identity = wait(lambda: tmux("show", "-sqv", "@terminum-id").strip(), 10)
         folder = os.path.join(t.app, "lastlines", f"local@{SOCKET}")
         api_file = os.path.join(folder, f"{identity}_{api[1:]}.json")
@@ -85,11 +88,17 @@ def main():
         check("AC-96 a page gets a pane's latest lines, none from before a restart",
               now and now["before"] is None and "ended-400\n" in now["latest"]["text"] and now["lines"] == 300, now and {k: v for k, v in now.items() if k not in ("latest",)})
 
+        ws.send({"t": "unread", "id": key(talk), "on": True})
         layout = os.path.join(t.app, "layout.json")
         check("AC-96 the checkpoint names the server's identity (no output)",
               wait(lambda: os.path.exists(layout) and json.load(open(layout)).get("identity") == identity and "ended-" not in open(layout).read(), 10))
+        check("AC-15 the checkpoint keeps the agent's title for its pane",
+              wait(lambda: "Fix the login form" in open(layout).read(), 10), open(layout).read()[:300])
+        check("AC-93 the mark is kept", wait(lambda: key(talk) in open(os.path.join(t.app, "unread.json")).read(), 5))
+        old_talk = talk
 
         old = {"api": api, "prog": prog}
+        talk_index = tmux("display", "-p", "-t", talk, "#{window_index}").strip()
         tmux("kill-server")
 
         def remade():
@@ -114,6 +123,23 @@ def main():
             gone_old = not [f for f in os.listdir(folder) if f.startswith(identity + "_" + api[1:] + ".")]
             check("AC-96 the old pane's file became the new pane's (a new identity)", new_identity != identity and gone_old and
                   os.path.exists(os.path.join(folder, f"{new_identity}_{made['api'][1:]}.before.json")), sorted(os.listdir(folder)))
+
+            history = tmux("capture-pane", "-p", "-J", "-S", "-1000", "-t", made["api"])
+            check("AC-96 the pane made again has the old lines in its terminal, then a note and its shell",
+                  "ended-102\n" in history and history.index("ended-400") < history.index("from before tmux restarted")
+                  and tmux("display", "-p", "-t", made["api"], "#{pane_current_command}").strip() in ("bash", "zsh", "sh"),
+                  history[-300:])
+            check("AC-96 the file it printed is gone", not [f for f in os.listdir(folder) if f.startswith("print-")], sorted(os.listdir(folder)))
+            new_talk = tmux("list-panes", "-t", f"main:{talk_index}", "-F", "#{pane_id}").strip()
+            check("AC-15 the agent's pane made again keeps its title while a shell runs there",
+                  tmux("show", "-pqv", "-t", new_talk, "@tm-title").strip() == "Fix the login form", new_talk)
+            fresh = t.page()                            # the list as a page opening now gets it
+            gs = wait_layout(fresh, lambda gs: any(i["id"] == key(new_talk) for g in gs for i in g.get("items", [])), 10) or []
+            row = next((i for g in gs for i in g.get("items", []) if i["id"] == key(new_talk)), {})
+            check("AC-15 its row shows that title", row.get("title") == "Fix the login form", row)
+            unread = json.load(open(os.path.join(t.app, "unread.json")))
+            check("AC-93 the mark went to the pane made in its place", unread["unread"] == [key(new_talk)], [unread, key(old_talk)])
+            check("AC-93 its row is unread", row.get("unread") is True, row)
 
             # a pane closed by the user: its files go once it stays absent 30 s
             files = lambda: [f for f in os.listdir(folder) if f.startswith(f"{new_identity}_{made['api'][1:]}.")]   # noqa: E731

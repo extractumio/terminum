@@ -126,7 +126,8 @@ so only with the user's go-ahead and at a quiet moment:
 1. Note what runs: `tmux -L terminum list-panes -a -F '#S #{pane_current_path} #{pane_current_command}'`
    (keep the output for the user).
 2. `tmux -L terminum kill-server`. terminum makes the sessions again with their windows,
-   splits, folders and projects within seconds; the programs do not come back.
+   splits, folders, projects, names, Unread marks and each terminal's last 300 lines within
+   seconds; the programs do not come back.
 3. Start the coding agents again in their folders (`claude --continue`, `codex resume --last`).
 4. `terminum status`: no `folders:` line any more.
 

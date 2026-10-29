@@ -38,6 +38,9 @@ pub struct PaneFields {
     pub quick_side: String,
     /// the session's id (`$N`): a host's session client attaches by it (AC-89)
     pub session_id: String,
+    /// the title a restore gave the pane (`@tm-title`: its coding agent's, before tmux
+    /// restarted, AC-15), shown while a shell runs there
+    pub restored_title: String,
 }
 
 /// What the list shows for a pane.
@@ -56,19 +59,19 @@ pub struct Item {
 /// The `list-panes -F` format [`parse_list_panes`] reads, fields separated by tabs.
 pub const LIST_PANES_FORMAT: &str = "#{session_name}\t#{window_index}\t#{window_id}\t#{window_name}\t\
 #{automatic-rename}\t#{pane_id}\t#{pane_index}\t#{pane_title}\t#{pane_current_command}\t\
-#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}";
+#{pane_current_path}\t#{alternate_on}\t#{pane_active}\t#{host}\t#{@tm-quick}\t#{@tm-quick-side}\t#{session_id}\t#{@tm-title}";
 
 /// Whether `s` is a name tmux could have given a window after its command (`claude`, `zsh`).
 fn auto_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_alphanumeric() || c == '_' || ".+@-".contains(c))
 }
 
-/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 16 fields (a name
-/// holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
+/// One row of `list-panes -F LIST_PANES_FORMAT`; `None` when it has not its 17 fields (16 without
+/// the restored title, as tests write them; more: a name holding a tab) or its numbers are not numbers. An empty `#{automatic-rename}` (a tmux that
 /// does not say) counts as on when the window's name looks like a command.
 pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
     let f: Vec<&str> = line.trim_end_matches(['\r', '\n']).split('\t').collect();
-    if f.len() != 16 {
+    if f.len() != 16 && f.len() != 17 {
         return None;
     }
     let flag = |s: &str| s == "1";
@@ -89,6 +92,7 @@ pub fn parse_list_panes(line: &str) -> Option<PaneFields> {
         quick_for: f[13].into(),
         quick_side: f[14].into(),
         session_id: f[15].into(),
+        restored_title: f.get(16).copied().unwrap_or_default().into(),
     })
 }
 
@@ -127,7 +131,7 @@ pub fn agent_of(command: &str) -> Option<&'static str> {
 }
 
 /// "1.2.3": three numbers and two dots, nothing else.
-fn is_version(s: &str) -> bool {
+pub fn is_version(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
     parts.len() == 3 && parts.iter().all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
 }
@@ -171,7 +175,13 @@ pub fn item(p: &PaneFields, pane_no: usize, panes_in_window: usize, home: &str) 
     let window_name = if p.automatic_rename { named(&p.window_name) } else { p.window_name.clone() };
     let window_name = window_name.as_str();
     let path = tilde(&p.path, home);
-    let program_title = if empty_title(p) { String::new() } else { p.pane_title.clone() };
+    let program_title = if SHELLS.contains(&job.as_str()) && !p.restored_title.is_empty() {
+        p.restored_title.clone()                  // its coding agent's before tmux restarted (AC-15)
+    } else if empty_title(p) {
+        String::new()
+    } else {
+        p.pane_title.clone()
+    };
     let user_named = !window_name.is_empty() && !p.automatic_rename;
     let mut title = if user_named {
         window_name.to_string()

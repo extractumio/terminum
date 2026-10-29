@@ -38,7 +38,7 @@ static WRITING: parking_lot::Mutex<()> = parking_lot::Mutex::new(());
 /// Identities a restore took the lines of: a round read before the restart writes none of theirs.
 static RETIRED: parking_lot::Mutex<Vec<String>> = parking_lot::Mutex::new(Vec::new());
 /// A pane printed nothing since a restore but its prompt: its lines from before stay its own.
-const ONLY_A_PROMPT: usize = 2;
+pub const ONLY_A_PROMPT: usize = 2;
 
 /// The lines kept, or 0: off, also while restore is (nothing would take them after a restart).
 pub fn wanted(app: &Shared) -> usize {

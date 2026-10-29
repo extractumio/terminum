@@ -112,7 +112,7 @@ async fn checkpoint(app: &Shared, prev: &Value) -> Option<Value> {
     let mut answers = app.tmux.local.bulk()?.run_all(vec![format!("list-windows -a -F '{WINDOWS}'"), format!("list-panes -a -F '{PANES}'"), IDENTITY.into()]).await.into_iter();
     let (wins, panes) = (answers.next()?.ok()?, answers.next()?.ok()?);
     let identity = answers.next().and_then(Result::ok).and_then(|l| l.into_iter().next()).unwrap_or_default();
-    let ssh_ttys: Vec<&str> = panes.iter().map(|l| l.splitn(6, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 6 && g[3] == "ssh").map(|g| g[4]).collect();
+    let ssh_ttys: Vec<&str> = panes.iter().map(|l| l.splitn(7, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 7 && g[3] == "ssh").map(|g| g[4]).collect();
     let procs = ssh_commands(&ssh_ttys).await;
     let sessions = sessions_of(&wins, &panes, |_| true, |c, tty| kind(c, tty, &procs));
     let hosts: Vec<String> = app.tmux.hosts().iter().map(|h| h.name.clone()).collect();
@@ -177,9 +177,10 @@ async fn run(app: &Shared, saved: &Value) -> bool {
     let existing: Vec<String> = exec.run(&["list-sessions", "-F", "#{session_name}"]).await.unwrap_or_default().lines().map(String::from).collect();
     let mut m = Made::default();
     let kept = crate::restore_srv::kept(&exec).await;
-    make(&exec, saved["sessions"].as_array().map(Vec::as_slice).unwrap_or_default(), &existing, None, usable, &home, &mut m).await;
-    crate::page::projects::restarted(app, &app.tmux.local.key(""), &[m.panes.clone(), kept].concat()).await;
-    m.lines = crate::lastlines::restarted(app, &app.tmux.local.id(), saved["identity"].as_str(), exec.identity().await, &m.panes).await;
+    let sessions = saved["sessions"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let print = crate::restore_lines::commands(app, &exec, &app.tmux.local.id(), saved["identity"].as_str(), sessions).await;
+    make(&exec, sessions, &existing, None, usable, &home, &print, &mut m).await;
+    crate::restore_srv::hand_on(app, &exec, &app.tmux.local, saved, kept, &mut m).await;
     let made = m.sessions;
     let mut text = format!("Restored {made} session{}, {} window{}.", if made == 1 { "" } else { "s" }, m.windows, if m.windows == 1 { "" } else { "s" });
     if !m.programs.is_empty() {

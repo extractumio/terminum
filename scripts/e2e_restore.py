@@ -71,6 +71,9 @@ def main():
         check("AC-15 the sessions are back", sorted(sessions) == ["main", "notes"], sessions)
         wins = tmux("list-windows", "-t", "main", "-F", "#{window_name} #{window_panes}").splitlines()
         check("AC-15 windows and splits are back", wins == ["api 2", "docs 1"], wins)
+        renames = tmux("list-windows", "-a", "-F", "#{session_name}:#{window_index} #{automatic-rename}").splitlines()
+        check("AC-15 a window the user named keeps its name; one tmux named after its program is tmux's to name again",
+              renames == ["main:0 0", "main:1 0", "notes:0 1"], renames)
         paths = set(tmux("list-panes", "-a", "-F", "#{pane_current_path}").split())
         check("AC-15 the panes are in their folders", {f"{work}/api", f"{work}/docs", f"{work}/notes"} <= paths, paths)
         check("AC-15 the report is kept in the state folder", os.path.exists(os.path.join(t.app, "restore-report.json")))

@@ -9,6 +9,7 @@
 //! or window the user closed while its server runs stays closed, and so does the last pane
 //! whose closing ended its tmux (tmux's own `%exit` while one pane was shown).
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde_json::{json, Value};
@@ -17,8 +18,8 @@ use crate::app::Shared;
 use crate::tmux::args;
 use crate::tmux::server::{plain, Link, Server, HOST_SESSION};
 
-pub const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{@tm-quick}\t#{window_name}\t#{window_layout}";
-pub const PANES: &str = "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}";
+pub const WINDOWS: &str = "#{session_name}\t#{window_id}\t#{@tm-quick}\t#{window_name}\t#{window_layout}\t#{automatic-rename}";
+pub const PANES: &str = "#{session_name}\t#{window_id}\t#{pane_id}\t#{pane_current_command}\t#{pane_tty}\t#{pane_current_path}\t#{@tm-title}\t#{pane_title}";
 /// The server's identity (`@terminum-id`) for the checkpoint: whose files hold its panes' last lines (AC-96).
 pub const IDENTITY: &str = "show -sqv @terminum-id";
 
@@ -74,10 +75,10 @@ pub fn simple_kind(command: &str) -> Value {
 /// The sessions of `wins` and `panes` (the lists of WINDOWS and PANES) that `keep` takes, in
 /// the checkpoint's shape; `kind(command, tty)` describes a pane's program.
 pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> bool, kind: impl Fn(&str, &str) -> Value) -> Vec<Value> {
-    let fields: Vec<Vec<&str>> = panes.iter().map(|l| l.splitn(6, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 6).collect();
+    let fields: Vec<Vec<&str>> = panes.iter().map(|l| l.splitn(8, '\t').collect::<Vec<_>>()).filter(|g| g.len() == 8).collect();
     let mut sessions: Vec<Value> = Vec::new();
     for w in wins {
-        let f: Vec<&str> = w.splitn(5, '\t').collect();
+        let f: Vec<&str> = w.splitn(6, '\t').collect();
         if f.len() < 5 || !f[2].is_empty() || !keep(f[0]) {
             continue;                                   // a quick shell (AC-88) is not kept
         }
@@ -85,9 +86,17 @@ pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> boo
             let mut k = kind(p[3], p[4]);
             k["dir"] = json!(p[5]);
             k["id"] = json!(p[2]);                      // its pane's id, for what keeps pane keys (projects, AC-92)
+            if let Some(t) = agent_title(p[3], p[7], p[6]) {
+                k["title"] = json!(t);                  // its row's name (AC-15)
+            }
             k
         }).collect();
-        let win = json!({"name": f[3], "layout": f[4], "panes": ps});
+        let mut win = json!({"name": f[3], "layout": f[4], "panes": ps});
+        // tmux names it after its program: not the user's name; a version (Claude Code's process,
+        // "2.1.310") is one a restore before 0.24.11 fixed with `-n`, never the user's
+        if f.get(5) == Some(&"1") || crate::tmux::titles::is_version(f[3]) {
+            win["auto"] = json!(true);
+        }
         match sessions.iter_mut().find(|s| s["name"] == f[0]) {
             Some(s) => s["windows"].as_array_mut().expect("array").push(win),
             None => sessions.push(json!({"name": f[0], "windows": [win]})),
@@ -95,6 +104,35 @@ pub fn sessions_of(wins: &[String], panes: &[String], keep: impl Fn(&str) -> boo
     }
     sessions
 }
+
+/// The title a coding agent gave its pane (Claude Code's conversation), which its row shows,
+/// or the one a restore gave it (`restored`, `@tm-title`) while a shell runs there: none for
+/// another program or a title that names nothing but the program.
+fn agent_title(command: &str, title: &str, restored: &str) -> Option<String> {
+    use crate::tmux::titles;
+    let shell = titles::SHELLS.contains(&command.trim_start_matches('-'));
+    let title = if titles::agent_of(command).is_some() || crate::tmux::agentstate::claude_marked(title) {
+        title
+    } else if shell && !restored.is_empty() {
+        restored
+    } else {
+        return None;
+    };
+    let t: String = titles::bare(title).chars().filter(|c| !c.is_control()).take(TITLE_MAX).collect();
+    let t = t.trim();
+    (!t.is_empty() && t != "Claude Code" && !titles::program_name(t) && !titles::is_version(t)).then(|| t.to_string())
+}
+
+/// The pane made again keeps the title its row showed (`@tm-title`, shown while a shell runs
+/// there, titles.rs) when its checkpoint has one.
+async fn titled(exec: &Exec<'_>, pane: &str, saved: Option<&Value>) {
+    if let Some(t) = saved.and_then(|p| p["title"].as_str()).filter(|t| !t.is_empty() && pane.starts_with('%')) {
+        let _ = exec.run(&["set", "-pq", "-t", pane, "@tm-title", t]).await;
+    }
+}
+
+/// A window's name made of a title: at most this many characters.
+const TITLE_MAX: usize = 100;
 
 /// What one making-again did, for the report.
 #[derive(Default)]
@@ -112,8 +150,11 @@ pub struct Made {
 
 /// Makes `sessions` on the server `exec` reaches, but those in `existing`; `into` names a
 /// session that exists already and takes the windows instead (a host's fresh `terminum`).
-/// `dir_ok(dir)`: whether a folder can be used (else the home folder, with a note).
-pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into: Option<&str>, dir_ok: impl Fn(&str) -> bool, home: &str, out: &mut Made) {
+/// `dir_ok(dir)`: whether a folder can be used (else the home folder, with a note); `print`: the
+/// command an old pane's replacement starts with (its last lines, restore_lines.rs).
+#[allow(clippy::too_many_arguments)]
+pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into: Option<&str>, dir_ok: impl Fn(&str) -> bool, home: &str, print: &HashMap<String, String>, out: &mut Made) {
+    let print_of = |p: Option<&Value>| p.and_then(|p| p["id"].as_str()).and_then(|o| print.get(o)).map(String::as_str);
     for s in sessions {
         let name = s["name"].as_str().unwrap_or("");
         let fill = into == Some(name);
@@ -139,17 +180,20 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
                 }
             }
             let d0 = panes.first().map_or(home.to_string(), dir_of);
-            let wname = w["name"].as_str().unwrap_or("");
             let target = format!("={name}:");
-            let made = if first {
-                exec.run(&["new-session", "-d", "-s", name, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id} #{pane_id}"]).await
-            } else {
-                exec.run(&["new-window", "-d", "-t", &target, "-n", wname, "-c", &d0, "-P", "-F", "#{window_id} #{pane_id}"]).await
-            };
+            let mut cmd = if first { vec!["new-session", "-d", "-s", name] } else { vec!["new-window", "-d", "-t", target.as_str()] };
+            // `-n` turns automatic-rename off: a window tmux named after its program is left to tmux
+            if w["auto"] != true {
+                cmd.extend(["-n", w["name"].as_str().unwrap_or("")]);
+            }
+            cmd.extend(["-c", &d0, "-P", "-F", "#{window_id} #{pane_id}"]);
+            cmd.extend(print_of(panes.first()));
+            let made = exec.run(&cmd).await;
             let old = |p: Option<&Value>| p.and_then(|p| p["id"].as_str()).map(str::to_string);
             let wid = match made {
                 Ok(ids) => {
                     let (wid, pane) = ids.split_once(' ').unwrap_or((ids.as_str(), ""));
+                    titled(exec, pane, panes.first()).await;
                     if let Some(o) = old(panes.first()) {
                         out.panes.push((o, pane.to_string()));
                     }
@@ -166,8 +210,14 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
             first = false;
             out.windows += 1;
             for p in panes.iter().skip(1) {
-                match exec.run(&["split-window", "-d", "-t", &wid, "-c", &dir_of(p), "-P", "-F", "#{pane_id}"]).await {
-                    Ok(new) => out.panes.extend(old(Some(p)).map(|o| (o, new))),
+                let d = dir_of(p);
+                let mut split = vec!["split-window", "-d", "-t", &wid, "-c", &d, "-P", "-F", "#{pane_id}"];
+                split.extend(print_of(Some(p)));
+                match exec.run(&split).await {
+                    Ok(new) => {
+                        titled(exec, &new, Some(p)).await;
+                        out.panes.extend(old(Some(p)).map(|o| (o, new)));
+                    }
                     Err(e) => out.errors.push(format!("{name}: {e}")),
                 }
             }
@@ -176,6 +226,17 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
             }
         }
     }
+}
+
+/// What the old panes had goes to the panes a restore made in their place (`m.panes`; `kept`,
+/// the panes running before it, paired with themselves): projects and bookmarks, Unread
+/// (AC-93) and the last lines (AC-96), by the identity the checkpoint `saved` names.
+pub async fn hand_on(app: &Shared, exec: &Exec<'_>, server: &Server, saved: &Value, kept: Vec<(String, String)>, m: &mut Made) {
+    let prefix = server.key("");
+    crate::page::projects::restarted(app, &prefix, &[m.panes.clone(), kept].concat()).await;
+    let (old, now) = (saved["identity"].as_str(), exec.identity().await);
+    crate::page::unread::restarted(app, &prefix, old, now.as_deref(), &m.panes);
+    m.lines = crate::lastlines::restarted(app, &server.id(), old, now, &m.panes).await;
 }
 
 /// The checkpoint of every other server that can be read now (a host's `terminum`, the
@@ -247,9 +308,9 @@ pub async fn users_local(app: &Shared, server: &Server) {
     let home = crate::config::home().display().to_string();
     let exec = Exec::Local { tmux, socket, conf: None };
     let kept = kept(&exec).await;
-    make(&exec, &wanted, &[], None, crate::restore::usable, &home, &mut m).await;
-    crate::page::projects::restarted(app, &server.key(""), &[m.panes.clone(), kept].concat()).await;
-    m.lines = crate::lastlines::restarted(app, &server.id(), saved["identity"].as_str(), exec.identity().await, &m.panes).await;
+    let print = crate::restore_lines::commands(app, &exec, &server.id(), saved["identity"].as_str(), &wanted).await;
+    make(&exec, &wanted, &[], None, crate::restore::usable, &home, &print, &mut m).await;
+    hand_on(app, &exec, server, &saved, kept, &mut m).await;
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
@@ -274,9 +335,8 @@ pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let mut m = Made::default();
     let home = server.home().await.unwrap_or_default();
     let kept = kept(&Exec::Ctl(server)).await;
-    make(&Exec::Ctl(server), &sessions, &existing, Some(HOST_SESSION), |_| true, if home.is_empty() { "~" } else { &home }, &mut m).await;
-    crate::page::projects::restarted(app, &server.key(""), &[m.panes.clone(), kept].concat()).await;
-    m.lines = crate::lastlines::restarted(app, &server.id(), saved["identity"].as_str(), Exec::Ctl(server).identity().await, &m.panes).await;
+    make(&Exec::Ctl(server), &sessions, &existing, Some(HOST_SESSION), |_| true, if home.is_empty() { "~" } else { &home }, &HashMap::new(), &mut m).await;
+    hand_on(app, &Exec::Ctl(server), server, &saved, kept, &mut m).await;
     // the fresh session's own first window goes once the kept ones are there
     if m.windows > 0 && fresh.len() == 1 {
         let _ = server.run(format!("kill-window -t {}", args::word(&fresh[0]))).await;
@@ -290,13 +350,26 @@ mod tests {
 
     #[test]
     fn sessions_are_kept_with_their_windows_and_folders_but_quick_shells() {
-        let wins = ["main\t@1\t\tapi\tlayout1", "main\t@2\t%9\tquick\tlayout2", "work\t@3\t\tlogs\tlayout3", "other\t@4\t\tx\tl"].map(String::from);
-        let panes = ["main\t@1\t%1\tzsh\t/dev/ttys1\t/Users/alex/api", "main\t@1\t%2\tnode\t/dev/ttys2\t/Users/alex/api/web",
-                     "main\t@2\t%9\tzsh\t/dev/ttys3\t/tmp", "work\t@3\t%4\tzsh\t/dev/ttys4\t/var/log"].map(String::from);
+        let wins = ["main\t@1\t\tapi\tlayout1\t0", "main\t@2\t%9\tquick\tlayout2\t0", "work\t@3\t\t2.1.310\tlayout3\t1", "work\t@5\t\t2.1.312\tlayout5\t0", "work\t@6\t\t2.1.312\tlayout6\t1",
+                    "work\t@7\t\tbash\tlayout7\t1", "other\t@4\t\tx\tl\t0"].map(String::from);
+        let panes = ["main\t@1\t%1\tzsh\t/dev/ttys1\t/Users/alex/api\t\tdevbox", "main\t@1\t%2\tnode\t/dev/ttys2\t/Users/alex/api/web\t\t",
+                     "main\t@2\t%9\tzsh\t/dev/ttys3\t/tmp\t\t", "work\t@3\t%4\tzsh\t/dev/ttys4\t/var/log\t\t\u{2733} Claude Code",
+                     "work\t@5\t%5\tbash\t/dev/ttys5\t/var/log\tRestored talk\tdevbox", "work\t@6\t%6\t2.1.312\t/dev/ttys6\t/var/log\tRestored talk\t\u{2733} Fix the login\u{7} form",
+                     "work\t@7\t%7\tbash\t/dev/ttys7\t/var/log\t\t\u{2733} Old talk"].map(String::from);
         let s = sessions_of(&wins, &panes, |n| n != "other", |c, _| simple_kind(c));
         assert_eq!(s.len(), 2, "a session the server does not show is not kept");
         assert_eq!(s[0]["windows"].as_array().unwrap().len(), 1, "the quick shell's window is not kept");
         assert_eq!(s[0]["windows"][0]["panes"][1], json!({"kind": "other", "program": "node", "dir": "/Users/alex/api/web", "id": "%2"}));
         assert_eq!(s[1]["windows"][0]["panes"][0], json!({"kind": "shell", "dir": "/var/log", "id": "%4"}));
+        assert_eq!(s[0]["windows"][0].get("auto"), None, "a window the user named keeps its name");
+        assert_eq!(s[1]["windows"][0]["auto"], true, "a window tmux names after its program is marked so");
+        assert_eq!(s[1]["windows"][1]["auto"], true, "a version's name an earlier restore fixed is tmux's again");
+        let title = |w: usize| s[1]["windows"][w]["panes"][0].get("title").cloned();
+        assert_eq!(title(0), None, "Claude Code's own title names nothing");
+        assert_eq!(title(1), Some(json!("Restored talk")), "a shell keeps the title a restore gave it");
+        assert_eq!(title(2), Some(json!("Fix the login form")), "a coding agent's title wins, its mark and control characters dropped");
+        assert_eq!(title(3), Some(json!("Old talk")), "a shell under a marked title (the agent just ended) too");
+        assert_eq!(s[1]["windows"][2]["auto"], true, "and the window stays tmux's to name");
+        assert_eq!(s[0]["windows"][0]["panes"][1].get("title"), None, "another program's title is not kept");
     }
 }

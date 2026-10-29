@@ -41,6 +41,11 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
     // host's others (OQ-81, AC-89)
     let panes: Vec<PaneFields> = all.into_iter().filter(|p| server.shows(&p.session)).collect();
     let (agents, views) = agent_states(server, states, hooks, ending, &panes).await;
+    // a restored pane's title (AC-15) gives way once a coding agent runs there again: its own
+    for p in panes.iter().filter(|p| !p.restored_title.is_empty() && titles::agent_of(&p.command).is_some()) {
+        let (s, pane) = (server.clone(), p.pane_id.clone());
+        tokio::spawn(async move { s.run(format!("set -pqu -t {} @tm-title", super::args::word(&pane))).await });
+    }
     hooks.retain(&server.key(""), &panes.iter().map(|p| server.key(&p.pane_id)).collect::<Vec<_>>());
     let mut groups: Vec<Value> = Vec::new();
     let mut map = HashMap::new();

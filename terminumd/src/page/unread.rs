@@ -3,7 +3,8 @@
 //! is unread until a page shows it, and the list marks its row. Kept in state/unread.json with
 //! the identity of each tmux server the marks were made in, so a restart of terminumd (an
 //! upgrade) keeps them while a tmux server started anew (a reboot, a killed tmux: its pane ids
-//! start again at %0) takes its marks with it. A change marks the list as last sent and tells
+//! start again at %0) sets its marks aside until its restore hands them to the panes it made
+//! (AC-15); those of panes not made again go. A change marks the list as last sent and tells
 //! the pages (no new read of the servers).
 
 use std::collections::{HashMap, HashSet};
@@ -20,7 +21,16 @@ const FILE: &str = "unread.json";
 pub struct Marks {
     keys: HashSet<String>,
     servers: HashMap<String, String>,
+    /// the marks of a server started anew, by its keys' start and the identity they were made
+    /// in, until its restore hands them on (not kept on disk: a restore follows within seconds)
+    aside: HashMap<String, (String, HashSet<String>)>,
+    /// the marks a restore handed on, and when: a whole list read before it shows their panes
+    /// (a host's, read in the same round) keeps them
+    handed: HashMap<String, std::time::Instant>,
 }
+
+/// How long a mark a restore handed on stays though no list shows its pane.
+const HANDED_FOR: std::time::Duration = std::time::Duration::from_secs(30);
 
 impl Marks {
     /// The marks a terminumd before this one kept; none when there is no file (one that cannot
@@ -29,21 +39,49 @@ impl Marks {
         crate::auth::store::read_or_set_aside(&dir.join(FILE), |v| {
             let keys = serde_json::from_value(v["unread"].clone()).map_err(|e| e.to_string())?;
             let servers = serde_json::from_value(v["servers"].clone()).map_err(|e| e.to_string())?;
-            Ok(Marks { keys, servers })
+            Ok(Marks { keys, servers, ..Marks::default() })
         }).unwrap_or_default()
     }
 
     /// A server's list was read (`prefix` its keys' start): a server with another identity than
-    /// the marks were made in started anew, and its marks go. True when anything changed.
+    /// the marks were made in started anew, and its marks are set aside for its restore. True
+    /// when anything changed.
     fn seen(&mut self, prefix: &str, identity: &str) -> bool {
         let was = self.servers.insert(prefix.to_string(), identity.to_string());
         if was.as_deref() == Some(identity) {
             return false;
         }
-        if was.is_some() {
-            self.keys.retain(|k| !k.starts_with(prefix));
+        if let Some(was) = was {
+            let (gone, kept) = std::mem::take(&mut self.keys).into_iter().partition(|k| k.starts_with(prefix));
+            self.keys = kept;
+            // started anew twice before a restore (it failed): the first marks wait still
+            if !gone.is_empty() || !self.aside.contains_key(prefix) {
+                self.aside.insert(prefix.to_string(), (was, gone));
+            }
         }
         true
+    }
+
+    /// A restore made the panes `pairs` (old id -> new) again on the server `prefix` names,
+    /// from its checkpoint of identity `old`, now `new`: their marks go to the new panes. The
+    /// marks are where they are: still current (the list not read since) or set aside.
+    fn restarted(&mut self, prefix: &str, old: &str, new: &str, pairs: &[(String, String)]) -> bool {
+        let mut from = HashSet::new();
+        if self.servers.get(prefix).map(String::as_str) == Some(old) {
+            let (mine, kept) = std::mem::take(&mut self.keys).into_iter().partition(|k: &String| k.starts_with(prefix));
+            self.keys = kept;
+            from = mine;
+        } else if let Some((was, keys)) = self.aside.remove(prefix) && was == old {
+            from = keys;
+        }
+        self.servers.insert(prefix.to_string(), new.to_string());
+        let before = self.keys.len();
+        let now = std::time::Instant::now();
+        for (_, n) in pairs.iter().filter(|(o, _)| from.contains(&format!("{prefix}{o}"))) {
+            self.keys.insert(format!("{prefix}{n}"));
+            self.handed.insert(format!("{prefix}{n}"), now);
+        }
+        self.keys.len() != before || !from.is_empty()
     }
 
     fn json(&self) -> Value {
@@ -91,6 +129,15 @@ pub async fn seen(app: &Shared, server: &crate::tmux::Server) {
     let Some(identity) = server.identity().await else { return };
     if app.unread.lock().seen(&server.key(""), &identity) {
         save(app);
+    }
+}
+
+/// A restore made panes again (AC-15): the marks of the old panes go to the new ones.
+pub fn restarted(app: &Shared, prefix: &str, old: Option<&str>, new: Option<&str>, pairs: &[(String, String)]) {
+    let (Some(old), Some(new)) = (old.filter(|i| !i.is_empty()), new.filter(|i| !i.is_empty())) else { return };
+    if old != new && app.unread.lock().restarted(prefix, old, new, pairs) {
+        save(app);
+        relist(app);
     }
 }
 
@@ -159,7 +206,9 @@ pub fn mark(app: &Shared, groups: &mut [Value], whole: bool) {
     }
     let before = unread.keys.len();
     if whole {
-        unread.keys.retain(|k| listed.contains(k));
+        let Marks { keys, handed, .. } = &mut *unread;
+        handed.retain(|_, at| at.elapsed() < HANDED_FOR);
+        keys.retain(|k| listed.contains(k) || handed.contains_key(k));
     }
     if unread.keys.len() != before {
         drop(unread);
@@ -202,5 +251,48 @@ mod tests {
         assert_eq!(m.keys.len(), 2);
         assert!(m.seen(A, "id2"), "started anew: %3 is another pane now");
         assert_eq!(m.keys.iter().collect::<Vec<_>>(), vec!["tmux:devbox.example:default:%3"], "only that server's marks go");
+    }
+
+    fn pairs(p: &[(&str, &str)]) -> Vec<(String, String)> {
+        p.iter().map(|(o, n)| (o.to_string(), n.to_string())).collect()
+    }
+
+    #[test]
+    fn a_restore_hands_the_marks_to_the_panes_made_again_whether_the_list_was_read_or_not() {
+        // the list read after the restart first: the marks wait aside
+        let mut m = Marks::default();
+        m.keys.extend([format!("{A}%3"), format!("{A}%7"), "tmux:devbox.example:default:%3".to_string()]);
+        m.seen(A, "id1");
+        m.seen(A, "id2");
+        assert!(m.restarted(A, "id1", "id2", &pairs(&[("%3", "%0"), ("%5", "%1")])));
+        let mut keys: Vec<&String> = m.keys.iter().collect();
+        keys.sort();
+        assert_eq!(keys, vec!["tmux:devbox.example:default:%3", "tmux:local:terminum:%0"], "%3's mark on %0; %7 not made again goes");
+        assert!(!m.seen(A, "id2"), "the new identity is the marks' now");
+        // the restore first: the marks are still current
+        let mut m = Marks::default();
+        m.keys.extend([format!("{A}%0"), format!("{A}%1")]);
+        m.seen(A, "id1");
+        m.restarted(A, "id1", "id2", &pairs(&[("%1", "%0"), ("%0", "%1")]));
+        let mut keys: Vec<&String> = m.keys.iter().collect();
+        keys.sort();
+        assert_eq!(keys, vec![&format!("{A}%0"), &format!("{A}%1")], "ids that swap keep each mark on its own pane");
+        assert!(!m.seen(A, "id2"), "and the list read later keeps them");
+        assert_eq!(m.keys.len(), 2);
+        // a checkpoint of another identity hands on nothing
+        let mut m = Marks::default();
+        m.keys.insert(format!("{A}%3"));
+        m.seen(A, "id1");
+        m.seen(A, "id2");
+        m.restarted(A, "id0", "id2", &pairs(&[("%3", "%0")]));
+        assert!(m.keys.is_empty(), "the marks were made in another server than the checkpoint's");
+        // started anew twice before its restore: the first server's marks still wait
+        let mut m = Marks::default();
+        m.keys.insert(format!("{A}%3"));
+        m.seen(A, "id1");
+        m.seen(A, "id2");
+        m.seen(A, "id3");
+        m.restarted(A, "id1", "id3", &pairs(&[("%3", "%0")]));
+        assert_eq!(m.keys.iter().collect::<Vec<_>>(), vec![&format!("{A}%0")]);
     }
 }
