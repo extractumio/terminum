@@ -3,7 +3,7 @@
 // column the user can hide (remembered per browser); "/" opens it and filters.
 const $ = (id) => document.getElementById(id);
 
-export function sessionDrawer({ narrow, store, drawNav, focusInput }) {
+export function sessionDrawer({ narrow, store, drawNav, focusInput, peek }) {
   function openDrawer() {
     if (!narrow.matches) { $("app").classList.remove("nav-hidden"); store.set("navHidden", false); return; }
     $("app").classList.add("nav-open");
@@ -15,7 +15,8 @@ export function sessionDrawer({ narrow, store, drawNav, focusInput }) {
     $("navbtn").setAttribute("aria-expanded", "false");
   }
   $("navbtn").onclick = openDrawer;
-  $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? openDrawer() : $("filter").focus(); };   // its buttons (✎, Plan, Copy) are theirs
+  // its buttons (✎, Plan, Copy) are theirs; a narrow window's title shows the full name and path (☰ opens the list)
+  $("current").onclick = (e) => { if (!e.target.closest("button")) narrow.matches ? peek() : $("filter").focus(); };
 
   $("scrim").onclick = closeDrawer;
   $("drawerclose").onclick = closeDrawer;

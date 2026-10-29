@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A narrow window's title, tapped (header.js): the header's buttons slide off to its sides and the
+   session's full name and path show in their place for 3 s, then all slides back (AC-01). Over the
+   header, never changing its height (the terminal keeps its rows); a long name or path goes on
+   below it on the header's fill. Motion's tokens: Reduce Motion swaps them at once (motion.css). */
+#curfull { position: absolute; top: env(safe-area-inset-top); left: 14px; right: 26px; min-height: calc(100% - env(safe-area-inset-top)); z-index: 2;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px; padding: var(--sp-2) 0;
+  background: var(--fill, var(--chrome)); border-radius: 0 0 var(--r-md) var(--r-md); cursor: pointer;
+  opacity: 0; visibility: hidden; transition: opacity var(--dur-pop) var(--ease-out), visibility 0s linear var(--dur-pop); }
+#curfull .ft { font-size: 15px; line-height: 20px; font-weight: 600; overflow-wrap: anywhere; }
+#curfull .fp { font-size: 12px; line-height: 16px; color: var(--muted-text); overflow-wrap: anywhere; }
+#curfull .fp:empty { display: none; }
+/* the buttons themselves: on a phone #tools is display: contents (style.css), its keys on two rows;
+   a narrow window only: widened meanwhile, the header is whole again */
+@media (max-width: 860px) {
+  #bar :is(#navbtn, #tools > *, #current) { transition: translate var(--dur-pop) var(--ease-out), opacity var(--dur-pop) var(--ease-out),
+    background-color var(--dur-out) var(--ease-out), color var(--dur-out) var(--ease-out); }
+  #bar.peek #navbtn { translate: calc(-100% - 14px) 0; opacity: 0; pointer-events: none; }
+  #bar.peek #tools > * { translate: calc(100% + 26px) 0; opacity: 0; pointer-events: none; }
+  #bar.peek #current { opacity: 0; pointer-events: none; }
+  #bar.peek #curfull { opacity: 1; visibility: visible; transition: opacity var(--dur-pop) var(--ease-out); }
+}

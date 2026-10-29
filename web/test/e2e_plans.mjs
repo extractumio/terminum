@@ -147,7 +147,7 @@ export async function webPlans(browser, name) {
     await pause(page, 150);
 
     // a row's percent shows its session and opens the pane; showing another session closes it
-    if (phone) { await page.click("#current .t"); await pause(page, 300); }
+    if (phone) { await page.click("#navbtn"); await pause(page, 300); }
     from = f.sent.length;
     await page.click(`.item[data-id="${B}"] .plpct`);
     await pause(page, 300);

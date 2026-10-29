@@ -3,6 +3,8 @@
 // pencil; then one line: the pane's folder (its coding agent's, following it: follow.js) with a button that copies its full path, where the
 // pane is in tmux (session:window, as tmux names a target), then what runs there (host, program,
 // profile, titles). That last part gives way first, then the folder, down to a few letters each.
+// In a narrow window a tap on the title slides the buttons aside for 3 s and shows the session's
+// full name and path (peek.css).
 import { agentMark, el, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
@@ -10,6 +12,7 @@ import { following } from "./follow.js";
 import { planPane } from "./planpane.js";
 
 const $ = (id) => document.getElementById(id);
+const PEEK = 3000;             // ms the full name and path show
 const span = (cls, text) => el("span", cls, text);
 
 /** The second line's parts, in order: the folder (and its full path, to copy), the window, the rest;
@@ -27,12 +30,19 @@ export function headerParts(group, item, follow = following()) {
 /** copy(text): the page's Copy (input.js), the selection kept. Returns show(found). */
 export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, records }) {
   const plan = planPane({ send, sid, toChat, records });   // the shown session's plan (AC-97): its progress here, its pane
+  let peeking = 0, shown = null;
+  const unpeek = () => { clearTimeout(peeking); peeking = 0; $("bar").classList.remove("peek"); };
+  $("curfull").addEventListener("click", unpeek);
+  const full = (title, path) => { $("curfull").querySelector(".ft").textContent = title; $("curfull").querySelector(".fp").textContent = path; };
   function show(found) {
+    // drawn again with every change of the list: the full name and path stay up, kept current, until another session shows
+    if ((found?.item.id ?? null) !== shown) unpeek();
+    shown = found?.item.id ?? null;
     $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
     $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
     setAgent(found?.item.agent ?? null);
     plan.header(found?.item ?? null);
-    if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); }
+    if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); full("", ""); }
     else {
       const { group: g, item: it } = found, { folder, path, where, rest } = headerParts(g, it), parts = [];
       if (folder) {
@@ -53,10 +63,18 @@ export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, record
       $("cursub").replaceChildren(...parts.flatMap((p, i) => (i ? [span("sep", "·"), ...p] : p)));
       $("curbar").replaceChildren(folderBar(it, true));   // still: the list's bar breathes while it works
       $("curagent").replaceChildren(agentMark(it, 16));
+      full(textForm(it.title), path ? (it.host ? `${it.host}:${path}` : path) : "");
     }
     document.title = found ? `${found.item.title} – terminum` : "terminum";
     if (!renaming()) $("rename").hidden = !found;
   }
   show.plan = plan;
+  /** The full name and path for PEEK ms, the header's buttons slid aside; again: back at once. */
+  show.peek = () => {
+    if (peeking) return unpeek();
+    if ($("current").hidden || !$("curfull").querySelector(".ft").textContent) return;
+    $("bar").classList.add("peek");
+    peeking = setTimeout(unpeek, PEEK);
+  };
   return show;
 }

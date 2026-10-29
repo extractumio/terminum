@@ -55,7 +55,7 @@ export async function webHeader(browser, name) {
         clear: [document.getElementById("rename"), document.getElementById("menubtn"), getComputedStyle(b).position === "absolute" && document.querySelector("#cursub .dir")].filter(Boolean).every((e) => {   // ✎, ⋯ and, in a column of its own, the folder
           const o = e.getBoundingClientRect(); return !o.width || o.right <= box.left + 0.5 || o.left >= box.right - 0.5; }) };
     });
-    check("AC-01 the folder's Copy: its target never over the title's text (a long title's middle opens the list), inside the header, clear of ✎ and ⋯ (and the folder on a phone), a finger's 44 × 44 on a phone",
+    check("AC-01 the folder's Copy: its target never over the title's text (a tap on a long title's middle is the title's), inside the header, clear of ✎ and ⋯ (and the folder on a phone), a finger's 44 × 44 on a phone",
       !target.overTitle && target.inBar && target.clear && (!size.startsWith("390") || (target.w >= 44 && target.h >= 44)), JSON.stringify(target));
     await page.evaluate(() => {                     // what was copied: by the clipboard API or the older copy command
       window.copied = [];
@@ -79,8 +79,37 @@ export async function webHeader(browser, name) {
       const files = await tap('#views [data-view="files"]', true);
       check("AC-01 a phone: a tap at the Files tab's top centre opens Files, not the folder's Copy", files.files === "true" && !files.copied, JSON.stringify(files));
       const before = await page.evaluate(() => document.getElementById("app").className);
+      const look = () => page.evaluate(() => {
+        const r = (id) => document.getElementById(id).getBoundingClientRect(), full = document.getElementById("curfull");
+        const shown = (id) => { const e = document.getElementById(id), s = getComputedStyle(e), b = e.getBoundingClientRect(); return +s.opacity > 0.5 && b.right > 0 && b.left < innerWidth; };
+        return { peek: document.getElementById("bar").classList.contains("peek"), full: getComputedStyle(full).visibility === "visible" ? full.innerText : null,
+          tools: shown("views") && shown("menubtn"), nav: shown("navbtn"), bar: Math.round(r("bar").height), term: Math.round(r("term").top) };
+      });
+      const still = await look();
       const title = await tap("#current .t", false);
-      check("AC-01 a phone: a tap on a long title's middle opens the list, not the folder's Copy", !title.copied && title.app !== before, JSON.stringify({ ...title, before }));
+      await pause(page, 400);                        // the motion's end (none with reduced motion)
+      const peeked = await look();
+      await pause(page, 3000);
+      const back = await look();
+      check("AC-01 a phone: a tap on a long title's middle slides the header's buttons aside and shows the full name and path for 3 s, the header's height kept; not the Copy, not the list",
+        !title.copied && title.app === before && peeked.peek && !peeked.tools && !peeked.nav && peeked.full === "api\n/Users/alex/work/api"
+        && peeked.bar === still.bar && peeked.term === still.term && !back.peek && back.tools && back.nav && back.full === null, JSON.stringify({ title, still, peeked, back }));
+      // the list changes meanwhile (an agent works, a title changes): still shown, the new name in it
+      await tap("#current .t", false);
+      f.say({ t: "layout", groups: [{ ...LAYOUT[0], items: [{ ...LAYOUT[0].items[0], title: "api renamed" }] }] });
+      await pause(page, 300);
+      const kept = await look();
+      check("AC-01 a phone: the list drawn again during those 3 s keeps the full name and path up, the name as it is now",
+        kept.peek && kept.full === "api renamed\n/Users/alex/work/api", JSON.stringify(kept));
+      await pause(page, 3000);
+      await tap("#current .t", false);
+      const again = await look();
+      await page.click("#curfull");
+      const closed = await look();
+      await page.click("#navbtn");
+      await pause(page, 300);
+      const list = await page.evaluate(() => document.getElementById("app").classList.contains("nav-open"));
+      check("AC-01 a phone: a tap on the full name and path slides the buttons back at once; ☰ opens the list", again.peek && !closed.peek && closed.tools && list, JSON.stringify({ again: again.peek, closed, list }));
     }
     check("AC-01 no page errors (header)", !f.errors.length, f.errors.join(" | "));
     await f.close();

@@ -387,7 +387,7 @@ function select(id, force = false) {
   drawNav(); syncControls();
 }
 
-const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus() });
+const { openDrawer, closeDrawer } = sessionDrawer({ narrow, store, drawNav, focusInput: () => input.focus(), peek: () => showCurrent.peek() });
 
 // ---------- theme ----------
 

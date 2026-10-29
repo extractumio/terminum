@@ -66,6 +66,38 @@ export async function webFoot(browser, name) {
   await page.evaluate(() => document.activeElement.blur());
   await pause(page, 600);
   check("AC-07 the keyboard's focus on one of its buttons unfolds it", open(keyed) && folded(await measure(page)), JSON.stringify(keyed));
+  // [+] in the list's head: New session's form under the head, the foot folded; the foot's button: above the foot again
+  const where = () => page.evaluate(() => {
+    const r = (id) => document.getElementById(id).getBoundingClientRect(), form = document.getElementById("newsess");
+    return { open: !form.hidden, underHead: !form.hidden && r("newsess").top >= document.querySelector(".nav-head").getBoundingClientRect().bottom - 1 && r("newsess").bottom <= r("sessions").top + 1,
+      aboveFoot: !form.hidden && r("newsess").bottom <= document.querySelector(".nav-foot").getBoundingClientRect().top + 1 && r("newsess").top >= r("sessions").bottom - 1,
+      focus: document.activeElement?.id, plus: document.getElementById("navnew").ariaExpanded,
+      keys: ["navnew", "navclose"].map((id) => [Math.round(r(id).left), Math.round(r(id).top), Math.round(r(id).width), Math.round(r(id).height)]) };
+  });
+  await page.click("#navnew");
+  await pause(page, 300);
+  const head = { ...(await where()), foot: await measure(page) };
+  await page.fill("#newsessname", "scratch");
+  const sentAt = f.sent.length;
+  await page.keyboard.press("Enter");
+  await pause(page, 200);
+  const made = f.sent.slice(sentAt).find((m) => m.t === "newsession");
+  await page.keyboard.press("Escape");
+  await pause(page, 200);
+  const shut = await where();
+  check("AC-07 [+] left of the list's hide button, as large: New session's form under the list's head, its field in focus, the foot folded; Create asks terminumd; Esc closes it",
+    head.open && head.underHead && head.focus === "newsessname" && head.plus === "true" && folded(head.foot) && made?.name === "scratch" && !shut.open && shut.plus === "false"
+    && head.keys[0][0] < head.keys[1][0] && head.keys[0][1] === head.keys[1][1] && head.keys[0][2] === head.keys[1][2] && head.keys[0][3] === head.keys[1][3], JSON.stringify({ head, made, shut }));
+  await page.hover(".footpeek");
+  await pause(page, 400);
+  await pressFoot(page, "#newsessbtn");
+  await pause(page, 300);
+  const foot = await where();
+  await page.keyboard.press("Escape");
+  await pause(page, 400);
+  check("AC-07 the foot's New session opens the same form above the foot again", foot.open && foot.aboveFoot && foot.plus === "false", JSON.stringify(foot));
+  await away(page);
+  await pause(page, 600);
   const counts = await page.evaluate(() => [document.getElementById("markcount").textContent, document.getElementById("markpeek").textContent]);
   check("AC-07 the folded row's count is the bookmarks button's", counts[0] === counts[1], JSON.stringify(counts));
   check("AC-07 no page errors (the foot)", !f.errors.length, f.errors.join(" | "));

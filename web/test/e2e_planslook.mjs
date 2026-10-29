@@ -58,8 +58,8 @@ export async function planLook(browser, name, size, device) {
     row.light && row.pct >= 4.5 && row.fill >= 3 && row.head >= 4.5 && row.arc >= 3, JSON.stringify(row));
 
   // long names: ellipsis, the percent in the row, no overlap, no sideways scroll
-  // a phone: back to the list by the title, pressed at its top: the Copy's finger target reaches over its middle (style.css)
-  if (phone) { await page.click("#current .t", { position: { x: 8, y: 4 } }); await pause(page, 300); }
+  // a phone: back to the list by ☰
+  if (phone) { await page.click("#navbtn"); await pause(page, 300); }
   const longRow = await page.evaluate((a) => {
     const r = document.querySelector(`.item[data-id="${a}"]`), p = r.querySelector(".plpct").getBoundingClientRect(), rr = r.getBoundingClientRect();
     const t = r.querySelector(".t") ?? r.querySelector(".title"), tr = t?.getBoundingClientRect();

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's tools (AC-07, AC-52, AC-81, AC-89): its width, "New session", "Add host" and
-// "Attach tmux sessions" (addtmux.js) at its foot, a host group's menu (retry, off, on, remove, attach its
+// "Attach tmux sessions" (addtmux.js) at its foot, "New session" also as [+] in its head (its form then under the head), a host group's menu (retry, off, on, remove, attach its
 // tmux sessions) and an attached session's (detach), the line for a tmux server that does not
 // answer, the pencil that names the shown pane, and the page's confirmation dialog.
 
@@ -111,8 +111,21 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
     }
     if (button && $(id).hidden) pending = null;
   }
-  const closeForm = (id) => { $(id).hidden = true; $(`${id}btn`).setAttribute("aria-expanded", "false"); if (pending === id) pending = null; };
-  $("newsessbtn").onclick = () => openForm("newsess", true);
+  const closeForm = (id) => {
+    $(id).hidden = true;
+    $(`${id}btn`).setAttribute("aria-expanded", "false");
+    if (id === "newsess") $("navnew").setAttribute("aria-expanded", "false");
+    if (pending === id) pending = null;
+  };
+  // New session opens its form by the button pressed: under the list's head for [+], above the foot for the foot's
+  const spot = $("newsess").nextElementSibling;
+  $("newsessbtn").onclick = () => { if ($("newsess").hidden) spot.before($("newsess")); openForm("newsess", true); };
+  $("navnew").onclick = () => {
+    if ($("newsess").hidden) $("sessions").before($("newsess"));
+    openForm("newsess", true);
+    $("newsessbtn").setAttribute("aria-expanded", "false");   // the foot stays folded (foot.css)
+    $("navnew").setAttribute("aria-expanded", String(!$("newsess").hidden));
+  };
   $("addhostbtn").onclick = () => openForm("addhost", true);
   const agents = hostAgents(send);
   const tmux = addTmux({ send, groups, openForm, closeForm, setPending: (f) => { pending = f; } });

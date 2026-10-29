@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="listdrag.css">
 <link rel="stylesheet" href="dock.css">
 <link rel="stylesheet" href="fold.css">
+<link rel="stylesheet" href="peek.css">
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
@@ -43,6 +44,7 @@
         <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
+      <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
       <button id="navclose" class="icon wide-only" type="button" aria-label="Hide the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/></svg></button>
     </div>
     <div id="sessions"></div>
@@ -114,6 +116,7 @@
           <span id="cursub" class="s"></span>
         </span>
       </div>
+      <div id="curfull"><span class="ft"></span><span class="fp"></span></div>
       <form id="renamebox" hidden>
         <input id="renamename" class="field" maxlength="100" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
           aria-label="Session name" placeholder="Name (empty: automatic)">
