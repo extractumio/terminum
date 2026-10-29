@@ -11,7 +11,8 @@ import { icon } from "./icons.js";
 import { planPct, planTrack } from "./planrow.js";
 import { textForm } from "./render.js";
 
-// A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing.
+// A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
+// (a quiet terminal mark while a shell of its still runs: backgroundMark).
 const STATES = {
   waiting: { label: "Waiting for your answer", icon: "circle-help" },
   failed: { label: "Failed", icon: "triangle-alert" },
@@ -29,6 +30,18 @@ export function seeWaits(groups, shown) {
 }
 /** A row's state as its mark shows it: a waiting one the user saw shows none. */
 export const shownState = (it) => (it.state === "waiting" && it.seen ? null : it.state);
+
+/** Done with a shell, a monitor or a task it started still running (terminumd reads Claude Code's
+ *  footer, AC-39): a quiet terminal mark in the state's place, null otherwise. */
+export function backgroundMark(item, size = 14) {
+  if (!item.background || item.state !== "done") return null;
+  const wrap = el("span", "bgwork");
+  wrap.title = "Done; a shell, a monitor or a task it started still runs";
+  wrap.setAttribute("role", "img");
+  wrap.setAttribute("aria-label", wrap.title);
+  wrap.append(icon("terminal", size));
+  return wrap;
+}
 
 export function stateIcon(state, size = 16) {
   const s = STATES[state];
@@ -174,7 +187,7 @@ function row(item, current, onPick, movable, child = false, marked = new Map(), 
     b.title = "Unread: its agent finished";
     b.setAttribute("aria-description", b.title);
   }
-  const mark = stateIcon(shownState(item));
+  const mark = stateIcon(shownState(item)) ?? backgroundMark(item);
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);

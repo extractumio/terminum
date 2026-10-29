@@ -116,11 +116,46 @@ fn background_work_alone_counts_for_ten_minutes() {
     assert_eq!(read("\u{2733} Fix it", &shell), (Working, true), "the footer alone");
     assert_eq!(spinning, (Working, false), "the agent itself at work: no limit");
     let (mut s, t0) = (States::new(), Instant::now());
-    assert_eq!(s.limited("k", (Working, true), t0), Working);
-    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT / 2), Working, "since it began");
-    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT), Done, "a dev server: done after ten minutes");
-    assert_eq!(s.limited("k", spinning, t0 + BACKGROUND_LIMIT), Working, "a new turn");
-    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT * 2), Working, "its background work counts anew");
+    assert_eq!(s.limited("k", (Working, true), t0), (Working, false));
+    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT / 2), (Working, false), "since it began");
+    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT), (Done, true), "a dev server: done after ten minutes, marked while it runs");
+    assert_eq!(s.limited("k", (Done, false), t0 + BACKGROUND_LIMIT), (Done, false), "its shell ended: no mark");
+    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT * 2), (Working, false), "a shell again: it counts anew");
+    assert_eq!(s.limited("k", spinning, t0 + BACKGROUND_LIMIT * 3), (Working, false), "a new turn");
+    assert_eq!(s.limited("k", (Working, true), t0 + BACKGROUND_LIMIT * 3), (Working, false), "its background work counts anew");
+    s.store("k", "", t0, (Done, true), false);
+    assert!(s.behind("k"), "the mark is kept between reads");
+    s.store("k", "", t0, (Done, false), false);
+    assert!(!s.behind("k"));
+}
+
+/// A turn its hooks ended, done with a shell still running: its footer is read again every
+/// STATE_EVERY while it is marked, and not once the mark has gone.
+#[test]
+fn a_hooked_turn_done_with_a_shell_is_read_again_while_marked() {
+    let (mut s, t0) = (States::new(), Instant::now());
+    assert_eq!(s.lingers("k", t0), None, "not one");
+    s.linger("k", t0, true);
+    assert_eq!(s.lingers("k", t0 + STATE_EVERY / 2), Some(false), "marked, not due");
+    assert_eq!(s.lingers("k", t0 + STATE_EVERY), Some(true), "due");
+    s.linger("k", t0 + STATE_EVERY, false);
+    assert_eq!(s.lingers("k", t0 + STATE_EVERY * 2), None, "its shell ended");
+    s.linger("tmux:local:terminum:%1", t0, true);
+    s.linger("tmux:h:default:%1", t0, true);
+    s.retain("tmux:local:terminum:", &[]);
+    assert_eq!((s.lingers("tmux:local:terminum:%1", t0), s.lingers("tmux:h:default:%1", t0)), (None, Some(false)), "a closed pane is forgotten, another server's kept");
+}
+
+/// What a Stop's footer read says: (keeps the turn going, the mark of work behind its Done).
+#[test]
+fn a_stops_footer_keeps_the_turn_or_marks_it() {
+    use Background::{Agents, Tasks};
+    assert_eq!(after_stop(false, Some(Tasks)), (true, Some(false)), "a shell: working for a while");
+    assert_eq!(after_stop(true, Some(Tasks)), (false, Some(true)), "ten minutes on: done, marked");
+    assert_eq!(after_stop(true, Some(Agents)), (true, Some(false)), "agents: working however long");
+    assert_eq!(after_stop(false, Some(Background::None)), (false, Some(false)), "nothing in the background");
+    assert_eq!(after_stop(true, Some(Background::None)), (false, Some(false)), "its shell ended: the mark goes");
+    assert_eq!(after_stop(true, None), (false, None), "not read: the mark as it was");
 }
 
 #[test]
@@ -220,7 +255,7 @@ fn the_screen_is_read_again_only_on_a_new_title_or_after_a_while() {
         let now = t0 + Duration::from_secs(at);
         if s.due("tmux:local:terminum:%1", title, now) {
             reads += 1;
-            s.store("tmux:local:terminum:%1", title, now, Waiting, false);
+            s.store("tmux:local:terminum:%1", title, now, (Waiting, false), false);
         }
         assert_eq!(s.last("tmux:local:terminum:%1"), Some(Waiting));
     }
@@ -235,7 +270,7 @@ fn the_cache_stays_small() {
     let mut s = States::new();
     let now = Instant::now();
     for n in 0..KEEP + 1 {
-        s.store(&format!("k{n}"), "", now, Done, false);
+        s.store(&format!("k{n}"), "", now, (Done, false), false);
     }
     assert!(s.known.len() <= KEEP);
     assert_eq!(s.last(&format!("k{KEEP}")), Some(Done), "the newest is kept");

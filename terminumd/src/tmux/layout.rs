@@ -40,13 +40,15 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
     // a host shows the session terminumd holds there and those the user attached, never the
     // host's others (OQ-81, AC-89)
     let panes: Vec<PaneFields> = all.into_iter().filter(|p| server.shows(&p.session)).collect();
-    let (agents, views) = agent_states(server, states, hooks, ending, &panes).await;
+    let (agents, views, behind) = agent_states(server, states, hooks, ending, &panes).await;
     // a restored pane's title (AC-15) gives way once a coding agent runs there again: its own
     for p in panes.iter().filter(|p| !p.restored_title.is_empty() && titles::agent_of(&p.command).is_some()) {
         let (s, pane) = (server.clone(), p.pane_id.clone());
         tokio::spawn(async move { s.run(format!("set -pqu -t {} @tm-title", super::args::word(&pane))).await });
     }
-    hooks.retain(&server.key(""), &panes.iter().map(|p| server.key(&p.pane_id)).collect::<Vec<_>>());
+    let live: Vec<String> = panes.iter().map(|p| server.key(&p.pane_id)).collect();
+    hooks.retain(&server.key(""), &live);
+    states.lock().retain(&server.key(""), &live);
     let mut groups: Vec<Value> = Vec::new();
     let mut map = HashMap::new();
     let mut keys = Vec::new();
@@ -85,6 +87,10 @@ pub async fn read(server: &Arc<Server>, states: &Mutex<States>, hooks: &Hooks, e
                 if let Some(d) = hooks.cwd(&key).filter(|d| *d != p.path) {
                     row["agentFolder"] = json!(titles::tilde(&d, home));
                     row["agentDir"] = json!(d);
+                }
+                // done, a shell, a monitor or a task it started still running (its quiet mark)
+                if behind.contains(&p.pane_id) && state == Some(agentstate::State::Done) {
+                    row["background"] = json!(true);
                 }
                 if let Some(h) = hook.filter(|h| h.state != agentstate::State::Done) {
                     for (k, v) in [("tool", &h.tool), ("why", &h.why)] {
@@ -215,52 +221,78 @@ fn maybe_codex(p: &PaneFields) -> bool {
 /// gives way to a screen that shows the agent at work (an approval answered fires no event until
 /// its tool ends), and a Stop whose turn waits (`ending`) to a footer that counts a shell or an
 /// agent it started, still running in the background (its screen read then, only its footer;
-/// past BACKGROUND_LIMIT, `ending`'s true, only an agent).
-/// Also the hooks' views, by pane, for the rows.
+/// past BACKGROUND_LIMIT, `ending`'s true, only an agent; then, done, its footer is read every
+/// STATE_EVERY while it counts a shell, a monitor or a task, for the row's mark).
+/// Also the hooks' views, by pane, for the rows, and the panes done with work in the background.
 async fn agent_states(server: &Server, states: &Mutex<States>, hooks: &Hooks, ending: &HashMap<String, bool>, panes: &[PaneFields])
-    -> (HashMap<String, Option<agentstate::State>>, HashMap<String, super::hookstate::View>) {
+    -> (HashMap<String, Option<agentstate::State>>, HashMap<String, super::hookstate::View>, HashSet<String>) {
     use agentstate::State::{Done, Waiting, Working};
     let now = Instant::now();
-    let (mut held, mut read, mut ended) = (HashMap::new(), Vec::new(), Vec::new());
-    for p in panes {
-        match hooks.view(&server.key(&p.pane_id), &p.command, now) {
-            Some(h) => {
-                if h.state == Waiting {
-                    read.push(p);
-                } else if let Some(&late) = ending.get(&server.key(&p.pane_id)).filter(|_| h.state == Done && h.agent == "claude") {
-                    ended.push((p, late));
+    let (mut held, mut read, mut ended, mut behind) = (HashMap::new(), Vec::new(), Vec::new(), HashSet::new());
+    {
+        let mut g = states.lock();
+        for p in panes {
+            let key = server.key(&p.pane_id);
+            match hooks.view(&key, &p.command, now) {
+                Some(h) => {
+                    let done = h.state == Done && h.agent == "claude";
+                    let lingers = if done { g.lingers(&key, now) } else { g.linger(&key, now, false); None };
+                    if h.state == Waiting {
+                        read.push(p);
+                    } else if let Some(&late) = ending.get(&key).filter(|_| done) {
+                        ended.push((p, late));
+                    } else if lingers == Some(true) {
+                        ended.push((p, true));
+                    } else if lingers == Some(false) {
+                        behind.insert(p.pane_id.clone());
+                    }
+                    held.insert(p.pane_id.clone(), h);
                 }
-                held.insert(p.pane_id.clone(), h);
+                None => read.push(p),
             }
-            None => read.push(p),
         }
     }
-    let mut out = screen_states(server, states, &read, now).await;
-    let busy = background(server, &ended).await;
+    let (mut out, seen) = screen_states(server, states, &read, now).await;
+    behind.extend(seen);
+    let footers = background(server, &ended).await;
+    let mut busy = HashSet::new();
+    {
+        let mut g = states.lock();
+        for ((p, late), footer) in ended.iter().zip(footers) {
+            let key = server.key(&p.pane_id);
+            let (keeps, mark) = agentstate::after_stop(*late, footer);
+            if keeps {
+                busy.insert(p.pane_id.clone());
+            }
+            if let Some(on) = mark {
+                g.linger(&key, now, on);
+            }
+            if g.lingers(&key, now).is_some() {
+                behind.insert(p.pane_id.clone());
+            }
+        }
+    }
     for (id, h) in &held {
         if !(h.state == Waiting && out.get(id) == Some(&Some(Working))) {
             out.insert(id.clone(), Some(if h.state == Done && busy.contains(id) { Working } else { h.state }));
         }
     }
-    (out, held)
+    (out, held, behind)
 }
 
-/// The panes of `panes` whose Claude Code footer counts work in the background, read now (no
-/// cached read: one from before the turn would say nothing): agents, or (not `late`) any.
-async fn background(server: &Server, panes: &[(&PaneFields, bool)]) -> HashSet<String> {
-    let Some(client) = server.bulk().filter(|_| !panes.is_empty()) else { return HashSet::new() };
+/// What the Claude Code footers of `panes` count in the background, read now (no cached read: one
+/// from before the turn would say nothing); None for a pane that could not be read.
+async fn background(server: &Server, panes: &[(&PaneFields, bool)]) -> Vec<Option<agentstate::Background>> {
+    let Some(client) = server.bulk().filter(|_| !panes.is_empty()) else { return vec![None; panes.len()] };
     let answers = client.run_all(panes.iter().map(|(p, _)| format!("capture-pane -p -J -t {}", p.pane_id)).collect()).await;
-    panes.iter().zip(answers).filter(|((_, late), a)| a.as_deref().is_ok_and(|rows| match agentstate::background_tasks(rows) {
-        agentstate::Background::Agents => true,
-        agentstate::Background::Tasks => !*late,
-        agentstate::Background::None => false,
-    })).map(|((p, _), _)| p.pane_id.clone()).collect()
+    answers.into_iter().map(|a| a.ok().map(|rows| agentstate::background_tasks(&rows))).collect()
 }
 
 /// Agent states of the panes that run a coding agent, read only when due; a `node` pane is one
 /// while its last read screen is Codex's (its state is `None` otherwise, as for any program).
-async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFields], now: Instant) -> HashMap<String, Option<agentstate::State>> {
-    let mut out = HashMap::new();
+async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFields], now: Instant)
+    -> (HashMap<String, Option<agentstate::State>>, HashSet<String>) {
+    let (mut out, mut behind) = (HashMap::new(), HashSet::new());
     let mut due = Vec::new();
     for &p in panes {
         let named = named_agent(p);
@@ -273,13 +305,16 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
             due.push(p);
         } else if named || g.codex(&key) {
             out.insert(p.pane_id.clone(), g.last(&key));
+            if g.behind(&key) {
+                behind.insert(p.pane_id.clone());
+            }
         }
     }
     if due.is_empty() {
-        return out;
+        return (out, behind);
     }
     let lines: Vec<String> = due.iter().map(|p| format!("capture-pane -p -J -t {}", p.pane_id)).collect();
-    let Some(client) = server.bulk() else { return out };
+    let Some(client) = server.bulk() else { return (out, behind) };
     let answers = client.run_all(lines).await;
     for (p, a) in due.iter().zip(answers) {
         let key = server.key(&p.pane_id);
@@ -287,15 +322,18 @@ async fn screen_states(server: &Server, states: &Mutex<States>, panes: &[&PaneFi
         let mut g = states.lock();
         let codex = !named_agent(p) && rows.as_deref().map_or(g.codex(&key), agentstate::codex_screen);
         // a pane that cannot be read shows no state this time (AC-39 failure)
-        let state = rows.map(|rows| g.limited(&key, agentstate::read(&p.pane_title, &rows), now));
-        if let Some(s) = state {
-            g.store(&key, &p.pane_title, now, s, codex);
+        let read = rows.map(|rows| g.limited(&key, agentstate::read(&p.pane_title, &rows), now));
+        if let Some(r) = read {
+            g.store(&key, &p.pane_title, now, r, codex);
         }
         if named_agent(p) || codex {
-            out.insert(p.pane_id.clone(), state);
+            out.insert(p.pane_id.clone(), read.map(|r| r.0));
+            if read.is_some_and(|r| r.1) {
+                behind.insert(p.pane_id.clone());
+            }
         }
     }
-    out
+    (out, behind)
 }
 
 /// Every pane listed once (AC-89): a tmux server reached twice (two hosts that are one machine,

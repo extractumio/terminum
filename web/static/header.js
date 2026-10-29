@@ -5,7 +5,7 @@
 // profile, titles). That last part gives way first, then the folder, down to a few letters each.
 // In a narrow window a tap on the title slides the buttons aside for 3 s and shows the session's
 // full name and path (peek.css).
-import { agentMark, el, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
+import { agentMark, backgroundMark, el, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
 import { following } from "./follow.js";
@@ -39,7 +39,7 @@ export function pageHeader({ copy, renaming, setAgent, send, sid, toChat, record
     if ((found?.item.id ?? null) !== shown) unpeek();
     shown = found?.item.id ?? null;
     $("current").querySelector(".t").textContent = found ? textForm(found.item.title) : "Choose a session";
-    $("curstate").replaceChildren(...[found && stateIcon(shownState(found.item))].filter(Boolean));
+    $("curstate").replaceChildren(...[found && (stateIcon(shownState(found.item)) ?? backgroundMark(found.item))].filter(Boolean));
     setAgent(found?.item.agent ?? null);
     plan.header(found?.item ?? null);
     if (!found) { $("cursub").replaceChildren(); $("curbar").replaceChildren(); $("curagent").replaceChildren(); full("", ""); }

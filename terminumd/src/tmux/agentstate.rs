@@ -240,6 +240,18 @@ fn claude_box(rows: &[String]) -> Option<usize> {
     rows[top + 1].trim_start().starts_with('\u{276f}').then_some(bottom)
 }
 
+/// After a Stop whose turn waits, what its footer says (`read`; None: it could not be read):
+/// whether that keeps the turn going (agents; shells, monitors and tasks until `late`,
+/// BACKGROUND_LIMIT on), and whether work runs behind its Done (the mark; None: as it was).
+pub fn after_stop(late: bool, read: Option<Background>) -> (bool, Option<bool>) {
+    match read {
+        Some(Background::Agents) => (true, Some(false)),
+        Some(Background::Tasks) => (!late, Some(late)),
+        Some(Background::None) => (false, Some(false)),
+        None => (false, None),
+    }
+}
+
 /// The state from the raw title and the screen's last rows.
 #[cfg(test)]
 pub fn state_of(title: &str, rows: &[String]) -> State {
@@ -275,10 +287,14 @@ pub fn read(title: &str, rows: &[String]) -> (State, bool) {
 /// spinner while it works) or [`STATE_EVERY`] passed: the list asks every 2 s for every agent.
 #[derive(Debug, Default)]
 pub struct States {
-    /// key -> title, read at, state, and whether a `node` pane's screen was Codex's
-    known: HashMap<String, (String, Instant, State, bool)>,
+    /// key -> title, read at, state, whether a `node` pane's screen was Codex's, and whether it
+    /// was done with work in the background still running (past BACKGROUND_LIMIT)
+    known: HashMap<String, (String, Instant, State, bool, bool)>,
     /// key -> since when only work in the background kept it working
     background: HashMap<String, Instant>,
+    /// key -> when its footer was read: a turn its hooks ended, done, its work in the background
+    /// still running
+    lingering: HashMap<String, Instant>,
 }
 
 impl States {
@@ -304,24 +320,50 @@ impl States {
         self.known.get(key).is_some_and(|k| k.3)
     }
 
-    /// The state read for `key` at `now` (`background`: Working only through the footer's work
-    /// in the background): Done once that has gone on for BACKGROUND_LIMIT.
-    pub fn limited(&mut self, key: &str, (state, background): (State, bool), now: Instant) -> State {
-        if !background {
-            self.background.remove(key);
-            return state;
-        }
-        let since = *self.background.entry(key.to_string()).or_insert(now);
-        if now.saturating_duration_since(since) >= BACKGROUND_LIMIT { State::Done } else { state }
+    /// Whether the screen last read for `key` was done with work in the background still running.
+    pub fn behind(&self, key: &str) -> bool {
+        self.known.get(key).is_some_and(|k| k.4)
     }
 
-    /// Remembers `state`, read at `now` for `title`, and whether the screen was Codex's.
-    pub fn store(&mut self, key: &str, title: &str, now: Instant, state: State, codex: bool) {
+    /// The state read for `key` at `now` (`background`: Working only through the footer's work
+    /// in the background): Done once that has gone on for BACKGROUND_LIMIT, and then whether
+    /// that work still runs (its mark).
+    pub fn limited(&mut self, key: &str, (state, background): (State, bool), now: Instant) -> (State, bool) {
+        if !background {
+            self.background.remove(key);
+            return (state, false);
+        }
+        let since = *self.background.entry(key.to_string()).or_insert(now);
+        if now.saturating_duration_since(since) >= BACKGROUND_LIMIT { (State::Done, true) } else { (state, false) }
+    }
+
+    /// Remembers `state`, read at `now` for `title`, whether the screen was Codex's, and whether
+    /// work in the background ran behind a Done.
+    pub fn store(&mut self, key: &str, title: &str, now: Instant, (state, behind): (State, bool), codex: bool) {
         if self.known.len() >= KEEP && !self.known.contains_key(key) {
             self.known.clear();
             self.background.clear();
+            self.lingering.clear();
         }
-        self.known.insert(key.to_string(), (title.to_string(), now, state, codex));
+        self.known.insert(key.to_string(), (title.to_string(), now, state, codex, behind));
+    }
+
+    /// A turn its hooks ended, done with work in the background still running: Some(whether its
+    /// footer is due to be read again at `now`), None when it is not one.
+    pub fn lingers(&self, key: &str, now: Instant) -> Option<bool> {
+        self.lingering.get(key).map(|at| now.saturating_duration_since(*at) >= STATE_EVERY)
+    }
+
+    /// Forgets the panes of the server keyed by `prefix` that are not `live` (closed).
+    pub fn retain(&mut self, prefix: &str, live: &[String]) {
+        let keep = |k: &String| !k.starts_with(prefix) || live.contains(k);
+        self.background.retain(|k, _| keep(k));
+        self.lingering.retain(|k, _| keep(k));
+    }
+
+    /// Says whether `key`'s footer, read at `now`, still counts work in the background behind its Done.
+    pub fn linger(&mut self, key: &str, now: Instant, on: bool) {
+        if on { self.lingering.insert(key.to_string(), now); } else { self.lingering.remove(key); }
     }
 
     /// Forgets a pane (its state is read anew).
