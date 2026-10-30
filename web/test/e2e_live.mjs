@@ -121,8 +121,10 @@ async function wide(browser, name) {
   check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
   await liveQuick(page, { tmux, work: WORK });
   await liveSplit(page, { tmux, work: WORK });
-  tmux("new-window", "-d", "-n", "byhand");
-  await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction(() => document.getElementById("sessions").innerText.includes("byhand"), null, { timeout: 3000 }));
+  // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
+  const byhandName = `byhand-${name}`;
+  tmux("new-window", "-d", "-n", byhandName);
+  await within("AC-01 a window made by hand shows in the list", () => page.waitForFunction((n) => document.getElementById("sessions").innerText.includes(n), byhandName, { timeout: 3000 }));
   await within("AC-70 Files is docked and shows the pane's folder", async () => {
     const frame = await (await page.waitForSelector("#files:not([hidden])", { timeout: 5000 })).contentFrame();
     await frame.waitForFunction(() => document.body.innerText.includes("alpha.txt"), null, { timeout: 8000 });
@@ -190,17 +192,21 @@ async function wide(browser, name) {
   check("AC-08 terminumd marks the tmux server it started with its own executable",
     tmux("show-options", "-gqv", "@terminum-started-by") === fs.realpathSync(BIN), tmux("show-options", "-gqv", "@terminum-started-by"));
   // what a restart of terminumd (an upgrade) keeps: a row marked unread (AC-93), a color scheme picked (AC-12)
-  const byhand = page.locator("#sessions .item", { hasText: "byhand" }).last();
+  const byhand = page.locator("#sessions .item", { hasText: byhandName });
   await byhand.click({ button: "right" });
   await page.click('#rowmenu button[data-action="unread"]');
-  await within("AC-93 Mark as Unread marks the row", () => page.waitForFunction(() => [...document.querySelectorAll("#sessions .item.unread")].some((r) => r.innerText.includes("byhand")), null, { timeout: 5000 }));
+  const unreadRow = () => page.waitForFunction((n) => [...document.querySelectorAll("#sessions .item.unread")].some((r) => r.innerText.includes(n)), byhandName, { timeout: 5000 })
+    .then(() => "", async (e) => `${e.message} — rows: ${JSON.stringify(await page.evaluate(() => [...document.querySelectorAll("#sessions .item")].map((r) => [r.innerText.split("\n")[0], r.className])))}`);
+  const marked = await unreadRow();
+  check("AC-93 Mark as Unread marks the row", !marked, marked);
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme="Nord"]');
   await page.keyboard.press("Escape");
   await stop();
   await start();
   await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3 && !document.getElementById("status").innerText.includes("not running"), null, { timeout: 8000 }));
-  await within("AC-93 a row marked unread is still unread after terminumd restarts", () => page.waitForFunction(() => [...document.querySelectorAll("#sessions .item.unread")].some((r) => r.innerText.includes("byhand")), null, { timeout: 5000 }));
+  const still = await unreadRow();
+  check("AC-93 a row marked unread is still unread after terminumd restarts", !still, still);
   check("AC-12 the color scheme picked is kept across the restart", kept() === "Nord" && await bg(page) === "#2e3440", `${kept()} ${await bg(page)}`);
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme=""]');

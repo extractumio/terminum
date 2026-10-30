@@ -7,7 +7,9 @@ import path from "node:path";
 import { check } from "./check.mjs";
 
 export async function liveFolds(page, { tmux, work }) {
-  const pane = tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
+  // the pane shown, where the keys go (another pane may be in the same folder: a split, the other browser's)
+  const pane = await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id?.split(":").pop())
+    ?? tmux("list-panes", "-a", "-F", "#{pane_id} #{pane_current_path}").split("\n").map((l) => l.split(" ")).find((p) => p[1] === work)?.[0];
   const rows = Number(tmux("display", "-p", "-t", pane, "#{pane_height}"));
   // a tool's call and output, blank rows, then the next call whose output fills the screen but a few
   // rows (the shell's prompt takes some): the screen's top falls among the blank rows
@@ -15,13 +17,19 @@ export async function liveFolds(page, { tmux, work }) {
     "⏺ Bash(sed -n 1,9p b.rs)", "  ⎿  next", ...Array.from({ length: rows - 7 }, (_, i) => `     more ${i}`)];
   const file = path.join(work, "agent.txt");
   fs.writeFileSync(file, lines.join("\n") + "\n");
+  // the folds of this label already there (another browser's run in the same pane): only a new one counts
+  const folds = () => [...document.querySelectorAll("#hist .ln.wg-fold")]
+    .filter((h) => h.shadowRoot?.querySelector('[data-act="fold"]')?.textContent === "⋯ 10 more lines of output").length;
+  const before = await page.evaluate(folds);
+  const more = (n) => [...document.querySelectorAll("#hist .ln.wg-fold")]
+    .filter((h) => h.shadowRoot?.querySelector('[data-act="fold"]')?.textContent === "⋯ 10 more lines of output").length > n;
   await page.click("#term");
   await page.keyboard.type(`clear; cat ${file}`);
   await page.keyboard.press("Enter");
-  const label = await page.waitForFunction(() => [...document.querySelectorAll("#hist .ln.wg-fold")]
-    .map((h) => h.shadowRoot?.querySelector('[data-act="fold"]')?.textContent).find((t) => t === "⋯ 10 more lines of output") ?? null, null, { timeout: 5000 })
-    .then((h) => h.jsonValue(), () => null);
-  const screen = tmux("capture-pane", "-p", "-t", pane);   // the screen alone: the next call there, all of the first above it
+  let screen = "";                                         // the screen alone: the next call there, all of the first above it
+  for (let i = 0; i < 50 && !screen.includes("more 0"); i++) { screen = tmux("capture-pane", "-p", "-t", pane); await page.waitForTimeout(100); }
+  const label = await page.waitForFunction(more, before, { timeout: 5000 })
+    .then(() => "⋯ 10 more lines of output", () => null);
   const next = screen.includes("⏺ Bash(sed -n 1,9p b.rs)") && !screen.includes("11: line");
   check("AC-32 a tool's output that scrolled off folds while the next tool's ⏺ is still on the screen", label !== null && next, JSON.stringify({ label, next, rows, top: screen.split("\n").slice(0, 4) }));
   fs.rmSync(file, { force: true });
