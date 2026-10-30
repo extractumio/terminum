@@ -1,6 +1,6 @@
 # Commercial license
 
-iterm-enhancer is dual-licensed:
+terminum is dual-licensed:
 
 | License | Who it is for | Main terms |
 |---|---|---|
