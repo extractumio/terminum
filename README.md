@@ -1,74 +1,49 @@
 # terminum
 
-**The agentic IDE for vibe coding, built on tmux and made for working on the go.**
+**The self-hosted, tmux-native browser IDE for running dozens of coding agents at once, from your
+desk or your phone.**
 
 [![terminum on a monitor, a laptop and a phone: one Claude Code session on all three](docs/images/terminum-devices.jpg)](https://terminum.app/)
 
-Run Claude Code, Codex and your shells in real terminals on your Mac and your servers, and pick
-them up from any browser: the laptop on your desk or the iPhone in your pocket. Every session
-lives in tmux, so nothing is lost when you close a tab, switch devices or reboot.
+No app, no account, no vendor relay: terminum runs on your Mac or Linux server, and your devices
+reach it over your own network.
 
-## Why terminum
+## Features
 
-### Real terminals, on every screen
+### Local or remote: no difference
 
-- **A true terminal in the browser.** tmux does the emulation, so vim, htop, mc, Claude Code and
-  Codex look exactly as in a native terminal, with Screen mode for full-screen programs.
-- **One workspace, every device.** Start on the Mac, carry on from the phone: the same sessions,
-  projects and bookmarks, live, with the pane sized to the screen you read it on.
-- **Built for the phone.** A touch-first layout, a hot-key row, paste and file upload: real work
-  on an iPhone, not just a peek.
-- **Splits and sessions as in tmux.** Split panes, windows, a Quick shell under any pane; attach
-  the tmux sessions you already run, without disturbing them.
-- **Sessions that never die.** They outlive the browser and the server, and after a reboot come
-  back with their windows, splits and folders; a session's menu shows its last 300 lines from
-  before the restart.
+- **Same agents:** Claude Code and Codex on your Mac, your Linux server or any ssh host, in one
+  session list.
+- **Same files:** browse and edit files on any host, no sftp client needed.
+- **Same viewer:** JSON as a tree, CSV and TSV as tables; PDF, audio, video and MIDI play in place.
+- **Same clipboard:** paste screenshots, drop files (and folders from a Mac's Finder); they land on
+  the session's host.
+- **Zero server setup:** only tmux needed; reconnects by itself.
 
-### Made for coding agents
+### Keep track of every agent
 
-- **Claude Code and Codex hooks.** One command (`terminum hooks install`) and every session shows
-  what its agent does: working, waiting for your approval, done, running subagents. It also adds
-  terminum's MCP server, through which the agent keeps the session's plan, progress and notes for
-  you (in Codex a marked block in `~/.codex/config.toml`; trust terminum's hooks once in Codex's
-  `/hooks` and restart running Codex sessions). Outside terminum the server offers no tools.
-- **Plans, progress and notes.** Each agent session shows its plan as a percent in the list;
-  the Plan pane has the steps, the agent's ETA and the notes it left you (bugs, follow-ups,
-  questions), with Done and Insert into chat. Agents on your ssh hosts too, once enabled per host.
-- **Alerts across sessions.** See at a glance which agent waits for you, and which finished while
-  you were away, without opening each session.
-- **Quote & Ask.** Select any output, ask about it, and the quote and your question go straight
-  to the agent.
-- **Bookmarks and reminders.** Pin a line of output; a reminder comes up when the agent ends
-  its turn.
-- **Navigate the conversation.** Your prompts, the agent's answers and your bookmarks are marked
-  along the history: jump to any of them, or type an earlier prompt again.
-- **Screenshots in one paste, even over ssh.** ⌘V an image into the terminal and Claude Code
-  receives it, on your Mac or in a session on a remote server: terminum carries the file to the
-  host for you, a thing a plain terminal can't do. Dropped files go the same way.
+- **Plan and ETA:** the agent keeps its plan via MCP; the list shows its percent done.
+- **Agent notes:** findings and follow-ups saved per session, never lost in the scroll.
+- **Cross-session alerts:** an agent waiting for you shows up in every session.
+- **Status at a glance:** working, waiting, done, subagents.
 
-### An IDE around your terminal
+These come with `terminum hooks install` (see [the guide](docs/USAGE.md)).
 
-- **Files beside the terminal, local and remote.** A file tree that follows the pane's folder,
-  a viewer and an editor with highlighting; create, rename, move to Trash. It works the same in
-  an ssh session: browse and edit the server's files next to its terminal, with no sftp client
-  or remote editor to set up.
-- **Rich output.** Markdown, code, Mermaid diagrams, tables and links rendered right inside the
-  terminal output, with folds for long blocks.
-- **Many projects, one list.** Sessions grouped into colored projects, ⌘[ / ⌘] to go back and
-  forth between sessions, search through the history, 20 color schemes.
+### Talk to agents precisely
 
-### Your servers, one page
+- **Quote & Ask:** select text, comment, sent as a numbered quote.
+- **Bookmarks and reminders:** mark a line now, come back to it later.
+- **Rendered chat:** Markdown, tables and Mermaid drawn in the output.
 
-- **Remote hosts over ssh.** Add a host by its ssh command; terminum keeps its tmux connected and
-  reconnects after a drop.
-- **Zero setup on the server.** Only tmux is needed there: terminum copies and updates its own
-  helper for the host's files (Linux and macOS).
+### Any screen, nothing lost
 
-### Private by design
+- **Phone, iPad, desktop:** the full IDE in the browser, touch-ready.
+- **Survives reboots:** sessions, windows and splits come back with their last 300 lines.
+- **Real terminal:** tmux emulates; vim, htop and agents look native.
 
-- Listens on loopback only, every browser signs in with your password, other devices come over
-  Tailscale's HTTPS; terminal output and files never run script in the page; releases are
-  signed. Details in [SECURITY.md](SECURITY.md).
+### Yours to bend
+
+- **Open source, AGPL-3.0:** released almost daily, made to be forked.
 
 ## Install
 
@@ -98,6 +73,7 @@ shows a chip when one is out.
 sudo apt install tmux curl openssh-client
 curl -fsSL https://github.com/extractumio/terminum/releases/latest/download/install.sh | sh
 terminum password
+terminum hooks install   # optional: exact states from Claude Code and Codex
 ```
 
 terminumd runs as a systemd user service (`sudo loginctl enable-linger $USER` keeps it, and the
@@ -105,28 +81,28 @@ terminals, after you log out). Open the page from your computer through
 `ssh -L 48080:127.0.0.1:48080 <server>` at `http://127.0.0.1:48080/`, or with `tailscale serve` on
 the server.
 
-### A Linux server's tmux
+### A remote host's tmux
 
-Install tmux there (`sudo apt install tmux`) and make sure the Mac reaches it with `ssh`; then,
-on the Mac:
+Install tmux on the host (Linux or macOS) and make sure the machine running terminum reaches it
+with `ssh`; then, there:
 
 ```bash
 terminum hosts add devbox 'alex@devbox.example' --files
 ```
 
 Its tmux sessions and, with `--files`, its files show on the page; terminum copies its helper
-there and keeps it at the Mac's version.
+there and keeps it at terminum's version.
 
 ### Over Tailscale
 
 To open terminum on your phone or another computer, serve it on your tailnet and sign in at
-`https://<mac>.<tailnet>.ts.net/`:
+`https://<machine>.<tailnet>.ts.net/`:
 
 ```bash
 tailscale serve --bg --https=443 http://127.0.0.1:48080
 ```
 
-This takes the Mac's tailnet name. To keep that name for another service, give terminum a name of
+This takes the machine's tailnet name. To keep that name for another service, give terminum a name of
 its own with a Tailscale Service: see [Over Tailscale](docs/USAGE.md#over-tailscale) in the guide.
 
 ## Learn more
