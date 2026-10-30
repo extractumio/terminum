@@ -66,13 +66,18 @@ export function selection(term, view) {
 /** The range's first line on the screen (where the selection starts). */
 const firstRect = (range) => [...range.getClientRects()].find((r) => r.height > 0) ?? range.getBoundingClientRect();
 
+/** How far the floating buttons' column's left is from the terminal's text's right edge: a 32 px
+ *  button, 8 px from the scrollbar's 18. */
+const COLUMN_IN = 18 + 8 + 32;
+/** The floating buttons' column's left in the terminal's area (marks.js placeFab; the selection's
+ *  buttons too, where the column is not drawn: a split's embedded page). */
+export const columnLeft = (term) => `${term.offsetLeft + term.clientLeft + term.clientWidth - COLUMN_IN}px`;
+/** The same, in the window (fabpane.js placeWindow). */
+export const columnX = (term) => term.getBoundingClientRect().left + term.clientLeft + term.clientWidth - COLUMN_IN;
+
 /** Shows `button` while text in `term` (within `main`) is selected, `copyButton` above it and
  *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text, n) (the text
  *  as taken while it was selected). */
-/** The floating buttons' column's left in the terminal's area (marks.js placeFab; the selection's
- *  buttons too, where the column is not drawn: a split's embedded page). */
-export const columnLeft = (term) => `${term.offsetLeft + term.clientLeft + term.clientWidth - 18 - 8 - 32}px`;
-
 export function markPicker({ term, main, button, copyButton, askButton, view, onPick, onCopy, onAsk }) {
   let kept = null, hide = 0, frame = 0, copied = false;
   const floating = matchMedia(FLOATING);

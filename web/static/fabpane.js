@@ -6,8 +6,12 @@
 // button, centered on it, or under it where the view is too narrow (then `data-under` is set).
 
 import { floats } from "./fold.js";   // a phone or a narrow window
+import { columnX } from "./markpick.js";
 
 const GAP = 14;                // px between a button and its pane
+
+/** `start` moved so that a box `own` long stays `gap` px inside 0…`max` (the window's width or height). */
+export const inside = (start, own, max, gap = 8) => Math.round(Math.max(gap, Math.min(start, max - own - gap)));
 
 /** On a phone or a narrow window `el` is a centered modal sheet (sheets.css, AC-18): its inline
  *  place is cleared and `data-sheet` set, true returned; elsewhere false and the caller places it.
@@ -76,17 +80,14 @@ function shadeUnder(el, close, focus) {
   if (focus && !el.contains(document.activeElement)) el.querySelector("button:not(:disabled), input, textarea, [tabindex]")?.focus({ preventScroll: true });
 }
 
-const COLUMN = ["findfab", "marksfab", "sentfab"];   // the floating column, one of them shown with the terminal
-
 /** On a computer `pane` is a window as View's (style.css #filewin, panewin.css): 12 px under the
- *  terminal's top and 16 px over its end, its right edge 14 px left of `fab` (or of the floating
- *  column when `fab` is not in it; the terminal's edge without one), 820 px wide at most, 16 px in
+ *  terminal's top (the banners stand above the terminal) and 16 px over its end, its right
+ *  edge 14 px left of the floating buttons' column (markpick.js), 820 px wide at most, 16 px in
  *  from the terminal's left. */
-function placeWindow(pane, fab) {
-  const area = pane.offsetParent?.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
+function placeWindow(pane) {
+  const area = pane.offsetParent?.getBoundingClientRect(), term = document.getElementById("term"), t = term.getBoundingClientRect();
   if (pane.hidden || !area) return;
-  const b = [fab, ...COLUMN.map((id) => document.getElementById(id))].find((e) => e?.offsetWidth && e.getBoundingClientRect().left > t.left + t.width / 2)?.getBoundingClientRect();
-  const right = (b ? b.left : t.right) - 14, left = Math.max(t.left + 16, right - 820);
+  const right = columnX(term) - 14, left = Math.max(t.left + 16, right - 820);
   Object.assign(pane.style, { left: `${Math.round(left - area.left)}px`, top: `${Math.round(t.top + 12 - area.top)}px`,
     width: `${Math.round(right - left)}px`, height: `${Math.max(240, Math.round(t.height - 28))}px` });
   delete pane.dataset.under;
@@ -94,10 +95,10 @@ function placeWindow(pane, fab) {
 
 /** A floating button's pane: a window as View's on a computer (placeWindow), a sheet elsewhere
  *  (placeModal, its window's size let go; `close` takes a press on its shade). Nothing while hidden. */
-export function placePane(pane, fab, close) {
+export function placePane(pane, close) {
   if (pane.hidden) return;
   if (placeModal(pane, close)) for (const p of ["width", "height"]) pane.style.removeProperty(p);
-  else placeWindow(pane, fab);
+  else placeWindow(pane);
 }
 
 /** Places `pane` beside `fab` (nothing while it is hidden). */
@@ -106,7 +107,7 @@ export function placeBeside(fab, pane) {
   const area = fab.offsetParent;
   if (area && fab.offsetTop > area.clientHeight / 2) {      // a button at the bottom (a phone's row): the pane above it
     pane.style.top = `${Math.max(8, fab.offsetTop - 8 - pane.offsetHeight)}px`;
-    pane.style.left = `${Math.max(8, Math.min(fab.offsetLeft, area.clientWidth - pane.offsetWidth - 8))}px`;
+    pane.style.left = `${inside(fab.offsetLeft, pane.offsetWidth, area.clientWidth)}px`;
     delete pane.dataset.under;
     return;
   }
@@ -132,8 +133,20 @@ function scrim(onPress) {
   return el;
 }
 
-/** fab, pane, close: elements; onToggle(open) after it opened or closed. {toggle(on?), open(), place()}. */
-export function fabPane({ fab, pane, close, onToggle }) {
+/** fab, pane, close: elements; onToggle(open) after it opened or closed; onPlace() after it was
+ *  placed. {toggle(on?), open(), place()}. */
+// a banner shown or gone moves the terminal, and so the open panes (banners.js: they all stand
+// beside #status); one watcher for every pane, each placing itself only while open
+const placers = [];
+let banners = null;
+function onBanner(place) {
+  placers.push(place);
+  if (banners) return;
+  banners = new MutationObserver(() => { for (const p of placers) p(); });
+  banners.observe(document.getElementById("status").parentElement, { subtree: true, attributes: true, attributeFilter: ["hidden"] });
+}
+
+export function fabPane({ fab, pane, close, onToggle, onPlace }) {
   let open = false, back = null;
   function toggle(on = !open) {
     if (on === open) return;
@@ -146,7 +159,8 @@ export function fabPane({ fab, pane, close, onToggle }) {
     onToggle(on);
     place();
   }
-  const place = () => placePane(pane, fab);
+  const place = () => { placePane(pane); if (!pane.hidden) onPlace?.(); };
+  onBanner(place);
   fab.addEventListener("click", () => toggle());
   fab.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
   close.addEventListener("click", () => toggle(false));

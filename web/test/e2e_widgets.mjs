@@ -17,7 +17,7 @@ export const CSP = "default-src 'self'; img-src 'self' data: blob:; media-src 's
 const ORIGIN = "http://web.test";
 const TYPES = { html: "text/html", css: "text/css", svg: "image/svg+xml", js: "text/javascript", png: "image/png" };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
-const LAYOUT = [{ kind: "window", label: "Window 1", where: "", host: null, wid: "W1", new: "New tab", pool: "", items: [
+export const LAYOUT = [{ kind: "window", label: "Window 1", where: "", host: null, wid: "W1", new: "New tab", pool: "", items: [
   { id: "S1", title: "One", sub: ["zsh", "~/p"], index: "", host: null, profile: "Default", agent: null, shell: true, state: "" }] }];
 const THEME = { bg: "#1e1e1e", fg: "#d4d4d4", cursor: "#ffffff", cursorText: "#000000", bold: "#ffffff", useBold: false,
   ansi: ["#000", "#c33", "#3c3", "#cc3", "#33c", "#c3c", "#3cc", "#ccc", "#666", "#f66", "#6f6", "#ff6", "#66f", "#f6f", "#6ff", "#fff"], font: null, size: null };

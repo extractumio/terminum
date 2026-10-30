@@ -4,20 +4,21 @@
 // terminal, Done and Delete with Undo for 5 s, the bar's Done, Quote in chat), and an agent's
 // record: found where its call was printed (by its title), its text as Markdown.
 import { check } from "./check.mjs";
-import { open } from "./e2e_widgets.mjs";
+import { LAYOUT, open } from "./e2e_widgets.mjs";
+import { pressFab } from "./fake.mjs";
 
 const line = (text) => ({ r: [[text, null, null, 0]], e: true });
 const HIST = Array.from({ length: 400 }, (_, i) => line(`out ${i} lorem ipsum`));
 HIST[300] = line('⏺ terminum - add_notes_for_user (MCP)(notes: [{"title": "Final report: retry loop fixed", "text": "…"}])');
 const at0 = 1790000000;
 const ITEMS = [
-  { id: "A", sid: "S1", n: 200, text: "out 200 lorem ipsum", note: "second by line", title: "One", at: at0 + 9 },
+  { id: "A", sid: "S1", n: 200, text: "out 200 lorem ipsum", note: "second by line\nwith a **second** line", title: "One", at: at0 + 9 },
   { id: "B", sid: "S1", n: 100, text: "out 100 lorem ipsum", note: "first by line", title: "One", at: at0 + 1 },
   { id: "C", sid: "S1", n: 150, text: "out 150 lorem ipsum", note: "check the deploy", title: "One", at: at0 + 2, remind: true, due: true },
   { id: "D", sid: "S1", n: 160, text: "out 160 lorem ipsum", note: "settled", title: "One", at: at0 + 3, remind: true, resolved: at0 + 4 },
   { id: "R", sid: "S1", n: -1, note: "Final report: retry loop fixed", text: "**Fixed** the retry loop.\n\n- `src/retry.rs`\n- next: add a test",
     title: "One", at: at0 + 5, by: "claude", kind: "report" },
-  { id: "Q", sid: "S1", n: -1, note: "Decide the API name", text: "fetch_all or list_all?", title: "One", at: at0 + 6, by: "codex", remind: true },
+  { id: "Q", sid: "S1", n: -1, note: "Decide the API name", text: "fetch_all or list_all? See [the PR](https://example.com/pr/1).", title: "One", at: at0 + 6, by: "codex", remind: true },
 ];
 const mod = process.platform === "darwin" ? "Meta" : "Control";
 
@@ -71,6 +72,55 @@ export async function webMarkNav(browser, name) {
     && next.strong === "Fixed" && next.items === 2 && !sent.slice(from).some((m) => m.t === "locate") && shown.acts.join() === "Show in terminal,Resolve,Quote in chat"
     && shown.place.left && shown.place.right
     && shown.wrap === "pre-wrap" && shown.tall === 28, JSON.stringify({ shown, next }));
+
+  // the list on top, each its title, its time at its right and its text's start on one line; the view under it past the line
+  const layout = () => page.evaluate(() => {
+    const r = (s) => document.querySelector(s).getBoundingClientRect(), [list, grip, view] = ["#markpane .mknav", "#markpane .mkgrip", "#markpane .mkview"].map(r);
+    const row = (id) => { const li = document.querySelector(`#markpane li[data-id="${id}"]`), note = li.querySelector(".note").getBoundingClientRect(), meta = li.querySelector(".meta").getBoundingClientRect(), snip = li.querySelector(".snip");
+      return { snip: snip?.textContent ?? null, oneLine: snip ? snip.getBoundingClientRect().height < 24 : null, metaRight: meta.left >= note.right && Math.abs(meta.top - note.top) < 4 }; };
+    let saved = null; try { saved = localStorage.getItem("markShare"); } catch { /* none */ }
+    const ul = document.querySelector("#markpane .mknav");
+    return { fits: ul.scrollHeight <= ul.clientHeight + 1, stacked: list.bottom <= grip.top + 0.5 && grip.bottom <= view.top + 0.5 && Math.abs(list.left - view.left) < 1 && Math.abs(list.width - view.width) < 1,
+      list: Math.round(list.height), view: Math.round(view.height), gripMid: Math.round(grip.top + grip.height / 2), gripX: Math.round(grip.left + grip.width / 2),
+      chosen: document.querySelector("#markpane li.chosen")?.dataset.id, now: document.querySelector("#markpane .mkgrip").getAttribute("aria-valuenow"), saved,
+      R: row("R"), A: row("A"), B: row("B") };
+  });
+  const half = await layout();
+  check(`AC-33 ${at} the list on top, as tall as its 5 rows (under half), the view under it: each entry its title, its time at its right, its text's start on one line with no Markdown marks or breaks`,
+    half.stacked && half.fits && half.list < half.view && half.now === "50" && half.R.snip === "Fixed the retry loop. src/retry.rs next: add a test" && half.R.oneLine
+    && half.R.metaRight && half.A.snip === "out 200 lorem ipsum" && half.B.metaRight, JSON.stringify(half));
+  await page.mouse.move(half.gripX, half.gripMid);
+  await page.mouse.down();
+  await page.mouse.move(half.gripX, half.gripMid - 80, { steps: 4 });
+  await page.mouse.up();
+  const dragged = await layout();
+  await page.keyboard.press("ArrowDown");                     // the pane kept the keys: ↓ still chooses
+  const keys = await layout();
+  await page.focus("#markpane .mkgrip");
+  await page.keyboard.press("ArrowUp");                       // the focused line: ↑ moves it, the list's choice stays
+  const stepped = await layout();
+  await pressFab(page, "#marksfab");
+  await pressFab(page, "#marksfab");
+  await page.waitForSelector("#markpane .mknav li");
+  const again = await layout();
+  check(`AC-33 ${at} the line dragged 80 px up shares the height so, the keys stay the list's; ↑ on the focused line moves it 5%; kept when the pane opens again`,
+    Math.abs(dragged.list - (half.list - 80)) <= 2 && !dragged.fits && dragged.chosen === "R" && keys.chosen !== "R"
+    && Math.abs(Number(stepped.now) - (Number(dragged.now) - 5)) <= 1 && stepped.list < dragged.list && stepped.chosen === keys.chosen && Number(stepped.saved) * 100 - Number(stepped.now) < 0.6
+    && Math.abs(again.list - stepped.list) <= 1, JSON.stringify({ dragged, keys, stepped, again }));
+  await page.mouse.dblclick(again.gripX, again.gripMid);       // a double click: half and half again
+  const reset = await layout();
+  check(`AC-33 ${at} a double click on the line: half at most again, the list as tall as its rows`, reset.now === "50" && reset.fits && Math.abs(reset.list - half.list) <= 1, JSON.stringify(reset));
+  await page.click('#markpane li[data-id="R"] .mkitem');
+
+  // a note of two lines with Markdown: one line in the list and the title, whole above its text in the view
+  await page.click('#markpane li[data-id="A"] .mkitem');
+  await page.waitForTimeout(400);
+  const noted = await page.evaluate(() => { const body = document.querySelector("#markpane .mkvbody").shadowRoot.querySelector(".body");
+    return { row: document.querySelector('#markpane li[data-id="A"] .note').textContent, title: document.querySelector("#markpane .mkvtitle").textContent,
+      strong: body.querySelector("p strong")?.textContent, pre: body.querySelector("pre")?.textContent.trim() }; });
+  check(`AC-33 ${at} a note of two lines with Markdown: one line without its marks in the list and the title, whole as Markdown above the text in the view`,
+    noted.row === "second by line with a second line" && noted.title === noted.row && noted.strong === "second" && noted.pre === "out 200 lorem ipsum", JSON.stringify(noted));
+  await page.click('#markpane li[data-id="R"] .mkitem');
 
   // Enter: shown in the terminal, found by its title where its call was printed; the pane closes, the terminal has the keys
   await page.keyboard.press("Enter");
@@ -134,13 +184,81 @@ export async function webMarkNav(browser, name) {
   check(`AC-33 ${at} the view's Quote in chat pastes the note and its text quoted, no Enter; the pane closes`,
     quoted.includes("first by line") && quoted.includes("> out 100 lorem ipsum") && !after, JSON.stringify({ quoted, after }));
 
-  // the reminders' pane: an agent's record with its mark, its text as Markdown, not a quote
+  // the reminders' pane: the same navigator of the reminders only; an agent's with its mark, its text as Markdown, its link in the theme's link color
   await page.click("#remindfab");
-  await page.waitForSelector("#remindlist .rmitem");
-  const pane = await page.evaluate(() => [...document.querySelectorAll("#remindlist .rmitem")].map((li) => ({ mark: !!li.querySelector(".rmwhere .agmark"),
-    quote: !!li.querySelector("blockquote"), text: li.querySelector(".markdown").textContent.trim() })));
-  check(`AC-98 ${at} the reminders' pane shows an agent's reminder with its mark, its text as Markdown (no quote)`,
-    pane.some((p) => p.mark && !p.quote && p.text.includes("fetch_all or list_all?")), JSON.stringify(pane));
+  await page.waitForSelector("#remindpane .mknav li");
+  await page.click('#remindpane li[data-id="Q"] .mkitem');
+  await page.waitForTimeout(500);
+  const pane = await page.evaluate(() => {
+    const body = document.querySelector("#remindpane .mkvbody")?.shadowRoot?.querySelector(".body"), a = body?.querySelector("a");
+    const probe = (parent) => { const s = document.createElement("span"); s.style.color = "var(--link)"; parent.append(s); const c = getComputedStyle(s).color; s.remove(); return c; };
+    // the page's own Markdown (the sent history, Open all) takes the same sheet
+    const page = Object.assign(document.createElement("div"), { className: "markdown", innerHTML: '<a href="https://example.com/x">x</a>' });
+    document.body.append(page);
+    const out = { title: document.querySelector("#remindpane .pwtitle").textContent, ids: [...document.querySelectorAll("#remindpane .mknav li")].map((l) => l.dataset.id),
+      mark: !!document.querySelector('#remindpane li[data-id="Q"] .note .agmark'), quote: !!body?.querySelector("blockquote, pre"), text: body?.textContent.trim(),
+      link: a && getComputedStyle(a).color, want: probe(document.body), pageLink: getComputedStyle(page.querySelector("a")).color,
+      acts: [...document.querySelectorAll("#remindpane .mkvacts button")].map((b) => b.textContent.trim()), grip: !!document.querySelector("#remindpane .mkgrip") };
+    page.remove();
+    return out;
+  });
+  const blue = ["rgb(0, 0, 238)", "rgb(85, 26, 139)", "rgb(0, 0, 255)"];
+  // a layout while it is open (they come often while agents work): its rows not made again; Resolve here, Undo on the bookmarks' pane
+  const rowBefore = await page.evaluate(() => { window.__row = document.querySelector('#remindpane li[data-id="Q"]'); return !!window.__row; });
+  say({ t: "layout", groups: LAYOUT });
+  await page.waitForTimeout(200);
+  const kept = await page.evaluate(() => document.querySelector('#remindpane li[data-id="Q"]') === window.__row);
+  await page.click("#remindpane .mkvdone");
+  await page.keyboard.press("Escape");
+  await pressFab(page, "#marksfab");
+  await page.waitForSelector('#markpane li[data-id="Q"]');
+  const shared = await page.evaluate(() => ({ pending: document.querySelector('#markpane li[data-id="Q"]').classList.contains("pending"), undo: !!document.querySelector('#markpane li[data-id="Q"] .mkundo') }));
+  await page.click('#markpane li[data-id="Q"] .mkundo');
+  const from2 = sent.length;
+  await page.waitForTimeout(5300);
+  check(`AC-91 ${at} a layout while the reminders' pane is open makes no row again; Resolve there is pending in the bookmarks' pane, whose Undo takes it back (nothing sent)`,
+    rowBefore && kept && shared.pending && shared.undo && !sent.slice(from2).some((m) => m.t === "remind" && m.id === "Q"), JSON.stringify({ rowBefore, kept, shared }));
+  await page.keyboard.press("Escape");
+  check(`AC-91 AC-98 ${at} the reminders' pane is the bookmarks' navigator of the reminders only: an agent's with its mark, its text as Markdown (no quote), the same actions; a link in the theme's link color, in the widget and on the page, never the browser's blue or purple`,
+    pane.title === "Reminders of this session" && pane.ids.join() === "Q" && pane.mark && !pane.quote && pane.text.includes("fetch_all or list_all?") && pane.grip
+    && pane.acts.join() === "Show in terminal,Resolve,Quote in chat" && pane.link === pane.want && pane.pageLink === pane.want && !blue.includes(pane.link), JSON.stringify(pane));
+
+  // the list emptied while the line is held (the last one resolved elsewhere): the pane closes; opened again, nothing is held
+  await page.keyboard.press("Escape");                      // the reminders' pane closed
+  await pressFab(page, "#marksfab");
+  await page.waitForSelector("#markpane .mkgrip");
+  const g = await page.evaluate(() => { const r = document.querySelector("#markpane .mkgrip").getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  await page.mouse.move(g.x, g.y);
+  await page.mouse.down();
+  await page.mouse.move(g.x, g.y - 20, { steps: 2 });
+  say({ t: "marks", items: [], error: null });
+  await page.waitForTimeout(200);
+  const emptied = await page.evaluate(() => document.getElementById("markpane").hidden);
+  await page.mouse.up();
+  say({ t: "marks", items: ITEMS, error: null });
+  await page.waitForFunction(() => !document.getElementById("marksfab").hidden, null, { timeout: 5000 }).catch(() => {});
+  await pressFab(page, "#marksfab");
+  await page.waitForSelector("#markpane .mknav li");
+  const back = await page.evaluate(() => ({ empty: document.querySelector("#markpane .empty").hidden, rows: document.querySelectorAll("#markpane .mknav li").length,
+    grip: !!document.querySelector("#markpane .mkgrip")?.isConnected, dragging: document.querySelector("#markpane .mkcols").classList.contains("dragging"), sel: getComputedStyle(document.querySelector("#markpane .mkcols")).userSelect }));
+  check(`AC-33 ${at} the list emptied while the line is held: the pane closes; filled and opened again, the list and the line are back, nothing held`,
+    emptied && !back.dragging && back.empty && back.rows > 0 && back.grip && back.sel !== "none", JSON.stringify({ emptied, back }));
   check(`AC-33 ${at} no page errors`, f.errors.length === 0, f.errors.join(" | "));
   await page.close();
+
+  // a phone: the sheet's line a finger's size, the view at least 200 px with its actions inside the sheet
+  const p = await open(browser, { history: HIST, first: 0, screen: ["done"], device: { viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true } });
+  p.say({ t: "marks", items: ITEMS, error: null });
+  await p.page.waitForFunction(() => !document.getElementById("marksfab").hidden, null, { timeout: 5000 }).catch(() => {});
+  await pressFab(p.page, "#marksfab");
+  await p.page.waitForSelector("#markpane .mknav li");
+  await p.page.waitForTimeout(300);
+  const phone = await p.page.evaluate(() => {
+    const r = (s) => document.querySelector(s).getBoundingClientRect(), pane = r("#markpane"), acts = r("#markpane .mkvacts");
+    return { sheet: "sheet" in document.getElementById("markpane").dataset, grip: Math.round(r("#markpane .mkgrip").height), view: Math.round(r("#markpane .mkview").height),
+      acts: acts.top >= pane.top && acts.bottom <= pane.bottom + 0.5 };
+  });
+  check(`AC-33 ${at} phone: a sheet, its line 44 px high, its view at least 200 px with its actions inside it`,
+    phone.sheet && phone.grip >= 44 && phone.view >= 200 && phone.acts && p.errors.length === 0, JSON.stringify({ phone, errors: p.errors }));
+  await p.page.close();
 }

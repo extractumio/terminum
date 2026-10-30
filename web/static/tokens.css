@@ -87,6 +87,8 @@
   --fs-small: 13px;     /* 400: toast, filter, cards */
   --fs-label: 12.5px;   /* 500/600: group headers, segments, hints, errors */
   --fs-meta: 12px;      /* 400: secondary lines, counts */
+  --link: #6ea8fe;   /* a link in Markdown: the theme's link color (app.js), else View's default (ui/src/style.css) */
+  --win-md: var(--size); --win-md-lh: 1.5; --win-font: var(--term-font);   /* the floating windows' text as the chat's in the terminal (its font, − and +); not the menu's Markdown size (--md-size, prefs.js) */
   --fs-micro: 11px;     /* 400–600: kbd, badges, captions; nothing smaller */
   --fw-body: 400; --fw-ctl: 500; --fw-head: 600;
   --lh-tight: 1.2; --lh-ui: 1.35; --lh-prose: 1.45;
@@ -125,7 +127,7 @@
 }
 /* a light theme (app.js sets .light): shadows lift rather than stain, folder hues darken; the
    material's light shows only where it is brighter than the surface, its shade is softer */
-:root.light { --shadow-a: 18%; --dir-l: .62; --dir-c: .11;
+:root.light { --link: #2f6fdf; --shadow-a: 18%; --dir-l: .62; --dir-c: .11;
   /* --muted (3.2-3.6:1) and danger 80% (3.1:1) fall under 4.5:1 for small text on a light theme */
   --muted-text: color-mix(in srgb, var(--t-fg) 75%, var(--t-bg)); --danger-text: color-mix(in srgb, var(--danger) 45%, var(--t-fg));
   --m-hi: rgb(255 255 255 / .7); --m-lo: rgb(0 0 0 / .1); --m-hi-ctl: rgb(255 255 255 / .8); --m-lo-ctl: rgb(0 0 0 / .16);

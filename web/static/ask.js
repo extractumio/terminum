@@ -9,7 +9,7 @@
 // (Claude Code draws over its answer), so a long quote is pasted and folded. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
-import { placeModal } from "./fabpane.js";
+import { inside, placeModal } from "./fabpane.js";
 
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
@@ -45,8 +45,7 @@ export function askSends(text, { agent, now = false, typed = false }) {
 
 /** Where a box w×h stands centered on `area` (a rect), kept `gap` inside a vw×vh window. */
 export function centerOn(area, w, h, vw, vh, gap = 8) {
-  const at = (start, size, own, max) => Math.round(Math.max(gap, Math.min(start + (size - own) / 2, max - own - gap)));
-  return { x: at(area.left, area.width, w, vw), y: at(area.top, area.height, h, vh) };
+  return { x: inside(area.left + (area.width - w) / 2, w, vw, gap), y: inside(area.top + (area.height - h) / 2, h, vh, gap) };
 }
 
 /** send(msg) to terminumd; toChat(text, stay): pasted into the shown pane's input; keys(data, stay): typed

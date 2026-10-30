@@ -29,7 +29,8 @@ export async function markdownInto(el, md) {
 let sheet = null, loaded = null;
 export function loadStyles() {
   sheet ??= new CSSStyleSheet();
-  return (loaded ??= fetch("widgets.css").then((r) => r.text()).then((css) => sheet.replace(css))
+  // with Markdown's look, which the page's panes share (markdown.css)
+  return (loaded ??= Promise.all(["widgets.css", "markdown.css"].map((f) => fetch(f).then((r) => r.text()).catch(() => ""))).then((css) => sheet.replace(css.join("\n")))
     .catch(() => { /* unstyled, but working */ }));
 }
 

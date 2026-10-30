@@ -6,7 +6,7 @@
 
 import { addTmux } from "./addtmux.js";
 import { hostAgents } from "./hostagents.js";
-import { placeModal } from "./fabpane.js";
+import { inside, placeModal } from "./fabpane.js";
 import { banner } from "./banners.js";
 
 const $ = (id) => document.getElementById(id);
@@ -207,9 +207,8 @@ export function navTools({ send, store, current, groups, onResize, onRenamed }) 
     box.hidden = false;
     if (!placeModal(box, hideHostMenu)) {   // under its button, above it where the window ends first, always inside the window
       const h = box.offsetHeight;
-      const top = r.bottom + 4 + h <= innerHeight - 8 ? r.bottom + 4 : r.top - 4 - h;
-      box.style.top = `${Math.max(8, Math.min(top, innerHeight - h - 8))}px`;
-      box.style.left = `${Math.max(8, r.right - 180)}px`;
+      box.style.top = `${inside(r.bottom + 4 + h <= innerHeight - 8 ? r.bottom + 4 : r.top - 4 - h, h, innerHeight)}px`;
+      box.style.left = `${inside(r.right - 180, box.offsetWidth, innerWidth)}px`;
     }
     button.setAttribute("aria-expanded", "true");
   }

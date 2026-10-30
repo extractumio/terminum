@@ -26,6 +26,7 @@
 <link rel="stylesheet" href="fold.css">
 <link rel="stylesheet" href="peek.css">
 <link rel="stylesheet" href="controls.css">
+<link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="panewin.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
@@ -200,14 +201,11 @@
       <div class="pwbody"><p id="spmeta" class="pwmeta"></p>
         <div id="spbody" class="markdown"></div>
         <p id="spwhy" role="status" hidden></p></div>
-      <div class="spacts pwacts"><button id="spjump" type="button" title="Show where it was sent in this session's history">Jump to message</button><button id="spinsert" class="tochat" type="button" title="Paste it into the input, no Enter">Insert into chat</button></div>
+      <div class="pwacts"><button id="spjump" type="button" title="Show where it was sent in this session's history">Jump to message</button><button id="spinsert" class="tochat" type="button" title="Paste it into the input, no Enter">Insert into chat</button></div>
     </div>
     <!-- Reminders (AC-91): up when their session's agent ends a turn, under the sent history. -->
     <button id="remindfab" type="button" hidden title="Reminders" aria-label="Reminders" aria-expanded="false" aria-controls="remindpane"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></svg><span id="remindfabn"></span></button>
-    <div id="remindpane" class="box" role="region" aria-label="Reminders" tabindex="-1" hidden>
-      <div class="pwhead"><h2 class="pwtitle">Reminders</h2><button id="remindclose" class="icon" type="button" title="Close" aria-label="Close"></button></div>
-      <div id="remindlist" class="pwbody"></div>
-    </div>
+    <div id="remindpane" class="box" role="region" aria-label="Reminders" tabindex="-1" hidden></div>   <!-- the bookmarks' navigator (marknav.js) -->
     <div id="planpane" class="box" role="region" aria-label="Plan and notes" tabindex="-1" hidden>
       <div class="pwhead"><h2 class="pwtitle">Plan</h2><button id="planclose" class="icon" type="button" title="Close" aria-label="Close"></button></div>
       <div id="planbody" class="pwbody"></div>

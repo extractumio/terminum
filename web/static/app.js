@@ -185,7 +185,7 @@ let paneList = [null, []];
 const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.groups, st.groups.flatMap((g) => g.items)])[1]);
 const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes, projects: () => st.projects,
   openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); rail?.draw(); }, copy: (text) => input.copySelection(text, true),
-  toChat: (text) => { input.paste(text); focusTerminal(); } });
+  toChat: (text) => { input.paste(text); focusTerminal(); }, store });
 trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (!sizing.fullscreen() ? ($("term").classList.contains("reflow") ? "wrap" : "rows") : view.tooWide() ? "scaled" : "grid"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;
 $("term").addEventListener("scroll", () => { if (!kbdFrame) kbdFrame = requestAnimationFrame(() => { kbdFrame = 0; placeKbd(); }); }, { passive: true });
@@ -338,7 +338,7 @@ const rail = embedded ? null : promptRail({ view, term: $("term"), send, sid: ()
 const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "asked" : "paste"); focusTerminal(); }, keys: (data, stay) => input.type(data, stay ? "asked" : "ask"), sid: () => st.sid, agent: () => !!itemOf(st.sid)?.agent,
   pane: () => ({ cols: view.cols, rows: view.rows }), asked: asked.asked, toast });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
-const reminded = reminderBox({ marks: bookmarks, send });
+const reminded = reminderBox({ marks: bookmarks });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
 function drawNav() {
@@ -404,6 +404,8 @@ function applyTheme(theme) {
   const r = document.documentElement.style;
   r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
   r.setProperty("--accent", theme.cursor || theme.fg);
+  const link = theme.link || theme.ansi?.[12];          // as View colors links (ui/src/theme.ts); else tokens.css's
+  if (link) r.setProperty("--link", link); else r.removeProperty("--link");
   r.setProperty("--ring", ringColor(theme.bg, theme.cursor || theme.fg, theme.fg));   // a focus ring that shows
   document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues
   if (theme.sel) r.setProperty("--sel", theme.sel);

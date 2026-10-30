@@ -24,7 +24,7 @@ const measure = (sel) => {
   const w = document.querySelector(sel), r = w.getBoundingClientRect(), t = document.getElementById("term").getBoundingClientRect();
   const col = document.getElementById("findfab").getBoundingClientRect(), cs = getComputedStyle(w);
   const head = w.querySelector(".pwhead"), title = head?.querySelector(".pwtitle"), keys = [...(head?.querySelectorAll("button.icon") ?? [])];
-  const body = w.querySelector(".pwbody"), acts = [...w.querySelectorAll(".pwacts button, .mkvacts button")].filter((b) => b.offsetHeight);
+  const body = [...w.querySelectorAll(".pwbody")].find((b) => b.offsetHeight) ?? w.querySelector(".mkvbody")?.shadowRoot?.querySelector(".body"), acts = [...w.querySelectorAll(".pwacts button, .mkvacts button")].filter((b) => b.offsetHeight);
   const ts = title && getComputedStyle(title), box = acts[0]?.parentElement.getBoundingClientRect();
   const v = getComputedStyle(document.getElementById("filewin"));
   return { view: [v.backgroundColor, v.borderRadius, v.boxShadow].join(" | "), place: [r.left - t.left, r.top - t.top, col.left - r.right, t.bottom - r.bottom, r.width, r.height].map(Math.round),
@@ -32,6 +32,7 @@ const measure = (sel) => {
     title: ts && `${ts.fontSize} ${ts.fontWeight} ${Math.round(title.getBoundingClientRect().left - r.left)}`, keys: keys.map((k) => Math.round(k.getBoundingClientRect().width)),
     lh: body ? Math.round(parseFloat(getComputedStyle(body).lineHeight) / parseFloat(getComputedStyle(body).fontSize) * 100) / 100 : null,
     size: body ? getComputedStyle(body).fontSize : null,   // the navigator's in its widget
+    family: body ? getComputedStyle(body).fontFamily : null, term: getComputedStyle(document.documentElement).getPropertyValue("--size").trim(),
     acts: acts.length < 2 || (Math.abs(acts[0].getBoundingClientRect().left - box.left - parseFloat(getComputedStyle(acts[0].parentElement).paddingLeft)) < 1.5
       && Math.abs(box.right - parseFloat(getComputedStyle(acts[0].parentElement).paddingRight) - acts.at(-1).getBoundingClientRect().right) < 1.5) };
 };
@@ -45,6 +46,7 @@ export async function webPaneWin(browser, name) {
   const { page } = f;
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 0, null, { timeout: 10000 });
   f.say({ t: "marks", items: MARKS, error: null });
+  f.say({ t: "settings", page: { markdownSize: 13 } });     // the menu's Markdown size (prefs.js --md-size): not these windows'
   await pause(page, 500);
   const got = {};
   for (const [label, fab, pane] of PANES) {
@@ -59,8 +61,8 @@ export async function webPaneWin(browser, name) {
   const [left, top, right, end, width] = first.place;
   check(`AC-33 AC-90 AC-91 AC-97 [${name}] Bookmarks, Reminders, Sent and Plan are one window, placed as View's and with its chrome, corners and shadow: 12 px under the terminal's top, 16 px over its end, 14 px left of the floating buttons, 820 px at most`,
     Object.values(got).every((g) => g.place.join() === first.place.join() && g.look === g.view) && top === 12 && end === 16 && right === 14 && left >= 16 && width <= 820, JSON.stringify(got));
-  check(`AC-33 AC-90 AC-91 AC-97 [${name}] each has View's head (36 px, its title 14 px 600 12 px in, 24 px keys) and View's Markdown type (16 px, 1.65); the actions' first at the left, the last at the right`,
-    Object.values(got).every((g) => g.head === 36 && g.title === "14px 600 12" && g.keys.length && g.keys.every((k) => k === 24) && (g.lh === null || (g.lh === 1.65 && g.size === "16px")) && g.acts),
+  check(`AC-33 AC-90 AC-91 AC-97 [${name}] each has View's head (36 px, its title 14 px 600 12 px in, 24 px keys) and the chat's type (the terminal's font at its size, line height 1.5, whatever the menu's Markdown size; the navigators' content too); the actions' first at the left, the last at the right`,
+    Object.values(got).every((g) => g.head === 36 && g.title === "14px 600 12" && g.keys.length && g.keys.every((k) => k === 24) && (g.lh === 1.5 && g.size === g.term && /^TermFont/.test(g.family)) && g.acts),
     JSON.stringify(got));
   await page.close();
 }

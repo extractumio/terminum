@@ -16,7 +16,7 @@ body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibi
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
 /* the bookmarks' pane is a window as View's (panewin.css), its texts in View's type */
-#markpane .meta { font-size: var(--fs-meta); }
+:is(#markpane, #remindpane) .meta { font-size: var(--fs-meta); }
 /* nearly round, never quite: the outline drifts slowly */
 @keyframes blob {
   0%, 100% { border-radius: 58% 42% 52% 48% / 46% 56% 44% 54%; }
@@ -59,7 +59,7 @@ body.wide #msgrail { grid-row: 1 / -1; }
 /* a narrow bar: the note, ↑ ↓ and × on the first row, its buttons on a row under them */
 @media (max-width: 600px) { #markbar .mbhead { flex-wrap: wrap; } #markbar .mbacts { order: 1; flex: 1 0 100%; justify-content: flex-end; } }
 #mbnote { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-#mbnote.quiet, :is(#marklist, #markpane) .quiet { font-weight: 400; color: var(--muted); }
+#mbnote.quiet, :is(#marklist, #markpane, #remindpane) :is(.quiet, .note.quiet) { font-weight: 400; color: var(--muted); }   /* over .note's 600 */
 #mbpos { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 #mbdel.armed, .mkdel.armed { --key-fill: var(--danger-fill); --key-fill-hover: var(--danger-fill); --key-ink: #fff; --icon-ink: #fff; }   /* armed: a second press deletes */
 #mbwhy { margin: 6px 0 0; color: var(--muted); }
@@ -91,20 +91,20 @@ body.wide #markadd, body.wide #markcopy, body.wide #marksfab, body.wide #markpan
 #marklist, #marklist button { font: var(--fs-body)/1.35 var(--ui); }   /* its list as the session list's; its head a dialog's (tmux.css) */
 #marksdlg .dhead { margin: 0; padding: 10px 10px 4px 16px; }   /* a dialog's head (controls.css) */
 #marklist { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-1) var(--sp-2) var(--sp-3); }
-:is(#marklist, #markpane) ul { list-style: none; margin: 0; padding: 0; }
-:is(#marklist, #markpane) li { position: relative; display: flex; align-items: flex-start; padding-left: 8px; border-radius: var(--r-sm); margin: 2px 0; }
+:is(#marklist, #markpane, #remindpane) ul { list-style: none; margin: 0; padding: 0; }
+:is(#marklist, #markpane, #remindpane) li { position: relative; display: flex; align-items: flex-start; padding-left: 8px; border-radius: var(--r-sm); margin: 2px 0; }
 /* a bookmark's mark: the list's wavy orange line, never a straight edge on a rounded box */
-:is(#marklist, #markpane) li::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: 4px; background: var(--mark);
+:is(#marklist, #markpane, #remindpane) li::before { content: ""; position: absolute; inset: 3px auto 3px 0; width: 4px; background: var(--mark);
   -webkit-mask: var(--wave-line) repeat-y center / var(--wave-size); mask: var(--wave-line) repeat-y center / var(--wave-size); }
-:is(#marklist, #markpane) .mkitem { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; text-align: left; border-radius: var(--r-sm); }
-@media (hover: hover) { :is(#marklist, #markpane) .mkitem:hover { background: var(--surface-4); } }
-:is(#marklist, #markpane) .note, :is(#marklist, #markpane) .snip, :is(#marklist, #markpane) .meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-:is(#marklist, #markpane) .note { font-weight: 600; font-size: 13px; }
-:is(#marklist, #markpane) .snip { font: 11.5px TermFont, TermFontShipped, Menlo, monospace; color: var(--muted); }
-:is(#marklist, #markpane) .meta { font-size: 11px; color: var(--muted); }
-:is(#marklist, #markpane) .closed { margin-left: 6px; padding: 0 5px; border-radius: var(--r-xs); background: var(--surface-4); }
-:is(#marklist, #markpane) .mkdel { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
-:is(#marklist, #markpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
+:is(#marklist, #markpane, #remindpane) .mkitem { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: 5px 8px; text-align: left; border-radius: var(--r-sm); }
+@media (hover: hover) { :is(#marklist, #markpane, #remindpane) .mkitem:hover { background: var(--surface-4); } }
+:is(#marklist, #markpane, #remindpane) :is(.note, .snip, .meta) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(#marklist, #markpane, #remindpane) .note { font-weight: 600; font-size: 13px; }
+:is(#marklist, #markpane, #remindpane) .snip { font: 11.5px TermFont, TermFontShipped, Menlo, monospace; color: var(--muted); }
+:is(#marklist, #markpane, #remindpane) .meta { font-size: 11px; color: var(--muted); }
+:is(#marklist, #markpane, #remindpane) .closed { margin-left: 6px; padding: 0 5px; border-radius: var(--r-xs); background: var(--surface-4); }
+:is(#marklist, #markpane, #remindpane) .mkdel { margin: var(--sp-1); font-size: 12px; }   /* an icon key (controls.css) */
+:is(#marklist, #markpane, #remindpane) .empty { margin: 0; padding: 8px; color: var(--muted); font-size: 12.5px; }
 
 /* the session list: an orange strip beside the profile's bar of a session with bookmarks */
 .bars { position: relative; display: flex; align-self: stretch; }   /* its bar where every row has it (.pbar's margins) */
@@ -127,8 +127,8 @@ dialog.dlg.docdlg { width: min(860px, calc(100vw - 24px)); height: calc(100dvh -
   --fill: var(--chrome); color: var(--t-fg); display: none; flex-direction: column; }
 dialog.dlg.docdlg[open] { display: flex; }
 dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
-#markdocbody { flex: 1; overflow: auto; padding: 4px 22px 40px; font: var(--md-size, 14px)/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
-#markdocbody blockquote { margin: 0 0 6px; padding-left: 10px; color: var(--muted); box-shadow: inset 2px 0 0 var(--line); white-space: pre-wrap; }
+#markdocbody { flex: 1; overflow: auto; padding: 4px 22px 40px; font: var(--win-md)/var(--win-md-lh) var(--win-font); }   /* as the floating windows' (tokens.css); its look: markdown.css */
+#markdocbody blockquote { white-space: pre-wrap; }   /* a bookmark's text as it was */
 
 /* a quote asked about (asked.js): a light blue wavy line down its rows' left, in the gutter, as a reminder's quote */
 .askline { position: absolute; width: 4px; pointer-events: none; z-index: 1; background: var(--ask);
@@ -139,28 +139,44 @@ dialog.dlg.docdlg .dhead { margin: 0; padding: 10px 10px 10px 16px; }
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='12'%3E%3Cpath d='M3 0Q6 3 3 6T3 12' fill='none' stroke='%23ff9f1a' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") repeat-y; }
 
 /* the session's pane goes through its bookmarks and reminders (marknav.js): the chosen one, ✓, Undo */
-#markpane .mknav li.chosen .mkitem { background: var(--surface-4); }
-#markpane .mknav li.remind::before { background: var(--remind); }
-#markpane li.pending .mkitem { opacity: .5; text-decoration: line-through; }
-#markpane .mkdonetext { align-self: center; font-size: 11.5px; color: var(--muted); }
-#markpane .mkundo { margin: var(--sp-1); font-size: 12px; }
-#markpane .mkhint { flex: none; margin: 0; padding: 8px 22px 12px; font-size: var(--fs-micro); color: var(--muted-text); }
-@media (hover: none) { #markpane .mkhint { display: none; } }
-/* a navigator: the list at the left, the chosen one's content at the right (on a phone under it) */
-#markpane .mkcols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(200px, 36%) minmax(0, 1fr); gap: var(--sp-2); padding: 0 12px; }
-#markpane .mknav { overflow: auto; }
-#markpane .mkview { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--r-md); background: var(--surface-1); }
-#markpane .mkvhead { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 0; }   /* 16 px in: the list takes the window's left */
-#markpane .mkvtitle { font-size: 1.18em; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
-#markpane .mkvtitle :is(.agmark, .mkbell) { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
-#markpane .mkvmeta { font-size: var(--fs-meta); color: var(--muted-text); }
-#markpane .mkvbody { flex: 1; min-height: 0; overflow: auto; }
-#markpane .mkvacts { display: flex; flex-wrap: wrap; gap: var(--key-gap); padding: 10px 16px 16px; }
-#markpane .mkvacts .mkvdone { margin-left: auto; }   /* Show in terminal at the left, Resolve and Quote in chat at the right */
-#markpane .mkvacts .mkvdone.pending { --key-fill: var(--surface-4); }
-#markpane[data-sheet] { height: auto; }
-#markpane[data-sheet] .mkcols { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 35%) minmax(0, 1fr); height: 70vh; }
+:is(#markpane, #remindpane) .mknav li.chosen .mkitem { background: var(--surface-4); }
+:is(#markpane, #remindpane) .mknav li.remind::before { background: var(--remind); }
+:is(#markpane, #remindpane) li.pending .mkitem { opacity: .5; text-decoration: line-through; }
+:is(#markpane, #remindpane) .mkdonetext { align-self: center; font-size: 11.5px; color: var(--muted); }
+:is(#markpane, #remindpane) .mkundo { margin: var(--sp-1); font-size: 12px; }
+:is(#markpane, #remindpane) .mkhint { flex: none; margin: 0; padding: 8px 22px 12px; font-size: var(--fs-micro); color: var(--muted-text); }
+@media (hover: none) { :is(#markpane, #remindpane) .mkhint { display: none; } }
+/* a navigator: the list on top, the chosen one's content under it, the line between them dragged
+   (marknav.js sets the rows' shares); each entry its title, where and when at its right, its text's start under it */
+:is(#markpane, #remindpane) .mkcols { flex: 1; min-height: 0; display: grid; grid-template-rows: fit-content(var(--list, 50%)) auto minmax(min(200px, 50%), 1fr); padding: 0 12px; }
+:is(#markpane, #remindpane) .mkcols[hidden] { display: none; }
+:is(#markpane, #remindpane) .mknav { min-height: 0; overflow: auto; }
+:is(#markpane, #remindpane) .mkline { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+:is(#markpane, #remindpane) .mkline .note { flex: 1 1 auto; min-width: 0; }
+:is(#markpane, #remindpane) .mkline .meta { flex: none; max-width: 50%; }   /* the time whole; another session's name cut first */
+:is(#markpane, #remindpane) .note { font: 600 var(--win-md)/1.35 var(--win-font); }   /* the chat's font and size (tokens.css) */
+:is(#markpane, #remindpane) .snip { font: var(--win-md)/1.35 var(--win-font); }
+/* the line: a grabber inside the window (one surface: no band of the chrome as the page's splitters), 44 px for a finger */
+:is(#markpane, #remindpane) .mkgrip { height: 16px; cursor: row-resize; touch-action: none; display: grid; place-items: center; outline: none; }
+@media (pointer: coarse) { :is(#markpane, #remindpane) .mkgrip { height: 44px; } }
+:is(#markpane, #remindpane) .mkgrip::before { content: ""; width: 40px; height: 4px; border-radius: 2px; background: var(--surface-4); }
+:is(#markpane, #remindpane) :is(.mkgrip:hover, .mkgrip:focus-visible, .mkcols.dragging .mkgrip)::before { background: var(--accent); }
+:is(#markpane, #remindpane) .mkcols.dragging { cursor: row-resize; user-select: none; }
+:is(#markpane, #remindpane) .mkview { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-radius: var(--r-md); background: var(--surface-1); }
+:is(#markpane, #remindpane) .mkvhead { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 0; }   /* 16 px in: the list takes the window's left */
+:is(#markpane, #remindpane) .mkvtitle { font: 600 calc(var(--win-md) * 1.18)/1.3 var(--win-font); overflow-wrap: anywhere; }
+:is(#markpane, #remindpane) .mkvtitle :is(.agmark, .mkbell) { display: inline-flex; vertical-align: -2px; margin-right: 6px; }
+:is(#markpane, #remindpane) .mkvbody { flex: 1; min-height: 0; overflow: auto; }
+:is(#markpane, #remindpane) .pwacts { padding-inline: 16px; }   /* panewin.css: Show in terminal at the left, Resolve and Quote in chat at the right; 16 px in as the view */
+:is(#markpane, #remindpane) .mkvdone.pending { --key-fill: var(--surface-4); }
+:is(#markpane, #remindpane)[data-sheet] { height: auto; }
+:is(#markpane, #remindpane)[data-sheet] .mkcols { height: 70vh; }
+/* a phone's view: its title and content scroll as one, its actions stay at its foot */
+:is(#markpane, #remindpane)[data-sheet] .mkview { overflow: auto; }
+:is(#markpane, #remindpane)[data-sheet] .mkvbody { flex: none; overflow: visible; }
+:is(#markpane, #remindpane)[data-sheet] .mkvacts { position: sticky; bottom: 0; margin-top: auto; background: var(--surface-1); }
 :is(#marklist, #markpane, #remindpane) .note :is(.agmark, .mkbell) { display: inline-flex; vertical-align: -2px; margin-right: 5px; }
-:is(#marklist, #markpane) .mkbell { color: var(--remind); }
+:is(#marklist, #markpane, #remindpane) .mkbell { color: var(--remind); }
+:is(#markpane, #remindpane) .meta.up { color: var(--remind-text); font-weight: var(--fw-head); }   /* a reminder up now (AC-91) */
 #mbdone.pending { --key-fill: var(--surface-4); }
-#markpane li.pending { align-items: center; }
+:is(#markpane, #remindpane) li.pending { align-items: center; }

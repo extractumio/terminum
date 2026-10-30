@@ -9,7 +9,7 @@ import { columnLeft, markPicker } from "./markpick.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { nowhere, projectsOf, shownIn } from "./projects.js";
 import { Find } from "./find.js";
-import { loose, railBox, railSlots } from "./marktext.js";
+import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
 import { floats, FOLDED } from "./fold.js";
 import { kindMark, MarkNav } from "./marknav.js";
 
@@ -28,7 +28,6 @@ export const el = (tag, cls, text) => {
   if (text !== undefined) e.textContent = text;
   return e;
 };
-const firstLine = (text, max = 90) => { const l = text.trim().split("\n")[0]; return l.length > max ? `${l.slice(0, max)}…` : l; };
 export const when = (s) => new Date(s * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** A reminder not resolved (AC-91). */
@@ -64,9 +63,10 @@ export class Marks {
    *  alive(sid): an open pane's title now (renamed or not), null when it closed; pick(sid): show it (and close the drawer); toast(text);
    *  onChange(): the bookmarks changed (the list's strips, reminders); copy(text): to the clipboard;
    *  projects(): terminumd's (AC-92); toChat(text): pasted into the shown pane's input (Insert into chat).
+   *  store: this browser's choices (app.js: get(k, d), set(k, v)).
    *  onPlaced (set after): the floating buttons were placed (their panes follow). */
-  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll, toChat }) {
-    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, projects, openAll, toChat });
+  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll, toChat, store }) {
+    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, projects, openAll, toChat, store });
     this.listKind = "bookmark";  // what the list below the sessions shows: bookmarks or reminders
     this.items = new Map();
     this.replies = new Map();    // ref -> resolve, for the dialog
@@ -208,7 +208,7 @@ export class Marks {
   showBar(item, why = null) {
     this.shown = item; this.why = why;
     const mine = this.mine(), i = mine.findIndex((x) => x.id === item.id);
-    $("mbnote").textContent = item.note || firstLine(item.text);
+    $("mbnote").textContent = titleOf(item);
     $("mbnote").classList.toggle("quiet", !item.note);
     $("mbwhy").textContent = why ?? ""; $("mbwhy").hidden = !why;
     $("mbtext").textContent = item.text; $("mbtext").hidden = !why;
@@ -269,7 +269,7 @@ export class Marks {
       const b = el("button", "mk");
       b.type = "button";
       b.style.top = `${top}px`;
-      const what = items.map((i) => i.note || firstLine(i.text, 60));
+      const what = items.map((i) => titleOf(i, 60));
       b.title = items.length > 1 ? `${items.length} bookmarks:\n${what.join("\n")}` : what[0];
       b.setAttribute("aria-label", `Bookmark: ${b.title}`);
       if (items.length > 1) b.dataset.count = String(items.length);
@@ -329,9 +329,9 @@ export class Marks {
       b.type = "button";
       const title = el("span", "note" + (item.note ? "" : " quiet")), mark = kindMark(item);
       if (mark) title.append(mark);
-      title.append(item.note || firstLine(item.text));
+      title.append(titleOf(item));
       b.append(title);
-      if (item.note) b.append(el("span", "snip", firstLine(item.text)));
+      if (item.note) b.append(el("span", "snip", oneLine(item.text, !!item.by)));
       // an open session by its name now (it may have been renamed since), a closed one by its last
       const now = this.alive(item.sid);
       const meta = el("span", "meta", (all ? [now ?? item.title, item.host, when(item.at)] : [when(item.at)]).filter(Boolean).join(" · "));
@@ -386,7 +386,7 @@ export class Marks {
     this.search.place();
     if (!$("markpane").hidden) this.placePane();
   }
-  placePane() { placePane($("markpane"), $("marksfab"), () => this.togglePane(false)); }
+  placePane() { placePane($("markpane"), () => this.togglePane(false)); }
   /** Opens or closes the list of this session's bookmarks (a second press closes it). */
   togglePane(open = $("markpane").hidden) {
     const had = $("markpane").contains(document.activeElement);

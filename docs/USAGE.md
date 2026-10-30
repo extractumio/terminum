@@ -148,18 +148,21 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   The number counts up per session. The text you asked about keeps a light blue wavy line down its left in
   the terminal, as a reminder's quote, on every page of that session.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
-  of its project ends a turn, its count filled. Close puts it down until the next turn ends,
-  Resolve ends it. Insert into chat, on a reminder, a bookmark's bar or a sent message, pastes it
-  (a bookmark's note and its text) into the session's input, without Enter.
+  of its project ends a turn, its count filled. It opens the same window as the bookmarks' button,
+  with the open reminders only, those up first: Show in terminal, Resolve (it ends it, with Undo) and
+  Quote in chat. Quote in chat, on a reminder or a bookmark, and Insert into chat on a sent message
+  paste it (a bookmark's note and its text) into the session's input, without Enter.
   Bookmarks and reminders made in a project's session show in every session of that project;
   made outside projects, only in their own session. Once their project is gone (deleted, or its
   last session closed), or a session outside projects closes, they wait under Bookmarks /
   Reminders below the sessions (Open all).
-- **Going through them**: the bookmarks' button (its count: bookmarks and open reminders) lists the
-  session's bookmarks and reminders, top to bottom. Press one, or ↑ ↓ on a computer, and the session
-  goes there while the list stays open; ✓ (or Delete) settles one, a reminder resolved and a bookmark
-  deleted, with Undo for 5 seconds; Enter or Esc closes the list. The bar over the terminal has the
-  same Done.
+- **Going through them**: the bookmarks' button (its count: bookmarks and open reminders) opens a
+  window with the session's bookmarks and reminders on top, top to bottom, each its note and its
+  text's start on one line, and the chosen one's content under them; drag the line between them to
+  share the height (a double click: half). Press one, or ↑ ↓ on a computer, to show it; Show in
+  terminal (Enter) goes there; Resolve (or Delete) settles one, a reminder resolved and a bookmark
+  deleted, with Undo for 5 seconds; Esc closes the window. The bar over the terminal has the same
+  Resolve.
 - **Kept by the agent**: a coding agent hands you what must not get lost in the scroll (a final
   report, a next step, a gap it saw elsewhere, deferred work, a question) as the session's
   bookmarks, with its mark; a reminder when you must act or decide. Each is written to read without

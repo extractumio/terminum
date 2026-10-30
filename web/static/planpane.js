@@ -17,6 +17,10 @@ const STATUS = { completed: "completed", in_progress: "in progress", pending: "p
 
 /** send(msg) to terminumd; sid(): the shown pane's key; records(): {n, open()}, its agent's open
  *  records (marks.js agentRecords). */
+/** The bottom of the banners shown (banners.js), else of the header (#bar): a phone's sheet starts there. */
+const bannersEnd = () => Math.max($("bar").getBoundingClientRect().bottom,
+  ...[...document.querySelectorAll(".banner")].filter((b) => !b.hidden && b.offsetParent).map((b) => b.getBoundingClientRect().bottom));
+
 export function planPane({ send, sid, records }) {
   const fab = $("curplan"), ring = $("planfab");
   let of = null, shown = null, waiting = false;   // the key the pane shows; the shown row (layout); asked, no answer yet
@@ -24,6 +28,8 @@ export function planPane({ send, sid, records }) {
     of = on ? sid() : null;
     ring.setAttribute("aria-expanded", String(on));
     if (on) { $("planbody").replaceChildren(el("p", "plmeta", "Loading…")); ask(); place(); }
+  }, onPlace: () => {   // a phone's sheet: its top at the header's or a banner's bottom
+    if ("sheet" in $("planpane").dataset) $("planpane").style.setProperty("--plan-top", `${Math.round(bannersEnd())}px`);
   } });
   ring.addEventListener("click", () => pane.toggle());
   ring.addEventListener("mousedown", (e) => e.preventDefault());   // the keys stay put until the pane opens
@@ -138,19 +144,9 @@ export function planPane({ send, sid, records }) {
   }
 
   $("planclose").replaceChildren(icon("x", 16));
-  new MutationObserver(place).observe($("status").parentElement, { subtree: true, attributes: true, attributeFilter: ["hidden"] });   // a banner shown or gone moves it
   return { header, onMessage, place };
-  /** Placed by fabpane; as a phone's sheet, its top at the header's bottom. */
+  /** Placed by fabpane: a window under the banners shown, or a sheet. */
   function place() {
-    if (!pane.open()) return;
-    pane.place();
-    const p = $("planpane"), shown = [...document.querySelectorAll(".banner")].filter((b) => !b.hidden && b.offsetParent);
-    const below = Math.round(Math.max($("bar").getBoundingClientRect().bottom, ...shown.map((b) => b.getBoundingClientRect().bottom)));
-    if ("sheet" in p.dataset) return void p.style.setProperty("--plan-top", `${below}px`);
-    const top = p.getBoundingClientRect().top;                     // beside its button, under the banners shown (UI-GUIDELINES §6)
-    if (!shown.length || top >= below + 8) return;
-    const down = below + 8 - Math.round(top);                      // its end stays the window's (placeWindow)
-    p.style.top = `${p.offsetTop + down}px`;
-    p.style.height = `${Math.max(160, p.offsetHeight - down)}px`;
+    if (pane.open()) pane.place();
   }
 }

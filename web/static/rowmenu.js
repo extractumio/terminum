@@ -9,7 +9,7 @@
 // nothing else; Esc closes it.
 import { askConfirm, askName, closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
-import { placeModal } from "./fabpane.js";
+import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
 import { groupKey, groupRows, projectColor } from "./nav.js";
 import { lastLinesView } from "./lastlines.js";
@@ -82,8 +82,8 @@ export function rowMenus({ list, send, item, projects, clone, orderGroups, group
     openedAt = byFinger ? performance.now() : -Infinity;
     const w = box.offsetWidth, h = box.offsetHeight;
     if (!placeModal(box, keep ? hide : null, !keep)) {   // a computer's: at the pointer
-      box.style.left = `${Math.max(8, Math.min(x, innerWidth - w - 8))}px`;
-      box.style.top = `${Math.max(8, Math.min(y, innerHeight - h - 8))}px`;
+      box.style.left = `${inside(x, w, innerWidth)}px`;
+      box.style.top = `${inside(y, h, innerHeight)}px`;
     }
     if (!keep) box.querySelector("button:not(:disabled):not([data-action=x])")?.focus({ preventScroll: true });
   }

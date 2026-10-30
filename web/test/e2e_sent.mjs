@@ -150,19 +150,24 @@ export async function webSent(browser, name) {
         onAtFirst && off.rail === "none" && off.kept === "false" && !asked && back !== "none", JSON.stringify({ onAtFirst, off, asked, back }));
     } else check("the right edge's message marks: none on a phone (the bookmarks' own marks there)", !strip.shown, JSON.stringify(strip));
     await pressFab(page, "#remindfab");
-    await page.waitForFunction(() => document.querySelector("#remindlist strong")?.textContent === "check", null, { timeout: 5000 }).catch(() => {});
-    const pane = await page.evaluate(() => ({ md: document.querySelector("#remindlist strong")?.textContent, quote: document.querySelector("#remindlist blockquote")?.textContent.trim(),
-      acts: [...document.querySelectorAll(".rmacts button")].map((b) => b.textContent), due: document.getElementById("remindfab").classList.contains("due") }));
-    check("reminders: pressed, it is marked no more; its note as Markdown, its text quoted, Open, Quote in chat, Close, Delete, Resolve", pane.md === "check" && pane.quote === "reminder text here"
-      && pane.acts.join() === "Open,Quote in chat,Close,Delete,Resolve" && !pane.due, JSON.stringify(pane));
-    await page.click(".rmacts .primary");
-    await pause(page, 100);
-    check("reminders: Resolve tells terminumd", sent.some((m) => m.t === "remind" && m.id === "R1" && m.action === "resolve"));
+    await page.waitForSelector("#remindpane .mknav li", { timeout: 5000 }).catch(() => {});
+    await pause(page, 400);
+    const pane = await page.evaluate(() => ({ title: document.querySelector("#remindpane .pwtitle")?.textContent, note: document.querySelector("#remindpane .mknav .note")?.textContent,
+      at: document.querySelector("#remindpane .mknav .meta")?.textContent, text: document.querySelector("#remindpane .mkvbody")?.shadowRoot?.querySelector("pre")?.textContent.trim(),
+      acts: [...document.querySelectorAll("#remindpane .mkvacts button")].map((b) => b.textContent.trim()), grip: !!document.querySelector("#remindpane .mkgrip"),
+      due: document.getElementById("remindfab").classList.contains("due") }));
+    check("reminders: pressed, it is marked no more; its pane the bookmarks' navigator (AC-91): the reminder on top, its note without Markdown marks, \"up now\", its text under the line, Show in terminal, Resolve, Quote in chat",
+      pane.title === "Reminders of this session" && pane.note === "check the retry" && pane.at === "up now" && pane.text === "reminder text here" && pane.grip
+      && pane.acts.join() === "Show in terminal,Resolve,Quote in chat" && !pane.due, JSON.stringify(pane));
+    await page.click("#remindpane .mkvdone");
+    const early = sent.some((m) => m.t === "remind" && m.id === "R1");
+    await pause(page, 5300);
+    check("reminders: Resolve tells terminumd after its 5 s of Undo", !early && sent.some((m) => m.t === "remind" && m.id === "R1" && m.action === "resolve"));
     const before = sent.length;
     const looks = await page.evaluate(() => { const cs = (e) => { const s = getComputedStyle(e); return [s.height, s.backgroundColor, s.fontSize, s.borderRadius].join(); };
-      return [cs(document.querySelector(".rmacts .tochat")), cs(document.getElementById("spinsert")), cs(document.getElementById("mbsend"))]; });
+      return [cs(document.querySelector("#remindpane .mkvacts .tochat")), cs(document.getElementById("spinsert")), cs(document.getElementById("mbsend"))]; });
     check("Quote in chat (a reminder, a bookmark's bar) looks as the sent history's Insert into chat", new Set(looks).size === 1, JSON.stringify(looks));
-    await page.click('.rmacts button:text-is("Quote in chat")');
+    await page.click("#remindpane .mkvacts .tochat");
     await pause(page, 100);
     const pasted = sent.slice(before).filter((m) => m.t === "in").map((m) => m.data).join("");
     check("reminders: Quote in chat pastes its note and, under it, its text quoted into the input, no Enter; the pane closes",

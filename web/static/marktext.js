@@ -15,6 +15,33 @@ export function loose(text) {
 /** loose(text)'s code points start..start+size, as the bridge counts them. */
 export function part(text, start, size) { return [...loose(text)].slice(start, start + size).join(""); }
 
+// strong, struck or emphasised words: the closing mark followed by a space, a stop or the end
+const EMPHASIS = new RegExp(String.raw`(^|[\s(])(\*\*|__|~~|[*_])([^\s*_~]|[^\s*_~].*?[^\s*_~])\2(?=[\s),;:!?]|\.(?:\s|$)|$)`, "gm");
+
+/** `text` as one line of words for a list's row (AC-33): every line break and run of space one
+ *  space, the terminal's frame lines (box drawing, ⎿) gone and, from an agent's Markdown, its marks
+ *  (fences, a heading's, a quote's and a list's marks, emphasis, code, a table's bars, a link's
+ *  address); `max` characters at most (the row cuts it with …). */
+export function oneLine(text, markdown = false, max = 240) {
+  let t = (text ?? "").slice(0, max * 8);                                  // a long record's start is enough
+  if (markdown) t = t
+    .replace(/^[ \t]*(```|~~~).*$/gm, " ")                                  // a fence's lines
+    .replace(/^[ \t]*\|?[ \t:]*-{3,}[-| \t:]*$/gm, " ")                    // a table's rule, a horizontal rule
+    .replace(/^[ \t]*(?:(?:#{1,6}|[-*+]|\d+[.)]|\[[ xX]\])[ \t]+|>[ \t]?)+/gm, "")   // heading, list, task, quote marks
+    .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm, (_, row) => row.replace(/[ \t]*\|[ \t]*/g, " "))   // a table's row: its cells
+    .replace(/!?\[([^\]\n]*)\]\([^)\n]*\)/g, "$1")                         // a link or a picture: its words
+    .replace(/`([^`\n]+)`/g, "$1")                                         // code
+    .replace(EMPHASIS, "$1$3")                                               // strong, struck, emphasis around words
+    .replace(/\\([\\`*_{}[\]()#+\-.!>|~])/g, "$1");                          // escapes
+  t = t.replace(/[─-╿⎿]/g, " ").replace(/\s+/g, " ").trim();
+  const cps = [...t];
+  return cps.length > max ? cps.slice(0, max).join("") : t;
+}
+
+/** A record's title on one line: its note without Markdown marks, else its text's start. The bar,
+ *  the lists, the rail's tips and the navigator all show this. */
+export const titleOf = (item, max = 120) => oneLine(item.note, true, 200) || oneLine(item.text, !!item.by, max);
+
 /** The text nodes under `root` (an element or a shadow root's part), in order. */
 export function textNodes(root) {
   const out = [];
