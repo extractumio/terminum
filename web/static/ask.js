@@ -4,9 +4,10 @@
 // counts up across devices: `askno`) and puts the quote, as a Markdown quote, and the question at
 // the input's cursor, a blank line after each, without Enter, the view left where it was. In a
 // coding agent's box it is typed (its new lines as Ctrl+J; terminumd types a long one in parts,
-// keys.rs), so the agent shows it whole rather than folded into "[Pasted text]", unless it would
-// fill more than half the pane's rows: an agent's box taller than the pane breaks its redraw
-// (Claude Code draws over its answer), so a long quote is pasted and folded. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
+// keys.rs), so the agent shows it whole rather than folded into "[Pasted text]", unless its box
+// would then be taller than the pane, two rows kept: an agent's box taller than the pane breaks its
+// redraw (Claude Code draws over its answer), so a long quote is pasted and folded. The pane is
+// measured as the dialog opens: on a phone its field's keyboard then makes the pane shorter. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
 import { inside, placeModal } from "./fabpane.js";
@@ -14,7 +15,8 @@ import { inside, placeModal } from "./fabpane.js";
 const $ = (id) => document.getElementById(id);
 const ANSWER = 10000;          // ms the dialog waits for the number
 const ENTER_AFTER = 200;       // ms: an Enter in the same read as a paste is a new line to Claude Code
-const TYPED_SHARE = 0.5;       // of the pane's rows a typed quote may fill in an agent's box
+const SPARE = 2;               // rows of the pane a typed quote leaves above the agent's box and its footer
+const BOX = 6;                 // rows an agent's box and its footer take when the view has not found the box
 
 /** What Add to Chat puts: a Markdown quote numbered on its first line ("> Quote #0007"), the
  *  selection's lines under it (blank lines, line ends' spaces, tabs and control characters left
@@ -28,6 +30,10 @@ export function askText(n, quote, question) {
 
 /** Rows `text` takes in an agent's box `cols` wide (its border and prompt take 4). */
 export const boxRows = (text, cols) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / Math.max(1, cols - 4))), 0);
+
+/** Whether `text` typed fits a pane `cols` × `rows` whose agent's box (prompt, rules and footer)
+ *  takes `used` rows now; not measured (null): no. */
+export const fitsTyped = (text, { cols, rows, used } = {}) => !!cols && !!rows && boxRows(text, cols) + (used || BOX) + SPARE <= rows;
 
 /** Whether the text just before a quote's occurrence (white space as one space) is askText's
  *  opening, or one of before 0.4.9 (`Quote #N: «`, before 0.4.7 `Quote Start ---- «`): that
@@ -50,11 +56,12 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
 
 /** send(msg) to terminumd; toChat(text, stay): pasted into the shown pane's input; keys(data, stay): typed
  *  there (stay: Add to Chat's, the view left where it was); sid(): the shown pane; agent(): it runs a
- *  coding agent; pane(): its {cols, rows}; asked(n, quote, line): one was asked about (asked.js keeps it
+ *  coding agent; pane(): its {cols, rows, used (the rows its agent's box and footer take, 0 unknown)};
+ *  asked(n, quote, line): one was asked about (asked.js keeps it
  *  marked); toast(text): says what was not done. {open(text, line), seen(m), sync()}. */
 export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
-  let quote = "", line = null, waiting = null;
+  let quote = "", line = null, waiting = null, size = null;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
   const ready = (on) => { add.disabled = now.disabled = !on; };
   q.addEventListener("input", () => ready(q.value.trim()));
@@ -91,8 +98,7 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
     box.close();
     asked?.(m.n, quote, line);                                      // the quote stays marked where it was selected
     const stay = how === "add";                                   // Send to Agent goes to the input: the answer comes there
-    const text = askText(m.n, quote, q.value), { cols, rows } = pane();
-    const typed = !!cols && !!rows && boxRows(text, cols) <= rows * TYPED_SHARE;
+    const text = askText(m.n, quote, q.value), typed = fitsTyped(text, size);
     for (const [kind, data] of askSends(text, { agent: agent(), now: !stay, typed })) {
       if (kind !== "enter") (kind === "keys" ? keys : toChat)(data, stay);
       // the Enter only to the same pane, still in its agent: another pane's line or a shell would run it
@@ -117,6 +123,7 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
       ready(false);
       fail("");
       sync();
+      size = pane();                                                // before its field brings a phone's keyboard up
       box.showModal();
       place();
       q.focus();

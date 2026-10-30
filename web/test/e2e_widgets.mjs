@@ -453,6 +453,22 @@ export async function webWidgets(browser, name = "") {
   check(`${at} … Raw shows the drawn lines`, await tb.page.evaluate(() => document.querySelectorAll("#hist .ln.wg-hid").length === 0 && !!document.querySelector("#hist .ln.wg-raw")));
   await tb.page.close();
 
+  // a pipe table Claude Code printed at a phone's 44 columns: each padded row wrapped at a bar in its middle
+  // and into blank lines, the separator over four lines (the owner's phone, 0.6.17): one HTML table
+  const narrowRows = ["⏺ Статусы:", "", "  | Статус                           |", "  Что видит пользователь", "", "           |",
+    "  |----------------------------------|-------", "  ------------------------------------------", "  ----------|",
+    "  | защищено                         |", "  «Защищено», время последней проверки", "", "", "           |",
+    "  | неподдерживаемый Node | «Обновите Node.js до 16+» |", "", "Done."].map(line);
+  const pt = await open(browser, { history: narrowRows, screen: [], device: { viewport: { width: 390, height: 844 }, hasTouch: true } });
+  await pt.page.waitForFunction(() => document.querySelector("#hist .ln.wg-host")?.shadowRoot.querySelector(".body.table td"), null, { timeout: 8000 }).catch(() => {});
+  const piped = await pt.page.evaluate(() => { const b = document.querySelector("#hist .ln.wg-host")?.shadowRoot.querySelector(".body.table");
+    return { head: [...(b?.querySelectorAll("th") ?? [])].map((c) => c.textContent), cells: [...(b?.querySelectorAll("tbody tr") ?? [])].map((r) => [...r.cells].map((c) => c.textContent)),
+      hidden: document.querySelectorAll("#hist .ln.wg-hid").length }; });
+  check(`${at} a pipe table Claude Code wrapped at a phone's width is one HTML table: rows joined at their bars, blank lines and all`,
+    piped.head.join("|") === "Статус|Что видит пользователь" && JSON.stringify(piped.cells) === JSON.stringify([["защищено", "«Защищено», время последней проверки"], ["неподдерживаемый Node", "«Обновите Node.js до 16+»"]])
+    && piped.hidden === 12, JSON.stringify(piped));
+  await pt.page.close();
+
   // fbd not running: the widget says so, and the rows show as text
   const off = await open(browser, { renderers: false });
   await off.page.waitForFunction(() => [...document.querySelectorAll("#term .ln.wg-host")].some((h) => h.shadowRoot.querySelector(".err:not([hidden])")), null, { timeout: 10000 }).catch(() => {});

@@ -143,8 +143,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   the selection's orange [+]); type a question and Add to Chat puts the selection as a Markdown
   quote (`> Quote #0007`, then `> ` and each of its lines), a blank line, your question and a blank
   line into the input, without Enter; the view stays where you were reading. In a coding agent's
-  input it is typed, so the agent shows it whole, unless it would fill more than half the pane:
-  then it is pasted and the agent folds it.
+  input it is typed, so the agent shows it whole, unless the agent's box would then be taller
+  than the pane: then it is pasted and the agent folds it.
   The number counts up per session. The text you asked about keeps a light blue wavy line down its left in
   the terminal, as a reminder's quote, on every page of that session.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent

@@ -334,3 +334,38 @@ test("pipe tables: their own widget where an agent colored text around them, row
   assert.deepEqual(found.map((r) => [r.from, r.to, r.table.head.join("/")]), [[2, 6, "Итог/Версии"], [8, 10, "Вердикт/Строк"]]);
   assert.deepEqual(found[1].table.align, [false, true], "a right-aligned column");
 });
+
+// Claude Code's pipe table at a phone's width (44 columns): each row padded to its columns' width,
+// wrapped at a bar in its middle, the padding into blank lines, the separator over six lines.
+test("a pipe table wrapped at a phone's width: rows joined by their bars, blank lines and all", () => {
+  const L = (text) => ({ text, eol: true, styled: false });
+  const rows = ["  Статусы:", "", "  | Статус                           |", "  Что видит пользователь", "", "           |",
+    "  |----------------------------------|-------", "  ------------------------------------------", "  ------------------------------------------",
+    "  ----------|", "  | защищено                         |", "  «Защищено», время последней проверки", "", "",
+    "           |", "  | свой NODE_OPTIONS                |", "  «Не защищено: задан свой NODE_OPTIONS.", "  Добавьте --require в NODE_OPTIONS» |",
+    "  | неподдерживаемый Node | «Обновите Node.js до 16+» |", "", "  Дальше текст."].map(L);
+  const t = scan(rows).found.filter((r) => r.kind === "table");
+  assert.equal(t.length, 1);
+  assert.deepEqual([t[0].from, t[0].to], [2, 18]);
+  assert.deepEqual(t[0].table.head, ["Статус", "Что видит пользователь"]);
+  assert.deepEqual(t[0].table.rows, [["защищено", "«Защищено», время последней проверки"],
+    ["свой NODE_OPTIONS", "«Не защищено: задан свой NODE_OPTIONS. Добавьте --require в NODE_OPTIONS»"],
+    ["неподдерживаемый Node", "«Обновите Node.js до 16+»"]]);
+});
+
+test("a pipe table's row with a bar too many is a row of its own, the next rows joined again", () => {
+  const L = (text) => ({ text, eol: true, styled: false });
+  const rows = ["| a | b |", "|---|---|", "| 1 |", "2 |", "| x | y | z |", "| 3 | 4 |"].map(L);
+  const t = scan(rows).found.filter((r) => r.kind === "table");
+  assert.deepEqual(t[0].table.rows, [["1", "2", ""], ["x", "y", "z"], ["3", "4", ""]]);
+  // a wrapped table: after a row with a bar more the next wrapped rows join again
+  const wrapped = ["| a", "| b |", "|---|---|", "| x | y | z |", "| 3 |", "", "", "4 |", "| 5 | 6 |"].map(L);
+  assert.deepEqual(scan(wrapped).found.find((r) => r.kind === "table").table.rows, [["x", "y", "z"], ["3", "4", ""], ["5", "6", ""]]);
+});
+
+test("a table's last row short of its bars never takes the prose after a blank line; a wrapped table's may span blank lines", () => {
+  const L = (text) => ({ text, eol: true, styled: false });
+  const rows = ["| a | b |", "|---|---|", "| 4 | 5", "", "Use `ls | wc` here."].map(L);
+  const t = scan(rows).found.find((r) => r.kind === "table");
+  assert.equal(t?.to ?? -1, 1, "the table ends at its separator; its short row and the prose stay text");
+});

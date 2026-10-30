@@ -52,13 +52,71 @@ export function logicalLines(rows) {
   return out;
 }
 
-/** Lines with table rows a program wrapped at its width put back together (AC-31): a line that
- *  starts with "|" but does not end with one goes on in the next lines (their indentation
- *  dropped) until one ends with "|", four lines at most; a separator's dashes join without a space. */
+const BARS = /(?<!\\)\|/g;
+const bars = (t) => (t.match(BARS) ?? []).length;
+const SEP_START = /^\|\s*:?-{3}/, SEP_PART = /^[-:|]+$/;
+const ROW_LINES = 40;        // the most lines one row of a pipe table a program wrapped takes
+
+/** Lines i..j of `lines` as one: their texts joined by `by`, blank ones dropped. */
+const merged = (lines, i, j, by = " ") => ({
+  ...lines[i], to: lines[j].to, styled: lines.slice(i, j + 1).some((l) => l.styled),
+  text: lines.slice(i, j + 1).map((l, k) => (k ? l.text.trim() : l.text.trimEnd())).filter(Boolean).join(by),
+});
+/** The last line of a row from line i whose bars, joined, are `need`: -1 when it has more, or
+ *  meets a blank line and `blanks` is off. */
+function rowEnd(lines, i, need, blanks = true) {
+  for (let j = i, n = 0; j < lines.length && j - i < ROW_LINES; j++) {
+    if (!blanks && !lines[j].text.trim()) return -1;
+    n += bars(lines[j].text);
+    if (n >= need) return n === need ? j : -1;
+  }
+  return -1;
+}
+/** The separator from line k with the pieces it was wrapped into (dashes and bars alone): {to, text}. */
+function separator(lines, k) {
+  let j = k;
+  while (j + 1 < lines.length && j - k < ROW_LINES && SEP_PART.test(lines[j + 1].text.trim())) j++;
+  const text = lines.slice(k, j + 1).map((l) => l.text.trim()).join("");
+  return TABLE_SEP.test(text) ? { to: j, text } : null;
+}
+/** A pipe table's head and separator from line i, whatever the width wrapped them at: [headEnd,
+ *  sepEnd, bars of a row, wrapped (either took more than a line)], or null: its separator within
+ *  ROW_LINES lines and the head's bars as many as its. */
+function tableStart(lines, i) {
+  for (let k = i + 1; k < lines.length && k - i <= ROW_LINES; k++) {
+    if (!SEP_START.test(lines[k].text.trim())) continue;
+    const sep = separator(lines, k), need = sep && bars(sep.text);
+    return sep && rowEnd(lines, i, need) === k - 1 ? [k - 1, sep.to, need, k - 1 > i || sep.to > k] : null;
+  }
+  return null;
+}
+
+/** Lines with table rows a program wrapped at its width put back together (AC-31). In a table
+ *  whose head and separator are found, a row goes on until it has as many bars as its separator,
+ *  over blank lines too when the head or the separator was wrapped (Claude Code at a phone's width
+ *  wraps a padded row at a bar in its middle and into blank lines); a row with more bars is left as
+ *  it is and the next rows join again; a separator's pieces join without a space. Elsewhere a line that starts
+ *  with "|" but does not end with one goes on in the next lines (their indentation dropped) until
+ *  one ends with "|", four lines at most. */
 export function joinTableRows(lines) {
   const out = [];
+  let need = 0, blanks = false;                     // the bars of a row of the table being read; it was wrapped
   for (let i = 0; i < lines.length; i++) {
     const t = lines[i].text.trim();
+    if (!t.startsWith("|")) need = 0;
+    else if (need) {
+      const j = rowEnd(lines, i, need, blanks);
+      if (j >= 0) { out.push(j > i ? merged(lines, i, j) : lines[i]); i = j; continue; }
+    } else if (!SEP_START.test(t)) {
+      const start = tableStart(lines, i);
+      if (start) {
+        const [head, sep] = start;
+        out.push(head > i ? merged(lines, i, head) : lines[i], sep > head + 1 ? merged(lines, head + 1, sep, "") : lines[sep]);
+        [, , need, blanks] = start;
+        i = sep;
+        continue;
+      }
+    }
     let j = i, text = lines[i].text.trimEnd();
     if (t.startsWith("|") && !t.endsWith("|")) {
       while (j + 1 < lines.length && j - i < 4 && !text.endsWith("|")) {
