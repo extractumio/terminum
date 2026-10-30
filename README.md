@@ -2,6 +2,8 @@
 
 **The agentic IDE for vibe coding, built on tmux and made for working on the go.**
 
+[![terminum on a monitor, a laptop and a phone: one Claude Code session on all three](docs/images/terminum-devices.jpg)](https://terminum.app/)
+
 Run Claude Code, Codex and your shells in real terminals on your Mac and your servers, and pick
 them up from any browser: the laptop on your desk or the iPhone in your pocket. Every session
 lives in tmux, so nothing is lost when you close a tab, switch devices or reboot.
