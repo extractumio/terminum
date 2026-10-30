@@ -255,6 +255,9 @@ export class TermView {
   // The agent's input box. A cursor gone for a frame (a redraw) keeps the box while its rules
   // stay. The status lines shown below it while nothing is typed are learnt: only those wait
   // behind the button, so a "/" or "@" list or a new notice there stays in sight.
+  /** Rows the agent's input box and its footer take on the screen, 0 without one. */
+  get boxHeight() { return this.box ? this.box.end - this.box.top + 1 : 0; }
+
   findBox(rows) {
     const cursor = rows.findIndex((r) => r.el.querySelector(".cur"));
     const brs = rows.map(boxRow);

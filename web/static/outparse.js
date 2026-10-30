@@ -57,38 +57,40 @@ const bars = (t) => (t.match(BARS) ?? []).length;
 const SEP_START = /^\|\s*:?-{3}/, SEP_PART = /^[-:|]+$/;
 const ROW_LINES = 40;        // the most lines one row of a pipe table a program wrapped takes
 
-/** Lines i..j of `lines` as one: their texts joined by `by`, blank ones dropped. */
-const merged = (lines, i, j, by = " ") => ({
-  ...lines[i], to: lines[j].to, styled: lines.slice(i, j + 1).some((l) => l.styled),
-  text: lines.slice(i, j + 1).map((l, k) => (k ? l.text.trim() : l.text.trimEnd())).filter(Boolean).join(by),
-});
+/** Lines i..j of `lines` as one (line i itself when j is i): their texts joined by `by`, blank ones dropped. */
+function merged(lines, i, j, by = " ") {
+  if (j === i) return lines[i];
+  const part = lines.slice(i, j + 1);
+  return { ...lines[i], to: lines[j].to, styled: part.some((l) => l.styled),
+    text: part.map((l, k) => (k ? l.text.trim() : l.text.trimEnd())).filter(Boolean).join(by) };
+}
+// `at`: the lines read once by joinTableRows: {lines, trim (their texts trimmed), bars (their bars),
+// next (the first separator line from each)}
 /** The last line of a row from line i whose bars, joined, are `need`: -1 when it has more, or
  *  meets a blank line and `blanks` is off. */
-function rowEnd(lines, i, need, blanks = true) {
-  for (let j = i, n = 0; j < lines.length && j - i < ROW_LINES; j++) {
-    if (!blanks && !lines[j].text.trim()) return -1;
-    n += bars(lines[j].text);
+function rowEnd(at, i, need, blanks = true) {
+  for (let j = i, n = 0; j < at.lines.length && j - i < ROW_LINES; j++) {
+    if (!blanks && !at.trim[j]) return -1;
+    n += at.bars[j];
     if (n >= need) return n === need ? j : -1;
   }
   return -1;
 }
 /** The separator from line k with the pieces it was wrapped into (dashes and bars alone): {to, text}. */
-function separator(lines, k) {
+function separator(at, k) {
   let j = k;
-  while (j + 1 < lines.length && j - k < ROW_LINES && SEP_PART.test(lines[j + 1].text.trim())) j++;
-  const text = lines.slice(k, j + 1).map((l) => l.text.trim()).join("");
+  while (j + 1 < at.lines.length && j - k < ROW_LINES && SEP_PART.test(at.trim[j + 1])) j++;
+  const text = at.trim.slice(k, j + 1).join("");
   return TABLE_SEP.test(text) ? { to: j, text } : null;
 }
-/** A pipe table's head and separator from line i, whatever the width wrapped them at: [headEnd,
- *  sepEnd, bars of a row, wrapped (either took more than a line)], or null: its separator within
- *  ROW_LINES lines and the head's bars as many as its. */
-function tableStart(lines, i) {
-  for (let k = i + 1; k < lines.length && k - i <= ROW_LINES; k++) {
-    if (!SEP_START.test(lines[k].text.trim())) continue;
-    const sep = separator(lines, k), need = sep && bars(sep.text);
-    return sep && rowEnd(lines, i, need) === k - 1 ? [k - 1, sep.to, need, k - 1 > i || sep.to > k] : null;
-  }
-  return null;
+/** A pipe table's head and separator from line i, whatever the width wrapped them at: {head, sep
+ *  (the lines they end on), need (the bars of a row), wrapped (either took more than a line)}, or
+ *  null: its separator within ROW_LINES lines and the head's bars as many as its. */
+function tableStart(at, i) {
+  const k = at.next[i + 1];
+  if (k < 0 || k - i > ROW_LINES) return null;
+  const sep = separator(at, k), need = sep && bars(sep.text);
+  return sep && rowEnd(at, i, need) === k - 1 ? { head: k - 1, sep: sep.to, need, wrapped: k - 1 > i || sep.to > k } : null;
 }
 
 /** Lines with table rows a program wrapped at its width put back together (AC-31). In a table
@@ -99,35 +101,37 @@ function tableStart(lines, i) {
  *  with "|" but does not end with one goes on in the next lines (their indentation dropped) until
  *  one ends with "|", four lines at most. */
 export function joinTableRows(lines) {
+  const trim = lines.map((l) => l.text.trim()), next = Array(lines.length + 1).fill(-1);
+  for (let k = lines.length - 1; k >= 0; k--) next[k] = SEP_START.test(trim[k]) ? k : next[k + 1];
+  const at = { lines, trim, bars: trim.map(bars), next };
   const out = [];
   let need = 0, blanks = false;                     // the bars of a row of the table being read; it was wrapped
   for (let i = 0; i < lines.length; i++) {
-    const t = lines[i].text.trim();
+    const t = trim[i];
     if (!t.startsWith("|")) need = 0;
     else if (need) {
-      const j = rowEnd(lines, i, need, blanks);
-      if (j >= 0) { out.push(j > i ? merged(lines, i, j) : lines[i]); i = j; continue; }
-    } else if (!SEP_START.test(t)) {
-      const start = tableStart(lines, i);
+      const j = rowEnd(at, i, need, blanks);
+      if (j >= 0) { out.push(merged(lines, i, j)); i = j; continue; }
+    } else if (next[i] !== i) {
+      const start = tableStart(at, i);
       if (start) {
-        const [head, sep] = start;
-        out.push(head > i ? merged(lines, i, head) : lines[i], sep > head + 1 ? merged(lines, head + 1, sep, "") : lines[sep]);
-        [, , need, blanks] = start;
-        i = sep;
+        out.push(merged(lines, i, start.head), merged(lines, start.head + 1, start.sep, ""));
+        ({ need, wrapped: blanks } = start);
+        i = start.sep;
         continue;
       }
     }
     let j = i, text = lines[i].text.trimEnd();
     if (t.startsWith("|") && !t.endsWith("|")) {
       while (j + 1 < lines.length && j - i < 4 && !text.endsWith("|")) {
-        const next = lines[j + 1].text.trim();
-        if (!next || next.startsWith("| ")) break;
-        text += text.endsWith("-") && next.startsWith("-") ? next : ` ${next}`;
+        const more = trim[j + 1];
+        if (!more || more.startsWith("| ")) break;
+        text += text.endsWith("-") && more.startsWith("-") ? more : ` ${more}`;
         j++;
       }
     }
     if (j > i && text.endsWith("|")) {
-      out.push({ ...lines[i], text, to: lines[j].to, styled: lines.slice(i, j + 1).some((l) => l.styled) });
+      out.push({ ...merged(lines, i, j), text });
       i = j;
     } else out.push(lines[i]);
   }
@@ -140,7 +144,7 @@ export function joinTableRows(lines) {
 export function pipeTable(lines, i) {
   const row = (k) => /^\s*\|.*\|\s*$/.test(lines[k]?.text ?? "");
   if (!row(i) || !TABLE_SEP.test(lines[i + 1]?.text.trim() ?? "")) return undefined;
-  const cells = (k) => lines[k].text.trim().slice(1, -1).split(/(?<!\\)\|/).map((c) => c.trim());
+  const cells = (k) => lines[k].text.trim().slice(1, -1).split(BARS).map((c) => c.trim());
   let j = i + 2;
   while (row(j)) j++;
   const head = cells(i), rows = [];

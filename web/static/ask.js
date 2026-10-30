@@ -32,7 +32,7 @@ export function askText(n, quote, question) {
 export const boxRows = (text, cols) => text.split("\n").reduce((n, l) => n + Math.max(1, Math.ceil(l.length / Math.max(1, cols - 4))), 0);
 
 /** Whether `text` typed fits a pane `cols` × `rows` whose agent's box (prompt, rules and footer)
- *  takes `used` rows now; not measured (null): no. */
+ *  takes `used` rows now (0: not found, BOX counted); not measured (undefined): no. */
 export const fitsTyped = (text, { cols, rows, used } = {}) => !!cols && !!rows && boxRows(text, cols) + (used || BOX) + SPARE <= rows;
 
 /** Whether the text just before a quote's occurrence (white space as one space) is askText's
@@ -42,7 +42,7 @@ export const sentCopy = (before) => /((Quote #\d+:|Quote Start -+) ?«|Quote #\d
 
 /** What goes to the pane for `text`, in order: [kind, data], kind "keys" (typed), "paste" or
  *  "enter" (typed a moment after); `now`: sent to the agent (Send to Agent); `typed`: an agent's
- *  box takes it as keys (it fits: TYPED_SHARE). */
+ *  box takes it as keys (it fits: fitsTyped). */
 export function askSends(text, { agent, now = false, typed = false }) {
   if (agent && typed) return now ? [["keys", text], ["enter", "\r"]] : [["keys", `${text}\n\n`]];
   if (now) return [["paste", text], ["enter", "\r"]];
@@ -61,7 +61,7 @@ export function centerOn(area, w, h, vw, vh, gap = 8) {
  *  marked); toast(text): says what was not done. {open(text, line), seen(m), sync()}. */
 export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
-  let quote = "", line = null, waiting = null, size = null;
+  let quote = "", line = null, waiting = null, size;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
   const ready = (on) => { add.disabled = now.disabled = !on; };
   q.addEventListener("input", () => ready(q.value.trim()));

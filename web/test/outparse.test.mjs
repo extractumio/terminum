@@ -7,6 +7,8 @@ import { logicalLines, regions, scan } from "../static/outparse.js";
 // One row per line, every one with a hard end.
 const rows = (text) => text.split("\n").map((t) => ({ text: t, eol: true }));
 const found = (text, end) => regions(rows(text), end).map(({ kind, from, to, lang }) => ({ kind, from, to, lang }));
+// one output line, its styling given or plain
+const L = (text, o = {}) => ({ text, eol: true, styled: false, ...o });
 
 const README = `alex@devbox ~/app % cat README.md
 # App
@@ -327,7 +329,6 @@ test("a Markdown document ends before a drawn table, which is a widget of its ow
 });
 
 test("pipe tables: their own widget where an agent colored text around them, rows tmux wrapped joined", () => {
-  const L = (text, o = {}) => ({ text, eol: true, styled: false, ...o });
   const rows = [L("- a run of `code`, colored:", { styled: true }), L(""), L("| Итог | Версии"), L("        |"), L("|------|-----"), L("---|"),
     L("| Подтверждено | minimatch |"), L(""), L("| Вердикт | Строк |"), L("|---|---:|"), L("| Подтверждено | 212 |"), L(""), L("- next", { styled: true })];
   const found = scan(rows).found.filter((r) => r.kind === "table");
@@ -338,7 +339,6 @@ test("pipe tables: their own widget where an agent colored text around them, row
 // Claude Code's pipe table at a phone's width (44 columns): each row padded to its columns' width,
 // wrapped at a bar in its middle, the padding into blank lines, the separator over six lines.
 test("a pipe table wrapped at a phone's width: rows joined by their bars, blank lines and all", () => {
-  const L = (text) => ({ text, eol: true, styled: false });
   const rows = ["  Статусы:", "", "  | Статус                           |", "  Что видит пользователь", "", "           |",
     "  |----------------------------------|-------", "  ------------------------------------------", "  ------------------------------------------",
     "  ----------|", "  | защищено                         |", "  «Защищено», время последней проверки", "", "",
@@ -354,7 +354,6 @@ test("a pipe table wrapped at a phone's width: rows joined by their bars, blank 
 });
 
 test("a pipe table's row with a bar too many is a row of its own, the next rows joined again", () => {
-  const L = (text) => ({ text, eol: true, styled: false });
   const rows = ["| a | b |", "|---|---|", "| 1 |", "2 |", "| x | y | z |", "| 3 | 4 |"].map(L);
   const t = scan(rows).found.filter((r) => r.kind === "table");
   assert.deepEqual(t[0].table.rows, [["1", "2", ""], ["x", "y", "z"], ["3", "4", ""]]);
@@ -364,7 +363,6 @@ test("a pipe table's row with a bar too many is a row of its own, the next rows 
 });
 
 test("a table's last row short of its bars never takes the prose after a blank line; a wrapped table's may span blank lines", () => {
-  const L = (text) => ({ text, eol: true, styled: false });
   const rows = ["| a | b |", "|---|---|", "| 4 | 5", "", "Use `ls | wc` here."].map(L);
   const t = scan(rows).found.find((r) => r.kind === "table");
   assert.equal(t?.to ?? -1, 1, "the table ends at its separator; its short row and the prose stay text");
