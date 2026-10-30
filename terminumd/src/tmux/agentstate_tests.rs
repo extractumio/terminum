@@ -272,7 +272,7 @@ fn the_cache_stays_small() {
     for n in 0..KEEP + 1 {
         s.store(&format!("k{n}"), "", now, (Done, false), false);
     }
-    assert!(s.known.len() <= KEEP);
+    assert!(s.panes.len() <= KEEP);
     assert_eq!(s.last(&format!("k{KEEP}")), Some(Done), "the newest is kept");
 }
 
