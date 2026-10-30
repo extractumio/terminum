@@ -19,6 +19,7 @@ import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
 import { liveFolds } from "./e2e_livefolds.mjs";
+import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
@@ -211,6 +212,7 @@ async function wide(browser, name) {
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme=""]');
   await page.keyboard.press("Escape");
+  await liveJitter(page, { tmux, work: WORK });
   check("no page errors", errors.length === 0, errors.slice(0, 3).join(" | "));
   return ctx;
 }

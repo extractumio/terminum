@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A shown pane's frames (AC-02): `%output` wakes the task, which captures the screen at
-//! once when the pane was idle, else at the next 33 ms tick, and sends only the rows that
-//! changed; rows that scrolled off are appended to the page's history with their numbers.
+//! A shown pane's frames (AC-02): `%output` wakes the task, which captures the screen once the
+//! pane has been quiet SETTLE (a write that came in parts is whole) when it was idle, else at the
+//! next 33 ms tick, and sends only the rows that changed; rows that scrolled off are appended to
+//! the page's history with their numbers.
 //! A pane nobody shows is never captured.
 
 use std::sync::Arc;
@@ -21,6 +22,9 @@ use crate::tmux::Server;
 
 /// Frames at most 30 a second (AC-02).
 pub const FRAME_GAP: Duration = Duration::from_millis(33);
+/// After `%output`, the quiet that ends a write: one the terminal took in two reads (Claude Code's
+/// cursor up to its spinner row, the row, the cursor back) is captured whole, not half done.
+const SETTLE: Duration = Duration::from_millis(6);
 /// A shown pane is also looked at this often: a safety net, %output wakes it (AS-06 holds).
 const POLL: Duration = Duration::from_secs(1);
 /// History rows sent when a pane opens; older ones load on scroll (AC-02).
@@ -175,10 +179,67 @@ pub async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>, pane: String
             _ = ctl.wake.notified() => "key",
             _ = tokio::time::sleep(POLL) => "poll",
         };
+        let notice = tokio::time::Instant::now();
         super::timing::woken(&page, how);
         let since = last.elapsed();
         if since < FRAME_GAP {
             tokio::time::sleep(FRAME_GAP - since).await;
         }
+        // then quiet, output that came while it slept too (its wake kept): never 33 ms past the notice
+        if how == "output" {
+            settle(&wake, notice + FRAME_GAP).await;
+        }
+    }
+}
+
+/// Until the pane's output has been quiet SETTLE, or `until`.
+async fn settle(wake: &Notify, until: tokio::time::Instant) {
+    loop {
+        let quiet = SETTLE.min(until.saturating_duration_since(tokio::time::Instant::now()));
+        if quiet.is_zero() || tokio::time::timeout(quiet, wake.notified()).await.is_err() {
+            return;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::time::Instant;
+
+    #[tokio::test(start_paused = true)]
+    async fn a_write_in_parts_is_waited_for_never_past_a_frame() {
+        let wake = Arc::new(Notify::new());
+        let t0 = Instant::now();
+        settle(&wake, t0 + FRAME_GAP).await;
+        assert_eq!(t0.elapsed(), SETTLE, "no more output: the quiet alone");
+
+        let parts = wake.clone();
+        tokio::spawn(async move {
+            for _ in 0..3 {
+                tokio::time::sleep(Duration::from_millis(3)).await;
+                parts.notify_one();
+            }
+        });
+        let t0 = Instant::now();
+        settle(&wake, t0 + FRAME_GAP).await;
+        assert_eq!(t0.elapsed(), Duration::from_millis(9) + SETTLE, "each part 3 ms after the last: quiet after the third");
+
+        wake.notify_one();                                  // output while the frame gap was slept
+        let t0 = Instant::now();
+        settle(&wake, t0 + FRAME_GAP).await;
+        assert_eq!(t0.elapsed(), SETTLE, "that output kept: quiet after it");
+
+        let stream = wake.clone();
+        let busy = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                stream.notify_one();
+            }
+        });
+        let t0 = Instant::now();
+        settle(&wake, t0 + FRAME_GAP).await;
+        busy.abort();
+        assert_eq!(t0.elapsed(), FRAME_GAP, "output that never stops: a frame at the gap");
     }
 }

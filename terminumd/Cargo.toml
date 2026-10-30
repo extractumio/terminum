@@ -44,3 +44,7 @@ opt-level = 3
 [profile.release]
 lto = "thin"
 codegen-units = 4
+
+[dev-dependencies]
+# a paused clock in the tests of timed waits (page/stream.rs settle)
+tokio = { version = "1", features = ["full", "test-util"] }
