@@ -84,6 +84,7 @@ pub fn sync(app: &Shared) {
         if let Some(r) = runs.remove(name) {
             r.task.abort();
         }
+        tunnel::stop(app, name);
         if let Some(old) = app.tmux.remove_host(name) {
             let_go(app, old);
         }
@@ -105,7 +106,7 @@ pub fn sync(app: &Shared) {
             }
     }
     for s in app.tmux.hosts() {
-        if !recs.contains_key(&s.name) {
+        if !recs.contains_key(&s.name) || broken.contains_key(&s.name) {
             app.tmux.remove_host(&s.name);
             tunnel::stop(app, &s.name);
             let_go(app, s);

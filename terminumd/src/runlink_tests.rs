@@ -64,6 +64,46 @@ fn the_link_points_at_the_socket_atomically_and_goes_with_it() {
 }
 
 #[test]
+fn link_publication_and_conditional_cleanup_share_the_directory_lock() {
+    use std::os::fd::AsRawFd;
+    use std::time::Duration;
+    if let Some(run) = std::env::var_os("TM_TEST_RUNLINK_DIRECTORY") {
+        let run = PathBuf::from(run);
+        if std::env::var_os("TM_TEST_RUNLINK_REMOVE").is_some() {
+            unlink(&run, "mac1", &run.join("m-mac1-old.sock"));
+        } else {
+            link(&run, "mac1", &run.join("m-mac1-new.sock")).unwrap();
+        }
+        return;
+    }
+    let t = tmp("serial");
+    let run = t.0.join("run");
+    check_dir(&run, true).unwrap();
+    let old = run.join("m-mac1-old.sock");
+    let new = run.join("m-mac1-new.sock");
+    let (_old, _new) = (UnixListener::bind(&old).unwrap(), UnixListener::bind(&new).unwrap());
+    link(&run, "mac1", &old).unwrap();
+    let directory = std::fs::File::open(&run).unwrap();
+    for remove in [false, true] {
+        // SAFETY: the descriptor is our private scratch directory; no other task owns it.
+        assert_eq!(unsafe { libc::flock(directory.as_raw_fd(), libc::LOCK_EX) }, 0);
+        let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+        command.args(["--exact", "runlink::tests::link_publication_and_conditional_cleanup_share_the_directory_lock"])
+            .env("TM_TEST_RUNLINK_DIRECTORY", &run).env_remove("TM_TEST_RUNLINK_REMOVE")
+            .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+        if remove { command.env("TM_TEST_RUNLINK_REMOVE", "1"); }
+        let mut worker = command.spawn().unwrap();
+        std::thread::sleep(Duration::from_millis(100));
+        let bypassed = worker.try_wait().unwrap().is_some();
+        // SAFETY: unlock only the directory lock this test took above.
+        assert_eq!(unsafe { libc::flock(directory.as_raw_fd(), libc::LOCK_UN) }, 0);
+        assert!(worker.wait().unwrap().success());
+        assert!(!bypassed, "link update bypassed the cross-process directory lock (remove={remove})");
+    }
+    assert_eq!(std::fs::read_link(link_path(&run, "mac1")).unwrap(), new, "old cleanup cannot remove the newer link");
+}
+
+#[test]
 fn only_this_macs_dead_sockets_are_removed() {
     let t = tmp("sweep");
     let run = t.0.join("run");

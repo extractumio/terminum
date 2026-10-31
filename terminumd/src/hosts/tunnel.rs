@@ -348,6 +348,10 @@ pub(super) async fn update(recipe: &[String]) -> Result<(), String> {
 /// attached: "enabled" keeps its agent connected; "wanted" (ticked in Add host, AC-83) is set
 /// up as Enable does, and a failure clears the tick and Files asks again with the reason.
 pub fn reconcile(app: &Shared, host: &str) {
+    if app.tmux.host(host).is_none_or(|s| matches!(*s.status.lock(), crate::tmux::server::Status::Off)) {
+        stop(app, host);
+        return;
+    }
     let state = crate::hosts::files_state(app, host);
     let attached = app.tmux.host(host).is_some_and(|s| s.attached());
     let mut g = app.tunnels.0.lock();

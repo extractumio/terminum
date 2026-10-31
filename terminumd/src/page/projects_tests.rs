@@ -12,6 +12,36 @@ fn store() -> Projects {
 }
 
 #[test]
+fn invalid_project_schemas_are_backed_up_before_a_later_save() {
+    let dir = crate::testutil::fresh_dir("projects-schema");
+    let path = dir.join("projects.json");
+    assert!(Projects::load(path.clone()).list().is_empty(), "missing state starts empty");
+    for malformed in [
+        json!({"projects": [{"name": "recoverable", "members": []}], "servers": {}}),
+        json!({"projects": {}, "servers": {}}),
+        json!({"projects": [], "servers": []}),
+        json!([]),
+    ] {
+        let original = malformed.to_string();
+        std::fs::write(&path, &original).unwrap();
+        let projects = Projects::load(path.clone());
+        let backup = path.with_extension("json.bak");
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), original);
+        assert!(!path.exists(), "invalid schema must be set aside before writing");
+        projects.save().unwrap();
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), original);
+    }
+    std::fs::write(&path, "{}").unwrap();
+    assert!(Projects::load(path.clone()).list().is_empty(), "missing keys keep empty defaults");
+    let valid = json!({"projects": [{"id": "p1", "name": "work", "color": 2, "host": null,
+        "dir": "/sandbox", "members": [A]}], "servers": {"tmux:local:terminum:": "server1"}});
+    std::fs::write(&path, valid.to_string()).unwrap();
+    Projects::load(path.clone()).save().unwrap();
+    assert_eq!(serde_json::from_str::<Value>(&std::fs::read_to_string(path).unwrap()).unwrap(), valid);
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn a_new_project_is_named_and_colored_apart_from_the_others() {
     let mut ps = store();
     let p1 = ps.add(A, None, None, None, "/Users/alex/api".into(), None).unwrap();

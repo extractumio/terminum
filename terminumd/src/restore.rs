@@ -138,10 +138,10 @@ pub async fn follow(app: Shared) {
         if *app.restore.last.lock() == text {
             continue;
         }
-        *app.restore.last.lock() = text;
         v["at"] = json!(crate::auth::store::unix_now());
-        if let Err(e) = crate::config::write_private(&path(&app), v.to_string().as_bytes()) {
-            tracing::warn!(event = "restore.checkpoint_failed", error = %e);
+        match crate::config::write_private(&path(&app), v.to_string().as_bytes()) {
+            Ok(()) => *app.restore.last.lock() = text,
+            Err(e) => tracing::warn!(event = "restore.checkpoint_failed", error = %e),
         }
     }
 }

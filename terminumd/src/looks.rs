@@ -152,6 +152,7 @@ pub async fn follow(app: Shared) {
                 let _ = app.tmux.local.run(format!("set-option -g history-limit {n}")).await;
             }
             app.looks.note(msgs);
+            crate::hosts::sync(&app);
             crate::attach::sync(&app);
             retheme = true;
         }

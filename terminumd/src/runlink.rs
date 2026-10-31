@@ -70,8 +70,25 @@ pub fn link_path(dir: &Path, mac: &str) -> PathBuf {
     dir.join(format!("mac-{mac}.sock"))
 }
 
+/// Serializes helpers' shared link changes on the existing directory inode, with no lock file.
+fn lock_dir(dir: &Path) -> Result<std::fs::File, String> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
+        .open(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    loop {
+        // SAFETY: the descriptor is our checked run directory; File drop releases the lock.
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 { return Ok(file) }
+        let error = std::io::Error::last_os_error();
+        if error.kind() != std::io::ErrorKind::Interrupted {
+            return Err(format!("{}: {error}", dir.display()));
+        }
+    }
+}
+
 /// Points `mac-<mac>.sock` at `sock` atomically (a temp symlink renamed over it).
 pub fn link(dir: &Path, mac: &str, sock: &Path) -> Result<PathBuf, String> {
+    let _lock = lock_dir(dir)?;
     let tmp = dir.join(format!(".mac-{mac}.{}.tmp", std::process::id()));
     let _ = std::fs::remove_file(&tmp);
     std::os::unix::fs::symlink(sock, &tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
@@ -143,6 +160,13 @@ pub fn sweep(dir: &Path, mac: &str, keep: &Path) -> Vec<PathBuf> {
 /// connection of the same Mac may have taken it over).
 pub fn unlink(dir: &Path, mac: &str, sock: &Path) {
     let _ = std::fs::remove_file(sock);
+    let _lock = match lock_dir(dir) {
+        Ok(lock) => lock,
+        Err(error) => {
+            tracing::warn!(event = "agent.link_cleanup_failed", %error);
+            return;
+        }
+    };
     let l = link_path(dir, mac);
     if std::fs::read_link(&l).is_ok_and(|t| t == sock) {
         let _ = std::fs::remove_file(&l);

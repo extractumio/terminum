@@ -179,12 +179,13 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
                     _ => {}
                 }
             }
-            let d0 = panes.first().map_or(home.to_string(), dir_of);
+            let d0 = args::literal_format(&panes.first().map_or(home.to_string(), dir_of));
+            let window_name = args::literal_format(w["name"].as_str().unwrap_or(""));
             let target = format!("={name}:");
             let mut cmd = if first { vec!["new-session", "-d", "-s", name] } else { vec!["new-window", "-d", "-t", target.as_str()] };
             // `-n` turns automatic-rename off: a window tmux named after its program is left to tmux
             if w["auto"] != true {
-                cmd.extend(["-n", w["name"].as_str().unwrap_or("")]);
+                cmd.extend(["-n", &window_name]);
             }
             cmd.extend(["-c", &d0, "-P", "-F", "#{window_id} #{pane_id}"]);
             cmd.extend(print_of(panes.first()));
@@ -210,7 +211,7 @@ pub async fn make(exec: &Exec<'_>, sessions: &[Value], existing: &[String], into
             first = false;
             out.windows += 1;
             for p in panes.iter().skip(1) {
-                let d = dir_of(p);
+                let d = args::literal_format(&dir_of(p));
                 let mut split = vec!["split-window", "-d", "-t", &wid, "-c", &d, "-P", "-F", "#{pane_id}"];
                 split.extend(print_of(Some(p)));
                 match exec.run(&split).await {
@@ -347,6 +348,44 @@ pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn restore_keeps_literal_hash_names_and_folders_on_both_transports() {
+        let Some(tm) = crate::testutil::Tmux::start("restore-formats", (80, 30), "/bin/sh") else { panic!("tmux required") };
+        let dirs: Vec<_> = ["#S", "#{session_name}"].iter().map(|name| tm.dir.join(name)).collect();
+        for dir in &dirs { std::fs::create_dir(dir).unwrap(); }
+        let tmux = crate::config::find_program("tmux", "TM_TMUX").expect("tmux on PATH");
+        let server = Server::new("local", &tm.socket, Link::Local {
+            tmux: tmux.clone(), socket: tm.socket.clone(), conf: "/dev/null".into(),
+        }, std::sync::Arc::new(tokio::sync::Notify::new()));
+        for (name, exec) in [
+            ("restoredlocal", Exec::Local { tmux: &tmux, socket: &tm.socket, conf: None }),
+            ("restoredctl", Exec::Ctl(&server)),
+        ] {
+            if matches!(exec, Exec::Ctl(_)) {
+                server.sync_clients(&["main".to_string()]).unwrap();
+                let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(2);
+                while !server.attached() && tokio::time::Instant::now() < deadline {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+                assert!(server.attached(), "control client did not attach: {:?}", server.last_words());
+            }
+            let sessions = json!([{"name": name, "windows": [
+                {"name": "#S #{session_name}", "panes": [{"id": "%70", "dir": dirs[0]}, {"id": "%71", "dir": dirs[1]}]},
+                {"name": "second #S", "panes": [{"id": "%72", "dir": dirs[1]}]}
+            ]}]);
+            let mut out = Made::default();
+            make(&exec, sessions.as_array().unwrap(), &[], None, |_| true, tm.dir.to_str().unwrap(), &HashMap::new(), &mut out).await;
+            assert!(out.errors.is_empty(), "{:?}", out.errors);
+            assert_eq!((out.sessions, out.windows, out.panes.len()), (1, 2, 3));
+            let names = tm.read(&["list-windows", "-t", name, "-F", "#{window_name}"]);
+            assert_eq!(names.lines().collect::<Vec<_>>(), ["#S #{session_name}", "second #S"]);
+            for ((_, pane), dir) in out.panes.iter().zip([&dirs[0], &dirs[1], &dirs[1]]) {
+                assert_eq!(tm.read(&["display-message", "-p", "-t", pane, "#{pane_current_path}"]).trim(), dir.to_str().unwrap());
+            }
+        }
+        server.disconnect();
+    }
 
     #[test]
     fn sessions_are_kept_with_their_windows_and_folders_but_quick_shells() {

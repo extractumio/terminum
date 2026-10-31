@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use notify::{EventKind, RecursiveMode, Watcher as _};
+use notify::{EventKind, RecursiveMode};
 use parking_lot::Mutex;
 use tokio::sync::mpsc;
 
@@ -71,19 +71,25 @@ impl Watcher {
     pub fn set(&self, want: HashSet<PathBuf>) {
         let mut g = self.inner.lock();
         let (w, have) = &mut *g;
-        for p in have.difference(&want) {
-            let _ = w.unwatch(p);
-        }
-        for p in want.difference(have) {
-            if let Err(e) = w.watch(p, RecursiveMode::NonRecursive) {
-                tracing::debug!(event = "watch.failed", path = %p.display(), error = %e);
-            }
-        }
-        *have = want;
+        set_watched(w, have, want);
     }
 
     pub fn len(&self) -> usize {
         self.inner.lock().1.len()
+    }
+}
+
+fn set_watched(w: &mut impl notify::Watcher, have: &mut HashSet<PathBuf>, want: HashSet<PathBuf>) {
+    for p in have.difference(&want) {
+        let _ = w.unwatch(p);
+    }
+    have.retain(|p| want.contains(p));
+    for p in want {
+        if have.contains(&p) { continue; }
+        match w.watch(&p, RecursiveMode::NonRecursive) {
+            Ok(()) => { have.insert(p); }
+            Err(e) => tracing::debug!(event = "watch.failed", path = %p.display(), error = %e),
+        }
     }
 }
 
@@ -97,4 +103,37 @@ pub fn wanted(root: &str, expanded: &[String], tabs: impl Iterator<Item = String
     s.extend(tabs.filter_map(|t| Path::new(&t).parent().map(Path::to_path_buf)));
     s.retain(|p| p.is_dir());
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Default)]
+    struct Fake { calls: usize, unwatched: usize }
+
+    impl notify::Watcher for Fake {
+        fn new<F: notify::EventHandler>(_: F, _: notify::Config) -> notify::Result<Self> { Ok(Self::default()) }
+        fn watch(&mut self, _: &Path, _: RecursiveMode) -> notify::Result<()> {
+            self.calls += 1;
+            if self.calls == 1 { Err(notify::Error::generic("temporary quota")) } else { Ok(()) }
+        }
+        fn unwatch(&mut self, _: &Path) -> notify::Result<()> { self.unwatched += 1; Ok(()) }
+        fn kind() -> notify::WatcherKind { notify::WatcherKind::NullWatcher }
+    }
+
+    #[test]
+    fn failed_subscriptions_are_retried_without_changing_the_wanted_set() {
+        let (mut watcher, mut have) = (Fake::default(), HashSet::new());
+        let want = HashSet::from([PathBuf::from("/sandbox/project")]);
+        set_watched(&mut watcher, &mut have, want.clone());
+        assert!(have.is_empty(), "failed watches are not installed");
+        set_watched(&mut watcher, &mut have, want.clone());
+        assert_eq!((watcher.calls, &have), (2, &want));
+        set_watched(&mut watcher, &mut have, want);
+        assert_eq!(watcher.calls, 2, "a successful watch is not repeated");
+        set_watched(&mut watcher, &mut have, HashSet::new());
+        assert_eq!(watcher.unwatched, 1);
+        assert!(have.is_empty());
+    }
 }

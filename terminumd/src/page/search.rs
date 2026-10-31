@@ -34,7 +34,7 @@ pub fn find<S: AsRef<str>>(rows: &[(i64, S, bool)], query: &str) -> (Vec<(i64, u
         let t = py_rstrip(text.as_ref());
         starts.push((*n, size));
         parts.push_str(t);
-        size += t.chars().count();
+        size += t.chars().map(|c| c.to_lowercase().count()).sum::<usize>();
         if *eol {
             scan.line(&parts, &starts);
             (parts, size) = (String::new(), 0);
@@ -56,8 +56,7 @@ struct Scan {
 
 impl Scan {
     /// The matches in one line: its rows' text joined once (a line can be thousands of rows).
-    /// starts: (n, the row's first character in the line), as Python counted them on the text
-    /// before lowercasing.
+    /// starts: (n, the row's first character after lowercase expansion), matching `low`.
     fn line(&mut self, joined: &str, starts: &[(i64, usize)]) {
         let low = joined.to_lowercase();
         let (mut at_byte, mut at_char) = (0usize, 0usize); // where chars were counted up to
@@ -122,6 +121,15 @@ pub fn refused(r#ref: &str, why: &str) -> Value {
 mod tests {
     use super::*;
     use std::time::Instant;
+
+    #[test]
+    fn lowercase_expansion_keeps_search_hits_on_their_original_wrapped_rows() {
+        let rows = [(10, "İ", false), (11, "x x", false), (12, "z", true)];
+        assert_eq!(find(&rows, "x"), (vec![(11, 0), (11, 1)], 2));
+        assert_eq!(find(&rows, "İx"), (vec![(10, 0)], 1));
+        assert_eq!(find(&rows, "xz"), (vec![(11, 0)], 1));
+        assert_eq!(find(&[(1, "Ο", false), (2, "Σ", true)], "ος"), (vec![(1, 0)], 1));
+    }
 
     #[test]
     fn matches_by_row_case_insensitive_and_across_a_wrap() {

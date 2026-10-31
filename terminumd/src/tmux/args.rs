@@ -33,7 +33,12 @@ pub fn quote(s: &str) -> String {
 /// One word for an argument tmux expands as a format: `#` doubled to `##`, then quoted, so
 /// `#(cmd)` runs nothing and `#{…}` stays text (AS-11).
 pub fn format_arg(s: &str) -> String {
-    quote(&s.replace('#', "##"))
+    quote(&literal_format(s))
+}
+
+/// A literal value for a tmux format option, before command-parser quoting (or as argv).
+pub fn literal_format(s: &str) -> String {
+    s.replace('#', "##")
 }
 
 /// A word tmux reads as it is (`%3`, `@2`, `main:1`, a key name such as `Up`), else quoted.

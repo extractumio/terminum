@@ -68,9 +68,14 @@ fn name_ok(name: &str) -> Result<String, String> {
 impl Projects {
     pub fn load(path: PathBuf) -> Projects {
         // one that cannot be read is set aside (projects.json.bak), never written over
-        let v = crate::auth::store::read_or_set_aside(&path, Ok).unwrap_or(Value::Null);
-        let list = serde_json::from_value(v["projects"].clone()).unwrap_or_default();
-        let servers = serde_json::from_value(v["servers"].clone()).unwrap_or_default();
+        let (list, servers) = crate::auth::store::read_or_set_aside(&path, |v| {
+            if !v.is_object() {
+                return Err("expected a projects object".into());
+            }
+            let list = serde_json::from_value(v.get("projects").cloned().unwrap_or_else(|| json!([]))).map_err(|e| e.to_string())?;
+            let servers = serde_json::from_value(v.get("servers").cloned().unwrap_or_else(|| json!({}))).map_err(|e| e.to_string())?;
+            Ok((list, servers))
+        }).unwrap_or_default();
         Projects { path, list, servers, fresh: HashMap::new(), recheck: None }
     }
 

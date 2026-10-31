@@ -40,6 +40,18 @@ pub struct Queue {
     running: bool,
 }
 
+impl Queue {
+    fn batch(&mut self) -> Option<Vec<Typed>> {
+        let first = self.items.front()?;
+        let (key, server) = (first.key.clone(), first.server.clone());
+        let mut out = Vec::new();
+        while self.items.front().is_some_and(|t| t.key == key && Arc::ptr_eq(&t.server, &server)) {
+            out.push(self.items.pop_front().expect("checked"));
+        }
+        Some(out)
+    }
+}
+
 /// The page typed `data` into its shown pane.
 pub fn typed(app: &Shared, page: &Arc<Page>, data: String, k: Option<u64>) {
     let st = page.state.lock();
@@ -80,16 +92,11 @@ async fn run(app: Shared, page: Arc<Page>) {
     loop {
         let mut batch: Vec<Typed> = {
             let mut st = page.state.lock();
-            let Some(first) = st.queue.items.front() else {
+            let Some(batch) = st.queue.batch() else {
                 st.queue.running = false;
                 return;
             };
-            let pane = first.pane.clone();
-            let mut out = Vec::new();
-            while st.queue.items.front().is_some_and(|t| t.pane == pane) {
-                out.push(st.queue.items.pop_front().expect("checked"));
-            }
-            out
+            batch
         };
         let (server, pane, key) = (batch[0].server.clone(), batch[0].pane.clone(), batch[0].key.clone());
         let keys = batch.iter().any(|t| t.mouse.is_empty());
@@ -114,13 +121,16 @@ async fn run(app: Shared, page: Arc<Page>) {
             error(&page, e, Some(&key));
             continue;
         }
-        {
+        let still_shown = {
             let st = page.state.lock();
-            if let Some(s) = st.shown.as_ref().filter(|s| s.pane == pane) {
+            if let Some(s) = st.shown.as_ref().filter(|s| s.key == key && Arc::ptr_eq(&s.server, &server)) {
                 s.ctl.wake.notify_one();
+                true
+            } else {
+                false
             }
-        }
-        if keys {
+        };
+        if keys && still_shown {
             super::sizing::typed(&app, &page).await;
         }
     }
@@ -262,6 +272,30 @@ mod tests {
         }).collect();
         assert_eq!(got, ["keys:ab", "mouse:\x1b[<64;1;1M\x1b[<64;1;1M", "keys:c"]);
         assert_eq!(mouse_line("%3", b"\x1b["), "send-keys -t %3 -H 1b 5b");
+    }
+
+    #[test]
+    fn queued_typing_keeps_servers_and_replacement_generations_separate() {
+        let mut first = item("a", b"");
+        first.key = "tmux:local:tm-test:%1".into();
+        let mut same = item("b", b"");
+        same.key = first.key.clone();
+        same.server = first.server.clone();
+        let mut remote = item("remote", b"");
+        remote.key = "tmux:devbox:default:%1".into();
+        let mut replacement = item("replacement", b"");
+        replacement.key = first.key.clone();
+        let mut mouse = item("", b"mouse");
+        mouse.key = remote.key.clone();
+        mouse.server = remote.server.clone();
+        let destinations = [first.server.clone(), remote.server.clone(), replacement.server.clone(), remote.server.clone()];
+        let mut q = Queue { items: VecDeque::from([first, same, remote, replacement, mouse]), running: true };
+        for (server, length) in destinations.iter().zip([2, 1, 1, 1]) {
+            let batch = q.batch().unwrap();
+            assert_eq!(batch.len(), length);
+            assert!(batch.iter().all(|t| Arc::ptr_eq(&t.server, server)));
+        }
+        assert!(q.batch().is_none());
     }
 
     #[test]
