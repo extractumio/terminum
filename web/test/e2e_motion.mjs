@@ -87,7 +87,7 @@ export async function webMotion(browser, name) {
   check("motion: a color changes over a moment, not at once", shift[0] !== shift[2] && shift[1] !== shift[2], JSON.stringify(shift));
 
   // a key sinks into the panel while pressed (its well), nothing scales or ripples; a blob pulses
-  await page.hover(".footpeek");                    // the list's foot unfolds first (foot.css)
+  await page.click("#foottoggle");                 // the list's foot unfolds first (foot.js)
   await pause(page, 500);
   const box = await page.$("#newsessbtn").then((b) => b.boundingBox());
   await page.mouse.move(box.x + 20, box.y + 10);

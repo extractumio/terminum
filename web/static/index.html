@@ -81,10 +81,10 @@
     </form>
     <div id="navgrip" role="separator" aria-orientation="vertical" aria-label="Width of the session list" tabindex="0"
       aria-valuemin="200" aria-valuemax="640"></div>
-    <!-- the foot (AC-07): on a computer folded to one row of its buttons' icons (foot.css; navtools.js copies them) -->
+    <!-- the foot (AC-07): on a computer folded to one row of its buttons' icons, a toggle (foot.css; foot.js copies them) -->
     <div class="nav-foot">
-      <div class="footpeek" aria-hidden="true"><span id="markpeek" class="count"></span></div>
-      <div class="footmenu"><div class="footin">
+      <button id="foottoggle" class="footpeek" type="button" aria-expanded="false" aria-controls="footmenu" aria-label="Session tools" title="Session tools"><span class="icons" aria-hidden="true"><span id="markpeek" class="count"></span></span><svg class="tri" viewBox="0 0 10 10" width="10" height="10" aria-hidden="true"><path d="M3 1.5 7.5 5 3 8.5z" fill="currentColor"/></svg></button>
+      <div id="footmenu" class="footmenu"><div class="footin">
       <button id="newsessbtn" class="footbtn" type="button" aria-expanded="false" aria-controls="newsess" title="A new tmux session, with a shell in your home folder">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>New<span class="more"> session</span></span>
       </button>

@@ -5,7 +5,7 @@
 // defaults, messages and hot keys, and custom.css (AC-18, AC-19), and the page's words.
 
 import { check, runningIn } from "./check.mjs";
-import { drawn, group, item, LAYOUT, openPage, pause, SIZES, pressFoot } from "./fake.mjs";
+import { drawn, foldFoot, group, item, LAYOUT, openPage, pause, SIZES, pressFoot } from "./fake.mjs";
 
 /** Clicks a button of a group's header: the pointer over the header first, where its buttons show. */
 const headClick = async (page, grp, btn) => { await page.hover(`${grp} h2 .label`); await page.click(`${grp} h2 ${btn}`); };
@@ -136,6 +136,7 @@ export async function webTmux(browser, name) {
     const offered = await page.evaluate(() => [...document.querySelectorAll("#hostmenu button")].map((b) => b.textContent));
     if (!phone) {   // a window that ends under the button: the menu opens above it, whole (a phone's is a sheet)
       await page.click('#hostmenu button[data-action="retry"]');
+      await foldFoot(page);   // a form opened from the foot left it unfolded: the list gets its room back
       const was = page.viewportSize();
       // the window shortened until the button, still in the list's view (a click scrolls nothing), has no room for the menu under it
       const room = () => page.evaluate(() => { const b = document.querySelector('#sessions .grp[data-wid="devbox/terminum"] .hostbtn').getBoundingClientRect(),

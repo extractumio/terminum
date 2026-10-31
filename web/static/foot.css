@@ -1,29 +1,33 @@
 /* The session list's foot (AC-07): New session, Bookmarks / Reminders, Add host, Attach tmux sessions
    and the version; their forms open above it (tmux.css). On a computer it is folded to one slim row
-   of their icons (.footpeek, navtools.js copies them) and unfolds upward while the pointer is over it,
-   the keyboard's focus is on a button of it or one of their forms is open. */
+   of their icons with ▸ (#foottoggle, foot.js copies them): a click unfolds it upward (▾) and it
+   stays until clicked again; the pointer passing over it changes nothing. */
 .nav-foot { padding: var(--sp-1) 10px 10px; display: flex; flex-direction: column; }
 .footin { display: flex; flex-direction: column; gap: var(--sp-1); }
 .footpeek { display: none; }
 .footbtn { width: 100%; --key-h: var(--key-h-lg); justify-content: flex-start; font-weight: 500; }   /* a key (controls.css), the list's own size */
 .footbtn[aria-expanded="true"] { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 
-/* a computer: folded; unfolding waits 60 ms (a pointer passing by opens nothing), folding 0.3 s */
+/* a computer: folded unless toggled open (.open, foot.js) */
 @media (min-width: 861px) and (pointer: fine) {
-  .nav-foot { --fold-wait: .3s; }
-  .nav-foot:is(:hover, :has(:focus-visible), :has(.footbtn[aria-expanded="true"])) { --fold-wait: 60ms; }
-  .footpeek { display: flex; align-items: center; justify-content: space-evenly; height: 30px; overflow: clip;
-    border-radius: var(--key-r); background: var(--surface-2); color: var(--muted);
-    transition: height var(--dur-enter) var(--ease-out) var(--fold-wait), opacity var(--dur-out) var(--fold-wait); }
-  .footpeek > span { display: flex; align-items: center; gap: 4px; }   /* the bookmarks' icons and their count */
+  .footpeek { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 10px 0 4px; border: 0;
+    border-radius: var(--key-r); background: var(--surface-2); color: var(--muted); font: inherit; cursor: pointer; }
+  .footpeek:hover { background: var(--surface-3); color: var(--t-fg); }
+  .footpeek:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+  .footpeek .icons { flex: 1; display: flex; align-items: center; justify-content: space-evenly; }
+  .footpeek .icons > span { display: flex; align-items: center; gap: 4px; }   /* the bookmarks' icons and their count */
   .footpeek .count { font: 600 10px/1 var(--ui); font-variant-numeric: tabular-nums; }
+  .footpeek .tri { flex: none; width: 10px; height: 10px; transition: transform var(--dur-enter) var(--ease-out); }   /* ▸ folded, ▾ unfolded */
+  .footpeek[aria-expanded="true"] .tri { transform: rotate(90deg); }
   .footmenu { display: grid; grid-template-rows: 0fr; opacity: 0;
-    transition: grid-template-rows var(--dur-enter) var(--ease-out) var(--fold-wait), opacity var(--dur-out) var(--fold-wait); }
+    transition: grid-template-rows var(--dur-enter) var(--ease-out), opacity var(--dur-out); }
   .footin { min-height: 0; overflow: clip; }
   .footin .footbtn:focus-visible { outline-offset: -2px; }   /* inside the clip */
-  .nav-foot:is(:hover, :has(:focus-visible), :has(.footbtn[aria-expanded="true"])) .footpeek { height: 0; opacity: 0; }
-  .nav-foot:is(:hover, :has(:focus-visible), :has(.footbtn[aria-expanded="true"])) .footmenu { grid-template-rows: 1fr; opacity: 1; }
+  .nav-foot.open .footmenu { grid-template-rows: 1fr; opacity: 1; }
+  .nav-foot.open .footin { padding-top: var(--sp-1); }
+  .nav-foot.instant :is(.footmenu, .tri) { transition: none; }   /* the remembered state, drawn at once */
 }
+@media (prefers-reduced-motion: reduce) { .footmenu, .footpeek .tri { transition: none; } }
 
 /* a touch screen or a narrow window: one row of blobs, the label's first words under each (the
    rest stays in the name: "New session"), the title says it all */

@@ -17,14 +17,6 @@ for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
   x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
 }
 
-// The foot folded on a computer (foot.css): its buttons' icons in a row, the bookmarks' count after theirs.
-const peek = document.querySelector(".footpeek");
-for (const b of document.querySelectorAll(".nav-foot .footbtn")) {
-  const icon = b.querySelector("svg").cloneNode(true);
-  if (b.id !== "marksbtn") peek.append(icon);
-  else { const mk = document.createElement("span"); mk.append(icon, $("markpeek")); peek.append(mk); }
-}
-
 /** Asks `text` with a dialog: true when the user pressed `yes` (else Cancel, ×, Esc). Its question
  *  ("Close the session api?") is the title, what follows it the text. */
 export function askConfirm(text, yes) {

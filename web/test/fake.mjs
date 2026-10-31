@@ -107,11 +107,16 @@ export async function pressFab(page, sel, how = "click") {
 
 /** Presses a button of the list's foot; on a computer once the pointer unfolded it (foot.css, AC-07). */
 export async function pressFoot(page, sel) {
-  if (await page.isVisible(".footpeek")) {
-    await page.hover(".footpeek");
-    await page.waitForFunction(() => document.querySelector(".footpeek").getBoundingClientRect().height === 0, null, { timeout: 2000 });
+  if (await page.isVisible("#foottoggle") && (await page.getAttribute("#foottoggle", "aria-expanded")) === "false") {
+    await page.click("#foottoggle");   // the foot folded on a computer: unfolded by its toggle (foot.js)
+    await page.waitForFunction(() => document.querySelector(".footmenu").getBoundingClientRect().height > 100, null, { timeout: 2000 });
   }
   await page.click(sel);
+}
+
+/** Folds the foot a pressFoot left unfolded (it stays so until its toggle is clicked again). */
+export async function foldFoot(page) {
+  if (await page.isVisible("#foottoggle") && (await page.getAttribute("#foottoggle", "aria-expanded")) === "true") await page.click("#foottoggle");
 }
 
 /** Waits until the page drew the shown pane's screen. */

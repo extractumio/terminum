@@ -16,6 +16,7 @@ import { colorSchemes } from "./schemes.js";
 import { menuPrefs } from "./prefs.js";
 import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
+import { listFoot, showBuild } from "./foot.js";
 import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
 import { selectionCut } from "./selcut.js";
@@ -202,13 +203,6 @@ function toast(text, ms = 1800) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $("toast").hidden = true; }, ms);
 }
 
-// the build under the session list, small and quiet: a release's version, else "dev" and its id
-function showBuild(m) {
-  const id = String(m.id ?? ""), version = /^v\d/.test(id) ? id : `dev ${id.slice(0, 7)}`;
-  $("buildinfo").textContent = ["terminum", version, m.date].filter(Boolean).join(" · ");
-  $("buildinfo").title = `Build ${id}${m.date ? `, ${m.date}` : ""}`;
-}
-
 function pickFile() { $("upload").value = ""; $("upload").click(); }
 $("upload").addEventListener("change", () => { if ($("upload").files.length) files.uploadFiles([...$("upload").files]); });
 $("attachfab").addEventListener("click", pickFile);
@@ -336,6 +330,7 @@ const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "a
   pane: () => ({ cols: view.cols, rows: view.rows, used: view.boxHeight }), asked: asked.asked, toast });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks });
+listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
 function drawNav() {

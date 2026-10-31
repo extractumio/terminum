@@ -108,7 +108,8 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
 [SECURITY.md](../SECURITY.md)). `tmux -L terminum attach` from any terminal shows the same sessions.
 
 - **Under the list**: New session, Bookmarks / Reminders, Add host and Attach tmux sessions
-  fold into one row of their icons on a computer; move the pointer there and they unfold.
+  fold into one row of their icons with ▸ on a computer; click it and they unfold (▾) until you
+  click it again; the page remembers which.
 - **Quick shell**: the button in the header (or "Quick shell below" / "on the left" in the menu)
   opens a shell of its own under the shown pane, in its folder, for quick commands; drag its edge
   to size it, ⇄ moves it, × closes it. It is a tmux window marked with its pane, listed under it.
