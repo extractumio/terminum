@@ -10,7 +10,7 @@ import { hostRegressions } from "./e2e_review_hosts.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 520, height: 900 } });
-const SECRET = await signIn(page).catch((e) => { cleanup(); throw e; });
+const SECRET = await signIn(page).catch(async (e) => { await cleanup(); throw e; });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 page.on("dialog", (d) => void d.accept());   // leaving a panel with unsaved edits for the next case
@@ -138,6 +138,6 @@ try {
   await hostRegressions({ page, test, focus, text, edit, deferred, SB });
   check("review regressions have no uncaught page errors", errors.length === 0, errors.join("; "));
 } finally {
-  await browser.close(); cleanup();
+  await browser.close(); await cleanup();
 }
 process.exit(results.every(Boolean) ? 0 : 1);

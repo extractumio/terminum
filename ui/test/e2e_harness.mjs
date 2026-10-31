@@ -8,6 +8,7 @@ import { execFileSync, spawn } from "node:child_process";
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
+import { stopChild } from "./process-stop.mjs";
 
 export const PORT = Number(process.env.TM_TEST_PORT ?? 47932);
 export const TMUX_SOCKET = "tm-test-panel";
@@ -107,7 +108,7 @@ async function start(env = {}) {
   return p;
 }
 let server = await start();
-export const stopServer = () => new Promise((r) => { if (server.exitCode !== null) return r(); server.once("exit", r); server.kill(); });
+export const stopServer = () => stopChild(server);
 /** terminumd is back (`env`: as another build, TM_BUILD_ID). */
 export async function bringBack(env = {}) { server = await start(env); }
 /** terminumd goes away for `gapMs` (a restart); `during` runs meanwhile. */
@@ -148,8 +149,8 @@ export async function waitFor(ok, ms = 4000) {
   }
 }
 
-export function cleanup() {
-  server.kill();
+export async function cleanup() {
+  await stopServer();
   try { tmux("kill-server"); } catch { /* gone */ }
   removeDirs();
 }

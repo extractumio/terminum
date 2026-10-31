@@ -238,7 +238,7 @@ mark { background: color-mix(in srgb, var(--accent) 32%, transparent); color: in
 .btn.primary { background-color: var(--accent); color: var(--bg); --focus: var(--bg); }
 .btn.primary:hover { background-color: color-mix(in srgb, var(--accent) 85%, var(--fg)); }
 .btn.danger { color: var(--bad); }
-.btn.primary.danger { background-color: var(--bad); color: var(--bg); }
+.btn.primary.danger { background-color: var(--danger-fill); color: var(--danger-ink); --focus: var(--danger-ink); }
 .banner .btn { margin-left: 6px; }
 
 .row.editing { background: var(--bg-hover); }

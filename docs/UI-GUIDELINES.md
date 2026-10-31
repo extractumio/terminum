@@ -65,7 +65,7 @@ Selected list row: `color-mix(in srgb, var(--accent) 16%, var(--chrome))`. Press
 | Bookmark and reminder marks | `.wave.mark`, `.wave.remind` (marks.css) | Wavy lines beside a row's folder bar, never a straight strip; side by side when a project has both. |
 | Reminder | `--remind: #e8a3dc`, text on it `--remind-ink: #2a0f25`, its text on the theme `--remind-text` (mixed into `--t-fg`) (reminders.css) | The bell, its count, its pane's primary and "up now", a row's strip, the dialog's primary for a reminder. |
 | This Mac / a host | `--local: #4f9dff`, `--remote: #a98bff`; `--host-label: cornflowerblue` | Rows, group labels, `.tsess` pill. |
-| Danger / error | `--danger: #ff6b5e` (a dot or icon), `--danger-text` (= danger 80% into `--t-fg`, 45% on a light theme for 4.5:1: every error text), `--danger-fill: #b3372e` (fills, white text) | Remove/Close/Sign out, error lines, a failed host's state, `#status`, confirm primary, armed delete. |
+| Danger / error | `--danger: #ff6b5e` (a dot or icon), `--danger-text` (= danger 80% into `--t-fg`, 45% on a light theme for 4.5:1: every error text), `--danger-fill: #b3372e` (fills), `--danger-ink: #ffffff` (text on those fills) | Remove/Close/Sign out, error lines, a failed host's state, `#status`, confirm primary, armed delete. |
 | Done / ok | `--ok-fill: #2f7d4f` | `#restored`, update chip. |
 | Warning / waiting | `--warn-fill: #9a6a12`; `--waiting: #ffb020` (a dot or edge, never text) | `#stall`, `#sized`, Screen label warn, waiting cards. |
 | Text on the bookmark color | `#1b1200` | `#markbox .primary`. |

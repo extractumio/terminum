@@ -9,21 +9,33 @@ export interface Choice { id: string; label: string; primary?: boolean; danger?:
  *  id, or "cancel" on × and Esc. */
 export function ask(title: string, message: string, choices: Choice[]): Promise<string> {
   return new Promise((resolve) => {
+    const previous = document.activeElement as HTMLElement | null;
     const back = document.createElement("div");
     back.className = "modal-back";
     back.innerHTML =
-      `<div class="modal box" role="dialog" aria-label="${esc(title)}"><div class="mhead"><div class="mtitle">${esc(title)}</div>` +
+      `<div class="modal box" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="mhead"><div class="mtitle">${esc(title)}</div>` +
       `<button data-id="cancel" class="mx" title="Close (Esc)" aria-label="Close"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" ` +
       `stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>` +
       (message ? `<div class="mtext">${esc(message)}</div>` : "") +
       `<div class="mbtns">${choices.map((c) =>
         `<button data-id="${esc(c.id)}" class="btn${c.primary ? " primary" : ""}${c.danger ? " danger" : ""}">${esc(c.label)}</button>`).join("")}</div></div>`;
-    const done = (id: string) => { back.remove(); document.removeEventListener("keydown", key, true); resolve(id); };
+    const done = (id: string) => {
+      back.remove(); document.removeEventListener("keydown", key, true);
+      if (previous?.isConnected) previous.focus({ preventScroll: true });
+      resolve(id);
+    };
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done("cancel"); }
       if (e.key === "Enter") {
         e.preventDefault(); e.stopPropagation();
-        done((choices.find((c) => c.primary) ?? choices[0]).id);
+        const button = document.activeElement?.closest<HTMLButtonElement>("button[data-id]");
+        done(button && back.contains(button) ? button.dataset.id! : (choices.find((c) => c.primary) ?? choices[0]).id);
+      }
+      if (e.key === "Tab") {
+        e.preventDefault(); e.stopPropagation();
+        const buttons = [...back.querySelectorAll<HTMLButtonElement>("button[data-id]")];
+        const i = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        buttons[(i + (e.shiftKey ? buttons.length - 1 : 1)) % buttons.length]?.focus();
       }
     };
     back.addEventListener("click", (e) => {

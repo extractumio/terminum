@@ -281,9 +281,9 @@ export class Tree {
     if (!this.root || !path.startsWith(this.root.path)) return;
     const parent = this.nodes.get(dirname(path));
     if (!parent || (!this.expanded.has(parent.path) && parent !== this.root)) return;
-    const epoch = this.epoch;
+    const epoch = this.epoch, run = this.expandRun;
     const idx = await this.locate(parent, basename(path));
-    if (idx == null || epoch !== this.epoch) return;  // gone, filtered out, or re-rooted meanwhile
+    if (idx == null || epoch !== this.epoch || run !== this.expandRun || (parent !== this.root && !this.expanded.has(parent.path))) return;
     const node = this.node(path);
     parent.children.set(basename(path), { idx, node });
     parent.sorted = undefined;

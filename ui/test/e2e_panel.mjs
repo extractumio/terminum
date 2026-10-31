@@ -15,6 +15,7 @@ import path from "node:path";
 import { slack } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
 import { layoutTools } from "./e2e_layout.mjs";
+import { panelReview } from "./e2e_panel_review.mjs";
 import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
 import {
   base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, waitFor, within, wsKey,
@@ -28,7 +29,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-cor
 const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 520, height: 900 } });
 const page = await context.newPage();
-const SECRET = await signIn(page).catch((e) => { cleanup(); throw e; });
+const SECRET = await signIn(page).catch(async (e) => { await cleanup(); throw e; });
 const H = (extra = {}) => ({ "X-TM-Session": SECRET, ...extra });
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
@@ -49,6 +50,7 @@ const focusInput = async () => {
 try {
   await within("AC-51 the tree shows the pane's folder", (ms) => page.waitForSelector(row("app.py"), { timeout: ms }));
   await layoutTools(page);
+  await panelReview(page);
 
   // AC-57 create file (opens in a tab), duplicate name, nested folder
   await page.click("#new-file"); await focusInput();
@@ -472,7 +474,7 @@ try {
   await page.screenshot({ path: path.join(os.tmpdir(), "tm-e2e-panel.png") });
 } finally {
   await browser.close();
-  cleanup();
+  await cleanup();
 }
 const failed = results.filter((r) => !r).length;
 console.log(failed ? `FAIL (${failed} of ${results.length})` : `PASS (${results.length} checks)`);

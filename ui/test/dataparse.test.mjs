@@ -28,6 +28,35 @@ test("YAML: a syntax error says where", () => {
   assert.ok(r.line >= 2, JSON.stringify(r));
 });
 
+test("YAML: aliases stay within their document and must follow a defined anchor", () => {
+  const same = parseYaml("a: &value {x: 1}\nb: *value\n---\na: &value 2\nb: *value\n");
+  assert.deepEqual(same, { ok: true, value: [{ a: { x: 1 }, b: { x: 1 } }, { a: 2, b: 2 }] });
+  for (const [text, line, col] of [
+    ["a: *missing\n", 1, 4],
+    ["a: *later\nb: &later 1\n", 1, 4],
+    ["a: &old 42\n---\nb: *old\n", 3, 4],
+  ]) {
+    const r = parseYaml(text);
+    assert.deepEqual([r.ok, r.line, r.col], [false, line, col], JSON.stringify(r));
+    assert.match(r.error, /anchor/i);
+  }
+});
+
+test("YAML: explicit block indentation preserves extra spaces at every nesting level", () => {
+  const r = parseYaml("top: |2\n    indented\nnested:\n  text: |2-\n      more\nlist:\n  - |2\n      item\ncompact:\n  - text: |2\n        value\n");
+  assert.deepEqual(r, { ok: true, value: [{ top: "  indented\n", nested: { text: "  more" }, list: ["  item\n"], compact: [{ text: "  value\n" }] }] });
+  assert.deepEqual(parseYaml("a: >2-\n    keep\n    space\n"), { ok: true, value: [{ a: "  keep\n  space" }] });
+});
+
+test("YAML: escaped quoted line endings join without a space, literal backslashes still fold", () => {
+  for (const newline of ["\n", "\r\n"]) {
+    const continued = `a: "line\\${newline}  continued"${newline}`;
+    assert.deepEqual(parseYaml(continued), { ok: true, value: [{ a: "linecontinued" }] });
+    const backslash = `a: "line\\\\${newline}  continued"${newline}`;
+    assert.deepEqual(parseYaml(backslash), { ok: true, value: [{ a: "line\\ continued" }] });
+  }
+});
+
 test("YAML scalars by the core schema", () => {
   for (const [t, v] of [["", null], ["~", null], ["NULL", null], ["True", true], ["false", false], ["12", 12], ["-3.5e2", -350], ["0o17", 15], [".inf", Infinity], ["1_000", 1000], ["yes", "yes"], ["1.2.3", "1.2.3"]]) assert.deepEqual(scalar(t), v, t);
 });
@@ -76,4 +105,11 @@ test("CSV: an empty quoted field is a record, with or without a last line end; a
 
 test("the kind of data by its name", () => {
   assert.deepEqual(["a.json", "b.YAML", "c.yml", "d.csv", "e.tsv", "f.geojson", "g.md", "h.jsonc"].map(dataKind), ["json", "yaml", "yaml", "csv", "tsv", "json", null, null]);
+});
+
+test("YAML: escaped line continuations keep subsequent blank lines", () => {
+  for (const newline of ["\n", "\r\n"]) for (const blanks of [1, 2]) {
+    const text = 'a: "foo\\' + newline.repeat(blanks + 1) + '  bar"' + newline;
+    assert.deepEqual(parseYaml(text), { ok: true, value: [{ a: "foo" + "\n".repeat(blanks) + "bar" }] });
+  }
 });

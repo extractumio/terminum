@@ -84,8 +84,12 @@ const ESC: Record<string, string> = { n: "\n", t: "\t", r: "\r", "0": "\0", '"':
 /** A quoted scalar's text (`at`: its offset, for an escape past Unicode). */
 function quoted(t: string, at: number): string {
   const fold = (s: string) => s.replace(/[ \t]*\n[ \t]*/g, "\n").replace(/([^\n])\n(?!\n)/g, "$1 ").replace(/\n(\n+)/g, "$1");
-  if (t.startsWith("'")) return fold(t.slice(1, -1)).replace(/''/g, "'");
-  return fold(t.slice(1, -1)).replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, c: string) => {
+  const body = t.slice(1, -1).replace(/\r\n?/g, "\n");
+  if (t.startsWith("'")) return fold(body).replace(/''/g, "'");
+  // Consume escapes in pairs: an escaped backslash before a line end is not a continuation.
+  const continued = body.replace(/\\(?:\n[ \t]*(?:\n[ \t]*)*|[^\n])/g, (s) =>
+    s[1] === "\n" ? "\\n".repeat(s.split("\n").length - 2) : s);
+  return fold(continued).replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8}|.)/g, (_, c: string) => {
     if (c.length === 1) return ESC[c] ?? c;
     const code = parseInt(c.slice(1), 16);
     if (code > 0x10ffff) throw new YamlError(`\\${c} is past the last Unicode character`, at);
@@ -95,9 +99,10 @@ function quoted(t: string, at: number): string {
 
 /** A block scalar: "|" keeps its line ends, ">" folds lines into spaces; "-" strips the last line
  *  end, "+" keeps every one. */
-function block(header: string, content: string): string {
+function block(header: string, content: string, baseIndent: number): string {
   const lines = content.split("\n");
-  const indent = Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)![0].length));
+  const explicit = header.match(/[1-9]/)?.[0];
+  const indent = explicit ? baseIndent + Number(explicit) : Math.min(...lines.filter((l) => l.trim()).map((l) => l.match(/^ */)![0].length));
   const body = lines.map((l) => l.slice(Number.isFinite(indent) ? indent : 0)).join("\n");
   const trailing = body.match(/\n*$/)![0], core = body.slice(0, body.length - trailing.length);
   const text = header.includes(">") ? core.replace(/([^\n])\n(?=[^\n ])/g, "$1 ") : core;
@@ -119,8 +124,19 @@ export function parseYaml(text: string): Parsed<Value[]> {
     switch (n.name) {
       case "Literal": return scalar(src(n).trim());
       case "QuotedLiteral": return quoted(src(n), n.from);
-      case "BlockLiteral": return block(src(n.getChild("BlockLiteralHeader")!), n.getChild("BlockLiteralContent") ? src(n.getChild("BlockLiteralContent")!) : "");
-      case "Alias": return anchors.has(src(n).slice(1)) ? anchors.get(src(n).slice(1))! : src(n);
+      case "BlockLiteral": {
+        let parent = n.parent;
+        while (parent && !/^(Pair|Item|Document)$/.test(parent.name)) parent = parent.parent;
+        const at = parent?.from ?? 0, line = text.lastIndexOf("\n", at - 1) + 1;
+        const before = text.slice(line, at);
+        const base = parent?.name === "Item" ? Math.max(0, before.lastIndexOf("-")) : parent?.name === "Document" ? 0 : before.length;
+        return block(src(n.getChild("BlockLiteralHeader")!), n.getChild("BlockLiteralContent") ? src(n.getChild("BlockLiteralContent")!) : "", base);
+      }
+      case "Alias": {
+        const name = src(n).slice(1);
+        if (!anchors.has(name)) throw new YamlError(`No earlier anchor named ${JSON.stringify(name)} in this document`, n.from);
+        return anchors.get(name)!;
+      }
       case "Anchored": case "Tagged": {
         let inner: SyntaxNode | null = n.firstChild;
         while (inner && (inner.name === "Anchor" || inner.name === "Tag")) inner = inner.nextSibling;
@@ -148,6 +164,7 @@ export function parseYaml(text: string): Parsed<Value[]> {
   };
   try {
     const docs = tree.topNode.getChildren("Document").map((d) => {
+      anchors.clear();
       let c = d.firstChild;
       while (c && /^(DirectiveEnd|DocEnd|Comment|Directive)$/.test(c.name)) c = c.nextSibling;
       return valueOf(c);
