@@ -242,7 +242,7 @@ function membership(groups, projects) {
 }
 
 /** The sessions (a window's first pane, not the panes and quick shells under it) the tmux group
- *  `wid` lists, in order, whether it is collapsed or filtered: its menu's New Session and Close Group. */
+ *  `wid` lists, in order, whether it is collapsed or filtered: its menu's New Window and Close Group. */
 export function groupRows(groups, projects, wid) {
   const g = groups.find((x) => x.wid === wid);
   if (!g) return [];

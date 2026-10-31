@@ -192,7 +192,7 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   of sessions in a color of their own, with [+] for a new window in the project's folder, the same
   on every browser; a right click on a project's header, or its ⋯, opens its menu (New Session,
   Rename, moves among the projects, Ungroup, Close Project, which asks first); a tmux session's group
-  has the same kind of menu (New Session, moves, Close Group).
+  has the same kind of menu (New Window, a window in that session; moves, Close Group).
   ⌘Z sends the program's undo (Claude Code, zsh, bash, fish); ⌘⇧Z redoes where it can (fish);
   ⌘X cuts the text selected in a coding agent's input box.
 - **On a phone**: the floating buttons but the keyboard's two fold into ⟨…⟩ at the top right; a tap

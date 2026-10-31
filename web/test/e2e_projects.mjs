@@ -34,7 +34,7 @@ export async function webProjects(browser, name) {
   check("AC-07 every row has Clone, no group header has [+]", look.news === 0 && look.clones === 4, JSON.stringify(look));
   check("AC-01 a row's second line: its folder first, its program at the right edge", look.first === "~/work/docs" && look.prog === "zsh" && look.right <= 1, JSON.stringify(look));
   check("AC-93 a row whose agent finished unseen is unread, others not", look.unread && !look.plain, JSON.stringify(look));
-  // a tmux session's group: its menu on a right click on its header or its ⋯ (New Session, moves among
+  // a tmux session's group: its menu on a right click on its header or its ⋯ (New Window, moves among
   // the groups, Close Group, which asks first)
   const groupAt = (wid) => page.click(`#sessions section[data-wid="${wid}"] h2 .label`, { button: "right" });
   const order = () => page.evaluate(() => [...document.querySelectorAll("#sessions section.grp[data-wid]")].map((s) => s.dataset.wid).join());
@@ -59,8 +59,8 @@ export async function webProjects(browser, name) {
   await page.click("#confirmok");
   await pause(page, 100);
   const gkilled = sent.filter((m) => m.t === "kill").slice(gkills).map((m) => m.id);
-  check("AC-07 a session group's menu (a right click on its header, or its ⋯): New Session, Rename, moves among the groups, Close Group (asked first)",
-    JSON.stringify(gmenu) === JSON.stringify(["New Session", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Close Group…"]) && downed === "local/notes,local/main"
+  check("AC-07 a session group's menu (a right click on its header, or its ⋯): New Window, Rename, moves among the groups, Close Group (asked first)",
+    JSON.stringify(gmenu) === JSON.stringify(["New Window", "Rename…", "Move to the Top-", "Move Up-", "Move Down", "Move to the Bottom", "Close Group…"]) && downed === "local/notes,local/main"
     && await order() === "local/main,local/notes" && JSON.stringify(byDots) === JSON.stringify(gmenu) && JSON.stringify(gnew) === JSON.stringify({ t: "clone", id: ID(4) })
     && gasks === "Close the group notes and its session?" && JSON.stringify(gkilled) === JSON.stringify([ID(3)]), JSON.stringify({ gmenu, downed, byDots, gnew, gasks, gkilled }));
   // a collapsed group keeps its actions: its menu reads its sessions from the list, not from its drawn rows
@@ -73,7 +73,7 @@ export async function webProjects(browser, name) {
   folded.cloned = last(sent, "clone");
   await fold();
   await pause(page, 100);
-  check("AC-07 a collapsed session group's menu keeps New Session and Close Group",
+  check("AC-07 a collapsed session group's menu keeps New Window and Close Group",
     folded.rows === 0 && JSON.stringify(folded.menu) === JSON.stringify(gmenu) && JSON.stringify(folded.cloned) === JSON.stringify({ t: "clone", id: ID(4) }), JSON.stringify(folded));
   // Rename… names the group's tmux session; the group keeps its place among the groups and its fold
   await fold();
