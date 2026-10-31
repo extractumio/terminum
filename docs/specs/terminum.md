@@ -283,11 +283,13 @@ Scenario: AC-03 happy path — text and keys
 Scenario: AC-03 happy path — keys that arrive while one is on its way go together
   When the user holds → for a second
   Then the keys go as one "send-keys … Right Right Right…" per round trip, in order, at the keyboard's repeat rate, never one round trip a key
+  And queued keys, pastes and mouse reports for equal pane numbers on different tmux servers stay in separate batches, each sent only to its complete state key
   And typed input of more than 512 bytes (a key counted as 8, its longest encoding: a line's worth of ← and → each, held; a quote Ask types) goes in parts of at most 512 bytes: each after the pane printed something since the last (the program read the part before) or after 250 ms, so the terminal never holds more than its buffer (1 KB) and never hands a program a key's bytes in two parts ("[D" typed into a busy coding agent's input, its ESC taken for Escape), and a program never reads more than 800 characters at once, which Claude Code takes for a paste and folds into "[Pasted text #1 +16 lines]" (a Linux terminal hands on 4 KB at once)
 Scenario: AC-03 happy path — paste
   When the user pastes 20 KB of text
   Then terminumd loads it into a tmux buffer ("set-buffer -b tm-<n>" from the control channel, 64 KB a command, more in parts) and pastes it with "paste-buffer -p -d -b tm-<n> -t %3", so a program that asked for bracketed paste gets its markers (the menu's "Bracketed paste" switch turns -p off)
   And a paste holding control characters other than newline and tab is refused with "The text holds control characters and was not sent"
+  And a clipboard read or image conversion begun in one pane cannot paste or upload into another pane shown before it completes; the page says that nothing was pasted
   And text that starts with "-" (a paste on a host, a name, a path the Files panel types) is text: tmux takes a word that starts with "-" before the first other word for a flag, so every such argument comes after "--" (a paste of "-x …" said "invalid flag -")
   When the user selects lines in the history, copies them (⌘C) and presses ⌘V with the keys anywhere but a field (the selection, the list, a button)
   Then the terminal's input takes the keys back first and the text is pasted into the pane at its cursor, typing going on there without a click (not under a dialog, nor while Files is shown in the terminal's place)
@@ -702,6 +704,9 @@ Scenario: AC-15 edge — what is never stored
 Scenario: AC-15 failure — a session cannot be made
   When "new-session" fails (tmux missing, a bad name)
   Then the report names it, the other sessions are restored, and "Restore again" in the page's menu retries once
+  And a failed checkpoint write is retried on the next checkpoint even when the layout has not changed
+  And restored window names and folders containing "#S" or "#{session_name}" stay literal through both local commands and host control clients
+  And direct-mode process records with a zero, overflowing pid or empty start time never name a process to signal
 ```
 
 ### AC-16 — Upgrade, rollback, uninstall [SHOULD / P1]
@@ -725,6 +730,11 @@ Scenario: AC-16 happy path — rollback and uninstall
 Scenario: AC-16 failure — the new build does not come up
   When "B" does not report its build within 10 s
   Then "current" → "A", terminumd restarts on "A", and the command exits non-zero with "Upgrade to B failed (<reason>); rolled back to A — see ~/.terminum/logs/"
+  And a timed-out CLI subprocess ends its own descendants and closes its output readers; no detached reader thread remains
+Scenario: AC-16 edge — imported state
+  Given imported local and remote workspaces and an existing settings file
+  Then remote workspace namespaces use the mapped host alias the Panel opens, with their root and tabs preserved
+  And a settings file containing valid JSON of the wrong type is refused and kept byte for byte
 ```
 
 ### AC-17 — Update notice [SHOULD / P1]
@@ -803,7 +813,8 @@ Scenario: AC-20 happy path — latency
   When scripts/bench_echo.py types 200 keys into a local shell and times each echo (?trace=1 stages)
   Then the median from the key's arrival at terminumd to the changed row sent is under 25 ms and p95 under 60 ms; a capture and encode of a 200×60 pane takes under 3 ms; frames are at most 30 a second
 Scenario: AC-20 failure — a budget is missed
-  Then the bench exits non-zero naming the number and the budget; the Definition of Done is not met until it passes on the delivered tree
+  Then an echo that never arrives counts as a failed measurement, never as a sample to omit; p95 uses the nearest-rank percentile and every benchmark failure exits non-zero
+  And the bench exits non-zero naming the number and the budget; the Definition of Done is not met until it passes on the delivered tree
 ```
 
 ### AC-88 — Quick shell [SHOULD / P1]
@@ -823,6 +834,7 @@ Scenario: AC-88 happy path — open, use, close
   Then it moves to the other side
   When the user presses its ×
   Then terminumd closes the window ("kill-window"), at once when only a shell runs in it, after "Close the quick shell? The program running in it (npm) ends." otherwise
+  And confirming after the shown pane changes closes only the quick shell named when the confirmation opened
 Scenario: AC-88 happy path — it stays with its pane
   When the user shows another pane and comes back to %3, or reloads the page, or opens %3 on another computer
   Then %3's quick shell shows again where it was; one pane has at most one quick shell (the button focuses it)
@@ -864,6 +876,7 @@ Scenario: AC-92 edge — sessions that close
   When a tmux server starts anew (a reboot, a crash) its panes are numbered anew
   Then the sessions restored from its checkpoint keep their projects (restore says which new pane each old one is); without a restore (its @terminum-id differs) its old members go, never naming other panes
   And a projects.json that cannot be read is set aside as projects.json.bak, never written over
+  And valid JSON with an invalid projects or servers schema is set aside before starting empty, so a later save cannot destroy the recoverable original
   And a move in a tmux group reorders only the windows that group lists (a project's windows keep their places in tmux)
   And a bookmark or a reminder made in a project's session is the project's (terminum-terminal.md AC-33): a project that goes orphans it
 ```
@@ -1313,6 +1326,7 @@ curl -s -X POST -H "X-TM-Session: …" -H "Origin: http://evil.example" -H "Cont
 
 - State files: every field optional with a default; unknown fields ignored and dropped on the next write; `version` bumped only for a changed meaning.
 - iterm-enhancer's `workspaces.json` and `web-bookmarks.json` are read as they are (`terminum import` copies them from `~/.iterm-enhancer/state`; keys `tmux:<host>:<socket>:%N` match for tmux panes; iTerm2 session keys are dropped).
+  Imported remote workspaces use the mapped host alias in both parts of `web:[alias,paneKey]`; an existing settings file of the wrong JSON type is refused and kept byte for byte.
 - tmux 3.2–3.6 (DEP-02); a server without `ignore-size` (older) is refused with "tmux 3.2 or newer is needed". tmux 3.4 (Ubuntu 24.04) writes a `$` in a window name and in `#{pane_current_path}` as `\$`: terminumd shows tmux's name as it is, and the Files panel of a pane in a folder whose name holds `$` says the folder is not found (tmux 3.5+ is exact). tmux 3.8 (Homebrew, 2026-10) keeps a `\` of a window name as `\\` (its folder exact): the list shows tmux's name as it is, and a rename typed over it keeps the doubled one.
 
 ```bash
@@ -1348,6 +1362,8 @@ Order across the four specs: this stage 1, then `terminum-files.md` stage 1 (the
 | Stage 4 | AC-06, AC-15, AC-16, AC-17 | Mouse in full-screen programs; reboot restore; upgrades, rollback, update notice | — |
 
 ## 11. Checklist with Definition of Done
+
+- [x] Full-tree review (2026-10-31, uncommitted tree on `beea7ee`): `make test` passes (Rust 671 + 1, Python 48, Panel unit 47, Page unit 148); `node web/test/e2e_all.mjs` passes 1541 checks. `scripts/e2e_review.py` passes checkpoint recovery, retired-host routing and security refusals (5/5); `scripts/e2e_typing_review.py` passes equal-number pane isolation and real bash grapheme movement (3/3). Invalid PID records were checked without signalling them; import and restore regressions use synthetic state and private tmux. Detailed evidence and limits: `docs/reviews/2026-10-31-full-code-review.html`.
 
 Evidence of 2026-10-15 on the delivered tree (release build `terminumd/target/release/terminumd`; tmux 3.6a; private servers `-L tm-test-*` only). Python e2e checks speak the page's protocol to a private terminumd; `web/test/e2e_live.mjs` drives the real page in Chromium and WebKit against one; `web/test/e2e_all.mjs` drives the page against a fake terminumd (509 checks).
 

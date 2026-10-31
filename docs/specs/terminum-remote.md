@@ -231,6 +231,8 @@ Scenario: AC-87 happy path — the command and the file
 Scenario: AC-87 edge — same name, different hosts
   Given "vm1" and "vm2" both report the host name "ubuntu"
   Then they are two hosts with their own records, agents and keys ("tmux:vm1:…", "tmux:vm2:…"); "ubuntu" only labels them
+  When a host's ssh recipe changes, is switched off or becomes invalid
+  Then its old helper and coding-agent link stop and its Files registration is removed before another connection can use that name; the replacement probes its own home again
 
 Scenario: AC-87 failure — a bad record
   Given settings.json names a host with an option not allowed or a destination with control characters
@@ -240,6 +242,10 @@ Scenario: AC-87 failure — a bad record
 ### AC-99 — Coding agents' progress on a host [SHOULD / P1]
 
 ```gherkin
+Scenario: AC-99 edge — overlapping helper connections
+  Given a replacement helper publishes its Mac link while an old helper exits
+  Then publication and conditional cleanup are serialized across helper processes; the old cleanup never removes the replacement link
+
 Scenario: AC-99 happy path — enable
   Given devbox is attached
   When the user picks "Coding agents' progress on devbox…" in the host menu, or runs "terminum hosts agents devbox on"
@@ -440,6 +446,8 @@ Agents' link (AC-99): nothing is written to a host's `~/.claude` or `~/.codex` b
 | Stage 4 | AC-99 | See a host's coding agents' status, plans and notes after one action | — |
 
 ## 11. Checklist with Definition of Done
+
+- [x] Full-tree review (2026-10-31, uncommitted tree on `beea7ee`): `scripts/e2e_remote.py` passes 32/32 against a private daemon and local fake SSH. The unchanged `scripts/e2e_remote_agents.py` passes 22/22 three times after the HTTP framing fix (complete replies had timed out waiting for EOF). `scripts/e2e_review.py host` verifies off, changed recipe and invalid-record cleanup; `scripts/e2e_typing_review.py` verifies equal-number local/remote panes keep queued input separate. CI source selection and `ci_mac.sh` are exercised through synthetic repositories and stub SSH/rsync; no real remote transfer or credential read was performed. See `docs/reviews/2026-10-31-full-code-review.html` for full results and limits.
 
 Evidence of 2026-10-15: `scripts/e2e_remote.py` runs a private terminumd whose ssh is `scripts/fake_ssh.py` (this Mac plays the host with a private tmux server and a fake home; no sshd here) → 18/18.
 

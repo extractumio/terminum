@@ -301,6 +301,7 @@ Scenario: AC-59 happy path — trash a folder
 
 Scenario: AC-59 error — gone already, or the request fails
   Then "build: No such file or directory" as a toast and the tree refreshes; a request-level failure keeps every tab and edit, and only files reported trashed close their tabs
+  And Enter activates the focused dialog button: Cancel or Close never chooses Move to Trash, Overwrite or Don't save
 ```
 
 ### AC-60 — Utility actions [SHOULD / P1]
@@ -343,6 +344,11 @@ Scenario: AC-61 happy path — new file, clean tab reloads, dirty tab asks
   Given "src" is expanded and "app.py" open clean
   When another program runs "touch src/new.rs" and edits "app.py"
   Then within 1 s "new.rs" appears sorted and the tab shows the new content keeping its scroll; a dirty tab shows "Changed on disk" with "Reload" and "Keep mine"
+
+Scenario: AC-61 edge — retry a failed watch
+  Given installing a filesystem watch failed temporarily
+  When the same folder is requested again after the cause clears
+  Then the watch is retried and only successfully installed subscriptions count as watched
 
 Scenario: AC-61 edge — bursts and stale listings
   When "npm install" writes 40,000 files into an expanded "node_modules"
@@ -470,6 +476,7 @@ Scenario: AC-94 happy path — JSON and YAML as a tree
   And a row's value copies with its button (a JSON text of its subtree); a long string wraps
   And a folder of more than 1000 children, the top level too, shows the first 1000 and "… 2,300 more" (a press shows the next 1000)
   And every key is a member as named (`__proto__`, `constructor` too), shown, counted and copied
+  And YAML explicit block indentation keeps spaces beyond its indicated indent, and a backslash-escaped quoted line end joins the next line without an added space
 
 Scenario: AC-94 happy path — CSV and TSV as a table
   When the user opens "data.csv" or "data.tsv"
@@ -478,6 +485,7 @@ Scenario: AC-94 happy path — CSV and TSV as a table
 Scenario: AC-94 failure — a file that does not parse
   When the JSON or YAML is not valid (a YAML key twice in one mapping, an escape past Unicode too), or the CSV has an unclosed quote
   Then Rendered says why and where ("Line 12, column 4: …") over the Source, which still edits it; a file over the text limit shows as the others do
+  And a YAML alias must name an earlier anchor in its own document; an undefined or cross-document alias reports its line and column
 ```
 
 ### AC-95 — Upload by dropping files on the tree [SHOULD / P1]
@@ -520,6 +528,7 @@ Scenario Outline: AC-68 edge — limits
 
 Scenario: AC-68 failure — interrupted or unreadable
   Then a pane switch, re-root or collapse stops the expansion within one folder load with no workspace write; an unreadable folder shows its error row and the others expand
+  And a delayed locate answer after Collapse all cannot reopen the folder or restore its expanded children
 ```
 
 ### AC-69 — File-type icons [SHOULD / P1]
@@ -813,6 +822,8 @@ curl -s -X POST -H "X-TM-Session: …" -H "Content-Type: application/json" -d '{
 | Backlog | AC-72, AC-73 | Git colors, drag and drop | — |
 
 ## 11. Checklist with Definition of Done
+
+- [x] Full-tree review (2026-10-31, uncommitted tree on `beea7ee`): `cd ui && node test/e2e_panel.mjs` passes 165 checks, including focused Cancel/Close safety, cancelled delayed expansion and destructive-button contrast; Panel unit tests pass 47/47. Actual modal and Find screenshots inspected in Chromium/WebKit at 1400×900 and 390×844, dark/light; the phone's Cancel target is 44 px tall. YAML document/alias/scalar regressions and bounded Files requests pass. Watch-subscription retry uses an injected failure; real FSEvents/inotify exhaustion was not induced.
 
 Evidence of 2026-10-15: `node ui/test/e2e_panel.mjs` drives the panel in Chromium against a private terminumd and a private tmux server → 128 checks pass; `cd ui && npx tsc -p . && npm test` → 28 pass; `cargo test` (the moved fbd modules) → pass; `web/test/e2e_live.mjs` (Files docked beside the terminal, the pane's folder) → pass.
 

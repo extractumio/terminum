@@ -333,10 +333,12 @@ Scenario: AC-34 happy path — next, previous, close
 
 Scenario: AC-34 edge — nothing, or too long
   Then "Not found" when nothing matches; a text over 200 characters is refused inline
+  And Unicode lowercase expansions preserve the original match's row and DOM range: searching "x" in wrapped rows "İ", "x", "z" goes to the second row and highlights only "x"
 
 Scenario: AC-34 failure — terminumd cannot search
   When the pane closed or the history cannot be read
   Then the field says why and keeps the text
+  And after a request times out, Find retries the unchanged text; an old response cannot replace a newer request
 ```
 
 ### AC-35 — Links and file names [SHOULD / P1]
@@ -513,6 +515,15 @@ Scenario: AC-39 edge — Codex
   And Codex started through npm runs as `node`: a `node` pane is Codex while its screen, read as an agent's is, shows Codex's own words ("OpenAI Codex (v", "Ask Codex to do anything", "tell Codex what to do differently", "enter to submit answer", "tab to add notes"); the title never makes it Codex (a killed Codex can leave its mark to the next program); another `node` program, a dev server asking "(Y/n)" too, shows no state and no reminder, also right after Codex in the same pane
   And Codex started without "--no-alt-screen" (as "codex resume" is) draws on tmux's alternate screen, where tmux keeps no scrollback: scrolling up there says so once a pane, naming "codex --no-alt-screen" and Codex's setting alternate_screen = "never" under [tui]
 
+Scenario: AC-39 edge — shared hook matchers
+  Given one Codex matcher contains both terminum's hook and another command
+  When terminum's hooks are removed
+  Then the other command, matcher and unrelated metadata remain; only entries emptied by this removal go
+
+Scenario: AC-39 edge — a complete answer on an open socket
+  Given a hook or MCP call has received a complete Content-Length or chunked HTTP answer, or a no-body 204 answer
+  Then the client acknowledges it without waiting for the connection to close; an incomplete framed answer still fails within the shared request budget
+
 Scenario: AC-39 happy path — the agents' own hooks
   Given Claude Code or Codex is found (its program on PATH, ~/.claude, $CODEX_HOME or ~/.codex) without terminum's hooks
   Then "terminum status", "terminum open" and "terminum install" say so in one line naming "terminum hooks install"
@@ -523,6 +534,11 @@ Scenario: AC-39 happy path — the agents' own hooks
   Then the pane's row shows the state its hooks say over the screen's reading (the screen is not read for it), the tool it runs in its mark's title ("Working: Bash: npm test"), what it waits for ("Approve Bash: rm -rf", the question it asks; the reminder card says "<title> asks: …"), why a turn failed ("rate_limit"), and the number of subagents running under the mark
   When Claude Code's turn stops (its Stop) while subagents it started still run in the background
   Then the pane stays working with their number under the mark until the last one stops (SubagentStop), also through Claude Code's idle notice (the main thread waits for the user) and the user's next prompts (the subagents run on); its turn ends then (reminders, unread); a background subagent's tools keep it so, and one quiet for 10 minutes gives way to the screen; an interrupt (Esc) or a failure ends it at once; background shells and monitors are not counted (a dev server would keep it working for ever)
+
+Scenario: AC-39 edge — a previous session's delayed events
+  Given a new agent session has started in a pane
+  When a delayed non-start event or SessionEnd of a different session arrives
+  Then its current state, subagents, folder and plan stay unchanged; rejected events trigger no sent-history, turn or reminder side effects
 
 Scenario: AC-39 edge — hooks that stopped speaking
   Then a working state no hook renewed in 30 s (waiting: 120 s) is the screen's to say again (an interrupt in Claude Code fires no Stop, a crash no end); a tool event of a turn that stopped, come late from the background, changes nothing; another program in the pane, or another agent session, drops what the hooks said; Codex's done is read from its screen (it has no failure event); a hook from a pane no terminumd server lists changes nothing
@@ -566,6 +582,9 @@ Scenario: AC-90 happy path — the marks on the right edge
 
 Scenario: AC-90 edge — left out
   Then a line starting with a space (a shell's "not in history"), an empty one, the same text from the same pane within 10 s (one Enter told twice) and Enter in other programs (an editor, less) are not kept; the values of words named like secrets ("API_TOKEN=…", "--password …") and words of secrets' shapes ("sk-…", "ghp_…", "AKIA…", "eyJ…") are kept as "[redacted]"; 2000 per project are kept (cut back once 2500), 20,000 characters each
+  And an entry index outside the history, including the largest unsigned integer, returns no entry and the actual history count without a panic
+  And a secret value named by an option or assignment stays fully redacted across quoted spaces, escaped quotes and an unfinished quoted value; ordinary quoted command text stays readable
+  And an apostrophe in prose before or inside a value ("it's", "don't") hides no more than that value's word: the rest of a prompt stays readable
 
 Scenario: AC-90 failure — not written
   When the file cannot be written
@@ -654,6 +673,8 @@ Scenario: AC-97 happy path — the stale reminder
   And a plan whose items are all completed gets no reminder; only the agent's reminder event carries one (never PreToolUse, a prompt or a stop): Claude Code's synchronous PostToolBatch, because Claude Code does not deliver an async hook's output in an interactive session (its async PostToolUse never takes the reminder), Codex's async PostToolUse (delivered), the printed hookEventName that event's
 
 Scenario: AC-97 edge — partial, ETA, reuse, restart
+  Given two plan items and a successful TaskUpdate deleting the first with a subject
+  Then only the first item disappears; the next item's text and status stay unchanged
   When a TaskUpdate names id 9, which no TaskCreate made (an event lost)
   Then no item is invented; the plan is marked partial ("partial: some updates were missed"), its known counts shown, until a whole list (TodoWrite, update_plan, update_session_plan) heals it
   When the items change without a new eta_minutes
@@ -973,6 +994,8 @@ iterm-enhancer's `web-bookmarks.json` (version 1, `sid` + `key`) is read: `key` 
 | Stage 4 | AC-38 | Traces for latency and for a coding agent | — |
 
 ## 11. Checklist with Definition of Done
+
+- [x] Full-tree review (2026-10-31, uncommitted tree on `beea7ee`): `make test` passes (Rust 671 + 1, Page unit 148); `node web/test/e2e_all.mjs` passes 1541 checks in Chromium and WebKit, including deferred paste targeting, search retry/ranges and quick-shell identity; two WebKit-only synthetic-touch suites are explicitly skipped and exercised in Chromium. `scripts/e2e_hooks.py` passes 32/32; stale-session side effects and quoted-value redaction have direct production regressions. Real private bash verifies the Page's grapheme movement keys (`scripts/e2e_typing_review.py`). Physical iPhone clipboard permission UI was not checked. Follow-up (2026-10-31): the review's quoted-value redaction read quotes from the start of the whole text, so an apostrophe earlier in a prompt hid the rest of it; quotes now open only at a value's start (`cargo test redaction`: prose prompts, a value quoted from before its name, quoted parts, non-ASCII); a quote opened inside a value's word is not followed (SECURITY.md). Pragmatic review approved with those tests. On the delivered tree: `make test` (Rust 674 + 1, Python 48, Panel unit 47, Page unit 148), Clippy `-D warnings`, `cd ui && node test/e2e_panel.mjs` PASS 165, `node web/test/e2e_all.mjs` PASS 1541 (the same two WebKit touch suites skipped), `scripts/e2e_remote.py` 32/32, `scripts/security_check.sh` PASS.
 
 Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminumd, Chromium and WebKit, 509 checks) and `node --test web/test/*.test.mjs` (76) pass; terminumd's side by `cargo test` (288) and `scripts/e2e_core.py`.
 
