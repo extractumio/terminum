@@ -45,57 +45,9 @@ pub fn id(host: &str, path: &str) -> String {
     crate::auth::crypto::hex(&crate::auth::crypto::sha256(format!("{host}\0{path}").as_bytes())[..8])
 }
 
-const SECRET_WORD: [&str; 6] = ["token", "secret", "password", "passwd", "apikey", "api_key"];
-const SECRET_SHAPE: [&str; 9] = ["sk-", "ghp_", "gho_", "github_pat_", "glpat-", "xoxb-", "xoxp-", "AKIA", "eyJ"];
-
-/// `text` with secrets' values left out: `NAME=value`, `NAME: value`, `--name value` for a
-/// name like a secret's, `Bearer value`, words of a known secret's shape and private key blocks.
-pub fn redact(text: &str) -> String {
-    let text = pem_out(text);
-    let secretish = |w: &str| { let w = w.trim_start_matches('-').to_ascii_lowercase(); SECRET_WORD.iter().any(|s| w.contains(s)) };
-    let mut out = String::with_capacity(text.len());
-    let mut hide_next = false;
-    for piece in text.split_inclusive(char::is_whitespace) {
-        let word = piece.trim_end_matches(char::is_whitespace);
-        let gap = &piece[word.len()..];
-        let bare = word.trim_matches(|c: char| "'\"`(),;".contains(c));
-        if word.is_empty() {
-            out.push_str(piece);
-            continue;
-        }
-        let hidden = if hide_next && !bare.starts_with('-') {
-            hide_next = false;
-            "[redacted]".to_string()
-        } else if let Some((k, _)) = word.split_once('=').filter(|(k, v)| !v.is_empty() && secretish(k)) {
-            format!("{k}=[redacted]")
-        } else if SECRET_SHAPE.iter().any(|s| bare.starts_with(s) && bare.len() >= s.len() + 12) {
-            "[redacted]".to_string()
-        } else {
-            let key = bare.trim_end_matches(':').trim_matches('"');
-            hide_next = (word.starts_with("--") && !word.contains('=') && secretish(word)) || (bare.ends_with(':') && secretish(key))
-                || bare.eq_ignore_ascii_case("bearer");
-            word.to_string()
-        };
-        out.push_str(&hidden);
-        out.push_str(gap);
-    }
-    out
-}
-
-/// `text` with every "-----BEGIN … PRIVATE KEY-----" block replaced by "[redacted]".
-fn pem_out(text: &str) -> String {
-    let mut out = String::new();
-    let mut rest = text;
-    while let Some(i) = rest.find("-----BEGIN ") {
-        let Some(end) = rest[i..].find("PRIVATE KEY-----").map(|e| i + e) else { break };
-        let close = rest[end + 16..].find("PRIVATE KEY-----").map_or(rest.len(), |e| end + 16 + e + 16);
-        out.push_str(&rest[..i]);
-        out.push_str("[redacted]");
-        rest = &rest[close..];
-    }
-    out.push_str(rest);
-    out
-}
+#[path = "redaction.rs"]
+mod redaction;
+pub use redaction::redact;
 
 impl Sent {
     pub fn new(root: PathBuf) -> Sent {
@@ -251,7 +203,7 @@ impl Sent {
     pub fn get(&self, host: &str, path: &str, n: usize) -> (usize, Option<Value>) {
         let text = std::fs::read_to_string(self.file(host, path)).unwrap_or_default();
         let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-        let item = lines.len().checked_sub(n + 1).and_then(|i| serde_json::from_str(lines[i]).ok());
+        let item = lines.iter().rev().nth(n).and_then(|line| serde_json::from_str(line).ok());
         (lines.len(), item)
     }
 }
@@ -329,6 +281,19 @@ fn trim(file: &Path) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quoted_secret_values_are_fully_redacted_before_storage() {
+        for text in ["tool --password 'alpha beta' tail", "tool --password \"alpha beta\" tail", "PASSWORD='alpha beta' tool", "PASSWORD=\"alpha beta\" tool"] {
+            let redacted = redact(text);
+            assert!(!redacted.contains("alpha") && !redacted.contains("beta"), "{redacted}");
+        }
+        let (s, dir) = store();
+        s.add("local", "/sandbox", "k", "tool --password 'alpha beta' tail", json!({})).unwrap();
+        let stored = s.get("local", "/sandbox", 0).1.unwrap();
+        assert_eq!(stored["text"], "tool --password [redacted] tail");
+        let _ = std::fs::remove_dir_all(dir);
+    }
 
     fn store() -> (Sent, PathBuf) {
         let dir = std::env::temp_dir().join(format!("tm-sent-{}-{}", std::process::id(), rand::random::<u32>()));
@@ -469,5 +434,19 @@ mod tests {
         assert_eq!((n, last.unwrap()["text"].as_str()), (KEEP, Some("last")));
         assert_eq!(s.get("local", "/p", KEEP - 1).1.unwrap()["text"], format!("c{}", TRIM - KEEP));
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn an_out_of_range_sent_index_preserves_the_real_count_without_panicking() {
+        let (s, dir) = store();
+        assert_eq!(s.get("local", "/p", usize::MAX), (0, None));
+        s.add("local", "/p", "k1", "first", json!({})).unwrap();
+        s.add("local", "/p", "k1", "second", json!({})).unwrap();
+        for n in [2, 3, usize::MAX - 1, usize::MAX] {
+            assert_eq!(s.get("local", "/p", n), (2, None));
+        }
+        assert_eq!(s.get("local", "/p", 0).1.unwrap()["text"], "second");
+        assert_eq!(s.get("local", "/p", 1).1.unwrap()["text"], "first");
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
