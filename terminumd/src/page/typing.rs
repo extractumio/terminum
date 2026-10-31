@@ -121,15 +121,9 @@ async fn run(app: Shared, page: Arc<Page>) {
             error(&page, e, Some(&key));
             continue;
         }
-        let still_shown = {
-            let st = page.state.lock();
-            if let Some(s) = st.shown.as_ref().filter(|s| s.key == key && Arc::ptr_eq(&s.server, &server)) {
-                s.ctl.wake.notify_one();
-                true
-            } else {
-                false
-            }
-        };
+        // its screen woken, if its pane is still the one shown
+        let still_shown = page.state.lock().shown.as_ref().filter(|s| s.key == key && Arc::ptr_eq(&s.server, &server))
+            .map(|s| s.ctl.wake.notify_one()).is_some();
         if keys && still_shown {
             super::sizing::typed(&app, &page).await;
         }

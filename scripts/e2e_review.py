@@ -11,22 +11,12 @@ import json
 import os
 from pathlib import Path
 import subprocess
-import time
 
 from e2e_remote import api
-from e2e_ws import Terminumd, check, results, summary, unix_request
+from e2e_ws import Terminumd, check, results, summary, unix_request, wait_for
 
 HERE = Path(__file__).resolve().parent
 
-
-def wait_for(read, predicate, seconds=15):
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        value = read()
-        if predicate(value):
-            return value
-        time.sleep(0.1)
-    raise AssertionError(f"The expected private test state did not arrive; last: {str(value)[:300]}")
 
 
 def checkpoint():

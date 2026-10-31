@@ -304,12 +304,13 @@ impl Store {
         }
         let users = |remind: bool| new.iter().filter(|n| n.by.is_none() && n.remind == remind).count();
         self.users_room(users(false), users(true))?;
-        let old = self.items.clone();
+        // rolled back by length when nothing goes (every add), by a copy only when some do
+        let (before, old) = (self.items.len(), (!gone.is_empty()).then(|| self.items.clone()));
         self.items.retain(|i| !gone.contains(&i.id));
         let made: Vec<Item> = new.into_iter().map(Self::item).collect();
         self.items.extend(made.iter().cloned());
         if let Err(e) = self.save() {
-            self.items = old;
+            match old { Some(old) => self.items = old, None => self.items.truncate(before) }
             return Err(e);
         }
         Ok(made)

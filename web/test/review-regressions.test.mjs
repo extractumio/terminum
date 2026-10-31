@@ -6,7 +6,7 @@ import { Input } from "../static/input.js";
 import { uploads } from "../static/upload.js";
 import { paneFiles } from "../static/panefiles.js";
 import { rangeOfText } from "../static/marktext.js";
-import { arrowsTo, cursorCell, typedEnd } from "../static/cursor.js";
+import { arrowsTo, cursorCell, typedChars, typedEnd } from "../static/cursor.js";
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
 const replace = (t, key, value) => {
@@ -126,6 +126,6 @@ test("shell movement counts graphemes while terminal protocol columns stay physi
   assert.equal(arrowsTo(from, { row: 0, col: 1 }), "\x1b[D".repeat(3));
   const data = { r: [[["a", "😀", "", "e\u0301", "日", ""], null, null, 0], [" ", null, null, 256], ["suggestion", null, null, 2]] };
   assert.equal(typedEnd(data), 5, "protocol cells unchanged: last glyph starts in cell five");
-  assert.equal(typedEnd(data, true), 4, "editing clamp agrees with DOM positions");
-  assert.equal(typedEnd({ r: [["ae", null, null, 0], ["\u0301", 3, null, 0], [" ", null, null, 256], ["suggestion", null, null, 2]] }, true), 2, "a grapheme split across style runs counts once");
+  assert.equal(typedChars(data), 4, "editing clamp agrees with DOM positions");
+  assert.equal(typedChars({ r: [["ae", null, null, 0], ["\u0301", 3, null, 0], [" ", null, null, 256], ["suggestion", null, null, 2]] }), 2, "a grapheme split across style runs counts once");
 });

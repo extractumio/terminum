@@ -20,6 +20,11 @@ use crate::plans::rules;
 pub const BOOKMARKS_MOST: usize = 50;
 pub const REMINDERS_MOST: usize = 20;
 pub const ALL_MOST: usize = 500;
+
+/// A scope's limit of agents' bookmarks (false) or open reminders (true).
+pub fn most(remind: bool) -> usize {
+    if remind { REMINDERS_MOST } else { BOOKMARKS_MOST }
+}
 /// A record's title and text, in characters after `rules::clean`.
 pub const TITLE: usize = 120;
 pub const TEXT: usize = 2000;
@@ -90,12 +95,12 @@ fn own_scope(i: &Item, p: &Place) -> bool {
 /// The oldest (the file's order is the order they were made) open records of agents that go so
 /// that `adding` new ones of each kind fit in `at`'s scope, never `keep`; then orphaned ones past
 /// ALL_MOST. With whether each kind (bookmarks, reminders) went in the scope.
-fn room(store: &Store, at: &Place, adding: [usize; 2], keep: &str) -> (Vec<String>, [bool; 2]) {
+fn room(store: &Store, at: &Place, adding: [usize; 2], keep: Option<&str>) -> (Vec<String>, [bool; 2]) {
     let (mut gone, mut full) = (Vec::new(), [false; 2]);
-    for (remind, most) in [(false, BOOKMARKS_MOST), (true, REMINDERS_MOST)] {
+    for remind in [false, true] {
         let here: Vec<&Item> = store.all().iter().filter(|i| own_scope(i, at) && open(i) && i.remind == remind).collect();
-        let over = (here.len() + adding[usize::from(remind)]).saturating_sub(most);
-        gone.extend(here.iter().filter(|i| i.id != keep).take(over).map(|i| i.id.clone()));
+        let over = (here.len() + adding[usize::from(remind)]).saturating_sub(most(remind));
+        gone.extend(here.iter().filter(|i| Some(i.id.as_str()) != keep).take(over).map(|i| i.id.clone()));
         full[usize::from(remind)] = over > 0;
     }
     let agents = store.all().iter().filter(|i| i.by.is_some() && !gone.contains(&i.id)).count();
@@ -146,8 +151,11 @@ pub fn add(store: &mut Store, at: &Place, by: &str, records: Vec<Record>) -> Res
         });
     }
     let adding = [false, true].map(|r| new.iter().filter(|n| n.remind == r).count());
-    let (gone, full) = if new.is_empty() { (Vec::new(), [false; 2]) } else { room(store, at, adding, "") };
-    let made = if new.is_empty() { Vec::new() } else { store.replace_all(&gone, new).map_err(|e: MarkError| e.to_string())? };
+    let (gone, full, made) = if new.is_empty() { (Vec::new(), [false; 2], Vec::new()) } else {
+        let (gone, full) = room(store, at, adding, None);
+        let made = store.replace_all(&gone, new).map_err(|e: MarkError| e.to_string())?;
+        (gone, full, made)
+    };
     let mut said: Vec<String> = made.iter().map(|m| if m.remind {
         format!("reminder {} \"{}\" ({COMES_UP})", m.id, m.note)
     } else {
@@ -199,7 +207,7 @@ pub fn update(store: &mut Store, at: &Place, args: &Value) -> Result<(String, Ve
     let mut text = format!("{what} {id} updated{state}.");
     let mut told = vec![Told::Mark(Box::new(changed))];
     // reopened, or made the other kind: its kind's oldest make room, never itself
-    let (gone, full) = room(store, at, [0, 0], id);
+    let (gone, full) = if status == Some("open") || remind.is_some() { room(store, at, [0, 0], Some(id)) } else { (Vec::new(), [false; 2]) };
     if !gone.is_empty() {
         store.replace_all(&gone, Vec::new()).map_err(|e| e.to_string())?;
         made_room(&mut text, &mut told, gone, full);

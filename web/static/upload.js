@@ -7,7 +7,7 @@
 // the limit is not sent: the page says to give its path instead (a browser never gives a page a
 // file's path). A drop on a pane of this Mac in this Mac's browser puts the files' own paths
 // instead, nothing uploaded at any size: terminumd finds them on macOS's drag pasteboard (dragged.rs).
-import { shellWord } from "./input.js";
+import { NOT_PASTED, shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
 const TAKEN = ["image/png", "image/jpeg", "image/gif", "image/webp"];
@@ -66,7 +66,7 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
   async function send(list, what, why = "", from = sid()) {
     const said = why ? `${why} ` : "";
     if (!from) return toast("Open a session first.");
-    if (sid() !== from) return toast("Another session is shown now: nothing was pasted.", 6000);
+    if (sid() !== from) return toast(NOT_PASTED, 6000);
     const paths = [];
     let error = null;
     for (const [i, [blob, url]] of list.entries()) {
@@ -108,7 +108,7 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
       if (!from) return toast("Open a session first.");
       toast("Finding the files…", 60000);
       const own = await ownPaths(from, got);
-      if (sid() !== from) return toast("Another session is shown now: nothing was pasted.", 6000);
+      if (sid() !== from) return toast(NOT_PASTED, 6000);
       if (own.paths) { hideToast(); return paste(pathList(own.paths, lines())); }
       why = `Their own paths were not found: ${own.why.replace(/\.$/, "")}.`;
     }

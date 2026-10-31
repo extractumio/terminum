@@ -8,6 +8,9 @@ import { copyByCommand, keepSelectionAt } from "./touchcopy.js";
 import { composing } from "./trace.js";
 import { inWidget } from "./widgetui.js";
 
+/** Said when a paste begun in one pane would land in another (input.js, upload.js). */
+export const NOT_PASTED = "Another session is shown now: nothing was pasted.";
+
 // Four rows of six keys, grouped by what they do: text and the clipboard (with Upload), control
 // keys, the arrows with their modifiers, and moving around. Fn swaps the last two rows for the
 // F keys (mc, htop), so the panel never grows. The keyboard has its own floating button.
@@ -352,7 +355,7 @@ export class Input {
   /** Clipboard permission and image decoding may finish after the page switched panes. */
   pasteTarget(from) {
     if (!this.options.sid || from === this.options.sid()) return true;
-    this.options.status("Another session is shown now: nothing was pasted.");
+    this.options.status(NOT_PASTED);
     return false;
   }
 

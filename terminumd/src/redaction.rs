@@ -15,38 +15,30 @@ pub fn redact(text: &str) -> String {
     while at < text.len() {
         let piece = text[at..].split_inclusive(char::is_whitespace).next().expect("remaining text");
         let word = piece.trim_end_matches(char::is_whitespace);
-        let gap = &piece[word.len()..];
         let bare = word.trim_matches(|c: char| "'\"`(),;".contains(c));
         if word.is_empty() {
             out.push_str(piece);
             at += piece.len();
             continue;
         }
-        let hidden = if hide_next && (!bare.starts_with('-') || word.starts_with(['\'', '"'])) {
-            hide_next = false;
-            at = value_end(&text, at, None);
-            out.push_str("[redacted]");
-            continue;
-        } else if let Some((k, _)) = word.split_once('=').filter(|(k, v)| !v.is_empty() && secretish(k)) {
+        // a value hidden: from where it starts to its end, its quotes and escapes with it
+        let named = hide_next && (!bare.starts_with('-') || word.starts_with(['\'', '"']));
+        let assigned = word.split_once('=').filter(|(k, v)| !v.is_empty() && secretish(k)).map(|(k, _)| k);
+        if let Some(k) = assigned.filter(|_| !named) {
             let opened = k.chars().next().filter(|q| matches!(q, '\'' | '"') && !k[1..].contains(*q));
-            let end = value_end(&text, at + k.len() + 1, opened);
+            (hide_next, at) = (false, value_end(&text, at + k.len() + 1, opened));
             out.push_str(&format!("{k}=[redacted]"));
-            hide_next = false;
-            at = end;
             continue;
-        } else if SECRET_SHAPE.iter().any(|s| bare.starts_with(s) && bare.len() >= s.len() + 12) {
-            at = value_end(&text, at, None);
-            hide_next = false;
+        }
+        if named || SECRET_SHAPE.iter().any(|s| bare.starts_with(s) && bare.len() >= s.len() + 12) {
+            (hide_next, at) = (false, value_end(&text, at, None));
             out.push_str("[redacted]");
             continue;
-        } else {
-            let key = bare.trim_end_matches(':').trim_matches('"');
-            hide_next = (bare.starts_with("--") && !word.contains('=') && secretish(bare)) || (bare.ends_with(':') && secretish(key))
-                || bare.eq_ignore_ascii_case("bearer");
-            word.to_string()
-        };
-        out.push_str(&hidden);
-        out.push_str(gap);
+        }
+        let key = bare.trim_end_matches(':').trim_matches('"');
+        hide_next = (bare.starts_with("--") && !word.contains('=') && secretish(bare)) || (bare.ends_with(':') && secretish(key))
+            || bare.eq_ignore_ascii_case("bearer");
+        out.push_str(piece);
         at += piece.len();
     }
     out

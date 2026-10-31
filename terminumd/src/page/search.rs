@@ -34,7 +34,8 @@ pub fn find<S: AsRef<str>>(rows: &[(i64, S, bool)], query: &str) -> (Vec<(i64, u
         let t = py_rstrip(text.as_ref());
         starts.push((*n, size));
         parts.push_str(t);
-        size += t.chars().map(|c| c.to_lowercase().count()).sum::<usize>();
+        // as `low` counts them: a character may lowercase into several (İ); ASCII never does
+        size += if t.is_ascii() { t.len() } else { t.chars().map(|c| c.to_lowercase().count()).sum::<usize>() };
         if *eol {
             scan.line(&parts, &starts);
             (parts, size) = (String::new(), 0);

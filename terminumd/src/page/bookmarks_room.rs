@@ -11,7 +11,7 @@ use crate::app::Shared;
 pub const RESOLVED_KEEP_S: i64 = 30 * 86400;
 
 /// Whether `i` counts as an open reminder (one resolved counts in no limit).
-pub fn open_reminder(i: &Item) -> bool {
+fn open_reminder(i: &Item) -> bool {
     i.remind && i.resolved.is_none()
 }
 
@@ -47,7 +47,7 @@ pub async fn purge_daily(app: Shared) {
         match tokio::task::spawn_blocking(move || a.bookmarks.lock().purge_resolved(now)).await {
             Ok(Ok(gone)) => {
                 for id in &gone {
-                    app.pages.tell(&serde_json::json!({"t": "unmark", "id": id}).to_string());
+                    super::super::marks::tell_unmark(&app, id);
                 }
                 if !gone.is_empty() {
                     tracing::info!(event = "reminders.purged", removed = gone.len());

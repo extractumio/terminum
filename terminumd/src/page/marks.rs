@@ -27,7 +27,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
         "unmark" => {
             let id = msg["id"].as_str().unwrap_or("").to_string();
             match app.bookmarks.lock().remove(&id) {
-                Ok(true) => app.pages.tell(&json!({"t": "unmark", "id": id}).to_string()),
+                Ok(true) => tell_unmark(app, &id),
                 Ok(false) => {}
                 Err(e) => super::client::error(page, e.to_string(), None),
             }
@@ -124,6 +124,11 @@ pub fn project_of(item: &Value) -> (Option<String>, Option<String>) {
 /// Every page learns of a new or changed bookmark.
 pub fn tell_mark(app: &Shared, item: &bm::Item) {
     app.pages.tell(&json!({"t": "mark", "item": item.wire()}).to_string());
+}
+
+/// Every page learns a bookmark is gone.
+pub fn tell_unmark(app: &Shared, id: &str) {
+    app.pages.tell(&json!({"t": "unmark", "id": id}).to_string());
 }
 
 /// Where a bookmark's text is now in the shown pane: near its line first, the whole history

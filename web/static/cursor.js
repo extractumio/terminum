@@ -73,16 +73,7 @@ const FAINT = 2, CURSOR = 256;
 /** The column after the last character the user typed on a row ({r: runs} as render.js gets
  *  it): faint text is a program's suggestion (Claude Code shows its next prompt so, and → takes
  *  it), and the cursor's own cell is where the next character goes, so neither counts. */
-export function typedEnd(data, editing = false) {
-  if (editing) {
-    let text = "", end = 0;
-    for (const [run, , , flags] of data?.r ?? []) {
-      const part = (Array.isArray(run) ? run.join("") : run).replaceAll(VS15, "");
-      text += part;
-      if (part.trim() && !(flags & (FAINT | CURSOR))) end = text.length - part.length + part.trimEnd().length;
-    }
-    return graphemes(text.slice(0, end)).length;
-  }
+export function typedEnd(data) {
   let col = 0, end = 0;
   for (const [text, , , flags] of data?.r ?? []) {
     const cells = Array.isArray(text) ? text : [...text];
@@ -138,9 +129,20 @@ export function arrowsTo(from, to, { appCursor = false } = {}) {
   return ((appCursor ? "\x1bO" : "\x1b[") + (dx < 0 ? "D" : "C")).repeat(Math.abs(dx));
 }
 
+/** typedEnd counted as a shell's arrow keys move: characters (graphemes), not cells. */
+export function typedChars(data) {
+  let text = "", end = 0;
+  for (const [run, , , flags] of data?.r ?? []) {
+    const part = (Array.isArray(run) ? run.join("") : run).replaceAll(VS15, "");
+    text += part;
+    if (part.trim() && !(flags & (FAINT | CURSOR))) end = text.length - part.length + part.trimEnd().length;
+  }
+  return graphemes(text.slice(0, end)).length;
+}
+
 /** A shell tap stops at the typed text, before any faint autosuggestion. */
 export function shellMove(screen, rows, x, y, appCursor = false) {
   const from = cursorCell(screen), to = cellAt(screen, x, y);
-  if (from && to && to.row === from.row && to.col > from.col) to.col = Math.max(from.col, Math.min(to.col, typedEnd(rows[to.row]?.data, true)));
+  if (from && to && to.row === from.row && to.col > from.col) to.col = Math.max(from.col, Math.min(to.col, typedChars(rows[to.row]?.data)));
   return arrowsTo(from, to, { appCursor });
 }

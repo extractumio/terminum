@@ -12,9 +12,8 @@ from pathlib import Path
 import shlex
 import signal
 import subprocess
-import time
 
-from e2e_ws import Terminumd, check, summary, unix_request, wait_layout
+from e2e_ws import Terminumd, check, summary, unix_request, wait_for, wait_layout
 
 HERE = Path(__file__).resolve().parent
 
@@ -23,15 +22,6 @@ def tmux(socket, *args):
     return subprocess.run(["tmux", "-f", "/dev/null", "-L", socket, *args],
                           capture_output=True, text=True, check=True).stdout
 
-
-def wait_for(read, predicate, seconds=10):
-    end = time.monotonic() + seconds
-    while time.monotonic() < end:
-        value = read()
-        if predicate(value):
-            return value
-        time.sleep(0.02)
-    raise AssertionError("Expected private test state did not arrive")
 
 
 def recorder(socket, pane, output, ready):
@@ -93,7 +83,7 @@ def main():
         assert ws.until(lambda m: m.get("t") == "screen" and m.get("sid") == local_key, 5)
         read = lambda p: p.read_text() if p.exists() else ""
         ws.send({"t": "in", "data": "a" * 4096})
-        partial = wait_for(lambda: read(local_out), lambda s: len(s) >= 512)
+        partial = wait_for(lambda: read(local_out), lambda s: len(s) >= 512, every=0.02)   # while the first send is in flight
         assert len(partial) < 4096, "The first send must still be in flight when other input queues"
         ws.send({"t": "in", "data": "LOCAL_REVIEW\r"})
         ws.send({"t": "sub", "id": remote_key})

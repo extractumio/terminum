@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use serde_json::json;
 
-use crate::agentmarks::{BOOKMARKS_MOST, REMINDERS_MOST};
+use crate::agentmarks::most;
 use crate::app::Shared;
 
 #[derive(Default)]
@@ -57,15 +57,16 @@ pub fn turn_ended(app: &Shared, ended: &[String]) {
     if taken.is_empty() {
         return;
     }
-    let layout = app.layout.read().clone();
-    let new = taken.into_iter().map(|((scope, remind), sid)| {
-        let project = app.projects.lock().list().iter().find(|p| p.id == scope).map(|p| p.name.clone());
-        let label = project.unwrap_or_else(|| {
-            let title = crate::page::marks::find_item(&layout, &sid).and_then(|it| it["title"].as_str().map(str::to_string));
-            format!("session {}", title.filter(|t| !t.is_empty()).unwrap_or_else(|| sid.clone()))
-        });
-        Banner { scope, remind, most: if remind { REMINDERS_MOST } else { BOOKMARKS_MOST }, label, sid }
-    }).collect();
+    let new = {
+        let (layout, projects) = (app.layout.read(), app.projects.lock());
+        taken.into_iter().map(|((scope, remind), sid)| {
+            let label = projects.list().iter().find(|p| p.id == scope).map(|p| p.name.clone()).unwrap_or_else(|| {
+                let title = crate::page::marks::find_item(&layout, &sid).and_then(|it| it["title"].as_str().map(str::to_string));
+                format!("session {}", title.filter(|t| !t.is_empty()).unwrap_or_else(|| sid.clone()))
+            });
+            Banner { scope, remind, most: most(remind), label, sid }
+        }).collect()
+    };
     if add(&app.marks_full, new) {
         tell(app);
     }
@@ -116,7 +117,7 @@ mod tests {
     use super::*;
 
     fn banner(scope: &str, remind: bool) -> Banner {
-        Banner { scope: scope.into(), remind, most: if remind { REMINDERS_MOST } else { BOOKMARKS_MOST }, label: "p".into(), sid: "k".into() }
+        Banner { scope: scope.into(), remind, most: most(remind), label: "p".into(), sid: "k".into() }
     }
 
     #[test]
@@ -140,7 +141,7 @@ mod tests {
         assert!(app.marks_full.shown.lock().is_empty(), "another session's turn end shows nothing");
         turn_ended(&app, &[a.to_string()]);
         let shown = app.marks_full.shown.lock().clone();
-        assert_eq!(shown, [Banner { scope: a.into(), remind: true, most: REMINDERS_MOST, label: format!("session {a}"), sid: a.into() }]);
+        assert_eq!(shown, [Banner { scope: a.into(), remind: true, most: most(true), label: format!("session {a}"), sid: a.into() }]);
         turn_ended(&app, &[a.to_string()]);
         assert_eq!(app.marks_full.shown.lock().len(), 1, "shown once: nothing pending");
         seen(&app, a, false);

@@ -150,15 +150,11 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
 mod hook_tests {
     use super::*;
 
-    fn fixture(tag: &str) -> (std::path::PathBuf, Shared) {
-        crate::testutil::app(tag)
-    }
-
     #[test]
     fn hook_dispatch_waits_before_accepting_identity_or_mutating_plans() {
         let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
         let _entered = rt.enter();
-        let (root, app) = fixture("hook-dispatch-order");
+        let (root, app) = crate::testutil::app("hook-dispatch-order");
         let server = app.tmux.local.clone();
         server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
         let key = server.key("%1");
@@ -186,7 +182,7 @@ mod hook_tests {
 
     #[tokio::test]
     async fn rejected_session_events_have_no_plan_or_turn_side_effects() {
-        let (root, app) = fixture("stale-hook-side-effects");
+        let (root, app) = crate::testutil::app("stale-hook-side-effects");
         let server = app.tmux.local.clone();
         server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
         let key = server.key("%1");

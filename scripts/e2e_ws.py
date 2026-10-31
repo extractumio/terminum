@@ -39,6 +39,18 @@ def tmux_on(socket_name, *args):
     return subprocess.run(["tmux", "-L", socket_name, *args], capture_output=True, text=True).stdout
 
 
+def wait_for(read, predicate, seconds=15, every=0.1):
+    """read() until predicate(value) holds; its value, else an error with the last one."""
+    end = time.monotonic() + seconds
+    value = None
+    while time.monotonic() < end:
+        value = read()
+        if predicate(value):
+            return value
+        time.sleep(every)
+    raise AssertionError(f"The expected private test state did not arrive; last: {str(value)[:300]}")
+
+
 def wait_layout(ws, pred, timeout=5):
     """The groups of the first layout message for which pred(groups) holds, or None."""
     m = ws.until(lambda m: m["t"] == "layout" and pred(m["groups"]), timeout)
