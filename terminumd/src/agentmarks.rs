@@ -14,8 +14,11 @@ use serde_json::Value;
 use crate::page::bookmarks::{Item, MarkError, NewMark, Store};
 use crate::plans::rules;
 
-/// Open records of agents in one scope, and in all.
-pub const OPEN_MOST: usize = 50;
+/// Agents' bookmarks and open reminders in one scope: beyond them the oldest of that kind go to
+/// make room (the owner: never a refusal; told at the turn's end). Past ALL_MOST records of
+/// agents the oldest orphaned ones go (no scope shows them; a live scope's only by its own).
+pub const BOOKMARKS_MOST: usize = 50;
+pub const REMINDERS_MOST: usize = 20;
 pub const ALL_MOST: usize = 500;
 /// A record's title and text, in characters after `rules::clean`.
 pub const TITLE: usize = 120;
@@ -52,6 +55,8 @@ pub struct Record {
 pub enum Told {
     Mark(Box<Item>),
     Unmark(String),
+    /// agents' bookmarks (false) or reminders (true) of the caller's scope went for room
+    Full(bool),
 }
 
 fn agent_of(by: &str) -> String {
@@ -70,6 +75,43 @@ fn in_scope(i: &Item, p: &Place) -> bool {
 
 fn open(i: &Item) -> bool {
     i.resolved.is_none()
+}
+
+/// Whether `i` is an agent's record kept in `p`'s own scope (its project, else its session):
+/// what a limit counts and room is made from (`in_scope` also shows a pane its records from
+/// before it joined its project).
+fn own_scope(i: &Item, p: &Place) -> bool {
+    i.by.is_some() && i.orphaned.is_none() && match &p.project {
+        Some(project) => i.project.as_ref() == Some(project),
+        None => i.project.is_none() && i.key.as_deref() == Some(p.key.as_str()),
+    }
+}
+
+/// The oldest (the file's order is the order they were made) open records of agents that go so
+/// that `adding` new ones of each kind fit in `at`'s scope, never `keep`; then orphaned ones past
+/// ALL_MOST. With whether each kind (bookmarks, reminders) went in the scope.
+fn room(store: &Store, at: &Place, adding: [usize; 2], keep: &str) -> (Vec<String>, [bool; 2]) {
+    let (mut gone, mut full) = (Vec::new(), [false; 2]);
+    for (remind, most) in [(false, BOOKMARKS_MOST), (true, REMINDERS_MOST)] {
+        let here: Vec<&Item> = store.all().iter().filter(|i| own_scope(i, at) && open(i) && i.remind == remind).collect();
+        let over = (here.len() + adding[usize::from(remind)]).saturating_sub(most);
+        gone.extend(here.iter().filter(|i| i.id != keep).take(over).map(|i| i.id.clone()));
+        full[usize::from(remind)] = over > 0;
+    }
+    let agents = store.all().iter().filter(|i| i.by.is_some() && !gone.contains(&i.id)).count();
+    let over = (agents + adding[0] + adding[1]).saturating_sub(ALL_MOST);
+    gone.extend(store.all().iter().filter(|i| i.by.is_some() && i.orphaned.is_some()).take(over).map(|i| i.id.clone()));
+    (gone, full)
+}
+
+/// What room made says: to the agent (the ids that went) and to the pages.
+fn made_room(text: &mut String, told: &mut Vec<Told>, gone: Vec<String>, full: [bool; 2]) {
+    if gone.is_empty() {
+        return;
+    }
+    text.push_str(&format!(" To make room ({BOOKMARKS_MOST} bookmarks and {REMINDERS_MOST} open reminders of agents a scope) these oldest records were deleted: {}; the user is told.", gone.join(", ")));
+    told.extend(gone.into_iter().map(Told::Unmark));
+    told.extend([false, true].into_iter().filter(|k| full[usize::from(*k)]).map(Told::Full));
 }
 
 fn cleaned(s: &str, what: &str, max: usize) -> Result<String, String> {
@@ -103,22 +145,20 @@ pub fn add(store: &mut Store, at: &Place, by: &str, records: Vec<Record>) -> Res
             ..NewMark::default()
         });
     }
-    let here = store.all().iter().filter(|x| in_scope(x, at) && open(x)).count();
-    if here + new.len() > OPEN_MOST {
-        return Err(format!("{OPEN_MOST} open records of agents are kept here at most ({here} now): update_notes_for_user status done for those settled, or the user deletes some."));
-    }
-    let all = store.all().iter().filter(|x| x.by.is_some()).count();
-    if all + new.len() > ALL_MOST {
-        return Err(format!("{ALL_MOST} records of agents are kept at most: the user must delete some."));
-    }
-    let made = if new.is_empty() { Vec::new() } else { store.add_all(new).map_err(|e: MarkError| e.to_string())? };
+    let adding = [false, true].map(|r| new.iter().filter(|n| n.remind == r).count());
+    let (gone, full) = if new.is_empty() { (Vec::new(), [false; 2]) } else { room(store, at, adding, "") };
+    let made = if new.is_empty() { Vec::new() } else { store.replace_all(&gone, new).map_err(|e: MarkError| e.to_string())? };
     let mut said: Vec<String> = made.iter().map(|m| if m.remind {
         format!("reminder {} \"{}\" ({COMES_UP})", m.id, m.note)
     } else {
         format!("bookmark {} \"{}\"", m.id, m.note)
     }).collect();
     said.extend(repeats);
-    Ok((format!("Kept for the user: {}.", said.join("; ")), made.into_iter().map(|m| Told::Mark(Box::new(m))).collect()))
+    let mut text = format!("Kept for the user: {}.", said.join("; "));
+    let mut told: Vec<Told> = Vec::new();
+    made_room(&mut text, &mut told, gone, full);
+    told.extend(made.into_iter().map(|m| Told::Mark(Box::new(m))));
+    Ok((text, told))
 }
 
 /// The change `update_notes_for_user` asks for: status done (a reminder resolved, a bookmark
@@ -156,7 +196,15 @@ pub fn update(store: &mut Store, at: &Place, args: &Value) -> Result<(String, Ve
     }).map_err(|e| e.to_string())?;
     let what = if changed.remind { "Reminder" } else { "Bookmark" };
     let state = if changed.resolved.is_some() { " (resolved)" } else { "" };
-    Ok((format!("{what} {id} updated{state}."), vec![Told::Mark(Box::new(changed))]))
+    let mut text = format!("{what} {id} updated{state}.");
+    let mut told = vec![Told::Mark(Box::new(changed))];
+    // reopened, or made the other kind: its kind's oldest make room, never itself
+    let (gone, full) = room(store, at, [0, 0], id);
+    if !gone.is_empty() {
+        store.replace_all(&gone, Vec::new()).map_err(|e| e.to_string())?;
+        made_room(&mut text, &mut told, gone, full);
+    }
+    Ok((text, told))
 }
 
 /// The open notes of 0.23's notes.json in `dir` made agents' records once; the file is kept
@@ -167,7 +215,7 @@ pub fn import_notes(store: &mut Store, dir: &Path) {
     let notes = serde_json::from_str::<Value>(&text).ok().and_then(|v| v["notes"].as_array().cloned()).unwrap_or_default();
     // a note already kept (an import whose file could not be set aside) is not kept twice
     let kept = |n: &NewMark| store.all().iter().any(|i| i.by.is_some() && i.key == n.key && i.project == n.project && i.note.to_lowercase() == n.note.to_lowercase());
-    let room = ALL_MOST.saturating_sub(store.all().iter().filter(|i| i.by.is_some()).count());
+    let room = ALL_MOST.saturating_sub(store.all().iter().filter(|i| i.by.is_some() && open(i)).count());
     let new: Vec<NewMark> = notes.iter().filter(|n| n["status"] == "open" && n["orphaned"] != true).filter_map(|n| {
         let body = rules::clean(n["text"].as_str()?);
         let title: String = body.lines().next().unwrap_or("").chars().take(TITLE).collect();

@@ -16,6 +16,7 @@ import { colorSchemes } from "./schemes.js";
 import { menuPrefs } from "./prefs.js";
 import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
+import { marksFull } from "./marksfull.js";
 import { listFoot, showBuild } from "./foot.js";
 import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
@@ -279,6 +280,7 @@ function onMessage(m) {
     case "sized": sizing.onSized(m); break;
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
+    case "marksfull": if (!embedded) full.show(m.items); break;   // agents' records that went for room (AC-98)
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
     case "hostadded": case "hostagents": tools.hostAnswer(m); break;
@@ -330,6 +332,11 @@ const ask = askBox({ send, toChat: (text, stay) => { input.paste(text, stay ? "a
   pane: () => ({ cols: view.cols, rows: view.rows, used: view.boxHeight }), asked: asked.asked, toast });
 bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks });
+const full = marksFull({ box: $("marksfull"), send, open: (b) => {   // that pane gone: the list below the sessions
+  if (!findItem(st.groups, b.sid)) return bookmarks.toggleList(true);
+  if (st.sid !== b.sid) pick(b.sid);
+  requestAnimationFrame(() => (b.remind ? reminded.open() : bookmarks.togglePane(true)));
+} });
 listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
 bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };

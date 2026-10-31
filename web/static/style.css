@@ -462,16 +462,17 @@ body:not([data-shown="term"]) #bottom, body:not([data-shown="term"]) #paused { d
 /* ---------- 1400px and wider: Files docked on the right, File a window over the terminal ---------- */
 .winhead { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px 0 16px;
   --fill: var(--chrome); font-size: 14px; font-weight: 600; }   /* .wavebar */
-body.wide #main { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto auto auto auto minmax(0, 1fr) auto; }
+body.wide #main { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: auto auto auto auto auto auto auto minmax(0, 1fr) auto; }
 body.wide #main > * { grid-column: 1 / 2; }   /* both lines: an absolute child's auto end is the edge */
 body.wide #bar { grid-row: 1; }
 body.wide #status { grid-row: 2; }
 body.wide #restored { grid-row: 3; }
 body.wide #stall { grid-row: 4; }
 body.wide #sized { grid-row: 5; }
-body.wide #asks { grid-row: 6; }
-body.wide #term { grid-row: 7; }
-body.wide #hotkeys { grid-row: 8; }
+body.wide #marksfull { grid-row: 6; }
+body.wide #asks { grid-row: 7; }
+body.wide #term { grid-row: 8; }
+body.wide #hotkeys { grid-row: 9; }
 /* Positioned children are placed in the terminal's column, not over the docked Files. */
 body.wide #toast, body.wide #paused, body.wide #bottom, body.wide #fabs { grid-row: 1 / -1; }
 /* docked Files is set apart by a band of the chrome (a splitter by background), not a line */
@@ -479,7 +480,7 @@ body.docked #sidehead { display: flex; grid-column: 2; grid-row: 1; min-height: 
 #files.moving { visibility: hidden; }   /* another session's folder on its way (views.js) */
 body.docked #files, body.docked #viewnote { grid-column: 2; grid-row: 2 / -1; width: var(--side-w);
   height: auto; align-self: stretch; border-left: 6px solid var(--chrome); }
-body.wide #filewin { position: absolute; grid-row: 7; z-index: 7; top: 12px; right: 16px; bottom: 16px;
+body.wide #filewin { position: absolute; grid-row: 8; z-index: 7; top: 12px; right: 16px; bottom: 16px;
   width: min(820px, calc(100% - 32px)); border-radius: var(--r-xl); overflow: hidden;
   background: var(--chrome); box-shadow: var(--shadow-far); }
 body.wide #filewin .winhead { display: flex; padding: 6px 6px 6px 12px; }   /* on the grid of the rows inside (ui/src/style.css .vbar) */

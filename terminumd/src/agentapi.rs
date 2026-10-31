@@ -78,6 +78,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
             match t {
                 Told::Mark(item) => crate::page::marks::tell_mark(&app, item),
                 Told::Unmark(id) => app.pages.tell(&json!({"t": "unmark", "id": id}).to_string()),
+                Told::Full(remind) => crate::page::marksfull::went(&app, &key, *remind),
             }
         },
         Changed::Nothing => {}

@@ -112,6 +112,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         restore: Default::default(),
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),
         bookmarks: Mutex::new(page::bookmarks::Store::load(dir.join("web-bookmarks.json"))),
+        marks_full: Default::default(),
         projects: Mutex::new(page::projects::Projects::load(dir.join("projects.json"))),
         unread: Mutex::new(page::unread::Marks::load(&dir)),
         turns: Default::default(),
@@ -236,6 +237,7 @@ async fn serve() {
     tokio::spawn(lastlines::follow(app.clone()));
     tokio::spawn(release::run(app.clone()));
     tokio::spawn(page::upload::sweep_daily(page::upload::local_dir()));   // pastes older than 7 days (AC-36)
+    tokio::spawn(page::bookmarks::purge_daily(app.clone()));   // reminders resolved over 30 days ago (AC-91)
     let stopping = app.clone();
     tokio::spawn(async move {
         let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate()).unwrap();

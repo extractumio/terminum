@@ -14,7 +14,7 @@ fn rec(title: &str, remind: bool) -> Record {
 }
 
 fn ids(told: &[Told]) -> Vec<String> {
-    told.iter().map(|t| match t { Told::Mark(i) => i.id.clone(), Told::Unmark(id) => id.clone() }).collect()
+    told.iter().filter_map(|t| match t { Told::Mark(i) => Some(i.id.clone()), Told::Unmark(id) => Some(id.clone()), Told::Full(_) => None }).collect()
 }
 
 #[test]
@@ -47,24 +47,89 @@ fn a_repeat_is_not_kept_twice_and_its_text_is_cleaned() {
 }
 
 #[test]
-fn limits_are_the_agents_own() {
+fn past_a_kinds_limit_the_oldest_of_that_kind_in_the_scope_go() {
     let mut s = Store::memory();
-    for i in 0..OPEN_MOST {
-        add(&mut s, &here(), "claude", vec![rec(&format!("r{i}"), false)]).unwrap();
+    for i in 0..BOOKMARKS_MOST {
+        add(&mut s, &here(), "claude", vec![rec(&format!("b{i}"), false)]).unwrap();
     }
-    let e = add(&mut s, &here(), "claude", vec![rec("one more", false)]).unwrap_err();
-    assert!(e.contains("50 open records"), "{e}");
+    for i in 0..REMINDERS_MOST {
+        add(&mut s, &here(), "claude", vec![rec(&format!("r{i}"), true)]).unwrap();
+    }
+    let (b0, r0, r1) = (s.all()[0].id.clone(), s.all()[BOOKMARKS_MOST].id.clone(), s.all()[BOOKMARKS_MOST + 1].id.clone());
+    let (said, told) = add(&mut s, &here(), "claude", vec![rec("one more", false)]).unwrap();
+    assert!(s.get(&b0).is_none() && s.all().len() == BOOKMARKS_MOST + REMINDERS_MOST, "the oldest bookmark went, no reminder");
+    assert!(told.contains(&Told::Unmark(b0.clone())) && told.contains(&Told::Full(false)) && !told.contains(&Told::Full(true)));
+    assert!(said.contains(&format!("these oldest records were deleted: {b0}")), "{said}");
+    let (_, told) = add(&mut s, &here(), "claude", vec![rec("one more reminder", true)]).unwrap();
+    assert!(s.get(&r0).is_none() && told.contains(&Told::Full(true)) && !told.contains(&Told::Full(false)));
+    // a resolved reminder counts in no limit: resolving one makes room
+    update(&mut s, &here(), &json!({"id": r1, "status": "done"})).unwrap();
+    let (said, told) = add(&mut s, &here(), "claude", vec![rec("room now", true)]).unwrap();
+    assert!(!told.iter().any(|t| matches!(t, Told::Unmark(_) | Told::Full(_))) && !said.contains("deleted"), "{said}");
+    assert!(s.get(&r1).is_some(), "a resolved reminder is not deleted for room");
+    // another scope's records are its own
     let other = Place { key: "tmux:local:terminum:%2".into(), ..Place::default() };
-    add(&mut s, &other, "claude", vec![rec("elsewhere", false)]).unwrap();
-    // the user's 300 count only the user's
-    let user = crate::page::bookmarks::NewMark { key: Some(K.into()), n: 3, text: "x".into(), ..Default::default() };
-    for _ in 0..crate::page::bookmarks::MAX_ITEMS {
-        s.add(user.clone()).unwrap();
-    }
-    assert!(s.add(user).is_err(), "the user's limit stands");
-    assert!(add(&mut s, &other, "claude", vec![rec("still", false)]).is_ok(), "an agent's record past the user's 300");
+    let (_, told) = add(&mut s, &other, "claude", vec![rec("elsewhere", false)]).unwrap();
+    assert!(!told.iter().any(|t| matches!(t, Told::Unmark(_) | Told::Full(_))));
     let e = add(&mut s, &here(), "claude", vec![rec("", false)]).unwrap_err();
     assert!(e.contains("title is empty"), "{e}");
+}
+
+#[test]
+fn past_all_records_only_orphaned_ones_go_and_the_users_never() {
+    let mut s = Store::memory();
+    let user = crate::page::bookmarks::NewMark { key: Some(K.into()), n: 3, text: "x".into(), ..Default::default() };
+    let mine = s.add(user.clone()).unwrap().id;
+    for scope in 0..ALL_MOST / BOOKMARKS_MOST {
+        let at = Place { key: format!("tmux:local:terminum:%{}", scope + 10), ..Place::default() };
+        for i in 0..BOOKMARKS_MOST {
+            add(&mut s, &at, "claude", vec![rec(&format!("s{scope} b{i}"), false)]).unwrap();
+        }
+    }
+    // no orphaned record: a live scope loses only its own past its limit
+    let (_, told) = add(&mut s, &here(), "claude", vec![rec("the 501st", false)]).unwrap();
+    assert!(!told.iter().any(|t| matches!(t, Told::Unmark(_) | Told::Full(_))));
+    let orphans: Vec<String> = s.all().iter().filter(|i| i.key.as_deref() == Some("tmux:local:terminum:%10")).map(|i| i.id.clone()).collect();
+    s.orphan(&orphans).unwrap();
+    let (said, told) = add(&mut s, &here(), "claude", vec![rec("the 502nd", false), rec("the 503rd", false)]).unwrap();
+    let gone: Vec<&String> = told.iter().filter_map(|t| if let Told::Unmark(id) = t { Some(id) } else { None }).collect();
+    assert_eq!(gone, orphans.iter().take(3).collect::<Vec<_>>(), "the oldest orphaned go, to 500");
+    assert!(!told.contains(&Told::Full(false)) && said.contains(orphans[0].as_str()), "the answer names the ids; no banner for orphans");
+    assert!(s.get(&mine).is_some(), "the user's bookmark is never deleted for room");
+    // the user's limits stand apart: 300 bookmarks, 100 open reminders
+    for _ in 1..crate::page::bookmarks::MAX_ITEMS {
+        s.add(user.clone()).unwrap();
+    }
+    assert!(s.add(user.clone()).unwrap_err().to_string().contains("300 bookmarks"));
+    let reminder = crate::page::bookmarks::NewMark { remind: true, ..user };
+    for _ in 0..crate::page::bookmarks::MAX_REMINDERS {
+        s.add(reminder.clone()).unwrap();
+    }
+    assert!(s.add(reminder).unwrap_err().to_string().contains("100 open reminders"));
+    assert!(add(&mut s, &here(), "claude", vec![rec("still", false)]).is_ok(), "an agent's record past the user's limits");
+}
+
+#[test]
+fn room_is_made_in_the_records_own_scope_and_after_a_reopen() {
+    let mut s = Store::memory();
+    add(&mut s, &here(), "claude", vec![rec("before the project", true)]).unwrap();
+    let early = s.all()[0].id.clone();
+    let in_project = Place { project: Some("p1".into()), ..here() };
+    for i in 0..REMINDERS_MOST {
+        add(&mut s, &in_project, "claude", vec![rec(&format!("r{i}"), true)]).unwrap();
+    }
+    let first = s.all()[1].id.clone();
+    let (_, told) = add(&mut s, &in_project, "claude", vec![rec("one more", true)]).unwrap();
+    assert!(s.get(&early).is_some(), "the session's own record is not the project's to delete");
+    assert!(s.get(&first).is_none() && told.contains(&Told::Full(true)));
+    // a resolved one reopened: the oldest other open one makes room, never it
+    let oldest_open = s.all().iter().find(|i| i.project.is_some()).unwrap().id.clone();
+    let reopened = s.all().iter().rev().find(|i| i.project.is_some()).unwrap().id.clone();
+    update(&mut s, &in_project, &json!({"id": reopened, "status": "done"})).unwrap();
+    add(&mut s, &in_project, "claude", vec![rec("fills it again", true)]).unwrap();
+    let (said, told) = update(&mut s, &in_project, &json!({"id": reopened, "status": "open"})).unwrap();
+    assert!(s.get(&reopened).is_some_and(|i| i.resolved.is_none()) && s.get(&oldest_open).is_none(), "{said}");
+    assert!(told.contains(&Told::Unmark(oldest_open)) && told.contains(&Told::Full(true)));
 }
 
 #[test]

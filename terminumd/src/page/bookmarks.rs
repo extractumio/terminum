@@ -15,7 +15,9 @@ use std::io;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 
+/// The user's own: bookmarks, and open reminders (bookmarks_room.rs); agents' have their own (agentmarks.rs).
 pub const MAX_ITEMS: usize = 300;
+pub const MAX_REMINDERS: usize = 100;
 /// Characters of selected text kept (a longer one is cut).
 pub const MAX_TEXT: usize = 2000;
 /// Characters of a note (a longer one is refused).
@@ -289,21 +291,25 @@ impl Store {
         Ok(self.add_all(vec![new])?.remove(0))
     }
 
-    /// New bookmarks, saved once: all or none. The user's are MAX_ITEMS at most; an agent's
+    /// New bookmarks, saved once: all or none. The user's within their limits; an agent's
     /// (`by`) never count against them (agentmarks.rs keeps its own limits).
     pub fn add_all(&mut self, new: Vec<NewMark>) -> Result<Vec<Item>, MarkError> {
+        self.replace_all(&[], new)
+    }
+
+    /// Bookmarks `gone` deleted and `new` added, saved once: all or none.
+    pub fn replace_all(&mut self, gone: &[String], new: Vec<NewMark>) -> Result<Vec<Item>, MarkError> {
         if let Some(b) = &self.broken {
             return err(format!("Not saved: {b}."));
         }
-        let users = new.iter().filter(|n| n.by.is_none()).count();
-        if users > 0 && self.items.iter().filter(|i| i.by.is_none()).count() + users > MAX_ITEMS {
-            return err(format!("{MAX_ITEMS} bookmarks are kept at most: delete some first (a session's bookmarks' button, or Bookmarks / Reminders below the sessions)."));
-        }
-        let before = self.items.len();
+        let users = |remind: bool| new.iter().filter(|n| n.by.is_none() && n.remind == remind).count();
+        self.users_room(users(false), users(true))?;
+        let old = self.items.clone();
+        self.items.retain(|i| !gone.contains(&i.id));
         let made: Vec<Item> = new.into_iter().map(Self::item).collect();
         self.items.extend(made.iter().cloned());
         if let Err(e) = self.save() {
-            self.items.truncate(before);
+            self.items = old;
             return Err(e);
         }
         Ok(made)
@@ -347,6 +353,10 @@ impl Store {
     /// The bookmark with its note changed and, when `remind` says another kind, made a reminder
     /// (an open one) or a bookmark (AC-91); saved once.
     pub fn set_note(&mut self, id: &str, note: String, remind: Option<bool>) -> Result<Item, MarkError> {
+        // the user's bookmark made a reminder (or back) needs room among the other kind
+        if let Some(on) = remind && self.get(id).is_some_and(|i| i.by.is_none() && i.remind != on) {
+            self.users_room(usize::from(!on), usize::from(on))?;
+        }
         self.change(id, |i| {
             i.note = note;
             if let Some(on) = remind.filter(|on| *on != i.remind) {
@@ -451,4 +461,7 @@ mod tests;
 
 #[path = "bookmarks_scope.rs"]
 mod scope;
+#[path = "bookmarks_room.rs"]
+mod room;
+pub use room::purge_daily;
 pub use scope::{adopt, lost};

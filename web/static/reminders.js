@@ -40,5 +40,5 @@ export function reminders({ marks }) {
     nav.draw();                    // nothing while closed
   }
 
-  return { draw, place: () => (stale() ? pane.toggle(false) : pane.place()) };
+  return { draw, place: () => (stale() ? pane.toggle(false) : pane.place()), open: () => pane.toggle(true) };
 }

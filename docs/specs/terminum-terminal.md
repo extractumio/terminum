@@ -6,8 +6,8 @@ Sibling of `terminum.md` (the core: tmux, screens, typing, sessions, install, se
 
 | Field | Value |
 |---|---|
-| Version | 0.6.17 |
-| Date | 2026-10-30 |
+| Version | 0.6.18 |
+| Date | 2026-10-31 |
 | Status | draft |
 | Author | Claude (Fable 5.1) for the owner |
 
@@ -15,6 +15,7 @@ Change log:
 
 | Version | Date | Change |
 |---|---|---|
+| 0.6.18 | 2026-10-31 | Owner: an agent's add_notes_for_user was refused once its scope held 50 open records, bookmarks and reminders together, and nobody but the agent was told. Agents' bookmarks and reminders have limits of their own (50 bookmarks, 20 open reminders a scope; 500 open in all): beyond them the oldest of that kind go and the new ones are kept, and at the end of the turn in which some went every page says so over the terminal with a link to them; a resolved reminder counts in no limit and is deleted 30 days after it was resolved; the user's own bookmarks (300) and open reminders (100) have limits of their own too, still refused with why, never deleted for room (Never lose user data); deleting the user's resolved reminders after 30 days is the owner's decision ("they are closed; deleted after a month so the store does not overflow"). Pragmatic review applied: oldest is the file's order; a scope counts its own records (a session's from before its project stay the session's); a reopen or a kind change makes room too; the answer names the ids; the banner waits for a turn end of any pane of the scope and names the session by its row; past 500 only orphaned records go (no live scope loses a record to another's room). Rejected: purging resolved reminders inside every save instead of at start and once a day (pages would not be told of those gone); dropping the 500 bound (orphaned agents' records would grow without end). The bookmarks' button is an orange bookmark on the plain buttons' fill, as the reminders' bell (it was dark on an orange blob) (AC-33, AC-91, AC-98). |
 | 0.6.17 | 2026-10-30 | Owner: on a phone a Markdown table Claude Code printed was text, not a table: at 44 columns it prints the table's Markdown, each row padded to its columns' width and wrapped at a bar in its middle and into blank lines, the separator over several lines, and the page joined a row only up to the first line ending in a bar, four lines at most, never over a blank one. A table's rows now join until they have as many bars as its separator (AC-31). Ask's quote on a phone was pasted and folded ("[Pasted text #1 +12 lines]") though it fitted: it was typed only within half the pane's rows, counted while the dialog's keyboard made the pane short. It is typed when the agent's box with it stays inside the pane, two rows kept, the pane measured as the dialog opens (AC-37). Pragmatic review: taken: measure at open (not a wait for the pane to grow back: a guess, and races), a box taller than the screen counted whole, a wrapped table's rows join again after a row with a bar more, blank lines joined only in a wrapped table (a short last row took the prose after it); rejected: keeping half the pane for Add to Chat because a keyboard raised later shrinks the pane under the typed quote (0.4.7's failure): the owner asked for the quote whole, and Send to Agent's Enter empties the box at once; said to the owner as a risk. |
 | 0.6.16 | 2026-10-30 | Owner: the floating windows' text (Bookmarks, Reminders, Sent, Plan, and Open all) in the chat's font and size: the terminal's font at its size, line height 1.5, Markdown's headings, code and lists kept; the windows' heads, times and keys stay the interface's (AC-33, AC-90, AC-91, AC-97). |
 | 0.6.15 | 2026-10-30 | Owner: the reminders' pane is the bookmarks' navigator (the list on top, the line, the view, the same three actions and keys), of the open reminders only, those up first; its Open, Close and Delete are gone (Show in terminal; Resolve with Undo; Delete on the bar). Links in Markdown were the browser's blue and visited purple in the reminders' and sent panes and Open all (the widgets' styles reached only the terminal's shadow roots): one Markdown style sheet for every screen, links in the theme's link color as View's. Pragmatic review applied: the windows' Markdown 16 px again whatever the menu's Markdown size (0.6.13's token took its name, `--md-size`: 14 px in the real app); a list drawn again only when what it shows changed (a layout came often and reset its scroll); a note the title cannot hold shown whole above the text; an Undo seen in both panes; page-wide selectors scoped (AC-91, AC-33). |
@@ -309,7 +310,7 @@ Scenario: AC-33 edge — the lines are gone, a rename, a server restart
   And a renamed window keeps its bookmarks (the key is the pane's); a tmux server restored from its checkpoint (AC 15) gives its bookmarks their panes' new keys, those of a pane not made again orphaned (a project's stays with its project); one started anew without a restore (another @terminum-id) orphans its bookmarks: a reused pane id is another pane (OQ-31)
 
 Scenario: AC-33 failure — cannot keep or reach
-  When the Mac has 300 bookmarks, the pane closed meanwhile, or the file cannot be written
+  When the Mac has 300 of the user's bookmarks (a new bookmark, or a reminder made a bookmark in Edit) or 100 of the user's open reminders (a new reminder, or a bookmark made one), the pane closed meanwhile, or the file cannot be written
   Then the dialog stays open and says why; nothing is half saved; a save repeated after 10 s without an answer is kept once; an unreadable file is left as it is and every save says so
   When the lines do not arrive within 15 s or the pane changed
   Then the bar says the bookmark could not be reached and why
@@ -597,6 +598,7 @@ Scenario: AC-90 failure — not written
 Scenario: AC-91 happy path — a reminder
   When the user picks Reminder in the bookmark dialog (Bookmark | Reminder; its title and Save turn pale fuchsia) and saves
   Then it is kept as a bookmark of the kind reminder (AC-33: its text, note, line and pane); the sessions that show it have a wavy pink line in the list; a pale fuchsia bell (on the plain buttons' fill) under the bookmarks' button counts the open reminders the shown session shows
+  And the bookmarks' button is an orange bookmark with its count on the plain buttons' fill, as the bell (never a dark icon on an orange blob)
   And the floating buttons stand in one column at the terminal's top right: find, the split and the sent history, then, set apart, the colored ones (bookmarks, reminders) of one size and look without glow; 14 px below the terminal's top and 12 px apart, the header's ⋯ right above them (its middle on the magnifier's); find's field opens 14 px left of its button, centered on it, which stays in sight (under it where the view is too narrow, above it on a phone's bottom row); a split's embedded page shows none of them
 
 Scenario: AC-33, AC-90, AC-91, AC-97 happy path — the panes are windows as View's
@@ -619,8 +621,9 @@ Scenario: AC-91 happy path — by project or session
   Then a reminder belongs to its project, or its session, as a bookmark does (AC-33): it comes up when an agent of any session of the project ends a turn (outside projects: its own session's), the bell shows the reminders the shown session shows, the session list marks those sessions with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions
   When another session is shown while the bell's pane is open
   Then the pane closes (its reminders are the last session's)
-Scenario: AC-91 edge — restarts, kinds
-  Then a reminder up stays up across terminumd's restart; a first layout after a restart ends no turn; a bookmark made a reminder in its dialog (Edit) is open, and a reminder made a bookmark comes up no more
+Scenario: AC-91 edge — restarts, kinds, resolved ones
+  Then a resolved reminder (the user's or an agent's) counts in no limit and is deleted for good 30 days after it was resolved, at terminumd's start and once a day
+  And a reminder up stays up across terminumd's restart; a first layout after a restart ends no turn; a bookmark made a reminder in its dialog (Edit) is open, and a reminder made a bookmark comes up no more
 
 Scenario: AC-91 failure — not saved
   When web-bookmarks.json cannot be written
@@ -743,13 +746,23 @@ Scenario: AC-98 happy path — the agent updates one
   Then a reminder is resolved, a bookmark deleted (open reopens a resolved reminder); only a record an agent made in the caller's scope is found
 
 Scenario: AC-98 edge — limits, repeats, the notes of 0.23
-  When a scope holds 50 open records of agents (bookmarks and unresolved reminders)
-  Then the call answers an error naming the limit and nothing is added; agents' records never count against the user's 300 bookmarks; at most 500 in all
+  When a call adds bookmarks to a scope holding 50 of agents' bookmarks, or reminders to one holding 20 of agents' open reminders
+  Then the oldest of that kind there (in the order they were made) are deleted, in the same save, so that the new ones are kept, never a refusal for room; the answer names the ids that went; a resolved reminder counts in no limit (AC-91)
+  And a scope's count is of the records kept in it: its project's, else its session's (a session's records from before it joined a project are the session's, never deleted for the project's room)
+  And update_notes_for_user reopening a reminder or making a record the other kind makes room the same way, never deleting that record
+  And past 500 records of agents in all, the oldest orphaned ones go (no live scope loses a record but by its own limits); agents' records never count against the user's limits, and the user's own are never deleted for room
   When a record of the same title (letter case aside) is open in the scope
   Then it is not added again; the answer names its id (an agent repeats itself after its context is compacted)
   And a call carries 1–20 records: title 1–120 characters, text 1–2000, kind bug, deferred, followup, question or report, file at most 300
   When terminumd starts with the notes.json of 0.23 (the Plan pane's notes)
   Then its open notes become agents' bookmarks of their scopes once (title: the text's first line, cut to 120), and the file is kept as notes.json.imported
+
+Scenario: AC-98 happy path — told when the oldest went
+  Given agents' bookmarks or reminders of a scope were deleted for room
+  When an agent of a pane of that scope next ends a turn (AC-91's turn end)
+  Then every page shows a banner over the terminal: "Agents' bookmarks of <project> are over 50: the oldest are deleted automatically. Review them." (outside projects "of session <its row's title>"; for reminders "Agents' reminders … over 20"), with Open bookmarks (Open reminders) and ×; both kinds of a scope are two lines
+  And Open shows the pane that made room and opens its bookmarks' (reminders') pane (that pane gone: Bookmarks / Reminders below the sessions); × closes it on every page; pages that connect later get it until closed; a restart forgets it
+  And one banner a scope and kind: a deletion while it shows changes nothing; after it was closed, the next turn end after another deletion there shows it again; orphaned records that went (past 500) show none
 
 Scenario: AC-98 failure — not kept
   When the call is made outside a terminum pane or terminumd is down
@@ -945,7 +958,9 @@ Trace record (`logs/trace-*.jsonl`): `{"at": 1792003600123, "k": 17, "kind": "ch
 | Widget region | 2000 lines | stays text |
 | Widgets kept | 150 | drawn again when shown |
 | Unfold | 20,000 lines, a told fold | refused with why |
-| Bookmarks | 300; text 2000, note 1000 characters | refused with why; a longer text is cut |
+| Bookmarks | the user's: 300 bookmarks and 100 open reminders; text 2000, note 1000 characters | refused with why; a longer text is cut |
+| Agents' records (AC-98) | 50 bookmarks and 20 open reminders a scope, 500 open in all; 20 a call | the oldest of that kind go, told at the turn's end |
+| Resolved reminders (AC-91) | 30 days after resolved | deleted at start and once a day; counted in no limit |
 | Search | 2000 matches told; 200 characters | "2000+"; refused inline |
 | Upload | 100 MB, 2 at once, 300 s | toast with why |
 | Trace | 15 minutes, 20 MB, 10 files; ring 640 events, copy 120,000 characters | ends and says so; oldest events go first |
@@ -1051,3 +1066,4 @@ Evidence of 2026-10-15: `web/test/e2e_all.mjs` (the page against a fake terminum
 - [x] 0.6.15 (2026-10-30) — AC-91, AC-33 `web/test/e2e_marknav.mjs` (Chromium and WebKit: the reminders' pane is the navigator of the reminders only, titled "Reminders of this session", an agent's with its mark and its text as Markdown, the same three actions; its link the theme's link color in the widget and in a page `.markdown`, not the browser's blue or purple; a layout while it is open makes no row again; Resolve there is pending in the bookmarks' pane, whose Undo takes it back, nothing sent; a two-line note with Markdown: one line in the list and the title, whole above the text), `web/test/e2e_sent.mjs` (wide and phone: "up now", the note without its marks, Show in terminal, Resolve, Quote in chat; Resolve told after 5 s; Quote in chat as the sent history's key), `web/test/e2e_panewin.mjs` (with the menu's Markdown size at 13: every window's Markdown 16 px, 1.65, the navigators' content too). Looked at in Chromium and WebKit, 1400×900 and 390×844, dark and light (the light fixture's ANSI colors are gray, its links so). On the delivered tree: `node web/test/e2e_all.mjs` 1509/1509, `make test` (cargo 649, the Page's 138, the Panel's 38), the Panel's browser check 160, `scripts/security_check.sh` PASS.
 - [x] 0.6.17 (2026-10-30) — AC-31 `node --test web/test/outparse.test.mjs` (the owner's table at 44 columns: head, separator over four lines, rows wrapped at their middle bar and into blank lines → one table of the head and three rows; a row with a bar more; both fail on 17fd7b7), `web/test/e2e_widgets.mjs` (WebKit, 390×844 touch: that table in the history is one HTML table, its 12 other lines hidden); AC-37 `node --test web/test/ask.test.mjs` (fitsTyped: 23 rows typed in a 32-row pane with a 5-row box, not in 29, 16, a fuller box, without a size, or not measured); `outparse.test.mjs` (a wrapped table's rows after a row with a bar more; a short last row and the prose after a blank line stay text). Not verified: the owner's iPhone; Claude Code's redraw when a keyboard raised after Add to Chat shrinks the pane under a typed quote.
 - [x] 0.6.16 (2026-10-30) — AC-33, AC-90, AC-91, AC-97 `web/test/e2e_panewin.mjs` (Chromium and WebKit, with the menu's Markdown size at 13 sent: every window's text, the navigators' content too, TermFont at the terminal's size (13 px) and line height 1.5); looked at in WebKit 1400×900 and the phone sizes against the terminal behind it. `node web/test/e2e_all.mjs` 1509/1509, `node --test web/test/*.test.mjs` 138/138 on the delivered tree.
+- [x] 0.6.18 (2026-10-31) — AC-33, AC-91, AC-98 `cargo test agentmarks` (past 50 bookmarks or 20 open reminders the oldest of that kind in the records' own scope go, in the same save, the answer naming the ids; a resolved reminder counts in none and is not deleted for room; another scope untouched; a session's records from before its project kept; a reopen makes room, never deleting itself; past 500 only orphaned ones go; the user's 300 bookmarks and 100 open reminders refused apart, never deleted), `cargo test bookmarks_room` (resolved reminders gone after 30 days, 29 kept; Edit making a reminder needs room), `cargo test marksfull` (one banner a scope and kind; shown at a turn end of that scope only; closed by kind); `web/test/e2e_marksfull.mjs` (Chromium and WebKit, 1400×900 and 390×844: the bookmarks' button an orange bookmark on the bell's fill; the banner's two lines in terminumd's words over the terminal; Open bookmarks shows the pane that made room with its pane; × sends `marksfullseen`; a pane gone opens the list below the sessions) → `make test` (Rust 680 + 1, Python 48, Panel unit 47, Page unit 148), Clippy `-D warnings`, `cd ui && node test/e2e_panel.mjs` PASS 165, `node web/test/e2e_live.mjs` PASS 183, `node web/test/e2e_all.mjs` PASS 1571 (two WebKit touch suites skipped as before), `scripts/security_check.sh` PASS; installed, a real add_notes_for_user into a project holding 44 agents' bookmarks and 6 open reminders (refused before at 50 together) kept its three records. Looked at: the foot, the banner and the button, dark and light. Not checked live: a real deletion for room and its banner end to end (the live store would lose records).

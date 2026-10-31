@@ -151,18 +151,7 @@ mod hook_tests {
     use super::*;
 
     fn fixture(tag: &str) -> (std::path::PathBuf, Shared) {
-        let root = crate::testutil::fresh_dir(tag);
-        let home = root.join("home");
-        let dir = root.join("state");
-        std::fs::create_dir_all(&home).unwrap();
-        std::fs::create_dir_all(&dir).unwrap();
-        let env = crate::config::Env { port: 0, tmux_socket: "tm-test-stale".into(), history: 1000,
-            text_max: 1 << 20, list_cache_mb: 1, ttl_days: 1, roots: root.display().to_string() };
-        let cfg = crate::app::Config { port: 0, agent: true, service: false, text_max: 1 << 20,
-            history: 1000, dir, home: home.clone(), agent_token: String::new() };
-        let link = crate::tmux::server::Link::Local { tmux: "unused".into(), socket: env.tmux_socket.clone(), conf: "/dev/null".into() };
-        let app = crate::build_app(cfg, &env, crate::looks::Looks::load(&home), link, &env.tmux_socket);
-        (root, app)
+        crate::testutil::app(tag)
     }
 
     #[test]

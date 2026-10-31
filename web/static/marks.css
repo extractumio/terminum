@@ -9,12 +9,20 @@
 #markcopy { background: #9ba1a9; color: #16181b; animation-delay: -3.5s; }
 #askfab { background: var(--ask); color: var(--ask-ink); animation-delay: -1.75s; }   /* Ask (AC-37), under the [+] */
 :root { --ask: color-mix(in srgb, cornflowerblue 55%, #fff); --ask-ink: #0f1a33; }
-#marksfab { animation-delay: 0s; }   /* in phase with the column's other buttons */
+/* the bookmark in orange on the plain buttons' fill, as the reminders' bell (the owner: never dark on an orange blob) */
+:root { --mark-icon: var(--mark); }
+:root.light { --mark-icon: oklch(.6 .16 60); }   /* the pale orange is too faint on a light fill */
+#marksfab { animation-delay: 0s; background: var(--surface-3); color: var(--mark-icon); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }   /* in phase with the column's other buttons */
 @media (hover: hover) and (min-width: 861px) { #attachfab { display: none !important; } }   /* a computer: Upload on the hot keys, or a drop */
 body:has(#findbox[data-under]:not([hidden])) :is(#marksfab, #remindfab) { visibility: hidden; }   /* find's field under its magnifier stands there */
 #marksfab[aria-expanded="true"] { box-shadow: 0 0 0 2px var(--t-bg), 0 0 0 4px var(--mark); }
 #marksfabn { position: absolute; right: -4px; top: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: var(--r-sm);
   font: 700 9.5px/15px var(--ui); background: var(--t-bg); color: var(--mark); border: 1px solid var(--mark); }
+/* agents' records that went for room (marksfull.js): a warning banner, a line a scope and kind */
+#marksfull { background: var(--warn-fill); color: #fff; padding: 2px 12px; }
+#marksfull .fullline { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+#marksfull .fullline > span { flex: 1; min-width: 0; }
+#marksfull .link { padding: 0; color: inherit; text-decoration: underline; font-weight: 600; white-space: nowrap; }
 /* the bookmarks' pane is a window as View's (panewin.css), its texts in View's type */
 :is(#markpane, #remindpane) .meta { font-size: var(--fs-meta); }
 /* nearly round, never quite: the outline drifts slowly */

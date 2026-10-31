@@ -157,6 +157,10 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   made outside projects, only in their own session. Once their project is gone (deleted, or its
   last session closed), or a session outside projects closes, they wait under Bookmarks /
   Reminders below the sessions (Open all).
+- **Limits**: you keep up to 300 bookmarks and 100 open reminders (a save past them says so). Coding
+  agents' records have their own: 50 bookmarks and 20 open reminders a project (or session); past
+  them their oldest go, and a banner over the terminal says so at the end of that agent's turn, with
+  a link to review them. A resolved reminder is deleted 30 days after you resolve it.
 - **Going through them**: the bookmarks' button (its count: bookmarks and open reminders) opens a
   window with the session's bookmarks and reminders on top, top to bottom, each its note and its
   text's start on one line, and the chosen one's content under them; drag the line between them to
