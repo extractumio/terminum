@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! HTTP to terminumd over its private socket ~/.terminum/state/terminumd.sock (AC-09): the
 //! installer and the `terminum` command never talk to whatever holds the TCP port and never
-//! carry a sign-in. One HTTP/1.0 request a connection, the answer read to its end.
+//! carry a sign-in. One HTTP/1.0 request a connection, the answer read to its framing boundary.
 
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
@@ -36,16 +36,20 @@ pub fn call(sock: &Path, method: &str, path: &str, body: Option<&Value>, timeout
     }
     let mut raw = Vec::new();
     let mut buf = [0u8; 16 * 1024];
-    loop {
+    let (status, body) = loop {
         left(&s, end)?;
         match s.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => raw.extend_from_slice(&buf[..n]),
+            Ok(0) => break parse(&raw, true).ok_or(Down)?,
+            Ok(n) => {
+                raw.extend_from_slice(&buf[..n]);
+                if let Some(answer) = parse(&raw, false) {
+                    break answer;
+                }
+            }
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
             Err(_) => return Err(Down),
         }
-    }
-    let (status, body) = parse(&raw).ok_or(Down)?;
+    };
     if body.is_empty() {
         return Ok((status, None));
     }
@@ -69,8 +73,8 @@ fn left(s: &UnixStream, end: Instant) -> Result<(), Down> {
     Ok(())
 }
 
-/// The status and body of an HTTP/1.x answer (Content-Length, chunked or to the end).
-fn parse(raw: &[u8]) -> Option<(u16, Vec<u8>)> {
+/// A complete HTTP/1.x answer; only a close-delimited body needs EOF.
+fn parse(raw: &[u8], eof: bool) -> Option<(u16, Vec<u8>)> {
     let end = raw.windows(4).position(|w| w == b"\r\n\r\n")?;
     let head = std::str::from_utf8(&raw[..end]).ok()?;
     let mut lines = head.split("\r\n");
@@ -81,15 +85,21 @@ fn parse(raw: &[u8]) -> Option<(u16, Vec<u8>)> {
         let (k, v) = line.split_once(':')?;
         match k.trim().to_ascii_lowercase().as_str() {
             "transfer-encoding" => chunked = v.trim().eq_ignore_ascii_case("chunked"),
-            "content-length" => length = v.trim().parse::<usize>().ok(),
+            "content-length" => length = Some(v.trim().parse::<usize>().ok()?),
             _ => {}
         }
     }
     let rest = &raw[end + 4..];
-    let body = if chunked {
+    let body = if status == 204 || status == 304 {
+        Vec::new()
+    } else if chunked {
         dechunk(rest)?
+    } else if let Some(length) = length {
+        rest.get(..length)?.to_vec()
+    } else if eof {
+        rest.to_vec()
     } else {
-        rest[..length.unwrap_or(rest.len()).min(rest.len())].to_vec()
+        return None;
     };
     Some((status, body))
 }
@@ -101,10 +111,14 @@ fn dechunk(mut rest: &[u8]) -> Option<Vec<u8>> {
         let size = usize::from_str_radix(std::str::from_utf8(&rest[..eol]).ok()?.split(';').next()?.trim(), 16).ok()?;
         rest = &rest[eol + 2..];
         if size == 0 {
-            return Some(out);
+            return (rest.starts_with(b"\r\n") || rest.windows(4).any(|w| w == b"\r\n\r\n")).then_some(out);
         }
         out.extend_from_slice(rest.get(..size)?);
-        rest = rest.get(size + 2..)?;
+        let next = size.checked_add(2)?;
+        if rest.get(size..next)? != b"\r\n" {
+            return None;
+        }
+        rest = rest.get(next..)?;
     }
 }
 
@@ -120,10 +134,24 @@ mod tests {
 
     #[test]
     fn answers_by_length_chunks_or_end() {
-        assert_eq!(parse(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}xx"), Some((200, b"{}".to_vec())));
-        assert_eq!(parse(b"HTTP/1.1 409 Conflict\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n"), Some((409, b"{}".to_vec())));
-        assert_eq!(parse(b"HTTP/1.0 200 OK\r\n\r\n[1]"), Some((200, b"[1]".to_vec())));
-        assert_eq!(parse(b"garbage"), None);
+        assert_eq!(parse(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}xx", false), Some((200, b"{}".to_vec())));
+        assert_eq!(parse(b"HTTP/1.1 409 Conflict\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n", false), Some((409, b"{}".to_vec())));
+        assert_eq!(parse(b"HTTP/1.0 200 OK\r\n\r\n[1]", true), Some((200, b"[1]".to_vec())));
+        assert_eq!(parse(b"HTTP/1.0 200 OK\r\n\r\n[1]", false), None);
+        assert_eq!(parse(b"garbage", true), None);
+    }
+
+    #[test]
+    fn incomplete_framing_never_accepts_a_valid_json_prefix() {
+        let length = b"HTTP/1.0 200 OK\r\nContent-Length: 10\r\n\r\n{}";
+        let chunk = b"HTTP/1.0 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n";
+        for eof in [false, true] {
+            assert_eq!(parse(length, eof), None);
+            assert_eq!(parse(chunk, eof), None);
+        }
+        assert_eq!(dechunk(b"2\r\n{}xx0\r\n\r\n"), None);
+        assert_eq!(dechunk(b"2\r\n{}\r\n0\r\nX-Check: yes\r\n"), None);
+        assert_eq!(dechunk(b"2\r\n{}\r\n0\r\nX-Check: yes\r\n\r\n"), Some(b"{}".to_vec()));
     }
 
     #[test]
@@ -167,5 +195,40 @@ mod tests {
     #[test]
     fn nothing_listening_is_down() {
         assert!(call(Path::new("/nonexistent/terminumd.sock"), "GET", "/health", None, Duration::from_secs(1)).is_err());
+    }
+
+    #[test]
+    fn a_complete_framed_answer_does_not_wait_for_socket_eof() {
+        let replies: &[&[u8]] = &[
+            b"HTTP/1.0 200 OK\r\nContent-Length: 2\r\n\r\n{}",
+            b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n2\r\n{}\r\n0\r\n\r\n",
+            b"HTTP/1.0 204 No Content\r\n\r\n",
+        ];
+        for (i, reply) in replies.iter().enumerate() {
+            let path = std::env::temp_dir().join(format!("tm-frame-{}-{i}.sock", std::process::id()));
+            let listener = std::os::unix::net::UnixListener::bind(&path).unwrap();
+            let reply = reply.to_vec();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
+                let mut request = Vec::new();
+                while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+                    let mut buf = [0; 256];
+                    let n = stream.read(&mut buf).unwrap();
+                    assert!(n > 0);
+                    request.extend_from_slice(&buf[..n]);
+                }
+                let middle = reply.len() - 1;
+                stream.write_all(&reply[..middle]).unwrap();
+                std::thread::sleep(Duration::from_millis(10));
+                stream.write_all(&reply[middle..]).unwrap();
+                // Keep the server side open until the client closes its own socket.
+                let _ = stream.read(&mut [0; 1]);
+            });
+            let result = call(&path, "GET", "/health", None, Duration::from_millis(150));
+            server.join().unwrap();
+            std::fs::remove_file(path).unwrap();
+            assert_eq!(result.unwrap(), if i == 2 { (204, None) } else { (200, Some(json!({}))) });
+        }
     }
 }

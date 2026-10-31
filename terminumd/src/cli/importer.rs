@@ -108,6 +108,9 @@ fn workspaces(mut data: Map<String, Value>, names: &HashMap<String, String>) -> 
             let Some(Ok(Value::Array(pair))) = k.strip_prefix("web:").map(serde_json::from_str::<Value>) else { continue };
             let [host, key] = &pair[..] else { continue };
             if let Some(mapped) = map_key(key, names) {
+                let host = if key.as_str().is_some_and(|k| k.starts_with("tmux-remote:")) {
+                    json!(mapped.split(':').nth(1).unwrap_or_default())
+                } else { host.clone() };
                 panes.insert(format!("web:{}", json!([host, mapped])), pane.clone());
             }
         }
@@ -141,7 +144,8 @@ pub fn run(home: &Path, app_dir: &Path, settings_path: &Path) -> Result<Vec<Stri
     let agents = read_json(&src.join("agents.json"))?;
     let mut settings = match read_json(settings_path)? {
         Some(Value::Object(m)) => m,
-        _ => Map::new(),
+        None => Map::new(),
+        Some(_) => return Err(format!("{}: expected a JSON object", settings_path.display())),
     };
     let before = settings.get("hosts").cloned().unwrap_or_else(|| json!({}));
     let empty = Map::new();

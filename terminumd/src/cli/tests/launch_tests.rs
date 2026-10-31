@@ -17,6 +17,44 @@ fn stubbed(home: &Home, env: &[(&str, &str)]) -> (Ctx, PathBuf) {
     (ctx, dir)
 }
 
+#[test]
+fn invalid_pid_records_never_resolve_to_signal_targets() {
+    let home = Home::new();
+    let ctx = home.ctx(&[]);
+    std::fs::create_dir_all(&ctx.app_dir).unwrap();
+    // Only inspect running_pid: calling stop on an invalid record would be unsafe before the fix.
+    for text in ["0 ".to_string(), format!("{} ", u32::MAX), format!("{} ", i32::MAX as u32 + 1), format!("{} ", std::process::id())] {
+        std::fs::write(ctx.pidfile(), text).unwrap();
+        assert_eq!(direct::running_pid(&ctx), None);
+    }
+}
+
+#[test]
+fn timed_out_commands_end_their_descendants_and_output_readers() {
+    let home = Home::new();
+    let pidfile = home.path("descendant.pid");
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args(["-c", "sleep 30 & echo $! > \"$TM_TEST_CHILD_PID\"; wait"]).env("TM_TEST_CHILD_PID", &pidfile);
+    let result = launch::run_timeout(command, Duration::from_millis(200));
+    assert!(result.is_err());
+    let pid: libc::pid_t = std::fs::read_to_string(pidfile).unwrap().trim().parse().unwrap();
+    let state = std::process::Command::new("/bin/ps").args(["-o", "stat=", "-p", &pid.to_string()]).output().unwrap();
+    let running = !state.stdout.is_empty() && !String::from_utf8_lossy(&state.stdout).trim().starts_with('Z');
+    if running {
+        // SAFETY: this is the sleep child whose pid our own fixture recorded; cleanup before asserting.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+    assert!(!running, "the timed-out command left its descendant and pipe reader running");
+}
+
+#[test]
+fn bounded_commands_keep_both_output_streams_and_exit_status() {
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args(["-c", "printf stdout; printf stderr >&2; exit 7"]);
+    let output = launch::run_timeout(command, Duration::from_secs(2)).unwrap();
+    assert_eq!((output.stdout.as_slice(), output.stderr.as_slice(), output.status.code()), (b"stdout".as_slice(), b"stderr".as_slice(), Some(7)));
+}
+
 /// The plist as plutil reads it (macOS only).
 #[cfg(target_os = "macos")]
 fn plist_json(path: &Path) -> Value {

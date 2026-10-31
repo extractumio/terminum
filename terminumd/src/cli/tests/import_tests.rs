@@ -43,7 +43,7 @@ fn everything_of_tmux_panes_and_hosts() {
                                 "old-alias": {"host": "vm1"}}));
     let mut panes = serde_json::Map::new();
     panes.insert(web_key("", "tmux:mac:default:%3"), json!({"root": "/Users/alex/work"}));
-    panes.insert(web_key("", "tmux-remote:-p 2222 alex@devbox.example:default:%7"), json!({"root": "/home/alex"}));
+    panes.insert(web_key("", "tmux-remote:-p 2222 alex@devbox.example:default:%7"), json!({"root": "/home/alex", "tabs": [{"path": "/home/alex/notes.md"}]}));
     panes.insert(web_key("", "w0t0p0:6A1B"), json!({"root": "/Users/alex/iterm"}));
     panes.insert("tmux:mac:default:%3".into(), json!({"root": "/Users/alex/panel"}));
     panes.insert("web:not json".into(), json!({}));
@@ -60,9 +60,11 @@ fn everything_of_tmux_panes_and_hosts() {
     assert_eq!(ws["prefs"], json!({"theme": "dark"}));
     let mut keys: Vec<String> = ws["panes"].as_object().unwrap().keys().cloned().collect();
     keys.sort();
-    let mut want = vec![web_key("", "tmux:mac:default:%3"), web_key("", "tmux:devbox:default:%7")];
+    let remote_key = web_key("devbox", "tmux:devbox:default:%7");
+    let mut want = vec![web_key("", "tmux:mac:default:%3"), remote_key.clone()];
     want.sort();
     assert_eq!(keys, want);
+    assert_eq!(ws["panes"][&remote_key], json!({"root": "/home/alex", "tabs": [{"path": "/home/alex/notes.md"}]}), "the panel's actual host namespace retains its tree and tabs");
     let marks = t.read(&t.ctx.app_dir.join("web-bookmarks.json"))["items"].clone();
     let got: Vec<(String, String)> = marks.as_array().unwrap().iter().map(|m| (m["id"].as_str().unwrap().into(), m["key"].as_str().unwrap().into())).collect();
     assert_eq!(got, [("1".to_string(), "tmux:mac:default:%3".to_string()), ("3".into(), "tmux:devbox:default:%7".into())]);
@@ -105,6 +107,33 @@ fn broken_files_are_refused_with_their_name() {
     let err = t.run().unwrap_err();
     assert!(err.contains("agents.json: not JSON"), "{err}");
     assert!(!t.settings.exists());
+}
+
+#[test]
+fn existing_non_object_settings_are_refused_without_overwriting_them() {
+    for text in ["[]\n", "\"salvageable settings\"\n", "null\n", "42\n"] {
+        let t = T::new();
+        t.put("agents.json", json!({"a": {"ssh": ["alex@devbox.example"]}}));
+        std::fs::create_dir_all(t.settings.parent().unwrap()).unwrap();
+        std::fs::write(&t.settings, text).unwrap();
+        let error = t.run().unwrap_err();
+        assert!(error.contains("settings.json") && error.contains("object"), "{error}");
+        assert_eq!(std::fs::read_to_string(&t.settings).unwrap(), text);
+        assert!(!t.ctx.app_dir.join("workspaces.json").exists());
+    }
+}
+
+#[test]
+fn imported_remote_workspace_replaces_a_legacy_outer_host_hint() {
+    let t = T::new();
+    t.put("agents.json", json!({"old-destination": {"ssh": ["alex@devbox.example"]}}));
+    let pane = json!({"root": "/home/alex/work", "tabs": [{"path": "/home/alex/work/notes.md"}], "expanded": ["/home/alex/work/src"]});
+    let old_key = web_key("old-destination", "tmux-remote:old-destination:default:%8");
+    t.put("workspaces.json", json!({"version": 1, "panes": {old_key: pane}}));
+    t.run().unwrap();
+    let data = t.read(&t.ctx.app_dir.join("workspaces.json"));
+    assert_eq!(data["panes"][web_key("devbox", "tmux:devbox:default:%8")], pane);
+    assert_eq!(data["panes"].as_object().unwrap().len(), 1);
 }
 
 #[test]

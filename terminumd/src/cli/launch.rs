@@ -7,7 +7,7 @@
 //! label when the folders are the real home's, so a test cannot replace the live agent.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output, Stdio};
+use std::process::{Command, Output};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
@@ -119,23 +119,9 @@ pub fn prepare(ctx: &Ctx) -> Result<(), String> {
     std::fs::set_permissions(&log, std::fs::Permissions::from_mode(0o600)).map_err(|e| err(&log, e))
 }
 
-/// A command's output, or why it gave none within `limit` (it is killed then).
-pub fn run_timeout(mut cmd: Command, limit: Duration) -> Result<Output, String> {
-    let child = cmd.stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().map_err(|e| e.to_string())?;
-    let pid = child.id() as libc::pid_t;
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(child.wait_with_output());
-    });
-    match rx.recv_timeout(limit) {
-        Ok(r) => r.map_err(|e| e.to_string()),
-        Err(_) => {
-            // SAFETY: signalling the child we started and have not reaped yet
-            unsafe { libc::kill(pid, libc::SIGKILL) };
-            Err(format!("no answer within {} s", limit.as_secs()))
-        }
-    }
-}
+#[path = "process.rs"]
+mod process;
+pub use process::run_timeout;
 
 fn domain() -> String {
     // SAFETY: getuid has no preconditions

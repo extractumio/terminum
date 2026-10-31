@@ -31,10 +31,14 @@ pub fn running_pid(ctx: &Ctx) -> Option<u32> {
     let text = std::fs::read_to_string(ctx.pidfile()).ok()?;
     let (pid, since) = text.split_once(' ')?;
     let pid: u32 = pid.parse().ok()?;
+    if pid == 0 || pid > libc::pid_t::MAX as u32 || since.trim().is_empty() {
+        return None;
+    }
     if exited_child(ctx, pid) == Some(true) {
         return None;
     }
-    (started_at(pid) == since.trim()).then_some(pid)
+    let started = started_at(pid);
+    (!started.is_empty() && started == since.trim()).then_some(pid)
 }
 
 fn gone(ctx: &Ctx, pid: u32) -> bool {
