@@ -17,9 +17,11 @@ import stat
 import subprocess
 import sys
 import time
+from urllib.parse import urlencode
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_layout  # noqa: E402
+from e2e_remote import api  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PORT, LOCAL_SOCKET, REMOTE_SOCKET = 47963, "tm-test-alocal", "tm-test-aremote"
@@ -185,13 +187,14 @@ def main():
         t.env.update(FAKE_SSH_REFUSE_R="1")
         t.stop()
         t.start()
-        ws = t.page(t.signin())
+        secret = t.signin()
+        ws = t.page(secret)
         h = until(lambda: host_rec(t), lambda h: "refused" in str(h.get("agents", "")), 20)
         check("AC-99 a refused forward: `terminum hosts` says so", "forwarding refused by devbox's sshd" in str(h.get("agents", "")), h.get("agents"))
-        st, ls = unix_request(t.sock, "GET", "/hosts")
-        st2, body = t.api(f"/fs/list?path={home}", host="devbox") if hasattr(t, "api") else (None, None)
-        if st2 is not None:
-            check("AC-99 files still work with the forward refused", st2 == 200, body)
+        st2, body = until(lambda: api(t, secret, "/fb/api/ls?" + urlencode({"path": home}), "devbox"),
+                          lambda r: r[0] == 200 and r[1].get("status") == "ready", 5)
+        check("AC-99 files still work with the forward refused", st2 == 200 and body.get("status") == "ready"
+              and any(e["n"] == "proj" for e in body.get("entries", [])), body)
         out = in_pane(REMOTE_SOCKET, pane, f'{hb} hook claude < ev0.json; echo "rc=$?"', "rc=")
         check("AC-99 the hook with no link exits 0 silently", "rc=0" in out, out[-300:])
         t.env.pop("FAKE_SSH_REFUSE_R")

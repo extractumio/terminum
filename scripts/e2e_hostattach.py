@@ -57,16 +57,34 @@ def clients():
     return {int(p): c for p, c in (line.split(" ", 1) for line in remote("list-clients", "-F", "#{client_pid} #{client_name}").splitlines())}
 
 
+fixtures = []
+
+
+def cleanup_fixtures():
+    for process in fixtures:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+    fixtures.clear()
+
+
 def orphan(args, shell=False, live=False):
     """A control client `tmux -L <host's> <args>` of the host's tmux as a dropped ssh link
     leaves one: init's child, or (`shell`) a shell's whose parent is init; `live`: under a
     parent that lives (this check's). Its pid."""
     cmd = f"tmux -L {REMOTE} {args}"
     line = f"sleep 60 | {cmd} >/dev/null 2>&1"
-    if live:
-        subprocess.Popen(line, shell=True)
-    else:
-        subprocess.run(["sh", "-c", f"({line}) &" if shell else f"{line} &"])
+    command = line if live else f"({line}) &" if shell else f"{line} &"
+    process = subprocess.Popen(["sh", "-c", command], start_new_session=True)
+    fixtures.append(process)
+    if not live:
+        process.wait(timeout=5)  # the control client is orphaned, its owned group remains tracked
     for _ in range(50):
         found = subprocess.run(["pgrep", "-fx", cmd], capture_output=True, text=True).stdout.split()
         if found and int(found[0]) in clients():
@@ -245,6 +263,7 @@ def main():
         check("AC-89 a removed host's attached windows get their size back and run on",
               held == "96x28 manual 1" and st == 200 and "manual" not in size_of("work:") and "work" in remote("ls"), [held, st, size_of("work:")])
     finally:
+        cleanup_fixtures()
         t.cleanup()
         remote("kill-server")
     return summary()

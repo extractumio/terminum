@@ -6,11 +6,11 @@
 set -euo pipefail
 dir=$(cd "${1:?dir}" && pwd -P); runs=${2:-10}
 bin=${TERMINUMD_BIN:-$(dirname "$0")/../terminumd/target/release/terminumd}
-home=$(mktemp -d /tmp/tmb-XXXXXX)   # short: the socket path holds at most 104 bytes
+bench_home=$(mktemp -d /tmp/tmb-XXXXXX)   # short: the socket path holds at most 104 bytes
 tsock=tm-bench-$$
 pid=""
-trap '[ -n "$pid" ] && kill $pid 2>/dev/null; tmux -L "$tsock" kill-server 2>/dev/null; rm -rf "$home"' EXIT
-export TM_PORT=47899 TM_HOME=$home TM_APP_DIR=$home/state TM_TMUX_SOCKET=$tsock TM_LOG=warn
+trap '[ -n "$pid" ] && kill $pid 2>/dev/null; tmux -L "$tsock" kill-server 2>/dev/null; rm -rf "$bench_home"' EXIT
+export TM_PORT=47899 TM_HOME=$bench_home TM_APP_DIR=$bench_home/state TM_TMUX_SOCKET=$tsock TM_LOG=warn
 url="http://127.0.0.1:47899/fb/api/ls?path=$dir${SORT:+&sort=$SORT}"
 signin() { # a password over the socket (as `terminum password`), then the sign-in /auth/login gives for it
   curl -s -o /dev/null --unix-socket "$TM_APP_DIR/terminumd.sock" -X POST -H 'Content-Type: application/json' \
@@ -30,7 +30,8 @@ for _ in $(seq "$runs"); do
   rss=$(ps -o rss= -p $pid)
   kill $pid; wait $pid 2>/dev/null || true; pid=""
 done
-p95() { printf '%s\n' "$@" | sort -n | awk '{a[NR]=$1} END {i=int(NR*0.95); if(i<1)i=1; printf "%d", a[i]*1000}'; }
+p95() { printf '%s\n' "$@" | sort -n | awk '{a[NR]=$1} END {i=int(NR*0.95); if(i<NR*0.95)i++; printf "%d", a[i]*1000}'; }
 c=$(p95 "${cold[@]}"); w=$(p95 "${warm[@]}")
 verdict=$([ "$c" -lt 2500 ] && [ "$w" -lt 50 ] && [ "$rss" -lt 153600 ] && echo PASS || echo FAIL)
 echo "entries=$total cold_p95_ms=$c page_p95_ms=$w rss_mb=$((rss/1024)) $verdict"
+[ "$verdict" = PASS ]

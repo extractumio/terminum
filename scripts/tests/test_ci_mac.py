@@ -19,13 +19,27 @@ cd "$RUNNER" && bash -c "$last"
 """
 RSYNC = """#!/bin/bash
 echo "rsync" >> "$LOG"
+src=${@: -2:1}
+python3 - "$src" "$STAGED_MANIFEST" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+Path(sys.argv[2]).write_text(str(root) + '\\n' + '\\n'.join(str(p.relative_to(root)) for p in root.rglob('*')))
+PY
+"""
+GIT = """#!/bin/sh
+case "$*" in
+  *--cached*) printf 'AGENTS.md\\0CLAUDE.md\\0Makefile\\0scripts/ci_source.py\\0credentials.json\\0' ;;
+  *--others*) printf 'scripts/tests/test_ci_source.py\\0' ;;
+  *) exit 1 ;;
+esac
 """
 
 
 class CiMacTest(unittest.TestCase):
     def run_script(self, root, rc=0):
         env = {**os.environ, "RUN_RC": str(rc), "PATH": f"{root / 'bin'}:{os.environ['PATH']}", "LOG": str(root / "log"),
-               "RUNNER": str(root / "runner"), "TM_MAC_RUNNER": "mac-runner"}
+               "RUNNER": str(root / "runner"), "TM_MAC_RUNNER": "mac-runner", "STAGED_MANIFEST": str(root / "manifest")}
         r = subprocess.run(["bash", str(SCRIPT)], env=env, capture_output=True, text=True, timeout=30)
         log = (root / "log").read_text().splitlines() if (root / "log").exists() else []
         (root / "log").unlink(missing_ok=True)
@@ -36,7 +50,8 @@ class CiMacTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         (self.root / "bin").mkdir()
         (self.root / "runner").mkdir()
-        for name, text in (("ssh", SSH), ("rsync", RSYNC)):
+        # The synced Mac-runner tree has no .git: this unit fixture supplies its inventory.
+        for name, text in (("ssh", SSH), ("rsync", RSYNC), ("git", GIT)):
             (self.root / "bin" / name).write_text(text)
             (self.root / "bin" / name).chmod(0o755)
 
@@ -64,6 +79,25 @@ class CiMacTest(unittest.TestCase):
         self.assertEqual(r.returncode, 255)
         self.assertIn("remove ~/ci/terminum.lock", r.stderr)
         self.assertTrue((self.root / "runner/ci/terminum.lock").is_dir(), "the run may go on there")
+
+    def test_rsync_receives_a_staged_source_tree_without_local_files(self):
+        r, _ = self.run_script(self.root)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        lines = (self.root / "manifest").read_text().splitlines()
+        self.assertTrue(lines[0].startswith("/tmp/tm-ci-src."), lines[0])
+        self.assertIn("scripts/ci_source.py", lines)
+        self.assertIn("AGENTS.md", lines)
+        for name in ["local.mk", "CLAUDE.local.md", "MEMORY.md", "ui/node_modules", ".codex", ".claude"]:
+            self.assertNotIn(name, lines)
+        self.assertFalse(Path(lines[0]).exists(), "the owned staging tree is removed on exit")
+
+    def test_staging_creation_failure_releases_the_remote_lock(self):
+        file = self.root / "bin/mktemp"
+        file.write_text("#!/bin/sh\nexit 1\n"); file.chmod(0o700)
+        r, log = self.run_script(self.root)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("rsync", log)
+        self.assertFalse((self.root / "runner/ci/terminum.lock").exists())
 
 
 if __name__ == "__main__":

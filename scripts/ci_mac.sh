@@ -24,13 +24,18 @@ case $rc in
 esac
 # until the run starts the lock is this script's to give back; then the run's (it may outlive an interrupted ssh)
 running=0
-trap '[ $running = 1 ] || ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "rmdir ci/terminum.lock" \
+stage=""
+trap '[ -z "$stage" ] || rm -rf "$stage"; [ $running = 1 ] || ssh -o BatchMode=yes -o ConnectTimeout=10 "$host" "rmdir ci/terminum.lock" \
     || echo "ci_mac: $host:~/ci/terminum.lock was left: remove it" >&2' EXIT
+stage=$(mktemp -d /tmp/tm-ci-src.XXXXXX)
+python3 "$repo/scripts/ci_source.py" "$repo" "$stage"
+# Preserve the runner's existing caches and local configuration; selection of outbound files
+# has already happened in the source staging step above.
 rsync -a --delete \
     --exclude .git --exclude target --exclude node_modules --exclude ui/dist --exclude dist \
-    --exclude .toolchain --exclude 'local.mk' --exclude 'CLAUDE.local.md' --exclude 'MEMORY.md' \
-    --exclude '.env*' --exclude 'workspaces.json' --exclude '.claude' \
-    "$repo/" "$host:ci/terminum/"
+    --exclude .toolchain --exclude local.mk --exclude CLAUDE.local.md --exclude MEMORY.md \
+    --exclude '.env*' --exclude workspaces.json --exclude .claude --exclude .codex \
+    "$stage/" "$host:ci/terminum/"
 running=1
 # a login shell for Homebrew's PATH; no tmux there would skip every check of a real tmux
 rc=0

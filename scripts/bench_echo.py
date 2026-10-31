@@ -9,6 +9,7 @@ the number and the budget when one is missed.
 """
 import argparse
 import os
+import math
 import statistics
 import sys
 import time
@@ -28,7 +29,7 @@ def main():
     ap.add_argument("--keys", type=int, default=200)
     a = ap.parse_args()
     t = Terminumd(PORT, SOCKET, env={"TM_LOG": "warn"})
-    times = []
+    times, missed = [], 0
     try:
         t.start()
         ws = t.page()
@@ -57,6 +58,7 @@ def main():
             m = ws.until(lambda m: m["t"] == "screen" and typed in text_of(m["ch"]), 2)
             if m is None:
                 print(f"key {i + 1}: no echo within 2 s")
+                missed += 1
                 continue
             times.append((time.perf_counter() - t0) * 1000)
             time.sleep(0.02)
@@ -66,9 +68,11 @@ def main():
         print("no echo measured")
         sys.exit(1)
     times.sort()
-    p50, p95 = statistics.median(times), times[int(len(times) * 0.95) - 1]
-    print(f"keys {len(times)}  p50 {p50:.1f} ms  p95 {p95:.1f} ms  max {times[-1]:.1f} ms")
+    p50, p95 = statistics.median(times), times[math.ceil(len(times) * 0.95) - 1]
+    print(f"keys {len(times)}/{a.keys}, missed {missed}  p50 {p50:.1f} ms  p95 {p95:.1f} ms  max {times[-1]:.1f} ms")
     failed = [f"p50 {p50:.1f} ms over 25 ms" for _ in [0] if p50 >= 25] + [f"p95 {p95:.1f} ms over 60 ms" for _ in [0] if p95 >= 60]
+    if missed:
+        failed.append(f"{missed} of {a.keys} keys had no echo within 2 s")
     for f in failed:
         print("BUDGET MISSED:", f)
     sys.exit(1 if failed else 0)
