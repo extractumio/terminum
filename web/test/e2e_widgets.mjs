@@ -300,15 +300,17 @@ export async function webWidgets(browser, name = "") {
   // them) gives way, the table stays drawn (it turned back into plain text)
   const at2 = foldHist.length + 28;
   fo.say({ t: "hist", mode: "append", sid: "S1", first: at2, oldest: 0, truncated: false,
-    lines: ["⏺ Bash(cat t.md)", "  ⎿  the table:", "     | Field | Value |", "     |---|---|", ...Array.from({ length: 8 }, (_, k) => `     | f${k} | ${k} |`), ""].map((t) => line(t)) });
+    lines: ["⏺ Bash(cat t.md)", "  ⎿  the table:", "     | Field | Value |", "     |---|---|", ...Array.from({ length: 8 }, (_, k) => `     | f${k} | ${k} |`), "",
+      ...Array.from({ length: 12 }, (_, k) => `after ${k}`)].map((t) => line(t)) });   // lines after it: the table is final, not live
   await fo.page.waitForFunction(() => [...document.querySelectorAll("#hist .ln.wg-host")].some((h) => h.shadowRoot.querySelector('.wg[data-kind="table"]')), null, { timeout: 5000 }).catch(() => {});
   const prior = await fo.page.evaluate(() => [...document.querySelectorAll("#hist .ln.wg-host")].map((h) => h.shadowRoot.querySelector(".wg")?.dataset.kind ?? "fold").join());
   fo.say({ t: "folds", sid: "S1", items: [{ n: at2 + 4, to: at2 + 10, label: "⋯ 7 more lines of output" }] });
   await fo.page.waitForTimeout(400);
   const kept = await fo.page.evaluate(() => ({
     drawn: [...document.querySelectorAll("#hist .ln.wg-host")].some((h) => h.shadowRoot.querySelector('.wg[data-kind="table"] table')),
+    shown: [...document.querySelectorAll("#hist .ln:not(.wg-host)")].filter((el) => /^\s*\|/.test(el.textContent) && el.offsetParent).length,
     folded: [...document.querySelectorAll("#hist .ln.wg-fold")].map((h) => h.shadowRoot.querySelector('[data-act="fold"]').textContent).includes("⋯ 7 more lines of output") }));
-  check(`${at} … a fold over rendered output (a table whose lines the page has) gives way: the table stays drawn`, kept.drawn && !kept.folded, JSON.stringify({ kept, prior }));
+  check(`${at} … a fold over rendered output (a table whose lines the page has) gives way: the table stays drawn, its lines hidden`, kept.drawn && !kept.folded && kept.shown === 0, JSON.stringify({ kept, prior }));
   check(`${at} … no page errors with folds`, !fo.errors.length, JSON.stringify(fo.errors));
   await fo.page.close();
 

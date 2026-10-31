@@ -364,6 +364,14 @@ test("a pipe table's row with a bar too many is a row of its own, the next rows 
 
 test("a table's last row short of its bars never takes the prose after a blank line; a wrapped table's may span blank lines", () => {
   const rows = ["| a | b |", "|---|---|", "| 4 | 5", "", "Use `ls | wc` here."].map(L);
-  const t = scan(rows).found.find((r) => r.kind === "table");
-  assert.equal(t?.to ?? -1, 1, "the table ends at its separator; its short row and the prose stay text");
+  assert.deepEqual(scan(rows).found, [], "no row read, the next line a row cut short: the lines stay text, the prose too");
+});
+
+test("a pipe table's head with rows cut short (`cut -c`) is no widget; a head alone before other text still is one", () => {
+  const cut = ["| Version | Date | Change |", "|---|---|---|", "| 0.24.13 | 2026-10-31 | Owner: the list's foot is a", "again (it unfolded", "",
+    "| Version | Date | Change |", "|---|---|---|", "| 0.24.13 | 2026-10-31 | Owner: `cut -c` and **bold** the", "| 0.24.12 | 2026-10-30 | Owner: `tmux` a **b** and",
+    "| 0.24.11 | 2026-10-29 | Owner: [a](b) `x`", ""];
+  assert.deepEqual(scan(cut.map((t) => L(t))).found, [], "no table, and no document from its separator (its cells' `code` and **bold**)");
+  const alone = scan(["| Field | Value |", "|---|---|", "", "next"].map((t) => L(t))).found.filter((r) => r.kind === "table");
+  assert.deepEqual(alone.map((r) => [r.from, r.to, r.table.rows.length]), [[0, 1, 0]]);
 });

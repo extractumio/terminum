@@ -170,7 +170,9 @@ export class Widgets {
     // rendered output is never folded: a fold over a widget's rows gives way (folds.js giveWay); a
     // part the bridge folded and did not send stays the fold's (no text to draw it from)
     const drawn = new Set(list.flatMap(({ rows }) => (rows.every(Boolean) ? rows.map((r) => r.el) : [])));
-    if (this.folds.giveWay(drawn)) this.folds.apply();
+    // a fold that gave way showed all its rows: the regions under it hide theirs again
+    const gave = this.folds.giveWay(drawn);
+    if (gave) this.folds.apply();
     list = list.filter(({ rows }) => rows.length && !rows.some((r) => !r || this.folds.has(r.el)));
     // positions first, then changes: a read after a change would lay out the whole history again
     const away = new Set(list.filter((l) => !l.live && !this.hosts.has(l.rows[0].el) && !near(l.rows.map((r) => r.el))));
@@ -182,7 +184,7 @@ export class Widgets {
       hosts.set(anchor, { key, raw, rows: els, live });
       const root = hostOf(anchor, this.click);
       let mine = root.firstElementChild;
-      if (!live && was?.key === key && was.raw === raw && was.rows.length === els.length && was.rows.at(-1) === els.at(-1)
+      if (!gave && !live && was?.key === key && was.raw === raw && was.rows.length === els.length && was.rows.at(-1) === els.at(-1)
         && mine?.dataset.key === key) continue;
       if (was && was.key !== key) detach(anchor, was);
       else if (was) show(was.rows, new Set(els));                 // rows the region no longer has
