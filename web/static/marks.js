@@ -75,7 +75,7 @@ export class Marks {
     this.search = new Find({ view, widgets, term, send, sid });   // its magnifier stands beside the bookmarks' button
     this.search.onOpen = () => this.togglePane(false);                // one of the two at a time
     document.addEventListener("planfab", () => this.placeFab());      // the plan's progress circle shown or gone (planpane.js)
-    markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
+    this.picker = markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
       onPick: (sel) => this.edit(null, sel), onCopy: copy, onAsk: (text, line) => this.onAsk?.(text, line) });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
     $("markbox").addEventListener("close", () => { this.editing = null; });

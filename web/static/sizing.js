@@ -11,17 +11,19 @@
 // keeps the chosen text size, clipped at the edge, until tmux has the new width (2 s at most after
 // the last change): the text never shrinks to the old width and grows back (AC-04).
 import { banner } from "./banners.js";
+import { caretAt } from "./cursor.js";
 
 const $ = (id) => document.getElementById(id);
 const SETTLE = 300;             // ms after the last change of the view before its size is sent
 const TYPED_EVERY = 1000;       // ms: a key sends the size at most this often
 const SLIVER = { cols: 20, rows: 5 };   // a view smaller than this is passing: no size sent
 const HOLD = 2000;              // ms after the last change a pane may wait for its new width unscaled
+const COPIED_WAIT = 3000;      // ms after a release a program's copy may come: terminumd's 2 s (notices.rs COPY_WAIT) and the way back
 const bounded = (cols) => Math.max(45, Math.min(240, cols));   // the columns terminumd gives a grid (its sizing.rs)
 
 /** view: the TermView; sid(): the shown pane's id; refit(): the drawn size may have changed;
- *  notify(text): a toast. */
-export function paneSizing({ view, send, sid, refit, notify }) {
+ *  notify(text): a toast; copied({text, row}): what a full-screen program copied (AC-06). */
+export function paneSizing({ view, send, sid, refit, notify, copied }) {
   const term = $("term");
   let last = null, typedAt = -Infinity, settle = 0, elsewhere = null, full = false;
   let holdUntil = 0, holdTimer = 0, heldFor = null;   // a hold, once for each size sent (heldFor)
@@ -143,15 +145,32 @@ export function paneSizing({ view, send, sid, refit, notify }) {
     if (s) send({ t: "mouse", x: s.at.x, y: s.at.y, button: 0, action: s.action, mods: s.mods, ...(s.n > 1 ? { count: s.n } : {}) });
   }
   const BUTTON = { 0: 0, 1: 1, 2: 2 };
-  let held = null;                                // a mouse button down: {button, x, y}
+  let held = null;                                // a mouse button down: {button, x, y, y0}
+  let released = null;                            // the last left release to the program: when, the upper row
+  let shiftFrom = null;                           // a Shift selection's start, while the button is down
   term.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "mouse" || !mouseOn(e) || !(e.button in BUTTON)) return;
+    if (e.pointerType !== "mouse" || !(e.button in BUTTON)) return;
+    if (e.shiftKey && e.button === 0 && mouseOn()) {
+      // Shift: the browser's own selection, drawn here from the press to the pointer. The
+      // browsers' Shift extends the caret, Chrome's and Firefox's in the keyboard field (nothing,
+      // or from where it was), and Chrome then moves a caret along the drag.
+      const p = caretAt(e.clientX, e.clientY);
+      if (!p || !term.contains(p.node)) return;
+      e.preventDefault();
+      if (document.activeElement?.id === "kbd") document.activeElement.blur();   // Chrome keeps a focused field's caret
+      shiftFrom = p;
+      getSelection().collapse(p.node, p.offset);
+      return;
+    }
+    if (!mouseOn(e)) return;
     e.preventDefault();                           // no text selection: the drag is the program's
     const at = cellAt(e.clientX, e.clientY);
-    held = { button: BUTTON[e.button], ...at };
+    held = { button: BUTTON[e.button], ...at, y0: at?.y };   // y0: the press's row, as moves change y
     report("press", at, held.button, e);
   });
   term.addEventListener("pointermove", (e) => {
+    const q = shiftFrom && e.buttons & 1 && caretAt(e.clientX, e.clientY);
+    if (q && term.contains(q.node)) getSelection().setBaseAndExtent(shiftFrom.node, shiftFrom.offset, q.node, q.offset);
     if (e.pointerType !== "mouse" || !held || !mouseOn()) return;
     const at = cellAt(e.clientX, e.clientY);
     if (!at || (at.x === held.x && at.y === held.y)) return;
@@ -159,10 +178,24 @@ export function paneSizing({ view, send, sid, refit, notify }) {
     report("move", at, held.button, e);
   });
   addEventListener("pointerup", (e) => {
+    shiftFrom = null;
     if (e.pointerType !== "mouse" || !held) return;
-    const b = held.button; held = null;
-    if (mouseOn()) report("release", cellAt(e.clientX, e.clientY), b, e);
+    const { button: b, y0 } = held; held = null;
+    if (!mouseOn()) return;
+    const at = cellAt(e.clientX, e.clientY);
+    report("release", at, b, e);
+    if (b === 0 && y0 !== undefined && at) released = { at: performance.now(), y: Math.min(y0, at.y) };
   });
+  // What the program copied of its own selection after that release (terminumd's 2 s, and the
+  // way back): the selection's buttons by its upper row, with its text (AC-06). Only text on the
+  // screen: a program that writes the clipboard on its own (a hostile file it shows) gets nothing.
+  const bare = (t) => t.replace(/\s+/g, "");   // a row's txt: its text without render.js's U+FE0E/F
+  function onCopied(m) {
+    const row = released && view.screen[released.y]?.el, text = String(m.text ?? "");
+    if (m.sid !== sid() || !row?.isConnected || performance.now() - released.at > COPIED_WAIT) return;
+    if (!bare(view.screen.filter(Boolean).map((r) => r.txt).join("")).includes(bare(text))) return;
+    copied({ text, row });
+  }
   term.addEventListener("contextmenu", (e) => { if (mouseOn(e)) e.preventDefault(); });
   term.addEventListener("wheel", (e) => {
     if (!wheelOn() || !e.deltaY) return;
@@ -207,7 +240,7 @@ export function paneSizing({ view, send, sid, refit, notify }) {
   });
 
   return {
-    fullscreen, mouseOn, sync, holding, reflow,
+    fullscreen, mouseOn, sync, holding, reflow, onCopied,
     /** The grid that fits the terminal at the chosen text size, to send with "sub" ({} for none:
      *  hidden, or a sliver). */
     grid: () => { const g = grid(); return !term.hidden && term.clientWidth && g.cols >= SLIVER.cols && g.rows >= SLIVER.rows ? g : {}; },

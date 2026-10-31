@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+//! What a server's control clients tell (control.rs `Notice`): wake-ups of shown panes, lists
+//! to read again, flow control, and what a full-screen program copied after a page's mouse
+//! release (AC-06).
+
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
+use tokio::sync::mpsc;
+
+use super::{Notice, Server};
+
+/// How long after a page's mouse release a program's clipboard write is that page's (AC-06).
+const COPY_WAIT: Duration = Duration::from_secs(2);
+
+/// What a program's copy is handed to.
+pub type OnCopy = Arc<dyn Fn(String) + Send + Sync>;
+/// Panes armed by a release: until when, and for whom.
+pub(super) type Armed = Mutex<HashMap<String, (Instant, OnCopy)>>;
+
+impl Server {
+    /// A page's mouse release went to the pane `%N`: what its program copies within
+    /// `COPY_WAIT` goes to `to` (the latest page's release wins).
+    pub fn arm_copy(&self, pane: &str, to: OnCopy) {
+        let mut armed = self.copies.lock();
+        let now = Instant::now();
+        armed.retain(|_, (until, _)| *until > now);
+        armed.insert(pane.to_string(), (now + COPY_WAIT, to));
+    }
+
+    /// A clipboard write of the pane `%N`: its page's when armed, else nothing (AC-06).
+    fn copied(&self, pane: &str, text: String) {
+        let to = {
+            let mut armed = self.copies.lock();
+            let now = Instant::now();
+            armed.retain(|_, (until, _)| *until > now); // a page's arm goes once it is over
+            armed.get(pane).map(|(_, f)| f.clone())
+        };
+        match to {
+            Some(f) => f(text),
+            None => tracing::debug!(event = "clip.unasked", server = %self.name, pane),
+        }
+    }
+}
+
+pub(super) async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceiver<Notice>) {
+    while let Some(n) = rx.recv().await {
+        let Some(s) = server.upgrade() else { return };
+        match n {
+            Notice::Output(pane) => {
+                *s.printed.lock().entry(pane.clone()).or_insert(0) += 1;
+                let wake = s.wakes.lock().get(&pane).cloned();
+                if let Some(w) = wake {
+                    w.notify_one();
+                }
+            }
+            Notice::Changed => {
+                s.dirty.notify_one();
+                // a resize or a zoom redraws shown panes: capture them now
+                for w in s.wakes.lock().values() {
+                    w.notify_one();
+                }
+            }
+            Notice::Copy(pane, text) => s.copied(&pane, text),
+            Notice::Pause(pane) => {
+                // flow control on a slow link: shown panes are captured anyway, so go on
+                if let Some(c) = s.client(&pane) {
+                    drop(c.send(format!("refresh-client -A '{pane}:continue'")));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::Link;
+    use super::*;
+
+    /// AC-06: a program's copy goes to the page whose release armed its pane, within COPY_WAIT only.
+    #[test]
+    fn a_copy_goes_only_to_the_page_whose_release_armed_its_pane() {
+        let s = Server::new("local", "t", Link::Local { tmux: "tmux".into(), socket: "t".into(), conf: "/dev/null".into() }, Default::default());
+        let got: Arc<Mutex<Vec<String>>> = Arc::default();
+        let to = |tag: &'static str| -> OnCopy { let g = got.clone(); Arc::new(move |t| g.lock().push(format!("{tag}:{t}"))) };
+        s.copied("%1", "unasked".into());
+        s.arm_copy("%1", to("a"));
+        s.copied("%2", "another pane".into());
+        s.copied("%1", "word".into());
+        s.copied("%1", "line".into());
+        s.arm_copy("%1", to("b"));
+        s.copied("%1", "latest page".into());
+        s.copies.lock().get_mut("%1").expect("armed").0 = Instant::now() - Duration::from_millis(1);
+        s.copied("%1", "too late".into());
+        assert_eq!(*got.lock(), ["a:word", "a:line", "b:latest page"]);
+    }
+}

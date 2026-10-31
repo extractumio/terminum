@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The page against a real private terminumd and a real private tmux server (never the
 // user's): sign-in with the password, the list following tmux, a pane's screen, typing,
-// sizing for the view, a full-screen program as its grid, Files docked beside the
+// sizing for the view, a full-screen program as its grid and what it copies, Files docked beside the
 // terminal, custom.css, settings and themes changed live, and a terminumd restart.
 // Chromium and WebKit, at a wide (1400×900) and a phone (390×844) size.
 //
@@ -22,6 +22,7 @@ import { liveFolds } from "./e2e_livefolds.mjs";
 import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
 import { liveLimit } from "./e2e_livelimit.mjs";
+import { liveClip } from "./e2e_liveclip.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
 import { livePlans } from "./e2e_liveplans.mjs";
 
@@ -147,6 +148,7 @@ async function wide(browser, name) {
   await liveLinks(page, { work: WORK });
   await liveLimit(page, { tmux, work: WORK });
   await liveKeys(page, { tmux, work: WORK });
+  await liveClip(page, { tmux, work: WORK });
   await livePlans(page, { tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, signIn, name });
   await page.click("#term");
   await page.keyboard.type("vim -u NONE -N");

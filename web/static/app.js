@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 import "./signin.js";                                // first: it signs every request the page makes
 import { connection } from "./conn.js";
-import { ringColor } from "./contrast.js";
+import { pageColors } from "./contrast.js";
 import { oneKeyboard } from "./onekbd.js";
 import "./press.js";                                // a pressed blob's pulse (motion.css)
 import "./pop.js";                                  // where a window flies out of (motion.css)
@@ -94,7 +94,8 @@ const files = uploads({ sid: () => st.sid, host: () => itemOf(st.sid)?.host ?? n
 const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"), note: $("note"),
   bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : Infinity });
 // Sizing and full-screen programs (AC-04, AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
-const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000) });
+const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000),
+  copied: (pick) => bookmarks.picker.program(pick) });   // a full-screen program's own selection (AC-06)
 // another pane opened: the one shown stays until the new one has this view's grid, then it is drawn at once (AC-04)
 const gate = switchGate({ release: (queue, reset) => { reset(); for (const m of queue) onMessage(m); } });
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
@@ -278,6 +279,7 @@ function onMessage(m) {
       view.refill(m.first, m.lines); widgets.keepPlace(() => widgets.folds.filled(m.first, m.lines.length)); break;
     case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); break;
     case "sized": sizing.onSized(m); break;
+    case "copied": sizing.onCopied(m); break;   // what a full-screen program copied after our release (AC-06)
     case "settings": settings.apply(m); break;
     case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "marksfull": if (!embedded) full.show(m.items); break;   // agents' records that went for room (AC-98)
@@ -400,16 +402,7 @@ function applyTheme(theme) {
   shownTheme = key;
   views.setTheme(theme);
   widgets.setTheme(theme);
-  const r = document.documentElement.style;
-  r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
-  r.setProperty("--accent", theme.cursor || theme.fg);
-  const link = theme.link || theme.ansi?.[12];          // as View colors links (ui/src/theme.ts); else tokens.css's
-  if (link) r.setProperty("--link", link); else r.removeProperty("--link");
-  r.setProperty("--ring", ringColor(theme.bg, theme.cursor || theme.fg, theme.fg));   // a focus ring that shows
-  document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues
-  if (theme.sel) r.setProperty("--sel", theme.sel);
-  if (theme.selfg) r.setProperty("--selfg", theme.selfg);
-  document.querySelector('meta[name="theme-color"]').content = theme.bg;
+  pageColors(theme);
   if (!settings.page().textSize && theme.size) setBase(theme.size);
   if (theme.font && document.fonts && theme.font !== shownFont) {
     shownFont = theme.font;

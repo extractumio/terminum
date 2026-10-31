@@ -14,6 +14,7 @@ use super::client::error;
 use super::Page;
 use crate::app::Shared;
 use crate::tmux::keys::{PASTE_END, PASTE_START};
+use crate::tmux::server::OnCopy;
 use crate::tmux::{args, keys, Server};
 
 /// Largest paste (AC-03 limits).
@@ -31,6 +32,8 @@ pub struct Typed {
     data: String,
     /// a mouse report's bytes (`data` empty)
     mouse: Vec<u8>,
+    /// a release to a full-screen program: from when it goes to tmux, what the program copies is this page's (AC-06)
+    arm: bool,
     k: Option<super::trace::KeyRec>,
 }
 
@@ -63,12 +66,23 @@ pub fn typed(app: &Shared, page: &Arc<Page>, data: String, k: Option<u64>) {
     let (server, pane, key) = (s.server.clone(), s.pane.clone(), s.key.clone());
     drop(st);
     let k = super::timing::arrived(page, k);
-    queue(app, page, Typed { server, pane, key, data, mouse: Vec::new(), k });
+    queue(app, page, Typed { server, pane, key, data, mouse: Vec::new(), arm: false, k });
 }
 
-/// Mouse report bytes for the shown pane `pane` (state key `key`) of `server` (AC-06).
-pub fn mouse(app: &Shared, page: &Arc<Page>, server: Arc<Server>, pane: String, key: String, bytes: Vec<u8>) {
-    queue(app, page, Typed { server, pane, key, data: String::new(), mouse: bytes, k: None });
+/// Mouse report bytes for the shown pane `pane` (state key `key`) of `server` (AC-06); `arm`:
+/// a release to a full-screen program, whose copy this page gets from when its `send-keys` goes.
+pub fn mouse(app: &Shared, page: &Arc<Page>, server: Arc<Server>, pane: String, key: String, bytes: Vec<u8>, arm: bool) {
+    queue(app, page, Typed { server, pane, key, data: String::new(), mouse: bytes, arm, k: None });
+}
+
+/// Where what the program of `key` copies goes: this page, as `copied` (AC-06).
+fn copied_to(page: &Arc<Page>, key: &str) -> OnCopy {
+    let (to, sid) = (Arc::downgrade(page), key.to_string());
+    Arc::new(move |text: String| {
+        if let Some(p) = to.upgrade() {
+            p.send_json(&serde_json::json!({"t": "copied", "sid": sid, "text": text}));
+        }
+    })
 }
 
 fn queue(app: &Shared, page: &Arc<Page>, item: Typed) {
@@ -106,6 +120,11 @@ async fn run(app: Shared, page: Arc<Page>) {
             error(&page, format!("Not connected: tmux on {} does not answer — {what}", server.label()), Some(&key));
             continue;
         };
+        if batch.iter().any(|t| t.arm) {
+            // armed as the release goes (never while it waits behind a paste): what the program
+            // copies once it has it is this page's (AC-06)
+            server.arm_copy(&pane, copied_to(&page, &key));
+        }
         let mut result = Ok(());
         for run in runs(&batch) {
             result = match run {
@@ -254,7 +273,7 @@ mod tests {
     fn item(data: &str, mouse: &[u8]) -> Typed {
         let link = crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: "tm-test".into(), conf: "/dev/null".into() };
         let server = Server::new("local", "tm-test", link, Arc::new(tokio::sync::Notify::new()));
-        Typed { server, pane: "%1".into(), key: String::new(), data: data.into(), mouse: mouse.to_vec(), k: None }
+        Typed { server, pane: "%1".into(), key: String::new(), data: data.into(), mouse: mouse.to_vec(), arm: false, k: None }
     }
 
     #[test]

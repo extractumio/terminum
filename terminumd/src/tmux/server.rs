@@ -87,6 +87,8 @@ pub struct Server {
     /// its last client ended with tmux's own `%exit` while one pane at most was shown: the
     /// user closed the last one (or ran kill-server on it), nothing to make again (AC-15)
     closed_by_user: AtomicBool,
+    /// panes a page's mouse release went to lately: what their program copies goes to it (AC-06)
+    copies: notices::Armed,
 }
 
 impl Server {
@@ -110,6 +112,7 @@ impl Server {
             only: Mutex::new(None),
             tries: Mutex::default(),
             closed_by_user: AtomicBool::new(false),
+            copies: Mutex::default(),
         })
     }
 
@@ -466,33 +469,10 @@ impl Server {
     }
 }
 
-async fn notices(server: std::sync::Weak<Server>, mut rx: mpsc::UnboundedReceiver<Notice>) {
-    while let Some(n) = rx.recv().await {
-        let Some(s) = server.upgrade() else { return };
-        match n {
-            Notice::Output(pane) => {
-                *s.printed.lock().entry(pane.clone()).or_insert(0) += 1;
-                let wake = s.wakes.lock().get(&pane).cloned();
-                if let Some(w) = wake {
-                    w.notify_one();
-                }
-            }
-            Notice::Changed => {
-                s.dirty.notify_one();
-                // a resize or a zoom redraws shown panes: capture them now
-                for w in s.wakes.lock().values() {
-                    w.notify_one();
-                }
-            }
-            Notice::Pause(pane) => {
-                // flow control on a slow link: shown panes are captured anyway, so go on
-                if let Some(c) = s.client(&pane) {
-                    drop(c.send(format!("refresh-client -A '{pane}:continue'")));
-                }
-            }
-        }
-    }
-}
+#[path = "notices.rs"]
+mod notices;
+use notices::notices;
+pub use notices::OnCopy;
 
 #[cfg(test)]
 #[path = "server_tests.rs"]

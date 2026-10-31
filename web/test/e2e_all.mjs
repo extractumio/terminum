@@ -3,7 +3,9 @@
 // browser (no server, no tmux), in Chromium and in WebKit; the checks that depend on the size
 // run at a wide (1400×900) and a phone (390×844, touch) size themselves.
 //
-//   node web/test/e2e_all.mjs [chromium|webkit] [check…]     (needs `cd ui && npm ci && npm run build`)
+//   node web/test/e2e_all.mjs [chromium|webkit|firefox] [check…]     (needs `cd ui && npm ci && npm run build`)
+// Firefox only when named (`node ui/node_modules/playwright-core/cli.js install firefox`), and
+// only for the checks that run without a touch screen (FIREFOX_TOO).
 
 import { check, playwright, results, runningIn } from "./check.mjs";
 import { webApp } from "./e2e_app.mjs";
@@ -14,6 +16,7 @@ import { webCtxTrace } from "./e2e_ctxtrace.mjs";
 import { webEdit } from "./e2e_edit.mjs";
 import { webLook } from "./e2e_look.mjs";
 import { webMarks } from "./e2e_marks.mjs";
+import { webProgCopy } from "./e2e_progcopy.mjs";
 import { webMotion } from "./e2e_motion.mjs";
 import { webMove } from "./e2e_move.mjs";
 import { webScreen } from "./e2e_screen.mjs";
@@ -49,15 +52,17 @@ import { webMarkNav } from "./e2e_marknav.mjs";
 import { webPaneWin } from "./e2e_panewin.mjs";
 import { webReview } from "./e2e_review_regressions.mjs";
 
-const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webMarks, webTouch, webEdit, webBoxNav,
+const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
   webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksFull, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview };
-const BROWSERS = ["chromium", "webkit"];
+const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
+// Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
+const FIREFOX_TOO = ["webProgCopy"];
 // Checks that drive the page with Chromium's own tools: a CDP touch screen, synthetic Touch events.
 const CHROMIUM_ONLY = { webClip: "synthetic Touch events", webTouch: "a CDP touch screen" };
 
 const args = process.argv.slice(2);
-const browsers = args.filter((a) => BROWSERS.includes(a));
-const only = args.filter((a) => !BROWSERS.includes(a));
+const browsers = args.filter((a) => KNOWN.includes(a));
+const only = args.filter((a) => !KNOWN.includes(a));
 const unknown = only.filter((a) => !Object.hasOwn(CHECKS, a));
 if (unknown.length) {
   console.error(`unknown check: ${unknown.join(", ")}\nchecks: ${Object.keys(CHECKS).join(" ")}`);
@@ -69,6 +74,7 @@ for (const name of browsers.length ? browsers : BROWSERS) {
   try {
     for (const [which, run] of Object.entries(CHECKS)) {
       if (only.length && !only.includes(which)) continue;
+      if (name === "firefox" && !FIREFOX_TOO.includes(which)) continue;
       if (name !== "chromium" && CHROMIUM_ONLY[which]) { console.log(`SKIP [${name}] ${which}: needs ${CHROMIUM_ONLY[which]}`); continue; }
       runningIn(name);
       try { await run(browser, name); } catch (e) { check(`${which} ran to its end`, false, String(e.stack ?? e).split("\n").slice(0, 3).join(" | ")); }

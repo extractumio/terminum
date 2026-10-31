@@ -6,6 +6,7 @@
 pub mod agentstate;
 pub mod hookstate;
 pub mod args;
+pub mod clip;
 pub mod command;
 pub mod conf;
 pub mod control;

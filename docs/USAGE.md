@@ -148,6 +148,13 @@ and keeps the sign-in in its own origin's storage, never in its address or a coo
   than the pane: then it is pasted and the agent folds it.
   The number counts up per session. The text you asked about keeps a light blue wavy line down its left in
   the terminal, as a reminder's quote, on every page of that session.
+- **Full-screen programs with the mouse** (Claude Code's fullscreen mode, vim with `set mouse=a`,
+  mc): a drag, a double or a triple click is the program's, and it selects in its own way. When
+  it copies what it selected to the terminal's clipboard (OSC 52: Claude Code does on the
+  release, vim with an OSC 52 yank does on `y`), the page shows Copy, [+] and Ask by the
+  selection with its text, as for a selection of yours; they go at the next click or key. Hold
+  **Shift** while dragging to select in the browser instead (Safari, Chrome, Firefox): nothing
+  reaches the program.
 - **Reminders**: pick Reminder in a bookmark's dialog; the pale fuchsia bell comes up when an agent
   of its project ends a turn, its count filled. It opens the same window as the bookmarks' button,
   with the open reminders only, those up first: Show in terminal, Resolve (it ends it, with Undo) and

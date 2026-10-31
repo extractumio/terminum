@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The focus ring's color (docs/UI-GUIDELINES.md §2.6): the theme's accent (its cursor color),
-// unless that is too near the background to see (under 3:1), then the theme's text color.
+// The page's colors from the theme, among them the focus ring's (docs/UI-GUIDELINES.md §2.6):
+// the theme's accent (its cursor color), unless that is too near the background to see (under
+// 3:1), then the theme's text color.
 
 /** WCAG relative luminance of "#rgb" or "#rrggbb"; null for anything else. */
 function luminance(hex) {
@@ -19,3 +20,18 @@ export function contrast(a, b) {
 
 /** The ring for a theme: its accent when it stands out from bg (or cannot be measured), else fg. */
 export const ringColor = (bg, accent, fg) => ((contrast(bg, accent) ?? 3) >= 3 ? accent : fg);
+
+/** The page's colors from a theme: the terminal's, the accent, links, the focus ring, the
+ *  selection and the browser's bar. */
+export function pageColors(theme) {
+  const r = document.documentElement.style;
+  r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
+  r.setProperty("--accent", theme.cursor || theme.fg);
+  const link = theme.link || theme.ansi?.[12];          // as View colors links (ui/src/theme.ts); else tokens.css's
+  if (link) r.setProperty("--link", link); else r.removeProperty("--link");
+  r.setProperty("--ring", ringColor(theme.bg, theme.cursor || theme.fg, theme.fg));   // a focus ring that shows
+  document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues
+  if (theme.sel) r.setProperty("--sel", theme.sel);
+  if (theme.selfg) r.setProperty("--selfg", theme.selfg);
+  document.querySelector('meta[name="theme-color"]').content = theme.bg;
+}

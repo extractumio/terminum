@@ -23,8 +23,8 @@ pub const ANSWER_WAIT: Duration = Duration::from_secs(10);
 /// stderr kept to say why a client ended (ssh's "Permission denied (publickey)").
 const STDERR_KEPT: usize = 4096;
 
-/// What a control client tells besides answers. `%output` is only a wake-up: its content
-/// is never parsed (the screen comes from `capture-pane`).
+/// What a control client tells besides answers. `%output` is a wake-up: the screen comes from
+/// `capture-pane`; only a clipboard write in it is read (clip.rs, AC-06).
 #[derive(Debug, Clone, PartialEq)]
 pub enum Notice {
     /// a pane printed something: `%N`
@@ -33,6 +33,8 @@ pub enum Notice {
     Changed,
     /// tmux paused a pane's output (flow control): `%N`
     Pause(String),
+    /// a program in pane `%N` wrote this text to the clipboard (OSC 52)
+    Copy(String, String),
 }
 
 /// An answer: the block's lines, or tmux's error text.
@@ -124,6 +126,7 @@ impl Control {
             let mut lines: Vec<String> = Vec::new();
             let mut buf = Vec::with_capacity(4096);
             let mut exit_reason = None;
+            let mut clips = super::clip::Clips::default();
             loop {
                 buf.clear();
                 match reader.read_until(b'\n', &mut buf).await {
@@ -162,7 +165,18 @@ impl Control {
                     continue;
                 }
                 if let Some(n) = notice(&buf) {
+                    let copies: Vec<Notice> = match &n {
+                        Notice::Output(pane) => clips.line(pane, &buf).into_iter().map(|t| Notice::Copy(pane.clone(), t)).collect(),
+                        Notice::Pause(pane) => {
+                            clips.forget(pane); // its output is dropped until it goes on
+                            Vec::new()
+                        }
+                        _ => Vec::new(),
+                    };
                     let _ = notices.send(n);
+                    for c in copies {
+                        let _ = notices.send(c);
+                    }
                 } else if let Some(rest) = buf.strip_prefix(b"%exit") {
                     exit_reason = Some(String::from_utf8_lossy(rest).trim().to_string());
                 }

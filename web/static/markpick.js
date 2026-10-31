@@ -77,7 +77,7 @@ export const columnX = (term) => term.getBoundingClientRect().left + term.client
 
 /** Shows `button` while text in `term` (within `main`) is selected, `copyButton` above it and
  *  `askButton` under it; a press calls onPick({n, text}), onCopy(text) or onAsk(text, n) (the text
- *  as taken while it was selected). */
+ *  as taken while it was selected). Returns {program}: the same for a full-screen program's copy. */
 export function markPicker({ term, main, button, copyButton, askButton, view, onPick, onCopy, onAsk }) {
   let kept = null, hide = 0, frame = 0, copied = false;
   const floating = matchMedia(FLOATING);
@@ -100,16 +100,19 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
   const later = () => { if (!frame) frame = requestAnimationFrame(place); };
   let pending = 0;                                 // a drag changes the selection on every move: once a frame
   document.addEventListener("selectionchange", () => { if (!pending) pending = requestAnimationFrame(changed); });
+  const keep = (got) => {
+    if (got.raw !== kept?.raw) copied = false;     // another selection (the same one comes back after a copy)
+    kept = got;
+    clearTimeout(hide); hide = 0;
+    show(true);
+    place();                                       // placed before they are drawn
+  };
   const changed = () => {
     pending = 0;
     const got = selection(term, view);
-    if (got) {
-      if (got.raw !== kept?.raw) copied = false;   // another selection (the same one comes back after a copy)
-      kept = got;
-      clearTimeout(hide); hide = 0;
-      show(true);
-      place();                                       // placed before they are drawn
-    } else if (!button.hidden && !hide) {
+    if (!got && kept?.program) return;               // a program's selection is no browser's
+    if (got) keep(got);
+    else if (!button.hidden && !hide) {
       // after Copy the selection may go (a browser's copy, a phone): the [+] stays a while for it
       hide = setTimeout(gone, copied ? AFTER_COPY : KEEP_FOR);
     }
@@ -140,6 +143,16 @@ export function markPicker({ term, main, button, copyButton, askButton, view, on
     onCopy(kept.raw);                                                  // the selection stays for a bookmark
   });
   // the user moved on: a press in the terminal, a key
-  term.addEventListener("pointerdown", () => { if (copied) gone(); });
-  document.addEventListener("keydown", () => { if (copied) gone(); });
+  const movedOn = () => { if (copied || kept?.program) gone(); };
+  term.addEventListener("pointerdown", movedOn);
+  document.addEventListener("keydown", movedOn);
+  return {
+    /** What a full-screen program copied of its own selection (AC-06): the buttons by `row`, its
+     *  upper row, as for a selection there; the same text again only moves them. */
+    program({ text, row }) {
+      const n = view.lineOf(row);
+      if (n === null || !text.trim()) return;
+      keep({ n, text: text.trim(), raw: text, rect: row.getBoundingClientRect(), program: true });
+    },
+  };
 }
