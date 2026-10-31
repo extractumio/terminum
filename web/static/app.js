@@ -16,7 +16,7 @@ import { colorSchemes } from "./schemes.js";
 import { menuPrefs } from "./prefs.js";
 import { markDoc } from "./markdoc.js";
 import { reminders as reminderBox } from "./reminders.js";
-import { arrowsTo, cellAt, cursorCell, typedEnd } from "./cursor.js";
+import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
 import { selectionCut } from "./selcut.js";
 import { switchGate } from "./switchgate.js";
@@ -104,7 +104,7 @@ const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(ro
 
 const input = new Input({ kbd: $("kbd"), kbdButton: $("kbdbtn"), term: $("term"), panel: $("hotkeys"), pasteDialog: $("pastebox"),
   send: (data, path, e) => { if (data === "\r") sent.enter(); send({ t: "in", data, ...trace.keyFields(data, path, e) }); sizing.typed(); if (data.includes("\r")) st.ran = true; },
-  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, onTyped: (line, path) => { if (path !== "asked") view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
+  options: { appCursor: () => st.appCursor || view.alt, bracketed: () => st.bracketed, shown: () => !!st.sid, sid: () => st.sid, onTyped: (line, path) => { if (path !== "asked") view.typed(); st.undone = false; if (!line) boxMoves.forget(); }, status: toast, pasteImage: files.pasteImage, pickFile,
     tapLink: (x, y) => tapLink(x, y), tapMove: (x, y) => tapMove(x, y), holdMenu: (x, y) => editMenu(x, y), undo: () => undoRedo(false, true), inBox: () => !!boxMoves.state(), cellWidth: () => view.charRatio() * parseFloat(getComputedStyle($("term")).fontSize),
     // Ctrl+W deletes a word: in an agent's input box; at a shell's prompt, not after an Enter until the list says the shell is back (nano: search)
     lineMove: (d, repeat) => (findItem(st.groups, st.sid)?.item.agent ? boxMoves.line(d, st.appCursor, repeat) : null),
@@ -157,10 +157,7 @@ function tapMove(x, y) {
   if ((!found?.item.agent && !found?.item.shell) || sizing.mouseOn() || gate.holding()) return;   // the screen drawn is the pane before
   const inBox = found.item.agent ? boxMoves.to(x, y, st.appCursor) : null;
   if (inBox !== null) { if (inBox) { input.forget?.(); send({ t: "in", data: inBox, ...trace.keyFields(inBox, "tap") }); view.typed(); } return; }
-  const from = cursorCell($("screen")), to = cellAt($("screen"), x, y);
-  // right of the cursor only as far as the typed text: → over a suggestion would take it
-  if (from && to && to.row === from.row && to.col > from.col) to.col = Math.max(from.col, Math.min(to.col, typedEnd(view.screen[to.row]?.data)));
-  const seq = arrowsTo(from, to, { appCursor: st.appCursor });
+  const seq = shellMove($("screen"), view.screen, x, y, st.appCursor);
   if (seq) { input.forget?.(); send({ t: "in", data: seq, ...trace.keyFields(seq, "tap") }); }
   if (seq) view.typed();
 }

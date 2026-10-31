@@ -2,18 +2,19 @@
 // Editing in a terminal program from a phone (AC-52): which screen cell a tap is on, where
 // the cursor is, and the arrow keys that move one to the other. The character under a point is
 // also what a click on a link reads (termlinks.js).
+import { graphemes } from "./boxnav.js";
 const VS15 = "︎";     // added after symbols for their text form: not a character of the terminal's
 
 /** Characters of `row` before (node, offset), not counting added variation selectors. */
 function charsBefore(row, node, offset) {
   const walk = document.createTreeWalker(row, NodeFilter.SHOW_TEXT);
-  let n = 0;
+  let before = "";
   for (let t = walk.nextNode(); t; t = walk.nextNode()) {
     const text = t === node ? t.data.slice(0, offset) : t.data;
-    n += text.length - text.split(VS15).length + 1;
-    if (t === node) return n;
+    before += text;
+    if (t === node) break;
   }
-  return n;
+  return graphemes(before.replaceAll(VS15, "")).length;
 }
 
 /** The text position at viewport point (x, y), seen through the keyboard field (it may lie
@@ -72,7 +73,16 @@ const FAINT = 2, CURSOR = 256;
 /** The column after the last character the user typed on a row ({r: runs} as render.js gets
  *  it): faint text is a program's suggestion (Claude Code shows its next prompt so, and → takes
  *  it), and the cursor's own cell is where the next character goes, so neither counts. */
-export function typedEnd(data) {
+export function typedEnd(data, editing = false) {
+  if (editing) {
+    let text = "", end = 0;
+    for (const [run, , , flags] of data?.r ?? []) {
+      const part = (Array.isArray(run) ? run.join("") : run).replaceAll(VS15, "");
+      text += part;
+      if (part.trim() && !(flags & (FAINT | CURSOR))) end = text.length - part.length + part.trimEnd().length;
+    }
+    return graphemes(text.slice(0, end)).length;
+  }
   let col = 0, end = 0;
   for (const [text, , , flags] of data?.r ?? []) {
     const cells = Array.isArray(text) ? text : [...text];
@@ -126,4 +136,11 @@ export function arrowsTo(from, to, { appCursor = false } = {}) {
   const dx = to.col - from.col;
   if (Math.abs(dx) > 120) return "";
   return ((appCursor ? "\x1bO" : "\x1b[") + (dx < 0 ? "D" : "C")).repeat(Math.abs(dx));
+}
+
+/** A shell tap stops at the typed text, before any faint autosuggestion. */
+export function shellMove(screen, rows, x, y, appCursor = false) {
+  const from = cursorCell(screen), to = cellAt(screen, x, y);
+  if (from && to && to.row === from.row && to.col > from.col) to.col = Math.max(from.col, Math.min(to.col, typedEnd(rows[to.row]?.data, true)));
+  return arrowsTo(from, to, { appCursor });
 }

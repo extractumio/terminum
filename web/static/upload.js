@@ -63,9 +63,10 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
 
   // The paths saved are pasted; a failure stops the rest and stays on screen. `why`: why the
   // files' own paths were not taken, said first (never a silent fallback).
-  async function send(list, what, why = "") {
-    const from = sid(), said = why ? `${why} ` : "";
+  async function send(list, what, why = "", from = sid()) {
+    const said = why ? `${why} ` : "";
     if (!from) return toast("Open a session first.");
+    if (sid() !== from) return toast("Another session is shown now: nothing was pasted.", 6000);
     const paths = [];
     let error = null;
     for (const [i, [blob, url]] of list.entries()) {
@@ -117,10 +118,10 @@ export function uploads({ sid, host = () => null, paste, lines = () => false, to
 
   const fileUrl = (f) => `/upload?name=${encodeURIComponent(f.name)}&sid=`;
   return {
-    async pasteImage(blob) {
+    async pasteImage(blob, from = sid()) {
       const image = await asTaken(blob);
       if (!image) return toast(`This browser cannot read a ${blob.type.replace("image/", "").toUpperCase()} image: nothing was pasted.`, 6000);
-      return send([[image, "/paste?sid="]], "image");
+      return send([[image, "/paste?sid="]], "image", "", from);
     },
     uploadFiles: (list) => send(list.map((f) => [f, fileUrl(f)]), "file"),
     /** Files dropped anywhere on the page (a drop the page did not take would open the file in

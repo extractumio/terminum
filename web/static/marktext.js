@@ -85,20 +85,23 @@ export function rangeOf(nodes, needle) {
  *  nodes, or null (a search, AC-58). */
 export function rangeOfText(nodes, query, skip = 0) {
   if (!query) return null;
-  let text = "";
-  const starts = nodes.map((n) => { const at = text.length; text += n.data; return at; });
+  const text = nodes.map((node) => node.data).join("");
   const low = text.toLowerCase(), q = query.toLowerCase();
   let i = -1;
   for (let k = 0; k <= skip; k++) { i = low.indexOf(q, i + 1); if (i < 0) return null; }
-  const point = (offset, end) => {
-    let k = starts.length - 1;
-    while (k > 0 && (end ? starts[k] >= offset : starts[k] > offset)) k--;
-    return [nodes[k], offset - starts[k]];
-  };
   const r = document.createRange();
-  r.setStart(...point(i, false));
-  r.setEnd(...point(i + q.length, true));
-  return r;
+  let folded = 0, started = false;
+  for (const node of nodes) {
+    let offset = 0;
+    for (const ch of node.data) {
+      // One original character can lowercase into several UTF-16 units (İ → i + dot).
+      folded += ch.toLowerCase().length;
+      if (!started && folded > i) { r.setStart(node, offset); started = true; }
+      offset += ch.length;
+      if (folded >= i + q.length) { r.setEnd(node, offset); return r; }
+    }
+  }
+  return null;
 }
 
 /** Where the marks stand: a column on the terminal's right edge, left of a scroll bar

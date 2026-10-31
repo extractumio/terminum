@@ -96,7 +96,11 @@ export class Find {
     const ref = this.ref;
     this.say("Searching…");
     this.send({ t: "find", ref, q });
-    setTimeout(() => { if (this.ref === ref && !this.hits.length && $("findn").textContent === "Searching…") this.say("The Mac did not answer."); }, ANSWER);
+    setTimeout(() => {
+      if (this.ref !== ref || !this.pending) return;
+      this.pending = false;
+      this.say("The Mac did not answer.");
+    }, ANSWER);
   }
 
   found(m) {

@@ -206,8 +206,9 @@ export class Input {
       const image = imageIn(e.clipboardData);
       if (!image && e.target.id === "pastetext") return;               // text goes into the paste field
       e.preventDefault();
+      const from = e.target.id === "pastetext" ? this.pasteSid : this.options.sid?.();
       if (e.target.id === "pastetext") this.pasteDialog.close();
-      if (image) this.options.pasteImage(image);
+      if (image) { if (this.pasteTarget(from)) this.options.pasteImage(image, from); }
       else this.paste(e.clipboardData.getData("text/plain"));
     });
     // With a mouse, a click that does not end a text selection gives the terminal the keyboard; on
@@ -265,7 +266,7 @@ export class Input {
     form.addEventListener("submit", (e) => {
       e.preventDefault();
       const ta = form.querySelector("textarea");
-      if (e.submitter?.value === "send") this.paste(ta.value);
+      if (e.submitter?.value === "send" && this.pasteTarget(this.pasteSid)) this.paste(ta.value);
       ta.value = "";
       this.pasteDialog.close();
       this.focus();
@@ -316,27 +317,43 @@ export class Input {
   }
 
   async pasteFromClipboard() {
+    const from = this.options.sid?.();
+    const same = () => this.pasteTarget(from);
     // The clipboard API needs HTTPS (or localhost); elsewhere, paste into a field instead. One read
     // for an image or text: Safari asks the user to confirm each read (its own small Paste).
     if (window.isSecureContext && navigator.clipboard?.read) {
       let items;
       try { items = await navigator.clipboard.read(); } catch { /* denied, or no read(): readText or the field */ }
+      if (!same()) return;
       if (items) {
         for (const item of items) {
           const type = item.types.find((t) => t === "image/png") ?? item.types.find((t) => t.startsWith("image/"));
-          if (type) return this.options.pasteImage(await item.getType(type));
+          if (type) {
+            const image = await item.getType(type);
+            return same() && this.options.pasteImage(image, from);
+          }
         }
         const item = items.find((i) => i.types.includes("text/plain"));
-        return this.paste(item ? await (await item.getType("text/plain")).text() : "");
+        const text = item ? await (await item.getType("text/plain")).text() : "";
+        return same() && this.paste(text);
       }
     }
     if (window.isSecureContext && navigator.clipboard?.readText) {
       let text;
       try { text = await navigator.clipboard.readText(); } catch { /* denied: use the field */ }
-      if (text !== undefined) return this.paste(text);
+      if (text !== undefined) return same() && this.paste(text);
     }
+    if (!same()) return;
+    this.pasteSid = from;
     this.pasteDialog.showModal();
     this.pasteDialog.querySelector("textarea").focus();
+  }
+
+  /** Clipboard permission and image decoding may finish after the page switched panes. */
+  pasteTarget(from) {
+    if (!this.options.sid || from === this.options.sid()) return true;
+    this.options.status("Another session is shown now: nothing was pasted.");
+    return false;
   }
 
   renderKeys() {

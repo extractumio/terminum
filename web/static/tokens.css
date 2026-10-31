@@ -60,7 +60,7 @@
 
   /* ---- fixed hues by meaning (§2.2); text in a hue is mixed with --t-fg so it reads on a light theme ---- */
   --local: #4f9dff; --remote: #a98bff; --host-label: cornflowerblue;
-  --danger: #ff6b5e; --danger-fill: #b3372e; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020;
+  --danger: #ff6b5e; --danger-fill: #b3372e; --danger-ink: #ffffff; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020;
   --danger-text: color-mix(in srgb, var(--danger) 80%, var(--t-fg));
   --ring: var(--accent);   /* the focus ring: app.js sets the theme's text color when the accent hides (contrast.js) */
   /* a folder's bar (dircolors.js gives the hue): pastel on a dark theme, deeper on a light one (3:1) */

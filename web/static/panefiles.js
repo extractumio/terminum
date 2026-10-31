@@ -24,6 +24,18 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
   const queue = [];          // folders to list, {host, dir, names: Set}
   const listeners = new Set();
   let busy = 0, gen = 0, saying = 0, soon = 0;
+  let requesting = 0;
+  const waiting = [];
+
+  async function fetchPage(url, mine) {
+    if (requesting < AT_ONCE) requesting++;
+    else await new Promise((resolve) => waiting.push(resolve));
+    try { return mine === gen ? await fetchJson(url) : null; }
+    finally {
+      const next = waiting.shift();
+      if (next) next(); else requesting--;
+    }
+  }
 
   const say = () => { if (!saying) saying = setTimeout(() => { saying = 0; for (const fn of listeners) fn(); }, SAY_EVERY); };
   // the pane's folder, asked again at most every PANE_FOR ms; a new one means new places
@@ -59,8 +71,9 @@ export function paneFiles(paneInfo, fetchJson = (url) => fetch(url).then((r) => 
     if (found.size > KEPT) found.delete(found.keys().next().value);
   }
   async function list(job) {
+    const mine = gen;
     const isFile = (e) => e.k === "f" || e.k === "l";
-    const ask = (params) => fetchJson(`/fb/api/ls?${query({ path: job.dir, limit: String(PAGE), ...params }, job.host)}`);
+    const ask = (params) => fetchPage(`/fb/api/ls?${query({ path: job.dir, limit: String(PAGE), ...params }, job.host)}`, mine);
     let page = await ask({});
     for (let tries = 0; page?.status === "loading" && tries < 3; tries++) {         // a large folder still being read
       await new Promise((r) => setTimeout(r, 400));

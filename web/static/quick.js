@@ -102,7 +102,7 @@ export function quickShell({ send, store, current, item, pick, askConfirm, narro
     if (!q) return;
     const prog = q.sub.find((s) => s !== "quick shell" && !/^[~/]/.test(s));
     if (!q.shell && !(await askConfirm(`Close the quick shell? The program running in it (${prog || "a program"}) ends.`, "Close"))) return;
-    send({ t: "kill", id: key });
+    send({ t: "kill", id: q.id });
   };
 
   // its edge: dragged (the terminals resize once a second at most, terminumd waits for the end)
