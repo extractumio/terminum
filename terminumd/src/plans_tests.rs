@@ -15,6 +15,14 @@ fn pair(t: &str, s: &str) -> (String, String) {
 }
 
 #[test]
+fn deleting_a_task_with_a_subject_never_renames_the_next_task() {
+    let p = Plans::default();
+    p.hook(K, "claude", Some("s1"), &json!({"op": "all", "items": [{"text": "one"}, {"text": "two"}]}), T0);
+    p.hook(K, "claude", Some("s1"), &json!({"op": "set", "id": "1", "status": "deleted", "text": "renamed"}), T0 + 1);
+    assert_eq!(items(&p), [pair("two", "pending")]);
+}
+
+#[test]
 fn task_ops_build_the_plan_and_its_percent() {
     let p = Plans::default();
     p.hook(K, "claude", Some("s1"), &json!({"op": "add", "id": "1", "text": "alpha"}), T0);

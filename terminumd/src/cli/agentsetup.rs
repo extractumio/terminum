@@ -142,19 +142,9 @@ pub fn codex_add(text: Option<&str>, cmd: &str) -> Result<Value, String> {
     Ok(v)
 }
 
-/// `hooks.json` of Codex without terminum's entries (others' kept, an event left empty gone).
-pub fn codex_remove(v: &Value, cmd: &str) -> Value {
-    let mut v = v.clone();
-    if let Some(hooks) = v["hooks"].as_object_mut() {
-        for l in hooks.values_mut() {
-            if let Some(a) = l.as_array_mut() {
-                a.retain(|x| !is_ours(x, cmd));
-            }
-        }
-        hooks.retain(|_, l| l.as_array().is_none_or(|a| !a.is_empty()));
-    }
-    v
-}
+#[path = "hookremove.rs"]
+mod hookremove;
+pub use hookremove::codex_remove;
 
 const MCP_START: &str = "# >>> terminum: MCP server (terminum hooks install; terminum hooks remove takes it out)";
 const MCP_END: &str = "# <<< terminum";

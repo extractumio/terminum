@@ -12,6 +12,33 @@ fn ev(agent: &str, event: &str, extra: Value) -> Value {
 }
 
 #[test]
+fn late_events_of_another_session_leave_the_current_record_intact() {
+    for name in ["SessionEnd", "PreToolUse", "Stop", "SubagentStop"] {
+        let (h, t) = (Hooks::default(), Instant::now());
+        h.apply(K, &ev("claude", "UserPromptSubmit", json!({"session": "new", "turn": "new-turn", "cwd": "/Users/alex/current"})), t);
+        h.apply(K, &ev("claude", "SubagentStart", json!({"session": "new", "turn": "new-turn", "sub": "worker"})), t);
+        let before = h.view(K, "claude", t);
+        assert!(!h.apply(K, &ev("claude", name, json!({"session": "old", "turn": "old-turn", "cwd": "/Users/alex/old", "sub": "worker"})), t));
+        assert_eq!(h.view(K, "claude", t), before, "late {name}");
+        assert_eq!(h.cwd(K).as_deref(), Some("/Users/alex/current"));
+        assert!(!h.take_ended(K));
+    }
+}
+
+#[test]
+fn rejected_identities_are_distinct_from_accepted_unchanged_events() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    assert_eq!(h.apply_event(K, &ev("other", "SessionStart", json!({})), t), None);
+    assert_eq!(h.apply_event(K, &ev("claude", "SessionStart", json!({"session": "new"})), t), Some(true));
+    assert_eq!(h.apply_event(K, &ev("claude", "SomethingNew", json!({"session": "new"})), t), Some(false));
+    assert_eq!(h.apply_event(K, &ev("claude", "PostToolUse", json!({"session": "old", "plan": {"op": "all", "items": []}})), t), None);
+    assert_eq!(h.apply_event(K, &ev("codex", "SessionEnd", json!({"session": "new"})), t), None);
+    assert_eq!(h.apply_event(K, &ev("codex", "UserPromptSubmit", json!({"session": "next"})), t), Some(true));
+    assert_eq!(h.session(K), Some(("codex", "next".to_string())));
+    assert_eq!(h.apply_event(K, &ev("codex", "SessionEnd", json!({"session": "next"})), t), Some(true));
+}
+
+#[test]
 fn a_turn_is_working_then_done_with_its_tool_and_subagents() {
     let h = Hooks::default();
     let t = Instant::now();
@@ -122,6 +149,8 @@ fn leases_run_out_and_a_new_program_or_session_starts_anew() {
     h.apply(K, &json!({"agent": "claude", "event": "UserPromptSubmit", "session": "s2"}), t);
     assert_eq!(h.view(K, "c", t).unwrap().state, State::Working, "another session: a record of its own");
     h.apply(K, &ev("claude", "SessionEnd", json!({})), t);
+    assert!(h.view(K, "c", t).is_some(), "the old session's end cannot remove s2");
+    h.apply(K, &ev("claude", "SessionEnd", json!({"session": "s2"})), t);
     assert!(h.view(K, "c", t).is_none());
 }
 

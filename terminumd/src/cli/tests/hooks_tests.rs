@@ -10,6 +10,29 @@ const CMD: &str = "/Users/alex/.terminum/bin/terminum hook codex";
 const PROG: &str = "/Users/alex/.terminum/bin/terminum";
 
 #[test]
+fn removing_codex_keeps_other_commands_and_matcher_metadata_in_a_shared_entry() {
+    let shared = json!({"matcher": "Bash", "note": "keep", "hooks": [
+        {"type": "command", "command": CMD},
+        {"type": "command", "command": "user-check", "timeout": 7}
+    ]});
+    let odd = json!({"matcher": "unknown", "hooks": "leave invalid shape alone"});
+    let empty = json!({"matcher": "empty", "hooks": []});
+    let source = json!({"other": 1, "hooks": {"Stop": [shared, odd, empty],
+        "SessionEnd": [{"hooks": [{"command": CMD}]}], "Custom": 42}});
+    let removed = codex_remove(&source, CMD);
+    assert_eq!(removed["hooks"]["Stop"], json!([
+        {"matcher": "Bash", "note": "keep", "hooks": [{"type": "command", "command": "user-check", "timeout": 7}]},
+        odd, empty
+    ]));
+    assert!(removed["hooks"].get("SessionEnd").is_none());
+    assert_eq!((removed["hooks"]["Custom"].clone(), removed["other"].clone()), (json!(42), json!(1)));
+    assert_eq!(codex_remove(&removed, CMD), removed, "a second removal changes nothing");
+    for unrelated in [json!(null), json!([]), json!("opaque"), json!({"hooks": {"Stop": [null, [], "opaque"]}})] {
+        assert_eq!(codex_remove(&unrelated, CMD), unrelated, "unrecognized shapes are preserved");
+    }
+}
+
+#[test]
 fn codex_entries_are_added_once_and_removed_leaving_others() {
     let theirs = r#"{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "say done"}]}]}, "other": 1}"#;
     let v = codex_add(Some(theirs), CMD).unwrap();
@@ -95,10 +118,16 @@ fn install_status_and_remove_with_codex_and_a_stub_claude() {
     assert!(said(&ctx).iter().any(|l| l.starts_with("Claude Code:") && l.ends_with("MCP server in")), "{:?}", said(&ctx));
     assert!(said(&ctx).iter().any(|l| l.starts_with("Codex:") && l.ends_with("MCP server in")), "{:?}", said(&ctx));
 
+    let mut shared: Value = serde_json::from_str(&std::fs::read_to_string(codex.join("hooks.json")).unwrap()).unwrap();
+    shared["hooks"]["Stop"][0]["hooks"].as_array_mut().unwrap().push(json!({"command": agentsetup::command(&ctx, "codex")}));
+    shared["hooks"]["Stop"][0]["matcher"] = json!("user-matcher");
+    std::fs::write(codex.join("hooks.json"), shared.to_string()).unwrap();
     run(&ctx, Cmd::Hooks("remove".into(), None)).unwrap();
     assert!(std::fs::read_to_string(&log).unwrap().contains("plugin uninstall terminum@terminum-local"));
     let v: Value = serde_json::from_str(&std::fs::read_to_string(codex.join("hooks.json")).unwrap()).unwrap();
     assert_eq!(v["hooks"]["Stop"].as_array().unwrap().len(), 1, "theirs stays");
+    assert_eq!(v["hooks"]["Stop"][0]["hooks"], json!([{"type": "command", "command": "say done"}]));
+    assert_eq!(v["hooks"]["Stop"][0]["matcher"], "user-matcher");
     assert!(!agentsetup::installed(&ctx, "claude") && !agentsetup::installed(&ctx, "codex"));
     assert_eq!(std::fs::read_to_string(codex.join("config.toml")).unwrap(), "model = \"x\"\n", "only the block goes");
     assert!(!agentsetup::mcp_installed(&ctx, "claude") && !agentsetup::mcp_installed(&ctx, "codex"));

@@ -58,6 +58,8 @@ pub struct View {
 
 #[derive(Default)]
 pub struct Hooks {
+    /// Serialize identity acceptance and the socket handler's synchronous plan/turn effects.
+    pub(crate) dispatch: Mutex<()>,
     recs: Mutex<HashMap<String, Rec>>,
     /// when each agent's hooks last spoke (terminum hooks / status: installed and running)
     pub last: Mutex<HashMap<&'static str, std::time::SystemTime>>,
@@ -79,26 +81,36 @@ fn s(ev: &Value, k: &str) -> String {
 
 impl Hooks {
     /// Applies event `ev` (cli/hook.rs's fields) to pane `key`; true when what the list shows changed.
+    #[cfg(test)]
     pub fn apply(&self, key: &str, ev: &Value, now: Instant) -> bool {
-        let Some(agent) = ev["agent"].as_str().and_then(agent) else { return false };
-        self.last.lock().insert(agent, std::time::SystemTime::now());
+        self.apply_event(key, ev, now).unwrap_or(false)
+    }
+
+    /// None rejects an event's identity; Some says whether its accepted state changed.
+    pub fn apply_event(&self, key: &str, ev: &Value, now: Instant) -> Option<bool> {
+        let agent = ev["agent"].as_str().and_then(agent)?;
         let name = s(ev, "event");
         let session = s(ev, "session");
         let turn = s(ev, "turn");
         let mut recs = self.recs.lock();
+        let start = name == "SessionStart" || name == "UserPromptSubmit";
+        let fresh = |r: &Rec| r.agent != agent || (!session.is_empty() && r.session != session);
+        if !start && recs.get(key).is_some_and(fresh) {
+            return None;
+        }
+        self.last.lock().insert(agent, std::time::SystemTime::now());
         if name == "SessionEnd" {
-            return recs.remove(key).is_some();
+            return Some(recs.remove(key).is_some());
         }
         if recs.len() >= MOST && !recs.contains_key(key) {
-            return false;
+            return None;
         }
-        let fresh = |r: &Rec| r.agent != agent || (!session.is_empty() && r.session != session);
         if recs.get(key).is_some_and(fresh) || name == "SessionStart" {
             recs.remove(key);
         }
         // only a start or a prompt makes a record: a late event of an ended session makes none
         if !recs.contains_key(key) && name != "SessionStart" && name != "UserPromptSubmit" {
-            return false;
+            return Some(false);
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
             why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, cwd: String::new() });
@@ -145,10 +157,10 @@ impl Hooks {
             }
             // a background subagent's tools: it still works
             "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" if !r.subs.is_empty() => {}
-            _ => return moved,
+            _ => return Some(moved),
         }
         r.at = now;
-        moved || before != (r.state, r.tool.clone(), r.why.clone(), r.subs.len())
+        Some(moved || before != (r.state, r.tool.clone(), r.why.clone(), r.subs.len()))
     }
 
     /// The pane's hooks, while they hold: None when it has none, its lease ran out, or its

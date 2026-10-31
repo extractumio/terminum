@@ -250,7 +250,7 @@ impl Plans {
                     Some(st) => p.items[n].status = status(st).into(),
                     None => {}
                 }
-                if let (Some(t), Some(i)) = (s(op, "text"), p.items.get_mut(n)) {
+                if let (Some(t), Some(i)) = (s(op, "text"), p.items.iter_mut().find(|i| i.id == id)) {
                     i.text = t;
                 }
             }
