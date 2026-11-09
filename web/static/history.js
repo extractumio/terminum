@@ -73,8 +73,11 @@ function drawMenus() {
   menu($("fkind"), one("kind", [["", "Agents and shells"], ["agent", "Agents' prompts"], ["shell", "Shells' commands"]]));
 }
 
-/** The first page for the state (a newer ask wins), or the next one. */
+/** The first page for the state (a newer ask wins), or the next one. A first page already holds
+ *  the words typed, so a search still waiting on the keys is dropped: run late, it would read
+ *  the same list again and close the row opened meanwhile. */
 async function load(more = false) {
+  if (!more) clearTimeout(typing);
   const mine = ++loading;
   $("hsum").textContent = more ? $("hsum").textContent : "Searching…";
   $("hsum").classList.add("busy");
