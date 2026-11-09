@@ -211,6 +211,11 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   each call (`execute_tool("finish_task", {id, result})`). An agent that Dispatcher starts
   without permission prompts needs `execute_tool` allowed (Claude Code:
   `--allowedTools mcp__plugin_terminum_terminum__execute_tool`), and that allows every task tool.
+  A RUN's prompt also asks the agent to close the task out: what it noticed goes to tasks, it
+  reviews the tasks it made, and its result comes in fixed sections (Outcome, Done, Checked, Not
+  done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further
+  recommendations), written in the project's language: its window's "Language of agents'
+  writing on the board" (empty: English), used for its tasks and comments on the board too.
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,

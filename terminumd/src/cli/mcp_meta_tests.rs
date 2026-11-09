@@ -116,7 +116,7 @@ fn uncalled(words: &str, name: &str) -> Vec<String> {
             wrong.push(format!("{name} at {at}: not as execute_tool(\"{name}\", {{...}})"));
             continue;
         };
-        let given: Vec<(&str, bool)> = args.0.split(',').map(str::trim).map(|a| (a.trim_end_matches('?'), a.ends_with('?'))).collect();
+        let given: Vec<(&str, bool)> = args.0.split(',').map(str::trim).filter(|a| !a.is_empty()).map(|a| (a.trim_end_matches('?'), a.ends_with('?'))).collect();
         for (arg, optional) in &given {
             if schema["properties"].get(arg).is_none() || (*optional && required.contains(arg)) {
                 wrong.push(format!("{name} at {at}: {arg} is not its argument as written"));
@@ -129,7 +129,7 @@ fn uncalled(words: &str, name: &str) -> Vec<String> {
 
 #[test]
 fn ac155_terminum_s_words_call_a_tool_not_listed_by_execute_tool() {
-    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), crate::plans::REMINDER];
+    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), include_str!("../tasks/closeout.rs"), crate::plans::REMINDER];
     let wrong: Vec<String> = mcp::tool_names().into_iter().filter(|n| !DIRECT.contains(n)).flat_map(|n| words.iter().flat_map(move |w| uncalled(w, n))).collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     let listed: Vec<String> = listed().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();

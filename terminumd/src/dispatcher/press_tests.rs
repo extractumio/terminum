@@ -196,3 +196,23 @@ fn ac138_dropped_on_another_agent_of_its_kind_its_ended_conversation_goes_on_the
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac159_the_prompt_closes_the_task_out_in_the_project_s_language() {
+    use crate::tasks::closeout;
+    store_of("api-closeout").with(|tx| {
+        let a = made(tx, "Fix it", "the text");
+        let finish = format!("When it is done, call {FINISH} with the result. {ASK}");
+        let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
+        assert!(prompt.ends_with(&format!("{}\n\n{finish}", closeout::words("English", FINISH, false))), "{prompt}");
+        let rev = rev_of(&shown_of(tx, std::slice::from_ref(&a))?);
+        closeout::set_language(tx, &a.project, "Русский")?;
+        let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
+        assert!(prompt.contains("The result, in Русский:") && prompt.contains("Write in Русский also the titles"), "{prompt}");
+        assert_ne!(rev, rev_of(&shown_of(tx, std::slice::from_ref(&a))?), "a changed language is asked again before Run");
+        let b = made(tx, "two", "second");
+        let both = prompt_of(tx, &[a.clone(), b], None)?;
+        assert!(both.contains(&closeout::words("Русский", FINISH, true)) && both.contains("Before each execute_tool(\"finish_task\""), "{both}");
+        Ok(())
+    }).unwrap();
+}

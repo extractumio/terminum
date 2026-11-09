@@ -220,6 +220,7 @@ async fn meta(State(app): State<Shared>) -> Response {
             if let Some(v) = p["id"].as_str().and_then(|id| own.get(id)) {
                 p["prefix"] = v["prefix"].clone();
                 p["template"] = v["template"].clone();
+                p["language"] = v["language"].clone();
             }
         }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
@@ -230,7 +231,7 @@ async fn meta(State(app): State<Shared>) -> Response {
             p["agent_limit"] = json!(limit);
         }
     }
-    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "task_template": super::template::DEFAULT_TEMPLATE, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
+    Json(json!({"projects": projects, "agents": agents, "last_agents": last_agents, "efforts": super::agents::EFFORTS.iter().map(|(k, v)| (k.to_string(), json!(v))).collect::<serde_json::Map<_, _>>(), "limits": limits.iter().map(|(project, warn, end)| json!({"project": project, "warn": warn, "end": end})).collect::<Vec<_>>(), "global_limits": global_limits, "hosts": crate::hosts::names(&app), "sessions": sessions, "users": users, "problem": problem, "set_aside": set_aside, "most_bytes": files::MOST_BYTES, "task_template": super::template::DEFAULT_TEMPLATE, "default_language": super::closeout::DEFAULT_LANGUAGE, "theme": app.looks.theme(None, "").1, "scheme": app.looks.settings.read().page.color_scheme})).into_response()
 }
 
 async fn start_empty(State(app): State<Shared>) -> Response {
