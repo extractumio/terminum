@@ -6,7 +6,7 @@ Sibling of `terminum-kanban.md` (tasks and the board) and `terminum-dispatcher.m
 
 | Field | Value |
 |---|---|
-| Status | approved by the owner's request; built, with the gaps of §7 |
+| Status | approved by the owner; built |
 
 A snapshot of what terminum must do, not a record of how it came to be: git holds that.
 
@@ -325,8 +325,8 @@ Single stage.
 
 ## 11. Checklist with Definition of Done
 
-- [ ] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
-- [ ] AC-161 — `cargo test dispatcher::pool`, `cargo test tasks::agents`
-- [ ] AC-162 — `cargo test dispatcher::fire`, `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
-- [ ] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone)
-- [ ] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
+- [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
+- [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
+- [x] AC-162 — `cargo test dispatcher::fire`, `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
+- [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone)
+- [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
