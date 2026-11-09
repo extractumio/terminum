@@ -251,6 +251,9 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     if session_gone(&app, &body) {
         return refuse(StatusCode::BAD_REQUEST, "That session is gone.");
     }
+    let _converting = match crate::page::marks::claim(&app, body["record"].as_str()).await {
+        Ok(held) => held, Err(why) => return refuse(StatusCode::CONFLICT, why),     // held until the record goes
+    };
     let new = NewTask {
         title: text(&body, "title").unwrap_or_default(),
         text: text(&body, "text").unwrap_or_default(),

@@ -11,7 +11,7 @@ import { leaveSelection, newTaskUrl } from "./tasklink.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
 import { Find } from "./find.js";
-import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
+import { foundBy, loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
 
 import { COLORED, floats, PLAIN, PLAN } from "./fold.js";
 import { kindMark, MarkNav } from "./marknav.js";
@@ -61,11 +61,12 @@ export class Marks {
   /** view, widgets, term: the terminal's; send(msg) to the bridge; sid(): the pane shown;
    *  alive(sid): an open pane's title now (renamed or not), null when it closed; pick(sid): show it (and close the drawer); toast(text);
    *  onChange(): the bookmarks changed (the list's strips, reminders); copy(text): to the clipboard;
-   *  projects(): terminumd's (AC-92); toChat(text): pasted into the shown pane's input (Insert into chat).
+   *  projects(): terminumd's (AC-92); toChat(text): pasted into the shown pane's input (Insert into chat);
+   *  convert(item): a bookmark or reminder made a task (Convert to task, terminum-kanban.md AC-116).
    *  store: this browser's choices (app.js: get(k, d), set(k, v)).
    *  onPlaced (set after): the floating buttons were placed (their panes follow). */
-  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll, toChat, store, toTask }) {
-    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, projects, openAll, toChat, store, toTask });
+  constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll, toChat, store, convert }) {
+    Object.assign(this, { view, widgets, term, send, sid, alive, pick, toast, onChange, panes, projects, openAll, toChat, store, convert });
     this.listKind = "bookmark";  // what the list below the sessions shows: bookmarks or reminders
     this.items = new Map();
     this.replies = new Map();    // ref -> resolve, for the dialog
@@ -74,6 +75,8 @@ export class Marks {
     this.search = new Find({ view, widgets, term, send, sid });   // its magnifier stands beside the bookmarks' button
     this.search.onOpen = () => this.togglePane(false);                // one of the two at a time
     document.addEventListener("planfab", () => this.placeFab());      // the plan's progress circle shown or gone (planpane.js)
+    // a task's link to the record it was made of (terminum-kanban.md AC-116): its words found nearest their line
+    document.addEventListener("linejump", async (e) => { const r = await this.jumpText(e.detail); if (r.why) this.toast(r.why, 4000); });
     this.picker = markPicker({ term, main: $("main"), button: $("markadd"), copyButton: $("markcopy"), askButton: $("askfab"), view,
       onPick: (sel) => this.edit(null, sel), onCopy: copy, onAsk: (text, line) => this.onAsk?.(text, line) });
     $("markbox").querySelector("form").addEventListener("submit", (e) => this.submit(e));
@@ -84,7 +87,7 @@ export class Marks {
     $("markbox").addEventListener("cancel", (e) => { if (this.saving) e.preventDefault(); });   // Esc while saving
     $("mbclose").onclick = () => this.hideBar();
     $("mbedit").onclick = () => this.shown && this.edit(this.shown);
-    $("mbtask").onclick = () => this.shown && this.toTask(this.shown);
+    $("mbtask").onclick = () => this.shown && this.convert(this.shown);
     $("mbsend").onclick = () => this.shown && this.toChat(chatText(this.shown));
     $("mbprev").onclick = () => this.step(-1);
     $("mbnext").onclick = () => this.step(1);
@@ -258,7 +261,7 @@ export class Marks {
     this.pick(item.sid);
     if (opened) { try { await opened; } catch (e) { return this.showBar(item, e.message); } }
     this.showBar(item);
-    const r = await this.jumper.go(item.by ? { ...item, text: item.note } : item);
+    const r = await this.jumper.go({ ...item, text: foundBy(item) });
     if (r.cancelled || this.shown?.id !== item.id) return;
     const gone = item.by ? "Where it was made is no longer in this session's history: here it is." : `${r.why} Here is what was selected.`;
     if (r.why) this.showBar(item, r.gone ? gone : `Could not bring it into view: ${r.why}`);
@@ -361,7 +364,7 @@ export class Marks {
       const label = () => [icon("x", 14)];
       del.append(...label());
       armed(del, label, () => this.send({ t: "unmark", id: item.id }));
-      const make = iconButton("mkmake", "plus", "Convert to task", "Convert to task: a TODO task on the project's board; it goes once the task is kept", () => { this.toggleList(false); this.toTask(item); });
+      const make = iconButton("mkmake", "plus", "Convert to task", "Convert to task: a TODO task on the project's board; it goes once the task is kept", () => { this.toggleList(false); this.convert(item); });
       li.append(b, make, del);
       ul.append(li);
     }

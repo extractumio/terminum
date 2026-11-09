@@ -254,12 +254,12 @@ pub enum SubStep {
     #[default]
     Nothing,
     Tell,
-    CannotEnd,
+    Fail,
 }
 
 /// The step `silent` seconds reach; it is done once, when it passes what was `told`.
 pub fn subagent_step(silent: i64, told: SubStep) -> Option<SubStep> {
-    let reached = if silent >= SUB_END { SubStep::CannotEnd } else if silent >= SUB_TELL { SubStep::Tell } else { SubStep::Nothing };
+    let reached = if silent >= SUB_END { SubStep::Fail } else if silent >= SUB_TELL { SubStep::Tell } else { SubStep::Nothing };
     (reached > told).then_some(reached)
 }
 

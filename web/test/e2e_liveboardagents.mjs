@@ -136,7 +136,12 @@ async function agentPool(page, opts) {
   const status = async (id) => (await j(`/api/tasks/${id}`)).status;
   const hasStatus = (id, s, ms = 15000) => until(async () => await status(id) === s, ms);
   const paneOf = async (id) => (await j(`/api/tasks/${id}`)).session?.key?.split(":").pop();
-  const shown = async () => { await page.goto(`${base}/kanban/?project=${project}`); await page.waitForSelector(card(a)); };
+  // a task window's close goes Back: its address gone first, or the load is aborted (net::ERR_ABORTED)
+  const shown = async () => {
+    await page.waitForURL((u) => !/^\/kanban\/[A-Z]/.test(u.pathname), { timeout: 8000 });
+    await page.goto(`${base}/kanban/?project=${project}`);
+    await page.waitForSelector(card(a));
+  };
   const pool = `#agentbar .agentcard[data-agent="${fixer}"]`;
   const dots = () => page.$$eval(`${pool} .agdot`, (l) => l.map((d) => `${d.className} ${d.title}`));
   const dotted = async (test) => until(async () => test(await dots()), 15000);

@@ -57,7 +57,7 @@ Open questions:
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
 | OQ-121 | What memory limits warn and end a session (AC-128)? | Owner | resolved | 4 GiB warns the agent, 8 GiB ends the session as FAILED, set globally and per project; CPU is only shown. |
-| OQ-122 | How does Dispatcher end a subagent with no process of its own (AC-127)? | Claude | open | AS-126; until answered, AC-127's failure scenario holds for it. |
+| OQ-122 | How does Dispatcher end a subagent with no process of its own (AC-127)? | Claude | resolved | The maintainer's choice: the whole task FAILED, its session kept; RUN goes on in it (AC-127, AC-122). |
 
 ## 4. Acceptance cases
 
@@ -69,7 +69,7 @@ Open questions:
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 2 hours after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
-| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can, and says so where it cannot. |
+| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. |
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used; what a task's session spent stays on the task when it ends, in tokens and, where the price is known, an estimate in dollars. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
@@ -416,7 +416,10 @@ Scenario: AC-127 edge — busy and silent
 
 Scenario: AC-127 failure — cannot be ended alone
   When a subagent runs inside the agent's process (OQ-122)
-  Then it is not ended, the comment says "Subagent <id> cannot be ended alone: it runs inside the agent", and terminum-kanban.md AC-117 reminds the human
+  Then API-12 is FAILED with "Subagent <id> has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."
+  And the agent and its session stay, and terminum-kanban.md AC-117 reminds the human
+  When the human presses RUN
+  Then it goes on in that session as AC-122 says, the conversation kept
 ```
 
 ### AC-128 — What it consumes [SHOULD / P1]
@@ -467,7 +470,7 @@ Scenario: AC-129 happy path — on a finished task
   Then its card says "50k · ≈$0.42", and on hover each number and "an estimate at list prices"
   Given API-12 and API-13 in one session
   Then each says the session's whole, and on hover "for API-12 and API-13 together"
-  Given a price it does not know, as for Codex
+  Given a model whose price it does not know
   Then the card says only "50k"
 
 Scenario: AC-129 edge — priced by what each answer was
@@ -475,6 +478,12 @@ Scenario: AC-129 edge — priced by what each answer was
   Then its dollars are 20.00 + 0.50 = 20.50, not twice either price
   Given 1,000,000 cache-write tokens on claude-opus-5-5, 400,000 of them kept for an hour
   Then they are priced 600,000 at 1.25 times input and 400,000 at 2 times: 3.00 + 3.20 = 6.20 dollars
+
+Scenario: AC-129 edge — Codex
+  Given a Codex session whose file's last token count says 1,000,000 input tokens, 400,000 of them cached, and 100,000 output, and whose last turn named gpt-6.1-sol
+  Then it counts 600,000 input, 400,000 cache-read and 100,000 output tokens, all of them gpt-6.1-sol's: 1.20 + 0.04 + 1.00 = 2.24 dollars
+  When no turn names a model
+  Then the card says only the tokens
 
 Scenario: AC-129 edge — counted once
   When a Stop and a SessionEnd report the same total, or a report comes twice
@@ -845,11 +854,11 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
 | AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126). | `terminumd/src/dispatcher/walk.rs` |
-| AC-127 | A subagent is never ended alone, as none is tied to a process or pane yet (OQ-122, AS-126): it is said. | `terminumd/src/dispatcher/walk.rs` |
+| AC-127 | No subagent is tied to a process or pane yet (AS-126): at 20 minutes every one fails its task as one inside the agent does. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-129 | Codex's model is not read, so its sessions show tokens only. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -927,7 +936,7 @@ A hook's report, the whole and each model's (`""`: not named; 16 models at most)
             {"model": "claude-haiku-5-5", "input": 500, "output": 20, "cache_write": 0, "cache_write_1h": 0, "cache_read": 1000}]}
 ```
 
-A run keeps the last totals it heard of each model, copied to the run that goes on from it; a row holds what grew of one model, or, when the whole fell, each model's whole. Dollars are worked out when shown, from a table of list prices in terminumd, so a corrected price corrects old rows: a cache write is 1.25 times input, 2 times for one kept an hour.
+A run keeps the last totals it heard of each model, copied to the run that goes on from it; a row holds what grew of one model, or, when the whole fell, each model's whole. Dollars are worked out when shown, from a table of list prices in terminumd (Anthropic's; OpenAI's standard ones up to 272K input tokens), so a corrected price corrects old rows: a cache write is 1.25 times input, 2 times for one kept an hour. A model is priced by the longest id that begins its name followed by a dash, a bracket or nothing: `claude-opus-5-5[1m]` is Opus 5.5's, `gpt-5.7-sol` none's.
 
 **Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` runs with job control (`set -m`, so the terminal comes back to it however the agent ended) and survives the agent's Ctrl-C (`trap : INT`), goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 

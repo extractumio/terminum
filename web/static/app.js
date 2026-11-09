@@ -196,7 +196,7 @@ let paneList = [null, []];
 const panes = () => (paneList[0] === st.groups ? paneList[1] : (paneList = [st.groups, st.groups.flatMap((g) => g.items)])[1]);
 const bookmarks = new Marks({ view, widgets, term: $("term"), send, sid: () => st.sid, alive, panes, projects: () => st.projects,
   openAll: (items, title) => doc.open(items, title), pick: (id) => pick(id), toast, onChange: () => { drawNav(); reminded.draw(); rail?.draw(); }, copy: (text) => input.copySelection(text, true),
-  toChat: (text) => { input.paste(text); focusTerminal(); }, store, toTask: (item) => madeHere.convert(item) });
+  toChat: (text) => { input.paste(text); focusTerminal(); }, store, convert: (item) => madeHere.convert(item) });
 const madeHere = sessionTasks({ sid: () => st.sid, name: alive, toast, placed: () => bookmarks.placeFab(), panes, projects: () => st.projects });
 trace.watch(view, { st, bookmarks, widgets, findItem, send, mode: () => (!sizing.fullscreen() ? ($("term").classList.contains("reflow") ? "wrap" : "rows") : view.tooWide() ? "scaled" : "grid"), copy: (text) => input.copySelection(text) });
 let kbdFrame = 0;

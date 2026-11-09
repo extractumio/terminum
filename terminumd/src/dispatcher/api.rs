@@ -15,7 +15,7 @@ use super::runs::{self, Run};
 use super::press::{also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
 use super::pool::{self, Full};
 use super::screen::Screen;
-use super::{acts, move_one, move_task, procs, say, start, store, walk};
+use super::{acts, move_one, move_task, procs, say, start, store};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
@@ -206,7 +206,7 @@ async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), Stri
 async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<String>, String> {
     let said = server.run(format!("display -p -t {pane} '#{{pane_current_command}}\t#{{pane_pid}}'")).await.map_err(|e| format!("tmux does not answer: {e}"))?;
     let (name, pid) = said.first().and_then(|l| l.split_once('\t')).unwrap_or(("", ""));
-    if !walk::is_shell(name) {
+    if !crate::tmux::titles::is_shell(name) {
         return Ok(Some(name.to_string()));
     }
     // the moment after an agent's end its wrapper and a prompt's helpers still run: what stays is a job
@@ -244,7 +244,7 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
 /// The conversation cannot go on: FAILED, its comment says why, and Run from scratch stays (AC-122).
 async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, String> {
     let (run, words) = (r.clone(), format!("Conversation {} could not be continued: {why}", r.agent_session.as_deref().unwrap_or("unknown")));
-    store(app, move |tx| if super::plan::finished(&run.status) { say(tx, &run, &words) } else { move_task(tx, &run, "FAILED", &words) }).await?;
+    store(app, move |tx| super::fail(tx, &run, &words)).await?;
     super::told_all(app, r);
     Err(format!("{why}: use Run from scratch."))
 }

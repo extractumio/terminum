@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Convert to task (terminum-kanban.md AC-116): a bookmark or reminder becomes a TODO task on its project's board in
 // one small window: its title, severity (P2), project and session (the one shown and its project), nothing else to
-// type. Its text is the record's, quoted, with a link to the session it came from; the task counts as made in that
+// type. Its text is the record's, quoted, with a link to its line in the session it came from; the task counts as made in that
 // session (AC-150); the board does not open, and the record goes once the task is kept.
 import { $, DEFAULT, SEVERITIES, api, fillSelect, showError } from "./kanbanutil.js";
 import { chatText } from "./marks.js";
 import { titleOf } from "./marktext.js";
-import { sessionUrl } from "./tasklink.js";
+import { lineWords, sessionUrl } from "./tasklink.js";
 
 /** sid(): the session shown; name(key): a listed session's title, else null; panes(): every session listed;
  *  projects(): the list's projects; made(task): after it was kept. */
@@ -29,14 +29,15 @@ export function recordTasks({ sid, name, panes, projects, made }) {
   }
 
   async function keep() {
+    const go = $("convertok");
+    if (go.disabled) return;                       // a second press or Enter while the first is sent: one task
     const from = record.sid && name(record.sid) ? record.sid : null;   // a closed session links nowhere
-    const where = from ? `\n\nFrom [${name(from)}, line ${record.n}](${sessionUrl(from)})` : "";
+    const where = from ? `\n\nFrom [${name(from)}, line ${record.n}](${sessionUrl(from, `line:${record.n}:${lineWords(record)}`)})` : "";
     const body = {
       title: $("converttitle").value, text: chatText(record) + where,
       severity: $("convertsev").value, project: $("convertproj").value, session: $("convertsession").value || null,
       made_in: from ?? (sid() || null), record: record.id,
     };
-    const go = $("convertok");
     go.disabled = true;
     try {
       const t = await api("/api/tasks", { method: "POST", body });

@@ -140,9 +140,11 @@ pub fn carry(tx: &Transaction, from: &str, to: &str) -> Result<(), String> {
     tx.execute(&format!("INSERT INTO run_seen (run, model, {TOTALS}) SELECT ?2, model, {TOTALS} FROM run_seen WHERE run = ?1"), (from, to)).map(drop).map_err(sql)
 }
 
-/// List prices in dollars per million tokens, Anthropic's (cached 2026-10-06): input, output, cache read; a cache
-/// write is 1.25 times input, 2 times for one kept an hour. The longest id that begins the model's name is its.
-const PRICES: [(&str, f64, f64, f64); 13] = [
+/// List prices in dollars per million tokens: input, output, cache read. Anthropic's (cached 2026-10-06): a cache
+/// write is 1.25 times input, 2 times for one kept an hour. OpenAI's standard ones up to 272K input tokens (cached
+/// 2026-11-09), for Codex. The longest id that begins the model's name is its, where a dash, a bracket or the
+/// name's end follows it: gpt-5.7-sol is not gpt-5.
+const PRICES: &[(&str, f64, f64, f64)] = &[
     ("claude-fable-5-1", 10.0, 50.0, 0.25),
     ("claude-mythos-5-1", 10.0, 50.0, 0.25),
     ("claude-fable-5", 10.0, 50.0, 1.0),
@@ -156,11 +158,26 @@ const PRICES: [(&str, f64, f64, f64); 13] = [
     ("claude-sonnet-4-6", 3.0, 15.0, 0.30),
     ("claude-haiku-5-5", 0.10, 0.50, 0.01),
     ("claude-haiku-4-5", 1.0, 5.0, 0.10),
+    ("gpt-6-astra", 10.0, 50.0, 1.0),
+    ("gpt-6.1-sol", 2.0, 10.0, 0.10),
+    ("gpt-6.1-terra", 1.0, 5.0, 0.05),
+    ("gpt-6-sol", 2.0, 10.0, 0.20),
+    ("gpt-6-luna", 0.10, 0.50, 0.01),
+    ("gpt-5.6-sol", 4.0, 20.0, 0.40),
+    ("gpt-5.6-terra", 2.0, 12.0, 0.20),
+    ("gpt-5.6-luna", 0.20, 1.20, 0.02),
+    ("gpt-5.5", 5.0, 30.0, 0.50),
+    ("gpt-5.4", 2.50, 15.0, 0.25),
+    ("gpt-5.4-mini", 0.75, 4.50, 0.075),
+    ("gpt-5.3-codex", 1.75, 14.0, 0.175),
+    ("gpt-5.2", 1.75, 14.0, 0.175),
+    ("gpt-5.1", 1.25, 10.0, 0.125),
 ];
 
 /// An estimate at list prices, when the model is one terminum knows.
 pub fn dollars(t: &Totals, model: &str) -> Option<f64> {
-    let (_, input, output, read) = PRICES.iter().filter(|(id, ..)| model.starts_with(id)).max_by_key(|(id, ..)| id.len())?;
+    let named = |id: &str| model.strip_prefix(id).is_some_and(|rest| rest.is_empty() || rest.starts_with(['-', '[']));
+    let (_, input, output, read) = PRICES.iter().filter(|(id, ..)| named(id)).max_by_key(|(id, ..)| id.len())?;
     let (short, hour) = ((t.cache_write - t.cache_write_1h) as f64, t.cache_write_1h as f64);
     Some((t.input as f64 * input + t.output as f64 * output + (short * 1.25 + hour * 2.0) * input + t.cache_read as f64 * read) / 1e6)
 }
@@ -273,7 +290,12 @@ mod tests {
 
     #[test]
     fn ac129_a_price_it_does_not_know_gives_no_dollars() {
-        assert_eq!(dollars(&t(1_000_000, 0, 0, 0), "gpt-5-codex"), None);
+        assert_eq!(dollars(&t(1_000_000, 0, 0, 0), "gpt-7-nova"), None);
+        assert_eq!(dollars(&t(1_000_000, 0, 0, 0), "gpt-5.7-sol"), None, "not gpt-5.x's nearest: a new one is not known");
+        assert_eq!(dollars(&t(1_000_000, 1_000_000, 0, 1_000_000), "gpt-6.1-sol"), Some(12.10), "Codex's model, OpenAI's prices");
+        assert_eq!(dollars(&t(0, 1_000_000, 0, 0), "claude-opus-5-5[1m]"), Some(20.0));
+        let codex = dollars(&t(600_000, 100_000, 0, 400_000), "gpt-6.1-sol").unwrap();
+        assert!((codex - 2.24).abs() < 1e-9, "the spec's Codex session: {codex}");
         assert_eq!(dollars(&t(1_000_000, 0, 0, 0), "claude-opus-5-5"), Some(4.0), "Opus 5.5, not Opus 5");
         assert_eq!(dollars(&t(0, 1_000_000, 0, 0), "claude-opus-5-20260101"), Some(25.0));
         assert_eq!(Totals::of(&json!({"input": 1u64 << 60, "output": 1, "cache_read": 0})).unwrap().input, 1 << 52, "a made-up number is capped");

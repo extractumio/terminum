@@ -62,8 +62,8 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
   const count = () => page.evaluate(() => (document.getElementById("marksfab").hidden ? null : document.getElementById("marksfabn").textContent));
   const task = (id) => page.evaluate(async (t) => (await fetch(`/api/tasks/${t}`)).json(), id);
   const madeId = (said) => /Kept as ([A-Z][A-Z0-9]*-\d+)/.exec(said)?.[1];
-  /** The user's own record on the selected words of the shown pane. */
-  const keep = async (note, reminder) => {
+  /** The selected words of the shown pane, in the bookmark dialog. */
+  const selected = async () => {
     const line = await page.evaluate(() => {
       const r = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("selectable words")).getBoundingClientRect();
       return { x: r.left + 4, x2: r.left + 120, y: r.top + r.height / 2 };
@@ -71,6 +71,10 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await page.mouse.move(line.x, line.y); await page.mouse.down(); await page.mouse.move(line.x2, line.y, { steps: 4 }); await page.mouse.up();
     await page.waitForSelector("#markadd:not([hidden])", { timeout: 4000 });
     await page.click("#markadd");
+  };
+  /** The user's own record on the selected words of the shown pane. */
+  const keep = async (note, reminder) => {
+    await selected();
     if (reminder) await page.click('#markkind button[data-kind="reminder"]');
     await page.fill("#marknote", note);
     await page.click('#markbox button[value="save"]');
@@ -159,10 +163,13 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
 
     // a record becomes a task in one small window (terminum-kanban.md AC-116), counted where it was made (AC-150)
     const back = page.url();
-    const convert = async (note) => {
+    const openList = async (kind) => {
       await pressFoot(page, "#marksbtn");             // the foot folded on a computer: its toggle first
       await page.waitForSelector("#marksdlg[open]");
-      await page.click('#marklist .mkkind button:has-text("Reminders")');
+      await page.click(`#marklist .mkkind button:has-text("${kind}")`);
+    };
+    const convert = async (note) => {
+      await openList("Reminders");
       await page.click(`#marklist li:has-text("${note}") .mkmake`);
       await page.waitForSelector("#convertbox[open]", { timeout: 8000 });
     };
@@ -182,10 +189,11 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await page.fill("#converttitle", "A asks");
     await page.click("#convertok");
     await page.waitForSelector("#convertbox", { state: "hidden" });
-    const kept = async () => (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks)).find((t) => t.title === "A asks");
+    const todo = () => page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks);
+    const kept = async () => (await todo()).find((t) => t.title === "A asks");
     check("AC-116 Create keeps the task, then the record goes; the board does not open", await until(() => !rec("A asks"), 8000) && !!(await kept()) && new URL(page.url()).pathname === "/sessions/");
     const conv = await task((await kept()).id);
-    check("AC-116 its text quotes the record and links its session", /^> .*electable word/m.test(conv.text) && /From \[.*, line \d+\]\(\/sessions\/#\//.test(conv.text) && conv.session?.key?.endsWith(`:${a.pane}`), conv.text);
+    check("AC-116 its text quotes the record and links its session", /^> .*electable word/m.test(conv.text) && /From \[.*, line \d+\]\(\/sessions\/\?then=line:\d+:\S*electable%20word\S*#\//.test(conv.text) && conv.session?.key?.endsWith(`:${a.pane}`), conv.text);
     check("AC-150 the session's tasks' button counts it, in cornflower blue", await until(async () => Number(await fabCount()) === before + 1)
       && await page.evaluate(() => getComputedStyle(document.getElementById("tasksfabn")).color) === "rgb(100, 149, 237)", String(await fabCount()));
     await page.click("#tasksfab");
@@ -196,6 +204,46 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-150 a press opens the board's own task window here", (await page.textContent("#tasktitle")).startsWith(conv.id) && !!(await page.$("#taskbody .taskown")) && !!(await page.$("#taskbody .activity")));
     await page.click("#taskclose");
     await page.waitForSelector("#taskbox", { state: "hidden" });
+
+    // the bookmark's bar converts too, and Create pressed twice, or two tabs at once, make one task
+    const titled = async (t) => (await todo()).filter((x) => x.title === t).length;
+    await keep("A twice", false);
+    await openList("Bookmarks");
+    await page.click('#marklist li:has-text("A twice") .mkitem');
+    await page.waitForSelector("#markbar:not([hidden])", { timeout: 8000 });
+    await page.click("#mbtask");
+    await page.waitForSelector("#convertbox[open]", { timeout: 8000 });
+    check("AC-116 the bookmark's bar converts it too", await page.inputValue("#converttitle") === "A twice", await page.inputValue("#converttitle"));
+    await page.dblclick("#convertok");
+    await page.waitForSelector("#convertbox", { state: "hidden" });
+    await until(() => !rec("A twice"), 8000);
+    await wait(1000);
+    check("AC-116 Create pressed twice makes one task", await titled("A twice") === 1, String(await titled("A twice")));
+    await keep("A raced", false);
+    const codes = await page.evaluate(async (record) => Promise.all([0, 1].map(() => fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "A raced", text: "x", record }) }).then((r) => r.status))), rec("A raced").id);
+    check("AC-116 one record converted from two tabs at once: one task, the other refused", codes.sort().join() === "200,409" && await titled("A raced") === 1, codes.join());
+
+    // New task from selection: the board's new-task window, nothing kept (AC-106)
+    await selected();
+    await page.click("#marktask");
+    await page.waitForSelector("#newbox[open]", { timeout: 8000 });
+    check("AC-106 New task from selection opens the board's new-task window, the words quoted", /^> .*electable word/m.test(await page.inputValue("#newtext")), await page.inputValue("#newtext"));
+    await page.click("#newdiscard");                  // what it took goes: a later new-task window opens empty
+    await page.click("#confirmok");
+    await page.waitForSelector("#newbox", { state: "hidden" });
+
+    // the task's link: its session, its record's words looked for nearest their line
+    const located = [];
+    const sent = (ws) => ws.on("framesent", ({ payload }) => {
+      try { const m = JSON.parse(String(payload)); if (m.t === "locate" && m.text) located.push(m); } catch { /* not JSON */ }
+    });
+    page.on("websocket", sent);
+    await page.goto(new URL(/\]\((\/sessions\/[^)\s]+)\)/.exec(conv.text)[1], page.url()).href);
+    check("AC-116 the task's link brings its record's line into view", await until(() => located.some((m) => m.text.includes("electable word") && Number.isInteger(m.n)), 10000)
+      && await until(() => !page.url().includes("then="), 8000)
+      && await until(() => page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("selectable words of notes-a"))), 8000), JSON.stringify(located).slice(0, 300));
+    page.off("websocket", sent);
     await page.goto(back);
     await page.waitForSelector(row(a.pane), { timeout: 8000 });
     await foldFoot(page);

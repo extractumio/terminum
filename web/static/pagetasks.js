@@ -17,8 +17,16 @@ export function pageTasks({ box, embedded, say, show }) {
     /** The first list with rows says whether it is there; the page then goes on as after any closing. */
     layout(groups) {
       if (!asked || !groups.length) return;
+      const line = /^line:(\d+):(.*)$/s.exec(then ?? "");
       if (!findItem(groups, asked) && !serverDown(groups, asked)) say("That session has ended.", 4000);
       else if (then === "plan") setTimeout(() => document.dispatchEvent(new Event("planopen")));
+      // the Message history's Open in session (terminum.md AC-151): that message brought into view
+      else if (/^msg:\d+$/.test(then ?? "")) {
+        const id = Number(then.slice(4));                // read now: `then` is gone when the event goes
+        setTimeout(() => document.dispatchEvent(new CustomEvent("sentjump", { detail: id })));
+      }
+      // a task's link to the record it was made of (terminum-kanban.md AC-116): that line brought into view
+      else if (line) setTimeout(() => document.dispatchEvent(new CustomEvent("linejump", { detail: { n: Number(line[1]), text: line[2] } })));
       then = null;
       asked = null;
     },

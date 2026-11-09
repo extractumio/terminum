@@ -40,6 +40,10 @@ export function oneLine(text, markdown = false, max = 240) {
 
 /** A record's title on one line: its note without Markdown marks, else its text's start. The bar,
  *  the lists, the rail's tips and the navigator all show this. */
+/** The words a record is found by again: an agent's, its title where its call was printed (AC-98); the user's,
+ *  what was selected. */
+export const foundBy = (item) => (item.by ? item.note : item.text);
+
 export const titleOf = (item, max = 120) => oneLine(item.note, true, 200) || oneLine(item.text, !!item.by, max);
 
 /** The text nodes under `root` (an element or a shadow root's part), in order. */

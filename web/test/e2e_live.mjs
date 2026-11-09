@@ -41,6 +41,7 @@ import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
+import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -134,6 +135,8 @@ const BOARD_ALONE = process.argv.includes("board");
 const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const SMOKE = process.argv.includes("smoke");
+const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
+const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -164,7 +167,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher]) => {
+  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -176,13 +179,17 @@ async function wide(browser, name) {
     await boards([liveBoardAgents, liveDispatcher]);
     return ctx;
   }
+  if (HISTORY_ALONE) {
+    await boards([liveHistory]);
+    return ctx;
+  }
   if (TASKS_ALONE) {
     await boards([liveBoardTasks, liveBoardIds]);
     return ctx;
   }
-  if (BOARD_ALONE) {
+  if (BOARD_ALONE || NOTES_ALONE) {
     await liveNotes(page, live);
-    await boards();
+    if (!NOTES_ALONE) await boards();
     return ctx;
   }
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);
@@ -355,6 +362,11 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
+  if (HISTORY_ALONE) {
+    await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
+    await ctx.close();
+    return;
+  }
   if (BOARD_ALONE) {
     await liveBoardPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
     await liveBoardSessionsPhone(page, { base: BASE });
@@ -375,6 +387,7 @@ async function phone(browser, name) {
     }
     throw new Error(`width ${tmux("display", "-p", "#{window_width}")} (was ${before})`);
   });
+  await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
   await ctx.close();
 }
 
