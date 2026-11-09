@@ -47,10 +47,14 @@ pub(super) async fn close(app: &Shared, run: &Run, (server, pane): (&Arc<Server>
     }
     let (id, words) = (run.id.clone(), words.to_string());
     match server.run(format!("kill-pane -t {pane}")).await {
-        Ok(_) => store(app, move |tx| {
-            let r = runs::change(tx, &id, |r| r.state = Phase::Closed)?;
-            say(tx, &r, &words)
-        }).await.map(|()| None),
+        Ok(_) => {
+            let closed = store(app, move |tx| {
+                let r = runs::change(tx, &id, |r| r.state = Phase::Closed)?;
+                say(tx, &r, &words)
+            }).await;
+            app.dispatcher.soon.notify_one();             // a slot is free: what waits for it starts (AC-158)
+            closed.map(|()| None)
+        }
         Err(e) => {
             let why = format!("tmux did not close it: {e}");
             store(app, move |tx| {
@@ -192,7 +196,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             Ok(())
         }
         Act::Nudge => {
-            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call {} with the result, or ask what you need.", super::press::FINISH);
+            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call {} with the result, or ask a human by {} what you need.", super::press::FINISH, super::press::ASK_HUMAN);
             let sent = gate::deliver(app, &l.run, &server, &pane, &text, false).await;
             went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
             match sent {
@@ -203,7 +207,9 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
                 }
             }
         }
-        Act::Close { words, keep } => close(app, &l.run, (&server, &pane), &words, keep, l.at, |_, r| Ok(plan::still_closes(r))).await.map(drop),
+        // a session that waits for a human's answers closes only at an empty box: a draft there is someone's (AC-157)
+        Act::Close { .. } if l.run.asked && !matches!(gate::read(&server, &pane, &l.run.kind).await, Ok(super::screen::Screen::Empty)) => Ok(()),
+        Act::Close { words, keep } => close(app, &l.run, (&server, &pane), &words, keep, l.at, |_, r| Ok(plan::still_closes(r) || plan::asked_closes(r))).await.map(drop),
         _ => Ok(()),
     };
     if let Err(e) = done {

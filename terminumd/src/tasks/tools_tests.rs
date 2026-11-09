@@ -41,7 +41,7 @@ fn ac115_an_agent_does_all_on_its_own() {
     let got = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
     assert!(got.starts_with(DATA), "said to be data: {got}");
     assert!(got.contains("\"text\":\"body\""));
-    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{id} is in WAIT FOR HUMAN."));
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{id} is in WAIT FOR HUMAN. Wait for the answer in this session."));
     call(&s, &dir, &w, "add_comment", json!({"id": id, "text": "note"})).unwrap();
     call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "**fixed**"})).unwrap();
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
@@ -248,4 +248,26 @@ fn ac145_an_agent_s_text_follows_its_project_s_template() {
     let own = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": SECTIONS})).unwrap_err();
     assert!(own.ends_with("## Why\n## Done when"), "the project's own is quoted: {own}");
     assert!(run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).is_ok());
+}
+
+#[test]
+fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_its_turn() {
+    let ((s, dir), w) = (fresh("tools-ask"), who(Some("api")));
+    let id = task(&s, "api", Some(KEY));
+    let other = task(&s, "api", Some(OTHER));
+    let asked = "1. Which API? Options: v1, v2. Recommended: v2, v1 is going away.";
+    assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap(), format!("{id} waits for the human, with your questions. Wait for the answer in this session."));
+    let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
+    assert_eq!(status, "WAIT FOR HUMAN");
+    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == asked && e["questions"] == true), "kept as questions: {history}");
+    assert!(call(&s, &dir, &w, "ask_human", json!({"id": other, "questions": "x"})).unwrap_err().contains("belongs to session"), "only its own task");
+    s.with(|tx| {
+        let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
+        let key = ops::key_of(tx, &id)?;
+        let run = crate::dispatcher::runs::add(tx, &like, &[key], 1)?;
+        crate::dispatcher::runs::change(tx, &run, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
+    }).unwrap();
+    let said = call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap();
+    assert!(said.contains("End your turn now") && said.contains("resumes this conversation"), "{said}");
+    assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap().contains("End your turn now"), "its own move waits the same way");
 }

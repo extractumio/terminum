@@ -18,10 +18,37 @@ pub fn last_comment_is(tx: &Transaction, id: &str, text: &str) -> Result<bool, S
 
 /// A comment (AC-108): the event's id.
 pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
+    comment_with(tx, author, id, text, None, at)
+}
+
+/// An agent's questions for a human (terminum-dispatcher.md AC-157): a comment the task's window shows as such.
+pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
+    comment_with(tx, author, id, text, Some(&json!({"questions": true})), at)
+}
+
+fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
     check_comment(text)?;
     let key = key_of(tx, id)?;
     touch(tx, &key, at)?;
-    log(tx, &key, author, "comment", text, None, at)
+    log(tx, &key, author, "comment", text, data, at)
+}
+
+/// The human's comment of a press, with its files, once: a press tried again, or pressed again by its wait
+/// (terminum-dispatcher.md AC-158), adds it no second time. Its event, when it was kept now.
+pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[String], at: i64) -> Result<Option<String>, String> {
+    if last_comment_is(tx, id, text)? {
+        return Ok(None);
+    }
+    let event = comment(tx, super::store::HUMAN, id, text, at)?;
+    super::files::attach(tx, files, id, Some(&event))?;
+    Ok(Some(event))
+}
+
+/// The humans' comments since the agent's last questions, oldest first: their answers (AC-157).
+pub fn answers(tx: &Transaction, id: &str) -> Result<Vec<String>, String> {
+    let key = key_of(tx, id)?;
+    rows(tx, "SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind = 'human' AND e.text IS NOT NULL
+              AND e.rowid > COALESCE((SELECT MAX(q.rowid) FROM events q WHERE q.task = ?1 AND json_extract(q.data, '$.questions') IS NOT NULL), 0) ORDER BY e.at, e.rowid", [&key], |r| r.get(0))
 }
 
 /// A human's own comment changed or deleted: a new event holds it, and the old text leaves the
@@ -55,12 +82,16 @@ pub fn history(tx: &Transaction, id: &str) -> Result<Value, String> {
     for (event, file) in rows(tx, "SELECT event, id, name, bytes, mime FROM files WHERE task = ?1 AND event IS NOT NULL", [&key], |r| Ok((r.get(0)?, File::of_row(r, 1)?)))? {
         files.entry(event).or_default().push(file);
     }
-    let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
+    let out = rows(tx, "SELECT e.id, e.at, e.author, u.name, u.kind, e.kind, e.text, e.edited_at, json_extract(e.data, '$.questions') IS NOT NULL FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 ORDER BY e.at, e.rowid", [&key], |r| {
         let event: String = r.get(0)?;
         let attached = files.remove(&event).unwrap_or_default();
-        Ok(json!({"id": event, "at": r.get::<_, i64>(1)?, "author": r.get::<_, String>(2)?,
+        let mut v = json!({"id": event, "at": r.get::<_, i64>(1)?, "author": r.get::<_, String>(2)?,
             "author_name": r.get::<_, String>(3)?, "author_kind": r.get::<_, String>(4)?,
-            "kind": r.get::<_, String>(5)?, "text": r.get::<_, Option<String>>(6)?, "edited_at": r.get::<_, Option<i64>>(7)?, "files": attached}))
+            "kind": r.get::<_, String>(5)?, "text": r.get::<_, Option<String>>(6)?, "edited_at": r.get::<_, Option<i64>>(7)?, "files": attached});
+        if r.get::<_, bool>(8)? {
+            v["questions"] = json!(true);
+        }
+        Ok(v)
     })?;
     Ok(Value::Array(out))
 }

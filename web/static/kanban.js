@@ -98,9 +98,10 @@ const projectOf = (id) => meta.projects.find((p) => p.id === id);
 /** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
 function sessionLine(t) {
   const s = t.session;
+  const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); if (why) e.title = why; return e; };
+  if (t.waits) return line("waiting", `waits for ${t.waits}`, "Run waits for that agent's room, then starts");
   if (!s && !t.run) return null;
   const open = t.status === "IN PROGRESS";
-  const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); if (why) e.title = why; return e; };
   if (t.run === "no_result") return line("stopped", "DONE, no result");
   if (t.run) return line("waiting", t.run === "asking" ? "answer in its window" : "starting");
   if (s.closed) return line("closed", "session closed");
@@ -256,7 +257,7 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
-const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: () => readSoon() });
+const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
@@ -366,7 +367,8 @@ async function runMade(t, agent) {
   madeHidden(t);
   if (!agent) return runThem([t]);
   try {
-    await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent } });
+    const started = await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent } });
+    if (started?.waits) say(started.waits);
     (meta.last_agents ??= {})[t.project] = agent;
     readSoon();
   } catch (e) {

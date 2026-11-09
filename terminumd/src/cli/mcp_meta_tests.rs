@@ -42,7 +42,7 @@ const GOLDEN: [(&str, &str); 44] = [
     ("claim a task", "take_task"),
     ("assign the task to me", "take_task"),
     ("start working on a task", "take_task"),
-    ("I need a human", "move_task"),
+    ("I need a human", "ask_human"),
     ("block the task waiting for a person", "move_task"),
     ("move my task to another column", "move_task"),
     ("change a task's status to failed", "move_task"),

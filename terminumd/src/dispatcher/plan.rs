@@ -14,6 +14,9 @@ pub const NOTHING: i64 = 3600;
 /// A session closes this long after DONE or FAILED.
 pub const CLOSE: i64 = 7200;
 
+/// Quiet this long after an agent asked a human before its session closes (AC-157): as an idle holder's.
+pub const ASKED_QUIET: i64 = IDLE_QUIET;
+
 /// A subagent silent and idle this long gets the main agent one request, then what can be done (AC-127).
 pub const SUB_TELL: i64 = 600;
 pub const SUB_END: i64 = 1200;
@@ -56,6 +59,8 @@ pub struct Facts {
     pub program: Option<String>,
     /// another of the session's tasks is not DONE or FAILED
     pub others_open: bool,
+    /// a subagent of it is known to run (AC-127)
+    pub subs: bool,
     /// its tree's memory, if `ps` said
     pub memory: Option<Memory>,
     /// seconds to add to the clocks: none over a gap (AC-131)
@@ -192,6 +197,20 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             acts.push(Act::Move { to: "DONE", words: "Dispatcher closed it: no activity for 60 minutes and no result from the agent.".into() });
         }
     }
+    // the agent asked a human itself (ask_human, move_task): once its turn is over and quiet, the session
+    // closes and RUN resumes its conversation (AC-157)
+    if alive && asked_human(run) && f.waiting.is_none() {
+        if f.active || !run.turn_ended || run.open_tools > 0 || f.subs {
+            run.closing_for = 0;
+        } else {
+            run.closing_for += f.dt;
+        }
+        if run.closing_for >= ASKED_QUIET && !f.others_open && f.program.is_none() {
+            acts.push(Act::Close { words: "Session closed: it waits for the human's answers. RUN resumes this conversation.".into(), keep: false });
+        }
+    } else if !finished(&run.status) {
+        run.closing_for = 0;
+    }
     // the budget: only IN PROGRESS counts, never a wait for an answer (AC-126)
     if let Some(total) = run.budget.filter(|_| alive && run.status == "IN PROGRESS") {
         if f.waiting.is_none() {
@@ -242,6 +261,23 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         }
     }
     acts
+}
+
+/// Whether its tasks wait for a human by the agent's own word, in a session whose conversation is known: closing it
+/// loses nothing RUN cannot resume (AC-157).
+pub fn asked_human(run: &Run) -> bool {
+    run.asked && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
+}
+
+/// Whether a close of either kind may come once `dt` more passes: then the walk reads whether another task of
+/// its session is open (AC-125, AC-157).
+pub fn close_near(run: &Run, dt: i64) -> bool {
+    (finished(&run.status) && run.closing_for + dt >= CLOSE) || (asked_human(run) && run.closing_for + dt >= ASKED_QUIET)
+}
+
+/// Whether a Close for an agent's question still holds, read just before the pane goes.
+pub fn asked_closes(run: &Run) -> bool {
+    asked_human(run) && run.turn_ended && run.open_tools == 0 && run.closing_for >= ASKED_QUIET
 }
 
 /// Quiet this long, two walks' worth, before an idle session can be closed for a slot (AC-141).

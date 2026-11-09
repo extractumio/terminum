@@ -38,9 +38,11 @@ export function activity(t, { refresh, confirmed }) {
   }
 
   function eventRow(e) {
-    const li = el("li", `ev ev-${e.kind} by-${e.author_kind}`);
+    const li = el("li", `ev ev-${e.kind} by-${e.author_kind}${e.questions ? " ev-questions" : ""}`);
     const head = el("div", "evhead");
     head.append(el("strong", null, e.author_name), el("time", null, stamp(e.at)));
+    // an agent's questions for the human: answered in a comment, then Run (terminum-dispatcher.md AC-157)
+    if (e.questions) head.append(el("span", "evasks", "asks you"));
     if (e.edited_at) head.append(el("span", "evedited", `edited ${stamp(e.edited_at)}`));
     li.append(head);
     if (e.kind === "comment") {

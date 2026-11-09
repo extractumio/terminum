@@ -101,6 +101,8 @@ pub struct Run {
     pub again_said: bool,
     pub close_tried: bool,
     pub memory_warned: bool,
+    /// its agent asked a human itself (ask_human, move_task): RUN resumes it (AC-157)
+    pub asked: bool,
     pub last_walk: i64,
 }
 
@@ -183,6 +185,7 @@ impl Run {
         self.budget_used = 0;                          // AC-122: the budget starts anew
         self.warned = false;
         self.memory_warned = false;
+        self.asked = false;
     }
 }
 
@@ -194,7 +197,7 @@ const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
     r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait,
-    NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned
+    NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked
     FROM runs r";
 /// A run Dispatcher still holds, over `runs r`.
 pub(crate) const STILL: &str = "r.state NOT IN ('closed', 'left')";
@@ -209,7 +212,7 @@ fn of_row(r: &Row) -> rusqlite::Result<Run> {
     Ok(Run {
         id: r.get(0)?, task: r.get(1)?, ids: listed(r.get(2)?), open: listed(r.get(3)?), status: r.get(4)?, project: r.get(5)?, budget: r.get(6)?, agent_id: r.get(7)?, agent_name: r.get(8)?, agent_color: r.get(9)?, kind: r.get(10)?, command: r.get(11)?, host: r.get(12)?, folder: r.get(13)?,
         pane_key: r.get(14)?, agent_session: r.get(15)?, state: r.get(16)?, prompt: r.get(17)?, turn_ended: r.get(18)?, open_tools: r.get(19)?, idle_for: r.get(20)?, waited_for: r.get(21)?,
-        closing_for: r.get(22)?, budget_used: r.get(23)?, nudged: r.get(24)?, nudge_turn: r.get(25)?, warned: r.get(26)?, wait_moved: r.get(27)?, no_result_wait: r.get(28)?, result: r.get(29)?, again_said: r.get(30)?, close_tried: r.get(31)?, last_walk: r.get(32)?, memory_warned: r.get(33)?,
+        closing_for: r.get(22)?, budget_used: r.get(23)?, nudged: r.get(24)?, nudge_turn: r.get(25)?, warned: r.get(26)?, wait_moved: r.get(27)?, no_result_wait: r.get(28)?, result: r.get(29)?, again_said: r.get(30)?, close_tried: r.get(31)?, last_walk: r.get(32)?, memory_warned: r.get(33)?, asked: r.get(34)?,
     })
 }
 
@@ -272,9 +275,9 @@ pub fn add(tx: &Transaction, like: &Run, tasks: &[String], at: i64) -> Result<St
 /// Writes what changes as a run goes on.
 pub fn save(tx: &Transaction, r: &Run) -> Result<(), String> {
     tx.execute("UPDATE runs SET pane_key = ?2, agent_session = ?3, state = ?4, prompt = ?5, turn_ended = ?6, open_tools = ?7, idle_for = ?8, waited_for = ?9, closing_for = ?10, budget_used = ?11,
-                nudged = ?12, nudge_turn = ?13, warned = ?14, wait_moved = ?15, no_result_wait = ?16, again_said = ?17, close_tried = ?18, last_walk = ?19, memory_warned = ?20 WHERE id = ?1",
+                nudged = ?12, nudge_turn = ?13, warned = ?14, wait_moved = ?15, no_result_wait = ?16, again_said = ?17, close_tried = ?18, last_walk = ?19, memory_warned = ?20, asked = ?21 WHERE id = ?1",
                rusqlite::params![r.id, r.pane_key, r.agent_session, r.state, r.prompt, r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used,
-                                 r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait, r.again_said, r.close_tried, r.last_walk, r.memory_warned]).map(|_| ()).map_err(sql)
+                                 r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait, r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked]).map(|_| ()).map_err(sql)
 }
 
 /// The agent gave `task`'s result (`finish_task`): no screen is kept for it (AC-125).
@@ -313,11 +316,11 @@ pub fn card_marks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, Str
                 AND ({STARTING} OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))"), [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
-/// The agent each of `keys` stays on: its newest run's, as that run knew it (AC-138).
+/// The agent each of `keys` stays on, and its conversation: its newest run's, as that run knew it (AC-138, AC-157).
 pub fn card_agents(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, serde_json::Value>, String> {
-    Ok(rows(tx, "SELECT m.task, r.agent_id, r.agent_name, r.agent_color FROM run_tasks m JOIN runs r ON r.id = m.run
+    Ok(rows(tx, "SELECT m.task, r.agent_id, r.agent_name, r.agent_color, r.agent_session FROM run_tasks m JOIN runs r ON r.id = m.run
               WHERE m.task IN (SELECT value FROM json_each(?1)) AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)", [listed_keys(keys)],
-            |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "name": r.get::<_, String>(2)?, "color": r.get::<_, i64>(3)?}))))?.into_iter().collect())
+            |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "name": r.get::<_, String>(2)?, "color": r.get::<_, i64>(3)?, "conversation": r.get::<_, Option<String>>(4)?}))))?.into_iter().collect())
 }
 
 /// The human gives up on `task`'s run (AC-138): its open tasks fail, Dispatcher lets go of the window, which stays.

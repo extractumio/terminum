@@ -183,15 +183,19 @@ async function agentPool(page, opts) {
   check("AC-138 a task in progress has no play key, its card names the agent", await until(async () => !(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
-  // busy: a third is refused, on the page and by terminumd
+  // busy: a third waits for its room (AC-158), said in RUN's window and by terminumd
   await page.click(`${card(c)} .ctitle`, { modifiers: ["Meta"] });
   await page.click(pool);
-  check("AC-141 an agent at its limit refuses a third: said", await until(async () => /Fast fixer is at its limit of 1/.test(await page.textContent("#toast"))), await page.textContent("#toast"));
-  check("AC-138 and no window opens", !(await page.$("#runbox[open]")));
+  check("AC-158 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Run waits/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
+  await page.click('#runbox button[value="cancel"]');
   await page.keyboard.press("Escape");
-  const refused = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
-  check("AC-141 terminumd refuses it too, naming what holds it", refused.code >= 400 && /at its limit of 1/.test(refused.error) && refused.error.includes(a), JSON.stringify(refused));
-  check("AC-138 the third stays", await status(c) === "TODO");
+  const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
+  check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
+  check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
+  const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
+  check("AC-158 a press again on that agent waits on, in its place", /It waits for Fast fixer/.test(again.waits), JSON.stringify(again));
+  await j(`/api/tasks/${c}/give-up`, "POST");
+  check("AC-158 Stop waiting calls it off and the third stays", await status(c) === "TODO" && !(await j(`/api/tasks/${c}`)).waits, JSON.stringify(await j(`/api/tasks/${c}`)));
 
   // a press on a dot shows its session; on the agent, its window
   await page.click(pool, { position: { x: 60, y: 8 } });
@@ -345,12 +349,14 @@ async function agentPool(page, opts) {
   check("AC-138 a dot each", await dotted((d) => d.length === 2 && d[0].includes(one) && d[1].includes(two)), JSON.stringify(await dots()));
   check("AC-138 and it counts them", await until(async () => (await page.textContent(`${pool} .agcount`).catch(() => "")) === "2/2"));
   const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer });
-  check("AC-141 a third is refused, naming both", /at its limit of 2/.test(third.error) && third.error.includes(one) && third.error.includes(two), JSON.stringify(third));
+  check("AC-158 a third waits, naming both", /at its limit of 2/.test(third.waits) && third.waits.includes(one) && third.waits.includes(two), JSON.stringify(third));
+  await j(`/api/tasks/${three}/give-up`, "POST");
   const other = (await j("/api/task-agents", "POST", { name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   check("AC-141 Agents at once takes 1 to 100 or nothing", /1 to 100/.test((await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 0 })).error));
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 2 });
   const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other });
-  check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.error), JSON.stringify(limited));
+  check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.waits), JSON.stringify(limited));
+  await j(`/api/tasks/${three}/give-up`, "POST");
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: null });
   check("AC-141 no limit: another agent starts", !!(await j(`/api/tasks/${three}/run`, "POST", { agent: other })).run);
   await hasStatus(three, "IN PROGRESS");
