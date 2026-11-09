@@ -82,11 +82,12 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
 /// Runs a schedule's task on its agent as RUN's route would; a refusal fails the task and pauses the schedule.
 async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
     let started = super::api::press_again(app, task, json!({"agent": s.agent})).await;
-    let (id, sid, now) = (task.to_string(), s.id.clone(), ops::now());
+    let (id, sid, now, s_now) = (task.to_string(), s.id.clone(), ops::now(), s.clone());
     let _ = store(app, move |tx| match started {
         Ok(_) => {
             let t = ops::get(tx, &id)?;
-            schedules::fire_started(tx, fire, &super::press::prompt_of(tx, std::slice::from_ref(&t), None)?)
+            // the firing's own words, as its run was sent them: that run exists now, and a RUN after it would be a human's
+            schedules::fire_started(tx, fire, &prompt(&s_now, &t.id, &t.title, &ops::text_of(tx, &t.id)?, false))
         }
         Err(why) => {
             let words = format!("Paused: {why}");
