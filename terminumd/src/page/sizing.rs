@@ -68,18 +68,11 @@ impl Sizes {
         if g.get(key).map(|w| w.claim) != Some(claim) {
             return;
         }
-        match before {
-            Some(mut w) => {
-                w.manual |= manual;
-                g.insert(key.clone(), w);
-            }
-            None if manual => {
-                g.insert(key.clone(), Win { manual: true, ..Win::default() });
-            }
-            None => {
-                g.remove(key);
-            }
-        }
+        let back = before.map(|w| Win { manual: w.manual || manual, ..w }).or_else(|| manual.then(|| Win { manual: true, ..Win::default() }));
+        match back {
+            Some(w) => g.insert(key.clone(), w),
+            None => g.remove(key),
+        };
     }
 }
 

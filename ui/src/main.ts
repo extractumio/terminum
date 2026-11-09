@@ -171,16 +171,15 @@ function renderHeader(s: TermState) {
   $("foot").textContent = s.note ?? "";
 }
 
-/** terminumd's state (its build, AC-16) from the socket's first frame. */
 /** terminumd could not write the panels' state to disk (AC-71): said in the banner until a
  *  write works again (it tries again by itself); what was accepted stays while it runs. */
-let unsavedShown = false;
+const UNSAVED = "Panel state not saved to disk";
 function showUnsaved(error: string | null | undefined) {
-  if (error) notice("Panel state not saved to disk", ` ${error}. terminum tries again; tabs and folders are kept until it restarts.`);
-  else if (unsavedShown && $("notice").textContent?.startsWith("Panel state not saved")) notice("", "");
-  unsavedShown = !!error;
+  if (error) notice(UNSAVED, ` ${error}. terminum tries again; tabs and folders are kept until it restarts.`);
+  else if ($("notice").textContent?.startsWith(UNSAVED)) notice("", "");
 }
 
+/** terminumd's state (its build, AC-16) from the socket's first frame. */
 function onState(s: TermState) {
   showUnsaved(s.unsaved);
   upgrade.build(s.build);
@@ -299,21 +298,25 @@ const terminal = (action: "insert" | "cd", body: object) =>
 
 // ── layout ───────────────────────────────────────────────────────────────────
 
-/** Preferences not yet saved (a failed PUT): the next change or reconnect sends them again. */
-let prefsUnsaved = false, prefsSending = false;
+/** Preferences not yet saved (a failed PUT): the next change or reconnect sends them again. One
+ *  PUT at a time, as the workspace's (saveNow), so terminumd keeps the newest. */
+let prefsUnsaved = false, prefsSaving: Promise<void> = Promise.resolve();
 const savePrefs = () => {
   prefsUnsaved = true;
-  if (prefsSending) return;   // one PUT at a time, so terminumd keeps the newest: its answer sends what changed meanwhile
-  prefsSending = true;
-  const sent = JSON.stringify(prefs);
-  void api("PUT", "/api/prefs", { body: prefs }).then(
-    () => {
-      prefsSending = false;
-      warned.delete("prefs");
-      if (JSON.stringify(prefs) === sent) prefsUnsaved = false; else savePrefs();
-    },
-    (e: Error) => { prefsSending = false; failed("prefs", `Preferences not saved: ${e.message}`); });
+  prefsSaving = prefsSaving.then(sendPrefs, sendPrefs);
 };
+
+async function sendPrefs() {
+  if (!prefsUnsaved) return;   // an earlier PUT in the queue sent them already
+  const sent = JSON.stringify(prefs);
+  try {
+    await api("PUT", "/api/prefs", { body: prefs });
+    warned.delete("prefs");
+    if (JSON.stringify(prefs) === sent) prefsUnsaved = false;
+  } catch (e) {
+    failed("prefs", `Preferences not saved: ${(e as Error).message}`);
+  }
+}
 
 function setSplit(r: number) {
   prefs.split = Math.min(0.85, Math.max(0.15, r));
