@@ -340,15 +340,13 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
     launch::migrate_legacy(ctx)?;
     launch::stop(ctx)?;
     launch::forget_legacy(ctx);
-    let absent = |r: std::io::Result<()>| match r {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
-        _ => Ok(()),
+    let folder_gone = |p: &Path| match std::fs::remove_dir_all(p) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        done => done,
     };
-    let left: Vec<String> = [
-        (ctx.lib(), absent(std::fs::remove_dir_all(ctx.lib()))),
-        (ctx.root.join("daemon"), absent(std::fs::remove_dir_all(ctx.root.join("daemon")))),
-        (ctx.bin().join("terminum"), absent(std::fs::remove_file(ctx.bin().join("terminum")))),
-    ].into_iter().filter_map(|(p, r)| r.err().map(|e| format!("{}: {e}", ctx.shown(&p)))).collect();
+    let (lib, daemon, command) = (ctx.lib(), ctx.root.join("daemon"), ctx.bin().join("terminum"));
+    let left: Vec<String> = [(&lib, folder_gone(&lib)), (&daemon, folder_gone(&daemon)), (&command, crate::config::remove_if_there(&command))]
+        .into_iter().filter_map(|(p, r)| r.err().map(|e| format!("{}: {e}", ctx.shown(p)))).collect();
     let _ = std::fs::remove_dir(ctx.bin()); // only when empty
     if !left.is_empty() {
         return Err(format!("terminumd stopped, but these could not be removed: {}", left.join("; ")));
