@@ -32,8 +32,7 @@ fn fake(meanwhile: Meanwhile, at: &'static str) -> Fake {
     let hosts = json!({"devbox": {"ssh": ["alex@devbox.example"]}, "other": {"ssh": ["alex@other.example"], "files": "enabled"}});
     let f = Fake { hosts: Mutex::new(hosts.as_object().unwrap().clone()), decisions: Decisions::default(), steps: Mutex::new(vec![]),
                    recipe: vec!["alex@devbox.example".into()], meanwhile, at, save_fails: false };
-    // as consent::enable does before its steps
-    f.decisions.make("devbox", Decision::Enable).unwrap();
+    assert!(matches!(f.decisions.enable("devbox"), Start::Run(_)), "as consent::enable does before its steps");
     f
 }
 
@@ -44,12 +43,12 @@ impl Fake {
             let h = &mut self.hosts.lock();
             match self.meanwhile {
                 Meanwhile::Nothing => {}
-                Meanwhile::Decline => record(&self.decisions, h, "devbox", Some("declined")),
+                Meanwhile::Decline => drop(record(&self.decisions, h, "devbox", Some("declined"))),
                 Meanwhile::DeclineThenEnable => {
                     record(&self.decisions, h, "devbox", Some("declined"));
-                    self.decisions.make("devbox", Decision::Enable).unwrap();
+                    assert!(matches!(self.decisions.enable("devbox"), Start::Run(_)), "after Not now a click runs");
                 }
-                Meanwhile::Remove => record(&self.decisions, h, "devbox", None),
+                Meanwhile::Remove => drop(record(&self.decisions, h, "devbox", None)),
                 Meanwhile::Moved => h["devbox"]["ssh"] = json!(["alex@devbox2.example"]),
             }
         }
@@ -96,6 +95,7 @@ fn an_enable_records_enabled_and_keeps_every_other_host() {
     let f = fake(Meanwhile::Nothing, "");
     assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Ok(()));
     assert_eq!(f.files("devbox"), "enabled");
+    assert_eq!(f.hosts.lock()["devbox"]["helper"], crate::agent::AGENT_ID, "in the same write");
     assert_eq!(f.files("other"), "enabled", "another host's record is kept");
     assert_eq!(*f.steps.lock(), ["probe", "copy", "trial", "save"]);
 }
@@ -149,42 +149,33 @@ fn a_failed_save_is_the_enables_failure() {
 #[test]
 fn an_operations_end_takes_only_its_own_decision() {
     let d = Decisions::default();
-    let first = d.make("devbox", Decision::Enable).unwrap();
-    let again = d.make("devbox", Decision::Enable).unwrap();
+    let Start::Run(first) = d.enable("devbox") else { panic!("none runs") };
+    assert_eq!(d.enable("devbox"), Start::Join, "the tick and a click together: one runs");
+    d.withdraw("devbox");
+    let Start::Run(again) = d.enable("devbox") else { panic!("after Not now a click runs") };
     assert!(!d.done("devbox", first), "the first enable's end keeps the click after it");
     assert!(d.is("devbox", Decision::Enable));
     assert!(d.done("devbox", again));
-    let removal = d.make("devbox", Decision::Remove).unwrap();
-    assert_eq!(d.make("devbox", Decision::Enable), None, "AC-83: Enable waits for the removal to end");
-    assert!(d.make("other", Decision::Enable).is_some(), "another host is not held up");
+    let removal = d.remove("devbox");
+    assert_eq!(d.enable("devbox"), Start::Refused, "AC-83: Enable waits for the removal to end");
+    assert!(matches!(d.enable("other"), Start::Run(_)), "another host is not held up");
     d.withdraw("devbox");
     assert!(!d.done("devbox", removal), "Not now during the removal stands: files is not cleared");
-    assert!(d.make("devbox", Decision::Enable).is_some());
 }
 
 #[test]
-fn every_failed_enable_leaves_enabling() {
-    // AC-83 failure: Enable tries again; it never answers at once without doing anything
+fn a_host_is_enabling_exactly_while_its_enable_runs() {
+    // AC-83 failure: whichever step an enable fails at, its end leaves "enabling", and Enable
+    // tries again instead of answering at once
     let root = run(async {
-        let (root, app) = crate::testutil::app("consent-finish");
-        let before = begin(&app, "devbox").expect("none runs");
+        let (root, app) = crate::testutil::app("consent-enabling");
+        let d = &app.hosts.decisions;
+        let Start::Run(ticket) = d.enable("devbox") else { panic!("none runs") };
         assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "enabling");
-        assert!(begin(&app, "devbox").is_none(), "the tick and a click together: one runs");
-        let err = finish(&app, "devbox", before, Err("settings.json: cannot be written".into())).unwrap_err();
-        assert_eq!(err, "Could not enable devbox: settings.json: cannot be written");
+        assert_eq!(crate::hosts::offer(&app, "devbox")["state"], "enabling");
+        d.done("devbox", ticket);
         assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "down");
-        // an agents-only connection runs: it keeps its own state
-        let task = tokio::spawn(std::future::pending::<()>());
-        {
-            let mut g = app.tunnels.0.lock();
-            let a = g.entry("devbox".into()).or_default();
-            (a.state, a.task) = ("up".into(), Some(task));
-        }
-        let before = begin(&app, "devbox").expect("an agents-only connection is not an enable");
-        let _ = finish(&app, "devbox", before, Err("no helper for FreeBSD amd64".into()));
-        assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "up");
-        assert!(begin(&app, "devbox").is_some(), "Enable can be tried again");
-        crate::hosts::tunnel::stop(&app, "devbox");
+        assert!(matches!(d.enable("devbox"), Start::Run(_)), "Enable can be tried again");
         root
     });
     let _ = std::fs::remove_dir_all(&root);

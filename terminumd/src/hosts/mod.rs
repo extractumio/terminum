@@ -47,7 +47,7 @@ pub struct Hosts {
     /// its answer once in (AC-87 edge)
     tried: Mutex<HashMap<String, Tried>>,
     /// the Files operation each host's last decision started, while it runs (consent.rs)
-    files: consent::Decisions,
+    decisions: consent::Decisions,
 }
 
 /// A recipe tried and, once in, its answer.
@@ -268,6 +268,7 @@ pub async fn add(app: &Shared, name: &str, text: &str, files: bool) -> Result<St
             rec["files"] = json!("wanted");
         } else if !files && rec["files"] == "wanted" {
             rec["files"] = Value::Null;
+            app.hosts.decisions.withdraw(&name); // unticked: a setup it started stops
         }
         hosts.insert(name.clone(), rec);
     })?;
@@ -303,7 +304,7 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
     }
     match action {
         "remove" => {
-            app.hosts.files.withdraw(name);
+            app.hosts.decisions.withdraw(name);
             agents::removed(app, name);
             tunnel::stop(app, name);
             save(app, |h| {
@@ -326,10 +327,10 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
             Ok(())
         }
         "enable" => consent::enable(app, name).await,
-        // a connection an enable started just before is closed (agents' alone comes back)
-        "decline" => consent::decide(app, name, Some("declined")).map(|()| link::changed(app, name)),
+        // Not now just after an enable recorded "enabled": the connection it started closes
+        "decline" => consent::decide(app, name, Some("declined")).map(|was| if was { link::changed(app, name) }),
         // agents on keep the helper: only Files goes
-        "files-remove" if link::wanted(app, name) => consent::decide(app, name, None).map(|()| link::changed(app, name)),
+        "files-remove" if link::wanted(app, name) => consent::decide(app, name, None).map(|_| link::changed(app, name)),
         "files-remove" => consent::remove(app, name).await,
         _ => Err(format!("unknown host action: {action}")),
     }

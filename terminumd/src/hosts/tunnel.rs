@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, Command};
 
+use super::consent::Decision;
 use super::recipe::with_command;
 use crate::app::Shared;
 
@@ -39,9 +40,10 @@ pub(crate) const HELPER_REMOVE_LIMIT: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 pub(super) struct Agent {
-    /// enabling, connecting, updating, up, down; failed (a ticked enabling, AC-83)
-    pub(super) state: String,
-    pub(super) note: String,
+    /// connecting, updating, up, down; failed (a ticked enabling, AC-83); "enabling" is the
+    /// Enable running (consent.rs), never stored
+    state: String,
+    note: String,
     updated_at: Option<Instant>,
     /// agents' link: "" (off), "up", "refused: <why>" (link.rs)
     pub(super) agents: String,
@@ -51,7 +53,7 @@ pub(super) struct Agent {
     pub(super) refusals: u32,
     /// the host's $HOME, from the probe
     pub(super) home: Option<String>,
-    pub(super) task: Option<tokio::task::JoinHandle<()>>,
+    task: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -68,6 +70,9 @@ fn set(app: &Shared, host: &str, state: &str, note: &str) {
 
 /// The agent's state for the panel's offer and `terminum hosts`.
 pub fn state(app: &Shared, host: &str) -> String {
+    if app.hosts.decisions.is(host, Decision::Enable) {
+        return "enabling".into();
+    }
     app.tunnels.0.lock().get(host).map_or_else(|| "down".to_string(), |a| a.state.clone())
 }
 
@@ -88,7 +93,7 @@ fn platform(system: &str, machine: &str) -> Option<&'static str> {
 
 /// The agent the running build carries for `platform`: `<build>/agents/<platform>/terminumd`,
 /// or this very binary when the platform is this Mac's (a build from a checkout).
-pub(super) fn binary_for(p: &str) -> Result<PathBuf, String> {
+fn binary_for(p: &str) -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let packaged = exe.parent().map(|d| d.join("agents").join(p).join("terminumd"));
     if let Some(b) = packaged.filter(|b| b.is_file()) {
@@ -141,7 +146,7 @@ pub(super) async fn probe(recipe: &[String]) -> Result<(Result<&'static str, Str
 
 /// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> through a temporary name, points
 /// bin/terminumd-agent at it, keeps one older version, checks it answers with `id`.
-pub(super) async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), String> {
+async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), String> {
     if !(id == "dev" || (id.len() == 12 && id.bytes().all(|b| b.is_ascii_hexdigit()))) {
         return Err(format!("not an agent id: {id}"));
     }
@@ -176,9 +181,9 @@ fn answer(out: &str) -> &str {
 }
 
 /// One running tunnel: the ssh child and the agent's id.
-pub(super) struct Running {
-    pub(super) child: Child,
-    pub(super) agent_id: String,
+struct Running {
+    child: Child,
+    agent_id: String,
     /// the agent lives as long as its stdin is open, and hears from us on it
     stdin: tokio::process::ChildStdin,
     /// what the helper said about the agents' link
@@ -204,13 +209,13 @@ async fn answers(mut stream: tokio::net::UnixStream) -> Result<(), String> {
 /// Whether the helper that said ready is this build's, the only one Files is checked against
 /// and given; none (the caller installs it) or another build (the caller replaces it, AC-84) is
 /// not: an older helper may not answer through the forward, and must not stop its update.
-pub(super) fn current(agent_id: &str) -> bool {
+fn current(agent_id: &str) -> bool {
     agent_id == crate::agent::AGENT_ID
 }
 
 /// Starts the agent through ssh and waits for its "ready" line (20 s); with `files`, also that
 /// the helper answers through the forward.
-pub(super) async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&super::link::LinkTo>, files: bool) -> Result<Running, String> {
+async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&super::link::LinkTo>, files: bool) -> Result<Running, String> {
     let dir = app.cfg.dir.join("agents");
     crate::config::private_dir(&dir);
     let local = dir.join(format!("{}.sock", &crate::auth::crypto::sha256_hex(format!("{host} {}", crate::auth::crypto::random_hex::<6>()).as_bytes())[..12]));
@@ -362,8 +367,23 @@ async fn keep(app: Shared, host: String) {
 }
 
 pub(super) async fn update(recipe: &[String]) -> Result<(), String> {
-    let p = probe(recipe).await?.0?;
-    install(recipe, &binary_for(p)?, crate::agent::AGENT_ID).await
+    copy(recipe, probe(recipe).await?.0?).await
+}
+
+/// This build's helper for `platform` copied to the host.
+pub(super) async fn copy(recipe: &[String], platform: &str) -> Result<(), String> {
+    install(recipe, &binary_for(platform)?, crate::agent::AGENT_ID).await
+}
+
+/// A trial connection through the forward of `host`'s new helper, which must be this build's.
+pub(super) async fn trial(app: &Shared, host: &str, recipe: &[String]) -> Result<(), String> {
+    let mut trial = connect(app, host, recipe, None, true).await?;
+    let _ = trial.child.kill().await;
+    if !current(&trial.agent_id) {
+        return Err(format!("the helper on {host} answers as build {:?}", trial.agent_id));
+    }
+    crate::remote::register(app, host, None);
+    Ok(())
 }
 
 /// Brings a host's helper in line with its recorded files state, once its control client is
@@ -384,7 +404,7 @@ pub fn reconcile(app: &Shared, host: &str) {
     // the task is held under the lock, so `stop` (the host removed) aborts it
     let task = match state.as_deref() {
         // not while its helper is being removed (consent.rs `remove`)
-        Some("enabled") if !app.hosts.files.is(host, super::consent::Decision::Remove) => tokio::spawn(keep(shared, name)),
+        Some("enabled") if !app.hosts.decisions.is(host, Decision::Remove) => tokio::spawn(keep(shared, name)),
         _ if super::link::wanted(app, host) => tokio::spawn(keep(shared, name)),
         Some("wanted") if attached => tokio::spawn(async move {
             let Err(e) = super::consent::enable(&shared, &name).await else { return };
@@ -394,7 +414,7 @@ pub fn reconcile(app: &Shared, host: &str) {
             }
             let note = match super::consent::unwant(&shared, &name) {
                 Ok(false) => return, // Not now or Remove came meanwhile
-                _ if self::state(&shared, &name) == "enabling" => return, // a later click's enable runs
+                _ if shared.hosts.decisions.is(&name, Decision::Enable) => return, // a later click's enable runs
                 Ok(true) => e,
                 Err(w) => format!("{e} (and settings.json not written: {w})"),
             };
