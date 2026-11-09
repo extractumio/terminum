@@ -208,9 +208,10 @@ async function wide(browser, name) {
     bySecret.r === 401 && (name !== "webkit" || bySecret.ws === "refused"), JSON.stringify(bySecret));
   check("AC-01 the list shows the session main", (await page.textContent("#sessions")).includes("main"));
   await within("AC-02 the shown pane's screen is drawn", () => page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 5000 }));
-  await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))`);
+  // the browser's name in the echo: the first browser's line stays on this pane's screen
+  await page.keyboard.type(`cd ${WORK} && echo live-$((6*7))-${name}`);
   await page.keyboard.press("Enter");
-  await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("live-42"), null, { timeout: 5000 }));
+  await within("AC-03 typed keys reach the pane and echo", () => page.waitForFunction((n) => document.getElementById("screen").innerText.includes(`live-42-${n}`), name, { timeout: 5000 }));
   // its own name per browser: the tmux server is both runs' (the first run's window and its marks stay)
   const byhandName = `byhand-${name}`;
   if (!SMOKE) {
