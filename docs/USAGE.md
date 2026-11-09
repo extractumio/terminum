@@ -194,8 +194,13 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use
-  `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`,
+  `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `ask_human`, `add_comment`, `attach_file`,
   `get_file` and `finish_task`: all on their own tasks, read and comment on their project's others;
+  an agent Dispatcher started has every tool unless its command names a permission mode; when it
+  needs you it asks with `ask_human`: its questions, with its recommended answers, stand on the task
+  in WAIT FOR HUMAN and its session closes; answer in comments and press Run, and the same
+  conversation goes on (dropped on another agent of its kind, there). Run on a busy agent waits
+  for its room and starts by itself; Stop waiting in the task's window calls it off;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task

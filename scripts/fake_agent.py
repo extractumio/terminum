@@ -3,7 +3,7 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, LIMIT, DIES, CLEAN, SILENT; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
+FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
 none`: never a box; `--start fast`: exits at once with 7."""
 import json
 import os
@@ -38,11 +38,14 @@ def main():
         else:
             draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {typed.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, "  ? for shortcuts"])
 
-    def finish(task):
+    def tool(name, arguments):
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
         lines = [rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}}), rpc(None, "notifications/initialized"),
-                 rpc(2, "tools/call", {"name": "finish_task", "arguments": {"id": task, "result": "All done."}})]
+                 rpc(2, "tools/call", {"name": name, "arguments": arguments})]
         subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
+
+    def finish(task):
+        tool("finish_task", {"id": task, "result": "All done."})
 
     if "--stubborn" in args:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -96,6 +99,9 @@ def main():
             elif "CLEAN" in prompt:
                 hook("SessionEnd", reason="other")
                 sys.exit(0)
+            elif "QUESTIONS" in prompt:
+                tool("ask_human", {"id": tasks[0], "questions": "1. v1 or v2? Options: v1, v2. Recommended: v2."})
+                hook("Stop", last_assistant_message="I asked.")
             elif "ASKS" in prompt:
                 hook("Notification", notification_type="permission_prompt", message="Approve Bash")
             elif "SUBAGENT" in prompt:
