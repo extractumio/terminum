@@ -252,7 +252,7 @@ pub async fn checkpoint(app: &Shared, prev: &Value) -> Value {
         // a host's tmux started anew is kept as it was until its layout was made again (host())
         if !s.is_local() && let Some(started) = started(&s).await {
             let at = servers.get(&s.id()).and_then(|v| v["at"].as_i64()).unwrap_or(i64::MAX);
-            if started > at && !app.restore.was_tried(&format!("{}@{started}", s.id())) {
+            if started > at && app.restore.waits(&format!("{}@{started}", s.id())) {
                 continue;
             }
         }
@@ -288,61 +288,107 @@ fn report(app: &Shared, place: &str, m: Made) {
     crate::restore::add_report(app, &text, m);
 }
 
+fn generation(server: &Server) -> u64 {
+    server.generation.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// The user's own tmux on this Mac does not run (a reboot, its server killed): its attached
-/// sessions are made again from their checkpoint, once while terminumd runs.
+/// sessions are made again from their checkpoint, once while terminumd runs (again when that
+/// failed with nothing back and the server is another one now).
 pub async fn users_local(app: &Shared, server: &Server) {
     let by_user = server.took_closed_by_user();
-    let Link::Local { tmux, socket, .. } = &server.link else { return };
-    if !app.looks.settings.read().restore {
-        return;
+    if !server.is_local() || !app.looks.settings.read().restore || by_user {
+        return;                                         // the user closed its last pane: it stays closed
     }
     let Some(saved) = saved(app, &server.id()) else { return };
-    if !app.restore.first_try(&format!("{}@{}", server.id(), saved["at"])) || by_user {
-        return;                                         // made again already, or the user closed its last pane
+    let key = format!("{}@{}", server.id(), saved["at"]);
+    if !app.restore.due(&key, generation(server)) {
+        return;
     }
+    let _one = app.restore.one.lock().await;
+    if app.restore.due(&key, generation(server)) {
+        users_make(app, server, &saved, &key).await;
+    }
+}
+
+/// Makes the user's own attached sessions of `saved` that do not run on `server`.
+async fn users_make(app: &Shared, server: &Server, saved: &Value, key: &str) {
+    let Link::Local { tmux, socket, .. } = &server.link else { return };
     let only = server.only.lock().clone().unwrap_or_default();
     let wanted: Vec<Value> = saved["sessions"].as_array().into_iter().flatten().filter(|s| only.iter().any(|o| s["name"] == o.as_str())).cloned().collect();
     if wanted.is_empty() {
         return;
     }
+    app.restore.begin(key);
     let mut m = Made::default();
     let home = crate::config::home().display().to_string();
     let exec = Exec::Local { tmux, socket, conf: None };
+    // a server that does not run has none (`list-sessions` fails)
+    let existing: Vec<String> = exec.run(&["list-sessions", "-F", "#{session_name}"]).await.unwrap_or_default().lines().map(String::from).collect();
     let kept = kept(&exec).await;
     let print = crate::restore_lines::commands(app, &exec, &server.id(), saved["identity"].as_str(), &wanted).await;
-    make(&exec, &wanted, &[], None, crate::restore::usable, &home, &print, &mut m).await;
-    hand_on(app, &exec, server, &saved, kept, &mut m).await;
+    make(&exec, &wanted, &existing, None, crate::restore::usable, &home, &print, &mut m).await;
+    hand_on(app, &exec, server, saved, kept, &mut m).await;
+    app.restore.end(key, &m, generation(server));
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
 /// A host attached again: when its tmux server started after its checkpoint (a reboot, a killed
 /// server), the `terminum` session's windows and the user's attached sessions there are made
-/// again. `seen`: the sessions running there.
+/// again (again when that failed with nothing back and its link is another one now). `seen`:
+/// the sessions running there.
 pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let by_user = server.took_closed_by_user();
-    if server.is_local() || !app.looks.settings.read().restore {
-        return;
+    if server.is_local() || !app.looks.settings.read().restore || by_user {
+        return;                                         // the user closed its last pane and its tmux ended with it
     }
     let Some(saved) = saved(app, &server.id()) else { return };
-    let at = saved["at"].as_i64().unwrap_or(i64::MAX);
     let started = started(server).await.unwrap_or(0);
-    // the user closed its last pane and its tmux ended with it: nothing to make again
-    if started <= at || !app.restore.first_try(&format!("{}@{started}", server.id())) || by_user {
+    let key = format!("{}@{started}", server.id());
+    if started <= saved["at"].as_i64().unwrap_or(i64::MAX) || !app.restore.due(&key, generation(server)) {
         return;
     }
-    let existing: Vec<String> = seen.iter().map(|(n, _)| n.clone()).collect();
+    let _one = app.restore.one.lock().await;
+    if app.restore.due(&key, generation(server)) {
+        let existing: Vec<String> = seen.iter().map(|(n, _)| n.clone()).collect();
+        host_make(app, server, &saved, &existing, true, &key).await;
+    }
+}
+
+/// Makes the sessions of `saved` on host `server` but those in `existing`; `fill`: its fresh
+/// `terminum` session (one window) takes the checkpoint's windows, the fresh one going after.
+async fn host_make(app: &Shared, server: &Server, saved: &Value, existing: &[String], fill: bool, key: &str) {
+    app.restore.begin(key);
     let fresh = server.run(format!("list-windows -t ={HOST_SESSION} -F '#{{window_id}}'")).await.unwrap_or_default();
     let sessions: Vec<Value> = saved["sessions"].as_array().cloned().unwrap_or_default();
     let mut m = Made::default();
     let home = server.home().await.unwrap_or_default();
     let kept = kept(&Exec::Ctl(server)).await;
-    make(&Exec::Ctl(server), &sessions, &existing, Some(HOST_SESSION), |_| true, if home.is_empty() { "~" } else { &home }, &HashMap::new(), &mut m).await;
-    hand_on(app, &Exec::Ctl(server), server, &saved, kept, &mut m).await;
+    let into = fill.then_some(HOST_SESSION);
+    make(&Exec::Ctl(server), &sessions, existing, into, |_| true, if home.is_empty() { "~" } else { &home }, &HashMap::new(), &mut m).await;
+    hand_on(app, &Exec::Ctl(server), server, saved, kept, &mut m).await;
     // the fresh session's own first window goes once the kept ones are there
-    if m.windows > 0 && fresh.len() == 1 {
+    if fill && m.windows > 0 && fresh.len() == 1 {
         let _ = server.run(format!("kill-window -t {}", args::word(&fresh[0]))).await;
     }
+    app.restore.end(key, &m, generation(server));
     report(app, &format!("host {}", server.name), m);
+}
+
+/// "Restore again" on a server besides terminum's (restore::again holds the lock): its sessions
+/// in `servers` (the checkpoint's) that do not run are made; a host's `terminum` session takes
+/// its windows only while its own restore is still owed (it failed with nothing back).
+pub async fn again(app: &Shared, server: &Server, servers: &Value) {
+    let Some(saved) = servers.get(server.id()).filter(|v| v.is_object()) else { return };
+    if server.is_users() {
+        users_make(app, server, saved, &format!("{}@{}", server.id(), saved["at"])).await;
+    } else if !server.is_local() && server.attached() {
+        let Ok(existing) = server.run("list-sessions -F '#{session_name}'").await else { return };
+        let started = started(server).await.unwrap_or(0);
+        let key = format!("{}@{started}", server.id());
+        let owed = started > saved["at"].as_i64().unwrap_or(i64::MAX) && app.restore.waits(&key);
+        host_make(app, server, saved, &existing, owed, &key).await;
+    }
 }
 
 #[cfg(test)]
