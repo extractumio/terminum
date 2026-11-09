@@ -197,6 +197,9 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`,
   `get_file` and `finish_task`: all on their own tasks, read and comment on their project's others;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
+  With `update_task` an agent grooms its project's board: severity and parent of any task (a
+  human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
+  archived with its reason; your own words and tasks are never reworded or archived by an agent.
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,

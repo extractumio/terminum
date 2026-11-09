@@ -66,6 +66,7 @@ Open questions: none.
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks: all on the agent's own, read and comment on the project's others, a free task can be taken. |
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
+| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
@@ -446,6 +447,46 @@ Scenario: AC-145 failure — a template too long
 Scenario: AC-145 edge — a human's
   When a human makes a task in the new-task window or converts a record (AC-116)
   Then no rule of this case applies
+```
+
+### AC-154 — An agent grooms the board [SHOULD / P1]
+
+```gherkin
+Scenario: AC-154 happy path — severity and parent
+  Given API-31 and API-12 of project api, made by agents, and an agent in a session of api
+  When it calls update_task {id: "API-12", severity: "P1", parent: "API-31"}
+  Then API-12 is P1, on top of the P1 cards (AC-105), and a subtask of API-31 (AC-112), each change in its history by that agent, and both cards change on every page
+  When it calls update_task {id: "API-12", parent: "none"}
+  Then API-12 leaves API-31; AC-112's rules hold: one level, one project
+
+Scenario: AC-154 happy path — an agents' task's words
+  Given API-12 made by an agent, its title and text never changed by a human, held by no other session or DONE
+  When an agent of the project calls update_task {id: "API-12", title, text}
+  Then they change by create_task's rules (AC-145): the title says Bug:, Feat: or Debt:, the text is in the template's sections, both cleaned and redacted
+
+Scenario: AC-154 happy path — off the board
+  Given API-12 an agents' task as above, its subtasks DONE, no run holding it
+  When an agent calls update_task {id: "API-12", archive: "yes", reason: "a duplicate of API-9"}
+  Then "Archived: a duplicate of API-9" is its comment, it and its DONE subtasks are archived (AC-118), and the answer says a human can bring it back from the Archived list
+
+Scenario Outline: AC-154 failure — refused with what to do
+  When an agent calls update_task with <what>
+  Then it is refused, "<words>", and nothing changes
+  Examples:
+    | what | words |
+    | a human's task's severity or parent, no reason | API-7 is a human's: give the reason for the change. |
+    | a title or text, or archive, of a task a human made or reworded | API-7 holds a human's words: they decide its title, text and archive. Comment instead. |
+    | the words of an open task another session holds, or its archive | API-7 belongs to session %8: comment instead. |
+    | archive with an open subtask | API-31 has an open subtask, API-12: finish it, archive it or take it out first. |
+    | archive with no reason | Give the reason it leaves the board. |
+    | archive with another field | archive goes alone, with its reason. |
+    | nothing to change | Give severity, parent, title, text or archive. |
+
+Scenario: AC-154 edge — a human's task
+  Given API-7 made by a human
+  When an agent calls update_task {id: "API-7", severity: "P3", reason: "a log line only"}
+  Then API-7 is P3 and "a log line only" is its comment, after the change in its history
+  And a task of another project stays out of reach (AC-115)
 ```
 
 ### AC-116 — A record becomes a task [SHOULD / P1]
@@ -937,6 +978,7 @@ Comments and history are one table, `events`: a window lists them in one order. 
 |---|---|---|
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
+| AC-154 | An agent may take a human's free task (take_task) and finish it (finish_task): DONE, then archived after 2 days (AC-118), with no human deciding. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -993,7 +1035,7 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 
 Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135).
 
-**MCP tools** added to `terminum mcp`: `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`. `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
+**MCP tools** added to `terminum mcp`: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `take_task`, `move_task`, `add_comment`, `attach_file`, `get_file`, `finish_task`. `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
 **Limits.** Title 1–200 characters; text 1 MiB; a project's template 8 KiB; ID letters 1–8; comment 256 KiB; a file 100 MB, no limit per project; 200 cards a page; 200 open tasks by agents a project; 50 projects (`terminum.md` AC-92), Default not counted. Over a host's link, a request of 64 KB (`terminum-remote.md` §9).
 
@@ -1043,3 +1085,4 @@ Depends on: nothing more.
 - [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`
 - [x] AC-145 — `cargo test tasks::tools` (refused with what to do, the template), `cargo test tasks::template`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
+- [x] AC-154 — `cargo test tasks::groom`, `cargo test cli::mcp` (the tool offered, its shape checked, its size)
