@@ -48,37 +48,15 @@ fn effort_flag(kind: &str) -> &'static str {
     if kind == "codex" { "model_reasoning_effort" } else { "--effort" }
 }
 
-/// What gives a kind every tool with no question (terminum-dispatcher.md AC-156), and the words of a command that
-/// already says how it asks: then the human's own words stand.
-const EVERY_TOOL: [(&str, &str, &[&str]); 2] = [
-    ("claude", "--permission-mode bypassPermissions", &["--permission-mode", "--dangerously-skip-permissions"]),
-    ("codex", "--dangerously-bypass-approvals-and-sandbox", &["--dangerously-bypass-approvals-and-sandbox", "--yolo", "--full-auto", "--ask-for-approval", "-a", "--sandbox", "-s"]),
-];
-
-/// What ends one program's command and starts another's: words after it would go to the last program.
+/// What ends one program's command and starts another's: an effort after it would go to the last program.
 const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
 
-/// The kind's words for every tool, unless the command says how it asks, or holds a separator.
-fn every_tool(kind: &str, command: &str) -> Option<&'static str> {
-    let (_, words, says) = EVERY_TOOL.iter().find(|(k, _, _)| *k == kind)?;
-    (!names_mode(says, command) && !command.contains(SEPARATORS)).then_some(*words)
-}
-
-/// Whether the command says how its program asks (`says`: the kind's words for it), by a whole word of it.
-fn names_mode(says: &[&str], command: &str) -> bool {
-    command.split_whitespace().any(|w| says.iter().any(|s| w == *s || w.strip_prefix(*s).is_some_and(|rest| rest.starts_with('='))))
-}
-
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
-    let mut line = match (kind, effort) {
+    match (kind, effort) {
         (_, "") => command.to_string(),
         ("codex", e) => format!("{command} -c {}={e}", effort_flag(kind)),
         (_, e) => format!("{command} {} {e}", effort_flag(kind)),
-    };
-    if let Some(words) = every_tool(kind, command) {
-        line = format!("{line} {words}");
     }
-    line
 }
 
 /// What a page keeps, trimmed.
@@ -133,11 +111,6 @@ impl Given {
         if has_control(&self.command) {
             return Err("An agent's command is one line, with no control or invisible characters.".into());
         }
-        // every tool goes on one program's command (terminum-dispatcher.md AC-156): said here, never left out unseen
-        let says = EVERY_TOOL.iter().find(|(k, _, _)| *k == self.kind).map_or(&[][..], |(_, _, says)| *says);
-        if self.command.contains(SEPARATORS) && !names_mode(says, &self.command) {
-            return Err("Every tool goes on one program's command: this one has ; | & or #. Name its permission mode in the command.".into());
-        }
         if !self.effort.is_empty() {
             if !EFFORTS.iter().any(|(kind, levels)| *kind == self.kind && levels.contains(&self.effort.as_str())) {
                 return Err(format!("{} has no effort {}.", self.kind, self.effort));
@@ -165,11 +138,15 @@ impl Given {
 }
 
 /// The pool, as they were added.
+const SELECT: &str = "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit FROM agents";
+
+fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
+    let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
+    Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
+}
+
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit FROM agents ORDER BY rowid", [], |r| {
-        let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
-        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
-    })
+    rows(tx, &format!("{SELECT} ORDER BY rowid"), [], of_row)
 }
 
 /// The pool as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
@@ -185,7 +162,7 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
 
 /// One of the pool, if it is still there.
 pub fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
-    Ok(list(tx)?.into_iter().find(|a| a.id == id))
+    Ok(rows(tx, &format!("{SELECT} WHERE id = ?1"), [id], of_row)?.pop())
 }
 
 /// Keeps a new one. Its id.

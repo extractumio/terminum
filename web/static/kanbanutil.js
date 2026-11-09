@@ -82,13 +82,12 @@ export function fillSelect(select, options, chosen) {
   select.value = options.some(([value]) => value === chosen) ? chosen : options[0]?.[0] ?? "";
 }
 
-/** A project's `agents` for `select`: a busy one not to be chosen; the first of `wanted` free, else the first free.
- *  `none`: the label of a choice of no agent, first; "" in `wanted` picks it. */
+/** A project's `agents` for `select`, a busy one said so by `busy` and chosen all the same: a run waits for its
+ *  room (terminum-dispatcher.md AC-158); the first of `wanted`, else the first. `none`: the label of a choice of
+ *  no agent, first; "" in `wanted` picks it. */
 export function fillAgents(select, agents, busy, wanted, none = null) {
-  const free = agents.filter((a) => !busy(a));
-  const pick = wanted.find((id) => (id === "" ? none : free.some((a) => a.id === id))) ?? free[0]?.id ?? "";
+  const pick = wanted.find((id) => (id === "" ? none : agents.some((a) => a.id === id))) ?? agents[0]?.id ?? "";
   fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (${busy(a)})` : a.name])], pick);
-  for (const o of select.options) o.disabled = !!o.value && !free.some((a) => a.id === o.value);
 }
 
 /** The agent a task is on, in its color (terminum-dispatcher.md AC-138). */

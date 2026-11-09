@@ -254,7 +254,8 @@
       <label class="fieldrow">Week's limit, M tokens <input id="agentweek" class="field" type="number" min="0" step="any" placeholder="None"></label>
       <label class="fieldrow">Month's limit, M tokens <input id="agentmonth" class="field" type="number" min="0" step="any" placeholder="None"></label>
     </div>
-    <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+    <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="agentcommandhint"></label>
+    <p id="agentcommandhint" class="hint">It runs with no one watching: give it the permissions its work needs here, as <code>claude --dangerously-skip-permissions</code> or <code>codex --dangerously-bypass-approvals-and-sandbox</code>. Dispatcher adds only the effort and, going on, its conversation.</p>
     <ul id="agentsessions" class="filelist" aria-label="Its sessions" hidden></ul>
     <p id="agenterror" role="alert" hidden></p>
     <div class="actions">

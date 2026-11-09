@@ -139,7 +139,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         }
         // its agent asked: what the humans answered since goes, theirs alone (AC-157)
         let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
-        let answers = if asked && tasks.len() == 1 { Some(ops::answers(tx, &wanted)?) } else { None };
+        let answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
         Ok((tasks, w, ops::user_name(tx, HUMAN)?, answers))
     }).await?;
     let t = tasks[0].clone();
