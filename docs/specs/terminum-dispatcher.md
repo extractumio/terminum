@@ -877,10 +877,8 @@ Scenario: AC-158 edge — in turn
   And a wait held by its project's limit holds no other agent's or project's wait
 
 Scenario: AC-158 edge — pressed again
-  When the user presses Run on API-13 again on Opus reviewer
-  Then it says "API-13 waits for Opus reviewer already."
-  When the user drops it on another agent, or presses Run from scratch
-  Then that press takes the wait's place: it starts at once or waits there
+  When the user presses Run on API-13 again, on Opus reviewer or on another agent, or Run from scratch
+  Then that press takes the wait's place, keeping its place in the line: it starts at once when there is room, else it waits
   When the user presses Close API-12's session and run
   Then it does not wait: AC-141's idle holder holds
 

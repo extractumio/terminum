@@ -193,7 +193,7 @@ async function agentPool(page, opts) {
   check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
   check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
   const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
-  check("AC-158 a press again on that agent says it waits already", again.code >= 400 && /waits for Fast fixer already/.test(again.error), JSON.stringify(again));
+  check("AC-158 a press again on that agent waits on, in its place", /It waits for Fast fixer/.test(again.waits), JSON.stringify(again));
   await j(`/api/tasks/${c}/give-up`, "POST");
   check("AC-158 Stop waiting calls it off and the third stays", await status(c) === "TODO" && !(await j(`/api/tasks/${c}`)).waits, JSON.stringify(await j(`/api/tasks/${c}`)));
 
@@ -349,12 +349,14 @@ async function agentPool(page, opts) {
   check("AC-138 a dot each", await dotted((d) => d.length === 2 && d[0].includes(one) && d[1].includes(two)), JSON.stringify(await dots()));
   check("AC-138 and it counts them", await until(async () => (await page.textContent(`${pool} .agcount`).catch(() => "")) === "2/2"));
   const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer });
-  check("AC-141 a third is refused, naming both", /at its limit of 2/.test(third.error) && third.error.includes(one) && third.error.includes(two), JSON.stringify(third));
+  check("AC-158 a third waits, naming both", /at its limit of 2/.test(third.waits) && third.waits.includes(one) && third.waits.includes(two), JSON.stringify(third));
+  await j(`/api/tasks/${three}/give-up`, "POST");
   const other = (await j("/api/task-agents", "POST", { name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   check("AC-141 Agents at once takes 1 to 100 or nothing", /1 to 100/.test((await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 0 })).error));
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 2 });
   const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other });
-  check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.error), JSON.stringify(limited));
+  check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.waits), JSON.stringify(limited));
+  await j(`/api/tasks/${three}/give-up`, "POST");
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: null });
   check("AC-141 no limit: another agent starts", !!(await j(`/api/tasks/${three}/run`, "POST", { agent: other })).run);
   await hasStatus(three, "IN PROGRESS");

@@ -81,9 +81,6 @@ struct Press {
     /// the other tasks of this press (AC-138)
     #[serde(default)]
     also: Vec<String>,
-    /// pressed again by its wait (AC-158), never by a page
-    #[serde(skip)]
-    again: bool,
 }
 
 /// What a press that would start a process comes to: its run, or a wait for a slot (AC-158).
@@ -112,7 +109,6 @@ fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: 
 /// A wait's press, as its route took it, pressed again now (AC-158).
 pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
     let mut body: Press = serde_json::from_value(body).map_err(|e| format!("its kept press is not readable: {e}"))?;
-    body.again = true;
     body.close = None;
     pressed(app, id, body).await
 }
@@ -132,15 +128,9 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     if comment.as_deref().is_some_and(has_stray) {
         return Err("The message has control or invisible characters.".to_string());
     }
-    let (wanted, said, attached, fresh, also, agent, again) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone(), body.again);
+    let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
     let kept = serde_json::to_value(&body).map_err(|e| e.to_string())?;
     let (tasks, w, who, answers) = store(app, move |tx| {
-        // one wait a task: pressed again on its own agent it says so; another agent's press takes its place
-        if !again && !fresh && let Some(w) = super::waits::of_task(tx, &ops::key_of(tx, &wanted)?)?
-            && agent.as_ref().is_none_or(|a| *a == w.agent) {
-            let name = agents::by_id(tx, &w.agent)?.map_or(w.agent.clone(), |a| a.name);
-            return Err(format!("{wanted} waits for {name} already."));
-        }
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
