@@ -384,7 +384,8 @@ ${"z".repeat(400)}
   }
   // this test's panes go, their agents' states with them: what follows measures a quiet page
   endPanes();
-  // the checks after these stand on the session page
+  // the checks after these stand on the session page; after the first half comes the second, on a page of its own
+  if (part === 0) return;
   await page.goto(`${base}/sessions/`);
   await page.waitForSelector("#term", { state: "attached" });
 }
