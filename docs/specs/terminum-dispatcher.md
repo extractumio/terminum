@@ -57,7 +57,7 @@ Open questions:
 | ID | Question | Owner | Status | Decision |
 |---|---|---|---|---|
 | OQ-121 | What memory limits warn and end a session (AC-128)? | Owner | resolved | 4 GiB warns the agent, 8 GiB ends the session as FAILED, set globally and per project; CPU is only shown. |
-| OQ-122 | How does Dispatcher end a subagent with no process of its own (AC-127)? | Claude | open | AS-126; until answered, AC-127's failure scenario holds for it. |
+| OQ-122 | How does Dispatcher end a subagent with no process of its own (AC-127)? | Claude | resolved | The maintainer's choice: the whole task FAILED, its session kept; RUN goes on in it (AC-127, AC-122). |
 
 ## 4. Acceptance cases
 
@@ -69,7 +69,7 @@ Open questions:
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 2 hours after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
-| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can, and says so where it cannot. |
+| AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. |
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used; what a task's session spent stays on the task when it ends, in tokens and, where the price is known, an estimate in dollars. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
@@ -416,7 +416,10 @@ Scenario: AC-127 edge — busy and silent
 
 Scenario: AC-127 failure — cannot be ended alone
   When a subagent runs inside the agent's process (OQ-122)
-  Then it is not ended, the comment says "Subagent <id> cannot be ended alone: it runs inside the agent", and terminum-kanban.md AC-117 reminds the human
+  Then API-12 is FAILED with "Subagent <id> has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."
+  And the agent and its session stay, and terminum-kanban.md AC-117 reminds the human
+  When the human presses RUN
+  Then it goes on in that session as AC-122 says, the conversation kept
 ```
 
 ### AC-128 — What it consumes [SHOULD / P1]
@@ -845,7 +848,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-131 | §9's walk budget has no bench yet (`scripts/bench_board.py`). | `terminumd/src/dispatcher/walk.rs` |
 | AC-121 | A real Codex's hooks need its own trust (AS-124), not checked here beyond its failure's words. | `terminumd/src/dispatcher/start.rs` |
 | AC-126 | A subagent in a pane of its own is not ended with its agent: its pane is not tied to its hook ID (AS-126). | `terminumd/src/dispatcher/walk.rs` |
-| AC-127 | A subagent is never ended alone, as none is tied to a process or pane yet (OQ-122, AS-126): it is said. | `terminumd/src/dispatcher/walk.rs` |
+| AC-127 | No subagent is tied to a process or pane yet (AS-126): at 20 minutes every one fails its task as one inside the agent does. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |

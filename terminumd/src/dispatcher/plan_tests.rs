@@ -248,9 +248,9 @@ fn ac127_a_silent_subagent_gets_one_request_then_it_is_said() {
     assert_eq!(subagent_step(599, SubStep::Nothing), None);
     assert_eq!(subagent_step(600, SubStep::Nothing), Some(SubStep::Tell));
     assert_eq!(subagent_step(900, SubStep::Tell), None, "once");
-    assert_eq!(subagent_step(1200, SubStep::Tell), Some(SubStep::CannotEnd));
-    assert_eq!(subagent_step(1200, SubStep::Nothing), Some(SubStep::CannotEnd), "a jump past both");
-    assert_eq!(subagent_step(9000, SubStep::CannotEnd), None, "said once");
+    assert_eq!(subagent_step(1200, SubStep::Tell), Some(SubStep::Fail));
+    assert_eq!(subagent_step(1200, SubStep::Nothing), Some(SubStep::Fail), "a jump past both");
+    assert_eq!(subagent_step(9000, SubStep::Fail), None, "said once");
 }
 
 #[test]

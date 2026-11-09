@@ -227,7 +227,8 @@ export async function liveDispatcher(page, opts) {
   const idleShown = until(async () => /idle: reviewer sub-1/.test(await page.textContent(card(silentSub)).catch(() => "")), 30000);
   await run(silentSub);
   check("AC-127 a silent subagent gets the main agent one request", await said(silentSub, "The request about a silent subagent", 15000), await history(silentSub));
-  check("AC-127 one that runs inside the agent cannot be ended alone: said", await said(silentSub, "Subagent sub-1 cannot be ended alone", 15000), await history(silentSub));
+  check("AC-127 one that runs inside the agent cannot be ended alone: said, and the task FAILED, its session kept (OQ-122)", await said(silentSub, "Subagent sub-1 has been silent for 20 minutes and cannot be ended alone", 15000)
+    && await hasStatus(silentSub, "FAILED", 15000) && tmux("display", "-p", "-t", await paneOf(silentSub), "#{pane_dead}").trim() === "0", await history(silentSub));
   check("AC-127 the card shows its kind and ID, as idle", await idleShown, await page.textContent(card(silentSub)));
 
   // AC-128 what it consumes: shown on its card; limits by project; a limit of 0 is off

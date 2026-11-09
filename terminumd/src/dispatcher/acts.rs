@@ -173,9 +173,11 @@ pub(super) async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server
             let text = format!("[terminum Dispatcher] A subagent of {} has been silent for 10 minutes. End it if it is stuck.", run.names());
             tell(app, run, server, pane, text, "The request about a silent subagent").await;
         } else {
-            let (r, words) = (run.clone(), format!("Subagent {id} cannot be ended alone: it runs inside the agent"));
+            // it runs inside the agent and cannot be ended alone: the task fails, its session stays, and RUN
+            // goes on in it (OQ-122, AC-122)
+            let (r, words) = (run.clone(), format!("Subagent {id} has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."));
             note(app, format!("{}: {words}", run.names()));
-            let _ = store(app, move |tx| say(tx, &r, &words)).await;
+            let _ = store(app, move |tx| if r.open.is_empty() { say(tx, &r, &words) } else { super::move_task(tx, &r, "FAILED", &words) }).await;
         }
         super::told_all(app, run);
     }
