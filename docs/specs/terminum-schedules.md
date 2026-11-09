@@ -173,7 +173,7 @@ Scenario: AC-162 edge — a sleeping Mac
   Given SCH-1 daily at 03:00 and the Mac asleep from 01:00 to 08:12, or terminumd stopped
   When the walk runs again
   Then one task is made at 08:12, its history saying "due Tue 10 Nov 03:00, run 08:12: the Mac was asleep or terminumd was not running."
-  And for any number of firings missed, only one: an every-15-minutes schedule after 8 hours makes one task, the firing written "32 missed, run once."
+  And for any number of firings missed, only one: an every-15-minutes schedule after 8 hours makes one task, the firing written "31 missed, run once."
   And no other clock gains those hours (terminum-dispatcher.md AC-131)
 
 Scenario: AC-162 edge — the clock
@@ -256,11 +256,11 @@ sequenceDiagram
   participant W as Dispatcher's walk
   participant DB as kanban.sqlite
   participant R as RUN (AC-121)
-  W->>DB: schedules due since checked_at
+  W->>DB: schedules due since last_due
   alt its last task open, or its session busy
     W->>DB: firing: skipped, why
   else
-    W->>DB: one transaction: task from the schedule, firing "made", checked_at = now
+    W->>DB: one transaction: task from the schedule, firing "made", last_due
     W->>R: run the task on the schedule's agent, its kept slot
     alt started or waits for room
       R->>DB: firing: started
@@ -290,14 +290,14 @@ sequenceDiagram
 ```sql
 CREATE TABLE schedules (id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, project TEXT NOT NULL REFERENCES projects, title TEXT NOT NULL, body TEXT NOT NULL,
   severity TEXT NOT NULL, agent_id TEXT NOT NULL, cron TEXT, once_at INTEGER, budget_seconds INTEGER NOT NULL, paused INTEGER NOT NULL DEFAULT 0, paused_why TEXT,
-  checked_at INTEGER NOT NULL, author TEXT NOT NULL REFERENCES users, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER);
+  last_due INTEGER NOT NULL, author TEXT NOT NULL REFERENCES users, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER);
 CREATE TABLE schedule_fires (id INTEGER PRIMARY KEY, schedule TEXT NOT NULL REFERENCES schedules, due_at INTEGER NOT NULL, at INTEGER NOT NULL,
   task TEXT REFERENCES tasks, state TEXT NOT NULL, missed INTEGER NOT NULL DEFAULT 0, why TEXT);
 ```
 
-A schedule is shown as `SCH-<number>`. `cron` or `once_at` (unix ms), never both. `checked_at` (unix s) is the moment through which firings are accounted: due is the first cadence minute after it, by the Mac's clock read at each walk, so a zone's change needs nothing saved; a save sets it to now, so an edit fires nothing it passed. `state`: `made` (task made, its run not yet asked for: a restart's walk asks once), `started` (a run or a wait), `failed`, `skipped`, `called off`. A schedule's tasks are those its firings name: `schedule_fires.task` is the one fact, indexed.
+A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_at`, never both. `last_due` is the due time of the last firing, or the moment of the last save, so an edit fires nothing it passed: due is the first cadence minute after it, by the Mac's clock read at each walk, so a zone's change needs nothing saved; a firing sets it to the last due time not after now, every one before it counted as missed. `state`: `made` (task made, its run not yet asked for: a restart's walk asks once), `started` (a run or a wait), `failed`, `skipped`, `called off`. A schedule's tasks are those its firings name: `schedule_fires.task` is the one fact, indexed.
 
-**Cadence** (`terminumd/src/tasks/cron.rs`). Five fields: minute 0–59, hour 0–23, day 1–31, month 1–12, weekday 0–7 (0 and 7 Sunday); each `*`, `n`, `a-b`, `a-b/s`, `*/s`, `n/s`, lists by commas; names of days and months are refused. Both days named: either matches (Vixie cron). The next minute is found minute by minute in local time, skipping whole hours and days that cannot match, up to eight years. A candidate whose local date and time is not after that of the moment it follows is passed over, so a minute the clock passes twice comes once. The 15-minute floor is checked on the next 500 runs.
+**Cadence** (`terminumd/src/tasks/cron.rs`). Five fields: minute 0–59, hour 0–23, day 1–31, month 1–12, weekday 0–7 (0 and 7 Sunday); each `*`, `n`, `a-b`, `a-b/s`, `*/s`, `n/s`, lists by commas; names of days and months are refused. Both days named: either matches (Vixie cron). The next minute is found minute by minute in local time, skipping whole hours and days that cannot match, up to eight years. A candidate whose local date and time is not after that of the moment it follows (the last due time) is passed over, so a minute the clock passes twice comes once. The 15-minute floor is checked on the next 500 runs.
 
 **Firing** (`terminumd/src/dispatcher/fire.rs`), on each walk before the runs: every schedule not paused or deleted, due ≤ now; its last firing's task open → skipped; its last run holding a slot → closed as AC-141's idle holder or skipped; else the task and the firing in one transaction, then the press of RUN's route (`api::press_again` with its agent), so every check of RUN holds. Made by Dispatcher, `by_agent` 0: its text is the human's.
 

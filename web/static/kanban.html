@@ -132,6 +132,7 @@
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
 <div id="agentbar" aria-label="Agents"></div>
+<section id="schedbar" aria-label="Scheduled tasks"></section>
 <div id="colswitch" class="seg" role="tablist" aria-label="Columns"></div>
 <main id="board" aria-label="Tasks"></main>
   </section>
@@ -190,6 +191,54 @@
       <button id="newdiscard" type="button">Discard</button>
       <button id="newcreate" type="button">Create</button>
       <button id="newrun" type="button" class="primary" title="Create it and start it on the agent chosen">Run</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="schedbox" class="box dlg" aria-labelledby="schedhead">
+  <form method="dialog">
+    <div class="dhead"><h2 id="schedhead">New schedule</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <label class="fieldrow">Title <input id="schedtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
+    <div class="edithead"><span>Text</span>
+      <div class="seg" role="tablist" aria-label="Text view">
+        <button id="schedwrite" type="button" role="tab" aria-selected="true">Write</button>
+        <button id="schedpreview" type="button" role="tab" aria-selected="false">Preview</button>
+      </div>
+    </div>
+    <textarea id="schedtext" class="field" rows="7" aria-label="Text, Markdown" placeholder="Markdown: what the agent does each time."></textarea>
+    <div id="schedshown" class="markdown" hidden></div>
+    <div class="fieldgrid three">
+      <label class="fieldrow">Project <select id="schedproj" class="field"></select></label>
+      <label class="fieldrow">Severity <select id="schedsev" class="field"><option>P0</option><option>P1</option><option selected>P2</option><option>P3</option></select></label>
+      <label class="fieldrow">Agent <select id="schedagent" class="field"></select></label>
+    </div>
+    <fieldset id="schedwhen" class="whenbox"><legend>When</legend>
+      <div class="whenline">
+        <select id="schedkind" class="field" aria-label="How often"></select>
+        <span id="whenevery" class="whenpart"><select id="schedevery" class="field" aria-label="Every"></select></span>
+        <span id="whenminute" class="whenpart">at minute <input id="schedminute" class="field" type="number" min="0" max="59" step="1" aria-label="At minute"></span>
+        <span id="whenday" class="whenpart"><input id="schedday" class="field" type="number" min="1" max="31" step="1" aria-label="Day of the month"></span>
+        <span id="whendate" class="whenpart"><input id="scheddate" class="field" type="date" aria-label="Date"></span>
+        <span id="whentime" class="whenpart">at <input id="schedtime" class="field" type="time" aria-label="Time"></span>
+        <input id="schedcron" class="field whenpart" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0 3 * * *" aria-label="Cron: minute hour day month weekday">
+      </div>
+      <div id="whendays" class="whenpart whendays seg" role="group" aria-label="Days"></div>
+      <p class="whensaid"><code id="schedfields"></code> <span id="schednext" aria-live="polite"></span></p>
+    </fieldset>
+    <div class="fieldgrid">
+      <label class="fieldrow">Time budget, minutes <input id="schedbudget" class="field" type="number" min="1" max="1440" step="1"></label>
+      <label class="fieldrow checkrow"><input id="schedpaused" type="checkbox"> Paused</label>
+    </div>
+    <details id="schedwhat" class="more"><summary>What the agent gets</summary>
+      <p class="colempty">Its command: <code id="schedline"></code></p>
+      <pre id="schedprompt" class="schedprompt"></pre>
+    </details>
+    <p id="schedby" class="colempty" hidden></p>
+    <p id="schederror" role="alert" hidden></p>
+    <div class="actions">
+      <button id="scheddrop" type="button" hidden>Delete</button>
+      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="schedok" type="button" class="primary">Save</button>
     </div>
   </form>
 </dialog>

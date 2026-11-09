@@ -54,6 +54,33 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .trackitems > .colempty { grid-column: 1 / -1; }
 .tracks > .trackside { grid-column: 5; display: flex; align-items: center; align-self: start; gap: var(--sp-2); min-width: 0; }
 .agentlist .colempty { margin: 0; align-self: center; white-space: nowrap; }
+/* the Scheduled section, between the pool and the columns: folded to its head, its cards on the same tracks (terminum-schedules.md AC-163) */
+#schedbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
+.schedhead { display: flex; align-items: center; gap: var(--sp-2); }
+.schedtoggle::after { content: ""; width: 6px; height: 6px; margin-left: var(--sp-1); border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform var(--dur-pop, .15s); }
+.schedtoggle[aria-expanded="true"]::after { transform: rotate(45deg) translate(-1px, -1px); }
+.schedtracks { margin-top: var(--sp-2); }
+.schedtracks[hidden] { display: none; }
+.schedcard { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2) var(--sp-2) var(--sp-2) calc(var(--sp-2) + 4px); box-shadow: inset 3px 0 0 var(--ag); cursor: pointer; }
+@media (hover: hover) { .schedcard:hover { background: var(--surface-2); } }
+.schedcard:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
+.schedcard .ctitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.schednext.paused { color: var(--danger-text); }
+.schedlast { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-meta); color: var(--muted); }
+.schedwaits { color: var(--accent); }
+/* its window's When: a line of the kind's parts, the days as keys, terminumd's words under it */
+.whenbox { margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); border: 0; border-radius: var(--key-r); box-shadow: var(--field-edge); }
+.whenbox legend { padding: 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
+.whenline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
+.whenline .field { width: auto; }
+.whenpart[hidden] { display: none; }
+#schedminute, #schedday { width: 64px; }
+#schedcron { flex: 1 1 160px; font-family: var(--term-font, monospace); }
+.whendays { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
+.whensaid { margin: var(--sp-2) 0 0; font-size: var(--fs-small); color: var(--muted); }
+.checkrow { flex-direction: row; align-items: center; gap: var(--sp-2); align-self: end; min-height: var(--key-h); }
+.schedprompt { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-small); }
+#schedbox { width: min(720px, calc(100vw - var(--sp-6) * 2)); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
 .agspent { padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -153,6 +180,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   .tracks { display: flex; align-items: stretch; }
   .tracks > :is(.trackitems, .trackside) { display: flex; flex: none; gap: var(--sp-2); }
   .agentlist .item { flex: none; width: 240px; }
+  .schedtracks { display: flex; flex-direction: column; }
+  .schedtracks > .trackitems { flex-direction: column; }
+  .schedlist .item { width: auto; }
   .pickhint { white-space: nowrap; }
   #app:not(.nav-hidden) #barsessions { display: grid; }
   #newproject span { display: none; }
