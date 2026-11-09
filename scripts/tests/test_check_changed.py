@@ -34,6 +34,7 @@ class Plan(unittest.TestCase):
             self.assertIn(critical, got["cargo"])
         self.assertIn("critical", got)
 
+    @unittest.skipUnless((REPO / ".git").exists(), "no .git: the Mac test runner's tree has none")
     def test_a_rust_source_naming_cases_at_its_top_brings_the_e2e_scripts_citing_them(self):  # AC-104
         cases = check_changed.touched_cases(["terminumd/src/tmux/server_local.rs"], "HEAD", cwd=REPO)
         self.assertLessEqual({"01", "89"}, cases)
