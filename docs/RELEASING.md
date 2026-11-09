@@ -95,11 +95,11 @@ systemctl) and checked by hand on a disposable machine before a release that cha
 
 An Ubuntu 24.04 machine; the runner under an unprivileged user of its own (no sudo, no docker,
 its home closed to others), as a systemd service confined (`ProtectHome=tmpfs`, `PrivateTmp`, its
-home bound in) and capped in memory (`MemoryMax=2G`, `OOMPolicy=continue`: a job that runs out
+home bound in) and capped in memory (`MemoryMax=3G`, `OOMPolicy=continue`: a job that runs out
 fails alone), labels `terminum`. Packages: `tmux build-essential` and the browsers' system
 libraries (`npx -y playwright-core@<ui's version> install-deps chromium webkit`, as root); Rust,
-Node and the browsers install per job into the runner's home. rustc alone peaks near 1.3 GB
-building the tests (a 1536M cap stalls it); each run prints
+Node and the browsers install per job into the runner's home. rustc alone peaks near 1.7 GB
+building the tests and grows with terminumd (a 2G cap no longer holds it); each run prints
 that peak and the job's cap hits. It builds with one rustc and no debug info (the workflow's
 env), since two rustc with it outgrew a 2 GB machine. The registration token travels on stdin,
 never on a command line:
