@@ -295,7 +295,7 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
 }
 
 /// One firing written; its id.
-pub fn fired(tx: &Transaction, s: &Schedule, due: i64, missed: i64, task: Option<&str>, state: &str, why: Option<&str>, now: i64) -> Result<i64, String> {
+pub fn fired(tx: &Transaction, s: &Schedule, (due, missed): (i64, i64), task: Option<&str>, state: &str, why: Option<&str>, now: i64) -> Result<i64, String> {
     tx.execute("INSERT INTO schedule_fires (schedule, due_at, at, task, state, missed, why) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                rusqlite::params![s.id, due, now, task, state, missed, why]).map_err(sql)?;
     Ok(tx.last_insert_rowid())

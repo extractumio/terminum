@@ -35,7 +35,7 @@ enum Next {
     /// a task made: its ID, its firing
     Run(String, i64),
     /// its last run's idle session holds its slot: closed first, then decided again
-    Close(runs::Run),
+    Close(String),
     /// written as skipped, with why
     Skipped,
     Nothing,
@@ -48,15 +48,15 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     if let Some(last) = schedules::last_task(tx, s)? {
         if !super::plan::finished(&last.status) && last.archived_at.is_none() {
             advance(tx)?;
-            schedules::fired(tx, s, due, missed, None, "skipped", Some(&format!("Skipped: {} is still open.", last.id)), now)?;
+            schedules::fired(tx, s, (due, missed), None, "skipped", Some(&format!("Skipped: {} is still open.", last.id)), now)?;
             return Ok(Next::Skipped);
         }
         if let Some(r) = runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot) {
             if !closed && pool::closable(tx, &r)? {
-                return Ok(Next::Close(r));
+                return Ok(Next::Close(r.id));
             }
             advance(tx)?;
-            schedules::fired(tx, s, due, missed, None, "skipped", Some(&format!("Skipped: {}'s session is still busy.", last.id)), now)?;
+            schedules::fired(tx, s, (due, missed), None, "skipped", Some(&format!("Skipped: {}'s session is still busy.", last.id)), now)?;
             return Ok(Next::Skipped);
         }
     }
@@ -65,7 +65,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
     let late = if now - due > LATE { format!(", run {}: the Mac was asleep or terminumd was not running", cron::clock(now)) } else { String::new() };
     ops::log(tx, &t.key, DISPATCHER, "why", &format!("Dispatcher made it from schedule {}, due {}{late}.", s.key, cron::when_words(due)), None, now)?;
-    let fire = schedules::fired(tx, s, due, missed, Some(&t.key), "made", None, now)?;
+    let fire = schedules::fired(tx, s, (due, missed), Some(&t.key), "made", None, now)?;
     if s.once_at.is_some() {
         schedules::pause(tx, &s.id, "ran once", now)?;
     }
@@ -118,7 +118,7 @@ pub async fn due(app: &Shared) {
                 // its idle session is closed for the slot, or found busy: decided again, it runs or is skipped
                 Ok(Next::Close(r)) => {
                     closed = true;
-                    let _ = super::api::close_idle(app, &r.id, &s.key).await;
+                    let _ = super::api::close_idle(app, &r, &s.key).await;
                     continue;
                 }
                 Ok(Next::Nothing) => {}

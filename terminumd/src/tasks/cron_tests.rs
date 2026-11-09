@@ -3,7 +3,7 @@ use super::*;
 
 /// The clock in UTC: what a test reads does not hang on the machine's zone.
 fn utc(at: i64) -> Option<Local> {
-    let t: libc::time_t = at.try_into().ok()?;
+    let t: libc::time_t = at;
     // SAFETY: gmtime_r writes only the tm given
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     (!unsafe { libc::gmtime_r(&t, &mut tm) }.is_null()).then(|| of_tm(&tm))

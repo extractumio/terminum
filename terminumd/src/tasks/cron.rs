@@ -164,7 +164,7 @@ pub fn words(text: &str) -> String {
 }
 
 fn local(at: i64) -> Option<Local> {
-    let t: libc::time_t = at.try_into().ok()?;
+    let t: libc::time_t = at;
     // SAFETY: localtime_r writes only the tm given, from a time_t it reads
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     if unsafe { libc::localtime_r(&t, &mut tm) }.is_null() {
