@@ -9,9 +9,9 @@ import path from "node:path";
 import { boardKit, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
-/** SQL into the private store beside terminumd, which holds it now and then: the CLI waits for it (as terminumd's
- *  own connections do), and the FTS triggers need a trusted schema (rusqlite's default, not the CLI's). */
-/** Python's sqlite3, as the board's tests write the store: the Linux runner has no sqlite3 command */
+/** SQL into the private store beside terminumd, which holds it now and then: Python's sqlite3, as the board's tests
+ *  write it (the Linux runner has no sqlite3 command), waits for it as terminumd's own connections do, and the FTS
+ *  triggers need a trusted schema (rusqlite's default, not every SQLite build's). */
 const intoStore = (app, sql) => execFileSync("python3", ["-I", "-c", `import sqlite3, sys
 store = sqlite3.connect(sys.argv[1], timeout=15)
 store.executescript("PRAGMA trusted_schema = ON; " + sys.argv[2])
