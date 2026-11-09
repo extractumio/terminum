@@ -306,6 +306,16 @@ pub struct Edit {
     pub owner: Option<String>,
 }
 
+/// How a change of a task's words ends in its history: what tells whose words it holds (AC-154).
+const RENAMED: &str = "renamed it";
+const RETEXTED: &str = "changed its text";
+
+/// A human has reworded the task: its title and text are theirs since (AC-154).
+pub fn worded_by_human(tx: &Transaction, key: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'edit' AND u.kind = 'human'
+                  AND (e.text LIKE '%' || ?2 OR e.text LIKE '%' || ?3))", (key, RENAMED, RETEXTED), |r| r.get(0)).map_err(sql)
+}
+
 pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> Result<(), String> {
     if change.title.is_none() && change.text.is_none() && change.severity.is_none() && change.owner.is_none() {
         return Ok(());
@@ -315,12 +325,12 @@ pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> 
     if let Some(t) = change.title {
         let t = check_title(&t)?;
         tx.execute("UPDATE tasks SET title = ?1 WHERE id = ?2", (&t, &key)).map_err(sql)?;
-        log(tx, &key, author, "edit", &format!("{who} renamed it"), None, at)?;
+        log(tx, &key, author, "edit", &format!("{who} {RENAMED}"), None, at)?;
     }
     if let Some(text) = change.text {
         check_text(&text)?;
         tx.execute("UPDATE tasks SET body = ?1 WHERE id = ?2", (&text, &key)).map_err(sql)?;
-        log(tx, &key, author, "edit", &format!("{who} changed its text"), None, at)?;
+        log(tx, &key, author, "edit", &format!("{who} {RETEXTED}"), None, at)?;
     }
     if let Some(s) = change.severity {
         check_severity(&s)?;
