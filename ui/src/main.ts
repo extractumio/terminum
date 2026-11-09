@@ -126,7 +126,16 @@ async function loadWorkspace(k: string) {
   // a pinned panel names its pane's folder once: a later reconnect must not undo a newer cd
   const cwd = pinCwd ?? undefined;
   pinCwd = null;
-  const pane = await api<Pane>("GET", "/api/workspace", { query: { key: k, cwd } });
+  let pane: Pane;
+  try {
+    pane = await api<Pane>("GET", "/api/workspace", { query: { key: k, cwd } });
+  } catch (e) {
+    // a terminumd gone or unproven is the stream's notice, and its next open loads it again
+    // (a load the stream's last open started met a program on the port: AC 09)
+    if (!(e instanceof ApiError) || !["unproven", "signed_out", "network"].includes(e.code)) failed("workspace", `Panel state not read: ${(e as Error).message}`);
+    pinCwd ??= cwd ?? null;   // not named yet: the next load names it
+    return;
+  }
   if (key === k && run === workspaceRun) await applyWorkspace(pane);
 }
 
