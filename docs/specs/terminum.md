@@ -555,6 +555,7 @@ Scenario: AC-13 edge — another tmux client is attached
 Scenario: AC-13 failure — the resize is refused
   When "resize-window" answers %error
   Then the view draws the pane as one of another width (AC-04) with "Sized for another screen (<cols>×<rows>): <error>" (another page's size is said only over a full-screen program), and the log has the error; nothing is retried faster than once a second
+  And the window stays whoever's it was before (the refused page's claim is undone, unless another page claimed it meanwhile): a view change of the page that sized it still resizes it, and a `window-size manual` tmux did apply is still given back when no page shows it
 ```
 
 ### AC-18 — Hot keys and touch [SHOULD / P1]
@@ -1166,7 +1167,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
-- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing`, scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
+- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
 - [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)
