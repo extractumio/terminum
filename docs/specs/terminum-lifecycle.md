@@ -290,7 +290,7 @@ Scenario: AC-96 edge — privacy
   Then the files are 0600 in 0700 folders, the folder is excluded from Time Machine on macOS, and their text reaches only a signed-in page that asks for one pane's; a host's lines are kept on this Mac
 Scenario: AC-96 failure — a file cannot be written or read
   When a write fails (a full disk)
-  Then terminumd logs `lastlines.unsaved` and goes on; a file that cannot be read, a pane gone or its tmux not answering is said in the window in terminumd's words
+  Then terminumd logs `lastlines.unsaved` and writes that pane's lines again the next round, changed or not (a closed pane's file not deleted: `lastlines.undeleted`, deleted the next round); a file that cannot be read, a pane gone or its tmux not answering is said in the window in terminumd's words
 ```
 
 ### AC-102 — No leftovers of old test runs [SHOULD / P1]
@@ -809,7 +809,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-15 — `scripts/e2e_restore.py`; `cargo test restore_srv`; `web/test/e2e_tmux.mjs`
 - [x] AC-16 — `scripts/e2e_install.sh`; `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
-- [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines`; `web/test/e2e_lastlines.mjs`
+- [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
