@@ -67,12 +67,14 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     if (preview) renderInto($("newshown"), $("newtext").value);
   }
 
-  /** The pool: the agent the user picked while it is free, else the project's last run's, else the first free;
-   *  none picked stays none, whatever changes meanwhile (AC-106). */
+  /** The pool: the agent the user picked, else the project's last run's, else the first; one at a limit is chosen
+   *  all the same, said so: Run waits for its room (terminum-dispatcher.md AC-158). None picked stays none,
+   *  whatever changes meanwhile (AC-106). */
   function showAgents() {
     const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
-    const busy = (a) => (now.full.includes(a.id) ? "at its limit" : now.full_projects.includes(project) ? "the project is at its limit" : "");
-    fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : all.every(busy) ? "All busy" : "Choose when it runs");
+    const busy = (a) => (now.full.includes(a.id) ? "at its limit: Run waits" : now.full_projects.includes(project) ? "the project is at its limit: Run waits" : "");
+    const named = all.map((a) => (busy(a) ? { ...a, name: `${a.name} (${busy(a)})` } : a));
+    fillAgents($("newagent"), named, () => "", [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : "Choose when it runs");
   }
 
   /** `given.parent`: a subtask of that task, in its project (AC-112). */

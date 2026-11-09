@@ -166,6 +166,15 @@ pub(super) fn moved_to(tx: &rusqlite::Transaction, tasks: &[Task], last: Option<
         .map(|a| Run { agent_id: a.id, agent_name: a.name, agent_color: a.color, command: a.line, ..r.clone() }))
 }
 
+/// The run a press goes on from, its agent as the pool has it now: the operator's change of its command holds for
+/// what goes on (AC-122, AC-156); an agent deleted since: the run's own.
+fn as_pool_has(tx: &rusqlite::Transaction, r: Run) -> Result<Run, String> {
+    Ok(match crate::tasks::agents::by_id(tx, &r.agent_id)? {
+        Some(a) => Run { agent_name: a.name, agent_color: a.color, command: a.line, ..r },
+        None => r,
+    })
+}
+
 /// A press's tasks, how it goes on, and the agent its conversation moves from.
 pub(super) type Ways = (Vec<Task>, Result<Way, String>, Option<String>);
 
@@ -177,7 +186,10 @@ pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent:
     let moved = moved_to(tx, &tasks, last.as_ref(), agent, fresh)?;
     let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), agent, fresh);
     let moved_from = moved.as_ref().and(last.as_ref()).map(|r| r.agent_name.clone());
-    let last = moved.or(last);
+    let last = match moved {
+        Some(m) => Some(m),
+        None => last.map(|r| as_pool_has(tx, r)).transpose()?,
+    };
     let lead = way(&tasks[0], last, anew);
     for other in &tasks[1..] {
         way(other, runs::last_of(tx, &other.key)?, true)?;

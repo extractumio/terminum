@@ -25,6 +25,7 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_a_human() {
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
     let acts = step(&mut r, &up(570));
     assert_eq!(moved(&acts).unwrap(), ("WAIT FOR HUMAN", "The agent stopped without a result".to_string()));
+    assert!(r.asked, "it waits as an agent's question does: its session closes, RUN resumes it (AC-157)");
 }
 
 #[test]
@@ -46,7 +47,7 @@ fn ac123_an_hour_of_nothing_is_done_with_no_result() {
     assert!(words.contains("no activity for 60 minutes"));
     let mut waited = run("WAIT FOR HUMAN");
     waited.no_result_wait = true;
-    assert_eq!(moved(&step(&mut waited, &up(3600))).unwrap().0, "DONE", "also after it stopped without a result");
+    assert_eq!(moved(&step(&mut waited, &up(3600))), None, "after it stopped without a result it waits for the human (AC-157)");
     let mut asked = run("WAIT FOR HUMAN");
     assert_eq!(moved(&step(&mut asked, &up(3600))), None, "not a wait for an answer");
 }

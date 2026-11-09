@@ -28,7 +28,7 @@ In scope:
 
 Out of scope (explicit):
 - Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit waits for its room (AC-158): the press is the human's.
-- Choosing an agent's permissions per task: a run has every tool unless its agent's command says how it asks (AC-156).
+- Choosing an agent's permissions: its command, as the operator writes it, carries them (AC-156).
 - Tasks, the board and the agent's tools: `terminum-kanban.md`.
 - Any act on a session Dispatcher did not start, other than writing its start and end on the task.
 
@@ -65,7 +65,7 @@ Open questions:
 |---|---|---|
 | AC-121 | [MUST / P0] | RUN opens a window at its project's place (AC-140), starts the chosen agent there by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
-| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` is DONE; a turn with no result gets one request per run, then WAIT FOR HUMAN; an hour with no activity at all is DONE, marked no result; a clean session end is DONE; a dead agent or a turn's failure is FAILED. |
+| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` is DONE; a turn with no result gets one request per run, then WAIT FOR HUMAN as an agent's question (AC-157); an hour with no activity while IN PROGRESS is DONE, marked no result; a clean session end is DONE; a dead agent or a turn's failure is FAILED. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 2 hours after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
@@ -80,7 +80,7 @@ Open questions:
 | AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it or closes it, and it counts against both limits. |
 | AC-143 | [SHOULD / P1] | An agent shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
-| AC-156 | [MUST / P0] | A run's agent has every tool and skill, as the user's own session would: Claude Code in `bypassPermissions` mode, Codex with no approvals and no sandbox, unless the agent's command names how it asks. |
+| AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, with options and its recommended answers, stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
 | AC-158 | [MUST / P0] | A RUN at its agent's or project's limit waits for room instead of being refused, oldest first, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
@@ -276,14 +276,14 @@ Scenario: AC-123 happy path — a turn ended with no result
   Given a Stop, or an idle screen after a turn with no Stop (an interrupt), API-12 IN PROGRESS, and no activity (§9) for 5 minutes
   Then once per run, until a human's prompt or RUN, through the gate: "[terminum Dispatcher] API-12 is still open and you stopped. Call execute_tool("finish_task", {id, result}) with the result, or ask a human by execute_tool("ask_human", {id, questions}) what you need."
   When 10 more minutes pass with no activity
-  Then API-12 is WAIT FOR HUMAN with "The agent stopped without a result"
+  Then API-12 is WAIT FOR HUMAN with "The agent stopped without a result", waiting as an agent's question does: its session closes once quiet, RUN resumes it (AC-157), and no clock moves it on
   And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing
 
 Scenario: AC-123 happy path — an hour of nothing
-  Given no activity (§9) for 60 minutes, and the agent does not wait for an answer (AC-124)
+  Given API-12 IN PROGRESS, no activity (§9) for 60 minutes, and the agent does not wait for an answer (AC-124)
   Then API-12 is DONE with the comment "Dispatcher closed it: no activity for 60 minutes and no result from the agent."
   And its card says "DONE, no result", and terminum-kanban.md AC-117 reminds
-  And that holds for a task that "The agent stopped without a result" put in WAIT FOR HUMAN
+  And a task in WAIT FOR HUMAN is never moved on by a clock: it waits for the human
 
 Scenario: AC-123 edge — a running tool is activity
   Given a tool started with no end yet (`gh run watch`, a remote build) or a counted subagent
@@ -788,29 +788,27 @@ Scenario: AC-144 edge — a project on another server
   Then each process runs on its project's server; the agent is the same line of the pool and its limit counts both
 ```
 
-### AC-156 — Every tool [MUST / P0]
+### AC-156 — The operator's command [MUST / P0]
 
 ```gherkin
 Scenario: AC-156 happy path — what a run starts
-  Given Opus reviewer's command "claude --model opus", effort high, and the user's own Claude Code settings saying defaultMode dontAsk
-  When a run of it starts, goes on from its shell or resumes
-  Then its line is "claude --model opus --effort high --permission-mode bypassPermissions": every tool, skill and MCP tool of the user's sessions, none asked for and none refused
-  And Codex's is "codex -c model_reasoning_effort=low --dangerously-bypass-approvals-and-sandbox": no approval, no sandbox
-  And RUN's window shows that line in full
+  Given Opus reviewer's command "myclaude", a function of the user's shell for claude --dangerously-skip-permissions, effort high
+  When a run of it starts
+  Then its line is "myclaude --effort high": the permissions, model and settings are the operator's words, and RUN's window shows the line in full
+  When it goes on from its shell or resumes a closed session
+  Then the line is "myclaude --effort high --resume <its conversation>"
 
-Scenario: AC-156 edge — the command says how it asks
-  Given a command naming a mode: --permission-mode plan, --dangerously-skip-permissions; Codex's --yolo, --full-auto, -a or --ask-for-approval, -s or --sandbox
-  Then the line adds nothing: the human's own words stand
-  Given a function or alias of the user's shell, as ccdsp
-  Then the words go after it, as an effort's do
+Scenario: AC-156 happy path — the operator changes it
+  Given API-12's session started with "claude" and is closed, its conversation known
+  When the operator changes Opus reviewer's command to "myclaude" and the human presses RUN
+  Then the conversation resumes with "myclaude --resume <id>": the pool's command as it is now
+  When the agent was deleted since
+  Then the run's own command resumes it (AC-141)
 
-Scenario: AC-156 failure — one program's command
-  When an agent's command holds ; | & or # and names no mode
-  Then its window says "Every tool goes on one program's command: this one has ; | & or #. Name its permission mode in the command." and nothing is kept
-
-Scenario: AC-156 edge — the first time
-  When Claude Code asks once whether to accept its bypass mode
-  Then AC-121's question before the box holds: WAIT FOR HUMAN, "Answer in its window", and the prompt goes in once the box is empty
+Scenario: AC-156 edge — what its window says
+  When the operator opens an agent's window
+  Then under Command it says the agent runs with no one watching, so the command carries the permissions its work needs, as "claude --dangerously-skip-permissions"
+  And nothing is added for them: a command without them runs with the user's own settings, a defaultMode dontAsk refusing what is not allowed
 ```
 
 ### AC-157 — Asking a human [MUST / P0]
@@ -951,14 +949,13 @@ stateDiagram-v2
   IN_PROGRESS --> WAIT_FOR_HUMAN: waits 2 min (AC-124), or no result for 15 min (AC-123)
   WAIT_FOR_HUMAN --> IN_PROGRESS: agent goes on (AC-124), RUN (AC-122)
   IN_PROGRESS --> DONE: finish_task, clean end, 60 min of nothing (AC-123)
-  WAIT_FOR_HUMAN --> DONE: 60 min of nothing after no result (AC-123)
   IN_PROGRESS --> FAILED: dead or failed turn (AC-123), budget (AC-126), memory (AC-128)
   DONE --> IN_PROGRESS: RUN, a human's prompt (AC-122)
   FAILED --> IN_PROGRESS: RUN, a human's prompt (AC-122)
   DONE --> ARCHIVED: 2 days (terminum-kanban.md AC-118)
 ```
 
-A wait for an answer stops the idle and budget clocks; a wait after "no result" stops the budget only.
+A wait for an answer stops the idle and budget clocks; WAIT FOR HUMAN waits for the human, its session closed when the agent asked or stopped without a result (AC-157).
 
 ```mermaid
 sequenceDiagram
@@ -1146,7 +1143,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 - A hook's fields are data: only a shape-checked session ID reaches a shell.
 - `ps` reads no command lines beyond a program's name: arguments can hold secrets.
 - Transcripts are read only by `terminum hook` on their own machine, a regular file, only for a task's session and after its turn's end has gone; three integers leave it, and terminumd keeps only integers.
-- An agent runs with every tool (AC-156): whatever it reads is one step from running, the same exposure as the user's own bypassed session. Claude Code's hooks still run and may refuse a call; Codex runs with no sandbox and no hook that refuses, so the primary checkout's guard does not hold for it; the same holds on a host. What reaches it as a prompt is still only a human's RUN: the task's text shown in RUN's window, an agent's part marked, and after its questions only the humans' comments (AC-157).
+- An agent runs with the permissions its command gives (AC-156): an operator's bypassing command makes whatever it reads one step from running, as the user's own bypassed session. What reaches it as a prompt is only a human's RUN: the task's text shown in RUN's window, an agent's part marked, and after its questions only the humans' comments (AC-157).
 - A project agent's command is the human's own words, run as they would type them: the board is the only way terminum offers to change it, no boundary against a process of the user's (`SECURITY.md`); RUN's dialog shows it in full.
 
 **What a card shows.** Every walk's `taskusage {items: {"API-12": {"cpu": 12, "gib": 1.2, "minutes": 14, "tokens": {"input": 1200, "output": 34, "cache_write": 0, "cache_read": 5, "counted": 1234}, "idle_subs": [{"id": "sub-1", "kind": "reviewer"}]}}}` to every page, when it changed; `"tokens": null`: not known; `"not_measured": "Host out of reach"`. `budget_used` goes with it. A host's `ps` and `kill` go over one ssh command each with its recipe, 12 s at most, and only where a wanted pane stands: a host with no run is read one beat in four with a page open. tmux's control link was tried for them: `run-shell`'s output comes outside its command's block.
@@ -1187,7 +1184,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [ ] AC-156 — `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries every tool; on the real program, outside every gate: a run's agent in a defaultMode dontAsk config uses Bash and the task tools
+- [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

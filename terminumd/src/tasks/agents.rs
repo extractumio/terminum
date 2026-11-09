@@ -48,37 +48,15 @@ fn effort_flag(kind: &str) -> &'static str {
     if kind == "codex" { "model_reasoning_effort" } else { "--effort" }
 }
 
-/// What gives a kind every tool with no question (terminum-dispatcher.md AC-156), and the words of a command that
-/// already says how it asks: then the human's own words stand.
-const EVERY_TOOL: [(&str, &str, &[&str]); 2] = [
-    ("claude", "--permission-mode bypassPermissions", &["--permission-mode", "--dangerously-skip-permissions"]),
-    ("codex", "--dangerously-bypass-approvals-and-sandbox", &["--dangerously-bypass-approvals-and-sandbox", "--yolo", "--full-auto", "--ask-for-approval", "-a", "--sandbox", "-s"]),
-];
-
-/// What ends one program's command and starts another's: words after it would go to the last program.
+/// What ends one program's command and starts another's: an effort after it would go to the last program.
 const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
 
-/// The kind's words for every tool, unless the command says how it asks, or holds a separator.
-fn every_tool(kind: &str, command: &str) -> Option<&'static str> {
-    let (_, words, says) = EVERY_TOOL.iter().find(|(k, _, _)| *k == kind)?;
-    (!names_mode(says, command) && !command.contains(SEPARATORS)).then_some(*words)
-}
-
-/// Whether the command says how its program asks (`says`: the kind's words for it), by a whole word of it.
-fn names_mode(says: &[&str], command: &str) -> bool {
-    command.split_whitespace().any(|w| says.iter().any(|s| w == *s || w.strip_prefix(*s).is_some_and(|rest| rest.starts_with('='))))
-}
-
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
-    let mut line = match (kind, effort) {
+    match (kind, effort) {
         (_, "") => command.to_string(),
         ("codex", e) => format!("{command} -c {}={e}", effort_flag(kind)),
         (_, e) => format!("{command} {} {e}", effort_flag(kind)),
-    };
-    if let Some(words) = every_tool(kind, command) {
-        line = format!("{line} {words}");
     }
-    line
 }
 
 /// What a page keeps, trimmed.
@@ -132,11 +110,6 @@ impl Given {
         }
         if has_control(&self.command) {
             return Err("An agent's command is one line, with no control or invisible characters.".into());
-        }
-        // every tool goes on one program's command (terminum-dispatcher.md AC-156): said here, never left out unseen
-        let says = EVERY_TOOL.iter().find(|(k, _, _)| *k == self.kind).map_or(&[][..], |(_, _, says)| *says);
-        if self.command.contains(SEPARATORS) && !names_mode(says, &self.command) {
-            return Err("Every tool goes on one program's command: this one has ; | & or #. Name its permission mode in the command.".into());
         }
         if !self.effort.is_empty() {
             if !EFFORTS.iter().any(|(kind, levels)| *kind == self.kind && levels.contains(&self.effort.as_str())) {
