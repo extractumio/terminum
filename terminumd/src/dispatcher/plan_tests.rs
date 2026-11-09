@@ -244,13 +244,13 @@ fn ac128_a_limit_of_zero_is_off_and_a_dip_starts_the_count_again() {
 }
 
 #[test]
-fn ac127_a_silent_subagent_gets_one_request_then_it_is_said() {
+fn ac127_a_silent_subagent_gets_one_request_then_fails_its_task() {
     assert_eq!(subagent_step(599, SubStep::Nothing), None);
     assert_eq!(subagent_step(600, SubStep::Nothing), Some(SubStep::Tell));
     assert_eq!(subagent_step(900, SubStep::Tell), None, "once");
     assert_eq!(subagent_step(1200, SubStep::Tell), Some(SubStep::Fail));
     assert_eq!(subagent_step(1200, SubStep::Nothing), Some(SubStep::Fail), "a jump past both");
-    assert_eq!(subagent_step(9000, SubStep::Fail), None, "said once");
+    assert_eq!(subagent_step(9000, SubStep::Fail), None, "failed once");
 }
 
 #[test]

@@ -11,7 +11,7 @@ import { leaveSelection, newTaskUrl } from "./tasklink.js";
 import { placeModal, placePane } from "./fabpane.js";
 import { sendOnModEnter } from "./modenter.js";
 import { Find } from "./find.js";
-import { loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
+import { foundBy, loose, oneLine, railBox, railSlots, titleOf } from "./marktext.js";
 
 import { COLORED, floats, PLAIN, PLAN } from "./fold.js";
 import { kindMark, MarkNav } from "./marknav.js";
@@ -62,7 +62,7 @@ export class Marks {
    *  alive(sid): an open pane's title now (renamed or not), null when it closed; pick(sid): show it (and close the drawer); toast(text);
    *  onChange(): the bookmarks changed (the list's strips, reminders); copy(text): to the clipboard;
    *  projects(): terminumd's (AC-92); toChat(text): pasted into the shown pane's input (Insert into chat);
- *  convert(item): a bookmark or reminder made a task (Convert to task, terminum-kanban.md AC-116).
+   *  convert(item): a bookmark or reminder made a task (Convert to task, terminum-kanban.md AC-116).
    *  store: this browser's choices (app.js: get(k, d), set(k, v)).
    *  onPlaced (set after): the floating buttons were placed (their panes follow). */
   constructor({ view, widgets, term, send, sid, alive, pick, toast, onChange, copy, panes, projects, openAll, toChat, store, convert }) {
@@ -261,7 +261,7 @@ export class Marks {
     this.pick(item.sid);
     if (opened) { try { await opened; } catch (e) { return this.showBar(item, e.message); } }
     this.showBar(item);
-    const r = await this.jumper.go(item.by ? { ...item, text: item.note } : item);
+    const r = await this.jumper.go({ ...item, text: foundBy(item) });
     if (r.cancelled || this.shown?.id !== item.id) return;
     const gone = item.by ? "Where it was made is no longer in this session's history: here it is." : `${r.why} Here is what was selected.`;
     if (r.why) this.showBar(item, r.gone ? gone : `Could not bring it into view: ${r.why}`);

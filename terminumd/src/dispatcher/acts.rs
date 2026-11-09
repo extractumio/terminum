@@ -150,8 +150,8 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
     super::told_all(app, &l.run);
 }
 
-/// A subagent silent and idle: one request to the main agent, then it is said that it cannot be
-/// ended alone: it runs inside the agent (AC-127, OQ-122). A busy tree runs neither clock.
+/// A subagent silent and idle: one request to the main agent, then, as it cannot be ended alone inside the
+/// agent, its task FAILED, its session kept (AC-127, OQ-122). A busy tree runs neither clock.
 pub(super) async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, key: &str, busy: bool) {
     let due: Vec<(String, plan::SubStep)> = {
         let mut watch = app.dispatcher.watch.lock();
@@ -177,7 +177,7 @@ pub(super) async fn watch_subagents(app: &Shared, run: &Run, server: &Arc<Server
             // goes on in it (OQ-122, AC-122)
             let (r, words) = (run.clone(), format!("Subagent {id} has been silent for 20 minutes and cannot be ended alone: it runs inside the agent. RUN goes on in this session."));
             note(app, format!("{}: {words}", run.names()));
-            let _ = store(app, move |tx| if r.open.is_empty() { say(tx, &r, &words) } else { super::move_task(tx, &r, "FAILED", &words) }).await;
+            let _ = store(app, move |tx| super::fail(tx, &r, &words)).await;
         }
         super::told_all(app, run);
     }

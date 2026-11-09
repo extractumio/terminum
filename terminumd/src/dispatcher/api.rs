@@ -244,7 +244,7 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
 /// The conversation cannot go on: FAILED, its comment says why, and Run from scratch stays (AC-122).
 async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, String> {
     let (run, words) = (r.clone(), format!("Conversation {} could not be continued: {why}", r.agent_session.as_deref().unwrap_or("unknown")));
-    store(app, move |tx| if super::plan::finished(&run.status) { say(tx, &run, &words) } else { move_task(tx, &run, "FAILED", &words) }).await?;
+    store(app, move |tx| super::fail(tx, &run, &words)).await?;
     super::told_all(app, r);
     Err(format!("{why}: use Run from scratch."))
 }

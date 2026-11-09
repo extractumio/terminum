@@ -4,7 +4,7 @@
 //! model's: no path, no text.
 
 use std::collections::{BTreeMap, HashMap};
-use std::io::{BufRead, Seek, SeekFrom};
+use std::io::{BufRead, Read, Seek, SeekFrom};
 use std::time::{Duration, Instant};
 
 use serde::de::DeserializeOwned;
@@ -96,18 +96,18 @@ fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
 }
 
 /// Codex's lines: a `token_count` event holds the session's total, its input with the cached part in it; a
-/// `turn_context` names the turn's model. The last of each stands: the whole is priced at the last model.
-fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
+/// `turn_context` names the turn's model. The last of each: the whole is priced at the last model.
+fn codex(reader: impl BufRead, until: Instant) -> Option<(Option<Totals>, String)> {
     let (mut last, mut model) = (None, String::new());
-    each_line(reader, until, &["token_count", "turn_context"], |_, v: Value| {
-        if v["type"] == "turn_context" && let Some(m) = v.pointer("/payload/model").and_then(Value::as_str) {
+    each_line(reader, until, &[r#""type":"token_count""#, r#""type":"turn_context""#], |_, v: Value| {
+        if v["type"] == "turn_context" && let Some(m) = v["payload"]["model"].as_str() {
             model = m.chars().take(MOST_MODEL).collect();
-        } else if let Some(u) = v.pointer("/payload/info/total_token_usage").filter(|_| v.pointer("/payload/type") == Some(&json!("token_count"))) {
+        } else if v["payload"]["type"] == "token_count" && let Some(u) = v.pointer("/payload/info/total_token_usage") {
             let cached = int(u, "cached_input_tokens");
             last = Some(Totals { input: (int(u, "input_tokens") - cached).max(0), output: int(u, "output_tokens"), cache_read: cached, ..Totals::default() });
         }
     })?;
-    Some(Sum::from([(model, last?)]))
+    Some((last, model))
 }
 
 /// What goes with a turn's end: the whole and each model's numbers, or `null` when they are not known (a new
@@ -120,15 +120,21 @@ pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
         let meta = std::fs::metadata(path).ok().filter(|m| m.is_file() && m.len() <= MOST_BYTES)?;
         let mut file = std::fs::File::open(path).ok()?;
         if agent == "codex" {
-            // the last total stands: the end of the file holds it, at no cost as a session grows
-            file.seek(SeekFrom::Start(meta.len().saturating_sub(CODEX_TAIL))).ok()?;
-            let tail = codex(std::io::BufReader::new(&file), until);
-            // its model named before the tail: the whole file, the tail's total when that cannot be read
-            if tail.as_ref().is_some_and(|s| !s.contains_key("")) {
-                return tail;
+            // the last total and model: the end of the file holds them, at no cost as a session grows; what it
+            // lacks is looked for before it, the tail's alone when that is past the time
+            let start = meta.len().saturating_sub(CODEX_TAIL);
+            file.seek(SeekFrom::Start(start)).ok()?;
+            let (mut total, mut model) = codex(std::io::BufReader::new(&file), until).unwrap_or_default();
+            if start > 0 && (total.is_none() || model.is_empty()) {
+                file.seek(SeekFrom::Start(0)).ok()?;
+                if let Some((t, m)) = codex(std::io::BufReader::new((&file).take(start)), until) {
+                    total = total.or(t);
+                    if model.is_empty() {
+                        model = m;
+                    }
+                }
             }
-            file.seek(SeekFrom::Start(0)).ok()?;
-            return codex(std::io::BufReader::new(&file), until).or(tail);
+            return Some(Sum::from([(model, total?)]));
         }
         claude(std::io::BufReader::new(file), until)
     };

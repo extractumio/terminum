@@ -144,7 +144,7 @@ pub fn carry(tx: &Transaction, from: &str, to: &str) -> Result<(), String> {
 /// write is 1.25 times input, 2 times for one kept an hour. OpenAI's standard ones up to 272K input tokens (cached
 /// 2026-11-09), for Codex. The longest id that begins the model's name is its, where a dash, a bracket or the
 /// name's end follows it: gpt-5.7-sol is not gpt-5.
-const PRICES: [(&str, f64, f64, f64); 27] = [
+const PRICES: &[(&str, f64, f64, f64)] = &[
     ("claude-fable-5-1", 10.0, 50.0, 0.25),
     ("claude-mythos-5-1", 10.0, 50.0, 0.25),
     ("claude-fable-5", 10.0, 50.0, 1.0),

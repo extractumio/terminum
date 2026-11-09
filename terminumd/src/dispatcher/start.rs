@@ -145,7 +145,7 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     let id = r.id.clone();
     let done = store(app, move |tx| {
         let now = runs::change(tx, &id, |r| { r.state = "gone".into(); r.prompt = None; })?;
-        if super::plan::finished(&now.status) { say(tx, &now, &words) } else { move_task(tx, &now, "FAILED", &words) }
+        super::fail(tx, &now, &words)
     }).await;
     if let Err(e) = done {
         tracing::warn!(event = "dispatcher.start", error = %e);

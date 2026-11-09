@@ -196,6 +196,11 @@ fn move_one(tx: &rusqlite::Transaction, id: &str, to: &str, words: &str) -> Resu
     ops::log(tx, &t.key, DISPATCHER, "why", words, None, at).map(|_| ())
 }
 
+/// `run`'s open tasks FAILED, `words` their comment; none open: `words` only said.
+fn fail(tx: &rusqlite::Transaction, run: &runs::Run, words: &str) -> Result<(), String> {
+    if plan::finished(&run.status) { say(tx, run, words) } else { move_task(tx, run, "FAILED", words) }
+}
+
 /// Moves `run`'s tasks still open: what is done stays done (AC-138).
 fn move_task(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) -> Result<(), String> {
     run.open.iter().try_for_each(|id| move_one(tx, id, to, words))

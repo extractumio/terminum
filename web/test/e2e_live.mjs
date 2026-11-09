@@ -188,8 +188,7 @@ async function wide(browser, name) {
   }
   if (BOARD_ALONE || NOTES_ALONE) {
     await liveNotes(page, live);
-    if (NOTES_ALONE) return ctx;
-    await boards();
+    if (!NOTES_ALONE) await boards();
     return ctx;
   }
   check("AC-09 the page signs in with the password; its address holds no secret", new URL(page.url()).pathname === "/sessions/" && !new URL(page.url()).search);

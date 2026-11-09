@@ -163,10 +163,13 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
 
     // a record becomes a task in one small window (terminum-kanban.md AC-116), counted where it was made (AC-150)
     const back = page.url();
-    const convert = async (note) => {
+    const openList = async (kind) => {
       await pressFoot(page, "#marksbtn");             // the foot folded on a computer: its toggle first
       await page.waitForSelector("#marksdlg[open]");
-      await page.click('#marklist .mkkind button:has-text("Reminders")');
+      await page.click(`#marklist .mkkind button:has-text("${kind}")`);
+    };
+    const convert = async (note) => {
+      await openList("Reminders");
       await page.click(`#marklist li:has-text("${note}") .mkmake`);
       await page.waitForSelector("#convertbox[open]", { timeout: 8000 });
     };
@@ -186,7 +189,8 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await page.fill("#converttitle", "A asks");
     await page.click("#convertok");
     await page.waitForSelector("#convertbox", { state: "hidden" });
-    const kept = async () => (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks)).find((t) => t.title === "A asks");
+    const todo = () => page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks);
+    const kept = async () => (await todo()).find((t) => t.title === "A asks");
     check("AC-116 Create keeps the task, then the record goes; the board does not open", await until(() => !rec("A asks"), 8000) && !!(await kept()) && new URL(page.url()).pathname === "/sessions/");
     const conv = await task((await kept()).id);
     check("AC-116 its text quotes the record and links its session", /^> .*electable word/m.test(conv.text) && /From \[.*, line \d+\]\(\/sessions\/\?then=line:\d+:\S*electable%20word\S*#\//.test(conv.text) && conv.session?.key?.endsWith(`:${a.pane}`), conv.text);
@@ -202,11 +206,9 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await page.waitForSelector("#taskbox", { state: "hidden" });
 
     // the bookmark's bar converts too, and Create pressed twice, or two tabs at once, make one task
-    const titled = async (t) => (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks)).filter((x) => x.title === t).length;
+    const titled = async (t) => (await todo()).filter((x) => x.title === t).length;
     await keep("A twice", false);
-    await pressFoot(page, "#marksbtn");
-    await page.waitForSelector("#marksdlg[open]");
-    await page.click('#marklist .mkkind button:has-text("Bookmarks")');
+    await openList("Bookmarks");
     await page.click('#marklist li:has-text("A twice") .mkitem');
     await page.waitForSelector("#markbar:not([hidden])", { timeout: 8000 });
     await page.click("#mbtask");
@@ -229,13 +231,15 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
 
     // the task's link: its session, its record's words looked for nearest their line
     const located = [];
-    page.on("websocket", (ws) => ws.on("framesent", ({ payload }) => {
+    const sent = (ws) => ws.on("framesent", ({ payload }) => {
       try { const m = JSON.parse(String(payload)); if (m.t === "locate" && m.text) located.push(m); } catch { /* not JSON */ }
-    }));
+    });
+    page.on("websocket", sent);
     await page.goto(new URL(/\]\((\/sessions\/[^)\s]+)\)/.exec(conv.text)[1], page.url()).href);
     check("AC-116 the task's link brings its record's line into view", await until(() => located.some((m) => m.text.includes("electable word") && Number.isInteger(m.n)), 10000)
       && await until(() => !page.url().includes("then="), 8000)
       && await until(() => page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("selectable words of notes-a"))), 8000), JSON.stringify(located).slice(0, 300));
+    page.off("websocket", sent);
     await page.goto(back);
     await page.waitForSelector(row(a.pane), { timeout: 8000 });
     await foldFoot(page);
