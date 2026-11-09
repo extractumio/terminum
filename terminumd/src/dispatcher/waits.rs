@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A RUN at a slot's limit waits for it (`terminum-dispatcher.md` AC-157): the press is kept, oldest first, and
+//! A RUN at a slot's limit waits for it (`terminum-dispatcher.md` AC-158): the press is kept, oldest first, and
 //! pressed again once its agent and its project have room, every check of a press read anew then. A wait is no
 //! run: it holds no slot, no pane, no clock.
 
@@ -105,7 +105,7 @@ fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
 }
 
 /// Each wait in turn, oldest first: one with room is pressed again as RUN's route would press it now; what that
-/// refuses is said on the task and the wait goes (AC-157). A wait blocked by its project blocks no other.
+/// refuses is said on the task and the wait goes (AC-158). A wait blocked by its project blocks no other.
 pub async fn start_due(app: &Shared) {
     let Ok(waiting) = super::store(app, all).await else { return };
     for w in waiting {

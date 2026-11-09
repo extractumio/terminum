@@ -70,7 +70,7 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 }
 
 /// The agent's own word that its task waits for a human, or no longer does, kept on its run; what it does next
-/// (terminum-dispatcher.md AC-156): in a session Dispatcher started and holds, it ends its turn and the session
+/// (terminum-dispatcher.md AC-157): in a session Dispatcher started and holds, it ends its turn and the session
 /// closes; elsewhere it waits there.
 fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, String> {
     use crate::dispatcher::runs;

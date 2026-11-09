@@ -205,6 +205,11 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
   archived with its reason; your own words and tasks are never reworded or archived by an agent.
+  An agent's tool list carries only `search_tools`, `get_tool_info`, `execute_tool` and the
+  tools terminum's own words name (`update_session_plan`, `create_task`, `get_task`, `get_file`,
+  `finish_task`); it finds the others by the action ("change a task's priority") and runs them
+  through `execute_tool`. Allowing `execute_tool` in an agent without asking (Claude Code's
+  `--allowedTools`) allows every tool behind it.
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,

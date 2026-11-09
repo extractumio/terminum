@@ -101,7 +101,7 @@ pub struct Run {
     pub again_said: bool,
     pub close_tried: bool,
     pub memory_warned: bool,
-    /// its agent asked a human itself (ask_human, move_task): RUN resumes it (AC-156)
+    /// its agent asked a human itself (ask_human, move_task): RUN resumes it (AC-157)
     pub asked: bool,
     pub last_walk: i64,
 }
@@ -316,7 +316,7 @@ pub fn card_marks(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, Str
                 AND ({STARTING} OR (t.status = 'DONE' AND m.result = 0 AND t.archived_at IS NULL))"), [listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
-/// The agent each of `keys` stays on, and its conversation: its newest run's, as that run knew it (AC-138, AC-156).
+/// The agent each of `keys` stays on, and its conversation: its newest run's, as that run knew it (AC-138, AC-157).
 pub fn card_agents(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, serde_json::Value>, String> {
     Ok(rows(tx, "SELECT m.task, r.agent_id, r.agent_name, r.agent_color, r.agent_session FROM run_tasks m JOIN runs r ON r.id = m.run
               WHERE m.task IN (SELECT value FROM json_each(?1)) AND m.rowid = (SELECT MAX(rowid) FROM run_tasks WHERE task = m.task)", [listed_keys(keys)],

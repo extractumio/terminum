@@ -14,7 +14,7 @@ pub const NOTHING: i64 = 3600;
 /// A session closes this long after DONE or FAILED.
 pub const CLOSE: i64 = 7200;
 
-/// Quiet this long after an agent asked a human, two walks, before its session closes (AC-156).
+/// Quiet this long after an agent asked a human, two walks, before its session closes (AC-157).
 pub const ASKED_QUIET: i64 = 60;
 
 /// A subagent silent and idle this long gets the main agent one request, then what can be done (AC-127).
@@ -198,7 +198,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         }
     }
     // the agent asked a human itself (ask_human, move_task): once its turn is over and quiet, the session
-    // closes and RUN resumes its conversation (AC-156)
+    // closes and RUN resumes its conversation (AC-157)
     if alive && asked_human(run) && f.waiting.is_none() {
         if f.active || !run.turn_ended || run.open_tools > 0 || f.subs {
             run.closing_for = 0;
@@ -264,7 +264,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
 }
 
 /// Whether its tasks wait for a human by the agent's own word, in a session whose conversation is known: closing it
-/// loses nothing RUN cannot resume (AC-156).
+/// loses nothing RUN cannot resume (AC-157).
 pub fn asked_human(run: &Run) -> bool {
     run.asked && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
 }

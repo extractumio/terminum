@@ -47,7 +47,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let slots = pool::Slots::read(tx)?;
         let mut offered = Vec::new();
         for a in &all {
-            // one at its limit is offered all the same: Run waits for its room (AC-157)
+            // one at its limit is offered all the same: Run waits for its room (AC-158)
             let full = slots.check(tx, Some(a), &t.project, None)?;
             let mut v = json!(a);
             v["full"] = json!(full);
@@ -82,12 +82,12 @@ struct Press {
     /// the other tasks of this press (AC-138)
     #[serde(default)]
     also: Vec<String>,
-    /// pressed again by its wait (AC-157), never by a page
+    /// pressed again by its wait (AC-158), never by a page
     #[serde(skip)]
     again: bool,
 }
 
-/// What a press that would start a process comes to: its run, or a wait for a slot (AC-157).
+/// What a press that would start a process comes to: its run, or a wait for a slot (AC-158).
 enum Next {
     Run(String),
     Waits(String),
@@ -102,7 +102,7 @@ impl Next {
     }
 }
 
-/// A slot's limit, or an older wait that has room, keeps this press waiting (AC-157): its words, after the human's
+/// A slot's limit, or an older wait that has room, keeps this press waiting (AC-158): its words, after the human's
 /// comment is kept, so it shows while it waits.
 fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: &Task, but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
     let why = match pool::check(tx, Some(agent), project, but)? {
@@ -120,7 +120,7 @@ fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: 
     Ok(Some(super::waits::words(&agent.name, &why)))
 }
 
-/// A wait's press, as its route took it, pressed again now (AC-157).
+/// A wait's press, as its route took it, pressed again now (AC-158).
 pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
     let mut body: Press = serde_json::from_value(body).map_err(|e| format!("its kept press is not readable: {e}"))?;
     body.again = true;
@@ -158,7 +158,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             let event = ops::comment(tx, HUMAN, &wanted, c, ops::now())?;
             files::attach(tx, &attached, &wanted, Some(&event))?;
         }
-        // its agent asked: what the humans answered since goes, theirs alone (AC-156)
+        // its agent asked: what the humans answered since goes, theirs alone (AC-157)
         let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
         let answers = if asked && tasks.len() == 1 { Some(ops::answers(tx, &wanted)?) } else { None };
         Ok((tasks, w, ops::user_name(tx, HUMAN)?, answers))
@@ -202,7 +202,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     }
 }
 
-/// The conversation goes on in a new window (AC-122), on its agent's slot or waiting for one (AC-157).
+/// The conversation goes on in a new window (AC-122), on its agent's slot or waiting for one (AC-158).
 async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Value) -> Result<Value, String> {
     let Ok(line) = start::resume_command(&r) else {
         return could_not_continue(app, &r, "no conversation is known").await;
@@ -395,7 +395,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
             return Ok(Next::Waits(words));
         }
         let prompt = prompt_of(tx, &now, said.as_deref())?;
-        // a wait kept its comment when it began (AC-157)
+        // a wait kept its comment when it began (AC-158)
         if let Some(c) = said.as_ref().filter(|c| !ops::last_comment_is(tx, &now[0].id, c).unwrap_or(false)) {
             for (i, t) in now.iter().enumerate() {
                 let event = ops::comment(tx, HUMAN, &t.id, c, ops::now())?;

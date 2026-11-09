@@ -94,7 +94,7 @@ fn ac138_an_effort_goes_on_its_kind_s_command_line() {
     assert_eq!(with("codex", "codex", "max").unwrap_err(), "codex has no effort max.");
     assert_eq!(with("claude", "claude", "$(rm -rf)").unwrap_err(), "claude has no effort $(rm -rf).", "a word of a fixed list, never free text");
     assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | & or #"), "the flag would go to the other program");
-    assert!(with("claude", "claude; notify", "").unwrap_err().contains("Name its permission mode"), "every tool would go to the other program (AC-155)");
+    assert!(with("claude", "claude; notify", "").unwrap_err().contains("Name its permission mode"), "every tool would go to the other program (AC-156)");
     assert!(with("claude", "claude --permission-mode default; notify", "").is_ok(), "a command is the human's own words");
     let twice = "The command names an effort already: choose Its own setting, or take it out of the command.";
     assert_eq!(with("claude", "claude --effort high", "max").unwrap_err(), twice);
@@ -189,7 +189,7 @@ fn ac144_a_project_or_an_agent_deleted_leaves_the_rest_standing() {
 }
 
 #[test]
-fn ac155_a_run_gets_every_tool_unless_its_command_says_how_it_asks() {
+fn ac156_a_run_gets_every_tool_unless_its_command_says_how_it_asks() {
     assert_eq!(command_line("claude", "ccdsp", ""), "ccdsp --permission-mode bypassPermissions", "a function of the user's shell takes the words too");
     for own in ["claude --permission-mode plan", "claude --permission-mode=default", "claude --dangerously-skip-permissions"] {
         assert_eq!(command_line("claude", own, ""), own, "the human's own words stand");

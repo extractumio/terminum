@@ -48,7 +48,7 @@ fn effort_flag(kind: &str) -> &'static str {
     if kind == "codex" { "model_reasoning_effort" } else { "--effort" }
 }
 
-/// What gives a kind every tool with no question (terminum-dispatcher.md AC-155), and the words of a command that
+/// What gives a kind every tool with no question (terminum-dispatcher.md AC-156), and the words of a command that
 /// already says how it asks: then the human's own words stand.
 const EVERY_TOOL: [(&str, &str, &[&str]); 2] = [
     ("claude", "--permission-mode bypassPermissions", &["--permission-mode", "--dangerously-skip-permissions"]),
@@ -132,7 +132,7 @@ impl Given {
         if has_control(&self.command) {
             return Err("An agent's command is one line, with no control or invisible characters.".into());
         }
-        // every tool goes on one program's command (terminum-dispatcher.md AC-155): said here, never left out unseen
+        // every tool goes on one program's command (terminum-dispatcher.md AC-156): said here, never left out unseen
         if self.command.contains([';', '|', '&', '#']) && !names_mode(&self.kind, &self.command) {
             return Err("Every tool goes on one program's command: this one has ; | & or #. Name its permission mode in the command.".into());
         }

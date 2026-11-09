@@ -183,19 +183,19 @@ async function agentPool(page, opts) {
   check("AC-138 a task in progress has no play key, its card names the agent", await until(async () => !(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
-  // busy: a third waits for its room (AC-157), said in RUN's window and by terminumd
+  // busy: a third waits for its room (AC-158), said in RUN's window and by terminumd
   await page.click(`${card(c)} .ctitle`, { modifiers: ["Meta"] });
   await page.click(pool);
-  check("AC-157 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Run waits/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
+  check("AC-158 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Run waits/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
   await page.click('#runbox button[value="cancel"]');
   await page.keyboard.press("Escape");
   const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
-  check("AC-157 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
-  check("AC-157 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
+  check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
+  check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
   const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
-  check("AC-157 a press again on that agent says it waits already", again.code >= 400 && /waits for Fast fixer already/.test(again.error), JSON.stringify(again));
+  check("AC-158 a press again on that agent says it waits already", again.code >= 400 && /waits for Fast fixer already/.test(again.error), JSON.stringify(again));
   await j(`/api/tasks/${c}/give-up`, "POST");
-  check("AC-157 Stop waiting calls it off and the third stays", await status(c) === "TODO" && !(await j(`/api/tasks/${c}`)).waits, JSON.stringify(await j(`/api/tasks/${c}`)));
+  check("AC-158 Stop waiting calls it off and the third stays", await status(c) === "TODO" && !(await j(`/api/tasks/${c}`)).waits, JSON.stringify(await j(`/api/tasks/${c}`)));
 
   // a press on a dot shows its session; on the agent, its window
   await page.click(pool, { position: { x: 60, y: 8 } });

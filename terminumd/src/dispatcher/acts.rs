@@ -52,7 +52,7 @@ pub(super) async fn close(app: &Shared, run: &Run, (server, pane): (&Arc<Server>
                 let r = runs::change(tx, &id, |r| r.state = Phase::Closed)?;
                 say(tx, &r, &words)
             }).await;
-            app.dispatcher.soon.notify_one();             // a slot is free: what waits for it starts (AC-157)
+            app.dispatcher.soon.notify_one();             // a slot is free: what waits for it starts (AC-158)
             closed.map(|()| None)
         }
         Err(e) => {
@@ -207,7 +207,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
                 }
             }
         }
-        // a session that waits for a human's answers closes only at an empty box: a draft there is someone's (AC-156)
+        // a session that waits for a human's answers closes only at an empty box: a draft there is someone's (AC-157)
         Act::Close { .. } if l.run.asked && !matches!(gate::read(&server, &pane, &l.run.kind).await, Ok(super::screen::Screen::Empty)) => Ok(()),
         Act::Close { words, keep } => close(app, &l.run, (&server, &pane), &words, keep, l.at, |_, r| Ok(plan::still_closes(r) || plan::asked_closes(r))).await.map(drop),
         _ => Ok(()),

@@ -24,7 +24,7 @@ pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) ->
     log(tx, &key, author, "comment", text, None, at)
 }
 
-/// An agent's questions for a human (terminum-dispatcher.md AC-156): a comment the task's window shows as such.
+/// An agent's questions for a human (terminum-dispatcher.md AC-157): a comment the task's window shows as such.
 pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
     check_comment(text)?;
     let key = key_of(tx, id)?;
@@ -32,7 +32,7 @@ pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) 
     log(tx, &key, author, "comment", text, Some(&json!({"questions": true})), at)
 }
 
-/// The humans' comments since the agent's last questions, oldest first: their answers (AC-156).
+/// The humans' comments since the agent's last questions, oldest first: their answers (AC-157).
 pub fn answers(tx: &Transaction, id: &str) -> Result<Vec<String>, String> {
     let key = key_of(tx, id)?;
     rows(tx, "SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind = 'human' AND e.text IS NOT NULL

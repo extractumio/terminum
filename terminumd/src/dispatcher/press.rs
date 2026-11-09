@@ -8,10 +8,10 @@ use super::runs::{self, Phase, Run};
 use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
 
-/// How an agent asks a human while it works (AC-156): in words, never in its window.
+/// How an agent asks a human while it works (AC-157): in words, never in its window.
 pub(super) const ASK: &str = "If you need a human's decision, call ask_human with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
 
-/// What RUN types when it goes on (AC-122, AC-156): after the agent asked, the humans' answers since, else the
+/// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
 pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: Option<&[String]>) -> String {
     match (answers, comment) {
@@ -149,7 +149,7 @@ pub(super) fn budget_told(id: &str, own: Option<i64>, run: &Run) -> String {
 }
 
 /// One task's ended run moved to `agent`, another of its kind: its conversation goes on there, with that agent's
-/// command and slot, in the run's own folder and host (AC-138, AC-156). A live agent, another kind or no
+/// command and slot, in the run's own folder and host (AC-138, AC-157). A live agent, another kind or no
 /// conversation: none; the press starts anew.
 pub(super) fn moved_to(tx: &rusqlite::Transaction, tasks: &[Task], last: Option<&Run>, agent: Option<&str>, fresh: bool) -> Result<Option<Run>, String> {
     let (Some(r), Some(id)) = (last, agent) else { return Ok(None) };

@@ -312,7 +312,7 @@ fn closes(acts: &[Act]) -> bool {
 }
 
 #[test]
-fn ac156_a_session_whose_agent_asked_closes_once_its_turn_is_over_and_quiet() {
+fn ac157_a_session_whose_agent_asked_closes_once_its_turn_is_over_and_quiet() {
     let mut r = asked();
     assert!(!closes(&step(&mut r, &up(30))), "one quiet walk is not enough");
     let acts = step(&mut r, &up(30));
@@ -322,7 +322,7 @@ fn ac156_a_session_whose_agent_asked_closes_once_its_turn_is_over_and_quiet() {
 }
 
 #[test]
-fn ac156_activity_a_tool_a_subagent_or_its_turn_keep_it_open() {
+fn ac157_activity_a_tool_a_subagent_or_its_turn_keep_it_open() {
     for (what, mut r, f) in [
         ("activity", asked(), Facts { active: true, ..up(60) }),
         ("a subagent", asked(), Facts { subs: true, ..up(60) }),
@@ -341,7 +341,7 @@ fn ac156_activity_a_tool_a_subagent_or_its_turn_keep_it_open() {
 }
 
 #[test]
-fn ac156_working_again_starts_its_quiet_anew() {
+fn ac157_working_again_starts_its_quiet_anew() {
     let mut r = asked();
     step(&mut r, &up(30));
     r.status = "IN PROGRESS".into();

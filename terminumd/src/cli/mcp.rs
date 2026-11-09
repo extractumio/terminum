@@ -23,9 +23,9 @@ const DEFAULT_VERSION: &str = "2025-06-18";
 
 pub const INSTRUCTIONS: &str = "terminum shows the user your plan and holds the board of tasks. Keep a plan: your \
 own plan tool (TaskCreate/TaskUpdate, update_plan), else update_session_plan; send doing and eta_minutes at each step \
-and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. A task of this session: \
-finish_task with its result before you stop. What is left to do: create_task, titled Bug:, Feat: or Debt:, with a \
-severity. If a tool says you are not in terminum, stop calling.";
+and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. A task of this session: finish_task with its result before you stop. What is left to do: \
+create_task. Any other action: search_tools, then execute_tool. If a tool says \
+you are not in terminum, stop calling.";
 
 pub use crate::plans::rules::NOT_IN_PANE;
 use crate::plans::rules::{self, STATUSES};
@@ -34,7 +34,8 @@ pub const DOWN: &str = "terminum is not running; go on without it.";
 pub const PLAN_TOOLS: [&str; 2] = ["update_session_plan", "get_session_plan"];
 use crate::tasks::tools::NAMES as TASK_TOOLS;
 
-/// Every tool offered.
+/// Every tool of the catalog (mcp_catalog.rs); tools/list lists only some (mcp_meta.rs).
+#[cfg(test)]
 pub fn tool_names() -> Vec<&'static str> {
     PLAN_TOOLS.iter().chain(TASK_TOOLS.iter()).copied().collect()
 }
@@ -127,14 +128,17 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
     match method {
         "initialize" => result(id, initialize(&params, knows(env, forward))),
         "ping" => result(id, json!({})),
-        "tools/list" => result(id, json!({"tools": if knows(env, forward) { tools() } else { json!([]) }})),
+        "tools/list" => result(id, json!({"tools": if knows(env, forward) { super::mcp_meta::listed() } else { vec![] }})),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
-            if !PLAN_TOOLS.contains(&name) && !TASK_TOOLS.contains(&name) {
-                return error(id, -32602, &format!("Unknown tool {name:?}: the tools are {}", tool_names().join(", ")));
-            }
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
             let session = params.pointer("/_meta/sessionId").and_then(Value::as_str);
+            if super::mcp_meta::META.contains(&name) {
+                return result(id, meta(name, &args, session, env, forward));
+            }
+            if !PLAN_TOOLS.contains(&name) && !TASK_TOOLS.contains(&name) {
+                return error(id, -32602, &format!("Unknown tool {name:?}: search_tools finds terminum's tools by what they do"));
+            }
             result(id, call(name, &args, session, env, forward))
         }
         _ => error(id, -32601, &format!("Method not found: {method}")),
@@ -186,6 +190,26 @@ pub fn pane_of(env: &Env) -> Option<(String, String)> {
     let ok = !socket.is_empty() && socket.len() <= 64 && pane.len() > 1 && pane.len() <= 12
         && pane.starts_with('%') && pane[1..].bytes().all(|b| b.is_ascii_digit());
     ok.then(|| (socket.to_string(), pane.to_string()))
+}
+
+/// A meta tool's result (mcp_meta.rs): search and describe answer here, execute_tool goes as its tool.
+fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: Forward) -> Value {
+    use super::mcp_meta as m;
+    if pane_of(env).is_none() {
+        return text_result(NOT_IN_PANE, true);
+    }
+    let answer = match name {
+        "execute_tool" => match m::target(args) {
+            Ok((tool, arguments)) => return call(tool, &arguments, session, env, forward),
+            Err(why) => Err(why),
+        },
+        "search_tools" => m::search(args),
+        _ => m::describe(args),
+    };
+    match answer {
+        Ok(text) => text_result(&text, false),
+        Err(why) => text_result(&why, true),
+    }
 }
 
 /// A tools/call's result: refused here, or terminumd's answer.
@@ -291,11 +315,15 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     Ok(Value::Object(out))
 }
 
-/// The tools of tools/list.
-pub fn tools() -> Value {
+/// A tool's hints: none of terminum's destroys or reaches beyond terminum.
+pub fn hints(read_only: bool, idempotent: bool) -> Value {
+    json!({"readOnlyHint": read_only, "destructiveHint": false, "idempotentHint": idempotent, "openWorldHint": false})
+}
+
+/// Every tool's definition (mcp_catalog.rs indexes them).
+pub fn catalog() -> Vec<Value> {
     let tool = |name: &str, title: &str, description: &str, properties: Value, required: Value| {
-        let annotations = json!({"readOnlyHint": name.starts_with("get_"), "destructiveHint": false, "idempotentHint": true, "openWorldHint": false});
-        json!({"name": name, "title": title, "description": description, "annotations": annotations,
+        json!({"name": name, "title": title, "description": description, "annotations": hints(name.starts_with("get_"), true),
                "inputSchema": {"type": "object", "properties": properties, "required": required}})
     };
     let mut all = vec![
@@ -317,7 +345,7 @@ of the minutes left. With your own plan tool its items count; this call then sto
             json!({}), json!([])),
     ];
     all.extend(super::mcp_tasks::tools());
-    Value::Array(all)
+    all
 }
 
 #[cfg(test)]

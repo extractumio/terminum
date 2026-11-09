@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the pool's agents starts the tasks and
-// with what message; one at its limit is chosen all the same, and Run waits for its room (AC-157); where is the
+// with what message; one at its limit is chosen all the same, and Run waits for its room (AC-158); where is the
 // project's (AC-140), said here; the agent dropped on, or the last chosen, already picked: one press. Several tasks
 // go by their numbers; what each says shows here first. Dropped on another agent, a conversation goes on there.
 import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
@@ -15,12 +15,12 @@ export function runWindow({ addAgent, noFolder, done }) {
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
-  /** At a limit: chosen, it waits for its room (AC-157). */
+  /** At a limit: chosen, it waits for its room (AC-158). */
   const busy = (a) => (a.full ? "at its limit: Run waits" : "");
   let said = "";                                   // what the window says whatever agent is chosen
 
   /** The chosen agent's, else the window's own words; at its limit with an idle holder, one press closes it and runs
-   *  (AC-141), else Run waits for its room (AC-157). */
+   *  (AC-141), else Run waits for its room (AC-158). */
   function showAgent() {
     const full = chosen()?.full, close = full?.close;
     const words = said || (full ? (close ? full.words : `${full.words} Run waits until it has room, then starts.`) : "");

@@ -251,7 +251,7 @@ fn ac145_an_agent_s_text_follows_its_project_s_template() {
 }
 
 #[test]
-fn ac156_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_its_turn() {
+fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_its_turn() {
     let ((s, dir), w) = (fresh("tools-ask"), who(Some("api")));
     let id = task(&s, "api", Some(KEY));
     let other = task(&s, "api", Some(OTHER));

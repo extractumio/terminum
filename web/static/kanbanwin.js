@@ -81,7 +81,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     const stands = el("div", "fieldrow", "Status");
     const value = el("span", "fieldvalue", t.archived_at ? "Archived" : t.status);
     if (t.agent) value.append(agentChip(t.agent));
-    // the conversation RUN resumes, by its ID (terminum-dispatcher.md AC-156)
+    // the conversation RUN resumes, by its ID (terminum-dispatcher.md AC-157)
     if (t.agent?.conversation) value.append(el("span", "cconv", `conversation ${t.agent.conversation}`));
     stands.append(value);
     grid.append(
@@ -195,7 +195,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     // its run cannot be reached or is no longer wanted: its tasks fail, the window stays (terminum-dispatcher.md AC-138)
     const giveUp = t.run_holds ? button(null, "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
       () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }))) : null;
-    // a RUN waiting for its agent's room is called off by this; the task stays where it is (AC-157)
+    // a RUN waiting for its agent's room is called off by this; the task stays where it is (AC-158)
     const stopWaiting = t.waits ? button(null, "Stop waiting", () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
     if (stopWaiting) stopWaiting.title = `Run waits for ${t.waits}: call it off, nothing starts`;
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back

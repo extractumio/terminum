@@ -146,7 +146,7 @@ fn ac126_the_agent_hears_what_the_session_has_now() {
 }
 
 #[test]
-fn ac156_the_prompt_says_how_to_ask_a_human() {
+fn ac157_the_prompt_says_how_to_ask_a_human() {
     store_of("api-ask").with(|tx| {
         let a = made(tx, "Fix it", "the text");
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
@@ -157,7 +157,7 @@ fn ac156_the_prompt_says_how_to_ask_a_human() {
 }
 
 #[test]
-fn ac156_after_its_questions_only_the_humans_answers_go_back() {
+fn ac157_after_its_questions_only_the_humans_answers_go_back() {
     store_of("api-answers").with(|tx| {
         let a = made(tx, "Fix it", "the text");
         ops::comment(tx, HUMAN, &a.id, "before the questions", 2)?;

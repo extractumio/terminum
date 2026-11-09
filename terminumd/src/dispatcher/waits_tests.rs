@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A RUN at a slot's limit waits for it (AC-157): kept in order, called off by what changed, ahead of newer presses.
+//! A RUN at a slot's limit waits for it (AC-158): kept in order, called off by what changed, ahead of newer presses.
 
 use super::*;
 use crate::dispatcher::runs::{self, Phase, Run};
@@ -29,7 +29,7 @@ fn holding(tx: &Transaction, a: &str, project: &str) -> String {
 }
 
 #[test]
-fn ac157_a_wait_keeps_its_place_and_its_newest_press() {
+fn ac158_a_wait_keeps_its_place_and_its_newest_press() {
     store("waits-place").with(|tx| {
         let (one, two) = (task(tx, "api"), task(tx, "api"));
         add(tx, &one.key, "a", "api", &json!({"comment": "first"}), 10)?;
@@ -45,7 +45,7 @@ fn ac157_a_wait_keeps_its_place_and_its_newest_press() {
 }
 
 #[test]
-fn ac157_an_older_wait_with_room_goes_first_one_blocked_by_its_project_does_not() {
+fn ac158_an_older_wait_with_room_goes_first_one_blocked_by_its_project_does_not() {
     store("waits-ahead").with(|tx| {
         let (old, new) = (task(tx, "api"), task(tx, "api"));
         add(tx, &old.key, "a", "api", &json!({}), 10)?;
@@ -63,7 +63,7 @@ fn ac157_an_older_wait_with_room_goes_first_one_blocked_by_its_project_does_not(
 }
 
 #[test]
-fn ac157_a_wait_stays_while_full_and_goes_when_its_task_moved_was_archived_or_its_agent_left() {
+fn ac158_a_wait_stays_while_full_and_goes_when_its_task_moved_was_archived_or_its_agent_left() {
     store("waits-due").with(|tx| {
         let t = task(tx, "api");
         add(tx, &t.key, "a", "api", &json!({"agent": "a"}), 10)?;
