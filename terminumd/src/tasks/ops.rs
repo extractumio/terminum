@@ -306,6 +306,14 @@ pub struct Edit {
     pub owner: Option<String>,
 }
 
+/// A human has reworded the task, renamed it, changed or purged its text: its title and text are
+/// theirs since (AC-154): such an event says `data.words`; one written before that, its text.
+pub fn worded_by_human(tx: &Transaction, key: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'edit' AND u.kind = 'human'
+                  AND (json_extract(e.data, '$.words') OR (e.data IS NULL AND (e.text LIKE '% renamed it' OR e.text LIKE '% changed its text' OR e.text LIKE '% purged its text'))))",
+                 [key], |r| r.get(0)).map_err(sql)
+}
+
 pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> Result<(), String> {
     if change.title.is_none() && change.text.is_none() && change.severity.is_none() && change.owner.is_none() {
         return Ok(());
@@ -315,12 +323,12 @@ pub fn edit(tx: &Transaction, author: &str, id: &str, change: Edit, at: i64) -> 
     if let Some(t) = change.title {
         let t = check_title(&t)?;
         tx.execute("UPDATE tasks SET title = ?1 WHERE id = ?2", (&t, &key)).map_err(sql)?;
-        log(tx, &key, author, "edit", &format!("{who} renamed it"), None, at)?;
+        log(tx, &key, author, "edit", &format!("{who} renamed it"), Some(&json!({"words": true})), at)?;
     }
     if let Some(text) = change.text {
         check_text(&text)?;
         tx.execute("UPDATE tasks SET body = ?1 WHERE id = ?2", (&text, &key)).map_err(sql)?;
-        log(tx, &key, author, "edit", &format!("{who} changed its text"), None, at)?;
+        log(tx, &key, author, "edit", &format!("{who} changed its text"), Some(&json!({"words": true})), at)?;
     }
     if let Some(s) = change.severity {
         check_severity(&s)?;
@@ -425,7 +433,7 @@ pub fn purge_text(tx: &Transaction, author: &str, id: &str, at: i64) -> Result<(
     let key = key_of(tx, id)?;
     tx.execute("UPDATE tasks SET body = '', updated_at = ?1 WHERE id = ?2", (at, &key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    log(tx, &key, author, "edit", &format!("{who} purged its text"), None, at).map(|_| ())
+    log(tx, &key, author, "edit", &format!("{who} purged its text"), Some(&json!({"words": true})), at).map(|_| ())
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@ pub mod comments;
 pub mod family;
 pub mod files;
 pub mod folder;
+mod groom;
 pub mod limits;
 pub mod marks;
 pub mod ops;
