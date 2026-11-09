@@ -367,6 +367,7 @@ Scenario: AC-113 happy path — across projects
   When API-12 with its session moves from api to web
   Then a dialog offers Move the session too, Unlink the session, Cancel
   And Move the session too refuses with why when that session has other open tasks; the session is told either way (AC-114)
+  And when the session cannot move (its project's record not written), API-12 goes back to api with it and the board says "Its session could not move (<why>): API-12 stays in its project."
 
 Scenario: AC-113 happy path — a session closes
   When API-12's session closes
@@ -1074,7 +1075,7 @@ Depends on: nothing more.
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
-- [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`

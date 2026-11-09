@@ -360,7 +360,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             match ops::change_project(tx, HUMAN, &id, project, choice.as_deref(), at)? {
                 // it has a session: the page's dialog asks what becomes of it, and sends `session_choice`
                 ProjectMove::Ask => return Ok(Err((StatusCode::CONFLICT, "session_choice"))),
-                ProjectMove::SessionFollows(s) => follow = Some((s, project.clone())),
+                ProjectMove::SessionFollows(s) => follow = Some((s, project.clone(), was.project.clone())),
                 ProjectMove::Done => {}
             }
         }
@@ -388,9 +388,13 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         Ok(Err((status, why))) => return refuse(status, why),
         Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
     };
-    let note = match follow {
-        Some((session, project)) => follow_session(&app, session, project).await.err(),
-        None => None,
+    // the session follows its task, else the task goes back where it was: never one of them moved (D02)
+    let (task, note) = match follow {
+        Some((session, project, was)) => match super::moves::follow_session(&app, session, project).await {
+            Ok(()) => (task, None),
+            Err(e) => super::moves::move_back(&app, task, was, e).await,
+        },
+        None => (task, None),
     };
     if budget.is_some() {
         crate::dispatcher::api::budget_changed(&app, &task);
@@ -398,20 +402,9 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     told(&app, if reparented { "" } else { &task.id });   // reparented: its parents' cards, old and new, count it
     let mut answered = card(&app, &task);
     if let Some(n) = note {
-        answered["note"] = json!(format!("The task moved, its session did not: {n}"));
+        answered["note"] = json!(n);
     }
     Json(answered).into_response()
-}
-
-/// A session goes where its task went, Default meaning no project (AC-113).
-async fn follow_session(app: &Shared, session: String, project: String) -> Result<(), String> {
-    let a = app.clone();
-    let joined = off(move || {
-        let mut ps = a.projects.lock();
-        if project == DEFAULT_PROJECT { ps.remove(&session) } else { ps.add_to(&session, &project, None) }
-    }).await;
-    crate::page::projects::tell(app);
-    joined
 }
 
 async fn add_comment(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {

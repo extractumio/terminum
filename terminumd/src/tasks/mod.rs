@@ -11,6 +11,7 @@ pub mod folder;
 mod groom;
 pub mod limits;
 pub mod marks;
+mod moves;
 pub mod ops;
 pub mod projectapi;
 pub mod projects;
