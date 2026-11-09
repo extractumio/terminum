@@ -136,6 +136,7 @@ const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
+const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -185,8 +186,9 @@ async function wide(browser, name) {
     await boards([liveBoardTasks, liveBoardIds]);
     return ctx;
   }
-  if (BOARD_ALONE) {
+  if (BOARD_ALONE || NOTES_ALONE) {
     await liveNotes(page, live);
+    if (NOTES_ALONE) return ctx;
     await boards();
     return ctx;
   }

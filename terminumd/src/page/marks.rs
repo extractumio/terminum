@@ -142,6 +142,18 @@ pub async fn forget(app: &Shared, id: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Held from a record's check until the task made of it is kept and the record gone, so two presses (two
+/// tabs, two devices) make one task of it (terminum-kanban.md AC-116); `Err` says it is gone already.
+pub async fn claim(app: &Shared, record: Option<&str>) -> Result<Option<tokio::sync::MutexGuard<'static, ()>>, &'static str> {
+    static CONVERTING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let Some(id) = record else { return Ok(None) };
+    let held = CONVERTING.lock().await;
+    if app.bookmarks.lock().get(id).is_none() {
+        return Err("That bookmark or reminder is a task already, or was deleted.");
+    }
+    Ok(Some(held))
+}
+
 /// Every page learns a bookmark is gone.
 pub fn tell_unmark(app: &Shared, id: &str) {
     app.pages.tell(&json!({"t": "unmark", "id": id}).to_string());

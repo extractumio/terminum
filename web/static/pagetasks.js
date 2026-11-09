@@ -24,6 +24,11 @@ export function pageTasks({ box, embedded, say, show }) {
         const id = Number(then.slice(4));                // read now: `then` is gone when the event goes
         setTimeout(() => document.dispatchEvent(new CustomEvent("sentjump", { detail: id })));
       }
+      // a task's link to the record it was made of (terminum-kanban.md AC-116): that line brought into view
+      else if (/^line:\d+:/.test(then ?? "")) {
+        const [, n, text] = /^line:(\d+):(.*)$/s.exec(then);
+        setTimeout(() => document.dispatchEvent(new CustomEvent("linejump", { detail: { n: Number(n), text } })));
+      }
       then = null;
       asked = null;
     },

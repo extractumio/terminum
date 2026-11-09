@@ -12,8 +12,12 @@ export const newTaskUrl = (session, project, parent) => `/kanban/?new=1&session=
 /** A session's own address on its page: `#/<key>/`, as readable as a key can stay (AC-134). */
 export const sessionHash = (key) => `#/${encodeURIComponent(key).replaceAll("%3A", ":")}/`;
 
-/** The session page showing session `key`; `then` "plan": with its Plan pane open. */
-export const sessionUrl = (key, then) => `/sessions/${then ? `?then=${then}` : ""}${sessionHash(key)}`;
+/** The session page showing session `key`; `then` "plan": with its Plan pane open; "msg:<id>": that sent
+ *  message in view (terminum.md AC-151); "line:<n>:<text>": that text in view, looked for nearest line n (AC-116). */
+export const sessionUrl = (key, then) => `/sessions/${then ? `?then=${encodeURIComponent(then).replaceAll("%3A", ":").replace(/[()]/g, (c) => `%${c.charCodeAt(0).toString(16)}`)}` : ""}${sessionHash(key)}`;
+
+/** The words a record's line is found by again: its first line, as a link can carry them. */
+export const lineWords = (record) => ((record.by ? record.note : record.text) ?? "").split("\n").map((l) => l.trim()).find(Boolean)?.slice(0, 80) ?? "";
 
 /** The session this page's address names, if any. */
 export function addressedSession() {

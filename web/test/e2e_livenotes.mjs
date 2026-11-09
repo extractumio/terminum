@@ -62,8 +62,8 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
   const count = () => page.evaluate(() => (document.getElementById("marksfab").hidden ? null : document.getElementById("marksfabn").textContent));
   const task = (id) => page.evaluate(async (t) => (await fetch(`/api/tasks/${t}`)).json(), id);
   const madeId = (said) => /Kept as ([A-Z][A-Z0-9]*-\d+)/.exec(said)?.[1];
-  /** The user's own record on the selected words of the shown pane. */
-  const keep = async (note, reminder) => {
+  /** The selected words of the shown pane, in the bookmark dialog. */
+  const selected = async () => {
     const line = await page.evaluate(() => {
       const r = [...document.querySelectorAll("#screen .ln")].find((l) => l.textContent.includes("selectable words")).getBoundingClientRect();
       return { x: r.left + 4, x2: r.left + 120, y: r.top + r.height / 2 };
@@ -71,6 +71,10 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await page.mouse.move(line.x, line.y); await page.mouse.down(); await page.mouse.move(line.x2, line.y, { steps: 4 }); await page.mouse.up();
     await page.waitForSelector("#markadd:not([hidden])", { timeout: 4000 });
     await page.click("#markadd");
+  };
+  /** The user's own record on the selected words of the shown pane. */
+  const keep = async (note, reminder) => {
+    await selected();
     if (reminder) await page.click('#markkind button[data-kind="reminder"]');
     await page.fill("#marknote", note);
     await page.click('#markbox button[value="save"]');
@@ -185,7 +189,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     const kept = async () => (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks)).find((t) => t.title === "A asks");
     check("AC-116 Create keeps the task, then the record goes; the board does not open", await until(() => !rec("A asks"), 8000) && !!(await kept()) && new URL(page.url()).pathname === "/sessions/");
     const conv = await task((await kept()).id);
-    check("AC-116 its text quotes the record and links its session", /^> .*electable word/m.test(conv.text) && /From \[.*, line \d+\]\(\/sessions\/#\//.test(conv.text) && conv.session?.key?.endsWith(`:${a.pane}`), conv.text);
+    check("AC-116 its text quotes the record and links its session", /^> .*electable word/m.test(conv.text) && /From \[.*, line \d+\]\(\/sessions\/\?then=line:\d+:\S*electable%20word\S*#\//.test(conv.text) && conv.session?.key?.endsWith(`:${a.pane}`), conv.text);
     check("AC-150 the session's tasks' button counts it, in cornflower blue", await until(async () => Number(await fabCount()) === before + 1)
       && await page.evaluate(() => getComputedStyle(document.getElementById("tasksfabn")).color) === "rgb(100, 149, 237)", String(await fabCount()));
     await page.click("#tasksfab");
@@ -196,6 +200,42 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-150 a press opens the board's own task window here", (await page.textContent("#tasktitle")).startsWith(conv.id) && !!(await page.$("#taskbody .taskown")) && !!(await page.$("#taskbody .activity")));
     await page.click("#taskclose");
     await page.waitForSelector("#taskbox", { state: "hidden" });
+
+    // the bookmark's bar converts too, and Create pressed twice, or two tabs at once, make one task
+    const titled = async (t) => (await page.evaluate(async () => (await (await fetch("/api/tasks?status=TODO&limit=200&subtasks=1")).json()).tasks)).filter((x) => x.title === t).length;
+    await keep("A twice", false);
+    await pressFoot(page, "#marksbtn");
+    await page.waitForSelector("#marksdlg[open]");
+    await page.click('#marklist .mkkind button:has-text("Bookmarks")');
+    await page.click('#marklist li:has-text("A twice") .mkitem');
+    await page.waitForSelector("#markbar:not([hidden])", { timeout: 8000 });
+    await page.click("#mbtask");
+    await page.waitForSelector("#convertbox[open]", { timeout: 8000 });
+    check("AC-116 the bookmark's bar converts it too", await page.inputValue("#converttitle") === "A twice", await page.inputValue("#converttitle"));
+    await page.dblclick("#convertok");
+    await page.waitForSelector("#convertbox", { state: "hidden" });
+    await until(() => !rec("A twice"), 8000);
+    await wait(1000);
+    check("AC-116 Create pressed twice makes one task", await titled("A twice") === 1, String(await titled("A twice")));
+    await keep("A raced", false);
+    const codes = await page.evaluate(async (record) => Promise.all([0, 1].map(() => fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title: "A raced", text: "x", record }) }).then((r) => r.status))), rec("A raced").id);
+    check("AC-116 one record converted from two tabs at once: one task, the other refused", codes.sort().join() === "200,409" && await titled("A raced") === 1, codes.join());
+
+    // New task from selection: the board's new-task window, nothing kept (AC-106)
+    await selected();
+    await page.click("#marktask");
+    check("AC-106 New task from selection opens the board's new-task window", await until(() => new URL(page.url()).pathname.startsWith("/kanban"), 8000), page.url());
+
+    // the task's link: its session, its record's words looked for nearest their line
+    const located = [];
+    page.on("websocket", (ws) => ws.on("framesent", ({ payload }) => {
+      try { const m = JSON.parse(String(payload)); if (m.t === "locate" && m.text) located.push(m); } catch { /* not JSON */ }
+    }));
+    await page.goto(new URL(/\]\((\/sessions\/[^)\s]+)\)/.exec(conv.text)[1], page.url()).href);
+    check("AC-116 the task's link brings its record's line into view", await until(() => located.some((m) => m.text.includes("electable word") && Number.isInteger(m.n)), 10000)
+      && await until(() => !page.url().includes("then="), 8000)
+      && await until(() => page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("selectable words of notes-a"))), 8000), JSON.stringify(located).slice(0, 300));
     await page.goto(back);
     await page.waitForSelector(row(a.pane), { timeout: 8000 });
     await foldFoot(page);

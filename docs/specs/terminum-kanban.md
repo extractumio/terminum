@@ -456,7 +456,7 @@ Scenario: AC-116 happy path
   When the user presses Convert to task: in the reminders' or bookmarks' pane, on the bar of one brought into view, or in the list below the sessions
   Then a small window offers its title, Severity P2, Project api's (the shown session's), Session the shown one
   When the user presses Create
-  Then the task stands in TODO of that project, linked to that session, its text the note and the record quoted, then "From api, line 812", a Markdown link to that session on the session page
+  Then the task stands in TODO of that project, linked to that session, its text the note and the record quoted, then "From api, line 812", a Markdown link to that line (`/sessions/?then=line:812:<its first words>#/<key>/`)
   And it counts as made in the record's session (AC-150); the board does not open; "API-31 is in TODO: Check the cache" is said
   And the record goes once the task is kept
 
@@ -466,6 +466,14 @@ Scenario: AC-116 edge — cancelled
 
 Scenario: AC-116 edge — a record of a closed session
   Then its text has no link and the task counts as made in the session shown
+
+Scenario: AC-116 happy path — the link
+  When the user opens the task's link "From api, line 812"
+  Then the session page opens at api, the hand-off dropped from the address once read, and brings the record's words into view nearest line 812 as terminum-terminal.md AC-90's Jump to message does, else says why where the page is
+
+Scenario: AC-116 edge — pressed twice
+  When the user presses Create twice, or two tabs convert the same record at once
+  Then one task is kept; the second ask is refused with "That bookmark or reminder is a task already, or was deleted."
 
 Scenario: AC-116 failure — not kept
   When the store refuses the task
@@ -927,7 +935,6 @@ Comments and history are one table, `events`: a window lists them in one order. 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-116 | The task's link opens the record's session, not its line: the record, which knows the line, is gone by then. | `web/static/marks.js` |
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
 
@@ -978,7 +985,7 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 |---|---|
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/API-12` | redirect keeping the query (`?trace=1`); the session page; the board |
 | `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&after=&limit=&counts=1` | a page of 200 at most, each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's count under the same filters; with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
-| `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go (AC-116) |
+| `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go, 409 when it went already (AC-116) |
 | `PATCH /api/task-projects/<id> {prefix?, template?}` | a project's ID letters (AC-148) and its template (AC-145), besides its name and folder |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
@@ -1013,7 +1020,7 @@ Depends on: nothing more.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
-- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `cargo test tasks::ops`
+- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
@@ -1022,7 +1029,7 @@ Depends on: nothing more.
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
-- [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task, Cancel, a refusal, Create)
+- [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
