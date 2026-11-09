@@ -325,12 +325,9 @@ fn save(app: &Shared, dir: &Path, identity: &str, writes: &[(String, PathBuf, Va
         }
     }
     for path in gone {
-        match std::fs::remove_file(path) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
-                tracing::warn!(event = "lastlines.undeleted", file = %path.display(), error = %e);
-                left.undeleted.push(path.clone());
-            }
-            _ => {}
+        if let Err(e) = crate::config::remove_if_there(path) {
+            tracing::warn!(event = "lastlines.undeleted", file = %path.display(), error = %e);
+            left.undeleted.push(path.clone());
         }
     }
     left

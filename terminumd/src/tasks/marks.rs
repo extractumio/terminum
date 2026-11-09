@@ -42,10 +42,9 @@ pub fn read_later(app: &Shared) {
         let mut wait = std::time::Duration::from_secs(1);
         loop {
             let b = a.clone();
-            match tokio::task::spawn_blocking(move || b.task_marks.refresh(&b.tasks)).await {
-                Ok(Ok(true)) => return tell(&a),
-                Ok(Ok(false)) => return,
-                Ok(Err(e)) => tracing::warn!(event = "tasks.marks", error = %e),
+            match tokio::task::spawn_blocking(move || b.task_marks.refresh(&b.tasks)).await.map_err(|e| e.to_string()).and_then(|r| r) {
+                Ok(true) => return tell(&a),
+                Ok(false) => return,
                 Err(e) => tracing::warn!(event = "tasks.marks", error = %e),
             }
             if !a.task_marks.ask() {

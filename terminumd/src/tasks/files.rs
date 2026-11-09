@@ -213,7 +213,7 @@ pub fn sweep(store: &Store, dir: &Path, at: i64) -> Result<usize, String> {
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
             let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age.as_secs() > ORPHAN_SECONDS);
-            if name.ends_with(&format!(".{DELETING}")) || (old && !known.contains(&name)) {
+            if Path::new(&name).extension().is_some_and(|x| x == DELETING) || (old && !known.contains(&name)) {
                 let _ = std::fs::remove_file(e.path());
             }
         }

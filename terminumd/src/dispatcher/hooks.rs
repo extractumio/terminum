@@ -117,11 +117,11 @@ async fn one_event(app: Shared, key: String, ev: Value) {
         let a = app.clone();
         let done = store(&app, move |tx| {
             let Some(r) = runs::in_pane(tx, &key)? else { return Ok(()) };
-            let mut counted = a.dispatcher.counted_in.lock();
-            let same = session.as_ref().zip(counted.get(&r.id)).map(|(s, c)| s == c);
+            let counted = a.dispatcher.counted_in.lock().get(&r.id).cloned();
+            let same = session.as_ref().zip(counted).map(|(s, c)| *s == c);
             super::usage::heard(tx, &r.id, &r.agent_id, &models, ops::now(), same)?;
             if let Some(s) = session {
-                counted.insert(r.id, s);
+                a.dispatcher.counted_in.lock().insert(r.id, s);
             }
             Ok(())
         }).await;

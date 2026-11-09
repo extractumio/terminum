@@ -46,7 +46,7 @@ pub fn main(agent: &str) -> i32 {
             // a closed stdout is the agent's choice: never a panic, still 0
             let printed = writeln!(std::io::stdout().lock(), "{line}").is_ok();
             // Dispatcher's lines in it go once they were printed, else they come again (AC-114)
-            if let (true, Ok((_, Some(answer)))) = (printed, &answers[i]) && let Some(n) = answer["lines"].as_u64() {
+            if printed && let Ok((_, Some(answer))) = &answers[i] && let Some(n) = answer["lines"].as_u64() {
                 let mut heard = ev.clone();
                 heard["event"] = json!("Heard");
                 heard["lines"] = json!(n);

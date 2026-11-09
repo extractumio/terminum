@@ -181,6 +181,10 @@ fn a_folders_first_save_sweeps_a_stops_leftover_copies() {
     let file = dir.join("file.txt");
     fs::write(&file, "a").unwrap();
     save(&roots, &file, "b", &etag(&fs::metadata(&file).unwrap())).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while (tmp.exists() || part.exists()) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));   // swept on a thread of its own
+    }
     assert!(!tmp.exists() && !part.exists(), "a stop's leftovers go");
     assert!(own.exists() && young.exists() && other.exists(), "its own, a young one and the user's file stay");
     fs::remove_dir_all(dir).unwrap();
