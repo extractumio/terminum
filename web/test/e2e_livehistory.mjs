@@ -33,9 +33,13 @@ export async function liveHistory(page, opts) {
   await page.click("#sessions .item");
   await page.waitForSelector("#term", { state: "visible" });
   await page.evaluate(() => document.getElementById("kbd").focus());
+  // Enter tells what the screen shows at the cursor: the typed line, once it is drawn (one more
+  // than before, counted on the drawn screen: the browser before this one typed the same line here)
+  await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 8000 });
+  const typed = () => page.evaluate(() => document.getElementById("screen").innerText.split("echo history probe words").length - 1);
+  const before = await typed();
   await page.keyboard.type("echo history probe words");
-  // Enter tells what the screen shows at the cursor: the typed line, once it is drawn
-  await until(() => page.evaluate(() => document.getElementById("screen").innerText.includes("echo history probe words")), 8000);
+  check("AC-151 the typed line is drawn before its Enter", await until(() => typed().then((n) => n > before)));
   await page.keyboard.press("Enter");
   await nap(600);
 
@@ -87,7 +91,8 @@ export async function liveHistory(page, opts) {
   await page.waitForURL(/\/sessions\//);
   check("AC-151 the session page opens without its hand-off in the address", await until(() => !page.url().includes("then="), 8000), page.url());
   check("AC-151 the message is brought into view where it was sent", await until(() => page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("echo history probe words"))), 8000));
-  check("AC-151 the jump asked for the message by its id", jumped.length > 0 && jumped.every((m) => m.item?.text === "echo history probe words"), JSON.stringify(jumped).slice(0, 300));
+  // the line may stand on the screen already: the answer to the ask comes on its own time
+  check("AC-151 the jump asked for the message by its id", await until(() => jumped.length > 0) && jumped.every((m) => m.item?.text === "echo history probe words"), JSON.stringify(jumped).slice(0, 300));
 
   // the Dashboard: the human's only (earlier suites in this run sent messages too: counted from the store)
   const day = await page.evaluate(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; });
