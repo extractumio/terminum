@@ -233,6 +233,11 @@ Scenario: AC-109 edge — files stay with the task
 Scenario: AC-109 failure — too large
   When a file is over 100 MB
   Then it is refused with "shot.mov is over 100 MB" and the rest of the window is kept
+
+Scenario: AC-109 failure — a purge or a keep cut short
+  When a purge fails (the store refuses it) or terminumd stops halfway through one or through keeping a file
+  Then a file is whole or gone, never a row without its bytes: a failed purge keeps both, and what a stop left (bytes set aside by a purge, bytes an hour old with no row) goes at the next sweep
+  And an agent's file is attached only to a task still within its session's reach when it attaches
 ```
 
 ### AC-110 — Projects shared [MUST / P0]
@@ -1065,7 +1070,7 @@ Depends on: nothing more.
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
+- [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`

@@ -17,6 +17,10 @@ pub const MOST_BYTES: usize = 100 << 20;
 /// What `raster_mime` looks at.
 const MIME_HEAD: u64 = 12;
 const UNUSED_SECONDS: i64 = 7 * 24 * 3600;
+/// Bytes with no row this old are a crash's leftover, not a file on its way (no upload lasts an hour).
+const ORPHAN_SECONDS: u64 = 3600;
+/// What a purge sets its bytes aside as until its row is gone: `<id>.deleting`.
+const DELETING: &str = "deleting";
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct File {
@@ -114,10 +118,11 @@ pub fn keep_from(store: &Store, dir: &Path, name: &str, from: impl Read, at: i64
 
 /// A file kept for what then failed goes again.
 pub fn forget(store: &Store, dir: &Path, id: &str) {
+    // the row first: bytes without a row are swept, a row without bytes would stand
+    let _ = store.with(|tx| tx.execute("DELETE FROM files WHERE id = ?1", [id]).map(|_| ()).map_err(sql));
     if let Ok(path) = path_of(dir, id) {
         let _ = std::fs::remove_file(path);
     }
-    let _ = store.with(|tx| tx.execute("DELETE FROM files WHERE id = ?1", [id]).map(|_| ()).map_err(sql));
 }
 
 /// The files of a window not yet saved join a task, on `event` of its history.
@@ -152,11 +157,20 @@ pub fn open(store: &Store, dir: &Path, id: &str) -> Result<(File, std::fs::File,
 }
 
 /// A human's purge (AC-109): the bytes go for good; the history keeps who did it and the name.
+/// The bytes are set aside before the row goes and put back when that fails, so no row ever
+/// names bytes that are gone (D14); what is set aside goes after the commit, else at the sweep.
 pub fn delete(store: &Store, dir: &Path, id: &str, author: &str, at: i64) -> Result<Option<String>, String> {
     let path = path_of(dir, id)?;
-    store.with(|tx| {
+    let aside = path.with_extension(DELETING);
+    let mut moved = false;
+    let done = store.with(|tx| {
         let found: Option<(Option<String>, String)> = tx.query_row("SELECT task, name FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
         let (task, name) = found.ok_or_else(|| "No such file".to_string())?;
+        match std::fs::rename(&path, &aside) {
+            Ok(()) => moved = true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{name}: {e}")),
+        }
         tx.execute("DELETE FROM files WHERE id = ?1", [id]).map_err(sql)?;
         let mut shown = None;
         if let Some(key) = &task {
@@ -164,9 +178,22 @@ pub fn delete(store: &Store, dir: &Path, id: &str, author: &str, at: i64) -> Res
             ops::log(tx, key, author, "edit", &format!("{who} deleted the file {name}"), None, at)?;
             shown = Some(tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get::<_, String>(0)).map_err(sql)?);
         }
-        std::fs::remove_file(&path).or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(format!("{name}: {e}")) })?;
         Ok(shown)
-    })
+    });
+    match &done {
+        Ok(_) if moved => {
+            if let Err(e) = std::fs::remove_file(&aside) {
+                tracing::warn!(event = "tasks.file_undeleted", id, error = %e);   // the sweep takes it
+            }
+        }
+        Err(_) if moved => {
+            if let Err(e) = std::fs::rename(&aside, &path) {
+                tracing::warn!(event = "tasks.file_unrestored", id, error = %e);
+            }
+        }
+        _ => {}
+    }
+    done
 }
 
 /// Files of windows never saved, older than 7 days, go; how many.
@@ -179,13 +206,14 @@ pub fn sweep(store: &Store, dir: &Path, at: i64) -> Result<usize, String> {
     for id in &gone {
         let _ = std::fs::remove_file(path_of(dir, id)?);
     }
-    // bytes whose row a crash never wrote: old ones only, one may be on its way now
+    // bytes whose row a crash never wrote: an hour old at least, one may be on its way now; a
+    // purge's bytes set aside, whatever their age
     if let Ok(entries) = std::fs::read_dir(folder(dir)) {
         let known: std::collections::HashSet<String> = store.with(|tx| rows(tx, "SELECT id FROM files", [], |r| r.get(0)))?.into_iter().collect();
         for e in entries.flatten() {
             let name = e.file_name().to_string_lossy().into_owned();
-            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age.as_secs() as i64 > UNUSED_SECONDS);
-            if old && !known.contains(&name) {
+            let old = e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age.as_secs() > ORPHAN_SECONDS);
+            if name.ends_with(&format!(".{DELETING}")) || (old && !known.contains(&name)) {
                 let _ = std::fs::remove_file(e.path());
             }
         }
@@ -288,6 +316,32 @@ mod tests {
         assert!(open(&s, &dir, &f.id).is_err());
         let h = s.with(|tx| ops::history(tx, &id)).unwrap();
         assert!(h.as_array().unwrap().iter().any(|e| e["text"].as_str().is_some_and(|t| t.ends_with("deleted the file secret.txt"))));
+    }
+
+    /// AC-109 failure (D14): a purge that fails leaves its file whole, row and bytes; leftovers
+    /// of a crash (bytes set aside, bytes with no row an hour old) go at the sweep.
+    #[test]
+    fn ac109_a_failed_purge_keeps_the_file_and_a_crash_s_bytes_are_swept() {
+        let (s, dir) = fresh("tf-purge-fails");
+        let id = task(&s);
+        let f = keep(&s, &dir, "notes.txt", b"kept", 1).unwrap();
+        s.with(|tx| attach(tx, std::slice::from_ref(&f.id), &id, None)).unwrap();
+        assert!(delete(&s, &dir, &f.id, "nobody", 2).is_err(), "no such user: the purge fails");
+        let (_, mut bytes, _) = open(&s, &dir, &f.id).expect("row and bytes stay");
+        let mut text = String::new();
+        std::io::Read::read_to_string(&mut bytes, &mut text).unwrap();
+        assert_eq!(text, "kept");
+        let aside = folder(&dir).join(format!("{}.{DELETING}", "a".repeat(32)));
+        std::fs::write(&aside, "x").unwrap();
+        let stray = folder(&dir).join("b".repeat(32));
+        std::fs::write(&stray, "x").unwrap();
+        let young = folder(&dir).join("c".repeat(32));
+        std::fs::write(&young, "x").unwrap();
+        std::fs::File::options().write(true).open(&stray).unwrap()
+            .set_modified(std::time::SystemTime::now() - std::time::Duration::from_secs(ORPHAN_SECONDS + 60)).unwrap();
+        sweep(&s, &dir, 3).unwrap();
+        assert!(!aside.exists() && !stray.exists(), "set aside, or an hour without a row: gone");
+        assert!(young.exists() && folder(&dir).join(&f.id).exists(), "one on its way, and a file with its row, stay");
     }
 
     #[test]

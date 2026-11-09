@@ -258,6 +258,8 @@ fn attach_file(store: &Store, state_dir: &Path, who: &Who, args: &Value) -> Resu
     let at = ops::now();
     let file = files::keep_from(store, state_dir, &name, data, at)?;
     store.with(|tx| {
+        // judged again where it attaches: the task may have left the session's reach while its bytes were copied (B3b)
+        visible(tx, who, id)?;
         let me = author(tx, who)?;
         let event = ops::comment(tx, &me, id, &format!("Attached {}", file.name), at)?;
         files::attach(tx, std::slice::from_ref(&file.id), id, Some(&event))
