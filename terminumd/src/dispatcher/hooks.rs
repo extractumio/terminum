@@ -33,6 +33,8 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             active = false;
         }
+        // the agent's own turn (a background task's end, another session's message): it works, no one asked for new work
+        "UserPromptSubmit" if ev["prompt"].as_str().is_some_and(crate::messages::injected) => r.turn_starts(),
         "UserPromptSubmit" if r.is_starting() => {
             r.state = Phase::Working;
             r.prompt = None;
@@ -213,6 +215,20 @@ mod tests {
         }, move |_| *count.lock() += 1).await;
         assert_eq!(*seen.lock(), vec![false]);
         assert_eq!(*said.lock(), 1);
+    }
+
+    #[test]
+    fn ac122_an_agents_own_turn_starts_a_turn_but_is_no_new_work() {
+        let s = Store::open(crate::testutil::fresh_dir("hooks-injected").join("kanban.sqlite"));
+        s.with(|tx| {
+            let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: true, ..Default::default() };
+            let prompt = |p: &str| serde_json::json!({"agent": "claude", "event": "UserPromptSubmit", "prompt": p});
+            let (moved, _) = apply(tx, &mut r, &prompt("<task-notification>\n<task-id>b1</task-id>"), false)?;
+            assert_eq!((moved, r.turn_ended, r.nudged), (false, false, true), "its clocks go on");
+            apply(tx, &mut r, &prompt("and now this"), false)?;
+            assert!(!r.nudged, "a human's prompt is new work");
+            Ok(())
+        }).unwrap();
     }
 
     /// TERM-34, across the hooks' record, Dispatcher and the plans: a subagent's failure and prompt, a late tool and a
