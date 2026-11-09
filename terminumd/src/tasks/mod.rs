@@ -5,6 +5,7 @@ pub mod agents;
 pub mod api;
 pub mod archiving;
 pub mod comments;
+pub mod cron;
 pub mod family;
 pub mod files;
 pub mod folder;

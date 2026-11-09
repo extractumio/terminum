@@ -17,6 +17,8 @@ import { spentLine, usageWords } from "./kanbanspend.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { boardSessions, sessionStrip } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
+import { foldedCards } from "./kanbanfold.js";
+import { scheduledSection } from "./kanbansched.js";
 import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
@@ -35,8 +37,6 @@ let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
-const FOLDED = new Set(["TODO", "DONE"]);          // their cards are a line each: ID, severity, title (terminum-kanban.md AC-159)
-let unfolded = null;                               // the one such card shown whole
 let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's slots hold, and who is at a limit (AC-141)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
@@ -136,13 +136,13 @@ function showSession(c, t) {
 }
 
 function card(t) {
-  const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}${FOLDED.has(t.status) ? " compact" : ""}${unfolded === t.id ? " open" : ""}`);
+  const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}`);
   c.dataset.id = t.id;
   c.dataset.budget = t.budget_seconds ?? "";
   c.draggable = true;
   c.tabIndex = 0;
   c.rowDrawn = "";
-  if (FOLDED.has(t.status)) c.setAttribute("aria-expanded", String(unfolded === t.id));
+  folds.mark(c, t);
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
@@ -167,8 +167,8 @@ function card(t) {
   c.append(...[head, el("div", "ctitle", t.title), boxes, foot].filter(Boolean));
   showUsage(c, t.id);
   showSession(c, t);
-  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else pressCard(c); });
-  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) pressCard(c); });
+  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else folds.press(c); });
+  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) folds.press(c); });
   c.addEventListener("dragstart", (e) => {
     dragging = picked.has(t.id) ? pickedTasks() : [t];
     e.dataTransfer.effectAllowed = "move";
@@ -187,20 +187,6 @@ function card(t) {
   return c;
 }
 
-/** A folded card's press shows it whole, folding the one shown before; a whole card's opens its window (AC-159). */
-function pressCard(c) {
-  if (!c.matches(".compact:not(.open)")) return openTask(c.dataset.id);
-  fold();
-  c.classList.add("open");
-  c.setAttribute("aria-expanded", "true");
-  unfolded = c.dataset.id;
-}
-function fold() {
-  const c = document.querySelector(".card.compact.open");
-  c?.classList.remove("open");
-  c?.setAttribute("aria-expanded", "false");
-  unfolded = null;
-}
 
 const pickedTasks = () => [...cards.values()].flat().filter((t) => picked.has(t.id));
 
@@ -218,7 +204,7 @@ function unpick() {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape" || document.querySelector("dialog[open]")) return;
   if (picked.size) unpick();
-  else fold();
+  else folds.fold();
 });
 
 /** RUN's window for `tasks`, on `agent` if chosen; what is said of a refusal is terminumd's. */
@@ -277,18 +263,21 @@ function send(m) {
   else say("Not connected");
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
+const folds = foldedCards((id) => openTask(id));
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: () => readSoon() });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
+const scheduled = scheduledSection({ getMeta: () => meta, chosen: () => filters().project, openTask });
+$("schedbar").append(scheduled.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
   if (dragging) return;
-  if (unfolded && ![...FOLDED].some((c) => cards.get(c).some((t) => t.id === unfolded))) unfolded = null;   // it left them: whole elsewhere, a line if it comes back
+  folds.keep(cards);
   const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
   for (const [column, part] of columns) {
     const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered, filters().project.length === 1]);   // a session's state changes on its card alone (sessionsCame)
@@ -361,6 +350,7 @@ async function loadMeta() {
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     bar.draw();
     agents.draw();
+    scheduled.draw();
     project.refresh();
   } catch (e) {
     failed.meta = e.message;
@@ -376,7 +366,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p), newSession });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); scheduled.draw(); }, editProject: (p) => project.open(p), newSession });
 const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
@@ -468,6 +458,7 @@ function listen() {
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
       else if (m.t === "taskmarks") needs.came(m);
+      else if (m.t === "schedules") scheduled.load();
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
         slots = m.slots ?? slots;
@@ -486,7 +477,7 @@ function listen() {
 signin.showKeptCss();
 signin.loadCss();
 await loadMeta();
-await load();
+await Promise.all([load(), scheduled.load()]);
 listen();
 address.route();
 const asked = new URLSearchParams(location.search);
