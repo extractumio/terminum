@@ -124,21 +124,27 @@ async fn signal(app: &Shared, server: &Server, name: &str, pids: &[String]) {
     }
 }
 
-/// SIGTERM to what runs under `root`, deepest first, and after `grace` SIGKILL to those still the
-/// same pid and start time (AC-126). How many were signalled; `Err`: `ps` did not answer, none were.
-pub async fn end(app: &Shared, server: &Arc<Server>, root: &str, grace: Duration) -> Result<usize, String> {
+/// What runs under `root`, deepest first, with each one's start time: what an end signals (AC-126). `Err`: `ps` did not answer.
+pub async fn under_root(app: &Shared, server: &Server, root: &str) -> Result<Vec<(String, String)>, String> {
     if !is_pid(root) {
         return Err(format!("{root} is no pane's process"));
     }
     let tree = read(app, server).await.ok_or("ps did not answer")?;
-    let targets: Vec<(String, String)> = descendants(&tree, root).into_iter().rev().map(|p| (p.pid.clone(), p.start.clone())).collect();
+    Ok(descendants(&tree, root).into_iter().rev().map(|p| (p.pid.clone(), p.start.clone())).collect())
+}
+
+/// SIGTERM to `targets` (`under_root`'s).
+pub async fn term(app: &Shared, server: &Server, targets: &[(String, String)]) {
     signal(app, server, "-TERM", &targets.iter().map(|t| t.0.clone()).collect::<Vec<_>>()).await;
+}
+
+/// After `grace`, SIGKILL to those of `targets` still under `root` with the same pid and start time (AC-126).
+pub async fn kill_left(app: &Shared, server: &Arc<Server>, root: &str, targets: &[(String, String)], grace: Duration) {
     tokio::time::sleep(grace).await;
     if let Some(now) = read(app, server).await {
         let still: Vec<(String, String)> = descendants(&now, root).into_iter().map(|p| (p.pid.clone(), p.start.clone())).collect();
         signal(app, server, "-KILL", &targets.iter().filter(|t| still.contains(t)).map(|t| t.0.clone()).collect::<Vec<_>>()).await;
     }
-    Ok(targets.len())
 }
 
 #[cfg(test)]

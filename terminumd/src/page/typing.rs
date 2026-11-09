@@ -213,7 +213,7 @@ async fn run(app: Shared, page: Arc<Page>, server: Arc<Server>) {
             server.arm_copy(&pane, copied_to(&page, &key));
         }
         let mut result = Ok(());
-        let held = server.typing(&pane).lock_owned().await;
+        let held = if keys { app.inputs.human_queue(&server, &pane, &key).await } else { server.typing(&pane).lock_owned().await };
         if keys {
             app.dispatcher.touched(&key);
         }

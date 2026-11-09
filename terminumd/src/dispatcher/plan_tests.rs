@@ -2,7 +2,7 @@
 use super::*;
 
 fn run(status: &str) -> Run {
-    Run { task: "k12".into(), status: status.into(), state: "working".into(), kind: "claude".into(), ids: vec!["T-12".into()], open: if crate::dispatcher::plan::finished(status) { vec![] } else { vec!["T-12".into()] }, ..Default::default() }
+    Run { task: "k12".into(), status: status.into(), state: Phase::Working, kind: "claude".into(), ids: vec!["T-12".into()], open: if crate::dispatcher::plan::finished(status) { vec![] } else { vec!["T-12".into()] }, ..Default::default() }
 }
 
 fn up(dt: i64) -> Facts {
@@ -19,6 +19,9 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_a_human() {
     r.turn_ended = true;
     assert!(step(&mut r, &up(299)).is_empty());
     assert_eq!(step(&mut r, &up(1)), vec![Act::Nudge]);
+    assert!(!r.nudged && r.nudge_turn, "`nudged` is written once it went (acts.rs)");
+    assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
+    r.nudged = true;
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
     let acts = step(&mut r, &up(570));
     assert_eq!(moved(&acts).unwrap(), ("WAIT FOR HUMAN", "The agent stopped without a result".to_string()));
@@ -53,7 +56,7 @@ fn ac123_the_exit_code_decides_a_clean_end_from_a_signal() {
     let mut r = run("IN PROGRESS");
     let (to, words) = moved(&step(&mut r, &Facts { exit: Some(0), alive: false, ..up(0) })).unwrap();
     assert_eq!((to, words.as_str()), ("DONE", "The session ended without finish_task."));
-    assert_eq!(r.state, "gone");
+    assert_eq!(r.state, Phase::Gone);
     let mut r = run("IN PROGRESS");
     let (to, words) = moved(&step(&mut r, &Facts { exit: Some(143), alive: false, ..up(0) })).unwrap();
     assert_eq!((to, words.as_str()), ("FAILED", "The agent's process ended: exit 143."));
@@ -87,11 +90,11 @@ fn ac124_two_minutes_of_a_question_wait_for_a_human_and_it_returns() {
 fn ac125_it_closes_two_hours_after_the_end_only_when_idle() {
     let ended = |dt| Facts { exit: Some(0), alive: false, dt, ..up(0) };
     let mut r = run("DONE");
-    r.state = "gone".into();
+    r.state = Phase::Gone;
     assert!(step(&mut r, &ended(7199)).is_empty());
     let acts = step(&mut r, &ended(1));
     assert_eq!(acts, vec![Act::Close { words: "Session ended: closed 2 hours after DONE.".into(), keep: true }]);
-    assert_eq!(r.state, "gone", "closed only when tmux did it");
+    assert_eq!(r.state, Phase::Gone, "closed only when tmux did it");
     let mut r = run("DONE");
     r.result = true;
     r.turn_ended = true;
@@ -113,7 +116,7 @@ fn ac125_activity_starts_the_two_hours_again_said_once() {
 #[test]
 fn ac125_a_human_at_the_shell_keeps_it_open() {
     let mut r = run("DONE");
-    r.state = "gone".into();
+    r.state = Phase::Gone;
     let shell = |dt, active| Facts { exit: Some(0), alive: false, active, dt, ..up(0) };
     step(&mut r, &shell(7000, false));
     step(&mut r, &shell(30, true));
@@ -125,7 +128,7 @@ fn ac125_a_human_at_the_shell_keeps_it_open() {
 fn ac125_an_agent_still_working_is_never_closed() {
     // its start failed by our reading (a Codex with hooks not trusted): it runs on, no turn's end heard
     let mut r = run("FAILED");
-    r.state = "gone".into();
+    r.state = Phase::Gone;
     assert!(step(&mut r, &up(9000)).is_empty());
     r.turn_ended = true;
     assert!(matches!(&step(&mut r, &up(30))[0], Act::Close { .. }), "once its turn is over");
@@ -138,7 +141,7 @@ fn ac125_other_tasks_and_a_human_s_program_keep_it_open() {
     assert!(step(&mut r, &Facts { others_open: true, ..up(9000) }).is_empty());
     let acts = step(&mut r, &Facts { program: Some("vim".into()), ..up(30) });
     assert_eq!(acts, vec![Act::Say("Session left open: vim runs in it".into())]);
-    assert_eq!(r.state, "left");
+    assert_eq!(r.state, Phase::Left);
 }
 
 #[test]
@@ -146,7 +149,7 @@ fn ac125_a_pane_not_this_run_s_is_never_acted_on() {
     let mut r = run("IN PROGRESS");
     let acts = step(&mut r, &Facts { pane: true, marked: false, alive: true, dt: 30, ..Default::default() });
     assert_eq!(moved(&acts).unwrap(), ("FAILED", "Its pane is no longer this run's: the link is dropped.".to_string()));
-    assert_eq!((r.state.as_str(), r.pane_key), ("closed", None));
+    assert_eq!((r.state, r.pane_key), (Phase::Closed, None));
     let mut gone = run("IN PROGRESS");
     gone.pane_key = Some("tmux:local:s:%1".into());
     step(&mut gone, &Facts::default());
@@ -193,7 +196,12 @@ fn ac126_the_last_warning_is_three_percent_at_least_two_minutes() {
     r.budget_used = 3400;
     assert!(step(&mut r, &up(70)).is_empty());
     assert_eq!(step(&mut r, &up(10)), vec![Act::Warn(120)]);
+    assert!(!r.warned && warn_due(&r), "`warned` once it went (acts.rs)");
+    assert_eq!(step(&mut r, &up(10)), vec![Act::Warn(110)], "lost before it went: given again");
+    r.warned = true;
     assert!(step(&mut r, &up(10)).is_empty(), "once");
+    r.new_work();
+    assert!(!warn_due(&r), "new work: its budget starts anew, a warning written late would not hold");
 }
 
 #[test]
@@ -204,10 +212,13 @@ fn ac126_at_the_limit_the_task_fails_first_then_the_agent_ends() {
     r.warned = true;
     let acts = step(&mut r, &up(30));
     assert_eq!(acts, vec![Act::Move { to: "FAILED", words: "Time budget of 60 minutes used: the agent was ended.".into() }, Act::End]);
-    assert_eq!(r.state, "gone");
+    assert_eq!(r.state, Phase::Ending, "until it is done");
     r.status = "FAILED".into();
+    assert_eq!(step(&mut r, &up(30)), vec![Act::End], "not done yet (a restart, a human's keys put it off): again");
+    assert_eq!((r.state, r.budget_used), (Phase::Ending, 3620), "no clock runs meanwhile");
     let acts = step(&mut r, &Facts { exit: Some(143), alive: false, ..up(30) });
     assert_eq!(moved(&acts), None, "the end Dispatcher caused counts for nothing");
+    assert_eq!(r.state, Phase::Gone);
 }
 
 #[test]
@@ -226,6 +237,7 @@ fn ac128_memory_warns_once_after_two_walks_and_ends_after_two() {
     let (mut r, mut count) = (run("IN PROGRESS"), (0, 0));
     assert!(step(&mut r, &Facts { memory: walks(5.0, &mut count), ..up(30) }).is_empty(), "one walk is not enough");
     assert_eq!(step(&mut r, &Facts { memory: walks(5.1, &mut count), ..up(30) }), vec![Act::MemoryWarn(5.1)]);
+    r.memory_warned = true;                            // as acts.rs writes it once it went
     assert!(step(&mut r, &Facts { memory: walks(5.1, &mut count), ..up(30) }).is_empty(), "once");
     assert!(step(&mut r, &Facts { memory: walks(9.2, &mut count), ..up(30) }).is_empty());
     let acts = step(&mut r, &Facts { memory: walks(9.2, &mut count), ..up(30) });
@@ -257,13 +269,13 @@ fn ac127_a_silent_subagent_gets_one_request_then_fails_its_task() {
 fn ac125_a_close_decided_is_read_again_before_the_pane_goes() {
     let due = || { let mut r = run("DONE"); r.turn_ended = true; r.closing_for = CLOSE; r };
     assert!(still_closes(&due()));
-    assert!(still_closes(&Run { state: "gone".into(), turn_ended: false, ..due() }), "its agent ended");
+    assert!(still_closes(&Run { state: Phase::Gone, turn_ended: false, ..due() }), "its agent ended");
     let mut pressed = due();
     pressed.new_work();
     assert!(!still_closes(&pressed), "a human's own prompt, or RUN, since the walk");
     assert!(!still_closes(&Run { turn_ended: false, ..due() }), "RUN took it to type in it");
     assert!(!still_closes(&Run { status: "IN PROGRESS".into(), ..due() }), "open again");
-    assert!(!still_closes(&Run { state: "left".into(), ..due() }), "given up since");
+    assert!(!still_closes(&Run { state: Phase::Left, ..due() }), "given up since");
 }
 
 #[test]
@@ -275,7 +287,7 @@ fn ac141_only_a_session_with_all_over_is_idle_for_a_slot() {
     assert!(!idle_holder(&Run { open_tools: 1, ..idle() }), "a tool open");
     assert!(!idle_holder(&Run { status: "IN PROGRESS".into(), ..idle() }));
     assert!(!idle_holder(&Run { open: vec!["T-13".into()], ..idle() }), "a task of it open");
-    assert!(!idle_holder(&Run { state: "gone".into(), ..idle() }), "holds no slot");
+    assert!(!idle_holder(&Run { state: Phase::Gone, ..idle() }), "holds no slot");
 }
 
 #[test]
@@ -284,8 +296,8 @@ fn ac142_a_session_with_no_task_is_watched_for_its_end_alone() {
     let mut quiet = up(7200);
     quiet.memory = Some(Memory { gib: 20.0, end_gib: 8.0, warn_due: true, end_due: true });
     assert!(step(&mut r, &quiet).is_empty(), "no nudge, budget, memory end or closing: the human's");
-    assert_eq!(r.state, "working");
+    assert_eq!(r.state, Phase::Working);
     let ended = step(&mut r, &Facts { alive: false, exit: Some(0), ..up(30) });
-    assert_eq!(r.state, "gone", "its agent's end frees its slot");
+    assert_eq!(r.state, Phase::Gone, "its agent's end frees its slot");
     assert!(ended.iter().all(|a| matches!(a, Act::Say(_))), "no task to move: {ended:?}");
 }

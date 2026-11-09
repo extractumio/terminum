@@ -11,7 +11,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
-use super::runs::{self, Run};
+use super::runs::{self, Phase, Run};
 use super::press::{also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
 use super::pool::{self, Full};
 use super::screen::Screen;
@@ -148,11 +148,14 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             }
             // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
             // it starts no process (AC-141)
-            let id = r.id.clone();
+            let (id, asked) = (r.id.clone(), std::time::Instant::now());
             store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = false).map(drop)).await?;
             if let Err(miss) = gate::deliver(app, &r, &server, &pane, &again, false).await {
-                let (id, was) = (r.id.clone(), r.turn_ended);
-                let _ = store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = was).map(drop)).await;
+                // what it was, unless a human's prompt came meanwhile: its turn is theirs (a Stop says it ended)
+                if !app.inputs.human_since(&server.key(&pane), asked) {
+                    let (id, was) = (r.id.clone(), r.turn_ended);
+                    let _ = store(app, move |tx| runs::change(tx, &id, |now| now.turn_ended = was).map(drop)).await;
+                }
                 return Err(match miss {
                     Miss::NotEmpty(_) => "The session is not at an empty input box: answer there first".to_string(),
                     Miss::Other(why) => format!("Not delivered: {why}"),
@@ -188,6 +191,7 @@ pub(super) fn has_stray(text: &str) -> bool {
 
 /// Closes an idle holder for the press that asked: read again here, its screen too: a draft or a question stands in the way (AC-141).
 async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), String> {
+    let at = std::time::Instant::now();
     let wanted = run.to_string();
     let r = store(app, move |tx| runs::by_id(tx, &wanted)).await?;
     let (server, pane) = pane_of(app, &r)?;
@@ -197,9 +201,9 @@ async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), Stri
     if !quiet || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
         return Err(format!("{}'s session is no longer idle: it stays.", r.names()));
     }
-    acts::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, pool::closable).await?;
+    let stayed = acts::close(app, &r, (&server, &pane), &format!("Session ended: closed for {for_tasks}."), true, at, pool::closable).await?;
     super::told_all(app, &r);
-    Ok(())
+    stayed.map_or(Ok(()), |why| Err(format!("{}'s session stays: {why}.", r.names())))
 }
 
 /// What runs in `pane` other than its shell: in front, or stopped or left behind it (AC-122).
@@ -262,7 +266,7 @@ fn project_named(app: &Shared, project: &str) -> Option<(String, String)> {
 async fn went_on(app: &Shared, r: &Run, t: &Task) -> Result<Value, String> {
     let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), "The human ran it again.");
     let done = store(app, move |tx| {
-        let now = runs::change(tx, &id, |now| { now.state = "working".into(); now.new_work(); })?;
+        let now = runs::change(tx, &id, |now| { now.state = Phase::Working; now.new_work(); })?;
         bring_back(tx, &task)?;
         if super::plan::finished(&status) {
             move_one(tx, &task, "IN PROGRESS", words)?;
@@ -297,7 +301,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<Str
         if agent.is_none() {
             say(tx, &old, &format!("{} is no longer in the pool: this goes on with the settings it started with.", old.agent_name))?;
         }
-        runs::change(tx, &old.id, |was| { was.state = "closed".into(); was.pane_key = None; })?;
+        runs::change(tx, &old.id, |was| { was.state = Phase::Closed; was.pane_key = None; })?;
         for other in old.ids.iter().filter(|other| **other != id) {
             ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
         }
@@ -373,7 +377,7 @@ async fn launch(app: &Shared, run: &str, server: &Arc<Server>, project: &str, di
         }
         Err(e) => {
             let r = run.to_string();
-            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = "closed".into()).map(drop)).await;
+            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = Phase::Closed).map(drop)).await;
             Err(e)
         }
     }
@@ -429,7 +433,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
         let keys: Vec<String> = now.iter().map(|t| t.key.clone()).collect();
         for t in &now {
             if let Some(old) = runs::last_of(tx, &t.key)?.filter(|r| !r.is_over() && r.pane_key == t.session) {
-                runs::change(tx, &old.id, |r| r.state = "left".into())?;
+                runs::change(tx, &old.id, |r| r.state = Phase::Left)?;
             }
         }
         runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, ops::now())

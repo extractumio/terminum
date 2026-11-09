@@ -37,6 +37,26 @@ async fn the_identity_is_set_once_with_one_answer_so_later_answers_stay_in_order
     assert_eq!(again[1], Ok(vec!["aaa".to_string()]), "a second connection keeps the first identity");
 }
 
+/// The gate's guarded command (terminum-dispatcher.md §9): each branch's own answer, and the next command's
+/// answer is its own (TERM-33).
+#[tokio::test]
+async fn a_guarded_command_gets_its_branchs_answer_and_the_next_command_its_own() {
+    let Some(s) = Tmux::start("ctl-if", (40, 10), "/bin/sh") else { return };
+    let (c, _n, _d) = attach(&s);
+    let pane = c.run("display -p '#{pane_id}'").await.unwrap().remove(0);
+    assert_eq!(c.run_if(&pane, "1", "display -p inner", "display -p other").await, Ok(vec!["inner".to_string()]));
+    assert_eq!(c.run("display -p next").await, Ok(vec!["next".to_string()]));
+    assert_eq!(c.run_if(&pane, "0", "display -p inner", "display -p other").await, Ok(vec!["other".to_string()]));
+    assert_eq!(c.run("display -p next").await, Ok(vec!["next".to_string()]));
+    // the branch's error reaches the caller, not the next command
+    let failed = c.run_if(&pane, "1", "send-keys -t %999 Enter", "display -p other").await;
+    assert!(failed.as_ref().is_err_and(|e| e.contains("can't find pane")), "{failed:?}");
+    assert_eq!(c.run("display -p next").await, Ok(vec!["next".to_string()]));
+    // pipelined behind other lines, as a page's frame reads go
+    let (a, b, d) = tokio::join!(c.run("display -p a"), c.run_if(&pane, "1", "display -p inner", "display -p other"), c.run("display -p d"));
+    assert_eq!((a, b, d), (Ok(vec!["a".to_string()]), Ok(vec!["inner".to_string()]), Ok(vec!["d".to_string()])));
+}
+
 #[tokio::test]
 async fn output_of_a_pane_is_a_notice() {
     let Some(s) = Tmux::start("ctl-notice", (40, 10), "/bin/sh") else { return };

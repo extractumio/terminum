@@ -21,7 +21,7 @@ fn working(tx: &Transaction, a: &str, titles: &[&str]) -> (Run, Vec<ops::Task>) 
     for t in &tasks {
         ops::link(tx, HUMAN, &t.id, Some(&format!("tmux:local:t:%{a}")), 2).unwrap();
     }
-    let r = change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(format!("tmux:local:t:%{a}")); }).unwrap();
+    let r = change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{a}")); }).unwrap();
     crate::dispatcher::move_all(tx, &r, "IN PROGRESS", "The agent took it.").unwrap();
     (by_id(tx, &id).unwrap(), tasks)
 }
@@ -81,7 +81,7 @@ fn ac141_a_run_holds_its_slot_until_it_is_closed_let_go_or_its_agent_is_gone() {
         assert!(holding_agent(tx, "a")?.is_some(), "its idle session stays open, and holds it");
         assert!(!by_id(tx, &r.id)?.busy(), "though nothing is left to hold its tasks");
         for state in ["gone", "left", "closed"] {
-            change(tx, &r.id, |r| r.state = state.into())?;
+            change(tx, &r.id, |r| r.state = Phase::of(state).unwrap())?;
             assert!(holding_agent(tx, "a")?.is_none(), "{state}");
         }
         Ok(())
@@ -109,7 +109,7 @@ fn ac138_each_agent_lists_what_its_slots_hold() {
 fn ac138_closing_its_session_frees_its_slot() {
     store("runs-closed").with(|tx| {
         let (r, _) = working(tx, "a", &["one"]);
-        change(tx, &r.id, |r| r.state = "closed".into())?;
+        change(tx, &r.id, |r| r.state = Phase::Closed)?;
         assert!(holding_agent(tx, "a")?.is_none());
         assert!(holding(tx, &r.task)?.is_none());
         Ok(())
@@ -122,7 +122,7 @@ fn ac138_giving_up_fails_what_is_open_and_lets_the_window_be() {
         let (r, t) = working(tx, "a", &["one", "two"]);
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         let after = give_up(tx, &t[1].key)?;
-        assert_eq!(after.state, "left");
+        assert_eq!(after.state, Phase::Left);
         assert_eq!(after.pane_key, r.pane_key, "its window stays");
         assert_eq!(ops::get(tx, &t[0].id)?.status, "DONE", "what is done stays");
         assert_eq!(ops::get(tx, &t[1].id)?.status, "FAILED");
@@ -139,10 +139,10 @@ fn ac138_marks_and_agents_are_each_task_s() {
         let keys: Vec<&str> = t.iter().map(|x| x.key.as_str()).collect();
         let agents = card_agents(tx, &keys)?;
         assert_eq!(agents[&t[1].key]["name"], "A", "the card stays on it, as the run knew it");
-        change(tx, &r.id, |r| r.state = "starting".into())?;
+        change(tx, &r.id, |r| r.state = Phase::Starting)?;
         assert_eq!(card_marks(tx, &keys)?[&t[1].key], "starting");
         assert!(card_marks(tx, &[])?.is_empty(), "only the page's");
-        change(tx, &r.id, |r| r.state = "working".into())?;
+        change(tx, &r.id, |r| r.state = Phase::Working)?;
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         finished(tx, &t[0].key)?;
         ops::move_to(tx, HUMAN, &t[1].id, "DONE", 3)?;
@@ -200,7 +200,7 @@ fn ac142_a_run_with_no_task_stands_in_its_project_and_can_be_let_go() {
         assert_eq!(r.project, "api");
         assert_eq!(live(tx)?.len(), 1, "a run with no task never stops the walk's read");
         assert!(holding_agent(tx, "a")?.is_some(), "it holds its slot");
-        assert_eq!(let_go(tx, &id)?.state, "left");
+        assert_eq!(let_go(tx, &id)?.state, Phase::Left);
         assert!(holding_agent(tx, "a")?.is_none());
         assert_eq!(let_go(tx, &id).unwrap_err(), "Dispatcher holds that session no more.");
         assert_eq!(last_agent(tx, "api")?.as_deref(), Some("a"), "the last agent of a project, by the run's own");
@@ -219,10 +219,27 @@ async fn ac121_a_walk_during_the_opening_of_its_window_does_not_fail_the_run() {
     crate::dispatcher::start::watch(&app, &id);
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     let r = app.tasks.with(|tx| by_id(tx, &id)).unwrap();
-    assert!(r.is_starting() && r.status != "FAILED", "still waiting for its pane: {} {}", r.state, r.status);
-    app.tasks.with(|tx| change(tx, &id, |r| r.state = "closed".into())).unwrap();
+    assert!(r.is_starting() && r.status != "FAILED", "still waiting for its pane: {} {}", r.state.label(), r.status);
+    app.tasks.with(|tx| change(tx, &id, |r| r.state = Phase::Closed)).unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert!(!app.dispatcher.starting.lock().contains(&id), "the watch ended with the run");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
+}
+
+/// TERM-35: a run's phase is one of its labels; one the store holds that is none is an error, not a run in a state of its own.
+#[test]
+fn ac131_a_runs_phase_is_one_it_knows() {
+    for (p, l) in PHASES {
+        assert_eq!((Phase::of(l), p.label()), (Some(p), l));
+    }
+    let s = store("runs-phase");
+    s.with(|tx| {
+        let t = task(tx, "one");
+        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], 1)?;
+        assert_eq!(by_id(tx, &id)?.state, Phase::Starting);
+        tx.execute("UPDATE runs SET state = 'dancing' WHERE id = ?1", [&id]).map_err(ops::sql)?;
+        assert!(by_id(tx, &id).is_err_and(|e| e.contains("not known")), "an unknown label");
+        Ok(())
+    }).unwrap();
 }

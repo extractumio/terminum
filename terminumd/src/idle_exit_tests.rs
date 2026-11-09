@@ -95,9 +95,10 @@ impl Stage {
     }
     /// The steps of keys that went, and whether the agent ended.
     async fn end(&self) -> (usize, Result<(), String>) {
+        let at = Instant::now();
         let first = read(&self.server, &self.pane).await.expect("tmux answers");
         assert_eq!(due(&first, now(), 1), Due::Go, "{first:?}");
-        end(&self.app, &self.server, &self.pane, &self.key, self.kind, &first).await
+        end(&self.app, &self.server, &self.pane, &self.key, self.kind, &first, at).await
     }
 }
 
@@ -148,15 +149,29 @@ async fn ac153_a_draft_in_the_box_gets_no_key() {
 #[tokio::test]
 async fn ac153_a_pane_opened_or_at_work_meanwhile_gets_no_key() {
     let Some(s) = Stage::new("idle-opened", "claude", "cc", "").await else { return };
+    let at = Instant::now();
     let first = read(&s.server, &s.pane).await.unwrap();
     s.tm.read(&["set-option", "-p", "-t", &s.pane, "@terminum-seen", &now().to_string()]);
-    let (keys, got) = end(&s.app, &s.server, &s.pane, &s.key, "claude", &first).await;
+    let (keys, got) = end(&s.app, &s.server, &s.pane, &s.key, "claude", &first, at).await;
     assert!(keys == 0 && got.as_ref().is_err_and(|e| e.contains("showed it")), "{keys} {got:?}");
     s.tm.read(&["set-option", "-p", "-t", &s.pane, "@terminum-seen", "1000"]);
     *s.app.layout.write() = json!([{"items": [{"id": s.key, "agent": "claude", "state": "working"}]}]);
     let (keys, got) = s.end().await;
     assert!(keys == 0 && got.as_ref().is_err_and(|e| e.contains("at work")), "{keys} {got:?}");
     assert_eq!(s.command(), "perl");
+}
+
+/// TERM-32: a human's keys or prompt after the look read the pane: nothing is sent, the look's decision is old.
+#[tokio::test]
+async fn ac153_a_human_typing_after_the_look_gets_no_key() {
+    let Some(s) = Stage::new("idle-typed", "claude", "cc", "").await else { return };
+    let at = Instant::now();
+    let first = read(&s.server, &s.pane).await.unwrap();
+    s.app.inputs.human(&s.key);
+    let (keys, got) = end(&s.app, &s.server, &s.pane, &s.key, "claude", &first, at).await;
+    assert!(keys == 0 && got.as_ref().is_err_and(|e| e.contains("typed")), "{keys} {got:?}");
+    assert_eq!(s.command(), "perl", "the agent runs on");
+    assert_eq!(s.end().await, (2, Ok(())), "a look after the human's input decides anew");
 }
 
 #[tokio::test]

@@ -384,6 +384,21 @@ Scenario: AC-126 happy path — the limit
   Then API-12 is FAILED with "Time budget of 60 minutes used: the agent was ended." first; then Dispatcher checks @terminum-run, reads the agent's tree and its subagents' panes it can name (AS-126) as (pid, start time), sends SIGTERM, and after 10 s SIGKILL to those still with the same pid and start time; the pane and its shell stay until AC-125
   And what it could not reach (a setsid process, a Docker container) is listed in the comment when it can be named, and the warning promises no more
 
+Scenario: AC-126 edge — new work after the limit was decided
+  Given the walk found API-12's budget used, moved it to FAILED and is about to end its agent
+  When a human's prompt reaches the session before the SIGTERM
+  Then the end is called off: API-12 goes IN PROGRESS as new work does (AC-122), its budget starts anew, the agent runs on and the comment says "Its end at the limit was called off: new work came in its session."
+  When a human typed in the session after the walk read it, with no prompt
+  Then the end waits for the next walk, which decides again
+  And the run, the human's input and the pane are read again under the pane's typing queue, held through the SIGTERM and not through the 10 s: what a human types meanwhile waits, and reaches the shell after
+  When terminumd restarts before the end is done
+  Then the next walk ends the agent: an end decided is kept in the store until it is done
+  When a human presses RUN meanwhile
+  Then it says "Its agent is being ended at its limit: run it again in a moment."; after the end RUN goes on from the shell (AC-122)
+
+Scenario: AC-126 edge — a warning given once it went
+  Then the last warning, the memory warning (AC-128) and the request for a result (AC-123) are written as given once they went, delivered, waiting for a tool call or refused; a restart before that gives them again; new work since the walk decided writes none
+
 Scenario: AC-126 edge — changed in flight
   When the human changes the budget on a running task
   Then it holds at once and the agent is told as the last warning is
@@ -409,6 +424,13 @@ Scenario: AC-127 happy path — silent and idle for 10 minutes
 Scenario: AC-127 happy path — 20 minutes
   When it stays so for 20 minutes, with its process or pane named (AS-126)
   Then Dispatcher ends those by (pid, start time) and the comment says "Ended subagent <type> <id>: silent for 20 minutes"
+
+Scenario: AC-127 edge — a subagent's events are its own
+  Given API-12's main agent works, with a subagent
+  When the subagent fails (its StopFailure), submits its own prompt or runs its tools
+  Then they are activity, and no more: API-12 is not FAILED, its run's turn and clocks do not move, the session's plan is not archived (terminum-agents.md AC-39)
+  When a late event of an older turn comes (a Stop, a tool of the turn before), or a tool's after its turn's Stop
+  Then it changes nothing: the current turn is not ended, no tool stays open for good; a new prompt and a turn read as ended clear what was open
 
 Scenario: AC-127 edge — busy and silent
   Given a subagent in a long build, above the threshold
@@ -769,9 +791,10 @@ Scenario: AC-131 edge — a walk and a window opening
   Then API-12's pane stays among them: its agent's first hooks are heard, and the prompt it takes does not read as "not taken in 30 s"
 
 Scenario: AC-131 edge — what it decided meanwhile
-  Given a walk that decided to close API-12's session after 2 hours
-  When RUN or a human's prompt reaches that session before the pane goes
-  Then the run is read again just before kill-pane: the session stays and the new work goes on (AC-125)
+  Given a walk that decided to close API-12's session after 2 hours, or to end its agent (AC-126)
+  When RUN, a human's prompt or a human's keys reach that session before the pane goes or the signal is sent
+  Then the run and the pane's last human input are read again under the pane's typing queue, held through kill-pane or the SIGTERM: the session stays and the new work goes on (AC-125)
+  And a human's input counts from when it comes: a page's keys and the Panel's text are marked before they wait behind the act, a prompt when its hook comes; a `tmux attach` of the user's own is seen only by its prompt's hook
 
 Scenario: AC-131 edge — terminumd restarts
   When terminumd restarts or upgrades during API-12's work
@@ -888,7 +911,7 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
   wait_moved INTEGER NOT NULL DEFAULT 0, no_result_wait INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, again_said INTEGER NOT NULL DEFAULT 0, close_tried INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0);
 ```
 
-`state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `gone` (only the shell remains), `left` (a human's program runs there), `closed`. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
+`state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `ending` (a limit's end decided, not yet done: done again after a restart, called off by new work or Give up), `gone` (only the shell remains), `left` (a human's program runs there, or it was given up), `closed`; another label in the store is an error, not a run in a state of its own. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 
 **The pool.** In the store. A row is what the human wrote: the command is kept as it is and reaches tmux only as one quoted argument of the window command, run by the user's login shell. It says nothing of where: that is the project's, and a run keeps a copy of what it started with.
 
@@ -953,7 +976,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 1. The pane's `@terminum-run` is this run's.
 2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
 3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
-4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F`), so an agent ending just before leaves nothing on its shell's line.
+4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F` with both branches, the other one printing a refusal: tmux answers it twice, and the control client gives the branch's answer to the gate and the next command its own), so an agent ending just before leaves nothing on its shell's line.
 5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
 6. Enter.
 
@@ -1007,19 +1030,19 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-121 — `cargo test dispatcher::screen`, `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
+- [x] AC-121 — `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
-- [x] AC-125 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
-- [x] AC-126 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
-- [x] AC-127 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
+- [x] AC-126 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
+- [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
-- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
