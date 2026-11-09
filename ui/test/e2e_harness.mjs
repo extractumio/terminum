@@ -19,7 +19,7 @@ export const BIN = process.env.TM_BIN ?? path.resolve(HERE, "../../terminumd/tar
 export const SB = fs.realpathSync(fs.mkdtempSync(`${shortTmp()}/tm-e2e-`)); // the sandbox: the only writable root
 // short folders: the CLI socket's path must stay under 104 bytes
 const HOME = fs.mkdtempSync(`${shortTmp()}/tmh-`);
-const APP = fs.mkdtempSync(`${shortTmp()}/tma-`);
+export const APP = fs.mkdtempSync(`${shortTmp()}/tma-`);
 export const base = `http://127.0.0.1:${PORT}`;
 
 /** terminumd's CLI socket: the password and health (`fetch` cannot use a Unix socket). */

@@ -146,7 +146,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
 
 /// Saves the workspaces and exits (WebSockets never end, so there is no graceful drain).
 fn exit_with(store: &Store, reason: &str) -> ! {
-    store.flush();
+    let _ = store.flush();                          // a failure is logged there
     agent::cleanup();
     tracing::info!(event = "stop", reason);
     std::process::exit(0);

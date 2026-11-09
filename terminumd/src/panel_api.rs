@@ -21,7 +21,7 @@ use tokio_stream::StreamExt;
 use crate::app::Shared;
 use crate::http::{err, ApiResult};
 use crate::termtext;
-use crate::workspace::Pane;
+use crate::workspace::{Pane, Refused};
 
 #[derive(Deserialize)]
 pub struct StateQuery {
@@ -29,14 +29,20 @@ pub struct StateQuery {
 }
 
 /// What the panel needs besides files: the build (another one means an upgrade: it reloads
-/// keeping unsaved edits, AC-16) and, for a host's pane, its files offer (AC-83).
+/// keeping unsaved edits, AC-16), whether its state is kept on disk (`unsaved`, AC-71) and,
+/// for a host's pane, its files offer (AC-83).
 pub async fn get_state(State(app): State<Shared>, Query(q): Query<StateQuery>) -> Json<Value> {
-    let mut s = json!({"version": 1, "bridge": true, "build": crate::config::build_id()});
+    let mut s = state(&app);
     if let Some(h) = q.host.filter(|h| !h.is_empty()) {
         s["host"] = json!(h);
         s["remote"] = crate::hosts::offer(&app, &h);
     }
     Json(s)
+}
+
+/// The panel's state frame: its build, and the last workspace write's error while there is one.
+pub fn state(app: &Shared) -> Value {
+    json!({"version": 1, "bridge": true, "build": crate::config::build_id(), "unsaved": app.store.unsaved()})
 }
 
 /// An agent's event stream (the Mac's terminumd relays its fs-change events, AC-82).
@@ -78,7 +84,8 @@ pub async fn put_workspace(State(app): State<Shared>, Query(q): Query<KeyQuery>,
             }
             Json(json!({"rev": rev})).into_response()
         }
-        Err(cur) => (StatusCode::CONFLICT, Json(json!({"error": "stale_rev", "message": "Workspace changed; reload", "current": cur}))).into_response(),
+        Err(Refused::Stale(cur)) => (StatusCode::CONFLICT, Json(json!({"error": "stale_rev", "message": "Workspace changed; reload", "current": cur}))).into_response(),
+        Err(Refused::Bad(why)) => (StatusCode::BAD_REQUEST, Json(json!({"error": "bad_workspace", "message": why}))).into_response(),
     }
 }
 
@@ -86,9 +93,11 @@ pub async fn get_prefs(State(app): State<Shared>) -> Json<Value> {
     Json(app.store.prefs())
 }
 
-pub async fn put_prefs(State(app): State<Shared>, Json(v): Json<Value>) -> StatusCode {
-    app.store.set_prefs(v);
-    StatusCode::NO_CONTENT
+pub async fn put_prefs(State(app): State<Shared>, Json(v): Json<Value>) -> Response {
+    match app.store.set_prefs(v) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(why) => (StatusCode::BAD_REQUEST, Json(json!({"error": "bad_prefs", "message": why}))).into_response(),
+    }
 }
 
 #[derive(Deserialize)]

@@ -13,7 +13,6 @@ use axum::http::HeaderMap;
 use axum::response::Response;
 use futures_util::stream::SplitSink;
 use futures_util::{SinkExt, StreamExt};
-use serde_json::json;
 use tokio::sync::broadcast::{error::RecvError, Receiver};
 use tokio::sync::watch;
 
@@ -44,7 +43,7 @@ async fn serve(app: Shared, credential: String, mut rx: Receiver<Event>, mut rev
         send(&mut tx, Message::Close(None)).await;
         return;
     }
-    let state = Event::State(json!({"version": 1, "bridge": true, "build": crate::config::build_id()}));
+    let state = Event::State(crate::panel_api::state(&app));
     if !send(&mut tx, frame(&state)).await {
         return;
     }
