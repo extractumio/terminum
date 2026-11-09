@@ -11,7 +11,7 @@ const OPEN_KEY = "tm.board.schedules";
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {
   const box = el("div", "schedsection");
-  const head = el("div", "schedhead"), toggle = el("button", "textkey schedtoggle"), list = el("div", "agentlist trackitems schedlist"), side = el("div", "trackside");
+  const head = el("div", "schedhead"), toggle = el("button", "textkey schedtoggle"), list = el("div", "agentlist trackitems schedlist");
   const grid = el("div", "tracks schedtracks");
   toggle.type = "button";
   toggle.setAttribute("aria-controls", "schedgrid");
@@ -19,9 +19,8 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   const add = button("textkey", "+ Schedule", () => win.open());
   add.id = "newschedule";
   add.title = "A task that runs on a cadence on one agent";
-  side.append(add);
-  head.append(toggle);
-  grid.append(list, side);
+  head.append(toggle, add);                        // + Schedule stands with the head: the section may be folded
+  grid.append(list);
   box.append(head, grid);
   let schedules = [], drawn = "", opened = read(OPEN_KEY) === true;
   const win = scheduleWindow({ getMeta, chosen, changed: () => load() });

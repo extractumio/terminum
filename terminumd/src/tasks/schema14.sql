@@ -29,7 +29,8 @@ CREATE TABLE schedule_fires (
   task TEXT REFERENCES tasks,
   state TEXT NOT NULL CHECK (state IN ('made', 'started', 'failed', 'skipped', 'called off')),
   missed INTEGER NOT NULL DEFAULT 0,
-  why TEXT
+  why TEXT,
+  prompt TEXT
 );
 CREATE INDEX schedule_fires_schedule ON schedule_fires (schedule, id);
 CREATE UNIQUE INDEX schedule_fires_task ON schedule_fires (task) WHERE task IS NOT NULL;

@@ -146,7 +146,7 @@ Scenario: AC-162 happy path — due
   And the firing is written: SCH-1, due 03:00, at 03:00:14, TERM-41
 
 Scenario: AC-162 happy path — the prompt
-  Then the prompt is, in this order: "terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human, ran task TERM-41: Nightly deps check. No human started this run or watches it now.", SCH-1's text, the budget's words (AC-126), and "This is a scheduled run: its result is read later on the board. When it is done, call finish_task with the result in this form, each on its own line:" then "Outcome: ok, attention or failed", "Summary: one or two sentences", "Details: what was checked or done", "For the human: what they should do, or nothing", then the words of AC-157 on asking a human
+  Then the prompt is, in this order: "Task TERM-41: Nightly deps check. A scheduled run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human; no human started this run or watches it now.", SCH-1's text, the budget's words (AC-126), and "This is a scheduled run: its result is read later on the board. When it is done, call finish_task with the result in this form, each on its own line:" then "Outcome: ok, attention or failed", "Summary: one or two sentences", "Details: what was checked or done", "For the human: what they should do, or nothing", then the words of AC-157 on asking a human
   And only the schedule's own text goes: nothing of an earlier task's comments, result or text, which an agent could have written
 
 Scenario: AC-162 happy path — the result
@@ -210,7 +210,7 @@ Scenario: AC-163 happy path — folded
   Then the section opens under it and this browser remembers it open; a press again folds it
 
 Scenario: AC-163 happy path — its cards
-  Then its cards stand on the columns' own tracks, each a column wide, four to a row, the fifth track for its keys
+  Then its cards stand on the columns' own tracks, each a column wide, four to a row
   And a card shows SCH-1, its severity, its title, its cadence in words ("Every day at 03:00"), its next run ("next Tue 03:00") or "paused" with why, its agent in its color, and its last task as a box of its ID in its status's color, "waits for you" when that one is WAIT FOR HUMAN, and "skipped N" since it last made one
   When the user presses the box
   Then that task's window opens
@@ -292,7 +292,7 @@ CREATE TABLE schedules (id TEXT PRIMARY KEY, number INTEGER NOT NULL UNIQUE, pro
   severity TEXT NOT NULL, agent_id TEXT NOT NULL, cron TEXT, once_at INTEGER, budget_seconds INTEGER NOT NULL, paused INTEGER NOT NULL DEFAULT 0, paused_why TEXT,
   last_due INTEGER NOT NULL, author TEXT NOT NULL REFERENCES users, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, deleted_at INTEGER);
 CREATE TABLE schedule_fires (id INTEGER PRIMARY KEY, schedule TEXT NOT NULL REFERENCES schedules, due_at INTEGER NOT NULL, at INTEGER NOT NULL,
-  task TEXT REFERENCES tasks, state TEXT NOT NULL, missed INTEGER NOT NULL DEFAULT 0, why TEXT);
+  task TEXT REFERENCES tasks, state TEXT NOT NULL, missed INTEGER NOT NULL DEFAULT 0, why TEXT, prompt TEXT);
 ```
 
 A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_at`, never both. `last_due` is the due time of the last firing, or the moment of the last save, so an edit fires nothing it passed: due is the first cadence minute after it, by the Mac's clock read at each walk, so a zone's change needs nothing saved; a firing sets it to the last due time not after now, every one before it counted as missed. `state`: `made` (task made, its run not yet asked for: a restart's walk asks once), `started` (a run or a wait), `failed`, `skipped`, `called off`. A schedule's tasks are those its firings name: `schedule_fires.task` is the one fact, indexed.

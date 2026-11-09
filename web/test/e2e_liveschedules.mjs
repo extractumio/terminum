@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The board's folded cards and its rows on the columns' tracks against a real private terminumd
-// (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138): `node web/test/e2e_live.mjs board chromium`.
+// (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
+// AC-164): `node web/test/e2e_live.mjs schedules chromium`.
+import { execFileSync } from "node:child_process";
+import path from "node:path";
 import { check, until } from "./check.mjs";
 import { boardKit, nap } from "./boardkit.mjs";
 
@@ -62,4 +65,92 @@ export async function liveFolded(page, live) {
   await shot("agents");
   for (const id of ids) await j(`/api/task-agents/${id}`, "DELETE");
   for (const id of [a, b]) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
+}
+
+const FAKE = new URL("../../scripts/fake_agent.py", import.meta.url).pathname;
+
+/** AC-160 to AC-164: a schedule made in its window, kept on its agent, fired on a fake agent, its task's result on
+ *  the board and its firing on the Scheduled page. Its due time is reached by moving its last due back an hour in
+ *  this test's own store, as a Mac asleep would. */
+export async function liveSchedules(page, live) {
+  const { j, card, open, cli } = boardKit(page, live);
+  const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
+  const project = (await j("/api/task-projects", "POST", { name: "Nightly", dir: live.work })).id;
+  const agent = (await j("/api/task-agents", "POST", { name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
+  await open(`?project=${project}`);
+  const toggle = "#schedbar .schedtoggle";
+  check("AC-163 the section is one line, folded, by default", await page.textContent(toggle) === "Scheduled 0" && await page.getAttribute(toggle, "aria-expanded") === "false" && !(await page.isVisible("#schedgrid")));
+
+  // AC-160: the window, its picker and terminumd's words
+  await page.click("#newschedule");
+  await page.waitForSelector("#schedbox[open]");
+  await page.fill("#schedtitle", "Nightly deps check");
+  await page.fill("#schedtext", "FINISHES the check of dependencies.");
+  await page.selectOption("#schedagent", agent);
+  await page.selectOption("#schedkind", "minutes");
+  await page.selectOption("#schedevery", "15");
+  check("AC-160 the picker writes cron fields and terminumd says the next runs", await until(async () => await page.textContent("#schedfields") === "*/15 * * * *" && /^Every 15 minutes\. Next: .+, .+, .+/.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
+  await page.click("#schedwhat summary");
+  check("AC-160 what the agent gets: the prompt and its command", (await page.textContent("#schedprompt")).includes("A scheduled run of terminum's schedule SCH-? \"Nightly deps check\" (every 15 minutes)") && (await page.textContent("#schedline")).includes("fake_agent.py"), await page.textContent("#schedprompt"));
+  await page.selectOption("#schedkind", "cron");
+  await page.fill("#schedcron", "*/5 * * * *");
+  check("AC-160 a cadence under 15 minutes is refused in the window", await until(async () => await page.textContent("#schederror") === "Runs come at least 15 minutes apart: this cadence has 5."));
+  await page.selectOption("#schedkind", "weekly");
+  await page.click('#whendays button:has-text("Fri")');
+  check("AC-160 weekly days are keys", await until(async () => (await page.textContent("#schedfields")).endsWith("* * 1,5")), await page.textContent("#schedfields"));
+  await page.selectOption("#schedkind", "minutes");
+  await page.selectOption("#schedevery", "15");
+  await page.fill("#schedbudget", "");
+  await page.click("#schedok");
+  check("AC-160 no budget is refused, the window stays", await until(async () => await page.textContent("#schederror") === "A scheduled run needs a time budget: no human watches it.") && await page.isVisible("#schedbox[open]"));
+  await page.fill("#schedbudget", "20");
+  await shot("schedule-window");
+  await page.click("#schedok");
+  check("AC-160 Save keeps it and closes the window", await until(async () => !(await page.isVisible("#schedbox[open]"))));
+  check("AC-163 the head counts it", await until(async () => await page.textContent(toggle) === "Scheduled 1"));
+  await page.click(toggle);
+  const sched = "#schedgrid .schedcard";
+  check("AC-163 open, its card: key, title, cadence, next run, agent", await until(async () => {
+    const t = await page.textContent(sched).catch(() => "");
+    return /SCH-\d+/.test(t) && t.includes("Nightly deps check") && t.includes("Every 15 minutes") && /next /.test(t) && t.includes("Night owl");
+  }), await page.textContent(sched).catch(() => ""));
+  const cols = await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
+  const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
+  if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);
+  const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
+  check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
+  await page.reload();
+  await page.waitForSelector("#board .col");
+  check("AC-163 this browser remembers it open", await until(() => page.isVisible(sched)));
+  await shot("schedules");
+
+  // AC-162: due, fired on the fake agent, its task DONE with its result
+  const s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
+  execFileSync("sqlite3", [path.join(live.app, "kanban.sqlite"), `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`]);
+  let task;
+  check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
+  check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
+  const t = await j(`/api/tasks/${task}`);
+  check("AC-162 its history says the schedule, late as after a sleep", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due .+, run \d\d:\d\d: the Mac was asleep/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
+  check("AC-163 its window names the schedule", t.schedule?.key === s.key);
+  await page.goto(`${live.base}/kanban/${task}`);
+  check("AC-163 the window's line opens the schedule", await until(() => page.isVisible(".taskfrom")));
+  await page.click(".taskfrom .linklike");
+  check("AC-163 …in its own window", await until(() => page.isVisible("#schedbox[open]")) && (await page.textContent("#schedhead")).startsWith(s.key));
+  await page.keyboard.press("Escape");
+  await open(`?project=${project}`);
+  check("AC-163 its card says the schedule; the schedule's card its last task", await until(async () => (await page.textContent(`${card(task)} .cfrom`).catch(() => "")) === s.key && (await page.textContent(`${sched} .stbox`).catch(() => "")) === task));
+
+  // AC-164: the Scheduled page
+  await page.goto(`${live.base}/scheduled/?schedule=${s.key}`);
+  check("AC-164 the Scheduled page lists the firing with its task and status", await until(async () => /DONE/.test(await page.textContent("#fires").catch(() => "")) && (await page.textContent("#fires")).includes(task)), await page.textContent("#fires").catch(() => ""));
+  await page.click("#fires .fireline");
+  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent("#fires .firebody"); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent("#fires .firebody"));
+  check("AC-164 the head has its key pressed", await page.getAttribute('.mpages a[href="/scheduled/"]', "aria-current") === "page");
+  await shot("scheduled-page");
+
+  // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks
+  const kept = await j(`/api/task-agents/${agent}`, "DELETE");
+  check("AC-161 an agent with schedules is not deleted", kept.code === 400 && /runs schedules SCH-\d+: give them another agent first\./.test(kept.error ?? ""), JSON.stringify(kept));
+  check("AC-160 deleted, its tasks stay", (await j(`/api/schedules/${s.id}`, "DELETE")).code === 200 && (await j(`/api/tasks/${task}`)).status === "DONE");
 }

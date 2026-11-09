@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, until, within } from "./check.mjs";
+import { pressCard } from "./boardkit.mjs";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -90,7 +91,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-107 a card placed shows in its column", await until(async () => (await inColumn("WAIT FOR HUMAN")).includes(second)));
   await place(urgent, "DONE");
   check("AC-107 and goes on its own to another", await until(async () => (await inColumn("DONE")).includes(urgent)));
-  await page.click(card(second));
+  await pressCard(page, second);
   await page.waitForSelector("#taskbox[open] .history");
   check("AC-105 a card's window has its own address", new URL(page.url()).pathname === `/kanban/${second}`, page.url());
   check("AC-107 its status is no field to change", !(await page.$('#taskbody .fieldgrid label:has-text("Status") select')) && /WAIT FOR HUMAN/.test(await page.textContent("#taskbody .fieldvalue")));
@@ -100,7 +101,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.fill(".newcomment textarea", "Use **v2**");
   await page.click('.newcomment button:has-text("Close")');
   await page.waitForSelector("#taskbox", { state: "hidden", timeout: 5000 });
-  await page.click(card(second));
+  await pressCard(page, second);
   await within("AC-108 a comment shows as Markdown", () => page.waitForSelector("#taskbody .ev-comment .markdown strong", { timeout: 5000 }));
   check("AC-108 Close moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
   // an edit of the text
@@ -242,7 +243,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-105 a title is text", await page.evaluate(() => !window.ranit && !document.querySelector(".ctitle img")));
   if (shots) {
     await page.screenshot({ path: path.join(shots, "board-wide.png") });
-    await page.click(card(first));
+    await pressCard(page, first);
     await page.waitForSelector("#taskbox[open]");
     await page.screenshot({ path: path.join(shots, "task-wide.png") });
     await page.click("#taskclose");

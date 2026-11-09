@@ -19,7 +19,7 @@ const LATE: i64 = 120;
 pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str) -> String {
     let words = s.words();
     let cadence = words.chars().next().map_or(String::new(), |c| c.to_lowercase().chain(words.chars().skip(1)).collect());
-    let mut parts = vec![format!("terminum's schedule {} \"{}\" ({cadence}), set by a human, ran task {task}: {title}. No human started this run or watches it now.", s.key, s.title)];
+    let mut parts = vec![format!("Task {task}: {title}. A scheduled run of terminum's schedule {} \"{}\" ({cadence}), set by a human; no human started this run or watches it now.", s.key, s.title)];
     if !body.trim().is_empty() {
         parts.push(body.to_string());
     }
@@ -75,7 +75,11 @@ async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
     let started = super::api::press_again(app, task, json!({"agent": s.agent})).await;
     let (id, sid, now) = (task.to_string(), s.id.clone(), ops::now());
     let _ = store(app, move |tx| match started {
-        Ok(_) => schedules::fire_is(tx, fire, "started", None),
+        Ok(_) => {
+            let t = ops::get(tx, &id)?;
+            schedules::fire_prompt(tx, fire, &super::press::prompt_of(tx, std::slice::from_ref(&t), None)?)?;
+            schedules::fire_is(tx, fire, "started", None)
+        }
         Err(why) => {
             let words = format!("Paused: {why}");
             if !super::plan::finished(&ops::get(tx, &id)?.status) {

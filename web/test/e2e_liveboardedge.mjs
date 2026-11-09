@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, nap, pressCard } from "./boardkit.mjs";
 import { check as report, ranToItsEnd, slack, until } from "./check.mjs";
 
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
@@ -139,8 +139,8 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       const a = await make("first opened"), b = await make("second opened"); await open();
       let hold = true;
       await page.route(`**/api/tasks/${a}`, async (r) => { if (hold) { hold = false; await nap(900); } await r.continue(); });
-      await page.click(card(a)); await nap(50);
-      await page.evaluate((s) => document.querySelector(s).click(), card(b));
+      await page.click(card(a)); await page.click(card(a)); await nap(50);   // a folded card: shown whole, then opened (AC-159)
+      await page.evaluate((s) => { document.querySelector(s).click(); document.querySelector(s).click(); }, card(b));
       await nap(1300); await page.unroute(`**/api/tasks/${a}`);
       const title = await page.textContent("#tasktitle");
       check("a slow window opened first does not replace the one opened last", title.startsWith(`${b} `) && page.url().includes(b), `${title} ${page.url()}`);
@@ -255,7 +255,7 @@ ${"z".repeat(400)}
       check("a task that does not exist is said, and the address goes back to the board", await until(async () => /No task/.test(await page.textContent("#toast")) && new URL(page.url()).pathname === "/kanban/", 4000), `${await page.textContent("#toast")} ${page.url()}`);
     },
     async back_closes_window() {
-      const id = await make("back closes it"); await open(); await page.click(card(id)); await page.waitForSelector("#taskbox[open]");
+      const id = await make("back closes it"); await open(); await pressCard(page, id); await page.waitForSelector("#taskbox[open]");
       await page.goBack(); await nap(500);
       check("Back closes the window and stays on the board", new URL(page.url()).pathname === "/kanban/" && !(await isOpen("#taskbox")), page.url());
       await open();
@@ -276,7 +276,7 @@ ${"z".repeat(400)}
     async html_is_text() {
       const id = await make("<img src=x onerror=\"window.pwned=1\"><b>bold</b>", { text: "<script>window.pwned=2</script>\n\n[x](javascript:window.pwned=3)" });
       await j(`/api/tasks/${id}/comments`, "POST", { text: "<img src=x onerror=\"window.pwned=4\">" });
-      await open(); await page.click(card(id)); await page.waitForSelector("#taskbox[open]"); await nap(500);
+      await open(); await pressCard(page, id); await page.waitForSelector("#taskbox[open]"); await nap(500);
       const bad = await page.evaluate(() => ({ p: window.pwned, imgs: document.querySelectorAll(".card img, #tasktitle img, #taskbody img").length, js: [...document.querySelectorAll("#taskbody a")].filter((a) => /^javascript:/i.test(a.getAttribute("href") ?? "")).length }));
       check("HTML in a title, text or comment stays text", !bad.p && !bad.imgs && !bad.js, JSON.stringify(bad));
       await page.click("#taskclose");

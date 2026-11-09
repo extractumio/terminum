@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const COMMAND = "claude --model opus";
@@ -151,6 +151,7 @@ async function agentPool(page, opts) {
   check("AC-138 a rectangle shows the agent's name, kind and effort", /Fast fixer/.test(said) && /Claude Code/.test(said) && /high/.test(said), said);
   check("AC-138 and no dot: nothing of it runs", (await dots()).length === 0, JSON.stringify(await dots()));
   check("AC-138 a card names no project when one is chosen", !(await page.$(`${card(a)} .cproj`)));
+  await page.click(`${card(a)} .ctitle`);           // a folded TODO card shown whole (terminum-kanban.md AC-159)
   check("AC-138 a task on no agent shows its owner", await page.isVisible(`${card(a)} .cowner`) && !(await page.$(`${card(a)} .cagent`)));
 
   // ⌘ or Ctrl+click chooses; Esc lets them go
@@ -217,7 +218,7 @@ async function agentPool(page, opts) {
   check("AC-138 both finish", await hasStatus(a, "DONE") && await hasStatus(b, "DONE"), `${await status(a)} ${await status(b)}`);
   check("AC-138 and stay on that agent", await until(async () => await page.textContent(`.col[data-status="DONE"] ${card(a)} .cagent`).catch(() => "") === "Fast fixer" && await page.textContent(`.col[data-status="DONE"] ${card(b)} .cagent`).catch(() => "") === "Fast fixer"));
   check("AC-138 its session stays, its dot still", await dotted((d) => d.length === 1 && /agdot idle/.test(d[0])), JSON.stringify(await dots()));
-  await page.click(`${card(a)} .ctitle`);
+  await pressCard(page, a);
   await page.waitForSelector("#taskbox[open]");
   check("AC-138 a task's window names its agent", await until(() => page.isVisible("#taskbody .fieldvalue .cagent"), 2000), await page.textContent("#taskbody .fieldvalue"));
   await page.click("#taskclose");
@@ -273,7 +274,7 @@ async function agentPool(page, opts) {
   // Archive hides it, Archived shows it, Bring back returns it
   const shelved = await task("not needed");
   await page.waitForSelector(card(shelved), { timeout: 5000 });
-  await page.click(card(shelved));
+  await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
   await page.click('#taskbody .newcomment button:has-text("Archive")');
   check("AC-118 Archive turns its key to Bring back", await until(() => page.isVisible('#taskbody .newcomment button:has-text("Bring back")'), 2000));
@@ -281,7 +282,7 @@ async function agentPool(page, opts) {
   check("AC-118 an archived task leaves the board", await until(async () => !(await page.$(card(shelved)))));
   await page.click("#farchived");
   check("AC-118 Archived shows it, in the address", await until(() => page.isVisible(card(shelved))) && new URL(page.url()).searchParams.get("archived") === "1", page.url());
-  await page.click(card(shelved));
+  await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
   const back = await until(() => page.isVisible('#taskbody .newcomment button:has-text("Bring back")'), 2000);
   check("AC-118 an archived task's window offers Bring back", back);
@@ -301,7 +302,7 @@ async function agentPool(page, opts) {
   check("AC-138 a press of several by the route starts", !!ran.run, JSON.stringify(ran));
   await hasStatus(held, "IN PROGRESS");
   const heldPane = await paneOf(held);
-  await page.click(card(held));
+  await pressCard(page, held);
   await page.waitForSelector("#taskbox[open]");
   check("AC-138 a task its run holds offers Give up, not Run", await until(() => page.isVisible('#taskbody .newcomment button:has-text("Give up")')) && !(await page.isVisible('#taskbody .newcomment button:has-text("Run")')));
   await page.click('#taskbody .newcomment button:has-text("Give up")');

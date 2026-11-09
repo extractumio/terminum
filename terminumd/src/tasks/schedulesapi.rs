@@ -113,11 +113,11 @@ async fn fires(State(app): State<Shared>, Query(asked): Query<Asked>) -> Respons
 /// Firings of `schedule` ("SCH-3"; none: all), those older than `before`.
 pub(crate) fn fires_of(tx: &Transaction, schedule: Option<&str>, before: Option<i64>, most: i64) -> Result<Vec<Value>, String> {
     let number = schedule.map(|k| k.trim_start_matches("SCH-").parse::<i64>().map_err(|_| format!("No schedule {k}"))).transpose()?;
-    // the task's first run says what went in and on which agent; its moves say when it worked; its last word by an
-    // agent or Dispatcher says what came out
+    // the firing keeps what went in; the task's first run says on which agent, its moves when it worked, its last
+    // word by an agent or Dispatcher what came out
     rows(tx, "SELECT f.id, 'SCH-' || s.number, s.title, f.due_at, f.at, t.slug, t.status, f.state, f.missed, f.why,
                      (SELECT r.agent_name FROM run_tasks rt JOIN runs r ON r.id = rt.run WHERE rt.task = t.id ORDER BY r.rowid LIMIT 1),
-                     (SELECT r.prompt FROM run_tasks rt JOIN runs r ON r.id = rt.run WHERE rt.task = t.id ORDER BY r.rowid LIMIT 1),
+                     f.prompt,
                      (SELECT min(e.at) FROM events e WHERE e.task = t.id AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS'),
                      (SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind = 'move' AND json_extract(e.data, '$.to') IN ('DONE', 'FAILED')),
                      (SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND e.kind IN ('comment', 'told') AND u.kind <> 'human'

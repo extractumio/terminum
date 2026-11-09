@@ -287,6 +287,11 @@ pub fn fired(tx: &Transaction, s: &Schedule, due: i64, missed: i64, task: Option
     Ok(tx.last_insert_rowid())
 }
 
+/// What a firing's task was sent, kept for the Scheduled page: a run's own prompt goes once it is taken (AC-164).
+pub fn fire_prompt(tx: &Transaction, fire: i64, prompt: &str) -> Result<(), String> {
+    tx.execute("UPDATE schedule_fires SET prompt = ?2 WHERE id = ?1", rusqlite::params![fire, prompt]).map(drop).map_err(sql)
+}
+
 /// A firing's state changes.
 pub fn fire_is(tx: &Transaction, fire: i64, state: &str, why: Option<&str>) -> Result<(), String> {
     tx.execute("UPDATE schedule_fires SET state = ?2, why = coalesce(?3, why) WHERE id = ?1", rusqlite::params![fire, state, why]).map(drop).map_err(sql)
