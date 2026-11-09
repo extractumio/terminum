@@ -139,13 +139,54 @@ pub fn save(roots: &Roots, path: &Path, text: &str, if_match: &str) -> Result<St
             }
             None => user_owned(&f, false),
         }
-        fs::rename(&tmp, &real).map_err(|e| io(e, path))
+        match &meta {
+            // another program's change while the copy was written is not written over (V4)
+            Some(_) if if_match != "*" => {
+                let now = fs::metadata(&real).map_err(|_| deleted())?;
+                if etag(&now) != if_match {
+                    return Err(OpError::Conflict { message: format!("{} changed on disk", name_of(path)), etag: Some(etag(&now)) });
+                }
+                fs::rename(&tmp, &real).map_err(|e| io(e, path))
+            }
+            Some(_) => fs::rename(&tmp, &real).map_err(|e| io(e, path)),
+            // made again: a file another program made there meanwhile is not written over
+            None => rename_exclusive(&tmp, &real).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists {
+                OpError::Conflict { message: format!("{} was made on disk meanwhile", name_of(path)), etag: None }
+            } else {
+                io(e, path)
+            }),
+        }
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
     result?;
+    sweep_leftovers(dir);
     Ok(etag(&fs::metadata(&real).map_err(|e| io(e, path))?))
+}
+
+/// A save's or an upload's copy older than this, of another process, is a stop's leftover.
+const LEFTOVER: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// The copies a stopped terminumd left in `dir` (`.fb-<pid>-<n>.tmp`, `.tm-upload-<pid>-<n>.part`,
+/// of another process, an hour old) go; once a folder while terminumd runs, at its first save or
+/// upload: a folder of 500,000 entries is read once, not at each save.
+fn sweep_leftovers(dir: &Path) {
+    static SWEPT: parking_lot::Mutex<Option<std::collections::HashSet<PathBuf>>> = parking_lot::Mutex::new(None);
+    if !SWEPT.lock().get_or_insert_with(Default::default).insert(dir.to_path_buf()) {
+        return;
+    }
+    let mine = std::process::id().to_string();
+    for e in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let pid = name.strip_prefix(".fb-").and_then(|r| r.strip_suffix(".tmp"))
+            .or_else(|| name.strip_prefix(".tm-upload-").and_then(|r| r.strip_suffix(".part")))
+            .and_then(|r| r.split_once('-')).map(|(pid, _)| pid);
+        let old = || e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age > LEFTOVER);
+        if pid.is_some_and(|p| p != mine && p.bytes().all(|b| b.is_ascii_digit())) && e.file_type().is_ok_and(|t| t.is_file()) && old() {
+            let _ = fs::remove_file(e.path());
+        }
+    }
 }
 
 /// macOS: mode, ACLs and extended attributes (copyfile(3)); mode alone if that fails.
@@ -253,6 +294,9 @@ pub fn upload(roots: &Roots, dir: &Path, name: &str, data: &[u8], both: bool) ->
     });
     if result.is_err() {
         let _ = fs::remove_file(&part);
+    }
+    if result.is_ok() {
+        sweep_leftovers(dir);
     }
     result
 }

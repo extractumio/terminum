@@ -230,6 +230,7 @@ Scenario: AC-56 edge — closing, competing saves, renames, size
   And text typed while a save is in flight stays unsaved; a ⌘S pressed before that save ends saves again once it does, so that text is written too
   And of two pages saving the same etag (symlink aliases included) exactly one succeeds and the other sees the conflict; a save pending across a rename retries on the current path and a stale old-path reply cannot mark it clean
   And a 9 MB file saves; a body over 6 × the text limit answers 413 as JSON; a 255-byte basename saves with no temp file left; a conflict dialog of one host's file is discarded only for that document when the pane switches hosts
+  And a change by another program while the copy is written is seen just before it replaces the file ("app.py changed on disk"); Overwrite of a file deleted on disk never writes over one another program made there meanwhile ("app.py was made on disk meanwhile"); the copies a stopped terminumd left in a folder (`.fb-*.tmp`, `.tm-upload-*.part`, an hour old) go at its first save or upload
 ```
 
 ### AC-57 — Create [SHOULD / P1]
@@ -782,7 +783,7 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 - [x] AC-53 — `ui/test/e2e_panel.mjs`, `cargo test files`
 - [x] AC-54 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_docs.mjs`, `ui/test/e2e_panel_more.mjs`, `ui/test/markdown.test.mjs`
 - [x] AC-55 — `ui/test/e2e_panel.mjs`, `cargo test workspace`
-- [x] AC-56 — `ui/test/e2e_panel.mjs`, `cargo test ops`
+- [x] AC-56 — `ui/test/e2e_panel.mjs`, `cargo test ops` (a stop's leftover copies swept)
 - [x] AC-57 — `ui/test/e2e_panel.mjs`, `ui/test/tree-cancel.test.mjs`, `web/test/e2e_live.mjs`, `cargo test ops`
 - [x] AC-58 — `ui/test/e2e_panel.mjs`, `cargo test ops`
 - [x] AC-59 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`
