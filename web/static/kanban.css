@@ -165,3 +165,5 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 }
 /* a phone: a subtask's box takes a finger (AC-105, AC-112) */
 @media (max-width: 860px) { .cboxes .stbox { min-height: 34px; min-width: 34px; justify-content: center; } }
+/* what an agent's command must carry: it runs with no one watching (terminum-dispatcher.md AC-156) */
+#agentbox .hint { margin: 0; font-size: var(--fs-small); color: var(--muted-text); overflow-wrap: anywhere; }
