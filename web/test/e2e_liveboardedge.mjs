@@ -12,7 +12,7 @@ import { check as report, ranToItsEnd, slack, until } from "./check.mjs";
 
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
 
-export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, stop, start }) {
+export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, stop, start, part }) {
   let tag = "AC-133";
   const check = (name, ok, extra) => report(`${tag} ${name}`, ok, extra);
   const { j, newPane, keyOf, hook, endPanes, card, open } = boardKit(page, { base, tmux, work, bin, home, app });
@@ -282,8 +282,9 @@ ${"z".repeat(400)}
       await page.click("#taskclose");
     },
     async huge_text() {
+      // 1 MiB + 1 byte in lines of 1 KiB: one unbreakable line cost Linux WebKit 100 MB to lay out
       await open(); await page.click("#newtask"); await page.fill("#newtitle", "too long a text");
-      await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = "x".repeat((1 << 20) + 1); t.dispatchEvent(new Event("input", { bubbles: true })); });
+      await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = `${"x".repeat(1023)}\n`.repeat(1024) + "x"; t.dispatchEvent(new Event("input", { bubbles: true })); });
       await page.click("#newcreate"); await nap(800);
       check("over 1 MiB is refused in place, the window stays", (await page.textContent("#newerror")).includes("1 MiB") && await isOpen("#newbox"), await page.textContent("#newerror"));
       await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = ""; }); await page.fill("#newtitle", ""); await page.click("#newclose").catch(() => {});
@@ -371,7 +372,11 @@ ${"z".repeat(400)}
       check("a cancelled drag leaves no lit column and no lifted card", await page.evaluate(() => !document.querySelector(".col.over") && !document.querySelector(".card.lifted")));
     },
   };
-  for (const [name, f] of Object.entries(probes)) {
+  // `part` 0 or 1: one half of the probes, each on a page of its own (e2e_live.mjs boards()): one page
+  // through all of them took Linux WebKit's web process past what CI's runner leaves it
+  const names = Object.keys(probes), half = Math.ceil(names.length / 2);
+  for (const name of part === undefined ? names : part ? names.slice(half) : names.slice(0, half)) {
+    const f = probes[name];
     tag = AGENT.has(name) ? "AC-136" : name === "meta_read_lost" ? "AC-105" : "AC-133";
     await nap(200);                                // a window closed just now goes Back in its own time
     try { await f(); } catch (e) { ranToItsEnd(e, `${tag} ${name} ran to its end`); await page.unroute("**/*").catch(() => {}); }
