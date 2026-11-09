@@ -144,8 +144,8 @@ export async function liveDispatcher(page, opts) {
   check("AC-157 its session closes once its turn is over", await until(async () => (await j(`/api/tasks/${asking}`)).session?.closed || /waits for the human's answers/.test(await history(asking)), 20000), await history(asking));
   const conversation = (await j(`/api/tasks/${asking}`)).agent?.conversation;
   check("AC-157 the task keeps its agent and conversation", /^fake-\d+$/.test(conversation ?? ""), JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
-  const resumed = await run(asking, { comment: "v2, and FINISHES" });
-  check("AC-157 RUN resumes it", !!resumed.run, JSON.stringify(resumed));
+  const answered = await run(asking, { comment: "v2, and FINISHES" });
+  check("AC-157 RUN resumes it", !!answered.run, JSON.stringify(answered));
   check("AC-157 in the same conversation, with the human's answers", await until(async () => { const p = await paneOf(asking); return !!p && /answered your questions/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", p)); }, 15000) || await status(asking) === "DONE");
   check("AC-157 and it goes on to the end", await hasStatus(asking, "DONE", 20000), await history(asking));
   check("AC-157 its conversation is the one it asked in", (await j(`/api/tasks/${asking}`)).agent?.conversation === conversation, JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
