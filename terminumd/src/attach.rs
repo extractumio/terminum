@@ -132,12 +132,20 @@ pub async fn ensure(app: &Shared, server: &Arc<Server>) -> (Vec<Value>, bool) {
         Err(e) => (Vec::new(), Some(e)),
     };
     let up: Vec<String> = only.iter().filter(|s| running.contains(s)).cloned().collect();
-    if up.is_empty() {
+    let status = if up.is_empty() {
         server.disconnect();
-    } else if let Err(e) = server.sync_clients(&up) {
-        tracing::warn!(event = "attach.error", socket = %server.socket, error = %e);
-    }
-    *server.status.lock() = if up.is_empty() { Status::Off } else { Status::Attached };
+        Status::Off
+    } else {
+        match server.sync_clients(&up) {
+            Ok(()) => Status::Attached,
+            Err(e) => {
+                // its clients could not start: not attached, and said so (S03)
+                tracing::warn!(event = "attach.error", socket = %server.socket, error = %e);
+                Status::Failed { why: e }
+            }
+        }
+    };
+    *server.status.lock() = status;
     let why = why.unwrap_or_else(|| format!("not running on {}: attached when it starts", server.label()));
     (only.iter().filter(|s| !up.contains(s)).map(|s| layout::absent_group(server, s, &why)).collect(), sure)
 }
@@ -176,8 +184,13 @@ pub fn host_waiting(server: &Server, why: &str) -> Vec<Value> {
     only.iter().map(|s| layout::absent_group(server, s, why)).collect()
 }
 
+/// One change of the attached sessions at a time: `add` checks the list and saves it under it,
+/// so two at once never both pass the check against the same list (L10).
+static EDITS: parking_lot::Mutex<()> = parking_lot::const_mutex(());
+
 /// Attaches `sessions` at `place` ("Attach tmux sessions", `terminum tmux attach`): all of them or none.
 pub fn add(app: &Shared, place: &Place, sessions: &[String]) -> Result<(), String> {
+    let _one = EDITS.lock();
     let mut names = Vec::new();
     for s in sessions {
         let s = args::check_session_name(s.trim())?;
@@ -223,6 +236,7 @@ pub async fn detach(app: &Shared, place: &Place, session: &str) -> Result<(), St
     if let Some(server) = place.server(app) {
         crate::page::sizing::release(app, &server, Some(session)).await;
     }
+    let _one = EDITS.lock();
     save(app, place, |l| l.retain(|s| s.as_str() != Some(session)))
 }
 
@@ -323,5 +337,28 @@ mod tests {
         let lines: Vec<String> = ["work\toff", "scratch\ton", "keep\tkeep-last", "odd\tname\toff", "\toff", "old"].iter().map(|s| s.to_string()).collect();
         let got: Vec<(String, bool)> = listed(&lines).into_iter().map(|r| (r.name, r.ends)).collect();
         assert_eq!(got, vec![("work".into(), false), ("scratch".into(), true), ("keep".into(), true), ("odd\tname".into(), false)]);
+    }
+
+    /// AC-89 failure (L10): two attaches of one session at once attach it once; the other is refused.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn two_attaches_at_once_attach_a_session_once() {
+        let (root, app) = crate::testutil::app("attach-twice");
+        let place = || Place::Local("tm-test-attach-twice-own".into());
+        let both: Vec<_> = (0..2).map(|_| {
+            let app = app.clone();
+            tokio::task::spawn_blocking(move || add(&app, &place(), &["work".to_string()]))
+        }).collect();
+        let mut answers = Vec::new();
+        for b in both {
+            answers.push(b.await.unwrap());
+        }
+        assert_eq!(answers.iter().filter(|a| a.is_ok()).count(), 1, "{answers:?}");
+        assert!(answers.iter().any(|a| a.as_ref().is_err_and(|e| e.contains("attached already"))), "{answers:?}");
+        assert_eq!(place().names(&app), ["work"]);
+        for s in app.tmux.attached_all() {
+            s.disconnect();
+        }
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

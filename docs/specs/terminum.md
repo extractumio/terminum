@@ -736,6 +736,7 @@ Scenario: AC-89 edge — many sessions on a host
 Scenario: AC-89 failure — refused
   When the user attaches a session attached already, one of terminum's own server ("main") or a host's "terminum", a name with ":" or ".", or a 33rd session (hosts and this Mac together)
   Then the form (or the command) says why and nothing changes
+  And two attaches of one session at once attach it once (the other says it is attached already); a session whose control client cannot start is said failed with tmux's words, not attached
 Scenario: AC-89 edge — one tmux reached twice
   Given two hosts are one machine (two ssh strings for it), a host is this Mac, or a window is in two sessions of one tmux (grouped sessions, a linked window)
   Then each pane is listed once, under the first group of the list that shows it (by an id terminumd gives each tmux server, its option @terminum-id, set where none is and read once a connection); a group left without rows says "the same tmux as devbox's terminum: shown there" and offers no new window
@@ -1177,4 +1178,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-147 — `cargo test inputs::`, `cargo test messages::`, `cargo test dispatcher::typed_tests`, `scripts/e2e_inputs.py`, `scripts/e2e_hooks.py`
 - [x] AC-151 — `cargo test messages::`, `web/test/e2e_livehistory.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs history`)
 - [x] AC-152 — `cargo test messages::`, `web/test/e2e_livehistory.mjs`
-- [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs
+- [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs, `cargo test attach::tests` (two attaches at once)
