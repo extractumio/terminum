@@ -208,7 +208,7 @@ fn ac159_the_prompt_closes_the_task_out_in_the_project_s_language() {
         let rev = rev_of(&shown_of(tx, std::slice::from_ref(&a))?);
         closeout::set_language(tx, &a.project, "Русский")?;
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
-        assert!(prompt.contains("The result, in Русский:") && prompt.contains("Write in Русский also the titles"), "{prompt}");
+        assert!(prompt.contains("The result, in the language named \"Русский\":") && prompt.contains("Write in \"Русский\" also the titles"), "{prompt}");
         assert_ne!(rev, rev_of(&shown_of(tx, std::slice::from_ref(&a))?), "a changed language is asked again before Run");
         let b = made(tx, "two", "second");
         let both = prompt_of(tx, &[a.clone(), b], None)?;

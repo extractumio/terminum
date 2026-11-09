@@ -42,7 +42,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         parts.extend(said);
         let total = tasks.iter().filter_map(|t| t.budget_seconds).reduce(|a, b| a + b);
         parts.extend(total.map(budget_words));
-        parts.push(closeout::words(&closeout::language_of(tx, &t.project)?, FINISH, true));
+        parts.push(closeout::prompt(tx, &t.project, FINISH, true)?);
         parts.push(format!("When one is done, call {FINISH} with its result; do so for each. {ASK}"));
         return Ok(parts.join("\n\n"));
     }
@@ -62,7 +62,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         parts.push(format!("Its parent task: {parent}"));
     }
     parts.extend(t.budget_seconds.map(budget_words));
-    parts.push(closeout::words(&closeout::language_of(tx, &t.project)?, FINISH, false));
+    parts.push(closeout::prompt(tx, &t.project, FINISH, false)?);
     parts.push(format!("When it is done, call {FINISH} with the result. {ASK}"));
     Ok(parts.join("\n\n"))
 }

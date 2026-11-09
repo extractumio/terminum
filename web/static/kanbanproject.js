@@ -58,7 +58,6 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectatonce").value = p?.agent_limit ?? "";
     $("projectprefix").value = p?.prefix ?? "";
     $("projectlanguage").value = p?.language ?? "";
-    $("projectlanguage").placeholder = getMeta().default_language ?? "English";
     $("projecttemplate").value = templateOf(p);
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";

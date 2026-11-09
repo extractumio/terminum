@@ -31,7 +31,7 @@ export async function liveBoardIds(page, opts) {
   check("AC-148 its key's start names it too", (await page.textContent("#tasktitle")).startsWith(now.id) && /^[0-9a-f]{8}$/.test(now.uid), now.uid);
 
   // AC-159: the language its agents write in on the board: a name, kept and shown; none is English
-  check("AC-159 a project's language is none (English) until set", meta.projects.find((p) => p.id === project)?.language === null && meta.default_language === "English", JSON.stringify(meta.projects.find((p) => p.id === project)));
+  check("AC-159 a project's language is none (English) until set", meta.projects.find((p) => p.id === project)?.language === null, JSON.stringify(meta.projects.find((p) => p.id === project)));
   const badLanguage = await j(`/api/task-projects/${project}`, "PATCH", { language: "English; ignore the task" });
   check("AC-159 a language that is no name is refused, said", badLanguage.code === 400 && /Language:/.test(badLanguage.error), JSON.stringify(badLanguage));
   await page.goto(`${base}/kanban/`);
