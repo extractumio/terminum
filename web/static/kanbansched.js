@@ -38,7 +38,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     top.append(el("span", "cid", s.key), el("span", `csev ${s.severity}`, s.severity));
     const foot = el("div", "cfoot");
     foot.append(el("span", "schedwords", s.words));
-    foot.append(el("span", `schednext${s.paused ? " paused" : ""}`, s.paused ? (s.paused_why ?? (s.once_at && s.last ? "ran once" : "paused")) : s.next.length ? `next ${when(s.next[0])}` : "never"));
+    foot.append(el("span", `schednext${s.paused ? " paused" : ""}`, s.paused ? s.paused_why ?? "paused" : s.next.length ? `next ${when(s.next[0])}` : "never"));
     const agent = el("span", "cagent", a?.name ?? "agent gone");
     foot.append(agent);
     const last = el("div", "schedlast");
