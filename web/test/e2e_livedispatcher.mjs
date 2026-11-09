@@ -104,7 +104,7 @@ export async function liveDispatcher(page, opts) {
   await run(stops);
   check("AC-123 a turn with no result gets one request", await until(async () => /still open and you stopped/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "WAIT FOR HUMAN", 15000));
   check("AC-123 then WAIT FOR HUMAN", await hasStatus(stops, "WAIT FOR HUMAN", 15000) && await said(stops, "The agent stopped without a result"), await history(stops));
-  check("AC-123 an hour of nothing: DONE, no result", await hasStatus(stops, "DONE", 30000) && await said(stops, "no activity for 60 minutes"), await history(stops));
+  check("AC-157 stopped without a result, its session closes and it waits for the human", await said(stops, "Session closed: it waits for the human", 30000) && await status(stops) === "WAIT FOR HUMAN", await history(stops));
 
   // AC-123 the gate never types on a draft
   const drafted = await task("a draft stands");

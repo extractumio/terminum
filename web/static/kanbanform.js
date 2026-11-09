@@ -73,8 +73,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   function showAgents() {
     const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
     const busy = (a) => (now.full.includes(a.id) ? "at its limit: Run waits" : now.full_projects.includes(project) ? "the project is at its limit: Run waits" : "");
-    const named = all.map((a) => (busy(a) ? { ...a, name: `${a.name} (${busy(a)})` } : a));
-    fillAgents($("newagent"), named, () => "", [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : "Choose when it runs");
+    fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : "Choose when it runs");
   }
 
   /** `given.parent`: a subtask of that task, in its project (AC-112). */

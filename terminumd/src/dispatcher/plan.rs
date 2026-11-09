@@ -190,7 +190,6 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             } else if run.nudged && run.idle_for >= NUDGE + AFTER_NUDGE {
                 // it waits for the human as an agent's question does: its session closes, RUN resumes it (AC-157)
                 run.no_result_wait = true;
-                run.asked = true;
                 acts.push(Act::Move { to: "WAIT FOR HUMAN", words: "The agent stopped without a result".into() });
             }
         }
@@ -267,7 +266,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
 /// Whether its tasks wait for a human by the agent's own word, in a session whose conversation is known: closing it
 /// loses nothing RUN cannot resume (AC-157).
 pub fn asked_human(run: &Run) -> bool {
-    run.asked && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
+    (run.asked || run.no_result_wait) && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
 }
 
 /// Whether a close of either kind may come once `dt` more passes: then the walk reads whether another task of

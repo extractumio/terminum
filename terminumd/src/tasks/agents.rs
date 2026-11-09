@@ -138,11 +138,15 @@ impl Given {
 }
 
 /// The pool, as they were added.
+const SELECT: &str = "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit FROM agents";
+
+fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
+    let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
+    Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
+}
+
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
-    rows(tx, "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit FROM agents ORDER BY rowid", [], |r| {
-        let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
-        Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
-    })
+    rows(tx, &format!("{SELECT} ORDER BY rowid"), [], of_row)
 }
 
 /// The pool as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
@@ -158,7 +162,7 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
 
 /// One of the pool, if it is still there.
 pub fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
-    Ok(list(tx)?.into_iter().find(|a| a.id == id))
+    Ok(rows(tx, &format!("{SELECT} WHERE id = ?1"), [id], of_row)?.pop())
 }
 
 /// Keeps a new one. Its id.

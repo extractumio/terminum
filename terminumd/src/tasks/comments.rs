@@ -47,7 +47,7 @@ pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[Strin
 /// The humans' comments since the agent's last questions, oldest first: their answers (AC-157); none asked: none.
 pub fn answers(tx: &Transaction, id: &str) -> Result<Option<Vec<String>>, String> {
     let key = key_of(tx, id)?;
-    let asked: Option<i64> = tx.query_row("SELECT MAX(rowid) FROM events WHERE task = ?1 AND json_extract(data, '$.questions') IS NOT NULL", [&key], |r| r.get(0)).map_err(sql)?;
+    let asked: Option<i64> = tx.query_row("SELECT MAX(rowid) FROM events WHERE task = ?1 AND kind = 'comment' AND json_extract(data, '$.questions') IS NOT NULL", [&key], |r| r.get(0)).map_err(sql)?;
     let Some(at) = asked else { return Ok(None) };
     rows(tx, "SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = ?1 AND e.kind = 'comment' AND u.kind = 'human' AND e.text IS NOT NULL
               AND e.rowid > ?2 ORDER BY e.at, e.rowid", (&key, at), |r| r.get(0)).map(Some)

@@ -25,7 +25,7 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_a_human() {
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
     let acts = step(&mut r, &up(570));
     assert_eq!(moved(&acts).unwrap(), ("WAIT FOR HUMAN", "The agent stopped without a result".to_string()));
-    assert!(r.asked, "it waits as an agent's question does: its session closes, RUN resumes it (AC-157)");
+    assert!(r.no_result_wait && asked_human(&Run { agent_session: Some("c0ffee".into()), status: "WAIT FOR HUMAN".into(), ..r.clone() }), "it waits as an agent's question does: its session closes, RUN resumes it (AC-157)");
 }
 
 #[test]

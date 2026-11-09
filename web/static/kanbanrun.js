@@ -50,8 +50,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     $("runfresh").hidden = first;
     $("rungo").disabled = none;
     if (first) {
-      // every one is chosen, a busy one said so in its name
-      fillAgents($("runagent"), offer.agents.map((a) => (busy(a) ? { ...a, name: `${a.name} (${busy(a)})` } : a)), () => "", [dropped, offer.last]);
+      fillAgents($("runagent"), offer.agents, busy, [dropped, offer.last]);
       $("runprompt").textContent = offer.prompt;
     }
     showAgent();
