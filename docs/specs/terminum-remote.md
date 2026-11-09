@@ -169,9 +169,24 @@ Scenario: AC-83 edge — Not now, remove, later
   Then the connection closes, "bin/terminumd-agent*" and "logs/agent.log*" are removed from the host's ~/.terminum (the folder when empty; a Mac host keeps its own install), and "files" is cleared
   And an enabled host asks nothing later, also after an upgrade (the agent is updated, AC-84)
 
+Scenario: AC-83 edge — a later decision while enabling or removing
+  Given an enable of devbox runs (a click or the tick)
+  When Not now or a removal of devbox comes meanwhile (another page, "terminum hosts")
+  Then the later decision stands: the enable takes no step after it, "enabled" is never written over it, and no connection starts; Files says "Could not enable devbox: Not now or Remove came for this host meanwhile; nothing was recorded"
+  When Enable comes again before the enable ends
+  Then that click is the last decision, and the enable running goes on to "enabled"
+  When a removal of the helper runs
+  Then no connection to devbox starts until it ends, Enable says "Could not enable devbox: its helper is being removed; try again when that ends"; if the removal fails, its message is shown, "files" stays "enabled" and the connection returns
+  When Not now comes just after an enable recorded "enabled"
+  Then "declined" is recorded and the connection that enable started closes
+
 Scenario: AC-83 failure — the host cannot take it
   When ssh fails, the platform has no agent in the package, the copy or the probe times out
   Then Files shows ssh's message or "no helper for <system>", nothing is recorded as enabled, and Enable can be tried again; concurrent enables, removes and updates keep every other host's record
+  When settings.json cannot be written after a good trial connection
+  Then Files shows "Could not enable devbox: <reason>", the host leaves "Setting up…", and Enable tries again
+  When devbox is off
+  Then Enable is refused with "Could not enable devbox: it is off; turn it on first" and nothing reaches the host
 ```
 
 ### AC-84 — Helpers follow the Mac's build [SHOULD / P1]
@@ -410,7 +425,7 @@ stateDiagram-v2
 |---|---|---|
 | AC-82 | A save that fails on a host says terminumd's words, "devbox is not connected" or "devbox not reachable — try again", with no "Not saved": the page passes them on raw. | `ui/src/viewer-save.ts:58`, `terminumd/src/remote.rs:80` |
 | AC-84 | The Files header's "(helper updated to <build>)" for 60 s is absent: the page shows only the toast. | `ui/src/host-offer.ts:19` |
-| AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:407`, `terminumd/src/hosts/mod.rs:460` |
+| AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:408`, `terminumd/src/hosts/mod.rs:390` |
 | AC-84 | The 10-minute retry after a failed copy has no test. | `terminumd/src/hosts/tunnel.rs:31` |
 | AC-99 | Never run: a macOS host over real sshd, Dropbear, a ForceCommand account, two Macs on one host over real sshd, real Claude Code and Codex on a host. | no run on record |
 | AC-81 | Key echo over a LAN host and remote file open have targets (§9 Performance) and no measurement: `bench_echo.py` has no host mode. | `scripts/bench_echo.py:30` |
@@ -499,7 +514,7 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-81 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `scripts/e2e_hostattach.py`, `web/test/e2e_tmux.mjs`, `cargo test tmux::orphans`, `cargo test tmux::once_tests` (a replaced host is a new connection), `cargo test an_ssh_link_that_never_reached_tmux_says_so`
 - [x] AC-82 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test remote::`
-- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::link`
+- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::consent`, `cargo test hosts::link`
 - [x] AC-84 — `scripts/e2e_remote_sshd.py`, `scripts/e2e_remote.py`
 - [x] AC-85 — `scripts/e2e_remote.py`
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
