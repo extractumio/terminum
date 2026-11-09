@@ -159,13 +159,18 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     field.name.select();
   }
 
-  /** A change to terminumd: the window closes when it is kept, and says why when it is not. */
+  /** A change to terminumd: the window closes when it is kept, and says why when it is not. While one is
+   *  sent, Enter again sends nothing and Esc waits. */
+  let sending = false;
   async function send(path, options) {
+    if (sending) return;
+    sending = $("agentok").disabled = true;
     try {
       await api(path, options);
       dialog.close();
       await reload();
     } catch (e) { say(e.message); }
+    finally { sending = $("agentok").disabled = false; }
   }
 
   function keep() {
@@ -183,6 +188,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   });
   // what was typed is not lost by a slip of Esc or × (terminum-kanban.md AC-133); Cancel means it
   dialog.addEventListener("cancel", async (e) => {
+    if (sending) return e.preventDefault();
     if (JSON.stringify(values()) === snapshot) return;
     e.preventDefault();
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();

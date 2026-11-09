@@ -71,7 +71,6 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     if (real) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
-  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
   /** Its letters and template, only those changed: a refusal says why and keeps the window. */
   function ownSettings(p) {
     const prefix = $("projectprefix").value.trim().toUpperCase(), template = $("projecttemplate").value;
@@ -81,7 +80,16 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     return body;
   }
 
+  let keeping = false;
+  /** One at a time: Enter again while it is kept sends nothing (terminum.md AC-165). */
   async function keep() {
+    if (keeping) return;
+    keeping = $("projectok").disabled = true;
+    try { await keepNow(); } finally { keeping = $("projectok").disabled = false; }
+  }
+
+  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
+  async function keepNow() {
     const name = $("projectname").value, dir = $("projectdir").value, host = $("projecthost").value;
     const atOnce = { limit: numberOrNull("projectatonce") };
     try {
@@ -106,6 +114,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   }
 
   $("projectok").addEventListener("click", keep);
+  box.addEventListener("cancel", (e) => { if (keeping) e.preventDefault(); });   // Esc waits for what is kept
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
   });

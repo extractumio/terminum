@@ -5,9 +5,18 @@ import { esc } from "./api";
 
 export interface Choice { id: string; label: string; primary?: boolean; danger?: boolean }
 
+let queue: Promise<unknown> = Promise.resolve();   // the modal shown, then those waiting: one answers keys
+
 /** Modal with a message and buttons, × in its corner as the Page's dialogs. Resolves to the chosen
- *  id, or "cancel" on × and Esc. */
+ *  id, or "cancel" on × and Esc. Asked while another is open, it waits for that one's answer: one key
+ *  answers one question (two Finder drops' "already there", two tabs closed). */
 export function ask(title: string, message: string, choices: Choice[]): Promise<string> {
+  const turn = queue.then(() => show(title, message, choices));
+  queue = turn;
+  return turn;
+}
+
+function show(title: string, message: string, choices: Choice[]): Promise<string> {
   return new Promise((resolve) => {
     const previous = document.activeElement as HTMLElement | null;
     const back = document.createElement("div");
@@ -19,7 +28,10 @@ export function ask(title: string, message: string, choices: Choice[]): Promise<
       (message ? `<div class="mtext">${esc(message)}</div>` : "") +
       `<div class="mbtns">${choices.map((c) =>
         `<button data-id="${esc(c.id)}" class="btn${c.primary ? " primary" : ""}${c.danger ? " danger" : ""}">${esc(c.label)}</button>`).join("")}</div></div>`;
+    let open = true;
     const done = (id: string) => {
+      if (!open) return;                            // a click and a key at once: the first answers
+      open = false;
       back.remove(); document.removeEventListener("keydown", key, true);
       if (previous?.isConnected) previous.focus({ preventScroll: true });
       resolve(id);
@@ -45,7 +57,7 @@ export function ask(title: string, message: string, choices: Choice[]): Promise<
     });
     document.addEventListener("keydown", key, true);
     document.body.append(back);
-    back.querySelector<HTMLButtonElement>(".btn.primary, .btn")?.focus();
+    (back.querySelector<HTMLButtonElement>(".btn.primary") ?? back.querySelector<HTMLButtonElement>(".btn"))?.focus();   // a list of selectors would take the first in the page
   });
 }
 

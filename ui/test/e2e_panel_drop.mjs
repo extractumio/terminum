@@ -58,6 +58,26 @@ export async function panelDrop(page, { row }) {
   check("AC-95 a name taken asks; Keep Both saves it as \"note 2.txt\", the file there kept as it was",
     asked === "“note.txt” is in data already" && both && fs.readFileSync(`${SB}/data/note.txt`, "utf8") === "mine" && fs.readFileSync(`${SB}/data/note 2.txt`, "utf8") === "hello note.txt",
     JSON.stringify({ asked, both }));
-  for (const f of ["note.txt", "note 2.txt", "two.txt"]) fs.rmSync(`${SB}/data/${f}`);
+
+  // two drops at once, each a name taken: one question shows, the other waits; one Enter answers one (AC-165)
+  fs.writeFileSync(`${SB}/data/two.txt`, "mine too");
+  await drag(page, row("data"), ["note.txt"], "drop");
+  await drag(page, row("data"), ["two.txt"], "drop");
+  await page.waitForSelector(".modal .btn.primary", { timeout: 3000 });
+  await page.waitForTimeout(500);                        // the second drop's "already there" back too
+  const shown = await page.$$eval(".modal .mtitle", (t) => t.map((e) => e.textContent));
+  const focused = await page.evaluate(() => document.activeElement?.textContent);
+  await page.keyboard.press("Enter");
+  const first = await waitFor(() => fs.existsSync(`${SB}/data/note 3.txt`) || fs.existsSync(`${SB}/data/two 2.txt`)).then(() => true, () => false);
+  const next = await page.waitForFunction(() => document.querySelectorAll(".modal").length === 1, null, { timeout: 3000 })
+    .then(() => page.$eval(".modal .mtitle", (e) => e.textContent), () => null);
+  const once = [fs.existsSync(`${SB}/data/note 3.txt`), fs.existsSync(`${SB}/data/two 2.txt`)].filter(Boolean).length;
+  check("AC-165 two drops' questions at once: one shows, Keep Both in focus; one Enter keeps one file, and the other question shows then",
+    shown.length === 1 && focused === "Keep Both" && first && once === 1 && !!next && next !== shown[0], JSON.stringify({ shown, focused, first, once, next }));
+  await page.keyboard.press("Escape");
+  await page.waitForSelector(".modal", { state: "detached", timeout: 3000 });
+  await page.waitForTimeout(300);
+  check("AC-165 Esc then skips the other alone", [fs.existsSync(`${SB}/data/note 3.txt`), fs.existsSync(`${SB}/data/two 2.txt`)].filter(Boolean).length === 1);
+  for (const f of ["note.txt", "note 2.txt", "note 3.txt", "two.txt", "two 2.txt"]) fs.rmSync(`${SB}/data/${f}`, { force: true });
   await page.click(row("data"));                         // folded again: the rows below stay in sight
 }
