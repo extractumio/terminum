@@ -132,10 +132,17 @@ fn ac155_terminum_s_words_call_a_tool_not_listed_by_execute_tool() {
     let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), crate::plans::REMINDER];
     let wrong: Vec<String> = mcp::tool_names().into_iter().filter(|n| !DIRECT.contains(n)).flat_map(|n| words.iter().flat_map(move |w| uncalled(w, n))).collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
-    assert!(uncalled("call get_task now", "get_task").len() == 1 && uncalled(r#"execute_tool("get_task", {page})"#, "get_task").len() == 1);
-    assert!(uncalled(r#"execute_tool("get_task", {id, page?})"#, "get_task").is_empty());
     let listed: Vec<String> = listed().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(listed, ["search_tools", "get_tool_info", "execute_tool", "update_session_plan"]);
+}
+
+#[test]
+fn ac155_a_name_outside_its_call_or_a_wrong_argument_is_found() {
+    assert_eq!(uncalled("call get_task now", "get_task").len(), 1);
+    assert_eq!(uncalled(r#"execute_tool("get_task", {page})"#, "get_task").len(), 1, "id is required");
+    assert_eq!(uncalled(r#"execute_tool("get_task", {id, page, task})"#, "get_task").len(), 1, "task is no argument of it");
+    assert_eq!(uncalled(r#"execute_tool("get_task", {id?})"#, "get_task").len(), 1, "a required one is not optional");
+    assert!(uncalled(r#"execute_tool("get_task", {id, page?})"#, "get_task").is_empty());
 }
 
 #[test]

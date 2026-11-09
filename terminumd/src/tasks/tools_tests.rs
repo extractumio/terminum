@@ -148,7 +148,7 @@ fn ac115_a_new_task_is_marked_cleaned_and_not_kept_twice() {
     let (t, text) = s.with(|tx| Ok((ops::get(tx, &id)?, ops::text_of(tx, &id)?))).unwrap();
     assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Bug: Gap in retry", true, None, "TODO", "api", "P1"));
     assert!(text.contains("[redacted]") && !text.contains("abc123"), "{text}");
-    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: gap in  RETRY.", "severity": "P1"})).unwrap_err(), format!("Not kept: {id} already says this. Read it with get_task, and comment if you have more."));
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: gap in  RETRY.", "severity": "P1"})).unwrap_err(), format!("Not kept: {id} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));
     assert_eq!(call(&s, &dir, &w, "create_task", json!({})).unwrap_err(), "title is required");
 }
 
@@ -218,7 +218,7 @@ fn ac120_a_long_get_task_comes_in_pages() {
     }).unwrap();
     let first = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
     assert!(first.len() < HISTORY_PAGE_BYTES + 2_000, "a page within the link's limit: {}", first.len());
-    assert!(first.contains("page 1 of 3: get_task with page \"2\" for the next") && first.contains("comment 0 ") && !first.contains("comment 104 "), "the first page says there is more");
+    assert!(first.contains("page 1 of 3: execute_tool(\"get_task\", {id, page}) with page \"2\" for the next") && first.contains("comment 0 ") && !first.contains("comment 104 "), "the first page says there is more");
     let last = call(&s, &dir, &w, "get_task", json!({"id": id, "page": "3"})).unwrap();
     let task: Value = serde_json::from_str(last.lines().last().unwrap()).unwrap();
     assert!(last.contains("comment 104 ") && !last.contains("for the next") && task.get("text").is_none() && task["files"].is_i64(), "the last page: its text and files' list only on the first, here their number");
