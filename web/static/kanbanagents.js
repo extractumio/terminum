@@ -13,12 +13,14 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
  *  agent; `run(tasks, agent)`. */
 export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession }) {
-  const box = el("section", "agents"), list = el("div", "agentlist");
+  // on the columns' tracks: an agent a column wide, its keys in the fifth (kanban.css .tracks)
+  const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
   addKey.id = "addagent";
   const hint = el("p", "pickhint");
   hint.hidden = true;
-  box.append(list, addKey, hint);
+  side.append(addKey, hint);
+  box.append(list, side);
   const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce"), week_limit: $("agentweek"), month_limit: $("agentmonth") };
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";

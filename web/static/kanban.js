@@ -35,6 +35,8 @@ let shownColumn = "TODO";
 const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-reduced-motion: reduce)");
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
+const FOLDED = new Set(["TODO", "DONE"]);          // their cards are a line each: ID, severity, title (terminum-kanban.md AC-159)
+let unfolded = null;                               // the one such card shown whole
 let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's slots hold, and who is at a limit (AC-141)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
@@ -134,12 +136,13 @@ function showSession(c, t) {
 }
 
 function card(t) {
-  const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}`);
+  const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}${FOLDED.has(t.status) ? " compact" : ""}${unfolded === t.id ? " open" : ""}`);
   c.dataset.id = t.id;
   c.dataset.budget = t.budget_seconds ?? "";
   c.draggable = true;
   c.tabIndex = 0;
   c.rowDrawn = "";
+  if (FOLDED.has(t.status)) c.setAttribute("aria-expanded", String(unfolded === t.id));
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
@@ -164,8 +167,8 @@ function card(t) {
   c.append(...[head, el("div", "ctitle", t.title), boxes, foot].filter(Boolean));
   showUsage(c, t.id);
   showSession(c, t);
-  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else openTask(t.id); });
-  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
+  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else pressCard(c); });
+  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) pressCard(c); });
   c.addEventListener("dragstart", (e) => {
     dragging = picked.has(t.id) ? pickedTasks() : [t];
     e.dataTransfer.effectAllowed = "move";
@@ -184,6 +187,21 @@ function card(t) {
   return c;
 }
 
+/** A folded card's press shows it whole, folding the one shown before; a whole card's opens its window (AC-159). */
+function pressCard(c) {
+  if (!c.matches(".compact:not(.open)")) return openTask(c.dataset.id);
+  fold();
+  c.classList.add("open");
+  c.setAttribute("aria-expanded", "true");
+  unfolded = c.dataset.id;
+}
+function fold() {
+  const c = document.querySelector(".card.compact.open");
+  c?.classList.remove("open");
+  c?.setAttribute("aria-expanded", "false");
+  unfolded = null;
+}
+
 const pickedTasks = () => [...cards.values()].flat().filter((t) => picked.has(t.id));
 
 /** ⌘ or Ctrl+click: several tasks for one agent; Esc lets them go. */
@@ -197,7 +215,11 @@ function unpick() {
   document.querySelectorAll(".card.picked").forEach((c) => c.classList.remove("picked"));
   agents.draw();
 }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && picked.size && !document.querySelector("dialog[open]")) unpick(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || document.querySelector("dialog[open]")) return;
+  if (picked.size) unpick();
+  else fold();
+});
 
 /** RUN's window for `tasks`, on `agent` if chosen; what is said of a refusal is terminumd's. */
 async function runThem(tasks, agent) {
@@ -266,6 +288,7 @@ $("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
   if (dragging) return;
+  if (unfolded && ![...FOLDED].some((c) => cards.get(c).some((t) => t.id === unfolded))) unfolded = null;   // it left them: whole elsewhere, a line if it comes back
   const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
   for (const [column, part] of columns) {
     const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered, filters().project.length === 1]);   // a session's state changes on its card alone (sessionsCame)
