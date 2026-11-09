@@ -55,6 +55,7 @@ Open questions: none.
 | ID | Priority | Case |
 |---|---|---|
 | AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, in severity order and by hand within a severity; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity and title; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment closes with RUN or CLOSE. |
@@ -124,6 +125,29 @@ Scenario: AC-105 failure — its projects and filters not read
   Given the read of the board's projects and filters fails while its columns' read answers
   Then the banner says "The board is out of date: <the message>" after the columns come too
   And they are read again every 2 s; once they come, the banner goes and the filters show
+```
+
+### AC-159 — Folded cards [MUST / P0]
+
+```gherkin
+Scenario: AC-159 happy path — a line a card
+  Given API-3 and API-7 in TODO, API-1 in DONE and API-9 IN PROGRESS
+  Then API-3, API-7 and API-1 are one line each: the ID, the severity, the title cut to the line; their foot, subtasks, session, agent and parent are not shown
+  And API-9's card is whole, as AC-105 says
+
+Scenario: AC-159 happy path — one shown whole
+  When the user presses API-3
+  Then API-3 shows whole, its Run key with it, no window opening
+  When the user presses API-7, or API-1 in DONE
+  Then that one shows whole and API-3 is a line again
+  When the user presses API-7 shown whole
+  Then its window opens (AC-105)
+  When the user presses Esc with nothing chosen and no window open
+  Then API-7 is a line again
+
+Scenario: AC-159 edge — what stays
+  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, run by its Run key on hover, and opened by Enter as a press; its state says "expanded" or "collapsed" to a screen reader
+  And the card shown whole stays so as the columns are read again, until it leaves TODO and DONE
 ```
 
 ### AC-106 — Making a task [MUST / P0]
@@ -1062,6 +1086,7 @@ Depends on: nothing more.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
+- [ ] AC-159 — `web/test/e2e_liveboard.mjs` (folded, shown whole, the next folds it, Esc, a drag)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
