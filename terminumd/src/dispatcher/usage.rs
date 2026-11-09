@@ -115,11 +115,16 @@ fn totals_at(r: &rusqlite::Row, i: usize) -> rusqlite::Result<Totals> {
 }
 
 /// A report of run `run`, each model's totals: what grew of each is kept, and the run remembers what it has
-/// heard. When the whole fell (a /clear), each model's whole is new and what it heard before goes.
-pub fn heard(tx: &Transaction, run: &str, agent: &str, now: &Models, at: i64) -> Result<(), String> {
+/// heard. When the whole fell (a /clear), each model's whole is new and what it heard before goes; `same`:
+/// whether the report is of the agent's session the last one counted was (None: not known), and a fall
+/// within one session is an older read come late, which counts nothing (D17).
+pub fn heard(tx: &Transaction, run: &str, agent: &str, now: &Models, at: i64, same: Option<bool>) -> Result<(), String> {
     let seen: Models = rows(tx, &format!("SELECT model, {TOTALS} FROM run_seen WHERE run = ?1"), [run], |r| Ok((r.get(0)?, totals_at(r, 1)?)))?.into_iter().collect();
     let sum = |of: &Models| of.values().fold(Totals::default(), |a, t| a + *t);
     let anew = fell(sum(&seen), sum(now));
+    if anew && same == Some(true) {
+        return Ok(());
+    }
     let grew: Vec<(&String, Totals, Totals)> = now.iter()
         .map(|(m, t)| (m, *t, grown(if anew { Totals::default() } else { seen.get(m).copied().unwrap_or_default() }, *t)))
         .filter(|(.., d)| *d != Totals::default()).collect();
@@ -244,14 +249,32 @@ mod tests {
         s.with(|tx| {
             let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, 1)?;
             let r = run_of(tx, "a", std::slice::from_ref(&task.key));
-            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(1000, 100, 50, 5000)), 10)?;
-            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(1000, 100, 50, 5000)), 11)?;
-            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(1500, 120, 50, 6000)), 12)?;
+            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(1000, 100, 50, 5000)), 10, None)?;
+            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(1000, 100, 50, 5000)), 11, None)?;
+            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(1500, 120, 50, 6000)), 12, None)?;
             let spent = &of_tasks(tx, &[task.key.as_str()])?[&task.key];
             assert_eq!((spent["input"].as_i64(), spent["output"].as_i64(), spent["cache_read"].as_i64()), (Some(1500), Some(120), Some(6000)), "a Stop and a SessionEnd of one total add nothing");
             assert_eq!(spent["counted"], 1500 + 120 + 50, "cache reads do not count");
-            heard(tx, &r, "a", &one(None, t(200, 10, 0, 0)), 13)?;
+            heard(tx, &r, "a", &one(None, t(200, 10, 0, 0)), 13, None)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["input"], 1700, "a total that fell, after a /clear: all of it");
+            Ok(())
+        }).unwrap();
+    }
+
+    /// AC-129 (D17): a lower total of the session counted last is an older read come late: nothing; one
+    /// of another session (a /clear began one) counts whole.
+    #[test]
+    fn ac129_a_late_lower_read_of_one_session_counts_nothing() {
+        let s = Store::open(crate::testutil::fresh_dir("usage-late").join("kanban.sqlite"));
+        s.with(|tx| {
+            let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, 1)?;
+            let r = run_of(tx, "a", std::slice::from_ref(&task.key));
+            heard(tx, &r, "a", &one(None, t(1500, 120, 0, 0)), 10, None)?;
+            heard(tx, &r, "a", &one(None, t(1000, 100, 0, 0)), 11, Some(true))?;
+            heard(tx, &r, "a", &one(None, t(1600, 130, 0, 0)), 12, Some(true))?;
+            assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["input"], 1600, "the late read added nothing; what grew after it, once");
+            heard(tx, &r, "a", &one(None, t(300, 10, 0, 0)), 13, Some(false))?;
+            assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["input"], 1900, "another session's: all of it");
             Ok(())
         }).unwrap();
     }
@@ -262,10 +285,10 @@ mod tests {
         s.with(|tx| {
             let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, 1)?;
             let first = run_of(tx, "a", std::slice::from_ref(&task.key));
-            heard(tx, &first, "a", &one(None, t(1000, 100, 0, 0)), 10)?;
+            heard(tx, &first, "a", &one(None, t(1000, 100, 0, 0)), 10, None)?;
             let next = run_of(tx, "a", std::slice::from_ref(&task.key));
             carry(tx, &first, &next)?;
-            heard(tx, &next, "a", &one(None, t(1300, 130, 0, 0)), 20)?;
+            heard(tx, &next, "a", &one(None, t(1300, 130, 0, 0)), 20, None)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["input"], 1300);
             Ok(())
         }).unwrap();
@@ -278,7 +301,7 @@ mod tests {
             let a = ops::create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)?;
             let b = ops::create(tx, HUMAN, NewTask { title: "b".into(), ..Default::default() }, 1)?;
             let r = run_of(tx, "x", &[a.key.clone(), b.key.clone()]);
-            heard(tx, &r, "x", &one(Some("claude-opus-5-5"), t(40_000, 8_000, 2_000, 90_000)), 10)?;
+            heard(tx, &r, "x", &one(Some("claude-opus-5-5"), t(40_000, 8_000, 2_000, 90_000)), 10, None)?;
             let spent = of_tasks(tx, &[a.key.as_str(), b.key.as_str()])?;
             assert_eq!(spent[&a.key]["input"], spent[&b.key]["input"]);
             assert_eq!(spent[&a.key]["with"], json!([b.id]));
@@ -308,16 +331,16 @@ mod tests {
         s.with(|tx| {
             let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, 1)?;
             let r = run_of(tx, "a", std::slice::from_ref(&task.key));
-            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(0, 1_000_000, 0, 0)), 10)?;
+            heard(tx, &r, "a", &one(Some("claude-opus-5-5"), t(0, 1_000_000, 0, 0)), 10, None)?;
             // after /model: opus's total stands, haiku's grows
-            heard(tx, &r, "a", &Models::from([("claude-opus-5-5".into(), t(0, 1_000_000, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000_000, 0, 0))]), 11)?;
+            heard(tx, &r, "a", &Models::from([("claude-opus-5-5".into(), t(0, 1_000_000, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000_000, 0, 0))]), 11, None)?;
             let spent = &of_tasks(tx, &[task.key.as_str()])?[&task.key];
             assert_eq!(spent["output"], 2_000_000);
             assert!((spent["usd"].as_f64().unwrap() - 20.5).abs() < 1e-9, "not twice either price: {spent}");
             // a /clear: the whole fell, each model's whole is new, and opus's is heard no more
-            heard(tx, &r, "a", &one(Some("claude-haiku-5-5"), t(0, 1_000, 0, 0)), 12)?;
+            heard(tx, &r, "a", &one(Some("claude-haiku-5-5"), t(0, 1_000, 0, 0)), 12, None)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["output"], 2_001_000);
-            heard(tx, &r, "a", &Models::from([("claude-opus-5-5".into(), t(0, 500, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000, 0, 0))]), 13)?;
+            heard(tx, &r, "a", &Models::from([("claude-opus-5-5".into(), t(0, 500, 0, 0)), ("claude-haiku-5-5".into(), t(0, 1_000, 0, 0))]), 13, None)?;
             assert_eq!(of_tasks(tx, &[task.key.as_str()])?[&task.key]["output"], 2_001_500, "opus anew after the /clear: only its 500");
             Ok(())
         }).unwrap();
@@ -354,9 +377,9 @@ mod tests {
         s.with(|tx| {
             let now = 100 * 86_400;
             let r = run_of(tx, "a", &[]);
-            heard(tx, &r, "a", &one(None, t(100, 10, 5, 999)), now - 20 * 86_400)?;
-            heard(tx, &r, "a", &one(None, t(300, 30, 5, 999)), now - 86_400)?;
-            heard(tx, &r, "a", &one(None, t(400, 30, 5, 999)), now - 40 * 86_400)?;
+            heard(tx, &r, "a", &one(None, t(100, 10, 5, 999)), now - 20 * 86_400, None)?;
+            heard(tx, &r, "a", &one(None, t(300, 30, 5, 999)), now - 86_400, None)?;
+            heard(tx, &r, "a", &one(None, t(400, 30, 5, 999)), now - 40 * 86_400, None)?;
             let (week, month) = of_agents(tx, now)?["a"];
             assert_eq!((week, month), (220, 335), "reads of the cache not counted; a report 40 days old out of the month");
             Ok(())

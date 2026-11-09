@@ -64,6 +64,8 @@ pub struct Dispatcher {
     usage: Mutex<String>,
     /// beats so far: a host with no run is read less often
     beat: AtomicU64,
+    /// the agent's session each run's last counted report was of (usage.rs `heard`); a restart learns it anew
+    counted_in: Mutex<HashMap<String, String>>,
 }
 
 /// What is known of a watched pane beyond the store; a restart learns it anew.

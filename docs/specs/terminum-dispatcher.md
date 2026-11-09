@@ -522,6 +522,8 @@ Scenario: AC-129 edge — counted once
   Then only what grew since its last run is added
   When a total falls, after a /clear
   Then the whole new total is added
+  When a total falls in the agent's session the last counted report was of (an older read come late)
+  Then it adds nothing, and what grew after it counts once; terminumd restarted, the first such fall counts as a /clear
   When a report says no models, as an older terminum's hook
   Then its total counts as one model's, the one it names
 
@@ -1178,7 +1180,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
 - [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
-- [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `web/test/e2e_livedispatcher.mjs`
+- [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `cargo test dispatcher::usage` (a late read counts nothing), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-130 — `scripts/e2e_remote_tasks.py`
 - [x] AC-131 — `cargo test dispatcher::plan` with a clock jump, `cargo test dispatcher::runs` (a phase it does not know), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-140 — `cargo test tasks::agents`, `cargo test tasks::store`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs`, `scripts/e2e_remote_tasks.py`
