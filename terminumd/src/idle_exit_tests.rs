@@ -167,6 +167,7 @@ async fn ac153_a_terminals_own_tmux_client_counts_as_opened_terminumds_control_c
     // a terminal's `tmux attach`: `script` gives it a tty of its own; it is ended by its pid
     let attach = [tmux.to_str().unwrap(), "-L", &s.tm.socket, "attach", "-t", "main"];
     let mut script = std::process::Command::new("script");
+    script.env("TERM", "xterm-256color");       // CI has none or `dumb`, and tmux refuses: "open terminal failed"
     if cfg!(target_os = "macos") {
         script.args(["-q", "/dev/null"]).args(attach);
     } else {
