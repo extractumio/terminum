@@ -123,10 +123,9 @@ pub fn highest_quote(tx: &Transaction, pane: &str) -> Result<u64, String> {
 /// trim), and an agent's own turns its hooks gave (`injected`), kept before they were told apart.
 /// Newest is by time, never by id: rows kept before this store had them came in later.
 pub fn trim(tx: &Transaction, now_ms: i64, days: i64, rows: i64) -> Result<(), String> {
-    let mut st = tx.prepare_cached("DELETE FROM messages WHERE via = 'hook' AND substr(ltrim(text, ' ' || char(9, 10, 13)), 1, length(?1)) = ?1").map_err(sql)?;
-    for p in INJECTED {
-        st.execute([p]).map_err(sql)?;
-    }
+    let head = "ltrim(substr(text, 1, 64), ' ' || char(9, 10, 13))";
+    let any = INJECTED.map(|p| format!("substr({head}, 1, {}) = '{p}'", p.len())).join(" OR ");
+    tx.execute(&format!("DELETE FROM messages WHERE via = 'hook' AND ({any})"), []).map_err(sql)?;
     tx.execute("DELETE FROM messages WHERE at < ?1", [now_ms - days * 86_400_000]).map_err(sql)?;
     tx.execute("DELETE FROM messages WHERE id IN (SELECT id FROM messages ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)", [rows]).map_err(sql)?;
     Ok(())

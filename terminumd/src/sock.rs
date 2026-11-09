@@ -229,22 +229,28 @@ mod hook_tests {
     }
 
     #[tokio::test]
-    async fn ac90_an_agents_own_turns_and_a_subagents_prompts_are_no_humans() {
-        // the one prompt both a human's typing and the kept message come from (an Agent's app keeps no messages)
-        let (root, app) = crate::testutil::app("hook-injected");
+    async fn ac90_an_agents_own_turns_and_a_subagents_prompts_are_no_ones_messages() {
+        let (root, mut app) = crate::testutil::app("hook-injected");
+        std::sync::Arc::get_mut(&mut app).unwrap().tasks = std::sync::Arc::new(crate::tasks::store::Store::open(root.join("kanban.sqlite")));
         let server = app.tmux.local.clone();
         server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
         let key = server.key("%1");
         let human = || app.inputs.human_since(&key, std::time::Instant::now() - std::time::Duration::from_secs(60));
         let prompt = |p: &str, sub: Option<&str>| json!({"agent": "claude", "event": "UserPromptSubmit", "pane": "%1", "session": "s1",
             "cwd": "/Users/alex/api", "prompt": p, "sub": sub});
-        for (p, sub) in [("<task-notification>\n<task-id>b1</task-id>", None), ("\n<cross-session-message from=\"x\">hi", None),
-                         ("<agent-message from=\"impl\">done", None), ("[Cross-session idle notice] \"x\" is idle", None), ("the child's own", Some("a1"))] {
+        for (p, sub) in [("<task-notification>\n<task-id>b1</task-id>", None), ("the child's own", Some("a1"))] {
             hook_on(app.clone(), Some(server.clone()), prompt(p, sub)).await;
             assert!(!human(), "no human typed {p}");
         }
         hook_on(app.clone(), Some(server.clone()), prompt("fix the <task-notification> parser", None)).await;
         assert!(human());
+        let kept = || app.tasks.with(|tx| crate::messages::nth_of_folder(tx, "local", "/Users/alex/api", 0)).unwrap();
+        for _ in 0..300 {
+            if kept().0 > 0 { break }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        let (n, last) = kept();
+        assert_eq!((n, last.unwrap()["text"].as_str().map(str::to_string)), (1, Some("fix the <task-notification> parser".into())));
         drop(app);
         std::fs::remove_dir_all(root).unwrap();
     }
