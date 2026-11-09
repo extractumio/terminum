@@ -8,8 +8,11 @@ const addressed = () => /^\/kanban\/([A-Za-z0-9-]+)$/.exec(location.pathname)?.[
 
 /** windowed: kanbanwin.js's window; needs: tasklines.js's lines of tasks that wait. */
 export function taskAddress({ windowed, needs }) {
+  // a close's own Back lands later (a popstate): a window opened before it stays, at its address
+  let backing = false, reopened = null;
   /** Its window has its own address: Back closes it, a task that is not there is said. */
   function openTask(id, push = true) {
+    if (backing) reopened = id;
     // one step of Back for the window, whichever tasks it showed
     if (push) history[addressed() ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
     needs.opened(id);
@@ -22,6 +25,13 @@ export function taskAddress({ windowed, needs }) {
   }
 
   async function route() {
+    if (backing) {
+      const id = reopened ?? ($("taskbox").open ? windowed.shownId() : null);
+      backing = false;
+      reopened = null;
+      if (id) history.pushState({ win: true }, "", `/kanban/${id}${location.search}`);
+      return;
+    }
     const id = addressed();
     if (id) { if (!windowed.shows(id)) openTask(id, false); return; }
     // Back with an edit not saved: asked; kept, the window keeps its address
@@ -31,7 +41,7 @@ export function taskAddress({ windowed, needs }) {
 
   $("taskbox").addEventListener("close", () => {
     if (!addressed()) return;
-    if (history.state?.win) history.back();
+    if (history.state?.win) { backing = true; history.back(); }
     else history.replaceState(null, "", `/kanban/${location.search}`);
   });
   return { openTask, route };

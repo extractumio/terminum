@@ -40,21 +40,35 @@ export async function liveSplit(page, { tmux, work, socket }) {
   const panes = () => tmux("list-panes", "-a", "-F", "#{pane_id} #{window_id} #{pane_current_path}").split("\n").filter(Boolean).map((l) => l.split(" "));
   const [pane, win] = panes().find((p) => p[2] === work) ?? [];
   const of = (fmt) => tmux("display", "-p", "-t", pane, fmt);
-  // the width the page sized the window to once it holds still for 1.5 s (a pane just shown is still
-  // being sized under load: a width read mid-way changed by itself, 56 → 87, before the split did anything)
+  // what the page draws: re-flowed while the pane's width is not the view's
+  const looks = () => page.evaluate(() => {
+    const t = document.getElementById("term");
+    return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote"), viewPx: t.clientWidth,
+      size: getComputedStyle(t).fontSize, fonts: document.fonts?.status };
+  });
+  // the width the page sized the window to: the page drawing it as it is (no reflow) and the width
+  // still for 1.5 s. Stillness alone is not enough: under load the pane kept its first width, 56,
+  // for seconds before the page's size (87) reached tmux, and the reflow then was not the zoom's
+  const reflowed = () => page.evaluate(() => document.getElementById("term").classList.contains("reflow"));
   let before = of("#{window_width}");
-  for (let still = 0, t = 0; still < 15 && t < 100; t++) {
+  for (let still = 0, t = 0; still < 15 && t < 150; t++) {
     await page.waitForTimeout(100);
     const now = of("#{window_width}");
-    still = now === before ? still + 1 : 0;
+    still = now === before && !(await reflowed()) ? still + 1 : 0;
     before = now;
   }
+  const pre = { ...(await looks()), pane: of("#{pane_width}") };
+  check("AC-13 before the split the pane has the view's width", !pre.reflow, JSON.stringify(pre));
   const split = () => tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane, "-P", "-F", "#{pane_id}");
   const first = split();
   check("AC-13 a split under the shown pane: it is zoomed to the whole window", await until(() => fills(tmux, pane), 5000), of("#{window_zoomed_flag} #{pane_width} #{window_width}"));
   check("AC-13 the zoom keeps the view's size", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
-  const flat = await page.evaluate(() => { const t = document.getElementById("term"); return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote") }; });
-  check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal", !flat.reflow && !flat.banner, JSON.stringify(flat));
+  // the page hears of the zoom after tmux has it (its %layout-change through terminumd): the split's
+  // moment may still be drawn when tmux answers, so the page is given its time to follow
+  let flat;
+  check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal",
+    await until(async () => { flat = await looks(); return !flat.reflow && !flat.banner; }, 3000),
+    JSON.stringify({ before: pre, zoomed: { ...flat, pane: of("#{pane_width}"), zoom: of("#{window_zoomed_flag}") } }));
   tmux("kill-pane", "-t", first);
   // a client attached by hand with this window on its screen: the layout stays its own
   tmux("select-window", "-t", win);
