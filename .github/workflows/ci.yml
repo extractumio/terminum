@@ -23,8 +23,8 @@ jobs:
     # written an hour, 2026-10-31), so 30 min bounds that at ~30-40 GiB
     timeout-minutes: 30
     env:
-      # the runner's memory cap (docs/RELEASING.md) sits in a VM shared with coding agents: one rustc at a time, no
-      # debug info (two rustc with it took the whole VM out of memory, 2026-10-25)
+      # the runner's memory cap (docs/RELEASING.md) sits in a VM shared with coding agents: one
+      # rustc at a time, no debug info (two rustc with it took the whole VM out of memory, 2026-10-25)
       CARGO_BUILD_JOBS: "1"
       CARGO_PROFILE_DEV_DEBUG: "0"
       CARGO_INCREMENTAL: "0"
