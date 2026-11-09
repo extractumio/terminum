@@ -40,8 +40,8 @@ pub(crate) const HELPER_REMOVE_LIMIT: Duration = Duration::from_secs(60);
 #[derive(Default)]
 pub(super) struct Agent {
     /// enabling, connecting, updating, up, down; failed (a ticked enabling, AC-83)
-    state: String,
-    note: String,
+    pub(super) state: String,
+    pub(super) note: String,
     updated_at: Option<Instant>,
     /// agents' link: "" (off), "up", "refused: <why>" (link.rs)
     pub(super) agents: String,
@@ -51,7 +51,7 @@ pub(super) struct Agent {
     pub(super) refusals: u32,
     /// the host's $HOME, from the probe
     pub(super) home: Option<String>,
-    task: Option<tokio::task::JoinHandle<()>>,
+    pub(super) task: Option<tokio::task::JoinHandle<()>>,
 }
 
 #[derive(Default)]
@@ -176,9 +176,9 @@ fn answer(out: &str) -> &str {
 }
 
 /// One running tunnel: the ssh child and the agent's id.
-struct Running {
-    child: Child,
-    agent_id: String,
+pub(super) struct Running {
+    pub(super) child: Child,
+    pub(super) agent_id: String,
     /// the agent lives as long as its stdin is open, and hears from us on it
     stdin: tokio::process::ChildStdin,
     /// what the helper said about the agents' link
@@ -204,13 +204,13 @@ async fn answers(mut stream: tokio::net::UnixStream) -> Result<(), String> {
 /// Whether the helper that said ready is this build's, the only one Files is checked against
 /// and given; none (the caller installs it) or another build (the caller replaces it, AC-84) is
 /// not: an older helper may not answer through the forward, and must not stop its update.
-fn current(agent_id: &str) -> bool {
+pub(super) fn current(agent_id: &str) -> bool {
     agent_id == crate::agent::AGENT_ID
 }
 
 /// Starts the agent through ssh and waits for its "ready" line (20 s); with `files`, also that
 /// the helper answers through the forward.
-async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&super::link::LinkTo>, files: bool) -> Result<Running, String> {
+pub(super) async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&super::link::LinkTo>, files: bool) -> Result<Running, String> {
     let dir = app.cfg.dir.join("agents");
     crate::config::private_dir(&dir);
     let local = dir.join(format!("{}.sock", &crate::auth::crypto::sha256_hex(format!("{host} {}", crate::auth::crypto::random_hex::<6>()).as_bytes())[..12]));
@@ -383,16 +383,18 @@ pub fn reconcile(app: &Shared, host: &str) {
     let (shared, name) = (app.clone(), host.to_string());
     // the task is held under the lock, so `stop` (the host removed) aborts it
     let task = match state.as_deref() {
-        Some("enabled") => tokio::spawn(keep(shared, name)),
+        // not while its helper is being removed (consent.rs `remove`)
+        Some("enabled") if !app.hosts.files.is(host, super::consent::Decision::Remove) => tokio::spawn(keep(shared, name)),
         _ if super::link::wanted(app, host) => tokio::spawn(keep(shared, name)),
         Some("wanted") if attached => tokio::spawn(async move {
-            let Err(e) = enable(&shared, &name).await else { return };
+            let Err(e) = super::consent::enable(&shared, &name).await else { return };
             tracing::warn!(event = "agent.enable_failed", host = name, why = e);
             if crate::hosts::recipe_of(&shared, &name).is_none() {
                 return;
             }
-            let note = match crate::hosts::set_files(&shared, &name, None) {
-                Ok(()) => e,
+            let note = match super::consent::unwant(&shared, &name) {
+                Ok(false) => return, // Not now or Remove came meanwhile
+                Ok(true) => e,
                 Err(w) => format!("{e} (and settings.json not written: {w})"),
             };
             set(&shared, &name, "failed", &note);
@@ -415,64 +417,6 @@ pub fn stop(app: &Shared, host: &str) {
         }
     crate::remote::register(app, host, None);
     app.links.stop(app, host);
-}
-
-/// Enable (AC-83): the platform, the copy, a first connection; then "files": "enabled".
-pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
-    let recipe = crate::hosts::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
-    {
-        // checked and set at once: the tick and a click may start it together
-        let mut g = app.tunnels.0.lock();
-        let a = g.entry(host.to_string()).or_default();
-        if a.state == "enabling" {
-            return Ok(());
-        }
-        a.state = "enabling".into();
-        a.note = format!("setting up {host}…");
-    }
-    crate::lists::host_changed(app, host);
-    let result = async {
-        let p = probe(&recipe).await?.0?;
-        install(&recipe, &binary_for(p)?, crate::agent::AGENT_ID).await?;
-        let mut trial = connect(app, host, &recipe, None, true).await?;
-        let _ = trial.child.kill().await;
-        if !current(&trial.agent_id) {
-            return Err(format!("the helper on {host} answers as build {:?}", trial.agent_id));
-        }
-        crate::remote::register(app, host, None);
-        Ok::<(), String>(())
-    }.await;
-    // the host removed or its recipe changed meanwhile: what was consented to is gone
-    let result = result.and_then(|()| match crate::hosts::recipe_of(app, host) {
-        Some(r) if r == recipe => Ok(()),
-        _ => Err(format!("{host} changed while it was set up")),
-    });
-    match result {
-        Ok(()) => {
-            crate::hosts::set_files(app, host, Some("enabled"))?;
-            let _ = crate::hosts::set_helper(app, host, crate::agent::AGENT_ID);
-            stop(app, host); // an agents-only connection restarts with Files
-            reconcile(app, host);
-            Ok(())
-        }
-        Err(e) => {
-            let mut g = app.tunnels.0.lock();
-            if !g.get(host).and_then(|a| a.task.as_ref()).is_some_and(|t| !t.is_finished()) {
-                g.remove(host); // an agents-only connection keeps running
-            }
-            drop(g);
-            crate::lists::host_changed(app, host);
-            Err(format!("Could not enable {host}: {e}"))
-        }
-    }
-}
-
-/// "Remove helper from <host>" (AC-83): the connection closes, the helper and its log go.
-pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
-    stop(app, host);
-    let recipe = crate::hosts::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
-    remove_helper(&recipe).await.map_err(|e| format!("Could not remove the helper from {host}: {e}"))?;
-    crate::hosts::set_files(app, host, None)
 }
 
 /// The helper and its log taken off a host (Files' remove, agents off with Files off).
