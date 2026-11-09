@@ -100,6 +100,8 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.fill(".newcomment textarea", "Use **v2**");
   await page.click('.newcomment button:has-text("Close")');
   await page.waitForSelector("#taskbox", { state: "hidden", timeout: 5000 });
+  // the close's Back comes later (a popstate): a card opened before it lands is closed by it
+  await page.waitForURL((u) => !/^\/kanban\/[A-Z]/.test(u.pathname), { timeout: 8000 });
   await page.click(card(second));
   await within("AC-108 a comment shows as Markdown", () => page.waitForSelector("#taskbody .ev-comment .markdown strong", { timeout: 5000 }));
   check("AC-108 Close moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
