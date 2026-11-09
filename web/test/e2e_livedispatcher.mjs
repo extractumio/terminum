@@ -46,7 +46,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
-  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call finish_task/.test(prompt), prompt);
+  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
@@ -310,7 +310,7 @@ export async function liveDispatcherReal(page, opts) {
   const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
   const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
-  const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task");
+  const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
@@ -343,7 +343,7 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-122 real Claude Code: and it ends", await hasStatus(t, "DONE", 180000), await history(t));
   console.log("REAL claude history:", (await history(t)).slice(0, 900));
   // two tasks in one press: they go by number, the agent reads each by get_task and finishes each (AC-138)
-  const pool = await add("Real pool", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task mcp__plugin_terminum_terminum__get_task");
+  const pool = await add("Real pool", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
   const makes = async (title, text) => (await j("/api/tasks", "POST", { title, text, project })).id;
   const [first, second] = [await makes("First of two", "Finish this task with the result one."), await makes("Second of two", "Finish this task with the result two.")];
   const both = await j(`/api/tasks/${first}/run`, "POST", { agent: pool, also: [second], comment: "Do both, briefly." });

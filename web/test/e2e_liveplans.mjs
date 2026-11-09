@@ -95,7 +95,7 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
     const etas = [hhmm(before + 1800), hhmm(Math.floor(Date.now() / 1000) + 1800)];
     check("AC-97 initialize answers terminum's server, the version asked, and its instructions",
       a[1]?.result?.protocolVersion === "2025-06-18" && a[1]?.result?.serverInfo?.name === "terminum" && /Keep a plan/.test(a[1]?.result?.instructions ?? ""), JSON.stringify(a[1]));
-    check("AC-97 tools/list names the tools; a notification gets no answer", (a[2]?.result?.tools ?? []).map((t) => t.name).join() === "search_tools,get_tool_info,execute_tool,update_session_plan,create_task,get_task,get_file,finish_task"
+    check("AC-97 tools/list names the tools; a notification gets no answer", (a[2]?.result?.tools ?? []).map((t) => t.name).join() === "search_tools,get_tool_info,execute_tool,update_session_plan"
       && Object.keys(a).sort().join() === "1,2,3,4,5,6,7", Object.keys(a).join());
     check("AC-155 search_tools finds update_task for a priority; execute_tool runs a tool tools/list does not carry",
       a[6]?.result?.isError === false && /\n1\. update_task\(/.test(textOf(a[6])) && a[7]?.result?.isError === false && /Parser drops a BOM/.test(textOf(a[7])), `${textOf(a[6])} ${textOf(a[7])}`);

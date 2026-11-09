@@ -164,7 +164,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
     let (task, key) = (l.run.names(), server.key(&pane));
     let done = match l.act {
         Act::Warn(left) => {
-            let text = format!("[terminum Dispatcher] {task}: {} minutes of the {}-minute budget are left. Write the result with finish_task and end your subagents now. Then the agent is ended and unsaved work is lost.", (left.max(0) + 59) / 60, l.run.budget.unwrap_or(0) / 60);
+            let text = format!("[terminum Dispatcher] {task}: {} minutes of the {}-minute budget are left. Write the result with {} and end your subagents now. Then the agent is ended and unsaved work is lost.", (left.max(0) + 59) / 60, l.run.budget.unwrap_or(0) / 60, super::press::FINISH);
             tell(app, &l.run, &server, &pane, text, "The last warning").await;
             went(app, &l.run, |r| r.warned |= plan::warn_due(r)).await;
             Ok(())
@@ -192,7 +192,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             Ok(())
         }
         Act::Nudge => {
-            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call finish_task with the result, or ask what you need.");
+            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call {} with the result, or ask what you need.", super::press::FINISH);
             let sent = gate::deliver(app, &l.run, &server, &pane, &text, false).await;
             went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
             match sent {

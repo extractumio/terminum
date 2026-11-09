@@ -9,9 +9,10 @@ use serde_json::{json, Value};
 use super::mcp_catalog::{self as catalog, AREAS};
 
 pub const META: [&str; 3] = ["search_tools", "get_tool_info", "execute_tool"];
-/// Listed in full: every tool terminum's own words name (INSTRUCTIONS, Dispatcher's fixed prompts in
-/// dispatcher/press.rs and acts.rs), so a name an agent is told is in its list (mcp_meta_tests.rs).
-pub const DIRECT: [&str; 5] = ["update_session_plan", "create_task", "get_task", "get_file", "finish_task"];
+/// Listed in full: the plan, sent at every step with a schema the client checks. Every other tool
+/// terminum's own words name is written there as its call, `execute_tool("finish_task", {id, result})`
+/// (mcp_meta_tests.rs checks each against the tool's schema).
+pub const DIRECT: [&str; 1] = ["update_session_plan"];
 const LIMIT: usize = 5;
 const LIMIT_MOST: usize = 10;
 const QUERY_MOST: usize = 500;
