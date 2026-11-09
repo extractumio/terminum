@@ -38,7 +38,7 @@ pub struct Restore {
     /// each server's start made again while terminumd runs, and how it went
     attempts: Mutex<std::collections::HashMap<String, Attempt>>,
     /// one restore at a time: a reboot's, a host's, the user's own tmux, a Restore again
-    pub one: tokio::sync::Mutex<()>,
+    one: tokio::sync::Mutex<()>,
 }
 
 impl Restore {
@@ -60,6 +60,16 @@ impl Restore {
     pub fn end(&self, what: &str, m: &Made, generation: u64) {
         let a = if m.errors.is_empty() { Attempt::Done } else { Attempt::Failed { generation, made: m.sessions + m.windows > 0 } };
         self.attempts.lock().insert(what.to_string(), a);
+    }
+
+    /// The one restore's turn for `what`, when it is due by itself (checked before the wait and again
+    /// after it: another restore may have made it meanwhile).
+    pub async fn turn_if_due(&self, what: &str, generation: u64) -> Option<tokio::sync::MutexGuard<'_, ()>> {
+        if !self.due(what, generation) {
+            return None;
+        }
+        let one = self.one.lock().await;
+        self.due(what, generation).then_some(one)
     }
 
     /// Whether `what` waits for its layout: being made, or failed with nothing back (its
@@ -267,9 +277,8 @@ pub fn hello(app: &Shared, page: &crate::page::Page) {
 /// A page closed the report: it is gone from every page and no page that connects gets it.
 pub fn seen(app: &Shared) {
     if app.restore.report.lock().take().is_some() {
-        match std::fs::remove_file(app.cfg.dir.join("restore-report.json")) {
-            Err(e) if e.kind() != std::io::ErrorKind::NotFound => tracing::warn!(event = "restore.report_remove_failed", error = %e),
-            _ => {}
+        if let Err(e) = crate::config::remove_if_there(&app.cfg.dir.join("restore-report.json")) {
+            tracing::warn!(event = "restore.report_remove_failed", error = %e);
         }
         app.pages.tell(&json!({"t": "restore", "report": null}).to_string());
     }

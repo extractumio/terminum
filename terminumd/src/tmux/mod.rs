@@ -29,8 +29,8 @@ pub use server::Server;
 /// orphans (`orphans`); a server made in another's place under the same id is a new connection.
 pub fn first_on_link(what: &'static str, server: &Server) -> bool {
     static DONE: parking_lot::Mutex<BTreeMap<(&'static str, String), u64>> = parking_lot::const_mutex(BTreeMap::new());
-    let generation = server.generation.load(std::sync::atomic::Ordering::Relaxed);
-    DONE.lock().insert((what, server.id()), generation) != Some(generation)
+    let epoch = server.epoch();
+    DONE.lock().insert((what, server.id()), epoch) != Some(epoch)
 }
 
 #[cfg(test)]

@@ -288,10 +288,6 @@ fn report(app: &Shared, place: &str, m: Made) {
     crate::restore::add_report(app, &text, m);
 }
 
-fn generation(server: &Server) -> u64 {
-    server.generation.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// The user's own tmux on this Mac does not run (a reboot, its server killed): its attached
 /// sessions are made again from their checkpoint, once while terminumd runs (again when that
 /// failed with nothing back and the server is another one now).
@@ -302,13 +298,8 @@ pub async fn users_local(app: &Shared, server: &Server) {
     }
     let Some(saved) = saved(app, &server.id()) else { return };
     let key = format!("{}@{}", server.id(), saved["at"]);
-    if !app.restore.due(&key, generation(server)) {
-        return;
-    }
-    let _one = app.restore.one.lock().await;
-    if app.restore.due(&key, generation(server)) {
-        users_make(app, server, &saved, &key).await;
-    }
+    let Some(_one) = app.restore.turn_if_due(&key, server.epoch()).await else { return };
+    users_make(app, server, &saved, &key).await;
 }
 
 /// Makes the user's own attached sessions of `saved` that do not run on `server`.
@@ -329,7 +320,7 @@ async fn users_make(app: &Shared, server: &Server, saved: &Value, key: &str) {
     let print = crate::restore_lines::commands(app, &exec, &server.id(), saved["identity"].as_str(), &wanted).await;
     make(&exec, &wanted, &existing, None, crate::restore::usable, &home, &print, &mut m).await;
     hand_on(app, &exec, server, saved, kept, &mut m).await;
-    app.restore.end(key, &m, generation(server));
+    app.restore.end(key, &m, server.epoch());
     report(app, &format!("your tmux{}", if socket == "default" { String::new() } else { format!(" -L {socket}") }), m);
 }
 
@@ -345,21 +336,19 @@ pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let Some(saved) = saved(app, &server.id()) else { return };
     let started = started(server).await.unwrap_or(0);
     let key = format!("{}@{started}", server.id());
-    if started <= saved["at"].as_i64().unwrap_or(i64::MAX) || !app.restore.due(&key, generation(server)) {
+    if started <= saved["at"].as_i64().unwrap_or(i64::MAX) {
         return;
     }
-    let _one = app.restore.one.lock().await;
-    if app.restore.due(&key, generation(server)) {
-        let existing: Vec<String> = seen.iter().map(|(n, _)| n.clone()).collect();
-        host_make(app, server, &saved, &existing, true, &key).await;
-    }
+    let Some(_one) = app.restore.turn_if_due(&key, server.epoch()).await else { return };
+    let existing: Vec<String> = seen.iter().map(|(n, _)| n.clone()).collect();
+    host_make(app, server, &saved, &existing, true, &key).await;
 }
 
 /// Makes the sessions of `saved` on host `server` but those in `existing`; `fill`: its fresh
 /// `terminum` session (one window) takes the checkpoint's windows, the fresh one going after.
 async fn host_make(app: &Shared, server: &Server, saved: &Value, existing: &[String], fill: bool, key: &str) {
     app.restore.begin(key);
-    let fresh = server.run(format!("list-windows -t ={HOST_SESSION} -F '#{{window_id}}'")).await.unwrap_or_default();
+    let fresh = if fill { server.run(format!("list-windows -t ={HOST_SESSION} -F '#{{window_id}}'")).await.unwrap_or_default() } else { Vec::new() };
     let sessions: Vec<Value> = saved["sessions"].as_array().cloned().unwrap_or_default();
     let mut m = Made::default();
     let home = server.home().await.unwrap_or_default();
@@ -368,10 +357,10 @@ async fn host_make(app: &Shared, server: &Server, saved: &Value, existing: &[Str
     make(&Exec::Ctl(server), &sessions, existing, into, |_| true, if home.is_empty() { "~" } else { &home }, &HashMap::new(), &mut m).await;
     hand_on(app, &Exec::Ctl(server), server, saved, kept, &mut m).await;
     // the fresh session's own first window goes once the kept ones are there
-    if fill && m.windows > 0 && fresh.len() == 1 {
+    if m.windows > 0 && fresh.len() == 1 {
         let _ = server.run(format!("kill-window -t {}", args::word(&fresh[0]))).await;
     }
-    app.restore.end(key, &m, generation(server));
+    app.restore.end(key, &m, server.epoch());
     report(app, &format!("host {}", server.name), m);
 }
 

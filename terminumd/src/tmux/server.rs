@@ -165,6 +165,11 @@ impl Server {
         matches!(self.link, Link::Local { .. })
     }
 
+    /// The connection's epoch (`generation`): another one after each reconnect and for a server made in another's place.
+    pub fn epoch(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
+    }
+
     /// The server's own name among all (`<host>:<socket>`, a pane key's middle): this Mac may
     /// have more than one (the private one, the user's own attached, AC-89), so a name alone
     /// does not tell two apart, and their `@N` windows clash.

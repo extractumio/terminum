@@ -24,23 +24,25 @@ const TMUX_AGAIN: Duration = Duration::from_secs(10);
 /// Workspaces of panes gone this long are removed at an inventory this often (AC-71).
 const INVENTORY: Duration = Duration::from_secs(300);
 
-/// Starts the local server when none runs, and keeps a control client per session.
+/// Starts the local server when none runs, and keeps a control client per session; what went
+/// wrong is the tmux problem, and any path back clears it (L26).
 async fn ensure_local(app: &Shared) {
+    let problem = local_problem(app).await;
+    set_problem(app, problem);
+}
+
+/// `ensure_local`'s work: the problem, None when the server runs with its clients.
+async fn local_problem(app: &Shared) -> Option<String> {
     let server = &app.tmux.local;
     // through the bulk client while it lives; a process of its own only when none does
     if server.connected()
         && let Ok(list) = server.run("list-sessions -F '#{session_name}'").await
             && !list.is_empty() {
-                // a success says so here too: an earlier problem goes (L26)
-                set_problem(app, server.sync_clients(&list).err());
-                return;
+                return server.sync_clients(&list).err();
             }
     let sessions = match server.local_sessions().await {
         Ok(s) => s,
-        Err(e) => {
-            set_problem(app, Some(e));
-            return;
-        }
+        Err(e) => return Some(e),
     };
     let sessions = match sessions {
         Some(s) if !s.is_empty() => s,
@@ -49,8 +51,7 @@ async fn ensure_local(app: &Shared) {
             if !server.took_closed_by_user() && crate::restore::at_start(app).await {
                 tracing::info!(event = "tmux.restored");
             } else if let Err(e) = server.start_local("main", &crate::config::home().display().to_string()).await {
-                set_problem(app, Some(format!("tmux could not start: {e}")));
-                return;
+                return Some(format!("tmux could not start: {e}"));
             } else {
                 tracing::info!(event = "tmux.started", socket = %server.socket);
             }
@@ -66,7 +67,8 @@ async fn ensure_local(app: &Shared) {
             }
             match server.local_sessions().await {
                 Ok(Some(s)) => s,
-                _ => return,
+                Ok(None) => return Some("tmux ended as it started".into()),
+                Err(e) => return Some(e),
             }
         }
     };
@@ -74,7 +76,7 @@ async fn ensure_local(app: &Shared) {
     if synced.is_ok() {
         *server.status.lock() = Status::Attached;
     }
-    set_problem(app, synced.err());
+    synced.err()
 }
 
 fn set_problem(app: &Shared, problem: Option<String>) {
