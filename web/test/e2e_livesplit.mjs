@@ -53,7 +53,11 @@ export async function liveSplit(page, { tmux, work, socket }) {
   const first = split();
   check("AC-13 a split under the shown pane: it is zoomed to the whole window", await until(() => fills(tmux, pane), 5000), of("#{window_zoomed_flag} #{pane_width} #{window_width}"));
   check("AC-13 the zoom keeps the view's size", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
-  const flat = await page.evaluate(() => { const t = document.getElementById("term"); return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote") }; });
+  // the page hears of the zoom after tmux has it (its %layout-change through terminumd): the split's
+  // moment may still be drawn when tmux answers, so the page is given its time to follow
+  const looks = () => page.evaluate(() => { const t = document.getElementById("term"); return { reflow: t.classList.contains("reflow"), banner: !!document.getElementById("splitnote") }; });
+  let flat = await looks();
+  await until(async () => { flat = await looks(); return !flat.reflow && !flat.banner; }, 3000);
   check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal", !flat.reflow && !flat.banner, JSON.stringify(flat));
   tmux("kill-pane", "-t", first);
   // a client attached by hand with this window on its screen: the layout stays its own
