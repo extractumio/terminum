@@ -17,26 +17,26 @@ const LIMIT_MOST: usize = 10;
 const QUERY_MOST: usize = 500;
 const NAMES_MOST: usize = 5;
 
-/// The areas with their tools' names, for search_tools' description and an empty search.
-fn areas() -> String {
+/// The areas, for search_tools' description; with their tools' names for an empty search.
+fn areas(names: bool) -> String {
     AREAS.iter().map(|(area, what)| {
-        let names: Vec<&str> = catalog::CARDS.iter().filter(|c| c.area == *area).map(|c| c.name).collect();
-        format!("{area} ({what}): {}", names.join(", "))
+        let tools: Vec<&str> = catalog::CARDS.iter().filter(|c| c.area == *area).map(|c| c.name).collect();
+        if names { format!("{area} ({what}): {}", tools.join(", ")) } else { format!("{area} ({what})") }
     }).collect::<Vec<_>>().join("; ")
 }
 
 /// The meta tools' definitions.
 pub fn definitions() -> Vec<Value> {
-    let read = json!({"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false});
+    let read = super::mcp::hints(true, true);
     vec![
         json!({"name": "search_tools", "title": "Search terminum's tools",
             "description": format!("Finds terminum's tools for an action. query: the action as verb and object, in English, e.g. \"change a task's priority\", \"make a task a subtask of another\", \"attach a screenshot to a task\"; \
 synonyms count. Answers the best tools with their arguments: run one with execute_tool. \
-Areas: {}.", AREAS.iter().map(|(a, w)| format!("{a} ({w})")).collect::<Vec<_>>().join("; ")),
+Areas: {}.", areas(false)),
             "annotations": read,
             "inputSchema": {"type": "object", "required": ["query"], "properties": {
                 "query": {"type": "string", "maxLength": QUERY_MOST, "description": "The action: verb and object, e.g. \"move a task under another task\"."},
-                "limit": {"type": "integer", "minimum": 1, "maximum": LIMIT_MOST, "description": "At most this many tools (default 5)."}}}}),
+                "limit": {"type": "integer", "minimum": 1, "maximum": LIMIT_MOST, "description": format!("At most this many tools (default {LIMIT}).")}}}}),
         json!({"name": "get_tool_info", "title": "Describe terminum's tools",
             "description": "terminum's tools' whole definitions by name, as search_tools found them: description, inputSchema, hints and an example call for execute_tool.",
             "annotations": read,
@@ -44,7 +44,7 @@ Areas: {}.", AREAS.iter().map(|(a, w)| format!("{a} ({w})")).collect::<Vec<_>>()
                 "names": {"type": "array", "minItems": 1, "maxItems": NAMES_MOST, "items": {"type": "string"}}}}}),
         json!({"name": "execute_tool", "title": "Run a terminum tool",
             "description": "Runs one of terminum's tools, found with search_tools, with its arguments as get_tool_info describes them; answers that tool's own result or error.",
-            "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false},
+            "annotations": super::mcp::hints(false, false),
             "inputSchema": {"type": "object", "required": ["name"], "properties": {
                 "name": {"type": "string", "description": "The tool, e.g. update_task."},
                 "arguments": {"type": "object", "description": "Its arguments, e.g. {\"id\": \"TERM-12\", \"severity\": \"P1\"}."}}}}),
@@ -81,23 +81,19 @@ fn summary(d: &Value) -> String {
     format!("{name}({}) [{area}]: {first}", args.join(", "))
 }
 
-/// get_tool_info's answer for one tool.
+/// get_tool_info's answer for one tool: its definition, area and an example call.
 fn info(d: &Value) -> Value {
-    let name = d["name"].as_str().unwrap_or("");
-    let mut out = json!({"name": name, "description": d["description"], "inputSchema": d["inputSchema"]});
-    if let Some(a) = d.get("annotations") {
-        out["annotations"] = a.clone();
-    }
-    if let Some(c) = catalog::card(name) {
+    let mut out = d.clone();
+    if let Some(c) = d["name"].as_str().and_then(catalog::card) {
         out["area"] = json!(c.area);
-        out["example"] = json!({"name": "execute_tool", "arguments": {"name": name, "arguments": serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null)}});
+        out["example"] = json!({"name": "execute_tool", "arguments": {"name": c.name, "arguments": serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null)}});
     }
     out
 }
 
 /// A name that is no tool: why, and the nearest by search.
 fn unknown(name: &str) -> String {
-    let near = catalog::index().search(&name.replace('_', " "), 3);
+    let near = catalog::index().search(name, 3);
     let near = if near.is_empty() { String::new() } else { format!(" Nearest: {}.", near.join(", ")) };
     format!("No tool is named {name:?}.{near} search_tools finds a tool by what it does.")
 }
@@ -119,7 +115,7 @@ pub fn search(args: &Value) -> Result<String, String> {
     let hits = catalog::index().search(query, limit);
     if hits.is_empty() {
         return Ok(format!("No tool matches {query:?}. Ask again with the action as a verb and its object in English, \
-e.g. \"create a task\". The tools by area: {}.", areas()));
+e.g. \"create a task\". The tools by area: {}.", areas(true)));
     }
     let lines: Vec<String> = hits.iter().filter_map(|n| catalog::definition(n)).enumerate().map(|(i, d)| format!("{}. {}", i + 1, summary(d))).collect();
     Ok(format!("Tools for {query:?}, best first (? optional):\n{}\nRun one: execute_tool {{name, arguments}}; get_tool_info {{names}} gives its whole description, schema and an example.", lines.join("\n")))

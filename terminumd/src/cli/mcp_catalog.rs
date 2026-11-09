@@ -26,7 +26,7 @@ pub struct Card {
     pub example: &'static str,
 }
 
-pub const CARDS: [Card; 12] = [
+pub const CARDS: &[Card] = &[
     Card { name: "update_session_plan", area: "plan", keywords: "update my plan, report progress, mark a step completed, set the current step and ETA, checklist, todo list",
         example: r#"{"items": [{"text": "Read the code", "status": "completed"}, {"text": "Write the fix", "status": "in_progress"}], "doing": "Write the fix", "eta_minutes": 20}"# },
     Card { name: "get_session_plan", area: "plan", keywords: "show my plan, read the stored plan, what is left, current progress",
@@ -57,13 +57,10 @@ pub fn card(name: &str) -> Option<&'static Card> {
     CARDS.iter().find(|c| c.name == name)
 }
 
-/// Every tool's definition, in the catalog's order.
+/// Every tool's definition, built once.
 pub fn definitions() -> &'static [Value] {
     static DEFS: OnceLock<Vec<Value>> = OnceLock::new();
-    DEFS.get_or_init(|| {
-        let all = super::mcp::catalog();
-        CARDS.iter().filter_map(|c| all.iter().find(|d| d["name"] == c.name).cloned()).collect()
-    })
+    DEFS.get_or_init(super::mcp::catalog)
 }
 
 pub fn definition(name: &str) -> Option<&'static Value> {
@@ -74,8 +71,8 @@ pub fn definition(name: &str) -> Option<&'static Value> {
 pub fn index() -> &'static Index {
     static INDEX: OnceLock<Index> = OnceLock::new();
     INDEX.get_or_init(|| {
-        let docs: Vec<(String, String, &Card)> = CARDS.iter().filter_map(|c| {
-            let d = definition(c.name)?;
+        let docs: Vec<(String, String, &Card)> = definitions().iter().filter_map(|d| {
+            let c = card(d["name"].as_str()?)?;
             let args: Vec<&str> = d["inputSchema"]["properties"].as_object().map(|p| p.keys().map(String::as_str).collect()).unwrap_or_default();
             Some((format!("{} {}", d["title"].as_str().unwrap_or(""), d["description"].as_str().unwrap_or("")), args.join(" "), c))
         }).collect();

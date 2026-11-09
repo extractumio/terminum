@@ -35,6 +35,7 @@ pub const PLAN_TOOLS: [&str; 2] = ["update_session_plan", "get_session_plan"];
 use crate::tasks::tools::NAMES as TASK_TOOLS;
 
 /// Every tool of the catalog (mcp_catalog.rs); tools/list lists only some (mcp_meta.rs).
+#[cfg(test)]
 pub fn tool_names() -> Vec<&'static str> {
     PLAN_TOOLS.iter().chain(TASK_TOOLS.iter()).copied().collect()
 }
@@ -135,7 +136,7 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
             if super::mcp_meta::META.contains(&name) {
                 return result(id, meta(name, &args, session, env, forward));
             }
-            if !tool_names().contains(&name) {
+            if !PLAN_TOOLS.contains(&name) && !TASK_TOOLS.contains(&name) {
                 return error(id, -32602, &format!("Unknown tool {name:?}: search_tools finds terminum's tools by what they do"));
             }
             result(id, call(name, &args, session, env, forward))
@@ -197,16 +198,13 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
     if pane_of(env).is_none() {
         return text_result(NOT_IN_PANE, true);
     }
-    if !args.is_object() {
-        return text_result("arguments must be an object", true);
-    }
     let answer = match name {
-        "search_tools" => m::search(args),
-        "get_tool_info" => m::describe(args),
-        _ => match m::target(args) {
+        "execute_tool" => match m::target(args) {
             Ok((tool, arguments)) => return call(tool, &arguments, session, env, forward),
             Err(why) => Err(why),
         },
+        "search_tools" => m::search(args),
+        _ => m::describe(args),
     };
     match answer {
         Ok(text) => text_result(&text, false),
@@ -317,11 +315,15 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     Ok(Value::Object(out))
 }
 
-/// Every tool's definition (mcp_catalog.rs orders and indexes them).
+/// A tool's hints: none of terminum's destroys or reaches beyond terminum.
+pub fn hints(read_only: bool, idempotent: bool) -> Value {
+    json!({"readOnlyHint": read_only, "destructiveHint": false, "idempotentHint": idempotent, "openWorldHint": false})
+}
+
+/// Every tool's definition (mcp_catalog.rs indexes them).
 pub fn catalog() -> Vec<Value> {
     let tool = |name: &str, title: &str, description: &str, properties: Value, required: Value| {
-        let annotations = json!({"readOnlyHint": name.starts_with("get_"), "destructiveHint": false, "idempotentHint": true, "openWorldHint": false});
-        json!({"name": name, "title": title, "description": description, "annotations": annotations,
+        json!({"name": name, "title": title, "description": description, "annotations": hints(name.starts_with("get_"), true),
                "inputSchema": {"type": "object", "properties": properties, "required": required}})
     };
     let mut all = vec![

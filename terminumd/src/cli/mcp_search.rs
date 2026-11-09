@@ -14,17 +14,17 @@ const STOP: [&str; 44] = [
 ];
 
 /// Synonym groups: each word of a group counts as its first. Verbs say the action, nouns its object.
-pub const SYNONYMS: [&[&str]; 17] = [
+const SYNONYMS: [&[&str]; 17] = [
     &["create", "add", "new", "make", "register", "submit", "draft", "spawn", "introduce"],
-    &["list", "search", "find", "browse", "all", "enumerate", "query", "filter", "look", "overview", "board", "backlog"],
+    &["list", "search", "find", "browse", "enumerate", "query", "filter", "look", "overview", "board", "backlog"],
     &["read", "get", "view", "fetch", "show", "see", "display", "inspect", "details", "retrieve", "load", "describe"],
     &["update", "change", "edit", "modify", "set", "alter", "adjust", "rename", "retitle", "rewrite", "revise", "groom", "amend", "reword", "correct"],
     &["priority", "severity", "urgency", "importance", "urgent", "critical", "prioritize", "reprioritize", "deprioritize", "rank", "bump", "raise", "lower", "higher", "p0", "p1", "p2", "p3"],
     &["parent", "subtask", "child", "children", "epic", "group", "regroup", "nest", "hierarchy", "umbrella", "under"],
-    &["move", "transfer", "column", "state", "block", "wait", "stuck", "handoff", "hand", "fail", "reopen"],
+    &["move", "transfer", "column", "block", "wait", "stuck", "handoff", "hand", "fail", "reopen"],
     &["human", "person", "user", "owner", "maintainer", "people", "escalate"],
-    &["take", "claim", "assign", "pick", "grab", "start", "begin", "accept", "adopt", "own"],
-    &["finish", "done", "complete", "close", "resolve", "result", "wrap", "deliver", "conclude", "ship", "end"],
+    &["take", "claim", "assign", "pick", "grab", "start", "begin", "accept", "adopt"],
+    &["finish", "done", "complete", "close", "resolve", "result", "wrap", "deliver", "conclude", "ship"],
     &["archive", "remove", "delete", "hide", "drop", "clear", "clean", "cleanup", "retire", "discard", "trash"],
     &["comment", "note", "reply", "remark", "annotate", "discuss", "mention", "message", "feedback"],
     &["attach", "upload", "attachment", "document", "screenshot", "artifact", "image", "path"],
@@ -113,13 +113,12 @@ impl Index {
         let mut df: HashMap<String, usize> = HashMap::new();
         for d in catalog {
             let mut tf: HashMap<String, f64> = HashMap::new();
-            let mut len = 0.0;
             for (text, weight) in std::iter::once((d.name, 3.0)).chain(d.fields.iter().copied()) {
                 for t in terms(text, &groups) {
                     *tf.entry(t).or_default() += weight;
-                    len += weight;
                 }
             }
+            let len = tf.values().sum();
             for t in tf.keys() {
                 *df.entry(t.clone()).or_default() += 1;
             }

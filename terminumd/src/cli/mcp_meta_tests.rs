@@ -2,6 +2,15 @@
 use serde_json::json;
 
 use super::*;
+use crate::cli::mcp;
+
+/// The cases whose tool is not where `found` wants it in the first three hits.
+fn misses(cases: &[(&str, &str)], found: impl Fn(&[String], &str) -> bool) -> String {
+    cases.iter().filter_map(|(query, want)| {
+        let got = catalog::index().search(query, 3);
+        (!found(&got, want)).then(|| format!("{query:?}: {got:?}, want {want}"))
+    }).collect::<Vec<_>>().join("\n")
+}
 
 /// What an agent asks, and the tool it must get first: the search's specification. A new tool
 /// adds its phrasings here.
@@ -68,40 +77,31 @@ const NEAR: [(&str, &str); 10] = [
 
 #[test]
 fn ac155_a_looser_phrasing_finds_its_tool_among_three() {
-    let wrong: Vec<String> = NEAR.iter().filter_map(|(query, want)| {
-        let got = catalog::index().search(query, 3);
-        (!got.iter().any(|g| g == want)).then(|| format!("{query:?}: {got:?}, want {want}"))
-    }).collect();
-    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    let wrong = misses(&NEAR, |got, want| got.iter().any(|g| g == want));
+    assert!(wrong.is_empty(), "{wrong}");
 }
 
 #[test]
 fn ac155_each_phrasing_finds_its_tool_first() {
-    let mut wrong = Vec::new();
-    for (query, want) in GOLDEN {
-        let got = catalog::index().search(query, 3);
-        if got.first().map(String::as_str) != Some(want) {
-            wrong.push(format!("{query:?}: {got:?}, want {want}"));
-        }
-    }
-    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    let wrong = misses(&GOLDEN, |got, want| got.first().is_some_and(|g| g == want));
+    assert!(wrong.is_empty(), "{wrong}");
 }
 
 #[test]
 fn ac155_every_tool_has_its_card_and_a_valid_example() {
-    let names: Vec<&str> = catalog::definitions().iter().filter_map(|d| d["name"].as_str()).collect();
-    assert_eq!(names, super::super::mcp::tool_names(), "one card for each tool, in its order");
-    for c in &catalog::CARDS {
+    let cards: Vec<&str> = catalog::CARDS.iter().map(|c| c.name).collect();
+    assert_eq!(cards, mcp::tool_names(), "one card for each tool, in its order");
+    for c in catalog::CARDS {
         let example: Value = serde_json::from_str(c.example).unwrap_or_else(|e| panic!("{}: {e}", c.name));
-        assert!(super::super::mcp::checked(c.name, &example).is_ok(), "{}'s example is refused", c.name);
+        assert!(mcp::checked(c.name, &example).is_ok(), "{}'s example is refused", c.name);
         assert!(catalog::AREAS.iter().any(|(a, _)| *a == c.area), "{}: no area {}", c.name, c.area);
     }
 }
 
 #[test]
 fn ac155_a_tool_terminum_s_words_name_is_listed() {
-    let words = [super::super::mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), crate::plans::REMINDER];
-    for name in super::super::mcp::tool_names() {
+    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), crate::plans::REMINDER];
+    for name in mcp::tool_names() {
         if words.iter().any(|w| w.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|x| x == name)) {
             assert!(DIRECT.contains(&name), "{name} is named to agents but not listed");
         }
