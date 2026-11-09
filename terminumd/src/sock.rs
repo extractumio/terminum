@@ -126,7 +126,8 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         return StatusCode::NO_CONTENT.into_response();
     }
     let _dispatch = app.hooks.dispatch.lock();
-    let Some(changed) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
+    // whose it is, decided once: only the main agent's events of its turn move a run, a task, a plan (AC-127)
+    let Some((changed, whose)) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
     };
     if changed {
@@ -147,8 +148,11 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });
     }
     crate::tasks::tell::session_ended(&app, &key, &ev);
-    crate::dispatcher::heard(&app, &key, &ev);
-    let remind = crate::plans::hook_event(&app, &key, &ev);
+    if whose == crate::tmux::hookstate::Whose::Main && ev["event"] == "UserPromptSubmit" && !ev["prompt"].as_str().is_some_and(|p| app.dispatcher.typed_it(&key, p)) {
+        app.inputs.human(&key);                  // a human's prompt: what was decided before it no longer holds (AC-131)
+    }
+    crate::dispatcher::heard(&app, &key, &ev, whose);
+    let remind = crate::plans::hook_event(&app, &key, &ev, whose);
     // what waits for it rides the same event
     let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)

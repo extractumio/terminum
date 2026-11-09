@@ -126,7 +126,13 @@ pub struct Inputs {
     tx: Option<SyncSender<Row>>,
     open: Mutex<HashMap<u64, Open>>,
     dropped: Arc<AtomicU64>,
+    /// when a human last typed into each pane (a key from a page, a prompt its agent's hook said): what a
+    /// look decided before it no longer holds (terminum-dispatcher.md AC-131, terminum-agents.md AC-153)
+    human: Mutex<HashMap<String, Instant>>,
 }
+
+/// How long a human's input is remembered: every decision it can call off is younger.
+const HUMAN_KEPT: Duration = Duration::from_secs(3600);
 
 pub fn now_ms() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64)
@@ -142,7 +148,7 @@ impl Inputs {
             std::thread::Builder::new().name("inputs".into()).spawn(move || writer::run(store, rx, d)).expect("a thread");
             tx
         });
-        Inputs { tx, open: Mutex::default(), dropped }
+        Inputs { tx, open: Mutex::default(), dropped, human: Mutex::default() }
     }
 
     /// A finished row to the writer; a full channel drops it, counted and logged.
@@ -154,6 +160,18 @@ impl Inputs {
                 tracing::warn!(event = "inputs.unsaved", lost, error = "the writer is behind");
             }
         }
+    }
+
+    /// A human typed into pane `key` now.
+    pub fn human(&self, key: &str) {
+        let mut all = self.human.lock();
+        all.retain(|_, at| at.elapsed() < HUMAN_KEPT);
+        all.insert(key.to_string(), Instant::now());
+    }
+
+    /// Whether a human typed into pane `key` after `at`.
+    pub fn human_since(&self, key: &str, at: Instant) -> bool {
+        self.human.lock().get(key).is_some_and(|last| *last > at)
     }
 
     /// Rows lost so far.

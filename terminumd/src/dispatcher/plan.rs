@@ -2,7 +2,7 @@
 //! What a walk does with one run (`terminum-dispatcher.md` AC-123, AC-124, AC-125): a pure rule over
 //! the run's clocks and what was just read, so every case is a test with no tmux and no waiting.
 
-use super::runs::Run;
+use super::runs::{Phase, Run};
 
 /// WAIT FOR HUMAN after an agent's question stands this long.
 pub const WAIT: i64 = 120;
@@ -91,7 +91,7 @@ pub fn finished(status: &str) -> bool {
 
 /// The task fails first, so the end Dispatcher causes counts for nothing; then the agent ends.
 fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
-    run.state = "gone".into();
+    run.state = Phase::Gone;
     acts.push(Act::Move { to: "FAILED", words });
     acts.push(Act::End);
 }
@@ -101,7 +101,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     let mut acts = Vec::new();
     let movable = !finished(&run.status) && !run.ad_hoc();     // + Session's has no task to move
     if !f.pane || !f.marked {
-        run.state = "closed".into();
+        run.state = Phase::Closed;
         if f.pane {
             run.pane_key = None;
         }
@@ -114,8 +114,8 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         return acts;
     }
     // the agent's end: its exit code tells a clean one from a signal (AS-127)
-    if run.state != "gone" && !f.alive {
-        run.state = "gone".into();
+    if run.state != Phase::Gone && !f.alive {
+        run.state = Phase::Gone;
         run.open_tools = 0;
         let how = match f.exit {
             Some(code) => format!("exit {code}"),
@@ -135,7 +135,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     if run.ad_hoc() {
         return acts;
     }
-    let alive = run.state != "gone";
+    let alive = run.state != Phase::Gone;
     if alive && movable && let Some(why) = &f.failed {
         acts.push(Act::Move { to: "FAILED", words: format!("The agent's turn failed: {why}") });
         return acts;
@@ -223,7 +223,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
         let idle = f.exit.is_some() || (f.alive && run.turn_ended);
         if run.closing_for >= CLOSE && !f.others_open && f.waiting.is_none() && idle {
             if let Some(program) = &f.program {
-                run.state = "left".into();
+                run.state = Phase::Left;
                 acts.push(Act::Say(format!("Session left open: {program} runs in it")));
             } else {
                 acts.push(Act::Close { words: format!("Session ended: closed 2 hours after {}.", run.status), keep: !run.result });
@@ -239,7 +239,7 @@ const IDLE_QUIET: i64 = 60;
 /// Whether a session can be closed for a slot, by what the store knows: its tasks ended, its turn over, no tool open and
 /// two walks quiet; what the pane shows is read just before (AC-141).
 pub fn idle_holder(run: &Run) -> bool {
-    run.state == "working" && finished(&run.status) && run.open.is_empty() && run.turn_ended && run.open_tools == 0 && run.closing_for >= IDLE_QUIET
+    run.state == Phase::Working && finished(&run.status) && run.open.is_empty() && run.turn_ended && run.open_tools == 0 && run.closing_for >= IDLE_QUIET
 }
 
 /// Whether a Close a walk decided still holds, read just before the pane goes: a press or a prompt may have come since.

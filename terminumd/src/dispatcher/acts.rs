@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use super::plan::{self, Act};
-use super::runs::{self, Run};
+use super::runs::{self, Phase, Run};
 use super::{gate, procs, say, scale, start, store, BEAT};
 use crate::app::Shared;
 use crate::tasks::{files, ops};
@@ -45,12 +45,12 @@ pub(super) async fn close(app: &Shared, run: &Run, server: &Arc<Server>, pane: &
     let (id, words) = (run.id.clone(), words.to_string());
     match server.run(format!("kill-pane -t {pane}")).await {
         Ok(_) => store(app, move |tx| {
-            let r = runs::change(tx, &id, |r| r.state = "closed".into())?;
+            let r = runs::change(tx, &id, |r| r.state = Phase::Closed)?;
             say(tx, &r, &words)
         }).await,
         Err(e) => store(app, move |tx| {
-            let r = runs::change(tx, &id, |r| if r.close_tried { r.state = "left".into(); } else { r.close_tried = true; })?;
-            if r.state == "left" { say(tx, &r, &format!("Session not closed: {e}. It stays open.")) } else { Ok(()) }
+            let r = runs::change(tx, &id, |r| if r.close_tried { r.state = Phase::Left; } else { r.close_tried = true; })?;
+            if r.state == Phase::Left { say(tx, &r, &format!("Session not closed: {e}. It stays open.")) } else { Ok(()) }
         }).await,
     }
 }

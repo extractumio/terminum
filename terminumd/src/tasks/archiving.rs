@@ -111,7 +111,7 @@ mod tests {
             let like = Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
             let run = runs::add(tx, &like, &[t.key.clone(), other.key.clone()], 100)?;
             assert_eq!(due(tx, 100 + 3 * DAY)?, Vec::<String>::new(), "its run still works on the other");
-            runs::change(tx, &run, |r| r.state = "closed".into())?;
+            runs::change(tx, &run, |r| r.state = crate::dispatcher::runs::Phase::Closed)?;
             assert_eq!(due(tx, 100 + 3 * DAY)?, vec![t.id.clone()]);
             Ok(())
         }).unwrap();

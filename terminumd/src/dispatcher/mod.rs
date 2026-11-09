@@ -146,7 +146,7 @@ impl Dispatcher {
         self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
         // what grew goes to the store, in its turn with the run's other events (AC-129)
         if known && self.has_run(key) {
-            let _ = self.events.sender.send((key.to_string(), ev.clone()));
+            let _ = self.events.sender.send((key.to_string(), ev.clone(), crate::tmux::hookstate::Whose::Main));
         }
     }
 

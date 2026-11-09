@@ -10,6 +10,7 @@ use serde_json::{json, Value};
 
 use super::{Plan, Plans};
 use crate::app::Shared;
+use crate::tmux::hookstate::Whose;
 
 const FILE: &str = "plans.json";
 const VERSION: u64 = 1;
@@ -73,9 +74,9 @@ pub fn save(app: &Shared) {
 /// Pane `key`'s hook event (sock.rs `/hook`), after the hooks applied it: a prompt starts a turn,
 /// a session of another id archives the plan, the plan tool's op applies; at a tool's end, the
 /// reminder due. A change is saved, and the list read again.
-pub fn hook_event(app: &Shared, key: &str, ev: &Value) -> Option<String> {
+pub fn hook_event(app: &Shared, key: &str, ev: &Value, whose: Whose) -> Option<String> {
     let now = crate::auth::store::unix_now();
-    let (changed, remind) = apply(&app.plans, key, ev, || app.hooks.working(key), now);
+    let (changed, remind) = apply(&app.plans, key, ev, whose, || app.hooks.working(key), now);
     if changed || remind.is_some() {
         save(app);
     }
@@ -96,17 +97,18 @@ pub fn carries_context(ev: &Value) -> bool {
     is_main(ev) && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
 }
 
-/// `ev` applied to the plans: (changed, the reminder due).
-fn apply(p: &Plans, key: &str, ev: &Value, working: impl FnOnce() -> bool, now: u64) -> (bool, Option<String>) {
+/// `ev` applied to the plans: (changed, the reminder due). A subagent's prompt, plan tool and tool calls are its own, and
+/// a late event's plan is an older one: the session's plan and turn are the main agent's, as they stand.
+fn apply(p: &Plans, key: &str, ev: &Value, whose: Whose, working: impl FnOnce() -> bool, now: u64) -> (bool, Option<String>) {
     let (agent, name) = (ev["agent"].as_str().unwrap_or(""), ev["event"].as_str().unwrap_or(""));
     let session = ev["session"].as_str().filter(|s| !s.is_empty());
+    let main = whose == Whose::Main && is_main(ev);
     let mut changed = match name {
-        "UserPromptSubmit" => { p.turn(key, agent, session, now); true }
+        "UserPromptSubmit" if main => { p.turn(key, agent, session, now); true }
         "SessionStart" => session.is_some_and(|s| p.session(key, Some(s))),
         _ => false,
     };
-    // a subagent's plan tool and tool calls are its own: the session's plan is the main agent's
-    if ev["plan"].is_object() && is_main(ev) {
+    if ev["plan"].is_object() && main {
         p.hook(key, agent, session, &ev["plan"], now);
         changed = true;
     }
@@ -204,13 +206,13 @@ mod tests {
         planned(&p);
         let ev = |sub: &str, event: &str| json!({"agent": "claude", "session": "s1", "event": event, "sub": sub,
             "plan": {"op": "all", "items": [{"text": "sub's own"}]}});
-        assert_eq!(apply(&p, K, &ev("a1", "PostToolUse"), || true, 100_000), (false, None));
+        assert_eq!(apply(&p, K, &ev("a1", "PostToolUse"), Whose::Main, || true, 100_000), (false, None));
         assert_eq!(p.row(K, false, 100_000).map(|r| r.total), Some(2), "the main agent's plan is kept");
-        let (changed, remind) = apply(&p, K, &ev("", "PostToolUse"), || true, 100_000);
+        let (changed, remind) = apply(&p, K, &ev("", "PostToolUse"), Whose::Main, || true, 100_000);
         assert!(changed && remind.is_none(), "the main agent's own op applies (it is fresh)");
         assert_eq!(p.row(K, false, 100_000).map(|r| r.total), Some(1));
         let main = json!({"agent": "claude", "session": "s1", "event": "PostToolBatch"});
-        assert!(apply(&p, K, &main, || true, 200_000).1.is_some(), "the main agent is reminded");
+        assert!(apply(&p, K, &main, Whose::Main, || true, 200_000).1.is_some(), "the main agent is reminded");
     }
 
     #[test]
@@ -219,15 +221,15 @@ mod tests {
         planned(&p);
         let ev = |agent: &str, event: &str| json!({"agent": agent, "session": "s1", "event": event});
         for other in ["PostToolUse", "PostToolUseFailure", "Stop", "PreToolUse"] {
-            assert_eq!(apply(&p, K, &ev("claude", other), || true, 100_000).1, None, "claude {other}: no reminder");
+            assert_eq!(apply(&p, K, &ev("claude", other), Whose::Main, || true, 100_000).1, None, "claude {other}: no reminder");
         }
         assert_eq!(p.cur.lock()[K].reminded_at, None, "claude's async PostToolUse never consumes the reminder");
-        assert!(apply(&p, K, &ev("claude", "PostToolBatch"), || true, 100_000).1.is_some(), "claude's PostToolBatch reminds");
-        assert_eq!(apply(&p, K, &ev("claude", "PostToolBatch"), || true, 100_010).1, None, "once per window");
+        assert!(apply(&p, K, &ev("claude", "PostToolBatch"), Whose::Main, || true, 100_000).1.is_some(), "claude's PostToolBatch reminds");
+        assert_eq!(apply(&p, K, &ev("claude", "PostToolBatch"), Whose::Main, || true, 100_010).1, None, "once per window");
         let q = Plans::default();
         q.hook(K, "codex", Some("s1"), &json!({"op": "all", "items": [{"text": "a"}, {"text": "b"}]}), 100);
-        assert_eq!(apply(&q, K, &ev("codex", "PostToolBatch"), || true, 100_000).1, None);
-        assert!(apply(&q, K, &ev("codex", "PostToolUse"), || true, 100_000).1.is_some(), "codex's PostToolUse reminds");
+        assert_eq!(apply(&q, K, &ev("codex", "PostToolBatch"), Whose::Main, || true, 100_000).1, None);
+        assert!(apply(&q, K, &ev("codex", "PostToolUse"), Whose::Main, || true, 100_000).1.is_some(), "codex's PostToolUse reminds");
     }
 
     #[test]

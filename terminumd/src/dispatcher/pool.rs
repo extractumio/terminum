@@ -132,7 +132,7 @@ mod tests {
     fn working(tx: &Transaction, a: &str, p: &str) -> (String, ops::Task) {
         let t = ops::create(tx, HUMAN, NewTask { title: format!("t in {p}"), project: Some(p.into()), ..Default::default() }, 1).unwrap();
         let id = runs::add(tx, &Run { agent_id: a.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: p.into(), ..Default::default() }, std::slice::from_ref(&t.key), 1).unwrap();
-        runs::change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
+        runs::change(tx, &id, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
         (id, t)
     }
 
@@ -228,7 +228,7 @@ mod tests {
             for state in ["closed", "left", "gone"] {
                 let (id, _) = working(tx, "a", "api");
                 assert!(check(tx, Some(&agent("a", 1)), "api", None)?.is_some());
-                runs::change(tx, &id, |r| r.state = state.into())?;
+                runs::change(tx, &id, |r| r.state = runs::Phase::of(state).unwrap())?;
                 assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?, None, "{state}");
             }
             Ok(())

@@ -53,7 +53,7 @@ fn ac138_what_is_done_of_a_run_still_working_runs_again_only_when_it_ends() {
         let id = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, &[a.key.clone(), b.key.clone()], 2)?;
         ops::link(tx, HUMAN, &a.id, Some(&pane), 2)?;
         ops::link(tx, HUMAN, &b.id, Some(&pane), 2)?;
-        runs::change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(pane.clone()); })?;
+        runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(pane.clone()); })?;
         ops::move_to(tx, HUMAN, &a.id, "DONE", 3)?;
         ops::move_to(tx, HUMAN, &b.id, "IN PROGRESS", 3)?;
         let last = runs::last_of(tx, &a.key)?;

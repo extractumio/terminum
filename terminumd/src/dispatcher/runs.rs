@@ -7,6 +7,59 @@ use rusqlite::{OptionalExtension, Row, Transaction};
 
 use crate::tasks::ops::{rows, sql};
 
+/// Where a run stands (terminum-dispatcher.md §9), kept as its label: a label the store holds that is none of these is an
+/// error, not a run in some state of its own.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Phase {
+    /// its window opens, its agent starts
+    #[default]
+    Starting,
+    /// its agent asks something before its box shows (a trust dialog)
+    Asking,
+    /// its first prompt was typed, its hook not heard yet
+    Typed,
+    Working,
+    /// a limit's End was decided and not yet done: done again after a restart, called off by new work or Give up (AC-126)
+    Ending,
+    /// its agent ended; the window stays its until it is closed
+    Gone,
+    Closed,
+    /// Dispatcher let go of it: given up, or a window it could not close
+    Left,
+}
+
+const PHASES: [(Phase, &str); 8] = [(Phase::Starting, "starting"), (Phase::Asking, "asking"), (Phase::Typed, "typed"), (Phase::Working, "working"),
+    (Phase::Ending, "ending"), (Phase::Gone, "gone"), (Phase::Closed, "closed"), (Phase::Left, "left")];
+
+impl Phase {
+    pub fn label(self) -> &'static str {
+        PHASES.iter().find(|(p, _)| *p == self).map_or("", |(_, l)| l)
+    }
+
+    pub fn of(label: &str) -> Option<Phase> {
+        PHASES.iter().find(|(_, l)| *l == label).map(|(p, _)| *p)
+    }
+}
+
+impl rusqlite::types::FromSql for Phase {
+    fn column_result(v: rusqlite::types::ValueRef<'_>) -> rusqlite::types::FromSqlResult<Phase> {
+        let label = v.as_str()?;
+        Phase::of(label).ok_or_else(|| rusqlite::types::FromSqlError::Other(format!("a run's phase is not known: {label:?}").into()))
+    }
+}
+
+impl rusqlite::ToSql for Phase {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.label().into())
+    }
+}
+
+impl serde::Serialize for Phase {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.label())
+    }
+}
+
 /// One RUN: its tasks, what they stand at together, and their project (AC-138).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Run {
@@ -31,7 +84,7 @@ pub struct Run {
     pub folder: String,
     pub pane_key: Option<String>,
     pub agent_session: Option<String>,
-    pub state: String,
+    pub state: Phase,
     pub prompt: Option<String>,
     pub turn_ended: bool,
     pub open_tools: i64,
@@ -59,17 +112,17 @@ impl Run {
 
     /// Before its prompt is taken: its start is being watched.
     pub fn is_starting(&self) -> bool {
-        matches!(self.state.as_str(), "starting" | "asking" | "typed")
+        matches!(self.state, Phase::Starting | Phase::Asking | Phase::Typed)
     }
 
     /// Dispatcher no longer touches it.
     pub fn is_over(&self) -> bool {
-        matches!(self.state.as_str(), "closed" | "left")
+        matches!(self.state, Phase::Closed | Phase::Left)
     }
 
     /// Its run still holds its tasks (AC-138): starting, a task open, or still in a turn after its last.
     pub fn busy(&self) -> bool {
-        !self.ad_hoc() && !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == "working" && !self.turn_ended))
+        !self.ad_hoc() && !self.is_over() && (self.is_starting() || !self.open.is_empty() || (self.state == Phase::Working && !self.turn_ended))
     }
 
     /// A run about to start `agent` in a project's place, nothing of it yet (AC-140, AC-141).
@@ -84,7 +137,7 @@ impl Run {
 
     /// It holds a slot of its agent and of its project (AC-141): from RUN until it is closed, let go or its agent is gone.
     pub fn holds_slot(&self) -> bool {
-        !self.is_over() && self.state != "gone"
+        !self.is_over() && self.state != Phase::Gone
     }
 
     /// What it is about now: its tasks still open, else all.
@@ -99,6 +152,9 @@ impl Run {
 
     /// RUN or a human's own prompt: every clock starts anew (AC-122). The turn is the agent's: a hook says when one starts.
     pub fn new_work(&mut self) {
+        if self.state == Phase::Ending {
+            self.state = Phase::Working;              // an End decided before it is called off (AC-126)
+        }
         self.nudged = false;
         self.nudge_turn = false;
         self.no_result_wait = false;
@@ -259,7 +315,7 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
         return Err("Dispatcher holds that session no more.".into());
     }
     super::move_task(tx, &run, "FAILED", "The human gave up on it.")?;
-    change(tx, &run.id, |r| r.state = "left".into())
+    change(tx, &run.id, |r| r.state = Phase::Left)
 }
 
 /// A run that still holds `task` open: its session stays until it ends, or the human gives up (AC-138).

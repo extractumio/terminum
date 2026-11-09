@@ -5,7 +5,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use super::runs::{self, Run};
+use super::runs::{self, Phase, Run};
 use super::screen::Screen;
 use super::{gate, hooks, move_task, say, store};
 use crate::app::Shared;
@@ -144,7 +144,7 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     }
     let id = r.id.clone();
     let done = store(app, move |tx| {
-        let now = runs::change(tx, &id, |r| { r.state = "gone".into(); r.prompt = None; })?;
+        let now = runs::change(tx, &id, |r| { r.state = Phase::Gone; r.prompt = None; })?;
         super::fail(tx, &now, &words)
     }).await;
     if let Err(e) = done {
@@ -175,7 +175,7 @@ pub fn watch(app: &Shared, id: &str) {
 async fn now_asking(app: &Shared, r: &Run) {
     let id = r.id.clone();
     let moved = store(app, move |tx| {
-        let now = runs::change(tx, &id, |r| r.state = "asking".into())?;
+        let now = runs::change(tx, &id, |r| r.state = Phase::Asking)?;
         move_task(tx, &now, "WAIT FOR HUMAN", "Answer in its window")
     }).await;
     if moved.is_ok() {
@@ -185,10 +185,10 @@ async fn now_asking(app: &Shared, r: &Run) {
 
 /// The prompt goes in: `typed` first, so no restart between can type it twice; a miss puts it back.
 async fn type_prompt(app: &Shared, r: &Run, server: &Server, pane: &str, prompt: &str) -> Result<(), gate::Miss> {
-    let (id, was, session) = (r.id.clone(), r.state.clone(), app.hooks.session(&server.key(pane)).map(|(_, s)| s).filter(|s| hooks::good_id(s)));
+    let (id, was, session) = (r.id.clone(), r.state, app.hooks.session(&server.key(pane)).map(|(_, s)| s).filter(|s| hooks::good_id(s)));
     let wrote = store(app, move |tx| runs::change(tx, &id, |now| {
         if now.is_starting() {
-            now.state = "typed".into();
+            now.state = Phase::Typed;
         }
         if let Some(s) = session {
             now.agent_session.get_or_insert(s);
@@ -200,7 +200,7 @@ async fn type_prompt(app: &Shared, r: &Run, server: &Server, pane: &str, prompt:
     let sent = gate::deliver(app, r, server, pane, prompt, true).await;
     if sent.is_err() {
         let id = r.id.clone();
-        let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.state == "typed" { now.state = was; })).await;
+        let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.state == Phase::Typed { now.state = was; })).await;
     }
     sent
 }
@@ -228,7 +228,7 @@ async fn watching(app: &Shared, id: &str) {
             let why = if code == NO_FOLDER { format!("The folder {} does not exist there", r.folder) } else { format!("the program ended with exit {code}") };
             return did_not_start(app, &r, Some((&server, &pane)), &why).await;
         }
-        if r.state == "typed" {
+        if r.state == Phase::Typed {
             let at = *typed_at.get_or_insert_with(Instant::now);
             if at.elapsed() >= start_scaled(TAKEN_WITHIN) {
                 let why = if r.kind == "codex" { "the prompt was not taken in 30 s; hooks not trusted: open /hooks in Codex" } else { "the prompt was not taken in 30 s" };
@@ -236,12 +236,12 @@ async fn watching(app: &Shared, id: &str) {
             }
         } else {
             match gate::read(&server, &pane, &r.kind).await.unwrap_or(Screen::Unknown) {
-                Screen::Asks if r.state != "asking" => now_asking(app, &r).await,
+                Screen::Asks if r.state != Phase::Asking => now_asking(app, &r).await,
                 Screen::Asks => {}
                 Screen::Empty if r.ad_hoc() => {
                     // + Session's: its box stands, nothing is typed: the human's from here (AC-142)
                     let id = r.id.clone();
-                    let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.is_starting() { now.state = "working".into(); }).map(drop)).await;
+                    let _ = store(app, move |tx| runs::change(tx, &id, |now| if now.is_starting() { now.state = Phase::Working; }).map(drop)).await;
                     return;
                 }
                 Screen::Empty => {
@@ -252,21 +252,21 @@ async fn watching(app: &Shared, id: &str) {
                     if (heard || since.elapsed() >= STANDS) && let Some(prompt) = &r.prompt
                         && let Err(m) = type_prompt(app, &r, &server, &pane, prompt).await {
                         miss = Some(m.to_string());
-                        if r.state == "starting" && began.elapsed() >= start_scaled(BOX_WITHIN) {
+                        if r.state == Phase::Starting && began.elapsed() >= start_scaled(BOX_WITHIN) {
                             return did_not_start(app, &r, Some((&server, &pane)), &box_within(&miss)).await;
                         }
                     }
                 }
                 _ => {
                     empty_since = None;
-                    if r.state == "starting" && began.elapsed() >= start_scaled(BOX_WITHIN) {
+                    if r.state == Phase::Starting && began.elapsed() >= start_scaled(BOX_WITHIN) {
                         return did_not_start(app, &r, Some((&server, &pane)), &box_within(&miss)).await;
                     }
                 }
             }
         }
         // a question nobody answers may stand all night: no need to look five times a second
-        tokio::time::sleep(Duration::from_millis(if r.state == "asking" { 1000 } else { 200 })).await;
+        tokio::time::sleep(Duration::from_millis(if r.state == Phase::Asking { 1000 } else { 200 })).await;
     }
 }
 
