@@ -52,6 +52,8 @@ pub struct Dispatcher {
     typed: Mutex<Vec<(String, String, Instant)>>,
     /// runs whose start is being watched
     starting: Mutex<HashSet<String>>,
+    /// runs whose End is under way (acts.rs)
+    ending: Mutex<HashSet<String>>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches

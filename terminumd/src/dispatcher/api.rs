@@ -191,6 +191,7 @@ pub(super) fn has_stray(text: &str) -> bool {
 
 /// Closes an idle holder for the press that asked: read again here, its screen too: a draft or a question stands in the way (AC-141).
 async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), String> {
+    let at = std::time::Instant::now();
     let wanted = run.to_string();
     let r = store(app, move |tx| runs::by_id(tx, &wanted)).await?;
     let (server, pane) = pane_of(app, &r)?;
@@ -200,9 +201,9 @@ async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), Stri
     if !quiet || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
         return Err(format!("{}'s session is no longer idle: it stays.", r.names()));
     }
-    acts::close(app, &r, &server, &pane, &format!("Session ended: closed for {for_tasks}."), true, pool::closable).await?;
+    let closed = acts::close(app, &r, (&server, &pane), &format!("Session ended: closed for {for_tasks}."), true, at, pool::closable).await?;
     super::told_all(app, &r);
-    Ok(())
+    if closed { Ok(()) } else { Err(format!("{}'s session is no longer idle: it stays.", r.names())) }
 }
 
 /// What runs in `pane` other than its shell: in front, or stopped or left behind it (AC-122).

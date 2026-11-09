@@ -63,13 +63,13 @@ type Walked = (Vec<Later>, Vec<String>, HashMap<String, (i64, i64)>);
 
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
 /// done here; what is not written is not done (AC-131). A run that cannot be written costs only itself, and says so.
-fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<Walked, String> {
+fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
         let Some(r) = live.get(&read.id).cloned() else { continue };
         tx.execute_batch("SAVEPOINT one_run").map_err(ops::sql)?;
-        let walked = walk_one(tx, r.clone(), read, now);
+        let walked = walk_one(tx, r.clone(), read, now, at);
         tx.execute_batch(if walked.is_ok() { "RELEASE one_run" } else { "ROLLBACK TO one_run; RELEASE one_run" }).map_err(ops::sql)?;
         match walked {
             Ok((l, c, u)) => {
@@ -97,7 +97,7 @@ fn said_once(tx: &rusqlite::Transaction, r: &Run, words: &str) -> Result<bool, S
     say(tx, r, words).map(|()| true)
 }
 
-fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Result<Walked, String> {
+fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     if r.is_starting() {
         return Ok((later, changed, used));
@@ -143,7 +143,7 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
                 say(tx, &r, &words)?;
                 changed.extend(r.ids.iter().cloned());
             }
-            act => later.push(Later { run: r.clone(), act }),
+            act => later.push(Later { run: r.clone(), act, at }),
         }
     }
     Ok((later, changed, used))
@@ -227,6 +227,8 @@ async fn walk(app: &Shared) {
     let (global_warn, global_end) = { let s = app.looks.settings.read(); (s.memory_warn_gib, s.memory_end_gib) };
     let with_run: HashSet<String> = all.iter().filter_map(|r| r.place(app)).map(|(s, _)| s.id()).collect();
     let wanted: Vec<String> = all.iter().filter_map(|r| r.pane_key.clone()).chain(linked.iter().map(|(_, k)| k.clone())).collect();
+    // what it decides holds as of now: a human's input after it calls off or puts off what it leaves to do (AC-131)
+    let at = Instant::now();
     let seen = read_servers(app, &wanted, &with_run).await;
     let now = ops::now();
     let (mut reads, mut subagents) = (Vec::new(), Vec::new());
@@ -283,7 +285,7 @@ async fn walk(app: &Shared) {
         }
         reads.push(Read { id: r.id.clone(), facts, ended });
     }
-    let (later, changed, used) = match store(app, move |tx| walk_store(tx, reads, now)).await {
+    let (later, changed, used) = match store(app, move |tx| walk_store(tx, reads, now, at)).await {
         Ok(done) => done,
         Err(e) => return tracing::warn!(event = "dispatcher.walk", error = %e),
     };

@@ -89,9 +89,15 @@ pub fn finished(status: &str) -> bool {
     matches!(status, "DONE" | "FAILED")
 }
 
-/// The task fails first, so the end Dispatcher causes counts for nothing; then the agent ends.
+/// Whether the last warning is due: what is left of the budget is within `warn_at`.
+pub fn warn_due(run: &Run) -> bool {
+    run.budget.is_some_and(|total| total - run.budget_used <= warn_at(total))
+}
+
+/// The task fails first, so the end Dispatcher causes counts for nothing; then the agent ends. Ending until it is
+/// done: a restart does it again, new work or Give up calls it off (AC-126).
 fn end_failed(run: &mut Run, acts: &mut Vec<Act>, words: String) {
-    run.state = Phase::Gone;
+    run.state = Phase::Ending;
     acts.push(Act::Move { to: "FAILED", words });
     acts.push(Act::End);
 }
@@ -112,6 +118,15 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             acts.push(Act::Say(format!("Session ended: {}", words.to_lowercase())));
         }
         return acts;
+    }
+    // an End decided and not done (a restart, or a human's keys put it off): again; done, its task was moved first
+    if run.state == Phase::Ending {
+        if f.alive {
+            acts.push(Act::End);
+            return acts;
+        }
+        run.state = Phase::Gone;
+        run.open_tools = 0;
     }
     // the agent's end: its exit code tells a clean one from a signal (AS-127)
     if run.state != Phase::Gone && !f.alive {
@@ -165,8 +180,8 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     }
     if alive && f.waiting.is_none() {
         if run.status == "IN PROGRESS" && run.turn_ended {
+            // `nudged` is written once it went (acts.rs): a restart before then asks again
             if run.idle_for >= NUDGE && !run.nudged {
-                run.nudged = true;
                 run.nudge_turn = true;
                 acts.push(Act::Nudge);
             } else if run.nudged && run.idle_for >= NUDGE + AFTER_NUDGE {
@@ -193,8 +208,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             return acts;
         }
         if !run.warned && left <= warn_at(total) {
-            run.warned = true;
-            acts.push(Act::Warn(left));
+            acts.push(Act::Warn(left));               // `warned` once it went (acts.rs)
         }
     }
     // what it consumes: two walks in a row, as summed memory counts shared pages many times (AC-128)
@@ -204,7 +218,6 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             return acts;
         }
         if m.warn_due && !run.memory_warned {
-            run.memory_warned = true;
             acts.push(Act::MemoryWarn(m.gib));
         }
     }

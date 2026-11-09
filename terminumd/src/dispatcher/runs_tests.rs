@@ -226,3 +226,20 @@ async fn ac121_a_walk_during_the_opening_of_its_window_does_not_fail_the_run() {
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+/// TERM-35: a run's phase is one of its labels; one the store holds that is none is an error, not a run in a state of its own.
+#[test]
+fn ac131_a_runs_phase_is_one_it_knows() {
+    for (p, l) in PHASES {
+        assert_eq!((Phase::of(l), p.label()), (Some(p), l));
+    }
+    let s = store("runs-phase");
+    s.with(|tx| {
+        let t = task(tx, "one");
+        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], 1)?;
+        assert_eq!(by_id(tx, &id)?.state, Phase::Starting);
+        tx.execute("UPDATE runs SET state = 'dancing' WHERE id = ?1", [&id]).map_err(ops::sql)?;
+        assert!(by_id(tx, &id).is_err_and(|e| e.contains("not known")), "an unknown label");
+        Ok(())
+    }).unwrap();
+}

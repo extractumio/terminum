@@ -19,6 +19,9 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_a_human() {
     r.turn_ended = true;
     assert!(step(&mut r, &up(299)).is_empty());
     assert_eq!(step(&mut r, &up(1)), vec![Act::Nudge]);
+    assert!(!r.nudged && r.nudge_turn, "`nudged` is written once it went (acts.rs)");
+    assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
+    r.nudged = true;
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
     let acts = step(&mut r, &up(570));
     assert_eq!(moved(&acts).unwrap(), ("WAIT FOR HUMAN", "The agent stopped without a result".to_string()));
@@ -193,7 +196,12 @@ fn ac126_the_last_warning_is_three_percent_at_least_two_minutes() {
     r.budget_used = 3400;
     assert!(step(&mut r, &up(70)).is_empty());
     assert_eq!(step(&mut r, &up(10)), vec![Act::Warn(120)]);
+    assert!(!r.warned && warn_due(&r), "`warned` once it went (acts.rs)");
+    assert_eq!(step(&mut r, &up(10)), vec![Act::Warn(110)], "lost before it went: given again");
+    r.warned = true;
     assert!(step(&mut r, &up(10)).is_empty(), "once");
+    r.new_work();
+    assert!(!warn_due(&r), "new work: its budget starts anew, a warning written late would not hold");
 }
 
 #[test]
@@ -204,10 +212,13 @@ fn ac126_at_the_limit_the_task_fails_first_then_the_agent_ends() {
     r.warned = true;
     let acts = step(&mut r, &up(30));
     assert_eq!(acts, vec![Act::Move { to: "FAILED", words: "Time budget of 60 minutes used: the agent was ended.".into() }, Act::End]);
-    assert_eq!(r.state, Phase::Gone);
+    assert_eq!(r.state, Phase::Ending, "until it is done");
     r.status = "FAILED".into();
+    assert_eq!(step(&mut r, &up(30)), vec![Act::End], "not done yet (a restart, a human's keys put it off): again");
+    assert_eq!((r.state, r.budget_used), (Phase::Ending, 3620), "no clock runs meanwhile");
     let acts = step(&mut r, &Facts { exit: Some(143), alive: false, ..up(30) });
     assert_eq!(moved(&acts), None, "the end Dispatcher caused counts for nothing");
+    assert_eq!(r.state, Phase::Gone);
 }
 
 #[test]
@@ -226,6 +237,7 @@ fn ac128_memory_warns_once_after_two_walks_and_ends_after_two() {
     let (mut r, mut count) = (run("IN PROGRESS"), (0, 0));
     assert!(step(&mut r, &Facts { memory: walks(5.0, &mut count), ..up(30) }).is_empty(), "one walk is not enough");
     assert_eq!(step(&mut r, &Facts { memory: walks(5.1, &mut count), ..up(30) }), vec![Act::MemoryWarn(5.1)]);
+    r.memory_warned = true;                            // as acts.rs writes it once it went
     assert!(step(&mut r, &Facts { memory: walks(5.1, &mut count), ..up(30) }).is_empty(), "once");
     assert!(step(&mut r, &Facts { memory: walks(9.2, &mut count), ..up(30) }).is_empty());
     let acts = step(&mut r, &Facts { memory: walks(9.2, &mut count), ..up(30) });
