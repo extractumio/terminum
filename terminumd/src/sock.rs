@@ -141,12 +141,15 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         crate::manager::hook_turn_ended(&app, &key, ev["event"].as_str().unwrap_or(""));
         crate::tasks::tell::turn_ended(&app, &key);
     }
-    // a human's prompt, not one Dispatcher typed: what was decided before it no longer holds (AC-131)
-    let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.typed_it(&key, p));
-    if whose == crate::tmux::hookstate::Whose::Main && ev["event"] == "UserPromptSubmit" && !typed {
+    // a human's prompt, not one Dispatcher typed: what was decided before it no longer holds (AC-131);
+    // the agent's own turns (a background task's end, another session's message) and a subagent's
+    // prompts are no one's: neither that nor a message (AC-90)
+    let prompt = ev["prompt"].as_str().filter(|p| ev["event"] == "UserPromptSubmit" && whose == crate::tmux::hookstate::Whose::Main && !crate::messages::injected(p));
+    let typed = prompt.is_some_and(|p| app.dispatcher.typed_it(&key, p));
+    if prompt.is_some() && !typed {
         app.inputs.human(&key);
     }
-    if ev["event"] == "UserPromptSubmit" && let (Some(prompt), Some(cwd)) = (ev["prompt"].as_str(), ev["cwd"].as_str()) {
+    if let (Some(prompt), Some(cwd)) = (prompt, ev["cwd"].as_str()) {
         let sender = if typed { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook", "sender": sender}));
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
@@ -221,6 +224,27 @@ mod hook_tests {
             assert!(app.hooks.working(&key));
             assert!(!app.hooks.take_ended(&key));
         }
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn ac90_an_agents_own_turns_and_a_subagents_prompts_are_no_humans() {
+        // the one prompt both a human's typing and the kept message come from (an Agent's app keeps no messages)
+        let (root, app) = crate::testutil::app("hook-injected");
+        let server = app.tmux.local.clone();
+        server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
+        let key = server.key("%1");
+        let human = || app.inputs.human_since(&key, std::time::Instant::now() - std::time::Duration::from_secs(60));
+        let prompt = |p: &str, sub: Option<&str>| json!({"agent": "claude", "event": "UserPromptSubmit", "pane": "%1", "session": "s1",
+            "cwd": "/Users/alex/api", "prompt": p, "sub": sub});
+        for (p, sub) in [("<task-notification>\n<task-id>b1</task-id>", None), ("\n<cross-session-message from=\"x\">hi", None),
+                         ("<agent-message from=\"impl\">done", None), ("[Cross-session idle notice] \"x\" is idle", None), ("the child's own", Some("a1"))] {
+            hook_on(app.clone(), Some(server.clone()), prompt(p, sub)).await;
+            assert!(!human(), "no human typed {p}");
+        }
+        hook_on(app.clone(), Some(server.clone()), prompt("fix the <task-notification> parser", None)).await;
+        assert!(human());
         drop(app);
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -38,6 +38,17 @@ pub struct Message {
     pub text: String,
 }
 
+/// How a turn a coding agent writes into its own conversation begins, which its hook speaks as
+/// a prompt though no one typed it: Claude Code's notice that a background task ended, another
+/// session's or agent's message, a delivery notice (AC-90). Never kept.
+const INJECTED: [&str; 4] = ["<task-notification>", "<cross-session-message", "<agent-message", "[Cross-session "];
+
+/// Whether a coding agent's prompt is one of its own turns (`INJECTED`), not a human's or Dispatcher's.
+pub fn injected(text: &str) -> bool {
+    let t = text.trim_start();
+    INJECTED.iter().any(|p| t.starts_with(p))
+}
+
 pub(crate) fn sql(e: rusqlite::Error) -> String {
     format!("The message history: {e}")
 }
@@ -109,8 +120,13 @@ pub fn highest_quote(tx: &Transaction, pane: &str) -> Result<u64, String> {
 }
 
 /// Messages older than the input log's days, then the oldest beyond `rows`, go (its writer's hourly
-/// trim). Newest is by time, never by id: rows kept before this store had them came in later.
+/// trim), and an agent's own turns its hooks gave (`injected`), kept before they were told apart.
+/// Newest is by time, never by id: rows kept before this store had them came in later.
 pub fn trim(tx: &Transaction, now_ms: i64, days: i64, rows: i64) -> Result<(), String> {
+    let mut st = tx.prepare_cached("DELETE FROM messages WHERE via = 'hook' AND substr(ltrim(text, ' ' || char(9, 10, 13)), 1, length(?1)) = ?1").map_err(sql)?;
+    for p in INJECTED {
+        st.execute([p]).map_err(sql)?;
+    }
     tx.execute("DELETE FROM messages WHERE at < ?1", [now_ms - days * 86_400_000]).map_err(sql)?;
     tx.execute("DELETE FROM messages WHERE id IN (SELECT id FROM messages ORDER BY at DESC, id DESC LIMIT -1 OFFSET ?1)", [rows]).map_err(sql)?;
     Ok(())
