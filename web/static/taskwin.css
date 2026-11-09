@@ -78,6 +78,10 @@ dialog .markdown img { max-width: 100%; }
 .sublist .icon { --ik: var(--icon-key-list); flex: none; }
 .evedited { font-style: italic; }
 .ev-comment { box-shadow: inset 3px 0 0 var(--accent); }
+/* an agent's questions for the human (terminum-dispatcher.md AC-157): set apart in the waiting color */
+.ev-questions { box-shadow: inset 3px 0 0 var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
+.evasks { color: color-mix(in srgb, var(--waiting) 70%, var(--t-fg)); font-weight: var(--fw-head); }
+.cconv { margin-left: var(--sp-2); font: var(--fs-meta) ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 
 .stbox { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-1); border-radius: var(--r-xs); font: 600 var(--fs-micro)/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
   color: var(--t-fg); background: color-mix(in srgb, var(--t-fg) 18%, var(--t-bg)); }

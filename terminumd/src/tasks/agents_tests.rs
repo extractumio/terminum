@@ -86,15 +86,16 @@ fn ac137_a_project_deleted_leaves_the_pool() {
 
 #[test]
 fn ac138_an_effort_goes_on_its_kind_s_command_line() {
-    assert_eq!(command_line("claude", "claude", ""), "claude");
-    assert_eq!(command_line("claude", "claude --model opus", "high"), "claude --model opus --effort high");
-    assert_eq!(command_line("codex", "codex", "low"), "codex -c model_reasoning_effort=low");
+    assert_eq!(command_line("claude", "claude", ""), "claude --permission-mode bypassPermissions");
+    assert_eq!(command_line("claude", "claude --model opus", "high"), "claude --model opus --effort high --permission-mode bypassPermissions");
+    assert_eq!(command_line("codex", "codex", "low"), "codex -c model_reasoning_effort=low --dangerously-bypass-approvals-and-sandbox");
     let with = |kind: &str, command: &str, effort: &str| Given { kind: kind.into(), command: command.into(), effort: effort.into(), ..opus() }.check();
     assert!(with("claude", "claude", "max").is_ok());
     assert_eq!(with("codex", "codex", "max").unwrap_err(), "codex has no effort max.");
     assert_eq!(with("claude", "claude", "$(rm -rf)").unwrap_err(), "claude has no effort $(rm -rf).", "a word of a fixed list, never free text");
     assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | & or #"), "the flag would go to the other program");
-    assert!(with("claude", "claude; notify", "").is_ok(), "a command is the human's own words");
+    assert!(with("claude", "claude; notify", "").unwrap_err().contains("Name its permission mode"), "every tool would go to the other program (AC-156)");
+    assert!(with("claude", "claude --permission-mode default; notify", "").is_ok(), "a command is the human's own words");
     let twice = "The command names an effort already: choose Its own setting, or take it out of the command.";
     assert_eq!(with("claude", "claude --effort high", "max").unwrap_err(), twice);
     assert_eq!(with("codex", "codex -c model_reasoning_effort=high", "low").unwrap_err(), twice);
@@ -185,4 +186,17 @@ fn ac144_a_project_or_an_agent_deleted_leaves_the_rest_standing() {
         assert_eq!(list(tx)?.into_iter().map(|x| x.id).collect::<Vec<_>>(), vec![other], "the other agent stands");
         Ok(())
     }).unwrap();
+}
+
+#[test]
+fn ac156_a_run_gets_every_tool_unless_its_command_says_how_it_asks() {
+    assert_eq!(command_line("claude", "ccdsp", ""), "ccdsp --permission-mode bypassPermissions", "a function of the user's shell takes the words too");
+    for own in ["claude --permission-mode plan", "claude --permission-mode=default", "claude --dangerously-skip-permissions"] {
+        assert_eq!(command_line("claude", own, ""), own, "the human's own words stand");
+    }
+    for own in ["codex --yolo", "codex --full-auto", "codex -a on-request", "codex --sandbox=read-only", "codex -s workspace-write"] {
+        assert_eq!(command_line("codex", own, ""), own);
+    }
+    assert_eq!(command_line("claude", "claude; notify", ""), "claude; notify", "after a ; the words would go to another program");
+    assert_eq!(command_line("claude", "claude --permission-modes", ""), "claude --permission-modes --permission-mode bypassPermissions", "a whole word, not its start");
 }

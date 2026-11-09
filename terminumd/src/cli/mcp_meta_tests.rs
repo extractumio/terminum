@@ -42,7 +42,7 @@ const GOLDEN: [(&str, &str); 44] = [
     ("claim a task", "take_task"),
     ("assign the task to me", "take_task"),
     ("start working on a task", "take_task"),
-    ("I need a human", "move_task"),
+    ("I need a human", "ask_human"),
     ("block the task waiting for a person", "move_task"),
     ("move my task to another column", "move_task"),
     ("change a task's status to failed", "move_task"),
@@ -107,7 +107,7 @@ fn ac155_a_tool_terminum_s_words_name_is_listed() {
         }
     }
     let listed: Vec<String> = listed().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
-    assert_eq!(listed, ["search_tools", "get_tool_info", "execute_tool", "update_session_plan", "create_task", "get_task", "get_file", "finish_task"]);
+    assert_eq!(listed, ["search_tools", "get_tool_info", "execute_tool", "update_session_plan", "create_task", "get_task", "get_file", "ask_human", "finish_task"]);
 }
 
 #[test]

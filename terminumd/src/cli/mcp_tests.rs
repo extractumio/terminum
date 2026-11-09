@@ -115,7 +115,7 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "add_comment", "attach_file", "get_file", "finish_task"]);
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task"]);
 }
 
 #[test]
@@ -186,6 +186,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "create_task" => json!({"title": "Bug: t", "severity": "P2"}),
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),
+                "ask_human" => json!({"id": "T-1", "questions": "a"}),
                 "finish_task" => json!({"id": "T-1", "result": "a"}),
                 "attach_file" => json!({"task": "T-1", "name": "a", "text": "b"}),
                 "get_file" => json!({"task": "T-1", "name": "a"}),
@@ -332,12 +333,13 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner
 /// asked for compact descriptions): the instructions within 512 characters, each tool's
-/// description within 500, all the listed tools' JSON within 4,700: what the catalog adds behind search_tools costs nothing here (AC-155).
+/// description within 500, all the listed tools' JSON within 4,900 (4,700 before ask_human, which RUN's prompt names:
+/// terminum-dispatcher.md AC-157): what the catalog adds behind search_tools costs nothing here (AC-155).
 #[test]
 fn the_tools_stay_compact() {
     let t = Value::Array(mcp_meta::listed());
     let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
-    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4700, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
+    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4900, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
 }

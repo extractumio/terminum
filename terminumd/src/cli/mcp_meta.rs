@@ -11,7 +11,7 @@ use super::mcp_catalog::{self as catalog, AREAS};
 pub const META: [&str; 3] = ["search_tools", "get_tool_info", "execute_tool"];
 /// Listed in full: every tool terminum's own words name (INSTRUCTIONS, Dispatcher's fixed prompts in
 /// dispatcher/press.rs and acts.rs), so a name an agent is told is in its list (mcp_meta_tests.rs).
-pub const DIRECT: [&str; 5] = ["update_session_plan", "create_task", "get_task", "get_file", "finish_task"];
+pub const DIRECT: [&str; 6] = ["update_session_plan", "create_task", "get_task", "get_file", "ask_human", "finish_task"];
 const LIMIT: usize = 5;
 const LIMIT_MOST: usize = 10;
 const QUERY_MOST: usize = 500;

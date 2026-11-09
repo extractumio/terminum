@@ -6,6 +6,7 @@
 mod acts;
 pub mod api;
 mod press;
+mod places;
 mod gate;
 mod hooks;
 pub mod plan;
@@ -16,6 +17,7 @@ pub mod runs;
 pub mod screen;
 mod start;
 mod walk;
+pub mod waits;
 
 use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};

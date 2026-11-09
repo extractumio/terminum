@@ -12,7 +12,7 @@ use super::mcp_search::{Doc, Index};
 /// The areas, in the order search_tools lists them, each with what it holds.
 pub const AREAS: [(&str, &str); 4] = [
     ("plan", "this session's steps, current step, ETA"),
-    ("tasks", "list, read, create, change priority, parent or text, archive, take, move, finish"),
+    ("tasks", "list, read, create, change priority, parent or text, archive, take, move, ask the human, finish"),
     ("comments", "on a task"),
     ("files", "on a task: attach, get"),
 ];
@@ -43,6 +43,8 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12"}"# },
     Card { name: "move_task", area: "tasks", keywords: "move a task to a column, change its status, in progress, wait for a human, escalate, blocked, give up, failed, postpone, put back to todo",
         example: r#"{"id": "TERM-12", "to": "WAIT FOR HUMAN"}"# },
+    Card { name: "ask_human", area: "tasks", keywords: "ask the human, ask the user, a question, need a decision, clarify, which option, wait for an answer, human in the loop, blocked on a choice",
+        example: r#"{"id": "TERM-12", "questions": "1. Keep v1? Options: drop it, keep it a month. Recommended: keep it a month, two clients still call it."}"# },
     Card { name: "add_comment", area: "comments", keywords: "comment on a task, leave a note, reply, remark, say something on a ticket",
         example: r#"{"id": "TERM-12", "text": "The cause is in tasks/ops.rs; a fix needs the owner's choice."}"# },
     Card { name: "attach_file", area: "files", keywords: "attach a file, upload, add a screenshot, a log, a document, an artifact to a task",
