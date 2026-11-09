@@ -303,6 +303,7 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
     }
     match action {
         "remove" => {
+            app.hosts.files.withdraw(name);
             agents::removed(app, name);
             tunnel::stop(app, name);
             save(app, |h| {
@@ -325,7 +326,8 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
             Ok(())
         }
         "enable" => consent::enable(app, name).await,
-        "decline" => consent::decide(app, name, Some("declined")),
+        // a connection an enable started just before is closed (agents' alone comes back)
+        "decline" => consent::decide(app, name, Some("declined")).map(|()| link::changed(app, name)),
         // agents on keep the helper: only Files goes
         "files-remove" if link::wanted(app, name) => consent::decide(app, name, None).map(|()| link::changed(app, name)),
         "files-remove" => consent::remove(app, name).await,

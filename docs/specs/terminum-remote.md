@@ -176,7 +176,9 @@ Scenario: AC-83 edge — a later decision while enabling or removing
   When Enable comes again before the enable ends
   Then that click is the last decision, and the enable running goes on to "enabled"
   When a removal of the helper runs
-  Then no connection to devbox starts until it ends; if it fails, its message is shown, "files" stays "enabled" and the connection returns
+  Then no connection to devbox starts until it ends, Enable says "Could not enable devbox: its helper is being removed; try again when that ends"; if the removal fails, its message is shown, "files" stays "enabled" and the connection returns
+  When Not now comes just after an enable recorded "enabled"
+  Then "declined" is recorded and the connection that enable started closes
 
 Scenario: AC-83 failure — the host cannot take it
   When ssh fails, the platform has no agent in the package, the copy or the probe times out

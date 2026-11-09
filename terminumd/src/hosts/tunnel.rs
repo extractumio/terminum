@@ -88,7 +88,7 @@ fn platform(system: &str, machine: &str) -> Option<&'static str> {
 
 /// The agent the running build carries for `platform`: `<build>/agents/<platform>/terminumd`,
 /// or this very binary when the platform is this Mac's (a build from a checkout).
-fn binary_for(p: &str) -> Result<PathBuf, String> {
+pub(super) fn binary_for(p: &str) -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let packaged = exe.parent().map(|d| d.join("agents").join(p).join("terminumd"));
     if let Some(b) = packaged.filter(|b| b.is_file()) {
@@ -141,7 +141,7 @@ pub(super) async fn probe(recipe: &[String]) -> Result<(Result<&'static str, Str
 
 /// Copies `binary` to ~/.terminum/bin/terminumd-agent-<id> through a temporary name, points
 /// bin/terminumd-agent at it, keeps one older version, checks it answers with `id`.
-async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), String> {
+pub(super) async fn install(recipe: &[String], binary: &PathBuf, id: &str) -> Result<(), String> {
     if !(id == "dev" || (id.len() == 12 && id.bytes().all(|b| b.is_ascii_hexdigit()))) {
         return Err(format!("not an agent id: {id}"));
     }
@@ -394,6 +394,7 @@ pub fn reconcile(app: &Shared, host: &str) {
             }
             let note = match super::consent::unwant(&shared, &name) {
                 Ok(false) => return, // Not now or Remove came meanwhile
+                _ if self::state(&shared, &name) == "enabling" => return, // a later click's enable runs
                 Ok(true) => e,
                 Err(w) => format!("{e} (and settings.json not written: {w})"),
             };

@@ -14,6 +14,9 @@ use crate::app::Shared;
 /// Said by an enable a later Not now or Remove overtook.
 pub(super) const OVERTAKEN: &str = "Not now or Remove came for this host meanwhile; nothing was recorded";
 
+/// Said by an Enable while the helper's removal runs.
+pub(super) const REMOVING: &str = "its helper is being removed; try again when that ends";
+
 /// The Files operation a host's last decision started, while it runs.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) enum Decision {
@@ -21,30 +24,43 @@ pub(super) enum Decision {
     Remove,
 }
 
+/// Each host's last decision and its ticket: an operation's end takes only its own.
 #[derive(Default)]
-pub struct Decisions(Mutex<HashMap<String, Decision>>);
+pub struct Decisions(Mutex<(u64, HashMap<String, (Decision, u64)>)>);
 
 impl Decisions {
-    /// `d` is the host's last decision (a second Enable while one runs keeps that one going).
-    pub(super) fn make(&self, host: &str, d: Decision) {
-        self.0.lock().insert(host.to_string(), d);
+    /// `d` is the host's last decision; its ticket. Enable is refused while a Remove runs (its
+    /// copy would race the removal on the host); a second Enable keeps a running one going.
+    pub(super) fn make(&self, host: &str, d: Decision) -> Option<u64> {
+        let mut g = self.0.lock();
+        if d == Decision::Enable && g.1.get(host).is_some_and(|&(was, _)| was == Decision::Remove) {
+            return None;
+        }
+        g.0 += 1;
+        let ticket = g.0;
+        g.1.insert(host.to_string(), (d, ticket));
+        Some(ticket)
     }
 
     pub(super) fn is(&self, host: &str, d: Decision) -> bool {
-        self.0.lock().get(host) == Some(&d)
+        self.0.lock().1.get(host).is_some_and(|&(was, _)| was == d)
     }
 
-    /// The operation ended: its decision goes, unless a later one replaced it.
-    pub(super) fn done(&self, host: &str, d: Decision) {
+    /// The operation of `ticket` ended: its decision goes, unless a later one replaced it;
+    /// whether it was still the last.
+    pub(super) fn done(&self, host: &str, ticket: u64) -> bool {
         let mut g = self.0.lock();
-        if g.get(host) == Some(&d) {
-            g.remove(host);
+        let last = g.1.get(host).is_some_and(|&(_, t)| t == ticket);
+        if last {
+            g.1.remove(host);
         }
+        last
     }
 
-    /// Not now, or a removal without the helper's: whatever runs stops at its next step.
-    fn withdraw(&self, host: &str) {
-        self.0.lock().remove(host);
+    /// Not now, a removal without the helper's, the host removed: whatever runs stops at its
+    /// next step.
+    pub(super) fn withdraw(&self, host: &str) {
+        self.0.lock().1.remove(host);
     }
 }
 
@@ -63,8 +79,10 @@ pub fn decide(app: &Shared, host: &str, files: Option<&str>) -> Result<(), Strin
 
 /// An enable's steps that reach the host or settings.json, over the recipe read at its start.
 pub(crate) trait Steps {
-    /// The platform read, this build's helper copied.
-    async fn install(&self) -> Result<(), String>;
+    /// The host's platform, or why it has no helper.
+    async fn probe(&self) -> Result<&'static str, String>;
+    /// This build's helper for `platform` copied.
+    async fn copy(&self, platform: &'static str) -> Result<(), String>;
     /// A trial connection through the forward, answered by this build's helper.
     async fn trial(&self) -> Result<(), String>;
     fn save(&self, f: &mut dyn FnMut(&mut Map<String, Value>)) -> Result<(), String>;
@@ -76,7 +94,9 @@ pub(crate) trait Steps {
 /// or Remove is not taken.
 pub(crate) async fn enable_with(steps: &impl Steps, decisions: &Decisions, host: &str) -> Result<(), String> {
     let still = || if decisions.is(host, Decision::Enable) { Ok(()) } else { Err(OVERTAKEN.to_string()) };
-    steps.install().await?;
+    let platform = steps.probe().await?;
+    still()?;
+    steps.copy(platform).await?;
     still()?;
     steps.trial().await?;
     still()?;
@@ -117,12 +137,13 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
     }
     let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
     let decisions = &app.hosts.files;
-    // also when one runs: this later click keeps it going
-    decisions.make(host, Decision::Enable);
+    let ticket = decisions.make(host, Decision::Enable).ok_or_else(|| format!("Could not enable {host}: {REMOVING}"))?;
     let Some(before) = begin(app, host) else { return Ok(()) };
     let result = enable_with(&Live { app, host, recipe }, decisions, host).await;
-    decisions.done(host, Decision::Enable);
-    finish(app, host, before, result)
+    // ended before its decision goes: a click after it starts an enable of its own
+    let result = finish(app, host, before, result);
+    decisions.done(host, ticket);
+    result
 }
 
 /// The state and note an enable found.
@@ -175,8 +196,11 @@ pub(super) struct Live<'a> {
 }
 
 impl Steps for Live<'_> {
-    async fn install(&self) -> Result<(), String> {
-        super::tunnel::update(&self.recipe).await
+    async fn probe(&self) -> Result<&'static str, String> {
+        super::tunnel::probe(&self.recipe).await?.0
+    }
+    async fn copy(&self, platform: &'static str) -> Result<(), String> {
+        super::tunnel::install(&self.recipe, &super::tunnel::binary_for(platform)?, crate::agent::AGENT_ID).await
     }
     async fn trial(&self) -> Result<(), String> {
         let mut trial = super::tunnel::connect(self.app, self.host, &self.recipe, None, true).await?;
@@ -201,18 +225,17 @@ impl Steps for Live<'_> {
 pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
     let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
     let files = &app.hosts.files;
-    files.make(host, Decision::Remove);
+    let ticket = files.make(host, Decision::Remove).expect("a removal is never refused");
     super::tunnel::stop(app, host);
-    let removed = super::tunnel::remove_helper(&recipe).await;
-    let saved = match removed {
+    let saved = match super::tunnel::remove_helper(&recipe).await {
         Ok(()) => super::save(app, |h| {
-            if files.is(host, Decision::Remove) {
-                record(files, h, host, None);
+            if let Some(r) = h.get_mut(host).filter(|_| files.done(host, ticket)) {
+                r["files"] = Value::Null;
             }
         }),
         Err(e) => Err(format!("Could not remove the helper from {host}: {e}")),
     };
-    files.done(host, Decision::Remove);
+    files.done(host, ticket);
     if saved.is_err() {
         super::tunnel::reconcile(app, host);
     }

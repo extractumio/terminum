@@ -2,7 +2,7 @@
 use super::*;
 use serde_json::json;
 
-/// What another page or `terminum hosts` sends while an enable runs, and before which step.
+/// What another page or `terminum hosts` sends while an enable runs, right after which step.
 #[derive(Clone, Copy, PartialEq)]
 enum Meanwhile {
     Nothing,
@@ -23,7 +23,7 @@ struct Fake {
     steps: Mutex<Vec<&'static str>>,
     recipe: Vec<String>,
     meanwhile: Meanwhile,
-    /// the step before which `meanwhile` happens
+    /// the step right after which `meanwhile` happens (in the save: before its change)
     at: &'static str,
     save_fails: bool,
 }
@@ -33,12 +33,13 @@ fn fake(meanwhile: Meanwhile, at: &'static str) -> Fake {
     let f = Fake { hosts: Mutex::new(hosts.as_object().unwrap().clone()), decisions: Decisions::default(), steps: Mutex::new(vec![]),
                    recipe: vec!["alex@devbox.example".into()], meanwhile, at, save_fails: false };
     // as consent::enable does before its steps
-    f.decisions.make("devbox", Decision::Enable);
+    f.decisions.make("devbox", Decision::Enable).unwrap();
     f
 }
 
 impl Fake {
     fn step(&self, name: &'static str) {
+        self.steps.lock().push(name);
         if name == self.at {
             let h = &mut self.hosts.lock();
             match self.meanwhile {
@@ -46,13 +47,12 @@ impl Fake {
                 Meanwhile::Decline => record(&self.decisions, h, "devbox", Some("declined")),
                 Meanwhile::DeclineThenEnable => {
                     record(&self.decisions, h, "devbox", Some("declined"));
-                    self.decisions.make("devbox", Decision::Enable);
+                    self.decisions.make("devbox", Decision::Enable).unwrap();
                 }
                 Meanwhile::Remove => record(&self.decisions, h, "devbox", None),
                 Meanwhile::Moved => h["devbox"]["ssh"] = json!(["alex@devbox2.example"]),
             }
         }
-        self.steps.lock().push(name);
     }
 
     fn files(&self, host: &str) -> Value {
@@ -61,8 +61,12 @@ impl Fake {
 }
 
 impl Steps for Fake {
-    async fn install(&self) -> Result<(), String> {
-        self.step("install");
+    async fn probe(&self) -> Result<&'static str, String> {
+        self.step("probe");
+        Ok("linux-x86_64")
+    }
+    async fn copy(&self, _: &'static str) -> Result<(), String> {
+        self.step("copy");
         Ok(())
     }
     async fn trial(&self) -> Result<(), String> {
@@ -93,17 +97,18 @@ fn an_enable_records_enabled_and_keeps_every_other_host() {
     assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Ok(()));
     assert_eq!(f.files("devbox"), "enabled");
     assert_eq!(f.files("other"), "enabled", "another host's record is kept");
-    assert_eq!(*f.steps.lock(), ["install", "trial", "save"]);
+    assert_eq!(*f.steps.lock(), ["probe", "copy", "trial", "save"]);
 }
 
 #[test]
-fn not_now_during_an_enable_stands_and_stops_it_at_its_next_step() {
-    // AC-83 edge — Not now or Remove while enabling: before each step and just before the save
-    for (at, steps) in [("trial", &["install", "trial"][..]), ("save", &["install", "trial", "save"][..])] {
+fn not_now_during_an_enable_stands_and_no_step_follows_it() {
+    // AC-83 edge — a later decision while enabling: after each step and just before the save
+    let all = ["probe", "copy", "trial", "save"];
+    for (at, taken) in [("probe", 1), ("copy", 2), ("trial", 3), ("save", 4)] {
         let f = fake(Meanwhile::Decline, at);
-        assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Err(OVERTAKEN.into()), "at {at}");
-        assert_eq!(f.files("devbox"), "declined", "at {at}: the later decision is never written over");
-        assert_eq!(*f.steps.lock(), steps, "at {at}: no step after the trial's check");
+        assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Err(OVERTAKEN.into()), "after {at}");
+        assert_eq!(f.files("devbox"), "declined", "after {at}: the later decision is never written over");
+        assert_eq!(*f.steps.lock(), all[..taken], "after {at}: not copied after a Not now during the probe either");
     }
 }
 
@@ -142,14 +147,19 @@ fn a_failed_save_is_the_enables_failure() {
 }
 
 #[test]
-fn an_operations_end_keeps_a_later_decision() {
+fn an_operations_end_takes_only_its_own_decision() {
     let d = Decisions::default();
-    d.make("devbox", Decision::Enable);
-    d.make("devbox", Decision::Remove);
-    d.done("devbox", Decision::Enable);
-    assert!(d.is("devbox", Decision::Remove), "the removal asked later still runs");
-    d.done("devbox", Decision::Remove);
-    assert!(!d.is("devbox", Decision::Remove) && !d.is("devbox", Decision::Enable));
+    let first = d.make("devbox", Decision::Enable).unwrap();
+    let again = d.make("devbox", Decision::Enable).unwrap();
+    assert!(!d.done("devbox", first), "the first enable's end keeps the click after it");
+    assert!(d.is("devbox", Decision::Enable));
+    assert!(d.done("devbox", again));
+    let removal = d.make("devbox", Decision::Remove).unwrap();
+    assert_eq!(d.make("devbox", Decision::Enable), None, "AC-83: Enable waits for the removal to end");
+    assert!(d.make("other", Decision::Enable).is_some(), "another host is not held up");
+    d.withdraw("devbox");
+    assert!(!d.done("devbox", removal), "Not now during the removal stands: files is not cleared");
+    assert!(d.make("devbox", Decision::Enable).is_some());
 }
 
 #[test]
