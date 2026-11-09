@@ -21,11 +21,11 @@ const MAX_LINE: usize = 1 << 20;
 const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_VERSION: &str = "2025-06-18";
 
-pub const INSTRUCTIONS: &str = "terminum shows the user your plan and holds the board of tasks. Keep a plan: your \
-own plan tool (TaskCreate/TaskUpdate, update_plan), else update_session_plan; send doing and eta_minutes at each step \
-and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. A task of this session: finish_task with its result before you stop. What is left to do: \
-create_task. Any other action: search_tools, then execute_tool. If a tool says \
-you are not in terminum, stop calling.";
+pub const INSTRUCTIONS: &str = "terminum shows the user your plan and holds the task board. Keep a plan with your \
+own plan tool, else update_session_plan; send doing and eta_minutes at each step and every 10 \
+minutes. Only the main agent calls update_session_plan; subagents report to it. Other tools: execute_tool(name, \
+arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before you stop. Left to \
+do: execute_tool(\"create_task\", {title, severity, text}). A tool says you are not in terminum: stop calling.";
 
 pub use crate::plans::rules::NOT_IN_PANE;
 use crate::plans::rules::{self, STATUSES};

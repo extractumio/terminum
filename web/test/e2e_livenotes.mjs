@@ -99,7 +99,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
 
     // the tools: tasks, no notes
     const list = (await a.mcp())?.result?.tools?.map((t) => t.name) ?? [];
-    check("AC-98 agents make tasks: no note tool is offered", !list.some((n) => n.endsWith("_notes_for_user")) && list.includes("create_task"), list.join());
+    check("AC-98 agents make tasks: no note tool is offered", !list.some((n) => n.endsWith("_notes_for_user")) && list.includes("execute_tool"), list.join());
 
     // an agent's tools and rights
     const madeA = await a.tool("create_task", { title: "Bug: Gap in the parser", text: `${SECTIONS}API_TOKEN=abc123 here`, severity: "P1" });

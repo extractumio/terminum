@@ -7,21 +7,21 @@ use axum::extract::{Path, State};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, Phase, Run};
-use super::press::{also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
-use super::pool::{self, Full};
+use super::press::{again_words, also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
+use super::pool;
 use super::screen::Screen;
+use super::places::{ad_hoc, folder_there, launch, no_folder, place, project_named, server_of};
 use super::{acts, move_one, move_task, procs, say, start, store};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
-use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
-use crate::tasks::store::{DEFAULT_PROJECT, HUMAN};
+use crate::tasks::store::HUMAN;
 use crate::termtext::has_control;
 use crate::tmux::Server;
 
@@ -37,7 +37,7 @@ pub fn routes() -> Router<Shared> {
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
     answer(store(&app, move |tx| {
-        let (tasks, w) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
+        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
@@ -46,11 +46,8 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let slots = pool::Slots::read(tx)?;
         let mut offered = Vec::new();
         for a in &all {
+            // one at its limit is offered all the same: Run waits for its room (AC-158)
             let full = slots.check(tx, Some(a), &t.project, None)?;
-            if let (Some(Full { words, close: None }), Some(named), Way::First) = (&full, &asked.agent, &w)
-                && named == &a.id {
-                return Err(words.clone());
-            }
             let mut v = json!(a);
             v["full"] = json!(full);
             offered.push(v);
@@ -58,40 +55,19 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         if asked.agent.as_ref().is_some_and(|named| !all.iter().any(|a| &a.id == named)) && matches!(w, Way::First) {
             return Err("That agent is gone.".to_string());
         }
+        // its conversation goes on on another agent: the window names both, Run from scratch stays (AC-138)
+        let moved = match (&w, moved_from) {
+            (Way::Shell(r) | Way::Resume(r), Some(from)) => Some(json!({"from": from, "to": r.agent_name, "conversation": r.agent_session})),
+            _ => None,
+        };
         let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
         let shown = shown_of(tx, &tasks)?;
         Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
-                  "prompt_rev": rev_of(&shown), "prompt": shown, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
+                  "prompt_rev": rev_of(&shown), "prompt": shown, "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
 }
 
-/// A project with no folder starts nothing: no one knows where (AC-140).
-fn no_folder(project: &str, dir: &str) -> Result<(), String> {
-    if dir.is_empty() { Err(format!("{project} has no folder: set it in its window.")) } else { Ok(()) }
-}
-
-/// Whether terminum's hooks are in place for `kind` on this Mac (AC-121).
-fn hooks_there(kind: &str) -> bool {
-    if crate::config::test_store() {
-        return true;
-    }
-    crate::cli::Ctx::from_env("terminumd").is_ok_and(|ctx| crate::cli::agentsetup::installed(&ctx, kind))
-}
-
-/// Whether `folder` stands on this Mac: off the async workers, as a stale mount can hang.
-async fn folder_there(folder: &str) -> bool {
-    let path = std::path::PathBuf::from(crate::tasks::folder::folder_in(&crate::config::home().display().to_string(), folder));
-    crate::http::off(move || Ok(path.is_dir())).await.unwrap_or(false)
-}
-
-fn server_of(app: &Shared, host: Option<&str>) -> Result<Arc<Server>, String> {
-    match host {
-        None => Ok(app.tmux.local.clone()),
-        Some(h) => app.tmux.host(h).filter(|s| s.connected()).ok_or_else(|| format!("The host {h} is out of reach.")),
-    }
-}
-
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 struct Press {
     agent: Option<String>,
     comment: Option<String>,
@@ -105,6 +81,36 @@ struct Press {
     /// the other tasks of this press (AC-138)
     #[serde(default)]
     also: Vec<String>,
+}
+
+/// What a press that would start a process comes to: its run, or a wait for a slot (AC-158).
+enum Next {
+    Run(String),
+    Waits(String),
+}
+
+/// A slot's limit, or an older wait that has room, keeps this press waiting (AC-158): its words, after the human's
+/// comment is kept, so it shows while it waits.
+fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: &Task, but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
+    let why = match pool::check(tx, Some(agent), project, but)? {
+        Some(full) => full.words,
+        None => match super::waits::ahead(tx, &agent.id, project, &task.key)? {
+            Some(first) => format!("{first} waits for it first."),
+            None => return Ok(None),
+        },
+    };
+    if let Some(c) = comment {
+        ops::keep_human_comment(tx, &task.id, c, files, ops::now())?;
+    }
+    super::waits::add(tx, task, &agent.id, project, body, ops::now())?;
+    Ok(Some(super::waits::words(&agent.name, &why)))
+}
+
+/// A wait's press, as its route took it, pressed again now (AC-158).
+pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
+    let mut body: Press = serde_json::from_value(body).map_err(|e| format!("its kept press is not readable: {e}"))?;
+    body.close = None;
+    pressed(app, id, body).await
 }
 
 /// The press on RUN: a comment is kept whatever follows (AC-122).
@@ -123,28 +129,31 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         return Err("The message has control or invisible characters.".to_string());
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
-    let (tasks, w, who) = store(app, move |tx| {
-        let (tasks, w) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
+    let kept = serde_json::to_value(&body).map_err(|e| e.to_string())?;
+    let (tasks, w, who, answers) = store(app, move |tx| {
+        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
-        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = said.as_ref().filter(|c| !ops::last_comment_is(tx, &wanted, c).unwrap_or(false)) {
-            let event = ops::comment(tx, HUMAN, &wanted, c, ops::now())?;
-            files::attach(tx, &attached, &wanted, Some(&event))?;
+        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
+            ops::keep_human_comment(tx, &wanted, c, &attached, ops::now())?;
         }
-        Ok((tasks, w, ops::user_name(tx, HUMAN)?))
+        // its agent asked: what the humans answered since goes, theirs alone (AC-157)
+        let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
+        let answers = if asked && tasks.len() == 1 { Some(ops::answers(tx, &wanted)?) } else { None };
+        Ok((tasks, w, ops::user_name(tx, HUMAN)?, answers))
     }).await?;
     let t = tasks[0].clone();
     let going_on = !matches!(w, Ok(Way::First));
     if comment.is_some() && going_on {
         told(app, id);
     }
-    let again = comment.as_ref().map_or_else(|| format!("{}: go on.", t.id), |c| format!("{}: a new comment by {who} follows.\n\n{c}", t.id));
+    let again = again_words(&t.id, &who, comment.as_deref(), answers.as_deref());
     match w? {
-        Way::First => first_run(app, &tasks, body, comment).await,
+        Way::First => first_run(app, &tasks, body, kept, comment).await,
         Way::Live(r) => {
             let (server, pane) = pane_of(app, &r)?;
             // the walk may not have read yet that its agent ended
             if start::exit_of(&server, &pane).await.is_some() {
-                return from_shell(app, &r, &server, &pane, again, &t).await;
+                return from_shell(app, &r, &server, &pane, again, &t, kept).await;
             }
             // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
             // it starts no process (AC-141)
@@ -165,23 +174,35 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         }
         Way::Shell(r) => {
             let (server, pane) = pane_of(app, &r)?;
-            from_shell(app, &r, &server, &pane, again, &t).await
+            from_shell(app, &r, &server, &pane, again, &t, kept).await
         }
-        Way::Resume(r) => {
-            let Ok(line) = start::resume_command(&r) else {
-                return could_not_continue(app, &r, "no conversation is known").await;
-            };
-            if r.host.is_none() && !folder_there(&r.folder).await {
-                return could_not_continue(app, &r, "its first folder is gone").await;
-            }
-            let server = server_of(app, r.host.as_deref())?;
-            let new = next_run(app, &r, &t, again).await?;
-            let project = project_named(app, &t.project);
-            start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind, agent: &r.agent_id }).await?;
-            start::watch(app, &new);
-            Ok(json!({"run": new}))
-        }
+        Way::Resume(r) => resume(app, r, &t, again, kept).await,
     }
+}
+
+/// The conversation goes on in a new window (AC-122), on its agent's slot or waiting for one (AC-158).
+async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Value) -> Result<Value, String> {
+    let Ok(line) = start::resume_command(&r) else {
+        return could_not_continue(app, &r, "no conversation is known").await;
+    };
+    if r.host.is_none() && !folder_there(&r.folder).await {
+        return could_not_continue(app, &r, "its first folder is gone").await;
+    }
+    let server = server_of(app, r.host.as_deref())?;
+    let new = match next_run(app, &r, t, again, kept).await? {
+        Next::Run(new) => new,
+        Next::Waits(words) => return Ok(waits_told(app, t, words)),
+    };
+    let project = project_named(app, &t.project);
+    start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind, agent: &r.agent_id }).await?;
+    start::watch(app, &new);
+    Ok(json!({"run": new}))
+}
+
+/// What a press that started nothing answers, every page told of its task.
+fn waits_told(app: &Shared, t: &Task, words: String) -> Value {
+    told(app, &t.id);
+    json!({"waits": words})
 }
 
 /// What a press types may hold line ends, nothing else unseen: tmux would refuse it after the run was written.
@@ -228,13 +249,16 @@ async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<S
 
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
 /// the pane's queue held from the look to the start, so no key starts anything between (AC-122).
-async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, t: &Task) -> Result<Value, String> {
+async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, t: &Task, kept: Value) -> Result<Value, String> {
     let _held = server.typing(pane).lock_owned().await;
     if let Some(program) = what_runs(app, server, pane).await? {
         return Err(format!("{program} runs in its pane."));
     }
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
-    let new = next_run(app, r, t, again).await?;
+    let new = match next_run(app, r, t, again, kept).await? {
+        Next::Run(new) => new,
+        Next::Waits(words) => return Ok(waits_told(app, t, words)),
+    };
     let done = start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await;
     crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, &r.ids, &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
     done?;
@@ -251,14 +275,6 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
     store(app, move |tx| super::fail(tx, &run, &words)).await?;
     super::told_all(app, r);
     Err(format!("{why}: use Run from scratch."))
-}
-
-/// A project's id and name for its sessions' place in the list; Default stands for none.
-fn project_named(app: &Shared, project: &str) -> Option<(String, String)> {
-    if project == DEFAULT_PROJECT {
-        return None;
-    }
-    app.projects.lock().list().iter().find(|p| p.id == project).map(|p| (p.id.clone(), p.name.clone()))
 }
 
 /// RUN goes on in its live session: every clock starts anew; a finished task reopens alone, an open one
@@ -290,13 +306,18 @@ fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
 
 /// A new run of `t` going on from `r`, which is over: its agent, unless another run took it meanwhile. What
 /// else was in `r` lets go of its session: it stays open to its own Run, and no agent there holds it.
-async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<String, String> {
-    let (old, key, id) = (r.clone(), t.key.clone(), t.id.clone());
+async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Value) -> Result<Next, String> {
+    let (old, key, id, task) = (r.clone(), t.key.clone(), t.id.clone(), t.clone());
     store(app, move |tx| {
-        // an agent deleted since has no slot to take: its run's own settings start
+        // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
         let agent = agents::by_id(tx, &old.agent_id)?;
-        if let Some(full) = pool::check(tx, agent.as_ref(), &old.project, Some(&old.id))? {
-            return Err(full.words);
+        match &agent {
+            Some(a) => if let Some(words) = wait_if_full(tx, a, &old.project, &task, Some(&old.id), (&kept, None, &[]))? {
+                return Ok(Next::Waits(words));
+            },
+            None => if let Some(full) = pool::check(tx, None, &old.project, Some(&old.id))? {
+                return Err(full.words);
+            },
         }
         if agent.is_none() {
             say(tx, &old, &format!("{} is no longer in the pool: this goes on with the settings it started with.", old.agent_name))?;
@@ -306,81 +327,11 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String) -> Result<Str
             ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
         }
         bring_back(tx, &id)?;
+        super::waits::remove(tx, &key)?;
         let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], ops::now())?);
         super::usage::carry(tx, &from, &id)?;
-        Ok(id)
+        Ok(Next::Run(id))
     }).await
-}
-
-/// Where `agent` would start in `project`, and what refuses it before any slot is asked (AC-140): no folder, no such
-/// agent, a host's link down, a folder or hooks not there.
-async fn place(app: &Shared, project: &str, agent: Option<String>) -> Result<(Agent, Option<String>, String, Arc<Server>), String> {
-    let project = project.to_string();
-    let (a, host, dir) = store(app, move |tx| {
-        let (name, host, dir) = ops::project_place(tx, &project)?;
-        no_folder(&name, &dir)?;
-        let a = agent.as_deref().map(|id| agents::by_id(tx, id)).transpose()?.flatten().ok_or("No agents yet: add one first.")?;
-        Ok((a, host, dir))
-    }).await?;
-    let server = server_of(app, host.as_deref())?;
-    if let Some(host) = &host {
-        let state = crate::hosts::link::agents_state(app, host);
-        if state == "off" {
-            return Err(format!("Run terminum hooks install on {host} first"));
-        }
-        if !state.starts_with("up") {
-            return Err(format!("The link to {host}'s agents is not up: {state}"));
-        }
-    } else {
-        if !folder_there(&dir).await {
-            return Err(format!("The folder {dir} does not exist on this Mac"));
-        }
-        let kind = a.kind.clone();
-        if !crate::http::off(move || Ok(hooks_there(&kind))).await.unwrap_or(false) {
-            return Err("Run terminum hooks install first: Dispatcher cannot follow the agent without them.".to_string());
-        }
-    }
-    Ok((a, host, dir, server))
-}
-
-#[derive(Deserialize)]
-struct AdHoc {
-    agent: String,
-}
-
-/// + Session (AC-142): a project's agent with no task, nothing typed: the human's from its first box.
-async fn ad_hoc(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<AdHoc>) -> Response {
-    answer(session(&app, &project, body.agent).await)
-}
-
-async fn session(app: &Shared, project: &str, agent: String) -> Result<Value, String> {
-    let (a, host, dir, server) = place(app, project, Some(agent)).await?;
-    let (ag, p, f) = (a.clone(), project.to_string(), dir.clone());
-    let run = store(app, move |tx| {
-        if let Some(full) = pool::check(tx, Some(&ag), &p, None)? {
-            return Err(full.words);
-        }
-        runs::add(tx, &Run::of(&ag, host, f, p, None), &[], ops::now())
-    }).await?;
-    let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
-    Ok(json!({"run": run, "key": key}))
-}
-
-/// The window of a run just added: opened at its place and watched; one that does not open closes its run. Its key.
-async fn launch(app: &Shared, run: &str, server: &Arc<Server>, project: &str, dir: &str, a: &Agent, tasks: &[String]) -> Result<String, String> {
-    let named = project_named(app, project);
-    let opening = start::Opening { server, project: named.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: dir, command: &a.line, run, tasks, program: &a.kind, agent: &a.id };
-    match start::open(app, opening).await {
-        Ok(key) => {
-            start::watch(app, run);
-            Ok(key)
-        }
-        Err(e) => {
-            let r = run.to_string();
-            let _ = store(app, move |tx| runs::change(tx, &r, |now| now.state = Phase::Closed).map(drop)).await;
-            Err(e)
-        }
-    }
 }
 
 /// The human lets go of a session Dispatcher holds: its open tasks fail, its slot frees, its window stays (AC-142).
@@ -396,19 +347,15 @@ fn let_go_of(app: &Shared, done: Result<Run, String>) -> Response {
     answer(done.map(|r| json!({"ok": true, "ids": r.ids})))
 }
 
-async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<String>) -> Result<Value, String> {
+async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comment: Option<String>) -> Result<Value, String> {
     let t = &tasks[0];
-    let (all, seen, said, attached) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone());
+    let (all, seen, said, attached, closing) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone(), body.close.is_some());
     let (a, host, dir, server) = place(app, &t.project, body.agent.clone()).await?;
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }
     let (ag, f, project) = (a.clone(), dir.clone(), t.project.clone());
-    let run = store(app, move |tx| {
-        // the one check that counts: in the transaction that takes the slots, each task as it stands now
-        if let Some(full) = pool::check(tx, Some(&ag), &project, None)? {
-            return Err(full.words);
-        }
+    let next = store(app, move |tx| {
         let now: Vec<Task> = all.iter().map(|t| ops::get(tx, &t.id)).collect::<Result<_, _>>()?;
         for t in &now {
             way(t, runs::last_of(tx, &t.key)?, true)?;
@@ -417,13 +364,19 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
         if seen.is_some_and(|rev| rev != rev_of(&shown_of(tx, &now).unwrap_or_default())) {
             return Err("The task's text changed: look at it again.".to_string());
         }
+        // the one check that counts: in the transaction that takes the slots; a press that closed a holder
+        // for its room does not wait (AC-141)
+        if closing && let Some(full) = pool::check(tx, Some(&ag), &project, None)? {
+            return Err(full.words);
+        }
+        if let Some(words) = wait_if_full(tx, &ag, &project, &now[0], None, (&kept, said.as_deref(), &attached))? {
+            return Ok(Next::Waits(words));
+        }
         let prompt = prompt_of(tx, &now, said.as_deref())?;
-        if let Some(c) = &said {
-            for (i, t) in now.iter().enumerate() {
-                let event = ops::comment(tx, HUMAN, &t.id, c, ops::now())?;
-                if i == 0 {
-                    files::attach(tx, &attached, &t.id, Some(&event))?;
-                }
+        // a wait kept its comment when it began (AC-158)
+        if let Some(c) = &said && ops::keep_human_comment(tx, &now[0].id, c, &attached, ops::now())?.is_some() {
+            for t in &now[1..] {
+                ops::comment(tx, HUMAN, &t.id, c, ops::now())?;
             }
         }
         for t in &now {
@@ -436,8 +389,13 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
                 runs::change(tx, &old.id, |r| r.state = Phase::Left)?;
             }
         }
-        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, ops::now())
+        super::waits::remove(tx, &keys[0])?;
+        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, ops::now()).map(Next::Run)
     }).await?;
+    let run = match next {
+        Next::Run(run) => run,
+        Next::Waits(words) => return Ok(waits_told(app, t, words)),
+    };
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
     launch(app, &run, &server, &t.project, &dir, &a, &ids).await?;
     for id in &ids {
@@ -448,7 +406,21 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, comment: Option<St
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).
 async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    let_go_of(&app, store(&app, move |tx| { let key = ops::key_of(tx, &id)?; runs::give_up(tx, &key) }).await)
+    // a wait is called off, the task where it stood (AC-158); else its run is given up
+    let wanted = id.clone();
+    let done = store(&app, move |tx| {
+        let key = ops::key_of(tx, &wanted)?;
+        let Some(w) = super::waits::of_task(tx, &key)? else { return runs::give_up(tx, &key).map(Some) };
+        let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
+        super::waits::call_off(tx, &key, &format!("The human called off its wait for {name}.")).map(|()| None)
+    }).await;
+    match done {
+        Ok(None) => {
+            told(&app, &id);
+            answer(Ok(json!({"ok": true, "ids": [id]})))
+        }
+        given_up => let_go_of(&app, given_up.map(|r| r.unwrap_or_default())),
+    }
 }
 
 /// A human changed the budget on a running task: it holds at once, and the agent is told as the last

@@ -46,7 +46,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
-  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call finish_task/.test(prompt), prompt);
+  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
@@ -134,6 +134,21 @@ export async function liveDispatcher(page, opts) {
   check("AC-124 a question for 2 minutes: WAIT FOR HUMAN, with what it asks", await hasStatus(waits, "WAIT FOR HUMAN", 15000) && await said(waits, "Approve Bash"), await history(waits));
   check("AC-124 and a line says so on the page", await until(async () => /[A-Z][A-Z0-9]*-\d+ waits for you/.test(await page.textContent("#asks"))), await page.textContent("#asks"));
   if (shots) await page.screenshot({ path: path.join(shots, "needs-line.png") });
+
+  // AC-157 the agent asks by ask_human: its session closes, RUN resumes the same conversation with the answers
+  const asking = await task("needs a decision QUESTIONS");
+  await run(asking);
+  check("AC-157 its questions wait for the human", await hasStatus(asking, "WAIT FOR HUMAN", 15000), await history(asking));
+  const asked = await j(`/api/tasks/${asking}`);
+  check("AC-157 kept as questions on the task", asked.history.some((e) => e.questions && /Recommended: v2/.test(e.text)), JSON.stringify(asked.history.at(-1)));
+  check("AC-157 its session closes once its turn is over", await until(async () => (await j(`/api/tasks/${asking}`)).session?.closed || /waits for the human's answers/.test(await history(asking)), 20000), await history(asking));
+  const conversation = (await j(`/api/tasks/${asking}`)).agent?.conversation;
+  check("AC-157 the task keeps its agent and conversation", /^fake-\d+$/.test(conversation ?? ""), JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
+  const answered = await run(asking, { comment: "v2, and FINISHES" });
+  check("AC-157 RUN resumes it", !!answered.run, JSON.stringify(answered));
+  check("AC-157 in the same conversation, with the human's answers", await until(async () => { const p = await paneOf(asking); return !!p && /answered your questions/.test(tmux("capture-pane", "-p", "-S", "-40", "-t", p)); }, 15000) || await status(asking) === "DONE");
+  check("AC-157 and it goes on to the end", await hasStatus(asking, "DONE", 20000), await history(asking));
+  check("AC-157 its conversation is the one it asked in", (await j(`/api/tasks/${asking}`)).agent?.conversation === conversation, JSON.stringify((await j(`/api/tasks/${asking}`)).agent));
 
   // AC-122 running again: a live agent, a shell, a closed session
   const again = await task("again STOPS");
@@ -310,7 +325,7 @@ export async function liveDispatcherReal(page, opts) {
   const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
   const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
-  const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task");
+  const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
@@ -343,7 +358,7 @@ export async function liveDispatcherReal(page, opts) {
   check("AC-122 real Claude Code: and it ends", await hasStatus(t, "DONE", 180000), await history(t));
   console.log("REAL claude history:", (await history(t)).slice(0, 900));
   // two tasks in one press: they go by number, the agent reads each by get_task and finishes each (AC-138)
-  const pool = await add("Real pool", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__finish_task mcp__plugin_terminum_terminum__get_task");
+  const pool = await add("Real pool", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
   const makes = async (title, text) => (await j("/api/tasks", "POST", { title, text, project })).id;
   const [first, second] = [await makes("First of two", "Finish this task with the result one."), await makes("Second of two", "Finish this task with the result two.")];
   const both = await j(`/api/tasks/${first}/run`, "POST", { agent: pool, also: [second], comment: "Do both, briefly." });

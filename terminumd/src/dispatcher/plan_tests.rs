@@ -301,3 +301,52 @@ fn ac142_a_session_with_no_task_is_watched_for_its_end_alone() {
     assert_eq!(r.state, Phase::Gone, "its agent's end frees its slot");
     assert!(ended.iter().all(|a| matches!(a, Act::Say(_))), "no task to move: {ended:?}");
 }
+
+/// The agent asked a human (ask_human): its conversation is known, its turn over.
+fn asked() -> Run {
+    Run { agent_session: Some("c0ffee".into()), turn_ended: true, asked: true, ..run("WAIT FOR HUMAN") }
+}
+
+fn closes(acts: &[Act]) -> bool {
+    acts.iter().any(|a| matches!(a, Act::Close { keep: false, .. }))
+}
+
+#[test]
+fn ac157_a_session_whose_agent_asked_closes_once_its_turn_is_over_and_quiet() {
+    let mut r = asked();
+    assert!(!closes(&step(&mut r, &up(30))), "one quiet walk is not enough");
+    let acts = step(&mut r, &up(30));
+    assert!(closes(&acts), "{acts:?}");
+    assert!(asked_closes(&r), "and the check just before the pane goes agrees");
+    assert_eq!(moved(&acts), None, "the task stays waiting for the human");
+}
+
+#[test]
+fn ac157_activity_a_tool_a_subagent_or_its_turn_keep_it_open() {
+    for (what, mut r, f) in [
+        ("activity", asked(), Facts { active: true, ..up(60) }),
+        ("a subagent", asked(), Facts { subs: true, ..up(60) }),
+        ("another task open", asked(), Facts { others_open: true, ..up(60) }),
+        ("a human's program", asked(), Facts { program: Some("vim".into()), ..up(60) }),
+        ("an answer it waits for in its window", asked(), Facts { waiting: Some("Allow?".into()), ..up(60) }),
+        ("its turn goes on", Run { turn_ended: false, ..asked() }, up(60)),
+        ("a tool open", Run { open_tools: 1, ..asked() }, up(60)),
+        ("no conversation to resume", Run { agent_session: None, ..asked() }, up(60)),
+        ("a wait the agent did not ask for (AC-124, AC-123)", Run { asked: false, ..asked() }, up(60)),
+    ] {
+        let mut acts = step(&mut r, &f);
+        acts.extend(step(&mut r, &f));
+        assert!(!closes(&acts), "{what}: {acts:?}");
+    }
+}
+
+#[test]
+fn ac157_working_again_starts_its_quiet_anew() {
+    let mut r = asked();
+    step(&mut r, &up(30));
+    r.status = "IN PROGRESS".into();
+    step(&mut r, &up(30));
+    assert_eq!(r.closing_for, 0, "its own move back");
+    r.status = "WAIT FOR HUMAN".into();
+    assert!(!closes(&step(&mut r, &up(30))));
+}

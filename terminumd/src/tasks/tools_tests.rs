@@ -41,7 +41,7 @@ fn ac115_an_agent_does_all_on_its_own() {
     let got = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
     assert!(got.starts_with(DATA), "said to be data: {got}");
     assert!(got.contains("\"text\":\"body\""));
-    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{id} is in WAIT FOR HUMAN."));
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{id} is in WAIT FOR HUMAN. Wait for the answer in this session."));
     call(&s, &dir, &w, "add_comment", json!({"id": id, "text": "note"})).unwrap();
     call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "**fixed**"})).unwrap();
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
@@ -148,7 +148,7 @@ fn ac115_a_new_task_is_marked_cleaned_and_not_kept_twice() {
     let (t, text) = s.with(|tx| Ok((ops::get(tx, &id)?, ops::text_of(tx, &id)?))).unwrap();
     assert_eq!((t.title.as_str(), t.by_agent, t.session.clone(), t.status.as_str(), t.project.as_str(), t.severity.as_str()), ("Bug: Gap in retry", true, None, "TODO", "api", "P1"));
     assert!(text.contains("[redacted]") && !text.contains("abc123"), "{text}");
-    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: gap in  RETRY.", "severity": "P1"})).unwrap_err(), format!("Not kept: {id} already says this. Read it with get_task, and comment if you have more."));
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: gap in  RETRY.", "severity": "P1"})).unwrap_err(), format!("Not kept: {id} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));
     assert_eq!(call(&s, &dir, &w, "create_task", json!({})).unwrap_err(), "title is required");
 }
 
@@ -218,7 +218,7 @@ fn ac120_a_long_get_task_comes_in_pages() {
     }).unwrap();
     let first = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
     assert!(first.len() < HISTORY_PAGE_BYTES + 2_000, "a page within the link's limit: {}", first.len());
-    assert!(first.contains("page 1 of 3: get_task with page \"2\" for the next") && first.contains("comment 0 ") && !first.contains("comment 104 "), "the first page says there is more");
+    assert!(first.contains("page 1 of 3: execute_tool(\"get_task\", {id, page}) with page \"2\" for the next") && first.contains("comment 0 ") && !first.contains("comment 104 "), "the first page says there is more");
     let last = call(&s, &dir, &w, "get_task", json!({"id": id, "page": "3"})).unwrap();
     let task: Value = serde_json::from_str(last.lines().last().unwrap()).unwrap();
     assert!(last.contains("comment 104 ") && !last.contains("for the next") && task.get("text").is_none() && task["files"].is_i64(), "the last page: its text and files' list only on the first, here their number");
@@ -248,4 +248,26 @@ fn ac145_an_agent_s_text_follows_its_project_s_template() {
     let own = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": SECTIONS})).unwrap_err();
     assert!(own.ends_with("## Why\n## Done when"), "the project's own is quoted: {own}");
     assert!(run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).is_ok());
+}
+
+#[test]
+fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_its_turn() {
+    let ((s, dir), w) = (fresh("tools-ask"), who(Some("api")));
+    let id = task(&s, "api", Some(KEY));
+    let other = task(&s, "api", Some(OTHER));
+    let asked = "1. Which API? Options: v1, v2. Recommended: v2, v1 is going away.";
+    assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap(), format!("{id} waits for the human, with your questions. Wait for the answer in this session."));
+    let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
+    assert_eq!(status, "WAIT FOR HUMAN");
+    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == asked && e["questions"] == true), "kept as questions: {history}");
+    assert!(call(&s, &dir, &w, "ask_human", json!({"id": other, "questions": "x"})).unwrap_err().contains("belongs to session"), "only its own task");
+    s.with(|tx| {
+        let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
+        let key = ops::key_of(tx, &id)?;
+        let run = crate::dispatcher::runs::add(tx, &like, &[key], 1)?;
+        crate::dispatcher::runs::change(tx, &run, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
+    }).unwrap();
+    let said = call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap();
+    assert!(said.contains("End your turn now") && said.contains("resumes this conversation"), "{said}");
+    assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap().contains("End your turn now"), "its own move waits the same way");
 }
