@@ -473,7 +473,7 @@ Scenario: AC-90 edge — left out
 
 Scenario: AC-90 failure — not written
   When the file cannot be written
-  Then the command goes to the terminal all the same and terminumd's log says why; a folder that cannot be read says "The pane's folder is not known: …" in the pane; a project with none says "Nothing sent in this folder yet."
+  Then the command goes to the terminal all the same and terminumd's log says why, and the other report of the same Enter (the page's or the hook's) may still keep it; a folder that cannot be read says "The pane's folder is not known: …" in the pane; a project with none says "Nothing sent in this folder yet."
 ```
 
 ### AC-91 — Reminders [SHOULD / P1]
