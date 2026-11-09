@@ -3,11 +3,12 @@
 //! its checked ssh recipe, files enabled or declined, the helper's build), never a name it
 //! reports (AC-87). terminumd holds each host's `terminum` session over ssh as a control
 //! client, reconnecting after a drop with back-off 1, 2, 4 … 30 s (AC-81); a host's files go
-//! through its agent once enabled (tunnel.rs, AC-82–AC-85).
+//! through its agent once enabled (tunnel.rs, AC-82–AC-85; the user's decisions: consent.rs).
 
 pub mod agents;
 pub mod agentsinstall;
 pub mod bounded;
+pub mod consent;
 mod hold;
 pub mod link;
 pub mod recipe;
@@ -45,6 +46,8 @@ pub struct Hosts {
     /// an attached host's new recipe, by name: tried over ssh before its link is let go, and
     /// its answer once in (AC-87 edge)
     tried: Mutex<HashMap<String, Tried>>,
+    /// the Files operation each host's last decision started, while it runs (consent.rs)
+    decisions: consent::Decisions,
 }
 
 /// A recipe tried and, once in, its answer.
@@ -265,6 +268,7 @@ pub async fn add(app: &Shared, name: &str, text: &str, files: bool) -> Result<St
             rec["files"] = json!("wanted");
         } else if !files && rec["files"] == "wanted" {
             rec["files"] = Value::Null;
+            app.hosts.decisions.withdraw(&name); // unticked: a setup it started stops
         }
         hosts.insert(name.clone(), rec);
     })?;
@@ -300,6 +304,7 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
     }
     match action {
         "remove" => {
+            app.hosts.decisions.withdraw(name);
             agents::removed(app, name);
             tunnel::stop(app, name);
             save(app, |h| {
@@ -321,24 +326,17 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
             }
             Ok(())
         }
-        "enable" => tunnel::enable(app, name).await,
-        "decline" => set_files(app, name, Some("declined")),
+        "enable" => consent::enable(app, name).await,
+        // Not now just after an enable recorded "enabled": the connection it started closes
+        "decline" => consent::decide(app, name, Some("declined")).map(|was| if was { link::changed(app, name) }),
         // agents on keep the helper: only Files goes
-        "files-remove" if link::wanted(app, name) => set_files(app, name, None).map(|()| link::changed(app, name)),
-        "files-remove" => tunnel::remove(app, name).await,
+        "files-remove" if link::wanted(app, name) => consent::decide(app, name, None).map(|_| link::changed(app, name)),
+        "files-remove" => consent::remove(app, name).await,
         _ => Err(format!("unknown host action: {action}")),
     }
 }
 
-/// Records a host's files state ("enabled", "declined" or none) and its helper's build.
-pub fn set_files(app: &Shared, name: &str, files: Option<&str>) -> Result<(), String> {
-    save(app, |h| {
-        if let Some(r) = h.get_mut(name) {
-            r["files"] = json!(files);
-        }
-    })
-}
-
+/// Records the build of a host's helper.
 pub fn set_helper(app: &Shared, name: &str, helper: &str) -> Result<(), String> {
     save(app, |h| {
         if let Some(r) = h.get_mut(name) {

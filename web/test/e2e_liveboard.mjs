@@ -98,9 +98,15 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
 
   // a comment: Close keeps it, nothing moves
   await page.fill(".newcomment textarea", "Use **v2**");
-  await page.click('.newcomment button:has-text("Close")');
-  await page.waitForSelector("#taskbox", { state: "hidden", timeout: 5000 });
-  await page.click(card(second));
+  // its card pressed again as the window closes, before the close's Back lands (a popstate, later):
+  // the window it opens stays, at its address
+  await page.evaluate((sel) => new Promise((done) => {
+    document.getElementById("taskbox").addEventListener("close", () => queueMicrotask(() => { document.querySelector(sel).click(); done(); }), { once: true });
+    [...document.querySelectorAll(".newcomment button")].find((b) => b.textContent === "Close").click();
+  }), card(second));
+  await page.waitForTimeout(800);
+  check("AC-105 a card pressed as its window closes opens and stays, at its address",
+    (await page.isVisible("#taskbox[open]")) && new URL(page.url()).pathname === `/kanban/${second}`, page.url());
   await within("AC-108 a comment shows as Markdown", () => page.waitForSelector("#taskbody .ev-comment .markdown strong", { timeout: 5000 }));
   check("AC-108 Close moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
   // an edit of the text
