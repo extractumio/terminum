@@ -8,6 +8,20 @@ use super::runs::{self, Phase, Run};
 use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
 
+/// How an agent asks a human while it works (AC-156): in words, never in its window.
+pub(super) const ASK: &str = "If you need a human's decision, call ask_human with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
+
+/// What RUN types when it goes on (AC-122, AC-156): after the agent asked, the humans' answers since, else the
+/// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
+pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: Option<&[String]>) -> String {
+    match (answers, comment) {
+        (Some([]), _) => format!("{id}: the human ran it again with no answer: decide with what you have, or ask_human again."),
+        (Some(said), _) => format!("{id}: the human answered your questions in the comments below. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
+        (None, Some(c)) => format!("{id}: a new comment by {who} follows. Go on with the task, taking it into account.\n\n{c}"),
+        (None, None) => format!("{id}: the human ran it again: go on with the task."),
+    }
+}
+
 /// Over this, the prompt names the task's text instead of carrying it (AC-121).
 const MOST_PROMPT: usize = 20_000;
 
@@ -22,7 +36,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         parts.extend(said);
         let total = tasks.iter().filter_map(|t| t.budget_seconds).reduce(|a, b| a + b);
         parts.extend(total.map(budget_words));
-        parts.push("When one is done, call finish_task with its result; do so for each. If you need a human, ask.".to_string());
+        parts.push(format!("When one is done, call finish_task with its result; do so for each. {ASK}"));
         return Ok(parts.join("\n\n"));
     }
     let body = ops::text_of(tx, &t.id)?;
@@ -41,7 +55,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         parts.push(format!("Its parent task: {parent}"));
     }
     parts.extend(t.budget_seconds.map(budget_words));
-    parts.push("When it is done, call finish_task with the result. If you need a human, ask.".to_string());
+    parts.push(format!("When it is done, call finish_task with the result. {ASK}"));
     Ok(parts.join("\n\n"))
 }
 
@@ -134,11 +148,25 @@ pub(super) fn budget_told(id: &str, own: Option<i64>, run: &Run) -> String {
     }
 }
 
+/// One task's ended run moved to `agent`, another of its kind: its conversation goes on there, with that agent's
+/// command and slot, in the run's own folder and host (AC-138, AC-156). A live agent, another kind or no
+/// conversation: none; the press starts anew.
+pub(super) fn moved_to(tx: &rusqlite::Transaction, tasks: &[Task], last: Option<&Run>, agent: Option<&str>, fresh: bool) -> Result<Option<Run>, String> {
+    let (Some(r), Some(id)) = (last, agent) else { return Ok(None) };
+    if fresh || tasks.len() > 1 || r.agent_id == id || !(r.is_over() || r.state == Phase::Gone) || r.agent_session.is_none() {
+        return Ok(None);
+    }
+    Ok(crate::tasks::agents::by_id(tx, id)?.filter(|a| a.kind == r.kind)
+        .map(|a| Run { agent_id: a.id, agent_name: a.name, agent_color: a.color, command: a.line, ..r.clone() }))
+}
+
 /// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how.
 pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<(Vec<Task>, Result<Way, String>), String> {
     let tasks = members(tx, id, also)?;
     let last = runs::last_of(tx, &tasks[0].key)?;
-    let anew = starts_anew(&tasks, last.as_ref(), agent, fresh);
+    let moved = moved_to(tx, &tasks, last.as_ref(), agent, fresh)?;
+    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), agent, fresh);
+    let last = moved.or(last);
     let lead = way(&tasks[0], last, anew);
     for other in &tasks[1..] {
         way(other, runs::last_of(tx, &other.key)?, true)?;

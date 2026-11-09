@@ -118,7 +118,8 @@ fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, mut r: Run, read: Read, n
     if read.ended && !hooks.working(&read.key) {
         r.open_tools = 0;
     }
-    facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
+    let due = (plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) || (plan::asked_human(&r) && r.closing_for + dt >= plan::ASKED_QUIET);
+    facts.others_open = match r.pane_key.as_deref().filter(|_| due) {
         Some(key) => runs::others_open(tx, key, &r.task)?,
         None => false,
     };
@@ -250,7 +251,7 @@ async fn walk(app: &Shared) {
         let measured = s.tree.as_ref().zip(p).map(|(t, p)| procs::under(t, &p.pid));
         // ps did not answer: the agent stands while tmux says no exit, and no limit fires on missing numbers
         let under = measured.as_ref().map_or(p.is_some_and(|p| p.exit.is_none()), |u| u.any);
-        let (busy, memory, under) = {
+        let (busy, memory, under, subs) = {
             let mut watch = app.dispatcher.watch.lock();
             let w = watch.entry(key.clone()).or_default();
             // gone with no exit recorded: only a second reading says so, the wrapper records it a moment after
@@ -264,7 +265,7 @@ async fn walk(app: &Shared) {
                 let (warn, end) = limits.get(&r.project).copied().unwrap_or((global_warn, global_end));
                 plan::Memory::read(u.gib(), warn, end, &mut w.over)
             });
-            (busy, memory, under)
+            (busy, memory, under, !w.subs.is_empty())
         };
         let (waiting, failed, ended) = listed(app, &key);
         // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
@@ -281,6 +282,7 @@ async fn walk(app: &Shared) {
             active: app.dispatcher.take_active(&key) || busy || job,
             program,
             memory,
+            subs,
             ..Default::default()
         };
         // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
@@ -346,7 +348,7 @@ pub async fn run(app: Shared) {
     }
     loop {
         let a = app.clone();
-        if let Err(e) = tokio::spawn(async move { archive_due(&a).await; walk(&a).await }).await {
+        if let Err(e) = tokio::spawn(async move { archive_due(&a).await; walk(&a).await; super::waits::start_due(&a).await }).await {
             tracing::error!(event = "dispatcher.panic", error = %e);
             acts::note(&app, "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat.".to_string());
         }

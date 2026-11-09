@@ -144,7 +144,7 @@ export async function liveDispatcher(page, opts) {
   let live;
   await until(async () => (live = await run(again, { comment: "Use the v2 API" })).run, 6000);
   check("AC-122 a live agent takes a comment", !!live.run && await hasStatus(again, "IN PROGRESS"), JSON.stringify(live));
-  check("AC-122 through the gate", await until(async () => /new comment by/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(again)))) || /comment/.test(await history(again)));
+  check("AC-122 through the gate", await until(async () => /answered in a comment by/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(again)))) || /comment/.test(await history(again)));
   await nap(500);
   const dead = await task("again from a shell DIES");
   await run(dead);

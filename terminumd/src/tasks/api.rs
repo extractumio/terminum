@@ -157,16 +157,17 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let tasks = query::list(tx, &filter)?;
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
+        let waits = crate::dispatcher::waits::on_cards(tx, &keys)?;
         let parents: Vec<&str> = tasks.iter().filter(|t| t.subtasks > 0).map(|t| t.key.as_str()).collect();
         let boxes = super::family::boxes(tx, &parents)?;
         // only a finished task says what it spent (AC-129)
         let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
         let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
-        Ok((tasks, counts, run_marks, on_agents, spent, boxes))
+        Ok((tasks, counts, run_marks, on_agents, spent, boxes, waits))
     }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes)) => {
+        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes, waits)) => {
             let layout = app.layout.read();
             let linked = tasks.iter().any(|t| t.session.is_some());
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_rows(&layout).filter(|_| linked).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
@@ -180,6 +181,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 }
                 if let Some(agent) = on_agents.get(&t.key) {
                     v["agent"] = agent.clone();
+                }
+                if let Some(on) = waits.get(&t.key) {
+                    v["waits"] = json!(on);               // RUN waits for that agent's room (terminum-dispatcher.md AC-157)
                 }
                 if let Some(kids) = boxes.remove(&t.key) {
                     v["boxes"] = json!(kids);
@@ -290,10 +294,11 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         let t = ops::get(tx, &id)?;
         let held = runs::holding(tx, &t.key)?.map(|r| r.names());
         let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
+        let waits = crate::dispatcher::waits::on_cards(tx, &[&t.key])?.remove(&t.key);
         let kids = query::subtasks(tx, &t.key)?;
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, held, agent, kids, t))
+        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits), agent, kids, t))
     }).await;
-    answer(done.map(|(body, history, attached, held, agent, kids, t)| {
+    answer(done.map(|(body, history, attached, (held, waits), agent, kids, t)| {
         let mut v = card(&app, &t);
         v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));
@@ -301,6 +306,7 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         v["history"] = history;
         v["files"] = json!(attached);
         v["run_holds"] = json!(held);
+        v["waits"] = json!(waits);
         if let Some(agent) = agent {
             v["agent"] = agent;
         }

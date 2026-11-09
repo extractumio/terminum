@@ -24,7 +24,7 @@ const DEFAULT_VERSION: &str = "2025-06-18";
 pub const INSTRUCTIONS: &str = "terminum shows the user your plan and holds the board of tasks. Keep a plan: your \
 own plan tool (TaskCreate/TaskUpdate, update_plan), else update_session_plan; send doing and eta_minutes at each step \
 and every 10 minutes. Only the main agent calls update_session_plan; subagents report to it. A task of this session: \
-finish_task with its result before you stop. What is left to do: create_task, titled Bug:, Feat: or Debt:, with a \
+finish_task with its result before you stop; a decision only a person can make: ask_human, then end your turn. What is left to do: create_task, titled Bug:, Feat: or Debt:, with a \
 severity. If a tool says you are not in terminum, stop calling.";
 
 pub use crate::plans::rules::NOT_IN_PANE;

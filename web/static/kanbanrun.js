@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the pool's free agents starts the
-// tasks and with what message; where is the project's (AC-140), said here; the agent dropped on, or the last
-// chosen, already picked: one press. Several tasks go by their numbers; what each says shows here first.
+// RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the pool's agents starts the tasks and
+// with what message; one at its limit is chosen all the same, and Run waits for its room (AC-157); where is the
+// project's (AC-140), said here; the agent dropped on, or the last chosen, already picked: one press. Several tasks
+// go by their numbers; what each says shows here first. Dropped on another agent, a conversation goes on there.
 import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 
-/** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done()` after a run started. */
+/** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done(waits)`
+ *  after a run started, or with what it waits for. */
 export function runWindow({ addAgent, noFolder, done }) {
   taskBoxes();
   const box = $("runbox");
@@ -13,14 +15,15 @@ export function runWindow({ addAgent, noFolder, done }) {
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
-  /** At a limit with nothing that could make room: not to be chosen. */
-  const stuck = (a) => (a.full && !a.full.close ? "at its limit" : "");
-  const free = () => offer.agents.filter((a) => !stuck(a));
+  /** At a limit: chosen, it waits for its room (AC-157). */
+  const busy = (a) => (a.full ? "at its limit: Run waits" : "");
   let said = "";                                   // what the window says whatever agent is chosen
 
-  /** The chosen agent's, else the window's own words; at its limit with an idle holder, one press closes it and runs (AC-141). */
+  /** The chosen agent's, else the window's own words; at its limit with an idle holder, one press closes it and runs
+   *  (AC-141), else Run waits for its room (AC-157). */
   function showAgent() {
-    const close = chosen()?.full?.close, words = said || (close ? chosen().full.words : "");
+    const full = chosen()?.full, close = full?.close;
+    const words = said || (full ? (close ? full.words : `${full.words} Run waits until it has room, then starts.`) : "");
     $("runnone").textContent = words;
     $("runnone").hidden = !words;
     $("rungo").textContent = close ? `Close ${close.tasks}'s session and run` : "Run";
@@ -31,10 +34,11 @@ export function runWindow({ addAgent, noFolder, done }) {
 
   function draw(scratch) {
     fresh = scratch;
-    const first = fresh || offer.first, none = first && !offer.agents.length, allBusy = first && !none && !free().length;
+    const first = fresh || offer.first, none = first && !offer.agents.length, moved = !first && offer.moved;
     const names = tasks.map((t) => t.id).join(", "), on = offer.agents.find((a) => a.id === dropped);
-    $("runhead").textContent = !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
-    const words = none ? "No agents yet." : allBusy ? `All agents are busy: one takes more when its session closes or its tasks end.` : first ? "" : "It goes on in its session, with what you write.";
+    $("runhead").textContent = moved ? `Continue ${names} on ${moved.to}` : !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
+    const words = none ? "No agents yet." : moved ? `Its conversation ${moved.conversation} with ${moved.from} goes on on ${moved.to}, with what you write. Run from scratch starts anew.`
+      : first ? "" : "It goes on in its session, with what you write.";
     said = words;
     // the agent it was dropped on is said by the title; what a person checks only sometimes stays folded
     $("runagentrow").hidden = !first || none || !!on;
@@ -44,9 +48,10 @@ export function runWindow({ addAgent, noFolder, done }) {
     $("runmarked").hidden = !offer.by_agent;
     $("runadd").hidden = !none;
     $("runfresh").hidden = first;
-    $("rungo").disabled = none || allBusy;
+    $("rungo").disabled = none;
     if (first) {
-      fillAgents($("runagent"), offer.agents, stuck, [dropped, offer.last]);
+      fillAgents($("runagent"), offer.agents, () => "", [dropped, offer.last]);
+      for (const o of $("runagent").options) { const a = offer.agents.find((x) => x.id === o.value); if (a && busy(a)) o.textContent = `${a.name} (${busy(a)})`; }
       $("runprompt").textContent = offer.prompt;
     }
     showAgent();
@@ -83,9 +88,10 @@ export function runWindow({ addAgent, noFolder, done }) {
     $("rungo").disabled = true;
     try {
       const first = fresh || offer.first;
-      await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : null, close: first ? chosen()?.full?.close?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });   // going on, it is its session's agent
+      // going on, it is its session's agent, or the one it was dropped on (AC-138)
+      const started = await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: first ? chosen()?.full?.close?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });
       box.close("run");
-      done();
+      done(started?.waits);
     } catch (e) { say(e.message); }
     $("rungo").disabled = false;
   }
