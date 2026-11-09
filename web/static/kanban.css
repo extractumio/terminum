@@ -51,6 +51,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .tracks { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); overflow-x: auto; scrollbar-width: none; }
 /* many agents or schedules scroll in their own bar: the columns keep the room (AC-138, terminum-schedules.md AC-163) */
 #agentbar .tracks, .schedtracks { max-height: 30dvh; overflow-y: auto; scrollbar-width: thin; }
+/* whatever stands over them (waiting agents, the pool, the section), the columns keep at least this: the rest gives way and scrolls */
+.board-page #board { min-height: 45dvh; }
+.board-page :is(#asks, #agentbar, #schedbar) { flex-shrink: 1; min-height: 0; overflow-y: auto; }
 .tracks::-webkit-scrollbar:horizontal { display: none; }
 .tracks > .trackitems { grid-column: 1 / 5; display: grid; grid-template-columns: subgrid; row-gap: var(--sp-2); min-width: 0; }
 .trackitems > .colempty { grid-column: 1 / -1; }
