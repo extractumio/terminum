@@ -227,7 +227,11 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     // New task from selection: the board's new-task window, nothing kept (AC-106)
     await selected();
     await page.click("#marktask");
-    check("AC-106 New task from selection opens the board's new-task window", await until(() => new URL(page.url()).pathname.startsWith("/kanban"), 8000), page.url());
+    await page.waitForSelector("#newbox[open]", { timeout: 8000 });
+    check("AC-106 New task from selection opens the board's new-task window, the words quoted", /^> .*electable word/m.test(await page.inputValue("#newtext")), await page.inputValue("#newtext"));
+    await page.click("#newdiscard");                  // what it took goes: a later new-task window opens empty
+    await page.click("#confirmok");
+    await page.waitForSelector("#newbox", { state: "hidden" });
 
     // the task's link: its session, its record's words looked for nearest their line
     const located = [];
