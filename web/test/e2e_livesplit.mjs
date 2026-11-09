@@ -49,24 +49,25 @@ export async function liveSplit(page, { tmux, work, socket }) {
   // the width the page sized the window to: the page drawing it as it is (no reflow) and the width
   // still for 1.5 s. Stillness alone is not enough: under load the pane kept its first width, 56,
   // for seconds before the page's size (87) reached tmux, and the reflow then was not the zoom's
-  let before = of("#{window_width}"), pre = await looks();
+  const reflowed = () => page.evaluate(() => document.getElementById("term").classList.contains("reflow"));
+  let before = of("#{window_width}");
   for (let still = 0, t = 0; still < 15 && t < 150; t++) {
     await page.waitForTimeout(100);
     const now = of("#{window_width}");
-    pre = await looks();
-    still = now === before && !pre.reflow ? still + 1 : 0;
+    still = now === before && !(await reflowed()) ? still + 1 : 0;
     before = now;
   }
-  check("AC-13 before the split the pane has the view's width", !pre.reflow, JSON.stringify({ ...pre, pane: of("#{pane_width}") }));
+  const pre = { ...(await looks()), pane: of("#{pane_width}") };
+  check("AC-13 before the split the pane has the view's width", !pre.reflow, JSON.stringify(pre));
   const split = () => tmux("split-window", "-h", "-d", "-l", "60%", "-t", pane, "-P", "-F", "#{pane_id}");
   const first = split();
   check("AC-13 a split under the shown pane: it is zoomed to the whole window", await until(() => fills(tmux, pane), 5000), of("#{window_zoomed_flag} #{pane_width} #{window_width}"));
   check("AC-13 the zoom keeps the view's size", of("#{window_width}") === before, `${before} → ${of("#{window_width}")}`);
   // the page hears of the zoom after tmux has it (its %layout-change through terminumd): the split's
   // moment may still be drawn when tmux answers, so the page is given its time to follow
-  let flat = await looks();
-  await until(async () => { flat = await looks(); return !flat.reflow && !flat.banner; }, 3000);
-  check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal", !flat.reflow && !flat.banner,
+  let flat;
+  check("AC-13 zoomed, the pane is drawn as the program laid it out, nothing over the terminal",
+    await until(async () => { flat = await looks(); return !flat.reflow && !flat.banner; }, 3000),
     JSON.stringify({ before: pre, zoomed: { ...flat, pane: of("#{pane_width}"), zoom: of("#{window_zoomed_flag}") } }));
   tmux("kill-pane", "-t", first);
   // a client attached by hand with this window on its screen: the layout stays its own

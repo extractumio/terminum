@@ -78,8 +78,8 @@ export async function liveBoardTasks(page, opts) {
   check("AC-118 it leaves the board", await until(async () => !(await page.$(card(old))) && !!(await page.$(card(young)))));
   check("AC-118 its history says Dispatcher did", (await j(`/api/tasks/${old}`)).history.some((e) => e.text === "Archived by Dispatcher"));
   check("AC-118 it keeps its status", (await j(`/api/tasks/${old}`)).status === "DONE");
-  const kept = await j(`/api/tasks/${young}`);
-  check("AC-118 one DONE just now stays", !kept.archived_at && !!(await page.$(card(young))), `archived_at ${kept.archived_at ?? "none"}, card ${!!(await page.$(card(young)))}`);
+  const kept = await j(`/api/tasks/${young}`), drawn = !!(await page.$(card(young)));
+  check("AC-118 one DONE just now stays", !kept.archived_at && drawn, `archived_at ${kept.archived_at ?? "none"}, card ${drawn}`);
 
   // AC-118: a project's own Archived
   await j(`/api/tasks/${young}/archive`, "POST", { on: true });
