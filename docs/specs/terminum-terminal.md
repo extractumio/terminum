@@ -506,7 +506,7 @@ Scenario: AC-91 happy path — said when they come up
   When they came up in another session
   Then it says so when that session is shown next (an unread one, or any); each reminder up is said once in a page; a bookmark is never said
 Scenario: AC-91 happy path — a session's own
-  Then a reminder belongs to its session, as a bookmark does (AC-33): it comes up when that session's agent ends a turn, never another session's of its project; the session list marks only its row, with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions
+  Then a reminder belongs to its session, as a bookmark does (AC-33): it comes up when that session's agent ends a turn, never another session's of its project; the session list marks only its row, with a wavy pink line beside the orange one; an orphaned reminder never comes up, one up when its session goes is no longer up, and it is listed under Reminders below the sessions; only a reminder is closed or resolved (a bookmark is refused)
   When another session is shown while the bell's pane is open
   Then the pane closes (its reminders are the last session's)
 Scenario: AC-91 edge — restarts, kinds, resolved ones
@@ -727,5 +727,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-37 — `cargo test sent::`, `web/test/seltext.test.mjs`, `web/test/ask.test.mjs`, `web/test/e2e_clip.mjs`, `web/test/e2e_touch.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_liveclip.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_switch.mjs`
 - [x] AC-38 — `cargo test page::trace`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`
 - [x] AC-90 — `cargo test sent::`, `cargo test messages::`, `cargo test sock::hook_tests`, `web/test/sent.test.mjs`, `web/test/e2e_sent.mjs`, `web/test/e2e_panewin.mjs`, `scripts/e2e_hooks.py`
-- [x] AC-91 — `cargo test page::bookmarks`, `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
+- [x] AC-91 — `cargo test page::bookmarks` (an orphan never up, a bookmark not settled), `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-40 — `web/test/boxnav.test.mjs`, `web/test/agentbox.test.mjs`, `web/test/rejoin.test.mjs`, `web/test/heldelete.test.mjs`, `web/test/kbdtouch.test.mjs`, `web/test/e2e_boxnav.mjs`, `web/test/e2e_codex.mjs`, `web/test/e2e_touch.mjs`

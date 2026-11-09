@@ -49,7 +49,7 @@ impl Store {
         self.edit_all(|i| {
             let gone = i.orphaned.is_none() && ids.contains(&i.id);
             if gone {
-                i.orphaned = Some(now);
+                (i.orphaned, i.due) = (Some(now), false);   // an orphan is never up (AC-91)
             }
             gone
         })
@@ -65,7 +65,7 @@ impl Store {
             match panes.iter().find(|(o, _)| o == old) {
                 Some((_, new)) if new != old => { i.key = Some(format!("{prefix}{new}")); true }
                 Some(_) => false,
-                None => { i.orphaned = Some(now); true }
+                None => { (i.orphaned, i.due) = (Some(now), false); true }
             }
         })
     }

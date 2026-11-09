@@ -207,7 +207,7 @@ fn clean_stored(it: &Value) -> Result<Item, String> {
         host: truthy(it.get("host")),
         at: opt("at").map(|v| int("at", v)).transpose()?.unwrap_or(0),
         remind: it["remind"] == true,
-        due: it["due"] == true,
+        due: it["due"] == true && it.get("orphaned").is_none_or(Value::is_null),   // an orphan is never up
         resolved: opt("resolved").map(|v| int("resolved", v)).transpose()?,
         dir: truthy(it.get("dir")),
         project: truthy(it.get("project")),
@@ -378,6 +378,9 @@ impl Store {
 
     /// A reminder closed (up again at its pane's next turn's end) or resolved (never again).
     pub fn settle(&mut self, id: &str, resolve: bool) -> Result<Item, MarkError> {
+        if self.get(id).is_some_and(|i| !i.remind) {
+            return err("This bookmark is not a reminder");
+        }
         let now = crate::auth::store::unix_now() as i64;
         self.change(id, |i| { i.due = false; if resolve { i.resolved = Some(now); } })
     }

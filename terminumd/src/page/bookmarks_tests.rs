@@ -303,6 +303,7 @@ fn a_reminder_comes_up_at_each_turns_end_until_resolved() {
     assert_eq!(s.due(&ended(k)).unwrap().len(), 1, "up again at the next turn's end");
     let done = s.settle(&r.id, true).unwrap();
     assert!(done.resolved.is_some() && !done.due);
+    assert!(s.settle(&b.id, true).is_err() && s.get(&b.id).unwrap().resolved.is_none(), "a bookmark is not settled as a reminder (S18)");
     assert!(s.due(&ended(k)).unwrap().is_empty(), "resolved: never again");
     let made = s.set_note(&b.id, "now".into(), Some(true)).unwrap();
     assert!(made.remind && made.note == "now", "a bookmark made a reminder, its note changed, saved once");
@@ -403,4 +404,25 @@ fn a_file_before_version_3_takes_its_sessions_projects_once() {
     let mut again = Store::load(d.file());
     again.take_projects(&std::collections::HashMap::from([("tmux:local:terminum:%6".to_string(), "p2".to_string())])).unwrap();
     assert_eq!(again.get("b").unwrap().project, None, "version 3: taken once");
+}
+
+/// AC-91 (S18): a reminder up when its session goes is orphaned not up, also as a file holds it.
+#[test]
+fn an_orphaned_reminder_is_never_up() {
+    let d = Dir::new();
+    let mut s = Store::load(d.file());
+    let k = "tmux:local:terminum:%1";
+    let r = s.add(NewMark { remind: true, ..mark(k, 4, "the retry loop", "") }).unwrap();
+    assert_eq!(s.due(&ended(k)).unwrap().len(), 1);
+    let gone = s.orphan(std::slice::from_ref(&r.id)).unwrap();
+    assert!(gone[0].orphaned.is_some() && !gone[0].due, "{gone:?}");
+    let restored = s.add(NewMark { remind: true, ..mark("tmux:local:terminum:%2", 1, "other", "") }).unwrap();
+    s.due(&ended("tmux:local:terminum:%2")).unwrap();
+    let gone = s.restarted("tmux:local:terminum:", &[]).unwrap();
+    assert!(gone.iter().any(|i| i.id == restored.id && i.orphaned.is_some() && !i.due), "a pane not made again: {gone:?}");
+    let was = std::fs::read_to_string(d.file()).unwrap();
+    let text = was.replace("\"remind\":true", "\"due\":true,\"remind\":true");   // a file that says its orphans are up
+    assert_ne!(text, was);
+    std::fs::write(d.file(), text).unwrap();
+    assert!(!Store::load(d.file()).get(&r.id).unwrap().due, "an orphan a file says is up is read not up");
 }
