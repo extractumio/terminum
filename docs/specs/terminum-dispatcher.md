@@ -953,7 +953,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 1. The pane's `@terminum-run` is this run's.
 2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
 3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
-4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F`), so an agent ending just before leaves nothing on its shell's line.
+4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F` with both branches, the other one printing a refusal: tmux answers it twice, and the control client gives the branch's answer to the gate and the next command its own), so an agent ending just before leaves nothing on its shell's line.
 5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
 6. Enter.
 
