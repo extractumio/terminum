@@ -210,6 +210,12 @@ pub fn of_task(tx: &Transaction, task_key: &str) -> Result<Option<Schedule>, Str
     tx.query_row(&format!("{SELECT} JOIN schedule_fires f ON f.schedule = s.id WHERE f.task = ?1"), [task_key], of_row).optional().map_err(sql)
 }
 
+/// The schedule each of `keys` (tasks' keys) was made by, "SCH-1", for its card (AC-163).
+pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<std::collections::HashMap<String, String>, String> {
+    Ok(rows(tx, "SELECT f.task, 'SCH-' || s.number FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task IN (SELECT value FROM json_each(?1))",
+            [crate::dispatcher::runs::listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+}
+
 /// Keeps a new one by `author`. Its id and key.
 pub fn add(tx: &Transaction, author: &str, given: &Given, now: i64) -> Result<(String, String), String> {
     let count: i64 = tx.query_row("SELECT count(*) FROM schedules WHERE deleted_at IS NULL", [], |r| r.get(0)).map_err(sql)?;

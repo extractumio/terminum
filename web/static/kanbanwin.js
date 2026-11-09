@@ -11,7 +11,7 @@ import { family } from "./kanbansubs.js";
 
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
 
-export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
+export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }) {
   taskBoxes();
   const box = $("taskbox"), body = $("taskbody");
   let shown = null, drawn = "", opening = 0;
@@ -217,7 +217,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask }) {
     const stamps = el("p", "taskstamps", `${t.uid} · ${madeChanged(t)}`);
     stamps.title = `${t.id} is also found by ${t.uid}, whatever its ID becomes`;
     const closed = t.waits ? el("p", "cstate waiting", `waits for ${t.waits}`) : t.session?.closed ? el("p", "cstate closed", "session closed") : null;
-    wrap.append(...[stamps, fields(t), closed, text(t), filesOf(t)].filter(Boolean));
+    // made by a schedule: its name, a press opening its window (terminum-schedules.md AC-163)
+    const from = t.schedule ? el("p", "taskfrom") : null;
+    if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
+    wrap.append(...[stamps, from, fields(t), closed, text(t), filesOf(t)].filter(Boolean));
     return wrap;
   }
 

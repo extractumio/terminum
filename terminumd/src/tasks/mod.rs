@@ -7,6 +7,7 @@ pub mod archiving;
 pub mod comments;
 pub mod cron;
 pub mod family;
+mod fileapi;
 pub mod files;
 pub mod folder;
 mod groom;

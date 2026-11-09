@@ -64,12 +64,16 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     bar.style.setProperty("--dot", agentColor(a));
     b.style.setProperty("--ag", agentColor(a));
     const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
+    // a clock for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161)
+    const kept = counted().kept?.[a.id] ?? [];
+    for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
     dots.append(...mine.map(dot));
-    if (a.at_once > 1) dots.append(el("small", "agcount", `${slots(a).length}/${a.at_once}`));
+    const used = slots(a).filter((s) => !s.kept).length + kept.length;
+    if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
     txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
     b.append(bar, txt);
-    b.title = [a.name, `${slots(a).length} of ${a.at_once} at once`, a.line].join(" · ");
+    b.title = [a.name, `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");
     return b;
   }
 
@@ -102,7 +106,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
-    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
+    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
     if (dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));
