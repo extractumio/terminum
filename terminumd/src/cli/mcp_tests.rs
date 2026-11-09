@@ -62,7 +62,7 @@ fn initialize_answers_the_clients_version_when_known() {
 fn the_instructions_stand_in_512_characters() {
     let first: String = INSTRUCTIONS.chars().take(512).collect();
     assert_eq!(first, INSTRUCTIONS, "whole within 512, so a client's cut loses nothing");
-    for w in ["update_session_plan", "eta_minutes", "create_task", "finish_task", "every 10 minutes", "stop calling",
+    for w in ["update_session_plan", "eta_minutes", "create_task", "finish_task", "every 10 minutes", "stop calling", "search_tools", "execute_tool",
               "Only the main agent calls update_session_plan; subagents report to it.",] {
         assert!(first.contains(w), "{w}");
     }
@@ -122,8 +122,10 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     let r = ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"progressToken":1}}}"#);
     let tools = r["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, tool_names());
-    for t in tools {
+    assert_eq!(names, super::super::mcp_meta::listed().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>());
+    let catalog = catalog();
+    assert_eq!(catalog.iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), tool_names());
+    for t in &catalog {
         let name = t["name"].as_str().unwrap();
         if crate::tasks::tools::NAMES.contains(&name) {
             continue;
@@ -132,14 +134,15 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
         assert_eq!(t["inputSchema"]["type"], "object");
         assert!(t["description"].as_str().unwrap().len() < 500);
     }
-    let plan = &tools[0]["inputSchema"];
+    let plan_tool = tools.iter().find(|t| t["name"] == "update_session_plan").unwrap();
+    let plan = &plan_tool["inputSchema"];
     assert_eq!(plan["required"], json!(["items"]));
     assert_eq!((plan["properties"]["items"]["minItems"].clone(), plan["properties"]["items"]["maxItems"].clone()), (json!(1), json!(50)));
     assert_eq!(plan["properties"]["items"]["items"]["properties"]["status"]["enum"], json!(["pending", "in_progress", "completed", "blocked"]));
     assert_eq!(plan["properties"]["items"]["items"]["properties"]["text"]["maxLength"], 200);
     assert_eq!((plan["properties"]["eta_minutes"]["minimum"].clone(), plan["properties"]["eta_minutes"]["maximum"].clone()), (json!(1), json!(1440)));
     assert_eq!((plan["properties"]["doing"]["maxLength"].clone(), plan["properties"]["title"]["maxLength"].clone()), (json!(120), json!(80)));
-    let d = tools[0]["description"].as_str().unwrap();
+    let d = plan_tool["description"].as_str().unwrap();
     assert!(d.contains("whole plan") && d.contains("pending, in_progress, completed or blocked") && d.contains("minutes"));
 }
 
@@ -172,8 +175,11 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                    env(Some(TMUX), Some("%x"), None), env(Some(TMUX), Some("%"), None),
                    env(Some(",1,0"), Some("%3"), None)];
     for env in &outside {
-        for t in tool_names() {
+        for t in tool_names().into_iter().chain(super::super::mcp_meta::META) {
             let args = match t {
+                "search_tools" => json!({"query": "create a task"}),
+                "get_tool_info" => json!({"names": ["get_task"]}),
+                "execute_tool" => json!({"name": "get_task", "arguments": {"id": "T-1"}}),
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
                 "list_tasks" | "get_session_plan" => json!({}),
                 "create_task" => json!({"title": "Bug: t", "severity": "P2"}),
@@ -248,7 +254,7 @@ fn outside_tmux_initialize_has_no_instructions_and_no_tools() {
         assert_eq!(say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"], json!({"tools": []}));
     }
     assert_eq!(ask(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#)["result"]["instructions"], INSTRUCTIONS, "in a pane: kept");
-    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), tool_names().len());
+    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), super::super::mcp_meta::listed().len());
 }
 
 #[test]
@@ -295,7 +301,7 @@ fn nothing_up_at_the_start_still_offers_the_tools_and_asks_again() {
     let init = say(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#);
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "nothing up: offered");
     let list = say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), tool_names().len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), super::super::mcp_meta::listed().len());
     assert_eq!(probes.get(), 2, "a probe that reached nobody is not kept");
     let call = say(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#);
     assert_eq!(call["result"]["content"][0]["text"], DOWN, "{call}");
@@ -320,17 +326,17 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
     let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS);
     let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), tool_names().len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), super::super::mcp_meta::listed().len());
 }
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner
 /// asked for compact descriptions): the instructions within 512 characters, each tool's
-/// description within 500, all the tools' JSON within 4,800.
+/// description within 500, all the listed tools' JSON within 4,700: what the catalog adds behind search_tools costs nothing here (AC-155).
 #[test]
 fn the_tools_stay_compact() {
-    let t = tools();
+    let t = Value::Array(super::super::mcp_meta::listed());
     let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
-    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4800, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
+    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4700, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
 }
