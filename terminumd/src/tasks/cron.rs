@@ -123,6 +123,10 @@ impl Local {
     fn wall(&self) -> (i64, i64, i64, i64, i64) {
         (self.year, self.month, self.day, self.hour, self.minute)
     }
+
+    fn clock(&self) -> String {
+        format!("{:02}:{:02}", self.hour, self.minute)
+    }
 }
 
 const DAYS: [&str; 7] = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -130,7 +134,12 @@ const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Au
 
 /// `at` (unix seconds) on the Mac's clock: "Tue 10 Nov 03:00".
 pub fn when_words(at: i64) -> String {
-    local(at).map_or_else(|| at.to_string(), |t| format!("{} {} {} {:02}:{:02}", DAYS[t.weekday as usize], t.day, MONTHS[(t.month - 1) as usize], t.hour, t.minute))
+    local(at).map_or_else(|| at.to_string(), |t| format!("{} {} {} {}", DAYS[t.weekday as usize], t.day, MONTHS[(t.month - 1) as usize], t.clock()))
+}
+
+/// `at`'s time of day on the Mac's clock: "08:12".
+pub fn clock(at: i64) -> String {
+    local(at).map_or_else(|| at.to_string(), |t| t.clock())
 }
 
 /// A cadence in words, for the kinds the schedule's window writes (AC-160); any other is its fields.

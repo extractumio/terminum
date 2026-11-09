@@ -5,7 +5,7 @@
 import { askConfirm } from "./dialogs.js";
 import { el } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
-import { $, DEFAULT, api, fillSelect, renderInto, showError, stamp } from "./kanbanutil.js";
+import { $, DEFAULT, api, fillSelect, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
 const HOUR_STEPS = [1, 2, 3, 4, 6, 8, 12];
 
@@ -63,20 +63,18 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     }
   }
   let soon = 0;
-  const changedWhen = () => { clearTimeout(soon); soon = setTimeout(preview, 250); };
-  for (const k of ["kind", "every", "minute", "day", "date", "time", "cron", "agent", "budget", "project", "title", "text"]) f[k].addEventListener("input", changedWhen);
+  /** Its fields at once; terminumd's words when typing pauses. */
+  const changedWhen = () => {
+    const cron = toCron(state());
+    if ($("schedfields").textContent !== (cron ?? "")) { $("schedfields").textContent = cron ?? ""; $("schednext").textContent = ""; }
+    clearTimeout(soon);
+    soon = setTimeout(preview, 250);
+  };
+  for (const k of ["kind", "every", "minute", "day", "date", "time", "cron", "agent", "budget", "project"]) f[k].addEventListener("input", changedWhen);
+  for (const k of ["title", "text"]) f[k].addEventListener("change", changedWhen);   // a long text goes once typed, not at each pause
   f.kind.addEventListener("change", () => { shownParts(); changedWhen(); });
 
-  /** Write or Preview of its text. */
-  function view(shown) {
-    $("schedwrite").setAttribute("aria-selected", String(!shown));
-    $("schedpreview").setAttribute("aria-selected", String(shown));
-    f.text.hidden = shown;
-    $("schedshown").hidden = !shown;
-    if (shown) renderInto($("schedshown"), f.text.value);
-  }
-  $("schedwrite").addEventListener("click", () => view(false));
-  $("schedpreview").addEventListener("click", () => view(true));
+  const view = writePreview("sched", f.text, $("schedshown"));
 
   /** Its window: a new one, or `s` to change. */
   function open(s = null) {
@@ -94,7 +92,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     f.minute.value = String(p.minute);
     f.day.value = String(p.day);
     f.time.value = p.once ? new Date(p.once * 1000).toTimeString().slice(0, 5) : p.time;
-    f.date.value = p.once ? new Date(p.once * 1000 - new Date(p.once * 1000).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : "";
+    f.date.value = p.once ? new Date(p.once * 1000).toLocaleDateString("sv") : "";   // the local day as YYYY-MM-DD
     f.cron.value = p.cron;
     days = new Set(p.days);
     shownDays();
@@ -120,7 +118,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     } catch (e) { showError(error, e.message); }
   }
   $("schedok").addEventListener("click", save);
-  dialog.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); save(); } });
+  onSend(dialog, save);
   $("scheddrop").addEventListener("click", async () => {
     if (!await askConfirm(`Delete ${editing.key}? Its tasks stay.`, "Delete")) return;
     try {
@@ -129,10 +127,6 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
       changed();
     } catch (e) { showError(error, e.message); }
   });
-  dialog.addEventListener("cancel", async (e) => {
-    if (snap() === snapshot) return;
-    e.preventDefault();
-    if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
-  });
+  guardCancel(dialog, () => snap() === snapshot);
   return { open };
 }

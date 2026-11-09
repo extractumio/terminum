@@ -413,7 +413,7 @@ async function projectWindowChecks(page, opts) {
   await page.waitForSelector("#projectbox", { state: "hidden" });
   const refusedRun = await j(`/api/tasks/${homeless}/run`, "POST", { agent: (await j("/api/tasks/meta")).agents[0].id });
   check("AC-140 terminumd refuses it too, and nothing starts", /Fresh has no folder: set it in its window/.test(refusedRun.error) && (await j(`/api/tasks/${homeless}`)).status === "TODO", JSON.stringify(refusedRun));
-  await page.click(`.card[data-id="${homeless}"]`);
+  await pressCard(page, homeless);
   await page.waitForSelector("#taskbox[open]");
   await page.click('#taskbody .newcomment button:has-text("Archive")');
   await page.click("#taskclose");

@@ -43,7 +43,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
     // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
     if let Some(s) = crate::tasks::schedules::of_task(tx, &t.key)? {
         let run = super::fire::prompt(&s, &t.id, &t.title, &body);
-        return Ok(said.map_or(run.clone(), |m| format!("{m}\n\n{run}")));
+        return Ok(match said { Some(m) => format!("{m}\n\n{run}"), None => run });
     }
     let mut parts = vec![format!("The human ran task {}: {}", t.id, t.title)];
     parts.extend(said);

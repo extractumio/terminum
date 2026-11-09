@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, renderInto, sessionOptions, showError, upload } from "./kanbanutil.js";
+import { $, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -59,13 +59,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     canCreate();
   }
 
-  function view(preview) {
-    $("newwrite").setAttribute("aria-selected", String(!preview));
-    $("newpreview").setAttribute("aria-selected", String(preview));
-    $("newtext").hidden = preview;
-    $("newshown").hidden = !preview;
-    if (preview) renderInto($("newshown"), $("newtext").value);
-  }
+  const view = writePreview("new", $("newtext"), $("newshown"));
 
   /** The pool: the agent the user picked while it is free, else the project's last run's, else the first free;
    *  none picked stays none, whatever changes meanwhile (AC-106). */
@@ -129,8 +123,6 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   box.querySelector("form").addEventListener("input", keep);
   $("newproj").addEventListener("change", showAgents);
   $("newagent").addEventListener("change", () => { chose = $("newagent").value; });
-  $("newwrite").addEventListener("click", () => view(false));
-  $("newpreview").addEventListener("click", () => view(true));
   $("newadd").addEventListener("click", () => $("newpick").click());
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
   onFiles($("newtext"), box, add, (on) => $("newtext").classList.toggle("dropping", on));

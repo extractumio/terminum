@@ -54,21 +54,27 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
     Ok(idle.into_iter().max_by_key(|r| r.closing_for))
 }
 
-/// What holds slots now, read once for every agent a window offers.
+/// What holds slots now, read once for every agent a window offers: the runs, the slots schedules keep by agent,
+/// and which runs stand in them (terminum-schedules.md AC-161).
 pub struct Slots {
     holding: Vec<Run>,
+    kept: BTreeMap<String, Vec<String>>,
+    in_kept: HashSet<String>,
 }
 
 impl Slots {
     pub fn read(tx: &Transaction) -> Result<Slots, String> {
-        Ok(Slots { holding: runs::live(tx)?.into_iter().filter(Run::holds_slot).collect() })
+        let holding: Vec<Run> = runs::live(tx)?.into_iter().filter(Run::holds_slot).collect();
+        let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
+        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding })
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
     /// not counted: the one it goes on from.
     pub fn check(&self, tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
         let holding: Vec<&Run> = self.holding.iter().filter(|r| Some(r.id.as_str()) != but).collect();
-        judge(tx, &holding, agent, project)
+        let kept = agent.and_then(|a| self.kept.get(&a.id)).map_or(&[][..], Vec::as_slice);
+        judge(tx, &holding, agent, project, (kept, &self.in_kept))
     }
 
     /// `check` for task `task` (its key): one of a schedule of `agent` takes the slot kept for it, only its project's
@@ -89,10 +95,11 @@ fn kept_for(tx: &Transaction, agent: &str, task: &str) -> Result<bool, String> {
              (task, agent), |r| r.get::<_, i64>(0))?.is_empty())
 }
 
-/// The runs in `agent`'s kept slots: their tasks are firings of its schedules that keep one (AC-161).
-fn in_kept(tx: &Transaction, agent: &str) -> Result<HashSet<String>, String> {
-    Ok(rows(tx, "SELECT DISTINCT rt.run FROM run_tasks rt JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
-                 WHERE s.agent_id = ?1 AND s.paused = 0 AND s.deleted_at IS NULL", [agent], |r| r.get(0))?.into_iter().collect())
+/// Which of the runs `ids` stand in their agent's kept slots: their tasks are firings of its schedules that keep one (AC-161).
+fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashSet<String>, String> {
+    Ok(rows(tx, "SELECT DISTINCT rt.run FROM run_tasks rt JOIN runs r ON r.id = rt.run JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
+                 WHERE rt.run IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL",
+            [runs::listed_keys(ids)], |r| r.get(0))?.into_iter().collect())
 }
 
 /// `check` of one agent, read now.
@@ -100,12 +107,8 @@ pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option
     Slots::read(tx)?.check(tx, agent, project, but)
 }
 
-fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str) -> Result<Option<Full>, String> {
-    // an agent's schedules keep a slot each, their own runs in it, the rest left to others (AC-161)
-    let (kept, in_kept) = match agent {
-        Some(a) => (schedules::kept_on(tx, &a.id, None)?, in_kept(tx, &a.id)?),
-        None => (Vec::new(), HashSet::new()),
-    };
+/// `kept`: the slots `agent`'s schedules keep, and the runs standing in kept slots: those count once (AC-161).
+fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str, (kept, in_kept): (&[String], &HashSet<String>)) -> Result<Option<Full>, String> {
     let of_agent: Vec<&Run> = holding.iter().copied().filter(|r| agent.is_some_and(|a| a.id == r.agent_id) && !in_kept.contains(&r.id)).collect();
     let of_project: Vec<&Run> = holding.iter().copied().filter(|r| r.project == project).collect();
     let limit = limits::agent_limit(tx, project)?;
@@ -128,30 +131,21 @@ fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &st
 
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
-    let holding = Slots::read(tx)?.holding;
+    let Slots { holding, kept, in_kept } = Slots::read(tx)?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
-    let mut in_kept_of: HashMap<&str, HashSet<String>> = HashMap::new();
+    // a slot its schedules keep counts once, whether its run is live or not (AC-161)
+    let mut others: HashMap<&str, usize> = HashMap::new();
     for r in &holding {
-        if !in_kept_of.contains_key(r.agent_id.as_str()) {
-            in_kept_of.insert(&r.agent_id, in_kept(tx, &r.agent_id)?);
+        let in_slot = in_kept.contains(&r.id);
+        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot}));
+        if !in_slot {
+            *others.entry(&r.agent_id).or_default() += 1;
         }
-        let kept = in_kept_of[r.agent_id.as_str()].contains(&r.id);
-        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": kept}));
         *in_project.entry(&r.project).or_default() += 1;
     }
-    let mut kept: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    let mut full = Vec::new();
-    for a in agents::list(tx)? {
-        let mine = schedules::kept_on(tx, &a.id, None)?;
-        let others = of_agent.get(a.id.as_str()).map_or(0, |s| s.len() - s.iter().filter(|v| v["kept"].as_bool() == Some(true)).count());
-        if (others + mine.len()) as i64 >= a.at_once {
-            full.push(a.id.clone());
-        }
-        if !mine.is_empty() {
-            kept.insert(a.id, mine);
-        }
-    }
+    let full: Vec<String> = agents::list(tx)?.into_iter()
+        .filter(|a| (others.get(a.id.as_str()).copied().unwrap_or(0) + kept.get(&a.id).map_or(0, Vec::len)) as i64 >= a.at_once).map(|a| a.id).collect();
     let full_projects: Vec<String> = limits::agent_limits(tx)?.into_iter().filter(|(p, most)| in_project.get(p.as_str()).copied().unwrap_or(0) >= *most).map(|(p, _)| p).collect();
     Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects}))
 }

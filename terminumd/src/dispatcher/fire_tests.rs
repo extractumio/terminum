@@ -54,7 +54,7 @@ fn ac162_its_last_task_open_skips_the_firing_and_says_so() {
         let s = schedule(tx, 1, every_15());
         let (id, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
         ops::move_to(tx, DISPATCHER, &id, "WAIT FOR HUMAN", NOW + 11 * 60)?;
-        assert!(matches!(decide(tx, &s, NOW + 25 * 60, false)?, Next::Nothing));
+        assert!(matches!(decide(tx, &s, NOW + 25 * 60, false)?, Next::Skipped));
         let listed = schedules::listed(tx, NOW + 25 * 60)?;
         assert_eq!(listed[0]["skipped"], 1);
         assert_eq!(listed[0]["last"]["status"], "WAIT FOR HUMAN");

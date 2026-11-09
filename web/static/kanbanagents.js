@@ -5,7 +5,7 @@
 import { askConfirm } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
-import { $, button, agentColor, api, countOf, fillSelect, showError } from "./kanbanutil.js";
+import { $, button, agentColor, api, countOf, fillSelect, guardCancel, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -187,12 +187,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   $("agentdrop").addEventListener("click", async () => {
     if (await askConfirm(`Delete the agent ${editing.name}? Its tasks and sessions stay.`, "Delete")) send(`/api/task-agents/${editing.id}`, { method: "DELETE" });
   });
-  // what was typed is not lost by a slip of Esc or × (terminum-kanban.md AC-133); Cancel means it
-  dialog.addEventListener("cancel", async (e) => {
-    if (JSON.stringify(values()) === snapshot) return;
-    e.preventDefault();
-    if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
-  });
+  guardCancel(dialog, () => JSON.stringify(values()) === snapshot);   // Cancel means it
 
   /** Its sessions in its window, each with Let go: a + Session's, or one on a host out of reach (AC-142). */
   function showSessions(a) {

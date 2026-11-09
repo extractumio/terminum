@@ -36,6 +36,8 @@ enum Next {
     Run(String, i64),
     /// its last run's idle session holds its slot: closed first, then decided again
     Close(runs::Run),
+    /// written as skipped, with why
+    Skipped,
     Nothing,
 }
 
@@ -47,7 +49,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
         if !super::plan::finished(&last.status) && last.archived_at.is_none() {
             advance(tx)?;
             schedules::fired(tx, s, due, missed, None, "skipped", Some(&format!("Skipped: {} is still open.", last.id)), now)?;
-            return Ok(Next::Nothing);
+            return Ok(Next::Skipped);
         }
         if let Some(r) = runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot) {
             if !closed && pool::closable(tx, &r)? {
@@ -55,13 +57,13 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
             }
             advance(tx)?;
             schedules::fired(tx, s, due, missed, None, "skipped", Some(&format!("Skipped: {}'s session is still busy.", last.id)), now)?;
-            return Ok(Next::Nothing);
+            return Ok(Next::Skipped);
         }
     }
     advance(tx)?;
     let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), ..Default::default() }, now)?;
     ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
-    let late = if now - due > LATE { format!(", run {}: the Mac was asleep or terminumd was not running", cron::when_words(now).rsplit(' ').next().unwrap_or_default()) } else { String::new() };
+    let late = if now - due > LATE { format!(", run {}: the Mac was asleep or terminumd was not running", cron::clock(now)) } else { String::new() };
     ops::log(tx, &t.key, DISPATCHER, "why", &format!("Dispatcher made it from schedule {}, due {}{late}.", s.key, cron::when_words(due)), None, now)?;
     let fire = schedules::fired(tx, s, due, missed, Some(&t.key), "made", None, now)?;
     if s.once_at.is_some() {
@@ -77,8 +79,7 @@ async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
     let _ = store(app, move |tx| match started {
         Ok(_) => {
             let t = ops::get(tx, &id)?;
-            schedules::fire_prompt(tx, fire, &super::press::prompt_of(tx, std::slice::from_ref(&t), None)?)?;
-            schedules::fire_is(tx, fire, "started", None)
+            schedules::fire_started(tx, fire, &super::press::prompt_of(tx, std::slice::from_ref(&t), None)?)
         }
         Err(why) => {
             let words = format!("Paused: {why}");
@@ -94,7 +95,7 @@ async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
 
 /// Each schedule due, and each task made but never run (AC-162). Called by the walk, one at a time.
 pub async fn due(app: &Shared) {
-    let Ok((all, unstarted)) = store(app, |tx| Ok((schedules::all(tx)?, schedules::unstarted(tx)?))).await else { return };
+    let Ok((active, unstarted)) = store(app, |tx| Ok((schedules::active(tx)?, schedules::unstarted(tx)?))).await else { return };
     let mut heard = !unstarted.is_empty();
     for (fire, task) in unstarted {
         let found = store(app, move |tx| { let t = ops::get(tx, &task)?; let owner = schedules::of_task(tx, &t.key)?; Ok((t, owner)) }).await;
@@ -104,20 +105,23 @@ pub async fn due(app: &Shared) {
         }
     }
     let now = ops::now();
-    for s in all.into_iter().filter(|s| s.due(now).is_some()) {
-        heard = true;
+    for s in active.into_iter().filter(|s| s.due(now).is_some()) {
         let mut closed = false;
         loop {
             let (one, at) = (s.clone(), ops::now());
             match store(app, move |tx| decide(tx, &one, at, closed)).await {
-                Ok(Next::Run(task, fire)) => start(app, &s, &task, fire).await,
-                Ok(Next::Close(r)) if !closed => {
-                    closed = true;
-                    if super::api::close_idle(app, &r.id, &s.key).await.is_ok() {
-                        continue;
-                    }
+                Ok(Next::Run(task, fire)) => {
+                    start(app, &s, &task, fire).await;
+                    heard = true;
                 }
-                Ok(_) => {}
+                Ok(Next::Skipped) => heard = true,
+                // its idle session is closed for the slot, or found busy: decided again, it runs or is skipped
+                Ok(Next::Close(r)) => {
+                    closed = true;
+                    let _ = super::api::close_idle(app, &r.id, &s.key).await;
+                    continue;
+                }
+                Ok(Next::Nothing) => {}
                 Err(e) => tracing::warn!(event = "dispatcher.schedule", schedule = %s.key, error = %e),
             }
             break;

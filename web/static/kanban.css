@@ -72,13 +72,14 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .whenbox { margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); border: 0; border-radius: var(--key-r); box-shadow: var(--field-edge); }
 .whenbox legend { padding: 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
 .whenline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
-.whenline .field { width: auto; }
+.whenline select.field { width: auto; min-width: 150px; }
+.whenline input.field { width: auto; }
 .whenpart[hidden] { display: none; }
 #schedminute, #schedday { width: 64px; }
 #schedcron { flex: 1 1 160px; font-family: var(--term-font, monospace); }
 .whendays { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
 .whensaid { margin: var(--sp-2) 0 0; font-size: var(--fs-small); color: var(--muted); }
-.checkrow { flex-direction: row; align-items: center; gap: var(--sp-2); align-self: end; min-height: var(--key-h); }
+.fieldrow.checkrow { display: flex; flex-direction: row; align-items: center; gap: var(--sp-2); align-self: end; min-height: var(--key-h); }
 .schedprompt { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-small); }
 #schedbox { width: min(720px, calc(100vw - var(--sp-6) * 2)); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }

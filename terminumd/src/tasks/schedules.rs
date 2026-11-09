@@ -77,6 +77,11 @@ impl When {
             When::Once(at) => (*at > after).then_some(*at),
         }
     }
+
+    /// Its next `n` runs after `from`, as its window and card show them.
+    pub fn upcoming(&self, from: i64, n: usize) -> Vec<i64> {
+        std::iter::successors(self.next_after(from), |at| self.next_after(*at)).take(n).collect()
+    }
 }
 
 impl Schedule {
@@ -133,9 +138,10 @@ impl Given {
         let title = ops::check_title(&text("title"))?;
         let words = text("body");
         ops::check_text(&words)?;
-        let severity = Some(text("severity")).filter(|s| !s.is_empty()).unwrap_or_else(|| "P2".into());
+        let or = |k: &str, default: &str| Some(text(k)).filter(|v| !v.is_empty()).unwrap_or_else(|| default.into());
+        let severity = or("severity", "P2");
         ops::check_severity(&severity)?;
-        let project = Some(text("project")).filter(|p| !p.is_empty()).unwrap_or_else(|| super::store::DEFAULT_PROJECT.into());
+        let project = or("project", super::store::DEFAULT_PROJECT);
         ops::check_project(tx, &project)?;
         let agent = text("agent");
         if agent.is_empty() {
@@ -151,9 +157,7 @@ impl Given {
         check_when(&when, now)?;
         Ok(Given { title, body: words, project, severity, agent, cron, once_at, budget_seconds: minutes * 60, paused: body["paused"].as_bool().unwrap_or(false) })
     }
-}
 
-impl Given {
     /// The schedule it would be, before it is kept: what its window shows (AC-160).
     pub fn as_schedule(&self) -> Schedule {
         Schedule {
@@ -163,6 +167,7 @@ impl Given {
         }
     }
 }
+
 
 /// A cadence that comes, at least 15 minutes apart (AC-160).
 fn check_when(when: &When, now: i64) -> Result<(), String> {
@@ -186,6 +191,15 @@ pub fn kept_on(tx: &Transaction, agent: &str, but: Option<&str>) -> Result<Vec<S
          (agent, but), |r| r.get(0))
 }
 
+/// The keys of the schedules keeping a slot, by agent.
+pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<String, Vec<String>>, String> {
+    let mut by = std::collections::BTreeMap::<String, Vec<String>>::new();
+    for (agent, key) in rows(tx, "SELECT agent_id, 'SCH-' || number FROM schedules WHERE paused = 0 AND deleted_at IS NULL ORDER BY number", [], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))? {
+        by.entry(agent).or_default().push(key);
+    }
+    Ok(by)
+}
+
 /// A slot to keep on its agent, unless it is paused (AC-161).
 fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), String> {
     let a = agents::by_id(tx, &given.agent)?.ok_or("That agent is gone.")?;
@@ -203,6 +217,11 @@ pub fn by_id(tx: &Transaction, id: &str) -> Result<Schedule, String> {
 /// Every schedule not deleted, oldest first.
 pub fn all(tx: &Transaction) -> Result<Vec<Schedule>, String> {
     rows(tx, &format!("{SELECT} WHERE s.deleted_at IS NULL ORDER BY s.number"), [], of_row)
+}
+
+/// Every schedule that may fire: not paused, not deleted.
+pub fn active(tx: &Transaction) -> Result<Vec<Schedule>, String> {
+    rows(tx, &format!("{SELECT} WHERE s.paused = 0 AND s.deleted_at IS NULL ORDER BY s.number"), [], of_row)
 }
 
 /// The schedule a task was made by, if one was (AC-163).
@@ -258,22 +277,17 @@ pub fn pause(tx: &Transaction, id: &str, why: &str, now: i64) -> Result<(), Stri
 pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for s in all(tx)? {
-        let mut next = Vec::new();
-        if let (Ok(when), false) = (s.when(), s.paused) {
-            let mut at = now;
-            while next.len() < 3 && let Some(n) = when.next_after(at) {
-                next.push(n);
-                at = n;
-            }
-        }
-        let last: Option<(String, String)> = tx.query_row("SELECT t.slug, t.status FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 ORDER BY f.id DESC LIMIT 1",
-                                                          [&s.id], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
+        let next = match (s.when(), s.paused) {
+            (Ok(when), false) => when.upcoming(now, 3),
+            _ => Vec::new(),
+        };
+        let last = last_task(tx, &s)?;
         let skipped: i64 = tx.query_row("SELECT count(*) FROM schedule_fires WHERE schedule = ?1 AND state = 'skipped'
                                          AND id > coalesce((SELECT max(id) FROM schedule_fires WHERE schedule = ?1 AND task IS NOT NULL), 0)", [&s.id], |r| r.get(0)).map_err(sql)?;
         let mut v = json!(s);
         v["words"] = json!(s.words());
         v["next"] = json!(next);
-        v["last"] = json!(last.map(|(task, status)| json!({"task": task, "status": status})));
+        v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
         out.push(v);
     }
@@ -287,9 +301,10 @@ pub fn fired(tx: &Transaction, s: &Schedule, due: i64, missed: i64, task: Option
     Ok(tx.last_insert_rowid())
 }
 
-/// What a firing's task was sent, kept for the Scheduled page: a run's own prompt goes once it is taken (AC-164).
-pub fn fire_prompt(tx: &Transaction, fire: i64, prompt: &str) -> Result<(), String> {
-    tx.execute("UPDATE schedule_fires SET prompt = ?2 WHERE id = ?1", rusqlite::params![fire, prompt]).map(drop).map_err(sql)
+/// A firing's task started, or waits for room, with what it was sent: kept for the Scheduled page, as a run's own
+/// prompt goes once it is taken (AC-164).
+pub fn fire_started(tx: &Transaction, fire: i64, prompt: &str) -> Result<(), String> {
+    tx.execute("UPDATE schedule_fires SET state = 'started', prompt = ?2 WHERE id = ?1", rusqlite::params![fire, prompt]).map(drop).map_err(sql)
 }
 
 /// A firing's state changes.

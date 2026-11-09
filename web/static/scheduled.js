@@ -2,7 +2,9 @@
 // The Scheduled page at /scheduled/ (terminum-schedules.md AC-164): every firing of the schedules, newest first,
 // 100 at a time: when, the schedule, its task and agent, the task's status, when it went IN PROGRESS and ended;
 // a row opens to what went in and what came out, or says why nothing ran. terminumd reads; the page draws.
-import { el } from "./listparts.js";
+import { el, plural } from "./listparts.js";
+import { statusBox } from "./kanbanutil.js";
+import { taskUrl } from "./tasklink.js";
 import { $, api, loadMeta, menu, readQuery, writeQuery } from "./msgpage.js";
 
 const KEYS = ["schedule"];
@@ -19,10 +21,7 @@ function row(f) {
   const line = el("summary", "fireline");
   line.append(el("span", "fwhen", at(f.at)), el("span", "fsched", `${f.schedule} · ${f.title}`));
   if (f.task) {
-    const t = el("a", `stbox st-${(f.status ?? "").toLowerCase().replaceAll(" ", "-")}`, f.task);
-    t.href = `/kanban/${encodeURIComponent(f.task)}`;
-    t.title = `${f.task} · ${f.status}: open it on the board`;
-    line.append(t, el("span", "fstatus", f.status ?? ""));
+    line.append(statusBox({ id: f.task, status: f.status ?? "" }, (id) => { location.href = taskUrl(id); }), el("span", "fstatus", f.status ?? ""));
   }
   if (f.agent) line.append(el("span", "fagent", f.agent));
   const times = [f.started_at && `in progress ${at(f.started_at)}`, f.started_at && f.ended_at && `ended after ${span(f.started_at, f.ended_at)}`].filter(Boolean).join(" · ");
@@ -42,7 +41,7 @@ function row(f) {
 function draw() {
   $("fires").replaceChildren(...shown.map(row));
   if (!shown.length) $("fires").append(el("div", "mempty", "No firings yet. A schedule's runs come here; + Schedule on the board makes one."));
-  $("ssum").textContent = shown.length ? `${shown.length} firing${shown.length === 1 ? "" : "s"}${state.schedule ? ` of ${state.schedule}` : ""}` : "";
+  $("ssum").textContent = shown.length ? `${plural(shown.length, "firing")}${state.schedule ? ` of ${state.schedule}` : ""}` : "";
   const sum = $("fschedule").querySelector("summary"), on = schedules.find((s) => s.key === state.schedule);
   sum.textContent = on ? `${on.key} · ${on.title}` : state.schedule || "All schedules";
   menu($("fschedule"), [{ label: "All schedules", on: !state.schedule, pick: () => choose("") },

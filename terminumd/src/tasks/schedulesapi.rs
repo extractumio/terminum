@@ -53,15 +53,14 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
 }
 
 async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
-    let (a, wanted) = (app.clone(), id.clone());
     let done = store(&app, move |tx| {
         let now = ops::now();
-        if schedules::change(tx, HUMAN, &wanted, &Given::of(tx, &body, now)?, now)? {
-            crate::dispatcher::fire::called_off(tx, &wanted, "Its schedule was paused.")?;
+        if schedules::change(tx, HUMAN, &id, &Given::of(tx, &body, now)?, now)? {
+            crate::dispatcher::fire::called_off(tx, &id, "Its schedule was paused.")?;
         }
         Ok(json!({"ok": true}))
     }).await;
-    crate::tasks::api::told(&a, "");
+    crate::tasks::api::told(&app, "");
     told(&app, done)
 }
 
@@ -82,13 +81,7 @@ async fn preview(State(app): State<Shared>, Json(body): Json<Value>) -> Response
         let now = ops::now();
         let given = Given::of(tx, &body, now)?;
         let s = given.as_schedule();
-        let when = s.when()?;
-        let mut next = Vec::new();
-        let mut at = now;
-        while next.len() < 3 && let Some(n) = when.next_after(at) {
-            next.push(n);
-            at = n;
-        }
+        let next = s.when()?.upcoming(now, 3);
         let line = super::agents::by_id(tx, &s.agent)?.map(|a| a.line).unwrap_or_default();
         Ok(json!({"next": next, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body), "line": line}))
     }).await)
