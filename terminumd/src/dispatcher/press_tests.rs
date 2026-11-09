@@ -70,6 +70,28 @@ fn ac138_what_is_done_of_a_run_still_working_runs_again_only_when_it_ends() {
     }).unwrap();
 }
 
+/// TERM-32: while a limit's End is under way RUN waits, a new session's too: else the run is let go and the agent at
+/// its limit runs on, unwatched (AC-126).
+#[test]
+fn ac126_run_waits_while_its_agent_is_being_ended() {
+    store_of("api-ending").with(|tx| {
+        let a = made(tx, "one", "");
+        let pane = "tmux:local:t:%1".to_string();
+        let id = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, std::slice::from_ref(&a.key), 2)?;
+        ops::link(tx, HUMAN, &a.id, Some(&pane), 2)?;
+        runs::change(tx, &id, |r| { r.state = Phase::Ending; r.pane_key = Some(pane.clone()); })?;
+        ops::move_to(tx, HUMAN, &a.id, "FAILED", 3)?;
+        let last = runs::last_of(tx, &a.key)?;
+        for fresh in [false, true] {
+            let refused = way(&ops::get(tx, &a.id)?, last.clone(), fresh).err().unwrap_or_default();
+            assert!(refused.contains("being ended"), "fresh {fresh}: {refused}");
+        }
+        runs::change(tx, &id, |r| r.state = Phase::Gone)?;
+        assert!(matches!(way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false), Ok(Way::Shell(_))), "ended: from its shell");
+        Ok(())
+    }).unwrap();
+}
+
 #[test]
 fn ac138_several_tasks_stand_in_one_project() {
     store_of("api-members").with(|tx| {

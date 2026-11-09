@@ -82,6 +82,11 @@ async fn ac126_an_end_decided_before_a_humans_input_does_not_end_the_agent() {
     assert!(s.agent_runs(), "new work after the decision: called off");
     assert_eq!(s.now().state, Phase::Working);
 
+    s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| r.state = Phase::Left).map(drop)).unwrap();   // Give up
+    end_agent(&s.app, &s.run, &s.server, &s.pane, Instant::now()).await;
+    assert!(s.agent_runs(), "given up after the decision: the window and its agent are the human's");
+    assert_eq!(s.now().state, Phase::Left);
+
     s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| r.state = Phase::Ending).map(drop)).unwrap();
     end_agent(&s.app, &s.run, &s.server, &s.pane, Instant::now()).await;
     assert!(!s.agent_runs(), "nothing came after it: the agent is ended");
@@ -95,16 +100,16 @@ async fn ac125_a_close_decided_before_a_humans_input_leaves_the_pane() {
     let still = |_: &rusqlite::Transaction, r: &Run| Ok(plan::still_closes(r));
     let decided = Instant::now();
     s.app.inputs.human(&s.server.key(&s.pane));
-    assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, decided, still).await, Ok(false));
+    assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, decided, still).await, Ok(Some("a human typed in it".into())));
     assert!(s.pane_stands(), "a human typed after the decision");
 
     let decided = Instant::now();
     s.app.tasks.with(|tx| runs::change(tx, &s.run.id, Run::new_work).map(drop)).unwrap();
-    assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, decided, still).await, Ok(false));
+    assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, decided, still).await, Ok(Some("it is no longer idle".into())));
     assert!(s.pane_stands(), "new work after the decision: its 2 hours start again");
 
     s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| r.closing_for = plan::CLOSE).map(drop)).unwrap();
-    assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, Instant::now(), still).await, Ok(true));
+    assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, Instant::now(), still).await, Ok(None));
     assert!(!s.pane_stands());
     assert_eq!(s.now().state, Phase::Closed);
 }

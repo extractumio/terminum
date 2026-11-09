@@ -21,9 +21,9 @@ pub(super) struct Later {
 
 /// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task. Last of all,
 /// under the pane's typing queue through tmux's kill: no human's input since `at` (what decided it was read), and
-/// `still`, of the run as it stands; else it stays: false. tmux refusing: one more try at the next beat, then it
-/// stays and says so (AC-125, AC-131).
-pub(super) async fn close(app: &Shared, run: &Run, (server, pane): (&Arc<Server>, &str), words: &str, keep: bool, at: Instant, still: fn(&rusqlite::Transaction, &Run) -> Result<bool, String>) -> Result<bool, String> {
+/// `still`, of the run as it stands; else it stays, and why comes back. tmux refusing: one more try at the next beat,
+/// then it stays and says so (AC-125, AC-131).
+pub(super) async fn close(app: &Shared, run: &Run, (server, pane): (&Arc<Server>, &str), words: &str, keep: bool, at: Instant, still: fn(&rusqlite::Transaction, &Run) -> Result<bool, String>) -> Result<Option<String>, String> {
     start::is_marked(server, pane, &run.id).await?;
     if keep {
         let rows = server.run(format!("capture-pane -p -S -200 -t {pane}")).await.unwrap_or_default();
@@ -40,21 +40,24 @@ pub(super) async fn close(app: &Shared, run: &Run, (server, pane): (&Arc<Server>
         }
     }
     // a human's keys, RUN or a human's prompt may have come since the walk decided: read again, last of all (AC-131)
-    let Some(_held) = app.inputs.act_queue(server, pane, &server.key(pane), at).await else { return Ok(false) };
+    let Some(_held) = app.inputs.act_queue(server, pane, &server.key(pane), at).await else { return Ok(Some("a human typed in it".into())) };
     let wanted = run.id.clone();
     if !store(app, move |tx| still(tx, &runs::by_id(tx, &wanted)?)).await? {
-        return Ok(false);
+        return Ok(Some("it is no longer idle".into()));
     }
     let (id, words) = (run.id.clone(), words.to_string());
     match server.run(format!("kill-pane -t {pane}")).await {
         Ok(_) => store(app, move |tx| {
             let r = runs::change(tx, &id, |r| r.state = Phase::Closed)?;
             say(tx, &r, &words)
-        }).await.map(|()| true),
-        Err(e) => store(app, move |tx| {
-            let r = runs::change(tx, &id, |r| if r.close_tried { r.state = Phase::Left; } else { r.close_tried = true; })?;
-            if r.state == Phase::Left { say(tx, &r, &format!("Session not closed: {e}. It stays open.")) } else { Ok(()) }
-        }).await.map(|()| false),
+        }).await.map(|()| None),
+        Err(e) => {
+            let why = format!("tmux did not close it: {e}");
+            store(app, move |tx| {
+                let r = runs::change(tx, &id, |r| if r.close_tried { r.state = Phase::Left; } else { r.close_tried = true; })?;
+                if r.state == Phase::Left { say(tx, &r, &format!("Session not closed: {e}. It stays open.")) } else { Ok(()) }
+            }).await.map(|()| Some(why))
+        }
     }
 }
 

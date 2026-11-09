@@ -198,13 +198,12 @@ async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), Stri
     let wanted = r.id.clone();
     let closable = store(app, move |tx| pool::closable(tx, &runs::by_id(tx, &wanted)?)).await?;
     let quiet = closable && app.dispatcher.watch.lock().get(&server.key(&pane)).is_none_or(|w| w.subs.is_empty());
-    let busy = || format!("{}'s session is no longer idle: it stays.", r.names());
     if !quiet || !matches!(gate::read(&server, &pane, &r.kind).await, Ok(Screen::Empty)) {
-        return Err(busy());
+        return Err(format!("{}'s session is no longer idle: it stays.", r.names()));
     }
-    let closed = acts::close(app, &r, (&server, &pane), &format!("Session ended: closed for {for_tasks}."), true, at, pool::closable).await?;
+    let stayed = acts::close(app, &r, (&server, &pane), &format!("Session ended: closed for {for_tasks}."), true, at, pool::closable).await?;
     super::told_all(app, &r);
-    if closed { Ok(()) } else { Err(busy()) }
+    stayed.map_or(Ok(()), |why| Err(format!("{}'s session stays: {why}.", r.names())))
 }
 
 /// What runs in `pane` other than its shell: in front, or stopped or left behind it (AC-122).
