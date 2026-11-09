@@ -886,6 +886,8 @@ Scenario: AC-165 edge — two questions at once
   Then the second waits behind it, unseen, and the one shown has its primary choice in focus (Keep Both; Cancel where Cancel is primary)
   When the user presses Enter
   Then only the question shown is answered (Keep Both keeps one file); the second shows then, and Esc answers it alone
+  When a question comes over an open context menu of the Files panel
+  Then Esc answers the question alone; the menu stays for the next key
 
 Scenario: AC-165 edge — Enter again while it is kept
   Given an agent's window, a new project's window, or a name's dialog that terminumd checks (Add existing)

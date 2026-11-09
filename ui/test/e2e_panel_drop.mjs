@@ -61,23 +61,39 @@ export async function panelDrop(page, { row }) {
 
   // two drops at once, each a name taken: one question shows, the other waits; one Enter answers one (AC-165)
   fs.writeFileSync(`${SB}/data/two.txt`, "mine too");
-  await drag(page, row("data"), ["note.txt"], "drop");
-  await drag(page, row("data"), ["two.txt"], "drop");
+  const kept = () => ["note 3.txt", "two 2.txt"].filter((f) => fs.existsSync(`${SB}/data/${f}`)).length;
+  let refused = 0;
+  const taken = (r) => { if (r.url().includes("/api/fs/upload") && !r.ok()) refused++; };
+  page.on("response", taken);
+  try {
+    await drag(page, row("data"), ["note.txt"], "drop");
+    await drag(page, row("data"), ["two.txt"], "drop");
+    await waitFor(() => refused === 2);                    // both drops' "already there" back
+  } finally { page.off("response", taken); }
   await page.waitForSelector(".modal .btn.primary", { timeout: 3000 });
-  await page.waitForTimeout(500);                        // the second drop's "already there" back too
   const shown = await page.$$eval(".modal .mtitle", (t) => t.map((e) => e.textContent));
   const focused = await page.evaluate(() => document.activeElement?.textContent);
   await page.keyboard.press("Enter");
-  const first = await waitFor(() => fs.existsSync(`${SB}/data/note 3.txt`) || fs.existsSync(`${SB}/data/two 2.txt`)).then(() => true, () => false);
+  const first = await waitFor(() => kept() === 1).then(() => true, () => false);
   const next = await page.waitForFunction(() => document.querySelectorAll(".modal").length === 1, null, { timeout: 3000 })
     .then(() => page.$eval(".modal .mtitle", (e) => e.textContent), () => null);
-  const once = [fs.existsSync(`${SB}/data/note 3.txt`), fs.existsSync(`${SB}/data/two 2.txt`)].filter(Boolean).length;
   check("AC-165 two drops' questions at once: one shows, Keep Both in focus; one Enter keeps one file, and the other question shows then",
-    shown.length === 1 && focused === "Keep Both" && first && once === 1 && !!next && next !== shown[0], JSON.stringify({ shown, focused, first, once, next }));
+    shown.length === 1 && focused === "Keep Both" && first && kept() === 1 && !!next && next !== shown[0], JSON.stringify({ shown, focused, first, kept: kept(), next }));
   await page.keyboard.press("Escape");
-  await page.waitForSelector(".modal", { state: "detached", timeout: 3000 });
-  await page.waitForTimeout(300);
-  check("AC-165 Esc then skips the other alone", [fs.existsSync(`${SB}/data/note 3.txt`), fs.existsSync(`${SB}/data/two 2.txt`)].filter(Boolean).length === 1);
-  for (const f of ["note.txt", "note 2.txt", "note 3.txt", "two.txt", "two 2.txt"]) fs.rmSync(`${SB}/data/${f}`, { force: true });
+  const skipped = await page.waitForFunction(() => document.getElementById("toast")?.textContent.includes("1 skipped"), null, { timeout: 3000 }).then(() => true, () => false);
+  check("AC-165 Esc then skips the other alone", skipped && kept() === 1 && !(await page.$(".modal")));
+
+  // a question over a context menu has the keys: Esc answers it, the menu stays for the next Esc
+  await page.click(row("data"), { button: "right" });
+  await page.waitForSelector(".ctx");
+  await drag(page, row("data"), ["note.txt"], "drop");
+  await page.waitForSelector(".modal .btn.primary", { timeout: 3000 });
+  await page.keyboard.press("Escape");
+  const menuStays = await page.waitForSelector(".modal", { state: "detached", timeout: 3000 }).then(() => page.$(".ctx")).then((m) => !!m, () => false);
+  await page.keyboard.press("Escape");
+  const menuGoes = await page.waitForSelector(".ctx", { state: "detached", timeout: 3000 }).then(() => true, () => false);
+  check("AC-165 a question over a context menu: Esc answers the question alone, the next Esc closes the menu",
+    menuStays && menuGoes && !fs.existsSync(`${SB}/data/note 4.txt`), JSON.stringify({ menuStays, menuGoes }));
+  for (const f of ["note.txt", "note 2.txt", "note 3.txt", "note 4.txt", "two.txt", "two 2.txt"]) fs.rmSync(`${SB}/data/${f}`, { force: true });
   await page.click(row("data"));                         // folded again: the rows below stay in sight
 }

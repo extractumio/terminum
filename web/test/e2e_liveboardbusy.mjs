@@ -29,9 +29,10 @@ async function sendsOnce(page, { what, url, method, open, box, field, ok, kept }
     for (let i = 0; i < 3; i++) await page.press(field, "Enter");
     await until(() => held.sent() > 0);
     await page.keyboard.press("Escape");
+    await page.evaluate((box) => document.querySelector(`${box} button[value="cancel"]`).click(), box);
     await nap(300);
-    check(`AC-165 ${what}: Enter again while it is sent sends nothing, Esc waits`,
-      held.sent() === 1 && !!(await page.$(`${box}[open]`)) && await page.isDisabled(ok), `sent=${held.sent()}`);
+    check(`AC-165 ${what}: Enter again while it is sent sends nothing, Esc and Cancel wait, nothing asked`,
+      held.sent() === 1 && !!(await page.$(`${box}[open]`)) && await page.isDisabled(ok) && !(await page.$("#confirmbox[open]")), `sent=${held.sent()}`);
     held.release();
     check(`AC-165 ${what}: kept once`, await until(kept) && held.sent() === 1, `sent=${held.sent()}`);
   } finally { held.release(); await held.end(); }

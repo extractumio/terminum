@@ -2,7 +2,7 @@
 // The pool over the columns, and its window (terminum-dispatcher.md AC-137, AC-138): what a task is dropped
 // on to run: each a rectangle with its color, name, kind, effort and a dot per live session. None is a project's.
 // terminumd checks what is kept and says what is wrong; every page hears.
-import { askConfirm } from "./dialogs.js";
+import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
 import { $, button, agentColor, api, countOf, fillSelect, showError } from "./kanbanutil.js";
@@ -159,18 +159,14 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     field.name.select();
   }
 
-  /** A change to terminumd: the window closes when it is kept, and says why when it is not. While one is
-   *  sent, Enter again sends nothing and Esc waits. */
-  let sending = false;
+  /** A change to terminumd, one at a time: the window closes when it is kept, and says why when it is not. */
+  const kept = oneAtATime(dialog, async (path, options) => {
+    await api(path, options);
+    dialog.close();
+    return true;
+  });
   async function send(path, options) {
-    if (sending) return;
-    sending = $("agentok").disabled = true;
-    try {
-      await api(path, options);
-      dialog.close();
-      await reload();
-    } catch (e) { say(e.message); }
-    finally { sending = $("agentok").disabled = false; }
+    try { if (await kept(path, options)) await reload(); } catch (e) { say(e.message); }
   }
 
   function keep() {
@@ -188,7 +184,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   });
   // what was typed is not lost by a slip of Esc or × (terminum-kanban.md AC-133); Cancel means it
   dialog.addEventListener("cancel", async (e) => {
-    if (sending) return e.preventDefault();
+    if (e.defaultPrevented) return;                 // while it is kept (oneAtATime)
     if (JSON.stringify(values()) === snapshot) return;
     e.preventDefault();
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();

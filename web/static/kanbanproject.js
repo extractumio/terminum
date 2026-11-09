@@ -3,6 +3,7 @@
 // folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the template its agents write
 // tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
 // kept and says what is wrong.
+import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
@@ -80,16 +81,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     return body;
   }
 
-  let keeping = false;
-  /** One at a time: Enter again while it is kept sends nothing (terminum.md AC-165). */
-  async function keep() {
-    if (keeping) return;
-    keeping = $("projectok").disabled = true;
-    try { await keepNow(); } finally { keeping = $("projectok").disabled = false; }
-  }
-
-  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
-  async function keepNow() {
+  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. One at a time. */
+  const keep = oneAtATime(box, async () => {
     const name = $("projectname").value, dir = $("projectdir").value, host = $("projecthost").value;
     const atOnce = { limit: numberOrNull("projectatonce") };
     try {
@@ -111,10 +104,9 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
         open(getMeta().projects.find((p) => p.id === id));
       }
     } catch (e) { say(e.message); }
-  }
+  });
 
   $("projectok").addEventListener("click", keep);
-  box.addEventListener("cancel", (e) => { if (keeping) e.preventDefault(); });   // Esc waits for what is kept
   box.addEventListener("keydown", (e) => {
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
   });
