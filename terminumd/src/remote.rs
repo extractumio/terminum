@@ -203,8 +203,9 @@ mod tests {
 }
 
 /// A host's agent is reachable through `socket` with `token` (the tunnel connected), or no
-/// more (`None`: the tunnel ended).
-pub fn register(app: &Shared, host: &str, agent: Option<(PathBuf, String)>) {
+/// more (`None`: the host's files went, whichever connection held them); the registration's
+/// generation, which `unregister` takes.
+pub fn register(app: &Shared, host: &str, agent: Option<(PathBuf, String)>) -> Option<u64> {
     match agent {
         Some((socket, token)) => {
             let generation = {
@@ -216,11 +217,24 @@ pub fn register(app: &Shared, host: &str, agent: Option<(PathBuf, String)>) {
             tracing::info!(event = "remote.up", host);
             tokio::spawn(relay_events(app.clone(), host.to_string(), generation));
             app.refresh_watch();
+            Some(generation)
         }
         None => {
             app.remotes.agents.lock().remove(host);
             tracing::info!(event = "remote.down", host);
+            None
         }
+    }
+}
+
+/// The tunnel of registration `generation` ended: its agent goes, unless a newer connection
+/// registered meanwhile (S09); nothing for a connection that registered none.
+pub fn unregister(app: &Shared, host: &str, generation: Option<u64>) {
+    let Some(g) = generation else { return };
+    let mut agents = app.remotes.agents.lock();
+    if agents.get(host).is_some_and(|a| a.generation == g) {
+        agents.remove(host);
+        tracing::info!(event = "remote.down", host);
     }
 }
 

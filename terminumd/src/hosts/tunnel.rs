@@ -183,6 +183,8 @@ struct Running {
     stdin: tokio::process::ChildStdin,
     /// what the helper said about the agents' link
     said: Option<super::link::Said>,
+    /// its registration as the host's files agent, if it made one (`remote::unregister`)
+    registered: Option<u64>,
 }
 
 /// Whether the helper answers an HTTP request through ssh's -L (any status): a host whose sshd
@@ -262,7 +264,7 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
         return Err(err.trim().lines().last().map_or_else(|| "the helper did not start".to_string(), str::to_string));
     };
     if !current(&agent_id) {
-        return Ok(Running { child, agent_id, stdin, said });
+        return Ok(Running { child, agent_id, stdin, said, registered: None });
     }
     // the socket appears once ssh listens; only a request answered shows the host forwards it
     let mut forwarded = None;
@@ -281,10 +283,12 @@ async fn connect(app: &Shared, host: &str, recipe: &[String], link: Option<&supe
         let _ = child.kill().await;
         return Err(format!("{}; Files cannot reach the helper ({e})", super::link::refused_why(host)));
     }
-    if files && crate::hosts::files_state(app, host).as_deref() == Some("enabled") {
-        crate::remote::register(app, host, Some((local, token)));
-    }
-    Ok(Running { child, agent_id, stdin, said })
+    let registered = if files && crate::hosts::files_state(app, host).as_deref() == Some("enabled") {
+        crate::remote::register(app, host, Some((local, token)))
+    } else {
+        None
+    };
+    Ok(Running { child, agent_id, stdin, said, registered })
 }
 
 /// Keeps a host's helper connected while its files or its agents are enabled and its control
@@ -304,7 +308,7 @@ async fn keep(app: Shared, host: String) {
         let wait = match got {
             Ok(mut run) if !current(&run.agent_id) => {
                 let _ = run.child.kill().await;
-                crate::remote::register(&app, &host, None);
+                crate::remote::unregister(&app, &host, run.registered);
                 set(&app, &host, "updating", &format!("updating the helper on {host}…"));
                 match update(&recipe).await {
                     Ok(()) => {
@@ -335,7 +339,7 @@ async fn keep(app: Shared, host: String) {
                     tracing::info!(event = "agent.link_retry", host);
                     let _ = run.child.kill().await;
                 }
-                crate::remote::register(&app, &host, None);
+                crate::remote::unregister(&app, &host, run.registered);
                 if link.is_some() && app.links.path(&host).is_some() {
                     app.links.stop(&app, &host);
                     super::link::set_agents(&app, &host, "", false);
@@ -436,10 +440,10 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
         install(&recipe, &binary_for(p)?, crate::agent::AGENT_ID).await?;
         let mut trial = connect(app, host, &recipe, None, true).await?;
         let _ = trial.child.kill().await;
+        crate::remote::unregister(app, host, trial.registered);   // only the trial's: keep's own connection stays (S09)
         if !current(&trial.agent_id) {
             return Err(format!("the helper on {host} answers as build {:?}", trial.agent_id));
         }
-        crate::remote::register(app, host, None);
         Ok::<(), String>(())
     }.await;
     // the host removed or its recipe changed meanwhile: what was consented to is gone

@@ -155,3 +155,20 @@ async fn a_range_goes_to_the_host_and_its_partial_answer_comes_back() {
     assert_eq!(&res.into_body().collect().await.unwrap().to_bytes()[..], b"2345");
     std::fs::remove_file(agent.socket).unwrap();
 }
+
+/// S09 (AC-83): an ended connection takes its own registration only, never a newer one's.
+#[tokio::test]
+async fn an_ended_tunnel_unregisters_only_its_own_agent() {
+    let (root, app) = crate::testutil::app("remote-unregister");
+    let sock = |n: &str| root.join(n);
+    let old = register(&app, "devbox.example", Some((sock("old.sock"), "t1".into())));
+    let new = register(&app, "devbox.example", Some((sock("new.sock"), "t2".into())));
+    unregister(&app, "devbox.example", old);
+    assert_eq!(app.remotes.get("devbox.example").map(|a| a.generation), new, "the newer connection's agent stays");
+    unregister(&app, "devbox.example", None);
+    assert!(app.remotes.get("devbox.example").is_some(), "a connection that registered none takes nothing");
+    unregister(&app, "devbox.example", new);
+    assert!(app.remotes.get("devbox.example").is_none());
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}

@@ -172,6 +172,7 @@ Scenario: AC-83 edge — Not now, remove, later
 Scenario: AC-83 failure — the host cannot take it
   When ssh fails, the platform has no agent in the package, the copy or the probe times out
   Then Files shows ssh's message or "no helper for <system>", nothing is recorded as enabled, and Enable can be tried again; concurrent enables, removes and updates keep every other host's record
+  And a connection to the helper that ends (an Enable's trial, an old link, an update) lets go of its own way to the host's files only, never one a newer connection made meanwhile
 ```
 
 ### AC-84 — Helpers follow the Mac's build [SHOULD / P1]
@@ -499,7 +500,7 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-81 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `scripts/e2e_hostattach.py`, `web/test/e2e_tmux.mjs`, `cargo test tmux::orphans`, `cargo test an_ssh_link_that_never_reached_tmux_says_so`
 - [x] AC-82 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test remote::`
-- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::link`
+- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::link`, `cargo test remote::tests` (an ended connection lets go of its own only)
 - [x] AC-84 — `scripts/e2e_remote_sshd.py`, `scripts/e2e_remote.py`
 - [x] AC-85 — `scripts/e2e_remote.py`
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
