@@ -18,8 +18,10 @@ import unittest
 from pathlib import Path
 
 SCRIPT = Path(__file__).resolve().parents[1] / "fake_ssh.py"
-# the "host's" client: one GET over a Unix socket, the answer's body printed
-GET = ("import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); "
+# the "host's" client: one GET over a Unix socket, the answer's body printed. With a timeout, so
+# Python waits in poll(): a blocking recv() of a Unix socket on a busy Mac at times sleeps on
+# through the answer and its end (1 in ~100 under load; poll's wait never did in 1,600 tries)
+GET = ("import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1]); s.settimeout(20); "
        "s.sendall(b'GET /hook HTTP/1.0\\r\\n\\r\\n'); d=b''\n"
        "while (c := s.recv(4096)): d += c\n"
        "print(d.split(b'\\r\\n\\r\\n', 1)[1].decode())")
