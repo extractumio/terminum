@@ -22,13 +22,19 @@ pub fn due(tx: &Transaction, now: i64) -> Result<Vec<String>, String> {
         if ops::get(tx, &id)?.archived_at.is_some() || crate::dispatcher::runs::holding(tx, &key)?.is_some() {
             continue;
         }
-        let kids: Vec<String> = rows(tx, "SELECT slug FROM tasks WHERE parent = ?1 AND status = 'DONE' AND archived_at IS NULL", [&key], |r| r.get(0))?;
-        for task in kids.into_iter().chain(std::iter::once(id)) {
-            ops::archive(tx, DISPATCHER, &task, true, now)?;
-            archived.push(task);
-        }
+        archived.extend(with_done_subtasks(tx, DISPATCHER, &key, &id, now)?);
     }
     Ok(archived)
+}
+
+/// Task `id` (row `key`) off the board with its subtasks that are DONE: their IDs, its own last.
+pub fn with_done_subtasks(tx: &Transaction, author: &str, key: &str, id: &str, at: i64) -> Result<Vec<String>, String> {
+    let mut tasks: Vec<String> = rows(tx, "SELECT slug FROM tasks WHERE parent = ?1 AND status = 'DONE' AND archived_at IS NULL", [key], |r| r.get(0))?;
+    tasks.push(id.to_string());
+    for task in &tasks {
+        ops::archive(tx, author, task, true, at)?;
+    }
+    Ok(tasks)
 }
 
 #[cfg(test)]

@@ -114,7 +114,7 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "take_task", "move_task", "add_comment", "attach_file", "get_file", "finish_task"]);
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "add_comment", "attach_file", "get_file", "finish_task"]);
 }
 
 #[test]
@@ -325,12 +325,12 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner
 /// asked for compact descriptions): the instructions within 512 characters, each tool's
-/// description within 500, all the tools' JSON within 4,200.
+/// description within 500, all the tools' JSON within 4,800.
 #[test]
 fn the_tools_stay_compact() {
     let t = tools();
     let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
-    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
+    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4800, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
 }
