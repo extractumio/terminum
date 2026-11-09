@@ -74,10 +74,12 @@ export async function liveBoardTasks(page, opts) {
   for (const id of [old, young]) await j(`/api/tasks/${id}`, "PATCH", { status: "DONE" });
   ageMoves(app, old, 3 * 24 * 3600);
   check("AC-118 DONE for 2 days archives itself", await until(async () => (await j(`/api/tasks/${old}`)).archived_at, 45000));
-  check("AC-118 it leaves the board", await until(async () => !(await page.$(card(old)))));
+  // a board still loading has no cards at all: old gone counts only with young drawn beside it
+  check("AC-118 it leaves the board", await until(async () => !(await page.$(card(old))) && !!(await page.$(card(young)))));
   check("AC-118 its history says Dispatcher did", (await j(`/api/tasks/${old}`)).history.some((e) => e.text === "Archived by Dispatcher"));
   check("AC-118 it keeps its status", (await j(`/api/tasks/${old}`)).status === "DONE");
-  check("AC-118 one DONE just now stays", !(await j(`/api/tasks/${young}`)).archived_at && !!(await page.$(card(young))));
+  const kept = await j(`/api/tasks/${young}`), drawn = !!(await page.$(card(young)));
+  check("AC-118 one DONE just now stays", !kept.archived_at && drawn, `archived_at ${kept.archived_at ?? "none"}, card ${drawn}`);
 
   // AC-118: a project's own Archived
   await j(`/api/tasks/${young}/archive`, "POST", { on: true });
