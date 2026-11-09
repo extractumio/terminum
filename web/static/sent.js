@@ -15,8 +15,9 @@ import { markdownInto } from "./widgetui.js";
 
 const $ = (id) => document.getElementById(id);
 // where a shell's prompt ends: "$ ", "% ", "# ", "❯ ", "› ", "> ", "» " after a space or the line's start
-// (a variation selector may follow the mark: Starship's "at 19:20 ❯︎ ")
-const PROMPT = /(^|\s)[$%#❯›>»][\uFE0E\uFE0F]? /;
+// (a variation selector may follow the mark: Starship's "at 19:20 ❯︎ "), or "$ ", "# " right after a
+// non-space (bash's own "alex@devbox:~/api$ ")
+const PROMPT = /(?:^|\s)[$%#❯›>»][\uFE0E\uFE0F]? |\S[$#] /;
 const BOX_PROMPT = /^[❯>›!]\s?/;     // an agent's input box: its first row's prompt
 const WRAPS = 10;                     // the most rows one command line wraps over
 

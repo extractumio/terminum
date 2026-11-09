@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 
-use super::runs::{self, Run};
+use super::runs::{self, Phase, Run};
 use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
 
@@ -92,9 +92,11 @@ pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, Strin
         return Err("Unlink the session to run it".to_string());
     }
     Ok(match last {
+        // its End holds its pane until the agent is ended, a new session's too: then RUN goes the shell's way (AC-126)
+        Some(r) if r.state == Phase::Ending => return Err("Its agent is being ended at its limit: run it again in a moment.".to_string()),
         _ if fresh => Way::First,
         None => Way::First,
-        Some(r) if r.state == "gone" && r.pane_key.is_some() => Way::Shell(r),
+        Some(r) if r.state == Phase::Gone && r.pane_key.is_some() => Way::Shell(r),
         Some(r) if r.pane_key.is_some() && !r.is_over() => Way::Live(r),
         Some(r) if r.agent_session.is_some() => Way::Resume(r),
         Some(_) => Way::First,

@@ -8,7 +8,8 @@ use std::time::Duration;
 use super::runs::Run;
 use super::screen::{self, Screen};
 use crate::app::Shared;
-use crate::tmux::{args, Server};
+use crate::tmux::control::Control;
+use crate::tmux::Server;
 
 /// How long what was pasted may take to show in the box.
 const SHOWN: Duration = Duration::from_millis(1500);
@@ -40,10 +41,17 @@ pub async fn read(server: &Server, pane: &str, kind: &str) -> Result<Screen, Str
     Ok(screen::read(kind, &rows))
 }
 
-/// `line`, if at that moment the pane is still `run`'s with its agent's exit not recorded: tmux judges both.
-fn guarded(run: &str, pane: &str, line: &str) -> String {
+/// What the gate's other branch prints: the pane was no more `run`'s, or its agent's exit was recorded.
+const REFUSED: &str = "terminum-gate-refused";
+
+/// `line`, if at that moment the pane is still `run`'s with its agent's exit not recorded: tmux judges
+/// both in the command that types; the answer is `line`'s own (`Control::run_if`).
+async fn guarded(client: &Control, run: &str, pane: &str, line: &str) -> Result<(), String> {
     let test = format!("#{{&&:#{{==:#{{@terminum-run}},{run}}},#{{==:#{{@terminum-exit}},}}}}");
-    format!("if-shell -F -t {pane} {} {}", args::quote(&test), args::quote(line))
+    match client.run_if(pane, &test, line, &format!("display -p {REFUSED}")).await? {
+        said if said.iter().any(|l| l == REFUSED) => Err("its pane is no more this run's, or its agent has ended".into()),
+        _ => Ok(()),
+    }
 }
 
 /// Pastes `text` into `run`'s pane and sends it. `first`: its first prompt, no turn has ended yet:
@@ -75,7 +83,7 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
     }
     let client = server.client(pane).ok_or_else(|| other("tmux does not answer"))?;
     let buffer = crate::page::typing::load_buffer(app, &client, server, text).await.map_err(other)?;
-    let pasted = client.run(guarded(&run.id, pane, &format!("paste-buffer -p -b {buffer} -t {pane}"))).await;
+    let pasted = guarded(&client, &run.id, pane, &format!("paste-buffer -p -b {buffer} -t {pane}")).await;
     let shown = async {
         pasted.map_err(|e| other(format!("tmux did not take the paste: {e}")))?;
         let until = tokio::time::Instant::now() + SHOWN;
@@ -93,7 +101,7 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
     let entered = match shown {
         Ok(()) => {
             app.dispatcher.remember_typed(&key, text);
-            client.run(guarded(&run.id, pane, &format!("send-keys -t {pane} Enter"))).await.map(drop).map_err(|e| other(format!("tmux did not take Enter: {e}")))
+            guarded(&client, &run.id, pane, &format!("send-keys -t {pane} Enter")).await.map_err(|e| other(format!("tmux did not take Enter: {e}")))
         }
         Err(m) => Err(m),
     };

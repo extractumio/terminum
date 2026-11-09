@@ -14,6 +14,7 @@ use super::runs::{self, Run};
 use super::{move_task, procs, say, scale, start, store, BEAT, GAP};
 use crate::app::Shared;
 use crate::tasks::ops;
+use crate::tmux::hookstate::Hooks;
 use crate::tmux::Server;
 
 /// CPU seconds in a beat over which an agent's tree counts as active (§9 Activity, AS-127).
@@ -56,6 +57,7 @@ struct Read {
     id: String,
     facts: Facts,
     ended: bool,
+    key: String,
 }
 
 /// What a beat's transaction leaves: acts, tasks changed, the budget used and whole by task.
@@ -63,13 +65,13 @@ type Walked = (Vec<Later>, Vec<String>, HashMap<String, (i64, i64)>);
 
 /// In one transaction: every run as it stands now, its clocks, what `plan` says. Moves and words are
 /// done here; what is not written is not done (AC-131). A run that cannot be written costs only itself, and says so.
-fn walk_store(tx: &rusqlite::Transaction, reads: Vec<Read>, now: i64) -> Result<Walked, String> {
+fn walk_store(tx: &rusqlite::Transaction, hooks: &Hooks, reads: Vec<Read>, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     let live: HashMap<String, Run> = runs::live(tx)?.into_iter().map(|r| (r.id.clone(), r)).collect();
     for read in reads {
         let Some(r) = live.get(&read.id).cloned() else { continue };
         tx.execute_batch("SAVEPOINT one_run").map_err(ops::sql)?;
-        let walked = walk_one(tx, r.clone(), read, now);
+        let walked = walk_one(tx, hooks, r.clone(), read, now, at);
         tx.execute_batch(if walked.is_ok() { "RELEASE one_run" } else { "ROLLBACK TO one_run; RELEASE one_run" }).map_err(ops::sql)?;
         match walked {
             Ok((l, c, u)) => {
@@ -97,7 +99,7 @@ fn said_once(tx: &rusqlite::Transaction, r: &Run, words: &str) -> Result<bool, S
     say(tx, r, words).map(|()| true)
 }
 
-fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Result<Walked, String> {
+fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, mut r: Run, read: Read, now: i64, at: Instant) -> Result<Walked, String> {
     let (mut later, mut changed, mut used) = (Vec::new(), Vec::new(), HashMap::new());
     if r.is_starting() {
         return Ok((later, changed, used));
@@ -110,7 +112,12 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
     let mut facts = read.facts;
     facts.dt = dt;
     facts.active |= r.open_tools > 0;
+    // and no hook says it works, read in this transaction: a tool an interrupt cut off is not open; a list read
+    // before a tool's hook came is no reason to forget it (its hook reached the hooks' record before the store)
     r.turn_ended |= read.ended;
+    if read.ended && !hooks.working(&read.key) {
+        r.open_tools = 0;
+    }
     facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
         Some(key) => runs::others_open(tx, key, &r.task)?,
         None => false,
@@ -140,7 +147,7 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64) -> Res
                 say(tx, &r, &words)?;
                 changed.extend(r.ids.iter().cloned());
             }
-            act => later.push(Later { run: r.clone(), act }),
+            act => later.push(Later { run: r.clone(), act, at }),
         }
     }
     Ok((later, changed, used))
@@ -224,6 +231,8 @@ async fn walk(app: &Shared) {
     let (global_warn, global_end) = { let s = app.looks.settings.read(); (s.memory_warn_gib, s.memory_end_gib) };
     let with_run: HashSet<String> = all.iter().filter_map(|r| r.place(app)).map(|(s, _)| s.id()).collect();
     let wanted: Vec<String> = all.iter().filter_map(|r| r.pane_key.clone()).chain(linked.iter().map(|(_, k)| k.clone())).collect();
+    // what it decides holds as of now: a human's input after it calls off or puts off what it leaves to do (AC-131)
+    let at = Instant::now();
     let seen = read_servers(app, &wanted, &with_run).await;
     let now = ops::now();
     let (mut reads, mut subagents) = (Vec::new(), Vec::new());
@@ -276,11 +285,12 @@ async fn walk(app: &Shared) {
         };
         // + Session's is the human's: nothing is typed in it, about its subagents either (AC-142)
         if facts.alive && !r.ad_hoc() {
-            subagents.push((r.clone(), server.clone(), pane.clone(), key, busy));
+            subagents.push((r.clone(), server.clone(), pane.clone(), key.clone(), busy));
         }
-        reads.push(Read { id: r.id.clone(), facts, ended });
+        reads.push(Read { id: r.id.clone(), facts, ended, key });
     }
-    let (later, changed, used) = match store(app, move |tx| walk_store(tx, reads, now)).await {
+    let a = app.clone();
+    let (later, changed, used) = match store(app, move |tx| walk_store(tx, &a.hooks, reads, now, at)).await {
         Ok(done) => done,
         Err(e) => return tracing::warn!(event = "dispatcher.walk", error = %e),
     };
@@ -346,3 +356,7 @@ pub async fn run(app: Shared) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "walk_tests.rs"]
+mod tests;

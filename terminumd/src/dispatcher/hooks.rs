@@ -9,11 +9,12 @@ use parking_lot::Mutex;
 use serde_json::Value;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 
-use super::runs::{self, Run};
+use super::runs::{self, Phase, Run};
 use super::{move_all, move_one, move_task, store};
 use crate::app::Shared;
 use crate::plans::rules;
 use crate::tasks::ops;
+use crate::tmux::hookstate::Whose;
 
 /// The shape a session ID must have to reach a command line (§9 Resume): no flag.
 pub fn good_id(id: &str) -> bool {
@@ -33,10 +34,10 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             active = false;
         }
         "UserPromptSubmit" if r.is_starting() => {
-            r.state = "working".into();
+            r.state = Phase::Working;
             r.prompt = None;
             r.new_work();
-            r.turn_ended = false;
+            r.turn_starts();
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             let agent = ops::pool_user(tx, &r.agent_id, &r.agent_name)?;
             for id in &r.ids {
@@ -50,7 +51,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             // a human's own prompt: new work (AC-122); to which of several finished tasks, it does not say
             active = true;
             r.new_work();
-            r.turn_ended = false;
+            r.turn_starts();
             if r.status != "IN PROGRESS" && (r.ids.len() == 1 || !r.open.is_empty()) {
                 for id in r.targets() {
                     move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
@@ -59,13 +60,11 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             }
         }
         "Stop" => {
-            r.turn_ended = true;
-            r.open_tools = 0;
+            r.turn_over();
             r.nudge_turn = false;
         }
         "StopFailure" => {
-            r.turn_ended = true;
-            r.open_tools = 0;
+            r.turn_over();
             active = true;
             if !super::plan::finished(&r.status) {
                 let why: String = rules::clean(ev["error"].as_str().unwrap_or("an error")).chars().take(60).collect();
@@ -94,16 +93,21 @@ impl Default for Events {
     }
 }
 
-/// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a lookup.
-pub fn heard(app: &Shared, key: &str, ev: &Value) {
+/// Pane `key`'s agent spoke: its run, if Dispatcher started it. A pane with none costs a lookup. Its subagents are
+/// counted from their own events; only the main agent's events of its current turn change the run (AC-127).
+pub fn heard(app: &Shared, key: &str, ev: &Value, whose: Whose) {
     if !app.dispatcher.has_run(key) {
         return;
     }
     app.dispatcher.heard_facts(key, ev);
-    let _ = app.dispatcher.events.sender.send((key.to_string(), ev.clone()));
+    match whose {
+        Whose::Main => drop(app.dispatcher.events.sender.send((key.to_string(), ev.clone()))),
+        Whose::Sub => app.dispatcher.touched(key),     // activity, and no more
+        Whose::Stale => {}
+    }
 }
 
-/// What one event does to its run.
+/// What one of the main agent's events does to its run.
 async fn one_event(app: Shared, key: String, ev: Value) {
     if ev["event"] == "Tokens" {
         let Some(models) = super::usage::by_model(&ev["tokens"]) else { return };
@@ -211,6 +215,65 @@ mod tests {
         assert_eq!(*said.lock(), 1);
     }
 
+    /// TERM-34, across the hooks' record, Dispatcher and the plans: a subagent's failure and prompt, a late tool and a
+    /// late Stop of an older turn leave the main run, its task and its plan as the main agent left them.
+    #[tokio::test]
+    async fn ac127_only_the_main_agents_events_of_its_turn_move_its_run_task_and_plan() {
+        let (root, mut app) = crate::testutil::app("hooks-whose");
+        std::sync::Arc::get_mut(&mut app).unwrap().tasks = Arc::new(Store::open(root.join("kanban.sqlite")));
+        let server = app.tmux.local.clone();
+        server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
+        let key = server.key("%1");
+        let (run, task) = app.tasks.with(|tx| {
+            let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
+            let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
+            let id = runs::add(tx, &like, std::slice::from_ref(&t.key), 1)?;
+            app.dispatcher.pane_opened(tx, &id, &key)?;
+            runs::change(tx, &id, |r| r.state = Phase::Working)?;
+            Ok((id, t.key))
+        }).unwrap();
+        let mut events = app.dispatcher.events.waiting.lock().take().unwrap();
+        let ev = |name: &str, extra: Value| {
+            let mut v = serde_json::json!({"agent": "claude", "event": name, "pane": "%1", "session": "s1"});
+            v.as_object_mut().unwrap().extend(extra.as_object().cloned().unwrap_or_default());
+            v
+        };
+        let done = serde_json::json!({"op": "all", "items": [{"text": "the main plan", "status": "completed"}]});
+        for e in [
+            ev("UserPromptSubmit", serde_json::json!({"turn": "p1", "prompt": "fix it", "cwd": "/srv"})),
+            ev("PostToolUse", serde_json::json!({"turn": "p1", "tool": "TodoWrite", "plan": done})),
+            ev("SubagentStart", serde_json::json!({"turn": "p1", "sub": "a1"})),
+            ev("UserPromptSubmit", serde_json::json!({"turn": "p1", "sub": "a1", "prompt": "the child's own", "cwd": "/srv"})),
+            ev("StopFailure", serde_json::json!({"turn": "p1", "sub": "a1", "error": "rate_limit"})),
+        ] {
+            crate::sock::hook_on(app.clone(), Some(server.clone()), e).await;
+        }
+        while let Ok((k, e)) = events.try_recv() {
+            one_event(app.clone(), k, e).await;
+        }
+        let read = || app.tasks.with(|tx| Ok((runs::by_id(tx, &run)?, crate::tasks::ops::get(tx, &task)?.status))).unwrap();
+        let (r, status) = read();
+        assert_eq!(status, "IN PROGRESS", "the child's failure is its own");
+        assert!(!r.turn_ended);
+        assert_eq!(app.plans.details(&key, false, 2).map(|d| d.items.len()), Some(1), "the child's prompt starts no turn: the finished plan stays");
+        for e in [
+            ev("Stop", serde_json::json!({"turn": "p1"})),
+            ev("PreToolUse", serde_json::json!({"turn": "p1", "tool": "Bash: ls"})),
+            ev("UserPromptSubmit", serde_json::json!({"turn": "p2", "prompt": "and now this", "cwd": "/srv"})),
+            ev("Stop", serde_json::json!({"turn": "p1"})),
+        ] {
+            crate::sock::hook_on(app.clone(), Some(server.clone()), e).await;
+        }
+        while let Ok((k, e)) = events.try_recv() {
+            one_event(app.clone(), k, e).await;
+        }
+        let (r, status) = read();
+        assert_eq!((r.turn_ended, r.open_tools, status.as_str()), (false, 0, "IN PROGRESS"), "p2 goes on: the late tool and Stop of p1 are no part of it");
+        assert!(app.hooks.working(&key));
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn ac131_a_walk_before_or_after_a_window_opens_keeps_its_pane() {
         let store = Store::open(crate::testutil::fresh_dir("hooks-panes").join("kanban.sqlite"));
@@ -226,7 +289,7 @@ mod tests {
         assert!(d.has_run("%7"), "a walk that read first has come and gone");
         store.with(|tx| d.read_runs(tx)).unwrap();
         assert!(d.has_run("%7"), "a walk that reads after it sees it in the store");
-        store.with(|tx| runs::change(tx, &run, |r| r.state = "closed".into()).map(drop)).unwrap();
+        store.with(|tx| runs::change(tx, &run, |r| r.state = Phase::Closed).map(drop)).unwrap();
         store.with(|tx| d.read_runs(tx)).unwrap();
         assert!(!d.has_run("%7"), "over: its hooks cost nothing again");
     }

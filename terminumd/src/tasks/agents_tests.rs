@@ -125,7 +125,7 @@ fn ac138_a_busy_agent_is_not_deleted() {
         let run = crate::dispatcher::runs::add(tx, &like, std::slice::from_ref(&t.key), 1)?;
         let refused = remove(tx, &id).unwrap_err();
         assert!(refused.contains("Opus reviewer has a session open:") && refused.contains(&t.id), "{refused}");
-        crate::dispatcher::runs::change(tx, &run, |r| r.state = "closed".into())?;
+        crate::dispatcher::runs::change(tx, &run, |r| r.state = crate::dispatcher::runs::Phase::Closed)?;
         remove(tx, &id)
     }).unwrap();
 }
@@ -177,7 +177,7 @@ fn ac144_a_project_or_an_agent_deleted_leaves_the_rest_standing() {
         assert_eq!(list(tx)?.len(), 2, "the pool does not change");
         // an agent with a session open stays; once it is closed, deleting it frees its slot and the run keeps its name
         assert!(remove(tx, &a).unwrap_err().contains("has a session open"));
-        runs::change(tx, &run, |r| r.state = "closed".into())?;
+        runs::change(tx, &run, |r| r.state = crate::dispatcher::runs::Phase::Closed)?;
         remove(tx, &a)?;
         let kept = runs::change(tx, &run, |_| {})?;
         assert_eq!((kept.agent_name.as_str(), kept.agent_color), (mine.name.as_str(), mine.color), "the name and color it knew");

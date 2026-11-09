@@ -89,6 +89,22 @@ pub struct Hooks {
     ended: Mutex<std::collections::VecDeque<String>>,
 }
 
+/// Whose an event is, decided once before it changes anything: only the main agent's events of its current turn move
+/// a pane's state, a run, a task or a plan (terminum-agents.md AC-39, terminum-dispatcher.md AC-127).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Whose {
+    Main,
+    /// a subagent's (Claude Code's `agent_id`: absent on the main thread)
+    Sub,
+    /// of a turn before the current one, or a tool's or a request's of a turn that already stopped: it came late
+    Stale,
+}
+
+/// What a turn's own events are, as opposed to its start and the session's.
+fn of_turn(name: &str) -> bool {
+    matches!(name, "Stop" | "StopFailure" | "Interrupt" | "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" | "PermissionRequest" | "Notification")
+}
+
 /// The coding agents with hooks (`terminum hooks`), by the name they come with.
 pub const AGENTS: [&str; 2] = ["claude", "codex"];
 
@@ -106,6 +122,14 @@ fn s(ev: &Value, k: &str) -> String {
     ev[k].as_str().unwrap_or("").to_string()
 }
 
+/// Subagent `sub` ended: the last after its turn's Stop ends the turn, whatever a background one last asked.
+fn sub_ended(r: &mut Rec, sub: &str) {
+    if r.subs.remove(sub) && r.stopped.is_some() && r.subs.is_empty() {
+        r.state = Some(State::Done);
+        (r.ended, r.counted) = (true, true);
+    }
+}
+
 impl Rec {
     /// How long a working state holds: longer once a Stop waits for its background subagents.
     fn working_lease(&self) -> Duration {
@@ -117,11 +141,18 @@ impl Hooks {
     /// Applies event `ev` (cli/hook.rs's fields) to pane `key`; true when what the list shows changed.
     #[cfg(test)]
     pub fn apply(&self, key: &str, ev: &Value, now: Instant) -> bool {
-        self.apply_event(key, ev, now).unwrap_or(false)
+        self.apply_event(key, ev, now).is_some_and(|(changed, _)| changed)
     }
 
-    /// None rejects an event's identity; Some says whether its accepted state changed.
-    pub fn apply_event(&self, key: &str, ev: &Value, now: Instant) -> Option<bool> {
+    /// None rejects an event's identity; Some says whether its accepted state changed, and whose it is.
+    pub fn apply_event(&self, key: &str, ev: &Value, now: Instant) -> Option<(bool, Whose)> {
+        let sub = !s(ev, "sub").is_empty();
+        let mut whose = if sub { Whose::Sub } else { Whose::Main };
+        let changed = self.apply_as(key, ev, now, &mut whose)?;
+        Some((changed, whose))
+    }
+
+    fn apply_as(&self, key: &str, ev: &Value, now: Instant, whose: &mut Whose) -> Option<bool> {
         let agent = ev["agent"].as_str().and_then(agent)?;
         let name = s(ev, "event");
         let session = s(ev, "session");
@@ -154,13 +185,26 @@ impl Hooks {
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
             why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, counted: false, asked: false, waits: false, stopped_at: None, cwd: String::new() });
+        let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
+        if *whose == Whose::Main && of_turn(&name) && !turn.is_empty() {
+            if r.turn.is_empty() && r.stopped.is_none() {
+                r.turn = turn.clone();                    // a record made again mid-turn (a link, a restart) learns its turn
+            }
+            let late = stopped && !matches!(name.as_str(), "Stop" | "Notification");
+            if r.turn != turn || late {
+                *whose = Whose::Stale;
+            }
+        }
+        // a main event of an older turn: its turn is over, it moves nothing (a late Stop would end the current one)
+        if *whose == Whose::Stale && r.turn != turn {
+            return Some(false);
+        }
         let cwd = s(ev, "cwd");
         let moved = cwd.starts_with('/') && s(ev, "sub").is_empty() && r.cwd != cwd;
         if moved {
             r.cwd = cwd;                                  // the list shows it (its folder, AC-51)
         }
         let before = (r.state, r.tool.clone(), r.why.clone(), r.subs.len());
-        let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
         let working = |r: &mut Rec| { r.state = Some(State::Working); r.why.clear(); };
         let end = |r: &mut Rec, state| {
             r.state = Some(state);
@@ -216,17 +260,11 @@ impl Hooks {
             // Codex's root stops for the user: a child's result does not wake it
             "Stop" if !r.subs.is_empty() && agent == "claude" => { r.tool.clear(); r.stopped = Some(turn.clone()); r.stopped_at = Some(now); }
             "Stop" | "Interrupt" => end(r, State::Done),
-            // a subagent's failure is its own: the agent goes on
-            "StopFailure" if !s(ev, "sub").is_empty() => { r.subs.remove(&s(ev, "sub")); }
+            // a subagent's failure is its own: the agent goes on; it ends as a SubagentStop does
+            "StopFailure" if !s(ev, "sub").is_empty() => sub_ended(r, &s(ev, "sub")),
             "StopFailure" => { end(r, State::Failed); r.why = s(ev, "error"); }
             "SubagentStart" if !stopped => { r.subs.insert(s(ev, "sub")); working(r); }
-            "SubagentStop" => {
-                r.subs.remove(&s(ev, "sub"));
-                if r.stopped.is_some() && r.subs.is_empty() && r.state == Some(State::Working) {
-                    r.state = Some(State::Done);
-                    (r.ended, r.counted) = (true, true);
-                }
-            }
+            "SubagentStop" => sub_ended(r, &s(ev, "sub")),
             // a background subagent's tools: it still works
             "PreToolUse" | "PostToolUse" | "PostToolUseFailure" | "PostToolBatch" if !r.subs.is_empty() => {}
             _ => return Some(moved),
@@ -315,9 +353,9 @@ impl Hooks {
         self.recs.lock().get(key).map(|r| r.cwd.clone()).filter(|c| !c.is_empty())
     }
 
-    /// Whether pane `key`'s hooks last said it works.
+    /// Whether pane `key`'s hooks say it works, while their lease holds: an interrupted turn fires no Stop.
     pub fn working(&self, key: &str) -> bool {
-        self.recs.lock().get(key).is_some_and(|r| r.state == Some(State::Working))
+        self.recs.lock().get(key).is_some_and(|r| r.state == Some(State::Working) && r.at.elapsed() < r.working_lease())
     }
 
     /// Whether pane `key`'s agent has hooks that spoke (its prompts come from them).

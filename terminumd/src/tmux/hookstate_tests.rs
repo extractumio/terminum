@@ -29,13 +29,13 @@ fn late_events_of_another_session_leave_the_current_record_intact() {
 fn rejected_identities_are_distinct_from_accepted_unchanged_events() {
     let (h, t) = (Hooks::default(), Instant::now());
     assert_eq!(h.apply_event(K, &ev("other", "SessionStart", json!({})), t), None);
-    assert_eq!(h.apply_event(K, &ev("claude", "SessionStart", json!({"session": "new"})), t), Some(true));
-    assert_eq!(h.apply_event(K, &ev("claude", "SomethingNew", json!({"session": "new"})), t), Some(false));
+    assert_eq!(h.apply_event(K, &ev("claude", "SessionStart", json!({"session": "new"})), t).map(|(c, _)| c), Some(true));
+    assert_eq!(h.apply_event(K, &ev("claude", "SomethingNew", json!({"session": "new"})), t).map(|(c, _)| c), Some(false));
     assert_eq!(h.apply_event(K, &ev("claude", "PostToolUse", json!({"session": "old", "plan": {"op": "all", "items": []}})), t), None);
     assert_eq!(h.apply_event(K, &ev("codex", "SessionEnd", json!({"session": "new"})), t), None);
-    assert_eq!(h.apply_event(K, &ev("codex", "UserPromptSubmit", json!({"session": "next"})), t), Some(true));
+    assert_eq!(h.apply_event(K, &ev("codex", "UserPromptSubmit", json!({"session": "next"})), t).map(|(c, _)| c), Some(true));
     assert_eq!(h.session(K), Some(("codex", "next".to_string())));
-    assert_eq!(h.apply_event(K, &ev("codex", "SessionEnd", json!({"session": "next"})), t), Some(true));
+    assert_eq!(h.apply_event(K, &ev("codex", "SessionEnd", json!({"session": "next"})), t).map(|(c, _)| c), Some(true));
 }
 
 #[test]
@@ -210,13 +210,13 @@ fn clear_resume_then_codex_in_one_pane() {
     h.apply(K, &at("PreToolUse", "A", json!({"turn": "a1", "tool": "Bash"})), t);
     // /clear
     h.apply(K, &at("SessionEnd", "A", json!({"reason": "clear"})), t);
-    assert_eq!(h.apply_event(K, &at("SessionStart", "B", json!({"source": "clear"})), t), Some(true));
+    assert_eq!(h.apply_event(K, &at("SessionStart", "B", json!({"source": "clear"})), t).map(|(c, _)| c), Some(true));
     assert_eq!(h.session(K), Some(("claude", "B".to_string())));
     assert!(!h.apply(K, &at("PostToolUse", "A", json!({"turn": "a1"})), t), "a late tool end of the cleared session");
     assert!(!h.apply(K, &at("Stop", "A", json!({"turn": "a1"})), t));
     assert_ne!(h.view(K, "claude", t).map(|v| v.state), Some(State::Working), "nothing of A's work shows under B");
     // /resume of A
-    assert_eq!(h.apply_event(K, &at("SessionStart", "A", json!({"source": "resume"})), t), Some(true));
+    assert_eq!(h.apply_event(K, &at("SessionStart", "A", json!({"source": "resume"})), t).map(|(c, _)| c), Some(true));
     assert_eq!(h.session(K), Some(("claude", "A".to_string())));
     assert!(!h.apply(K, &at("Stop", "B", json!({})), t), "the session left by /resume");
     h.apply(K, &at("UserPromptSubmit", "A", json!({"turn": "a2"})), t);
@@ -224,7 +224,7 @@ fn clear_resume_then_codex_in_one_pane() {
     h.apply(K, &at("Stop", "A", json!({"turn": "a2"})), t);
     h.apply(K, &at("SessionEnd", "A", json!({"reason": "exit"})), t);
     // Codex in the same pane
-    assert_eq!(h.apply_event(K, &ev("codex", "UserPromptSubmit", json!({"session": "C", "turn": "c1"})), t), Some(true));
+    assert_eq!(h.apply_event(K, &ev("codex", "UserPromptSubmit", json!({"session": "C", "turn": "c1"})), t).map(|(c, _)| c), Some(true));
     assert_eq!(h.session(K), Some(("codex", "C".to_string())));
     assert!(!h.apply(K, &at("Stop", "A", json!({"turn": "a2"})), t), "Claude's late Stop after Codex took the pane");
     assert_eq!(h.view(K, "node", t).map(|v| (v.agent, v.state)), Some(("codex", State::Working)));
@@ -360,4 +360,78 @@ fn ac39_a_lease_says_when_it_ends_so_a_page_out_of_sight_does_not_leave_a_turn_w
     assert_eq!(h.lease_ends_in(t + LEASE + Duration::from_secs(1)), None, "over: no wake-up again and again");
     h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
     assert_eq!(h.lease_ends_in(t), None, "Claude Code's done holds with no lease");
+}
+
+/// TERM-34: whose an event is, decided once; a late event of an older turn moves nothing (B6.1).
+#[test]
+fn ac39_ac127_a_subagents_or_an_older_turns_event_is_told_apart_and_moves_nothing() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    let whose = |name: &str, extra: Value| h.apply_event(K, &ev("claude", name, extra), t).map(|(_, w)| w);
+    assert_eq!(whose("UserPromptSubmit", json!({"turn": "p1"})), Some(Whose::Main));
+    assert_eq!(whose("PreToolUse", json!({"turn": "p1", "sub": "a1", "tool": "Bash"})), Some(Whose::Sub));
+    assert_eq!(whose("UserPromptSubmit", json!({"turn": "p1", "sub": "a1"})), Some(Whose::Sub), "a subagent's own prompt");
+    assert_eq!(whose("Stop", json!({"turn": "p1"})), Some(Whose::Main));
+    assert!(h.take_ended(K));
+    assert_eq!(whose("PreToolUse", json!({"turn": "p1", "tool": "Bash"})), Some(Whose::Stale), "a tool of a turn that stopped came late");
+    for name in ["SessionStart", "SessionEnd"] {
+        assert!(!of_turn(name), "{name} is the session's: never told late");
+    }
+    assert_eq!(whose("UserPromptSubmit", json!({"turn": "p2"})), Some(Whose::Main));
+    assert_eq!(whose("Stop", json!({"turn": "p1"})), Some(Whose::Stale), "a late Stop of p1");
+    assert_eq!(h.view(K, "c", t).map(|v| v.state), Some(State::Working), "p2 goes on");
+    assert!(!h.take_ended(K), "p2 has not ended");
+    for name in ["Interrupt", "StopFailure", "PostToolUse", "PermissionRequest"] {
+        assert_eq!(whose(name, json!({"turn": "p1", "error": "x", "tool": "Bash"})), Some(Whose::Stale), "{name}");
+        assert_eq!(h.view(K, "c", t).map(|v| v.state), Some(State::Working), "a late {name} of p1");
+    }
+    assert_eq!(whose("Stop", json!({"turn": "p2"})), Some(Whose::Main));
+    assert!(h.take_ended(K));
+}
+
+/// A record made again mid-turn (a restart) learns the turn from its first event: an older one is then told apart.
+#[test]
+fn ac39_a_record_made_mid_turn_learns_its_turn() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p2", "tool": "Bash"})), t);
+    assert_eq!(h.apply_event(K, &ev("claude", "Stop", json!({"turn": "p1"})), t).map(|(_, w)| w), Some(Whose::Stale));
+    assert_eq!(h.view(K, "c", t).map(|v| v.state), Some(State::Working));
+}
+
+/// B6.2: a subagent's failure ends it as its SubagentStop would: the last of them ends a stopped turn.
+#[test]
+fn ac39_the_last_subagents_failure_ends_a_stopped_turn() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a1"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Working, 1)));
+    h.apply(K, &ev("claude", "StopFailure", json!({"turn": "p1", "sub": "a1", "error": "rate_limit"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Done, 0)), "not working with no subagent");
+    assert!(h.take_ended(K));
+}
+
+/// B6.3: the parent stopped while a background subagent asked for approval: the last SubagentStop still ends the turn.
+#[test]
+fn ac39_the_last_subagent_ends_a_stopped_turn_that_waited() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStart", json!({"turn": "p1", "sub": "a1"})), t);
+    h.apply(K, &ev("claude", "PermissionRequest", json!({"turn": "p1", "tool": "Bash"})), t);
+    h.apply(K, &ev("claude", "Stop", json!({"turn": "p1"})), t);
+    h.apply(K, &ev("claude", "SubagentStop", json!({"turn": "p1", "sub": "a1"})), t);
+    assert_eq!(h.view(K, "c", t).map(|v| (v.state, v.subagents)), Some((State::Done, 0)));
+    assert!(h.take_ended(K));
+    h.apply(K, &ev("claude", "SubagentStop", json!({"turn": "p1", "sub": "a1"})), t);
+    assert!(!h.take_ended(K), "a second stop of the same subagent ends nothing again");
+}
+
+/// D09: working() holds only while the lease does, as view() does: an interrupt fires no Stop.
+#[test]
+fn ac39_working_holds_only_while_its_lease_does() {
+    let h = Hooks::default();
+    let past = Instant::now() - LEASE - Duration::from_secs(1);
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1"})), past);
+    assert!(!h.working(K), "no event renewed it for LEASE");
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "tool": "Bash"})), Instant::now());
+    assert!(h.working(K));
 }

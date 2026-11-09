@@ -198,7 +198,7 @@ fn ac142_a_session_with_no_task_takes_one_and_writes_as_its_agent_of_the_pool() 
     s.with(|tx| {
         let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
         let id = crate::dispatcher::runs::add(tx, &like, &[], 1)?;
-        crate::dispatcher::runs::change(tx, &id, |r| { r.state = "working".into(); r.pane_key = Some(KEY.into()); }).map(drop)
+        crate::dispatcher::runs::change(tx, &id, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
     }).unwrap();
     assert!(call(&s, &dir, &w, "take_task", json!({"id": free})).is_ok(), "+ Session's agent may take a task: it was given none");
     call(&s, &dir, &w, "add_comment", json!({"id": free, "text": "on it"})).unwrap();

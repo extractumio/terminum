@@ -7,7 +7,7 @@
 //! question, no answer to a permission is ever typed over; what is sent is in the input log (AC-147).
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::app::Shared;
 use crate::auth::store::unix_now as now;
@@ -126,9 +126,9 @@ fn busy(app: &Shared, key: &str) -> bool {
     app.hooks.working(key) || find_item(&app.layout.read(), key).and_then(idle_agent).is_none()
 }
 
-/// Why the next key may not go, read just before it: None when the agent is still `first`'s
-/// program, idle, unopened since then, its box shown empty.
-async fn holds(app: &Shared, server: &Server, pane: &str, key: &str, kind: &str, first: &Pane) -> Option<String> {
+/// Why the next key may not go, read just before it under the pane's typing queue: None when the agent is still
+/// `first`'s program, idle, unopened and untyped into since `at` (when `first` was read), its box shown empty.
+async fn holds(app: &Shared, server: &Server, pane: &str, key: &str, kind: &str, first: &Pane, at: Instant) -> Option<String> {
     let Some(p) = read(server, pane).await else { return Some("tmux does not answer".into()) };
     if p.command != first.command {
         return Some(format!("{} no longer runs in front", first.command));
@@ -139,7 +139,12 @@ async fn holds(app: &Shared, server: &Server, pane: &str, key: &str, kind: &str,
     if p.in_mode || !p.run.is_empty() || busy(app, key) {
         return Some("it is at work, or the pane is in a tmux mode".into());
     }
-    match crate::dispatcher::read_screen(server, pane, kind).await {
+    let screen = crate::dispatcher::read_screen(server, pane, kind).await;
+    // last: a human's keys wait behind this queue, marked before it; their prompt's hook marks it too
+    if app.inputs.human_since(key, at) {
+        return Some("a human typed in it meanwhile".into());
+    }
+    match screen {
         Err(e) => Some(e),
         Ok(Screen::Empty) => None,
         Ok(Screen::Holds(_)) => Some("its box holds a draft".into()),
@@ -172,12 +177,12 @@ async fn send(server: &Server, pane: &str, keys: &[&str]) -> Result<(), String> 
 
 /// Ctrl+C, Ctrl+C, then `/exit` and Enter while the agent stays; each key only while `holds` says
 /// none. Whether it ended, or why not, and how many steps of keys went.
-async fn end(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, kind: &str, first: &Pane) -> (usize, Result<(), String>) {
+async fn end(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, kind: &str, first: &Pane, at: Instant) -> (usize, Result<(), String>) {
     let _held = server.typing(pane).lock_owned().await;
     // (as logged, tmux's keys, whether the agent may have ended after them)
     let steps: [(&str, &[&str], bool); 3] = [("<C-c>", &["C-c"], false), ("<C-c>", &["C-c"], true), ("/exit<Enter>", &["-l /exit", "Enter"], true)];
     for (i, (words, keys, may_end)) in steps.into_iter().enumerate() {
-        if let Some(why) = holds(app, server, pane, key, kind, first).await {
+        if let Some(why) = holds(app, server, pane, key, kind, first, at).await {
             return (i, Err(if i == 0 { why } else { format!("after {i} key(s): {why}") }));
         }
         let sent = send(server, pane, keys).await;
@@ -200,13 +205,14 @@ async fn look(app: &Shared, days: u32, may_end: bool) {
     let at = now();
     for (key, kind) in idle_agents(app) {
         let Some((server, pane)) = app.tmux.resolve(&key) else { continue };
+        let read_at = Instant::now();
         let Some(p) = read(&server, &pane).await else { continue };
         match due(&p, at, days) {
             Due::Stamp => stamp(&server, &pane, at).await,
             Due::Wait => {}
             Due::Skip(why) => tracing::debug!(event = "idleexit.skipped", key = %key, why),
             Due::Go if may_end => {
-                let (keys, got) = end(app, &server, &pane, &key, &kind, &p).await;
+                let (keys, got) = end(app, &server, &pane, &key, &kind, &p, read_at).await;
                 match got {
                     Ok(()) => tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days, keys),
                     Err(why) => tracing::warn!(event = "idleexit.stayed", key = %key, kind = %kind, why = %why, keys),

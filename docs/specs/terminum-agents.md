@@ -102,7 +102,9 @@ Scenario: AC-39 edge — a turn's end is never lost
   When its screen shows it done for 10 s
   Then its turn ends: unread and reminders; a Stop already counted for that turn makes no second end
   And SubagentStop does not always fire (AS-73), so the count must not trust it: Codex's turn ends at its own Stop whatever subagents it counts; Claude Code's Stop with subagents counted is checked against the screen from 5 s on, and with no agents in the footer or turn line the count goes and the turn ends
-  And a subagent's own prompt starts no turn and its failure marks no pane
+  And a subagent's own prompt starts no turn and its failure marks no pane; its failure ends it as its SubagentStop does, and the last subagent to end after its turn's Stop ends the turn, whatever a background one last asked
+  And whose each event is gets decided once, before anything is changed by it: the main agent's, a subagent's (Claude Code's `agent_id`, absent on the main thread), or a late one, of a turn before the current one (`turn`) or a tool's or a request's of a turn that already stopped; a late event changes nothing of the row, and only the main agent's events of its current turn move its plan (AC-97), a task's run and the task (terminum-dispatcher.md AC-127); a record made again mid-turn learns its turn from its first event
+  And a working state no event renewed for its lease is working for nothing that asks: the row, the typing gate, a warning's way (terminum-dispatcher.md §9)
 
 Scenario: AC-39 happy path — reminders
   When an agent in a pane not shown has waited 2.5 s
@@ -319,7 +321,8 @@ Scenario: AC-153 failure path — nothing the user left is typed over
   Given the box holds a draft, or the agent asks a question (a permission, a choice), or its screen reads as neither (an unknown screen is not empty, as at Dispatcher's typing gate)
   Or the agent is working, waiting mid-turn or its subagents run; or the pane is in a tmux mode (copy mode)
   Or a page shows the pane meanwhile; or another program is in front
-  Then no key is sent, or no further key: each is sent only after all of this is read again just before it
+  Or a human typed in the pane after the look read it: a page's keys or the Panel's text (marked as they come, before they wait behind the look's keys), or a prompt its hook says was a human's
+  Then no key is sent, or no further key: each is sent only after all of this is read again just before it, under the pane's typing queue
   And when no key went, the pane's days are not restarted: the next look tries again; once a key went, the next try is 3 days later
 
 Scenario: AC-153 edge — what is never ended, and when nothing ends

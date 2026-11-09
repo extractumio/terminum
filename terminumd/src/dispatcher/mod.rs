@@ -52,6 +52,8 @@ pub struct Dispatcher {
     typed: Mutex<Vec<(String, String, Instant)>>,
     /// runs whose start is being watched
     starting: Mutex<HashSet<String>>,
+    /// runs whose End is under way (acts.rs)
+    ending: Mutex<HashSet<String>>,
     /// a walk is due now (a session ended)
     soon: Notify,
     /// what a walk or a hook learned of each pane it watches
@@ -85,6 +87,22 @@ struct Sub {
     kind: String,
     last: Instant,
     told: plan::SubStep,
+}
+
+/// A run's watch or End under way, by its id in one of Dispatcher's sets: one at a time; gone with it, a panic too.
+struct Held(crate::app::Shared, fn(&Dispatcher) -> &Mutex<HashSet<String>>, String);
+
+impl Held {
+    /// Run `id` in `set`, unless it is there already.
+    fn take(app: &crate::app::Shared, set: fn(&Dispatcher) -> &Mutex<HashSet<String>>, id: &str) -> Option<Held> {
+        set(&app.dispatcher).lock().insert(id.to_string()).then(|| Held(app.clone(), set, id.to_string()))
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        (self.1)(&self.0.dispatcher).lock().remove(&self.2);
+    }
 }
 
 /// Subagents kept per pane: a made-up hook adds no more.

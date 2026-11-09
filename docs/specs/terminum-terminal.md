@@ -440,6 +440,7 @@ Scenario: AC-90 happy path — kept
   When the user presses Enter in a pane at a shell prompt or in a coding agent's input box
   Then the page tells terminumd what stood there before the key goes: the command after the shell's prompt with the rows it wrapped from, or the agent's typed rows (a faint suggestion is not typed); for a coding agent whose hooks spoke its prompt comes from its hooks exactly and the page's is dropped
   And a prompt whose mark has a variation selector after it (Starship's "at 19:20 ❯︎ ") is told apart from the command: the entry holds the command alone
+  And so is a prompt whose "$" or "#" stands right after the folder (bash's own "alex@devbox:~/api$ ")
   And terminumd keeps it in the message history of the tasks' store (terminum.md AC-147), the project being the pane's host and folder, with the time, the agent and the pane's title; the Message history (terminum.md AC-151) searches them all
 
 Scenario: AC-90 happy path — read back

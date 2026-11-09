@@ -71,11 +71,13 @@ pub type Answer = Result<Vec<String>, String>;
 struct Pending {
     reply: oneshot::Sender<Answer>,
     at: Instant,
+    /// an `if-shell -F` with both branches: its own empty answer is passed over, the branch's is the reply
+    nested: bool,
 }
 
 /// A running control client. Dropping the last handle kills the process.
 pub struct Control {
-    lines: mpsc::UnboundedSender<(String, oneshot::Sender<Answer>)>,
+    lines: mpsc::UnboundedSender<(String, oneshot::Sender<Answer>, bool)>,
     /// bytes in `lines` (LINES_MAX)
     queued: Arc<AtomicUsize>,
     alive: Arc<AtomicBool>,
@@ -105,7 +107,7 @@ impl Control {
         let mut stdin = child.stdin.take().expect("piped");
         let stdout = child.stdout.take().expect("piped");
         let mut stderr = child.stderr.take().expect("piped");
-        let (tx, mut rx) = mpsc::unbounded_channel::<(String, oneshot::Sender<Answer>)>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<(String, oneshot::Sender<Answer>, bool)>();
         let pending: Arc<Mutex<VecDeque<Pending>>> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         let attached = Arc::new(AtomicBool::new(false));
@@ -125,10 +127,10 @@ impl Control {
             let mut bytes = Vec::new();
             while let Some(first) = rx.recv().await {
                 let mut next = Some(first);
-                while let Some((line, reply)) = next {
+                while let Some((line, reply, nested)) = next {
                     q.fetch_sub(line.len(), Ordering::Relaxed);
                     if a.load(Ordering::Relaxed) {
-                        p.lock().push_back(Pending { reply, at: Instant::now() });
+                        p.lock().push_back(Pending { reply, at: Instant::now(), nested });
                         bytes.extend_from_slice(line.as_bytes());
                         bytes.push(b'\n');
                     } else {
@@ -188,8 +190,12 @@ impl Control {
                     if *ours {
                         att.store(true, Ordering::Relaxed);
                         let taken = std::mem::take(&mut lines);
-                        if let Some(w) = p.lock().pop_front() {
-                            let _ = w.reply.send(if ok { Ok(taken) } else { Err(taken.join("\n")) });
+                        let mut waiting = p.lock();
+                        match waiting.pop_front() {
+                            // the branch tmux runs next, before any other line of ours, answers it
+                            Some(w) if w.nested && ok => waiting.push_front(Pending { nested: false, at: Instant::now(), ..w }),
+                            Some(w) => drop(w.reply.send(if ok { Ok(taken) } else { Err(taken.join("\n")) })),
+                            None => {}
                         }
                     } else {
                         att.store(true, Ordering::Relaxed);
@@ -282,6 +288,10 @@ impl Control {
     /// Writes one command line now; the answer arrives in order. Lines are never empty
     /// (an empty line detaches a control client) and never hold a newline.
     pub fn send(&self, line: String) -> oneshot::Receiver<Answer> {
+        self.queue(line, false)
+    }
+
+    fn queue(&self, line: String, nested: bool) -> oneshot::Receiver<Answer> {
         let (tx, rx) = oneshot::channel();
         debug_assert!(!line.trim().is_empty() && !line.contains('\n'));
         if line.trim().is_empty() || line.contains(['\n', '\r']) {
@@ -294,7 +304,7 @@ impl Control {
             let _ = tx.send(Err(NOT_KEEPING_UP.into()));
             return rx;
         }
-        if self.lines.send((line, tx)).is_err() {
+        if self.lines.send((line, tx, nested)).is_err() {
             self.queued.fetch_sub(n, Ordering::Relaxed);
             let (tx, rx) = oneshot::channel();
             let _ = tx.send(Err(NOT_CONNECTED.into()));
@@ -306,6 +316,14 @@ impl Control {
     /// One command and its answer.
     pub async fn run(&self, line: impl Into<String>) -> Answer {
         answer_of(self.send(line.into())).await
+    }
+
+    /// `if-shell -F -t <target> <test> <then> <else>`, both branches given: tmux answers it twice, its own
+    /// block and the branch's, the second before any later line; that one is the answer. An if-shell that
+    /// fails itself answers once.
+    pub async fn run_if(&self, target: &str, test: &str, then: &str, otherwise: &str) -> Answer {
+        let line = format!("if-shell -F -t {target} {} {} {}", super::args::quote(test), super::args::quote(then), super::args::quote(otherwise));
+        answer_of(self.queue(line, true)).await
     }
 
     /// Several commands written at once (one round trip), answered in order.

@@ -126,7 +126,8 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         return StatusCode::NO_CONTENT.into_response();
     }
     let _dispatch = app.hooks.dispatch.lock();
-    let Some(changed) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
+    // whose it is, decided once: only the main agent's events of its turn move a run, a task, a plan (AC-127)
+    let Some((changed, whose)) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
         return StatusCode::NO_CONTENT.into_response();
     };
     if changed {
@@ -140,17 +141,22 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         crate::manager::hook_turn_ended(&app, &key, ev["event"].as_str().unwrap_or(""));
         crate::tasks::tell::turn_ended(&app, &key);
     }
+    // a human's prompt, not one Dispatcher typed: what was decided before it no longer holds (AC-131)
+    let typed = ev["event"] == "UserPromptSubmit" && ev["prompt"].as_str().is_some_and(|p| app.dispatcher.typed_it(&key, p));
+    if whose == crate::tmux::hookstate::Whose::Main && ev["event"] == "UserPromptSubmit" && !typed {
+        app.inputs.human(&key);
+    }
     if ev["event"] == "UserPromptSubmit" && let (Some(prompt), Some(cwd)) = (ev["prompt"].as_str(), ev["cwd"].as_str()) {
-        let sender = if app.dispatcher.typed_it(&key, prompt) { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };
+        let sender = if typed { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };
         let (prompt, cwd, info) = (prompt.to_string(), cwd.to_string(), json!({"agent": ev["agent"], "via": "hook", "sender": sender}));
         let (app, key, host) = (app.clone(), key.clone(), server.name.clone());
         tokio::spawn(async move { crate::page::sent::keep(&app, &host, &cwd, &key, &prompt, info).await });
     }
     crate::tasks::tell::session_ended(&app, &key, &ev);
-    crate::dispatcher::heard(&app, &key, &ev);
-    let remind = crate::plans::hook_event(&app, &key, &ev);
+    crate::dispatcher::heard(&app, &key, &ev, whose);
+    let remind = crate::plans::hook_event(&app, &key, &ev, whose);
     // what waits for it rides the same event
-    let context = if crate::plans::carries_context(&ev) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
+    let context = if crate::plans::carries_context(&ev, whose) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
     let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
     match (context, tokens) {

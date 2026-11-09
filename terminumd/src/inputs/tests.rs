@@ -83,3 +83,26 @@ fn ac147_a_store_that_cannot_be_used_drops_rows_counted_and_holds_nothing_up() {
     none.push(row(0, "x"));
     assert_eq!(none.dropped(), 0);
 }
+
+/// TERM-32: a human's input is marked before it waits for the pane's typing queue, so an act holding the queue sees
+/// it (terminum-dispatcher.md AC-131).
+#[tokio::test]
+async fn ac131_a_humans_input_is_marked_before_it_waits_for_the_queue() {
+    let server = Server::new("local", "tm-test-inputs", crate::tmux::server::Link::Local { tmux: "tmux".into(), socket: "tm-test-inputs".into(), conf: "/dev/null".into() },
+                             Arc::new(tokio::sync::Notify::new()));
+    let inputs = Arc::new(Inputs::new(None));
+    let (pane, key) = ("%1", "tmux:local:tm-test-inputs:%1");
+    let at = Instant::now();
+    let act = inputs.act_queue(&server, pane, key, at).await.expect("nothing came since");
+    let (i, s) = (inputs.clone(), server.clone());
+    let human = tokio::spawn(async move { drop(i.human_queue(&s, pane, key).await) });
+    let until = Instant::now() + std::time::Duration::from_secs(2);
+    while !inputs.human_since(key, at) && Instant::now() < until {
+        tokio::task::yield_now().await;
+    }
+    assert!(inputs.human_since(key, at), "seen while it waits behind the act");
+    assert!(!human.is_finished(), "it waits behind the act");
+    drop(act);
+    human.await.unwrap();
+    assert!(inputs.act_queue(&server, pane, key, at).await.is_none(), "an act decided before it does not act");
+}
