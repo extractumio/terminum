@@ -19,15 +19,6 @@ pub(super) struct Later {
     pub(super) at: Instant,
 }
 
-/// A run's End in progress, by its id: a walk's next End of it waits for this one; gone with it, a panic too.
-struct EndHeld(Shared, String);
-
-impl Drop for EndHeld {
-    fn drop(&mut self) {
-        self.0.dispatcher.ending.lock().remove(&self.1);
-    }
-}
-
 /// Closes the pane: its mark checked just before; `keep`: the screen's last 200 rows stay on the task. Last of all,
 /// under the pane's typing queue through tmux's kill: no human's input since `at` (what decided it was read), and
 /// `still`, of the run as it stands; else it stays: false. tmux refusing: one more try at the next beat, then it
@@ -49,10 +40,7 @@ pub(super) async fn close(app: &Shared, run: &Run, (server, pane): (&Arc<Server>
         }
     }
     // a human's keys, RUN or a human's prompt may have come since the walk decided: read again, last of all (AC-131)
-    let _held = server.typing(pane).lock_owned().await;
-    if app.inputs.human_since(&server.key(pane), at) {
-        return Ok(false);
-    }
+    let Some(_held) = app.inputs.act_queue(server, pane, &server.key(pane), at).await else { return Ok(false) };
     let wanted = run.id.clone();
     if !store(app, move |tx| still(tx, &runs::by_id(tx, &wanted)?)).await? {
         return Ok(false);
@@ -94,10 +82,9 @@ async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, at
                 continue;
             }
         };
-        let held = server.typing(pane).lock_owned().await;
-        if app.inputs.human_since(&key, at) {
+        let Some(held) = app.inputs.act_queue(server, pane, &key, at).await else {
             return tracing::info!(event = "dispatcher.end", task = %run.names(), "put off: a human typed in its session");
-        }
+        };
         let id = run.id.clone();
         match store(app, move |tx| runs::by_id(tx, &id)).await {
             Ok(now) if now.state == Phase::Ending => {}
@@ -118,7 +105,7 @@ async fn end_agent(app: &Shared, run: &Run, server: &Arc<Server>, pane: &str, at
 async fn ended(app: &Shared, run: &Run, words: Option<String>) {
     let id = run.id.clone();
     let done = store(app, move |tx| {
-        let r = runs::change(tx, &id, |r| if r.state == Phase::Ending { r.state = Phase::Gone; r.open_tools = 0; })?;
+        let r = runs::change(tx, &id, |r| if r.state == Phase::Ending { r.gone(); })?;
         words.map_or(Ok(()), |w| say(tx, &r, &w))
     }).await;
     if let Err(e) = done {
@@ -137,12 +124,9 @@ async fn called_off(app: &Shared, now: &Run) {
     }
 }
 
-/// What a delivered act's flag says, written once it went (delivered, waiting for a tool call, or refused), unless
-/// a human's input came since `at`: their new work starts it anew (AC-122).
-async fn went(app: &Shared, run: &Run, key: &str, at: Instant, mark: fn(&mut Run)) {
-    if app.inputs.human_since(key, at) {
-        return;
-    }
+/// What a delivered act's flag says, written once it went (delivered, waiting for a tool call, or refused); `mark`
+/// sets it only while it still applies, so new work since (AC-122) is not undone.
+async fn went(app: &Shared, run: &Run, mark: fn(&mut Run)) {
     let id = run.id.clone();
     if let Err(e) = store(app, move |tx| runs::change(tx, &id, mark).map(drop)).await {
         tracing::warn!(event = "dispatcher.act", task = %run.names(), error = %e);
@@ -179,14 +163,14 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
         Act::Warn(left) => {
             let text = format!("[terminum Dispatcher] {task}: {} minutes of the {}-minute budget are left. Write the result with finish_task and end your subagents now. Then the agent is ended and unsaved work is lost.", (left.max(0) + 59) / 60, l.run.budget.unwrap_or(0) / 60);
             tell(app, &l.run, &server, &pane, text, "The last warning").await;
-            went(app, &l.run, &key, l.at, |r| r.warned = plan::warn_due(r) || r.warned).await;
+            went(app, &l.run, |r| r.warned |= plan::warn_due(r)).await;
             Ok(())
         }
         Act::MemoryWarn(gib) => {
             let text = format!("[terminum Dispatcher] {task}: its session uses {gib:.1} GiB of memory. End what it does not need.");
             tell(app, &l.run, &server, &pane, text, "The memory warning").await;
             note(app, format!("{task}'s session uses {gib:.1} GiB of memory"));
-            went(app, &l.run, &key, l.at, |r| r.memory_warned = true).await;
+            went(app, &l.run, |r| r.memory_warned = true).await;
             Ok(())
         }
         Act::End => {
@@ -194,11 +178,12 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
                 let r = l.run.clone();
                 let _ = store(app, move |tx| say(tx, &r, "The last warning could not reach the agent before the limit.")).await;
             }
-            if app.dispatcher.ending.lock().insert(l.run.id.clone()) {
+            // a walk's next End of it waits for this one
+            if let Some(held) = super::Held::take(app, |d| &d.ending, &l.run.id) {
                 let (a, r, s, p, at) = (app.clone(), l.run.clone(), server.clone(), pane.clone(), l.at);
                 tokio::spawn(async move {
-                    let _held = EndHeld(a.clone(), r.id.clone());
                     end_agent(&a, &r, &s, &p, at).await;
+                    drop(held);
                 });
             }
             Ok(())
@@ -206,7 +191,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
         Act::Nudge => {
             let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call finish_task with the result, or ask what you need.");
             let sent = gate::deliver(app, &l.run, &server, &pane, &text, false).await;
-            went(app, &l.run, &key, l.at, |r| r.nudged = true).await;
+            went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
             match sent {
                 Ok(()) => Ok(()),
                 Err(why) => {

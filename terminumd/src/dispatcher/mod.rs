@@ -89,6 +89,22 @@ struct Sub {
     told: plan::SubStep,
 }
 
+/// A run's watch or End under way, by its id in one of Dispatcher's sets: one at a time; gone with it, a panic too.
+struct Held(crate::app::Shared, fn(&Dispatcher) -> &Mutex<HashSet<String>>, String);
+
+impl Held {
+    /// Run `id` in `set`, unless it is there already.
+    fn take(app: &crate::app::Shared, set: fn(&Dispatcher) -> &Mutex<HashSet<String>>, id: &str) -> Option<Held> {
+        set(&app.dispatcher).lock().insert(id.to_string()).then(|| Held(app.clone(), set, id.to_string()))
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        (self.1)(&self.0.dispatcher).lock().remove(&self.2);
+    }
+}
+
 /// Subagents kept per pane: a made-up hook adds no more.
 const MOST_SUBS: usize = 64;
 
@@ -148,7 +164,7 @@ impl Dispatcher {
         self.watch.lock().entry(key.to_string()).or_default().tokens = Some(kept);
         // what grew goes to the store, in its turn with the run's other events (AC-129)
         if known && self.has_run(key) {
-            let _ = self.events.sender.send((key.to_string(), ev.clone(), crate::tmux::hookstate::Whose::Main));
+            let _ = self.events.sender.send((key.to_string(), ev.clone()));
         }
     }
 

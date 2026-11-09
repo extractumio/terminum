@@ -37,8 +37,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.state = Phase::Working;
             r.prompt = None;
             r.new_work();
-            r.turn_ended = false;
-            r.open_tools = 0;
+            r.turn_starts();
             r.agent_session = session.map(str::to_string).or(r.agent_session.take());
             let agent = ops::pool_user(tx, &r.agent_id, &r.agent_name)?;
             for id in &r.ids {
@@ -52,8 +51,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             // a human's own prompt: new work (AC-122); to which of several finished tasks, it does not say
             active = true;
             r.new_work();
-            r.turn_ended = false;
-            r.open_tools = 0;                          // a tool an interrupt cut off fired no end
+            r.turn_starts();
             if r.status != "IN PROGRESS" && (r.ids.len() == 1 || !r.open.is_empty()) {
                 for id in r.targets() {
                     move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
@@ -62,13 +60,11 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             }
         }
         "Stop" => {
-            r.turn_ended = true;
-            r.open_tools = 0;
+            r.turn_over();
             r.nudge_turn = false;
         }
         "StopFailure" => {
-            r.turn_ended = true;
-            r.open_tools = 0;
+            r.turn_over();
             active = true;
             if !super::plan::finished(&r.status) {
                 let why: String = rules::clean(ev["error"].as_str().unwrap_or("an error")).chars().take(60).collect();
@@ -86,8 +82,8 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
 
 /// Hooks' events waiting for their turn: what comes first is applied first.
 pub(super) struct Events {
-    pub(super) sender: UnboundedSender<(String, Value, Whose)>,
-    waiting: Mutex<Option<UnboundedReceiver<(String, Value, Whose)>>>,
+    pub(super) sender: UnboundedSender<(String, Value)>,
+    waiting: Mutex<Option<UnboundedReceiver<(String, Value)>>>,
 }
 
 impl Default for Events {
@@ -104,16 +100,15 @@ pub fn heard(app: &Shared, key: &str, ev: &Value, whose: Whose) {
         return;
     }
     app.dispatcher.heard_facts(key, ev);
-    let _ = app.dispatcher.events.sender.send((key.to_string(), ev.clone(), whose));
+    match whose {
+        Whose::Main => drop(app.dispatcher.events.sender.send((key.to_string(), ev.clone()))),
+        Whose::Sub => app.dispatcher.touched(key),     // activity, and no more
+        Whose::Stale => {}
+    }
 }
 
-/// What one event does to its run: a subagent's is activity and no more; a late one, nothing.
-async fn one_event(app: Shared, key: String, ev: Value, whose: Whose) {
-    match whose {
-        Whose::Main => {}
-        Whose::Sub => return app.dispatcher.touched(&key),
-        Whose::Stale => return,
-    }
+/// What one of the main agent's events does to its run.
+async fn one_event(app: Shared, key: String, ev: Value) {
     if ev["event"] == "Tokens" {
         let Some(models) = super::usage::by_model(&ev["tokens"]) else { return };
         let done = store(&app, move |tx| {
@@ -168,7 +163,7 @@ async fn in_turn<T, F: Future<Output = ()> + Send + 'static>(mut items: Unbounde
 pub async fn hearing(app: Shared) {
     let Some(events) = app.dispatcher.events.waiting.lock().take() else { return };
     let told = app.clone();
-    in_turn(events, move |(key, ev, whose)| one_event(app.clone(), key, ev, whose), move |e| {
+    in_turn(events, move |(key, ev)| one_event(app.clone(), key, ev), move |e| {
         tracing::error!(event = "dispatcher.panic", error = %e);
         super::acts::note(&told, "Dispatcher could not take an agent's event: see terminumd's log. It goes on with the next.".to_string());
     }).await;
@@ -253,8 +248,8 @@ mod tests {
         ] {
             crate::sock::hook_on(app.clone(), Some(server.clone()), e).await;
         }
-        while let Ok((k, e, whose)) = events.try_recv() {
-            one_event(app.clone(), k, e, whose).await;
+        while let Ok((k, e)) = events.try_recv() {
+            one_event(app.clone(), k, e).await;
         }
         let read = || app.tasks.with(|tx| Ok((runs::by_id(tx, &run)?, crate::tasks::ops::get(tx, &task)?.status))).unwrap();
         let (r, status) = read();
@@ -269,8 +264,8 @@ mod tests {
         ] {
             crate::sock::hook_on(app.clone(), Some(server.clone()), e).await;
         }
-        while let Ok((k, e, whose)) = events.try_recv() {
-            one_event(app.clone(), k, e, whose).await;
+        while let Ok((k, e)) = events.try_recv() {
+            one_event(app.clone(), k, e).await;
         }
         let (r, status) = read();
         assert_eq!((r.turn_ended, r.open_tools, status.as_str()), (false, 0, "IN PROGRESS"), "p2 goes on: the late tool and Stop of p1 are no part of it");

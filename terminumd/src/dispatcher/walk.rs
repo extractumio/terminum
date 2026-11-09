@@ -111,8 +111,7 @@ fn walk_one(tx: &rusqlite::Transaction, mut r: Run, read: Read, now: i64, at: In
     facts.dt = dt;
     facts.active |= r.open_tools > 0;
     if read.ended {
-        r.turn_ended = true;
-        r.open_tools = 0;                          // its turn is over: a tool an interrupt cut off is not open
+        r.turn_over();
     }
     facts.others_open = match r.pane_key.as_deref().filter(|_| plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) {
         Some(key) => runs::others_open(tx, key, &r.task)?,

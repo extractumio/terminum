@@ -87,14 +87,9 @@ pub fn hook_event(app: &Shared, key: &str, ev: &Value, whose: Whose) -> Option<S
     remind
 }
 
-/// An event of the main agent, no subagent's.
-fn is_main(ev: &serde_json::Value) -> bool {
-    !ev["sub"].as_str().is_some_and(|s| !s.is_empty())
-}
-
 /// Whether the main agent reads `ev`'s answer as context: the one event that may carry words to it.
-pub fn carries_context(ev: &Value) -> bool {
-    is_main(ev) && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
+pub fn carries_context(ev: &Value, whose: Whose) -> bool {
+    whose == Whose::Main && ev["event"].as_str() == Some(remind_event(ev["agent"].as_str().unwrap_or("")))
 }
 
 /// `ev` applied to the plans: (changed, the reminder due). A subagent's prompt, plan tool and tool calls are its own, and
@@ -102,7 +97,7 @@ pub fn carries_context(ev: &Value) -> bool {
 fn apply(p: &Plans, key: &str, ev: &Value, whose: Whose, working: impl FnOnce() -> bool, now: u64) -> (bool, Option<String>) {
     let (agent, name) = (ev["agent"].as_str().unwrap_or(""), ev["event"].as_str().unwrap_or(""));
     let session = ev["session"].as_str().filter(|s| !s.is_empty());
-    let main = whose == Whose::Main && is_main(ev);
+    let main = whose == Whose::Main;
     let mut changed = match name {
         "UserPromptSubmit" if main => { p.turn(key, agent, session, now); true }
         "SessionStart" => session.is_some_and(|s| p.session(key, Some(s))),
@@ -113,7 +108,7 @@ fn apply(p: &Plans, key: &str, ev: &Value, whose: Whose, working: impl FnOnce() 
         changed = true;
     }
     // the reminder rides the event whose output reaches the model: Claude's sync PostToolBatch, Codex's PostToolUse
-    let remind = carries_context(ev).then(|| p.post_tool(key, working(), now)).flatten();
+    let remind = carries_context(ev, whose).then(|| p.post_tool(key, working(), now)).flatten();
     (changed, remind)
 }
 
@@ -206,7 +201,7 @@ mod tests {
         planned(&p);
         let ev = |sub: &str, event: &str| json!({"agent": "claude", "session": "s1", "event": event, "sub": sub,
             "plan": {"op": "all", "items": [{"text": "sub's own"}]}});
-        assert_eq!(apply(&p, K, &ev("a1", "PostToolUse"), Whose::Main, || true, 100_000), (false, None));
+        assert_eq!(apply(&p, K, &ev("a1", "PostToolUse"), Whose::Sub, || true, 100_000), (false, None));
         assert_eq!(p.row(K, false, 100_000).map(|r| r.total), Some(2), "the main agent's plan is kept");
         let (changed, remind) = apply(&p, K, &ev("", "PostToolUse"), Whose::Main, || true, 100_000);
         assert!(changed && remind.is_none(), "the main agent's own op applies (it is fresh)");

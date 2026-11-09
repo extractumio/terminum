@@ -123,8 +123,7 @@ pub async fn terminal(State(app): State<Shared>, UrlPath(action): UrlPath<String
     let text = termtext::line(&job, &action, &b.paths, b.path.as_deref()).map_err(|m| err(StatusCode::BAD_REQUEST, "not_typed", m))?;
     let line = format!("send-keys -t {pane} -l -- {}", crate::tmux::args::quote(&text));   // a "-name" is text
     // behind the pane's typing queue, as a page's keys: no gate's paste or act decided before it interleaves (AC-131)
-    app.inputs.human(&key);
-    let held = server.typing(&pane).lock_owned().await;
+    let held = app.inputs.human_queue(&server, &pane, &key).await;
     let took = server.run_all_on(&pane, vec![line]).await.into_iter().find_map(Result::err);
     drop(held);
     let who = crate::inputs::Who::user("panel", None, &crate::webaccess::client(&headers, peer, false));

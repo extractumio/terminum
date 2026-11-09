@@ -125,13 +125,11 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             acts.push(Act::End);
             return acts;
         }
-        run.state = Phase::Gone;
-        run.open_tools = 0;
+        run.gone();
     }
     // the agent's end: its exit code tells a clean one from a signal (AS-127)
     if run.state != Phase::Gone && !f.alive {
-        run.state = Phase::Gone;
-        run.open_tools = 0;
+        run.gone();
         let how = match f.exit {
             Some(code) => format!("exit {code}"),
             None => "no exit recorded".to_string(),
@@ -207,7 +205,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             end_failed(run, &mut acts, format!("Time budget of {} minutes used: the agent was ended.", total / 60));
             return acts;
         }
-        if !run.warned && left <= warn_at(total) {
+        if !run.warned && warn_due(run) {
             acts.push(Act::Warn(left));               // `warned` once it went (acts.rs)
         }
     }

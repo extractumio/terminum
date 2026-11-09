@@ -165,6 +165,10 @@ impl Inputs {
     /// A human typed into pane `key` now.
     pub fn human(&self, key: &str) {
         let mut all = self.human.lock();
+        if let Some(last) = all.get_mut(key) {
+            *last = Instant::now();
+            return;
+        }
         all.retain(|_, at| at.elapsed() < HUMAN_KEPT);
         all.insert(key.to_string(), Instant::now());
     }
@@ -172,6 +176,19 @@ impl Inputs {
     /// Whether a human typed into pane `key` after `at`.
     pub fn human_since(&self, key: &str, at: Instant) -> bool {
         self.human.lock().get(key).is_some_and(|last| *last > at)
+    }
+
+    /// `pane`'s typing queue (state key `key`) for a human's input: marked first, so an act holding the queue sees
+    /// it waiting (terminum-dispatcher.md AC-131).
+    pub async fn human_queue(&self, server: &Server, pane: &str, key: &str) -> tokio::sync::OwnedMutexGuard<()> {
+        self.human(key);
+        server.typing(pane).lock_owned().await
+    }
+
+    /// The same queue for an act decided at `at`: none when a human's input came since, waiting behind it too.
+    pub async fn act_queue(&self, server: &Server, pane: &str, key: &str, at: Instant) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let held = server.typing(pane).lock_owned().await;
+        (!self.human_since(key, at)).then_some(held)
     }
 
     /// Rows lost so far.

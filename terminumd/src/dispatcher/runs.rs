@@ -150,6 +150,24 @@ impl Run {
         self.targets().join(", ")
     }
 
+    /// A turn of its agent starts: no tool of the turn before is open.
+    pub fn turn_starts(&mut self) {
+        self.turn_ended = false;
+        self.open_tools = 0;
+    }
+
+    /// Its agent's turn is over: no tool of it is open, also one an interrupt cut off with no end.
+    pub fn turn_over(&mut self) {
+        self.turn_ended = true;
+        self.open_tools = 0;
+    }
+
+    /// Its agent ended: only its shell remains.
+    pub fn gone(&mut self) {
+        self.state = Phase::Gone;
+        self.open_tools = 0;
+    }
+
     /// RUN or a human's own prompt: every clock starts anew (AC-122). The turn is the agent's: a hook says when one starts.
     pub fn new_work(&mut self) {
         if self.state == Phase::Ending {

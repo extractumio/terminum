@@ -161,13 +161,11 @@ pub async fn exit_of(server: &Server, pane: &str) -> Option<i32> {
 /// Watches a run until its prompt is taken: the box, the gate, the hook. Started once per run; a
 /// restart's walk starts it anew and reads every fact from the store.
 pub fn watch(app: &Shared, id: &str) {
-    if !app.dispatcher.starting.lock().insert(id.to_string()) {
-        return;
-    }
+    let Some(held) = super::Held::take(app, |d| &d.starting, id) else { return };
     let (app, id) = (app.clone(), id.to_string());
     tokio::spawn(async move {
         watching(&app, &id).await;
-        app.dispatcher.starting.lock().remove(&id);
+        drop(held);
     });
 }
 
