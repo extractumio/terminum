@@ -286,6 +286,7 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
                                          AND id > coalesce((SELECT max(id) FROM schedule_fires WHERE schedule = ?1 AND task IS NOT NULL), 0)", [&s.id], |r| r.get(0)).map_err(sql)?;
         let mut v = json!(s);
         v["words"] = json!(s.words());
+        v["next_words"] = json!(next.iter().map(|at| cron::when_words(*at)).collect::<Vec<_>>());   // the Mac's clock, whatever the browser's
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
@@ -315,6 +316,12 @@ pub fn fire_is(tx: &Transaction, fire: i64, state: &str, why: Option<&str>) -> R
 /// Firings whose task was made and whose run was never asked for: terminumd ended between the two (AC-162).
 pub fn unstarted(tx: &Transaction) -> Result<Vec<(i64, String)>, String> {
     rows(tx, "SELECT f.id, t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.state = 'made' ORDER BY f.id", [], |r| Ok((r.get(0)?, r.get(1)?)))
+}
+
+/// A task of `s` still open, the newest, by its ID (AC-162).
+pub fn open_task(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
+    tx.query_row("SELECT t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL
+                  ORDER BY f.id DESC LIMIT 1", [&s.id], |r| r.get(0)).optional().map_err(sql)
 }
 
 /// The task of `s`'s last firing, if it made one, with its status.

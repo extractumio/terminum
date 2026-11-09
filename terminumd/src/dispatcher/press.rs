@@ -23,7 +23,7 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
 }
 
 /// Over this, the prompt names the task's text instead of carrying it (AC-121).
-const MOST_PROMPT: usize = 20_000;
+pub(super) const MOST_PROMPT: usize = 20_000;
 
 /// What goes with one task: as before; several go by their numbers, so no text an agent wrote stands beside
 /// the human's words (AC-138). `message`: what the human wrote for the agent.
@@ -42,7 +42,8 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
     let body = ops::text_of(tx, &t.id)?;
     // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
     if let Some(s) = crate::tasks::schedules::of_task(tx, &t.key)? {
-        let run = super::fire::prompt(&s, &t.id, &t.title, &body);
+        // its first run is the firing's; any after is a human's RUN
+        let run = super::fire::prompt(&s, &t.id, &t.title, &body, runs::last_of(tx, &t.key)?.is_some());
         return Ok(match said { Some(m) => format!("{m}\n\n{run}"), None => run });
     }
     let mut parts = vec![format!("The human ran task {}: {}", t.id, t.title)];

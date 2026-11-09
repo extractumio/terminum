@@ -25,7 +25,6 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   let schedules = [], drawn = "", opened = read(OPEN_KEY) === true;
   const win = scheduleWindow({ getMeta, chosen, changed: () => load() });
 
-  const when = (at) => new Date(at * 1000).toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
 
   /** Its card: SCH-1, severity, title, cadence, next run or why it is paused, agent, last task, skips. */
   function card(s) {
@@ -38,7 +37,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     top.append(el("span", "cid", s.key), el("span", `csev ${s.severity}`, s.severity));
     const foot = el("div", "cfoot");
     foot.append(el("span", "schedwords", s.words));
-    foot.append(el("span", `schednext${s.paused ? " paused" : ""}`, s.paused ? s.paused_why ?? "paused" : s.next.length ? `next ${when(s.next[0])}` : "never"));
+    foot.append(el("span", `schednext${s.paused ? " paused" : ""}`, s.paused ? s.paused_why ?? "paused" : s.next.length ? `next ${s.next_words[0]}` : "never"));
     const agent = el("span", "cagent", a?.name ?? "agent gone");
     foot.append(agent);
     const last = el("div", "schedlast");

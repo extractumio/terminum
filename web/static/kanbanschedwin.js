@@ -51,8 +51,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     try {
       const v = await api("/api/schedules/preview", { method: "POST", body: { ...b, title: b.title || "Untitled" } });
       if (n !== asked) return;
-      const runs = v.next.map((at) => new Date(at * 1000).toLocaleString(undefined, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
-      $("schednext").textContent = `${v.words}. Next: ${runs.join(", ")}`;
+      $("schednext").textContent = `${v.words}. Next: ${v.next_words.join(", ")}`;   // the Mac's clock, terminumd's words
       $("schedprompt").textContent = v.prompt;
       $("schedline").textContent = v.line;
       showError(error, "");

@@ -97,13 +97,15 @@ fn ac162_once_pauses_itself_after_it_fires() {
 fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
     open("fire-prompt").with(|tx| {
         let s = schedule(tx, 1, json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}));
-        let p = prompt(&s, "TERM-41", "Nightly deps check", "Check them.");
+        let p = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false);
         assert!(p.starts_with("Task TERM-41: Nightly deps check. A scheduled run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human; no human started this run or watches it now.\n\nCheck them.\n\nYou have 30 minutes"), "{p}");
         assert!(p.contains("call finish_task with the result in this form, each on its own line:\nOutcome: ok, attention or failed\nSummary: one or two sentences\nDetails: what was checked or done\nFor the human: what they should do, or nothing"), "{p}");
         assert!(p.ends_with(ASK), "the words on asking a human");
         let (id, _) = made(decide(tx, &s, NOW + DAY, false)?);
         let t = ops::get(tx, &id)?;
-        assert_eq!(super::super::press::prompt_of(tx, std::slice::from_ref(&t), None)?, prompt(&s, &id, &t.title, "Check them."), "RUN of its task goes as the schedule's run");
+        assert_eq!(super::super::press::prompt_of(tx, std::slice::from_ref(&t), None)?, prompt(&s, &id, &t.title, "Check them.", false), "the firing's RUN goes as the schedule's run");
+        assert!(prompt(&s, &id, &t.title, "Check them.", true).starts_with(&format!("The human ran task {id} again: Nightly deps check. A task of terminum's schedule SCH-1")), "a human's RUN after says so");
+        assert!(prompt(&s, &id, &t.title, &"x".repeat(20_001), false).contains(&format!("Its text in get_task {id} is your assignment")), "a long text by get_task");
         Ok(())
     }).unwrap();
 }
@@ -116,13 +118,52 @@ fn ac161_its_task_takes_the_kept_slot_and_others_have_the_rest() {
         let s = schedule(tx, 1, every_15());
         let a = crate::tasks::agents::by_id(tx, "a")?.unwrap();
         let other = ops::create(tx, HUMAN, NewTask { title: "API-12".into(), ..Default::default() }, NOW)?;
-        let full = pool::check_for(tx, &a, "default", &other.key, None)?.expect("its one slot is kept");
+        let full = pool::check_for(tx, &a, "default", Some(&other.key), None)?.expect("its one slot is kept");
         assert_eq!(full.words, "Opus reviewer is at its limit of 1: SCH-1 (kept).");
         let (id, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
         let key = ops::key_of(tx, &id)?;
-        assert_eq!(pool::check_for(tx, &a, "default", &key, None)?, None, "its own task takes the kept slot");
+        assert_eq!(pool::check_for(tx, &a, "default", Some(&key), None)?, None, "its own task takes the kept slot");
         schedules::pause(tx, &s.id, "paused", NOW)?;
-        assert_eq!(pool::check_for(tx, &a, "default", &other.key, None)?, None, "paused: the slot is free");
+        assert_eq!(pool::check_for(tx, &a, "default", Some(&other.key), None)?, None, "paused: the slot is free");
+        Ok(())
+    }).unwrap();
+}
+
+/// A run of `task` on agent `a`, working.
+fn working(tx: &rusqlite::Transaction, task: &ops::Task) -> String {
+    let id = runs::add(tx, &runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: task.project.clone(), ..Default::default() }, std::slice::from_ref(&task.key), NOW).unwrap();
+    runs::change(tx, &id, |r| { r.state = runs::Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
+    id
+}
+
+#[test]
+fn ac161_one_run_stands_in_a_kept_slot() {
+    open("fire-one-kept").with(|tx| {
+        let s = schedule(tx, 1, every_15());
+        let a = crate::tasks::agents::by_id(tx, "a")?.unwrap();
+        let (old, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        ops::move_to(tx, DISPATCHER, &old, "FAILED", NOW + 11 * 60)?;
+        let (new, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);
+        let (old_key, new_key) = (ops::key_of(tx, &old)?, ops::key_of(tx, &new)?);
+        let run = working(tx, &ops::get(tx, &new)?);
+        let full = pool::check_for(tx, &a, "default", Some(&old_key), None)?.expect("the kept slot holds the new run");
+        assert_eq!(full.words, "Opus reviewer is at its limit of 1: SCH-1 (kept).");
+        assert_eq!(pool::check_for(tx, &a, "default", Some(&new_key), Some(&run))?, None, "its own run goes on from itself");
+        assert!(pool::check_for(tx, &a, "default", None, None)?.is_some(), "a run of several tasks takes no kept slot");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac162_any_open_task_of_it_skips_the_firing() {
+    open("fire-any-open").with(|tx| {
+        let s = schedule(tx, 2, every_15());
+        let (old, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        ops::move_to(tx, DISPATCHER, &old, "FAILED", NOW + 11 * 60)?;
+        let (new, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);
+        ops::move_to(tx, DISPATCHER, &new, "DONE", NOW + 26 * 60)?;
+        ops::move_to(tx, DISPATCHER, &old, "IN PROGRESS", NOW + 27 * 60)?;   // a human ran the older again
+        assert!(matches!(decide(tx, &s, NOW + 40 * 60, false)?, Next::Skipped), "the older one open: skipped");
         Ok(())
     }).unwrap();
 }

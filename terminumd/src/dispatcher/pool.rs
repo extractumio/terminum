@@ -55,11 +55,11 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
 }
 
 /// What holds slots now, read once for every agent a window offers: the runs, the slots schedules keep by agent,
-/// and which runs stand in them (terminum-schedules.md AC-161).
+/// and the run standing in each kept slot, by run, its schedule (terminum-schedules.md AC-161).
 pub struct Slots {
     holding: Vec<Run>,
     kept: BTreeMap<String, Vec<String>>,
-    in_kept: HashSet<String>,
+    in_kept: HashMap<String, String>,
 }
 
 impl Slots {
@@ -77,29 +77,38 @@ impl Slots {
         judge(tx, &holding, agent, project, (kept, &self.in_kept))
     }
 
-    /// `check` for task `task` (its key): one of a schedule of `agent` takes the slot kept for it, only its project's
-    /// limit holding it (terminum-schedules.md AC-161).
-    pub fn check_for(&self, tx: &Transaction, agent: &Agent, project: &str, task: &str, but: Option<&str>) -> Result<Option<Full>, String> {
-        self.check(tx, (!kept_for(tx, &agent.id, task)?).then_some(agent), project, but)
+    /// `check` for a run of task `task` alone (its key; none: several tasks): one of a schedule of `agent` takes the
+    /// slot kept for it while no other run, but `but`, stands there, only its project's limit holding it (AC-161).
+    pub fn check_for(&self, tx: &Transaction, agent: &Agent, project: &str, task: Option<&str>, but: Option<&str>) -> Result<Option<Full>, String> {
+        let schedule = match task {
+            Some(t) => kept_schedule(tx, &agent.id, t)?,
+            None => None,
+        };
+        let free = schedule.is_some_and(|s| !self.in_kept.iter().any(|(run, of)| *of == s && Some(run.as_str()) != but));
+        self.check(tx, (!free).then_some(agent), project, but)
     }
 }
 
 /// `check_for`, read now.
-pub fn check_for(tx: &Transaction, agent: &Agent, project: &str, task: &str, but: Option<&str>) -> Result<Option<Full>, String> {
+pub fn check_for(tx: &Transaction, agent: &Agent, project: &str, task: Option<&str>, but: Option<&str>) -> Result<Option<Full>, String> {
     Slots::read(tx)?.check_for(tx, agent, project, task, but)
 }
 
-/// Whether task `task` (its key) is a firing's of a schedule of `agent` that keeps its slot (AC-161).
-fn kept_for(tx: &Transaction, agent: &str, task: &str) -> Result<bool, String> {
-    Ok(!rows(tx, "SELECT 1 FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
-             (task, agent), |r| r.get::<_, i64>(0))?.is_empty())
+/// The schedule of `agent` keeping a slot that task `task` (its key) was made by, if one (AC-161).
+fn kept_schedule(tx: &Transaction, agent: &str, task: &str) -> Result<Option<String>, String> {
+    Ok(rows(tx, "SELECT s.id FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
+            (task, agent), |r| r.get(0))?.pop())
 }
 
-/// Which of the runs `ids` stand in their agent's kept slots: their tasks are firings of its schedules that keep one (AC-161).
-fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashSet<String>, String> {
-    Ok(rows(tx, "SELECT DISTINCT rt.run FROM run_tasks rt JOIN runs r ON r.id = rt.run JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
-                 WHERE rt.run IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL",
-            [runs::listed_keys(ids)], |r| r.get(0))?.into_iter().collect())
+/// The run standing in each kept slot, of the runs `ids`: a run of one task of its agent's schedule that keeps one, the
+/// oldest; a second, or a run of several tasks, counts as any run (AC-161). By run, its schedule.
+fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, String>, String> {
+    let found: Vec<(String, String)> = rows(tx, "SELECT r.id, s.id FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
+                 WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
+                   AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
+            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut seen = HashSet::new();
+    Ok(found.into_iter().filter(|(_, s)| seen.insert(s.clone())).collect())
 }
 
 /// `check` of one agent, read now.
@@ -108,8 +117,8 @@ pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option
 }
 
 /// `kept`: the slots `agent`'s schedules keep, and the runs standing in kept slots: those count once (AC-161).
-fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str, (kept, in_kept): (&[String], &HashSet<String>)) -> Result<Option<Full>, String> {
-    let of_agent: Vec<&Run> = holding.iter().copied().filter(|r| agent.is_some_and(|a| a.id == r.agent_id) && !in_kept.contains(&r.id)).collect();
+fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str, (kept, in_kept): (&[String], &HashMap<String, String>)) -> Result<Option<Full>, String> {
+    let of_agent: Vec<&Run> = holding.iter().copied().filter(|r| agent.is_some_and(|a| a.id == r.agent_id) && !in_kept.contains_key(&r.id)).collect();
     let of_project: Vec<&Run> = holding.iter().copied().filter(|r| r.project == project).collect();
     let limit = limits::agent_limit(tx, project)?;
     let mut full: Vec<(&[&Run], i64)> = Vec::new();
@@ -137,7 +146,7 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
     // a slot its schedules keep counts once, whether its run is live or not (AC-161)
     let mut others: HashMap<&str, usize> = HashMap::new();
     for r in &holding {
-        let in_slot = in_kept.contains(&r.id);
+        let in_slot = in_kept.contains_key(&r.id);
         of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot}));
         if !in_slot {
             *others.entry(&r.agent_id).or_default() += 1;

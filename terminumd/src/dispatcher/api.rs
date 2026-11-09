@@ -47,7 +47,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let mut offered = Vec::new();
         for a in &all {
             // one at its limit is offered all the same: Run waits for its room (AC-158)
-            let full = slots.check(tx, Some(a), &t.project, None)?;
+            let full = slots.check_for(tx, a, &t.project, (tasks.len() == 1).then_some(t.key.as_str()), None)?;
             let mut v = json!(a);
             v["full"] = json!(full);
             offered.push(v);
@@ -91,8 +91,9 @@ enum Next {
 
 /// A slot's limit, or an older wait that has room, keeps this press waiting (AC-158): its words, after the human's
 /// comment is kept, so it shows while it waits.
-fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: &Task, but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
-    let why = match pool::check_for(tx, agent, project, &task.key, but)? {
+/// `alone`: the press runs `task` alone: one of a schedule's may take its kept slot (terminum-schedules.md AC-161).
+fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
+    let why = match pool::check_for(tx, agent, project, alone.then_some(task.key.as_str()), but)? {
         Some(full) => full.words,
         None => match super::waits::ahead(tx, &agent.id, project, &task.key)? {
             Some(first) => format!("{first} waits for it first."),
@@ -312,7 +313,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Value) 
         // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
         let agent = agents::by_id(tx, &old.agent_id)?;
         match &agent {
-            Some(a) => if let Some(words) = wait_if_full(tx, a, &old.project, &task, Some(&old.id), (&kept, None, &[]))? {
+            Some(a) => if let Some(words) = wait_if_full(tx, a, &old.project, (&task, true), Some(&old.id), (&kept, None, &[]))? {
                 return Ok(Next::Waits(words));
             },
             None => if let Some(full) = pool::check(tx, None, &old.project, Some(&old.id))? {
@@ -366,10 +367,10 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         }
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder
         // for its room does not wait (AC-141)
-        if closing && let Some(full) = pool::check_for(tx, &ag, &project, &now[0].key, None)? {
+        if closing && let Some(full) = pool::check_for(tx, &ag, &project, (now.len() == 1).then_some(now[0].key.as_str()), None)? {
             return Err(full.words);
         }
-        if let Some(words) = wait_if_full(tx, &ag, &project, &now[0], None, (&kept, said.as_deref(), &attached))? {
+        if let Some(words) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
             return Ok(Next::Waits(words));
         }
         let prompt = prompt_of(tx, &now, said.as_deref())?;

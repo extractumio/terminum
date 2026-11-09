@@ -90,7 +90,7 @@ export async function liveSchedules(page, live) {
   await page.selectOption("#schedkind", "minutes");
   await page.selectOption("#schedevery", "15");
   check("AC-160 the picker writes cron fields and terminumd says the next runs", await until(async () => await page.textContent("#schedfields") === "*/15 * * * *" && /^Every 15 minutes\. Next: .+, .+, .+/.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
-  await page.click("#schedwhat summary");
+  check("AC-160 what the agent gets stands open before Save", await page.evaluate(() => document.getElementById("schedwhat").open));
   check("AC-160 what the agent gets: the prompt and its command", (await page.textContent("#schedprompt")).includes("A scheduled run of terminum's schedule SCH-? \"Nightly deps check\" (every 15 minutes)") && (await page.textContent("#schedline")).includes("fake_agent.py"), await page.textContent("#schedprompt"));
   await page.selectOption("#schedkind", "cron");
   await page.fill("#schedcron", "*/5 * * * *");
@@ -119,10 +119,16 @@ export async function liveSchedules(page, live) {
   if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
   check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
+  // more agents than a few rows: the bars scroll, the columns stay
+  const crowd = [];
+  for (let i = 0; i < 14; i++) crowd.push((await j("/api/task-agents", "POST", { name: `Crowd ${i}`, kind: "claude", command: "claude" })).id);
   await page.reload();
-  await page.waitForSelector("#board .col");
+  await page.waitForSelector("#board .col", { state: "attached" });
   check("AC-163 this browser remembers it open", await until(() => page.isVisible(sched)));
+  const room = await page.evaluate(() => Math.round(document.querySelector("#board .col").getBoundingClientRect().height));
+  check("AC-163 the columns keep their room under the pool and the section, however many agents", room > 200, String(room));
   await shot("schedules");
+  for (const id of crowd) await j(`/api/task-agents/${id}`, "DELETE");
 
   // AC-162: due, fired on the fake agent, its task DONE with its result
   const s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
