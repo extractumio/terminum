@@ -234,6 +234,7 @@ Scenario: AC-122 happy path — a human's new work
   Then API-12 is IN PROGRESS and the history says "Dispatcher moved it: new work in its session"
   And of several tasks of the session the one most recently IN PROGRESS returns, none when another stands there
   And it holds only for a session Dispatcher started
+  And a turn the agent writes itself, which its hook speaks as a prompt (terminum-terminal.md AC-90: a background task's end, another session's or agent's message), is no one's new work: its turn starts, its task and clocks stay
   When the agent then ends with finish_task, or the session ends cleanly
   Then API-12 is DONE again (AC-123)
 
@@ -1033,7 +1034,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-121 — `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
-- [x] AC-122 — `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
+- [x] AC-122 — `cargo test dispatcher::hooks`, `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
