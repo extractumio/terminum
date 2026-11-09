@@ -209,11 +209,12 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
   archived with its reason; your own words and tasks are never reworded or archived by an agent.
-  An agent's tool list carries only `search_tools`, `get_tool_info`, `execute_tool` and the
-  tools terminum's own words name (`update_session_plan`, `create_task`, `get_task`, `get_file`,
-  `finish_task`); it finds the others by the action ("change a task's priority") and runs them
-  through `execute_tool`. Allowing `execute_tool` in an agent without asking (Claude Code's
-  `--allowedTools`) allows every tool behind it.
+  An agent's tool list carries only `search_tools`, `get_tool_info`, `execute_tool` and
+  `update_session_plan`; it finds the task tools by the action ("change a task's priority") and
+  runs them through `execute_tool`, as terminum's instructions and Dispatcher's prompts write
+  each call (`execute_tool("finish_task", {id, result})`). An agent that Dispatcher starts
+  without permission prompts needs `execute_tool` allowed (Claude Code:
+  `--allowedTools mcp__plugin_terminum_terminum__execute_tool`), and that allows every task tool.
   TODO and DONE show each card as one line, its ID, severity and title: a press shows one whole
   (and folds the one before), a press on it then opens its window, Esc folds it. Agents stand a
   column wide over the columns, four a row.

@@ -126,7 +126,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 }
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
-                    return Err(format!("Not kept: {same} already says this. Read it with get_task, and comment if you have more."));
+                    return Err(format!("Not kept: {same} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));
                 }
                 let text = text_of(tx, &project, args["text"].as_str().unwrap_or_default())?;
                 let parent = args["parent"].as_str().map(str::to_string);
@@ -161,7 +161,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 ops::link(tx, &me, id, Some(&who.key), at)?;
                 ops::edit(tx, &me, id, ops::Edit { owner: Some(me.clone()), ..Default::default() }, at)?;
-                Ok((format!("{id} is this session's now, in {}. move_task when you start on it.", t.status), vec![id.to_string()]))
+                Ok((format!("{id} is this session's now, in {}. execute_tool(\"move_task\", {{id, to}}) when you start on it.", t.status), vec![id.to_string()]))
             }
             "move_task" => {
                 let (id, to) = (arg(args, "id")?, arg(args, "to")?);
@@ -245,7 +245,7 @@ fn get_task(store: &Store, who: &Who, args: &Value) -> Result<String, String> {
         v["files"] = json!(attached);
     }
     v["history"] = json!(cut[page - 1]);
-    let more = if page < pages { format!("\nIts history's page {page} of {pages}: get_task with page \"{}\" for the next.", page + 1) } else { String::new() };
+    let more = if page < pages { format!("\nIts history's page {page} of {pages}: execute_tool(\"get_task\", {{id, page}}) with page \"{}\" for the next.", page + 1) } else { String::new() };
     Ok(format!("{DATA}{more}\n{v}"))
 }
 

@@ -333,13 +333,12 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner
 /// asked for compact descriptions): the instructions within 512 characters, each tool's
-/// description within 500, all the listed tools' JSON within 4,900 (4,700 before ask_human, which RUN's prompt names:
-/// terminum-dispatcher.md AC-157): what the catalog adds behind search_tools costs nothing here (AC-155).
+/// description within 500, all the listed tools' JSON within 3,200: what the catalog adds behind search_tools costs nothing here (AC-155).
 #[test]
 fn the_tools_stay_compact() {
     let t = Value::Array(mcp_meta::listed());
     let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
-    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 4900, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
+    assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 3200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
 }

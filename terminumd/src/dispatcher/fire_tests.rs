@@ -99,7 +99,7 @@ fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
         let s = schedule(tx, 1, json!({"title": "Nightly deps check", "body": "Check them.", "agent": "a", "cron": "0 3 * * *", "budget_minutes": 30}));
         let p = prompt(&s, "TERM-41", "Nightly deps check", "Check them.", false);
         assert!(p.starts_with("Task TERM-41: Nightly deps check. A scheduled run of terminum's schedule SCH-1 \"Nightly deps check\" (every day at 03:00), set by a human; no human started this run or watches it now.\n\nCheck them.\n\nYou have 30 minutes"), "{p}");
-        assert!(p.contains("call finish_task with the result in this form, each on its own line:\nOutcome: ok, attention or failed\nSummary: one or two sentences\nDetails: what was checked or done\nFor the human: what they should do, or nothing"), "{p}");
+        assert!(p.contains("call execute_tool(\"finish_task\", {id, result}) with the result in this form, each on its own line:\nOutcome: ok, attention or failed\nSummary: one or two sentences\nDetails: what was checked or done\nFor the human: what they should do, or nothing"), "{p}");
         assert!(p.ends_with(ASK), "the words on asking a human");
         let (id, _) = made(decide(tx, &s, NOW + DAY, false)?);
         let t = ops::get(tx, &id)?;

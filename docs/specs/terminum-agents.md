@@ -65,7 +65,7 @@ Open questions: none.
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
-| AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and the tools terminum's own words name; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool. |
+| AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and update_session_plan; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool, as terminum's own words write each call. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay. |
 
 ## 5. BDD scenarios
@@ -305,7 +305,8 @@ Scenario: AC-98 edge — an agent of an older session
 Scenario: AC-155 happy path — listed, found, run
   Given `terminum mcp` started by the agent in a terminum pane
   When the agent lists the tools
-  Then it gets search_tools, get_tool_info, execute_tool, and in full every tool that terminum's instructions, reminder or Dispatcher's fixed prompts name: update_session_plan, create_task, get_task, get_file, finish_task; the instructions say that any other action is found with search_tools and run with execute_tool
+  Then it gets search_tools, get_tool_info, execute_tool and update_session_plan (the plan, sent at every step with a schema the client checks), nothing else
+  And wherever terminum's instructions, reminder or Dispatcher's fixed prompts name another tool, they write its call: `execute_tool("finish_task", {id, result})`, `execute_tool("get_task", {id})`, `execute_tool("get_file", {task, name})`, `execute_tool("create_task", {title, severity, text})`, `execute_tool("ask_human", {id, questions})`, each argument the tool's own and every required one there; the instructions say that any other tool is found with search_tools and run with execute_tool(name, arguments)
   When the agent calls search_tools {query: "change a task's priority"}
   Then it answers "Tools for "change a task's priority", best first (? optional):", then at most 5 numbered lines, the first "1. update_task(archive?: yes, id, parent?, reason?, severity?: P0|P1|P2|P3, text?, title?) [tasks]: Changes a task of your project: …", each a tool's signature (enums inline), its area and its description's first sentence; then how to run one
   When the agent calls get_tool_info {names: ["update_task"]}
@@ -322,8 +323,8 @@ Scenario: AC-155 happy path — the index
 
 Scenario: AC-155 edge — growing the catalog
   Given a new tool
-  Then it gets its card (area, keywords, an example that its own check accepts) beside its definition, and phrasings in GOLDEN; tools/list grows only when terminum's own words name it
-  And the tools/list a session pays for stays within 4,700 bytes of JSON, the instructions within 512 characters
+  Then it gets its card (area, keywords, an example that its own check accepts) beside its definition, and phrasings in GOLDEN; tools/list does not grow
+  And the tools/list a session pays for stays within 3,200 bytes of JSON, the instructions within 512 characters
 
 Scenario: AC-155 failure — wrong calls
   When search_tools has no query, a blank one, one over 500 characters, or a limit not 1–10

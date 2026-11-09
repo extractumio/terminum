@@ -5,7 +5,7 @@
 
 use serde_json::json;
 
-use super::press::{budget_words, ASK};
+use super::press::{budget_words, ASK, FINISH};
 use super::{pool, runs, store, DISPATCHER};
 use crate::app::Shared;
 use crate::tasks::cron;
@@ -32,7 +32,7 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool) ->
         parts.push(body.to_string());
     }
     parts.push(budget_words(s.budget_seconds));
-    parts.push(["This is a scheduled run: its result is read later on the board. When it is done, call finish_task with the result in this form, each on its own line:",
+    parts.push([&*format!("This is a scheduled run: its result is read later on the board. When it is done, call {FINISH} with the result in this form, each on its own line:"),
                 "Outcome: ok, attention or failed", "Summary: one or two sentences", "Details: what was checked or done", "For the human: what they should do, or nothing"].join("\n"));
     parts.push(ASK.to_string());
     parts.join("\n\n")

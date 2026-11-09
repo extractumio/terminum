@@ -150,7 +150,7 @@ fn ac157_the_prompt_says_how_to_ask_a_human() {
     store_of("api-ask").with(|tx| {
         let a = made(tx, "Fix it", "the text");
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
-        assert!(prompt.ends_with(&format!("When it is done, call finish_task with the result. {ASK}")), "{prompt}");
+        assert!(prompt.ends_with(&format!("When it is done, call {FINISH} with the result. {ASK}")), "{prompt}");
         assert!(ASK.contains("ask_human") && ASK.contains("the answer you recommend") && ASK.contains("end your turn"));
         Ok(())
     }).unwrap();
@@ -171,7 +171,7 @@ fn ac157_after_its_questions_only_the_humans_answers_go_back() {
         let words = again_words(&a.id, "alex", Some("and keep v1 a month"), Some(&said));
         assert!(words.starts_with(&format!("{}: the human answered your questions", a.id)) && words.contains("v2\n\n---\n\nand keep v1 a month"), "{words}");
         assert!(!words.contains("SYSTEM") && !words.contains("get_task"));
-        assert!(again_words(&a.id, "alex", None, Some(&[])).contains("with no answer: decide with what you have, or ask_human again"));
+        assert!(again_words(&a.id, "alex", None, Some(&[])).contains(&format!("with no answer: decide with what you have, or ask again by {ASK_HUMAN}")));
         assert!(again_words(&a.id, "alex", Some("use v2"), None).contains("a new comment by alex follows. Go on with the task"));
         Ok(())
     }).unwrap();

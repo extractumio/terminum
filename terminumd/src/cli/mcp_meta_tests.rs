@@ -98,16 +98,51 @@ fn ac155_every_tool_has_its_card_and_a_valid_example() {
     }
 }
 
-#[test]
-fn ac155_a_tool_terminum_s_words_name_is_listed() {
-    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), crate::plans::REMINDER];
-    for name in mcp::tool_names() {
-        if words.iter().any(|w| w.split(|c: char| !(c.is_alphanumeric() || c == '_')).any(|x| x == name)) {
-            assert!(DIRECT.contains(&name), "{name} is named to agents but not listed");
+/// Each place terminum's words name `name` outside a call: none may be, but for a listed tool. A call
+/// is `execute_tool("name", {a, b?})`: its arguments the tool's own, every required one there, `?` on
+/// an optional one.
+fn uncalled(words: &str, name: &str) -> Vec<String> {
+    let text = words.replace("\\\"", "\"").replace("{{", "{").replace("}}", "}");
+    let schema = &catalog::definition(name).unwrap()["inputSchema"];
+    let required: Vec<&str> = schema["required"].as_array().unwrap().iter().filter_map(Value::as_str).collect();
+    let mut wrong = Vec::new();
+    for (at, _) in text.match_indices(name) {
+        let after = &text[at + name.len()..];
+        let word = !text[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_') && !after.starts_with(|c: char| c.is_alphanumeric() || c == '_');
+        if !word {
+            continue;
         }
+        let Some(args) = text[..at].ends_with("execute_tool(\"").then(|| after.strip_prefix("\", {")).flatten().and_then(|a| a.split_once('}')) else {
+            wrong.push(format!("{name} at {at}: not as execute_tool(\"{name}\", {{...}})"));
+            continue;
+        };
+        let given: Vec<(&str, bool)> = args.0.split(',').map(str::trim).map(|a| (a.trim_end_matches('?'), a.ends_with('?'))).collect();
+        for (arg, optional) in &given {
+            if schema["properties"].get(arg).is_none() || (*optional && required.contains(arg)) {
+                wrong.push(format!("{name} at {at}: {arg} is not its argument as written"));
+            }
+        }
+        wrong.extend(required.iter().filter(|r| !given.iter().any(|(g, _)| g == *r)).map(|r| format!("{name} at {at}: {r} is required")));
     }
+    wrong
+}
+
+#[test]
+fn ac155_terminum_s_words_call_a_tool_not_listed_by_execute_tool() {
+    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), crate::plans::REMINDER];
+    let wrong: Vec<String> = mcp::tool_names().into_iter().filter(|n| !DIRECT.contains(n)).flat_map(|n| words.iter().flat_map(move |w| uncalled(w, n))).collect();
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     let listed: Vec<String> = listed().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();
-    assert_eq!(listed, ["search_tools", "get_tool_info", "execute_tool", "update_session_plan", "create_task", "get_task", "get_file", "ask_human", "finish_task"]);
+    assert_eq!(listed, ["search_tools", "get_tool_info", "execute_tool", "update_session_plan"]);
+}
+
+#[test]
+fn ac155_a_name_outside_its_call_or_a_wrong_argument_is_found() {
+    assert_eq!(uncalled("call get_task now", "get_task").len(), 1);
+    assert_eq!(uncalled(r#"execute_tool("get_task", {page})"#, "get_task").len(), 1, "id is required");
+    assert_eq!(uncalled(r#"execute_tool("get_task", {id, page, task})"#, "get_task").len(), 1, "task is no argument of it");
+    assert_eq!(uncalled(r#"execute_tool("get_task", {id?})"#, "get_task").len(), 1, "a required one is not optional");
+    assert!(uncalled(r#"execute_tool("get_task", {id, page?})"#, "get_task").is_empty());
 }
 
 #[test]
