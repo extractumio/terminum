@@ -132,7 +132,8 @@ export async function liveSchedules(page, live) {
 
   // AC-162: due, fired on the fake agent, its task DONE with its result
   const s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
-  execFileSync("sqlite3", [path.join(live.app, "kanban.sqlite"), `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`]);
+  // terminumd may hold the write lock for a moment: wait for it, as its own store does
+  execFileSync("sqlite3", ["-cmd", ".timeout 10000", path.join(live.app, "kanban.sqlite"), `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`]);
   let task;
   check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
   check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
