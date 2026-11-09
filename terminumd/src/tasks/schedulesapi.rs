@@ -90,7 +90,7 @@ async fn preview(State(app): State<Shared>, Json(body): Json<Value>) -> Response
             at = n;
         }
         let line = super::agents::by_id(tx, &s.agent)?.map(|a| a.line).unwrap_or_default();
-        Ok(json!({"next": next, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>"), "line": line}))
+        Ok(json!({"next": next, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body), "line": line}))
     }).await)
 }
 
@@ -111,7 +111,7 @@ async fn fires(State(app): State<Shared>, Query(asked): Query<Asked>) -> Respons
 }
 
 /// Firings of `schedule` ("SCH-3"; none: all), those older than `before`.
-pub(super) fn fires_of(tx: &Transaction, schedule: Option<&str>, before: Option<i64>, most: i64) -> Result<Vec<Value>, String> {
+pub(crate) fn fires_of(tx: &Transaction, schedule: Option<&str>, before: Option<i64>, most: i64) -> Result<Vec<Value>, String> {
     let number = schedule.map(|k| k.trim_start_matches("SCH-").parse::<i64>().map_err(|_| format!("No schedule {k}"))).transpose()?;
     // the task's first run says what went in and on which agent; its moves say when it worked; its last word by an
     // agent or Dispatcher says what came out

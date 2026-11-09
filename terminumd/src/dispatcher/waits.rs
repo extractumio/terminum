@@ -67,8 +67,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
     let since = of_task(tx, task)?.map_or(i64::MAX, |w| w.at);
     let slots = pool::Slots::read(tx)?;
     for w in all(tx)?.into_iter().filter(|w| w.task != task && w.at <= since && (w.agent == agent || w.project == project)) {
-        let a = agents::by_id(tx, &w.agent)?;
-        if a.is_some() && slots.check(tx, a.as_ref(), &w.project, None)?.is_none() {
+        if let Some(a) = agents::by_id(tx, &w.agent)? && slots.check_for(tx, &a, &w.project, &w.task, None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
     }
@@ -105,7 +104,7 @@ fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
     if t.status != w.status {
         return Ok(Due::Off(t.id, format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
     }
-    if pool::check(tx, Some(&a), &w.project, None)?.is_some() {
+    if pool::check_for(tx, &a, &w.project, &w.task, None)?.is_some() {
         return Ok(Due::Stays);
     }
     Ok(Due::Press(t.id, w.body.clone()))

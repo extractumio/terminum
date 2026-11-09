@@ -9,7 +9,7 @@ use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
 
 /// How an agent asks a human while it works (AC-157): in words, never in its window.
-pub(super) const ASK: &str = "If you need a human's decision, call ask_human with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
+pub(crate) const ASK: &str = "If you need a human's decision, call ask_human with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
@@ -40,6 +40,11 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         return Ok(parts.join("\n\n"));
     }
     let body = ops::text_of(tx, &t.id)?;
+    // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
+    if let Some(s) = crate::tasks::schedules::of_task(tx, &t.key)? {
+        let run = super::fire::prompt(&s, &t.id, &t.title, &body);
+        return Ok(said.map_or(run.clone(), |m| format!("{m}\n\n{run}")));
+    }
     let mut parts = vec![format!("The human ran task {}: {}", t.id, t.title)];
     parts.extend(said);
     if body.chars().count() > MOST_PROMPT {
@@ -59,7 +64,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
     Ok(parts.join("\n\n"))
 }
 
-fn budget_words(total: i64) -> String {
+pub(crate) fn budget_words(total: i64) -> String {
     format!("You have {} minutes for this. Before they end, write the result with finish_task and end your subagents: at the limit the agent is ended and unsaved work is lost.", total / 60)
 }
 

@@ -92,7 +92,7 @@ enum Next {
 /// A slot's limit, or an older wait that has room, keeps this press waiting (AC-158): its words, after the human's
 /// comment is kept, so it shows while it waits.
 fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: &Task, but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
-    let why = match pool::check(tx, Some(agent), project, but)? {
+    let why = match pool::check_for(tx, agent, project, &task.key, but)? {
         Some(full) => full.words,
         None => match super::waits::ahead(tx, &agent.id, project, &task.key)? {
             Some(first) => format!("{first} waits for it first."),
@@ -211,7 +211,7 @@ pub(super) fn has_stray(text: &str) -> bool {
 }
 
 /// Closes an idle holder for the press that asked: read again here, its screen too: a draft or a question stands in the way (AC-141).
-async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), String> {
+pub(super) async fn close_idle(app: &Shared, run: &str, for_tasks: &str) -> Result<(), String> {
     let at = std::time::Instant::now();
     let wanted = run.to_string();
     let r = store(app, move |tx| runs::by_id(tx, &wanted)).await?;
@@ -366,7 +366,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         }
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder
         // for its room does not wait (AC-141)
-        if closing && let Some(full) = pool::check(tx, Some(&ag), &project, None)? {
+        if closing && let Some(full) = pool::check_for(tx, &ag, &project, &now[0].key, None)? {
             return Err(full.words);
         }
         if let Some(words) = wait_if_full(tx, &ag, &project, &now[0], None, (&kept, said.as_deref(), &attached))? {

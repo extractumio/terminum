@@ -200,3 +200,18 @@ fn ac156_a_run_gets_every_tool_unless_its_command_says_how_it_asks() {
     assert_eq!(command_line("claude", "claude; notify", ""), "claude; notify", "after a ; the words would go to another program");
     assert_eq!(command_line("claude", "claude --permission-modes", ""), "claude --permission-modes --permission-mode bypassPermissions", "a whole word, not its start");
 }
+
+#[test]
+fn ac161_an_agent_keeps_its_schedules_slots_and_is_not_deleted_under_them() {
+    open("agents-kept-slots").with(|tx| {
+        let id = add(tx, &Given { at_once: 2, ..opus() })?;
+        let v = serde_json::json!({"title": "Nightly", "agent": id, "cron": "0 3 * * *", "budget_minutes": 30});
+        let given = crate::tasks::schedules::Given::of(tx, &v, 1_794_256_500)?;
+        crate::tasks::schedules::add(tx, HUMAN, &given, 1_794_256_500)?;
+        crate::tasks::schedules::add(tx, HUMAN, &given, 1_794_256_500)?;
+        assert_eq!(change(tx, &id, &Given { at_once: 1, ..opus() }).unwrap_err(), "Opus reviewer keeps 2 slots for SCH-1, SCH-2: at once is at least 2.");
+        change(tx, &id, &Given { at_once: 3, ..opus() })?;
+        assert_eq!(remove(tx, &id).unwrap_err(), "Opus reviewer runs schedules SCH-1, SCH-2: give them another agent first.");
+        Ok(())
+    }).unwrap();
+}

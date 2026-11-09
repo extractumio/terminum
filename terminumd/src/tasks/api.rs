@@ -31,6 +31,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::agents::routes())
         .merge(super::limits::routes())
         .merge(super::folder::routes())
+        .merge(super::schedulesapi::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))

@@ -16,6 +16,8 @@ pub mod ops;
 pub mod projectapi;
 pub mod projects;
 pub mod query;
+pub mod schedules;
+pub mod schedulesapi;
 pub mod slugs;
 pub mod store;
 pub mod tell;
