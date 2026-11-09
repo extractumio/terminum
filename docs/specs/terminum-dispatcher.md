@@ -835,7 +835,7 @@ Scenario: AC-156 happy path — the human answers
 
 Scenario: AC-156 happy path — what a prompt says
   Then RUN's prompt ends with "If you need a human's decision, call ask_human with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window."
-  And terminum mcp's instructions say the same in a line
+  And terminum mcp's ask_human says the same in its description
 
 Scenario: AC-156 edge — what keeps it open
   When the agent still works, a tool or a subagent runs, there is activity, a human's program runs in the pane, a draft stands in the box, another task of the session is open, or no conversation is known
