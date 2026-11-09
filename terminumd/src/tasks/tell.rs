@@ -13,24 +13,70 @@ use super::store::DISPATCHER;
 use crate::app::Shared;
 use crate::tmux::agentstate::State;
 
-/// Lines waiting for a pane's next context, with their tasks.
+/// One pane's lines, with their tasks: waiting for its next context, and those sent with one
+/// and not yet heard (the hook says so after printing them, `Heard`).
 #[derive(Default)]
-pub struct Lines(Mutex<HashMap<String, Vec<(String, String)>>>);
+struct Waiting {
+    lines: Vec<(String, String)>,
+    sent: Option<(u64, Vec<(String, String)>)>,
+}
+
+/// Lines for panes' next contexts: each goes until the hook says it was heard (D15), so an
+/// answer lost on its way, or a hook that printed nothing, sends it again.
+#[derive(Default)]
+pub struct Lines(Mutex<HashMap<String, Waiting>>);
+
+/// The most lines a pane keeps: a session with no next hook never holds many.
+const KEPT: usize = 20;
 
 impl Lines {
-    /// The newest few of a pane: a session with no next hook never holds many.
-    pub(crate) fn push(&self, key: &str, task: &str, line: String) {
-        const KEPT: usize = 20;
+    /// A line waits for the pane's next context; true when an older one went to make room.
+    pub(crate) fn push(&self, key: &str, task: &str, line: String) -> bool {
         let mut all = self.0.lock();
-        let lines = all.entry(key.to_string()).or_default();
-        lines.push((task.to_string(), line));
-        if lines.len() > KEPT {
-            lines.remove(0);
+        let w = all.entry(key.to_string()).or_default();
+        w.lines.push((task.to_string(), line));
+        let dropped = w.lines.len() > KEPT;
+        if dropped {
+            w.lines.remove(0);
         }
+        dropped
     }
 
+    /// The pane's lines for its next context, those sent before and not heard first, and the
+    /// number the hook says it heard them by.
+    pub(crate) fn offer(&self, key: &str) -> Option<(u64, Vec<String>)> {
+        static SENT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let mut all = self.0.lock();
+        let w = all.get_mut(key)?;
+        let mut lines = w.sent.take().map(|(_, l)| l).unwrap_or_default();
+        lines.append(&mut w.lines);
+        if lines.is_empty() {
+            all.remove(key);
+            return None;
+        }
+        let n = SENT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let words = lines.iter().map(|(_, l)| l.clone()).collect();
+        w.sent = Some((n, lines));
+        Some((n, words))
+    }
+
+    /// The hook printed the lines sent as `n`: they go; their tasks.
+    pub(crate) fn heard(&self, key: &str, n: u64) -> Vec<String> {
+        let mut all = self.0.lock();
+        let Some(w) = all.get_mut(key) else { return Vec::new() };
+        if w.sent.as_ref().is_none_or(|(m, _)| *m != n) {
+            return Vec::new();
+        }
+        let tasks = w.sent.take().map(|(_, l)| l.into_iter().map(|(t, _)| t).collect()).unwrap_or_default();
+        if w.lines.is_empty() {
+            all.remove(key);
+        }
+        tasks
+    }
+
+    /// Every line of the pane, sent or not, which never reached it (its run ends).
     pub(crate) fn take(&self, key: &str) -> Vec<(String, String)> {
-        self.0.lock().remove(key).unwrap_or_default()
+        self.0.lock().remove(key).map(|w| w.sent.map(|(_, l)| l).unwrap_or_default().into_iter().chain(w.lines).collect()).unwrap_or_default()
     }
 }
 
@@ -96,20 +142,24 @@ pub fn session_ended(app: &Shared, key: &str, ev: &Value) {
     }
 }
 
-/// The pane's next context, joined to what else is due; each line then is said on its task.
-pub fn with_lines(app: &Shared, key: &str, remind: Option<String>) -> Option<String> {
-    let lines = app.task_lines.take(key);
-    if lines.is_empty() {
-        return remind;
+/// The pane's next context, joined to what else is due, and the number its lines are heard by.
+pub fn with_lines(app: &Shared, key: &str, remind: Option<String>) -> (Option<String>, Option<u64>) {
+    let Some((n, lines)) = app.task_lines.offer(key) else { return (remind, None) };
+    let words: Vec<String> = remind.into_iter().chain(lines).collect();
+    (Some(words.join("\n")), Some(n))
+}
+
+/// The hook printed the lines sent as `n` (`Heard`): each is said on its task.
+pub fn heard(app: &Shared, key: &str, n: u64) {
+    let tasks = app.task_lines.heard(key, n);
+    if tasks.is_empty() {
+        return;
     }
-    let (tasks, lines): (Vec<String>, Vec<String>) = lines.into_iter().unzip();
     let a = app.clone();
     tokio::task::spawn_blocking(move || match a.tasks.with(|tx| say_told(tx, &tasks, ops::now())) {
         Ok(said) => said.iter().for_each(|id| super::api::history_heard(&a, id)),   // an open window shows it
         Err(e) => tracing::warn!(event = "tasks.told", error = %e),
     });
-    let words: Vec<String> = remind.into_iter().chain(lines).collect();
-    Some(words.join("\n"))
 }
 
 #[cfg(test)]
@@ -154,13 +204,31 @@ mod tests {
     }
 
     #[test]
-    fn ac114_lines_wait_per_pane_and_go_once() {
+    fn ac114_lines_wait_per_pane_and_go_once_heard() {
         let l = Lines::default();
         l.push("a", "T-1", "one".into());
         l.push("a", "T-2", "two".into());
         l.push("b", "T-3", "three".into());
-        assert_eq!(l.take("a").len(), 2);
-        assert!(l.take("a").is_empty());
+        let (n, words) = l.offer("a").unwrap();
+        assert_eq!(words, ["one", "two"]);
+        assert_eq!(l.heard("a", n), ["T-1", "T-2"]);
+        assert!(l.offer("a").is_none(), "heard: gone");
         assert_eq!(l.take("b")[0].1, "three");
+    }
+
+    /// AC-114 failure (D15): lines whose answer never reached the agent (not heard) go again
+    /// with its next context, before newer ones; a late Heard of an older sending takes nothing.
+    #[test]
+    fn ac114_lines_not_heard_go_again() {
+        let l = Lines::default();
+        l.push("a", "T-1", "one".into());
+        let (first, _) = l.offer("a").unwrap();
+        l.push("a", "T-1", "two".into());
+        let (second, words) = l.offer("a").unwrap();
+        assert_eq!(words, ["one", "two"], "the lost one again, then the new one");
+        assert!(l.heard("a", first).is_empty(), "an older sending heard late takes nothing");
+        assert_eq!(l.heard("a", second).len(), 2);
+        assert!((0..KEPT).all(|i| !l.push("b", "T-2", i.to_string())) && l.push("b", "T-2", "over".into()), "past the most, the oldest goes and that is said");
+        assert_eq!(l.take("b").len(), KEPT);
     }
 }

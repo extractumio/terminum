@@ -125,6 +125,12 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         app.dispatcher.heard_tokens(&key, &ev);   // terminum-dispatcher.md AC-129: asked for below
         return StatusCode::NO_CONTENT.into_response();
     }
+    if ev["event"] == "Heard" {
+        if let Some(n) = ev["lines"].as_u64() {
+            crate::tasks::tell::heard(&app, &key, n);   // the lines it printed (AC-114)
+        }
+        return StatusCode::NO_CONTENT.into_response();
+    }
     let _dispatch = app.hooks.dispatch.lock();
     // whose it is, decided once: only the main agent's events of its turn move a run, a task, a plan (AC-127)
     let Some((changed, whose)) = app.hooks.apply_event(&key, &ev, std::time::Instant::now()) else {
@@ -159,7 +165,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     crate::dispatcher::heard(&app, &key, &ev, whose);
     let remind = crate::plans::hook_event(&app, &key, &ev, whose);
     // what waits for it rides the same event
-    let context = if crate::plans::carries_context(&ev, whose) { crate::tasks::tell::with_lines(&app, &key, remind) } else { remind };
+    let (context, lines) = if crate::plans::carries_context(&ev, whose) { crate::tasks::tell::with_lines(&app, &key, remind) } else { (remind, None) };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
     let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
     match (context, tokens) {
@@ -168,6 +174,9 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
             let mut answer = json!({"tokens": tokens});
             if let Some(text) = text {
                 answer["remind"] = json!(text);
+            }
+            if let Some(n) = lines {
+                answer["lines"] = json!(n);             // the hook says Heard with it once it printed them
             }
             Json(answer).into_response()
         }

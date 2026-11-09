@@ -385,6 +385,7 @@ Scenario: AC-126 happy path — the last warning
   When 3% of the budget is left, or 2 minutes when 3% is less (a 60-minute budget: 2 minutes; a 200-minute budget: 6)
   Then, while the agent works, the next hook that carries context gives it, and while it idles the gate types it: "[terminum Dispatcher] API-12: 2 minutes of the 60-minute budget are left. Write the result with execute_tool("finish_task", {id, result}) and end your subagents now. Then the agent is ended and unsaved work is lost."
   And the comment says it was given; a warning that no way could carry before the limit is said so
+  And words that hook context carries go until the agent's hook says it printed them (it answers Heard): an answer lost on its way, or a hook that printed nothing, gives them again with the next context; at most 20 wait for a pane, and the comment says when the oldest went for a newer one
 
 Scenario: AC-126 happy path — the limit
   When the budget is used
@@ -1174,7 +1175,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
-- [x] AC-126 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
+- [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals
 - [x] AC-127 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks`, `cargo test tmux::hookstate`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-128 — `cargo test dispatcher`, `cargo test tasks::agents`, `web/test/e2e_livedispatcher.mjs`, its window's words and global placeholders in `web/test/e2e_liveboardagents.mjs`
 - [x] AC-129 — `cargo test cli::hooktokens` with fixtures of both agents' files, `web/test/e2e_livedispatcher.mjs`
