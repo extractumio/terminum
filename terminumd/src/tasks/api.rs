@@ -83,19 +83,7 @@ pub(super) fn history_heard(app: &Shared, task: &str) {
 /// A task's change: every page hears of it, and the session list of what it shows of tasks.
 pub fn told(app: &Shared, task: &str) {
     change_heard(app, task);
-    if !app.task_marks.ask() {
-        return;                                        // a read yet to begin sees this change too
-    }
-    let a = app.clone();
-    tokio::spawn(async move {
-        let refreshed = tokio::task::spawn_blocking({
-            let a = a.clone();
-            move || a.task_marks.refresh(&a.tasks)
-        }).await;
-        if matches!(refreshed, Ok(true)) {
-            super::marks::tell(&a);
-        }
-    });
+    super::marks::read_later(app);
 }
 
 /// A link only to a session that is there: a page's picker can be older than the list (AC-133).
@@ -237,7 +225,7 @@ async fn start_empty(State(app): State<Shared>) -> Response {
     let a = app.clone();
     let done = off(move || {
         a.tasks.start_empty()?;
-        a.task_marks.refresh(&a.tasks);
+        let _ = a.task_marks.refresh(&a.tasks);
         a.projects.lock().reload()
     }).await;
     if done.is_ok() {

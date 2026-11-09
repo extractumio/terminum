@@ -355,6 +355,7 @@ Scenario Outline: AC-112 failure — refused, said in the dialog
 Scenario: AC-113 happy path — linking
   When the user picks Session → api on API-12
   Then API-12 is linked to that pane and its row in the session list shows a task mark that opens API-12
+  And the marks follow each change of the tasks; a read of them that fails is tried again after 1 s, doubling to every 60 s, the last marks shown meanwhile
   And the link keeps its pane through a restore (terminum.md AC-92) and the agent's session ID from its hooks
   And a server started anew, its `@terminum-id` changed, drops the link: its pane IDs name other panes, and the task says so
 
