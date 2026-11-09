@@ -89,12 +89,16 @@ export async function livePlans(page, { tmux, work, bin, home, app, stop, start,
       ...mcpOpening, rpc(2, "tools/list"),
       call(3, "update_session_plan", { items: [{ text: "one", status: "completed" }, { text: "two", status: "pending" }], doing: "Checking the live page", eta_minutes: 30 }),
       call(4, "create_task", { title: "Bug: Parser drops a BOM", severity: "P2", text: "## Problem or goal\n<b>parser</b> drops a BOM in `src/parse.rs`\n## Context\nx\n## Expected result\ny\n## Prerequisites\nNone" }),
-      call(5, "get_session_plan", {})]);
+      call(5, "get_session_plan", {}),
+      call(6, "search_tools", { query: "change a task's priority" }),
+      call(7, "execute_tool", { name: "list_tasks", arguments: {} })]);
     const etas = [hhmm(before + 1800), hhmm(Math.floor(Date.now() / 1000) + 1800)];
     check("AC-97 initialize answers terminum's server, the version asked, and its instructions",
       a[1]?.result?.protocolVersion === "2025-06-18" && a[1]?.result?.serverInfo?.name === "terminum" && /Keep a plan/.test(a[1]?.result?.instructions ?? ""), JSON.stringify(a[1]));
-    check("AC-97 tools/list names the tools; a notification gets no answer", (a[2]?.result?.tools ?? []).map((t) => t.name).join() === "update_session_plan,get_session_plan,list_tasks,get_task,create_task,update_task,take_task,move_task,add_comment,attach_file,get_file,finish_task"
-      && Object.keys(a).sort().join() === "1,2,3,4,5", Object.keys(a).join());
+    check("AC-97 tools/list names the tools; a notification gets no answer", (a[2]?.result?.tools ?? []).map((t) => t.name).join() === "search_tools,get_tool_info,execute_tool,update_session_plan,create_task,get_task,get_file,finish_task"
+      && Object.keys(a).sort().join() === "1,2,3,4,5,6,7", Object.keys(a).join());
+    check("AC-155 search_tools finds update_task for a priority; execute_tool runs a tool tools/list does not carry",
+      a[6]?.result?.isError === false && /\n1\. update_task\(/.test(textOf(a[6])) && a[7]?.result?.isError === false && /Parser drops a BOM/.test(textOf(a[7])), `${textOf(a[6])} ${textOf(a[7])}`);
     const t3 = textOf(a[3]), eta = /ETA ~(\d\d:\d\d)\.$/.exec(t3)?.[1];
     check("AC-97 update_session_plan with a built-in plan keeps doing and the ETA (now + 30 min), not its items",
       a[3]?.result?.isError === false && /^Doing and ETA stored; items follow your own plan tool \(1 of 3 completed\), so the items sent were not taken, ETA ~\d\d:\d\d\.$/.test(t3) && etas.includes(eta), `${t3} ${etas}`);

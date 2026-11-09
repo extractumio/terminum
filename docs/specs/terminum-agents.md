@@ -65,6 +65,7 @@ Open questions: none.
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
+| AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and the tools terminum's own words name; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay. |
 
 ## 5. BDD scenarios
@@ -298,6 +299,46 @@ Scenario: AC-98 edge — an agent of an older session
   Then it is answered: "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it." and nothing is kept
 ```
 
+### AC-155 — Tools found by the action [SHOULD / P1]
+
+```gherkin
+Scenario: AC-155 happy path — listed, found, run
+  Given `terminum mcp` started by the agent in a terminum pane
+  When the agent lists the tools
+  Then it gets search_tools, get_tool_info, execute_tool, and in full every tool that terminum's instructions, reminder or Dispatcher's fixed prompts name: update_session_plan, create_task, get_task, get_file, finish_task; the instructions say that any other action is found with search_tools and run with execute_tool
+  When the agent calls search_tools {query: "change a task's priority"}
+  Then it answers "Tools for "change a task's priority", best first (? optional):", then at most 5 numbered lines, the first "1. update_task(archive?: yes, id, parent?, reason?, severity?: P0|P1|P2|P3, text?, title?) [tasks]: Changes a task of your project: …", each a tool's signature (enums inline), its area and its description's first sentence; then how to run one
+  When the agent calls get_tool_info {names: ["update_task"]}
+  Then it answers each tool's description, inputSchema, hints, area, and an example call of execute_tool
+  When the agent calls execute_tool {name: "update_task", arguments: {id: "TERM-12", severity: "P1"}}
+  Then the call is checked and goes to terminumd as a tools/call of update_task would, with the session of the outer call, and its answer is that tool's own
+
+Scenario: AC-155 happy path — the index
+  Given the catalog: each tool's name (counted thrice), its card's keywords (twice), its area, title, description and arguments' names
+  When a query is searched
+  Then its words and the catalog's are split at anything not a letter or digit, stop words left out, stemmed (plural, -ing, -ed, a final e, a doubled consonant: "moving", "moved", "moves" meet "move") and taken to their synonym group (ticket, issue, card = task; close, done, complete, resolve = finish; priority, severity, urgency, bump = priority; subtask, epic, child = parent; claim, assign, pick = take; …), no word in two groups
+  And the tools are ranked by BM25 over the distinct terms, a tool named exactly in the query first; a tool scoring under a fifth of the best one is left out; a tie goes to the shorter name
+  And each phrasing of `terminumd/src/cli/mcp_meta_tests.rs` GOLDEN finds its tool first ("mark my task done" → finish_task, "I need a human" → move_task, "download the attachment" → get_file, "make it a subtask of T-3" → update_task), each of NEAR among the first three
+
+Scenario: AC-155 edge — growing the catalog
+  Given a new tool
+  Then it gets its card (area, keywords, an example that its own check accepts) beside its definition, and phrasings in GOLDEN; tools/list grows only when terminum's own words name it
+  And the tools/list a session pays for stays within 4,700 bytes of JSON, the instructions within 512 characters
+
+Scenario: AC-155 failure — wrong calls
+  When search_tools has no query, a blank one, one over 500 characters, or a limit not 1–10
+  Then it answers an error saying how to ask ("the action as a verb and its object, e.g. "change a task's priority"")
+  When nothing matches (another language, a word of no tool)
+  Then it answers "No tool matches …", how to ask again in English, and the areas with their tools' names
+  When get_tool_info or execute_tool names no tool of the catalog
+  Then it answers "No tool is named …", the nearest names by the same search, and that search_tools finds a tool by what it does
+  When execute_tool names search_tools, get_tool_info or execute_tool, or its arguments are not an object
+  Then it answers an error and nothing goes to terminumd
+  When any of the three is called outside a terminum pane
+  Then it answers AC-97's "This session does not run in a terminum pane; …"
+  And a tools/call of a catalog tool by its own name, listed or not, still works (scripts, older clients)
+```
+
 ### AC-153 — Idle agents exit [SHOULD / P1]
 
 ```gherkin
@@ -416,8 +457,13 @@ MCP tools:
 
 | Tool | Arguments |
 |---|---|
+| `search_tools` | `query` (required, ≤ 500 characters), `limit` 1–10 (default 5) (AC-155) |
+| `get_tool_info` | `names` (required): 1–5 tool names, or one name (AC-155) |
+| `execute_tool` | `name` (required), `arguments` (an object, default `{}`) (AC-155) |
 | `update_session_plan` | `items` (required): `[{text, status}]`; `doing`, `eta_minutes`, `title` |
 | `get_session_plan` | none |
+
+The catalog (every tool above but the first three, with the task tools of `terminum-kanban.md` §9) and each tool's card: `terminumd/src/cli/mcp_catalog.rs`; the index: `mcp_search.rs`.
 
 ### Files
 
@@ -456,6 +502,7 @@ Limits a scenario states are not repeated.
 
 - Hooks: `terminum hook` sends only to terminumd's private socket (0600 in a 0700 folder: only the user's own processes reach it), or a Mac's link on a host. What a made-up event can do: `SECURITY.md`.
 - The installer writes only terminum's plugin folder, Codex's `hooks.json` and `config.toml` and its own marker.
+- execute_tool runs only a tool of the catalog, through the same checks and terminumd's own rules as a direct call; an agent's client that allows execute_tool without asking allows every tool behind it (AC-155).
 - Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
 - The idle exit (AC-153) types only Ctrl+C, `/exit` and Enter, fixed by terminumd, and only as that scenario allows; it is off until the user sets the days.
 
@@ -477,4 +524,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
+- [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`), `web/test/e2e_liveplans.mjs`
 - [x] AC-153 — `cargo test idle_exit` (keys on a private tmux with a stand-in agent), `cargo test settings`, `web/test/e2e_header.mjs`
