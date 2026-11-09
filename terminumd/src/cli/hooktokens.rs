@@ -25,8 +25,8 @@ fn int(v: &Value, key: &str) -> i64 {
     v[key].as_u64().map_or(0, |n| n.min(i64::MAX as u64) as i64)
 }
 
-/// Each line holding `needle`, parsed, to `each`; past `until`: None.
-fn each_line<T: DeserializeOwned>(mut reader: impl BufRead, until: Instant, needle: &str, mut each: impl FnMut(usize, T)) -> Option<()> {
+/// Each line holding one of `needles`, parsed, to `each`; past `until`: None.
+fn each_line<T: DeserializeOwned>(mut reader: impl BufRead, until: Instant, needles: &[&str], mut each: impl FnMut(usize, T)) -> Option<()> {
     let (mut line, mut at) = (String::new(), 0);
     loop {
         line.clear();
@@ -36,7 +36,7 @@ fn each_line<T: DeserializeOwned>(mut reader: impl BufRead, until: Instant, need
         if Instant::now() >= until {
             return None;
         }
-        if line.contains(needle) && let Ok(v) = serde_json::from_str(&line) {
+        if needles.iter().any(|n| line.contains(n)) && let Ok(v) = serde_json::from_str(&line) {
             each(at, v);
         }
         at += 1;
@@ -75,7 +75,7 @@ struct CacheCreation {
 /// the last stands.
 fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     let mut by_message: HashMap<String, (String, Totals)> = HashMap::new();
-    each_line(reader, until, "\"usage\"", |at, line: ClaudeLine| {
+    each_line(reader, until, &["\"usage\""], |at, line: ClaudeLine| {
         if let Some(u) = line.message.usage {
             let n = |v: Option<u64>| v.map_or(0, |n| n.min(i64::MAX as u64) as i64);
             let cache_write = n(u.cache_creation_input_tokens);
@@ -95,16 +95,19 @@ fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     Some(sum)
 }
 
-/// Codex's lines: a `token_count` event holds the session's total; the last stands.
+/// Codex's lines: a `token_count` event holds the session's total, its input with the cached part in it; a
+/// `turn_context` names the turn's model. The last of each stands: the whole is priced at the last model.
 fn codex(reader: impl BufRead, until: Instant) -> Option<Sum> {
-    let mut last = None;
-    each_line(reader, until, "token_count", |_, v: Value| {
-        if let Some(u) = v.pointer("/payload/info/total_token_usage") {
-            let tokens = Totals { input: int(u, "input_tokens"), output: int(u, "output_tokens"), cache_read: int(u, "cached_input_tokens"), ..Totals::default() };
-            last = Some(Sum::from([(String::new(), tokens)]));
+    let (mut last, mut model) = (None, String::new());
+    each_line(reader, until, &["token_count", "turn_context"], |_, v: Value| {
+        if v["type"] == "turn_context" && let Some(m) = v.pointer("/payload/model").and_then(Value::as_str) {
+            model = m.chars().take(MOST_MODEL).collect();
+        } else if let Some(u) = v.pointer("/payload/info/total_token_usage").filter(|_| v.pointer("/payload/type") == Some(&json!("token_count"))) {
+            let cached = int(u, "cached_input_tokens");
+            last = Some(Totals { input: (int(u, "input_tokens") - cached).max(0), output: int(u, "output_tokens"), cache_read: cached, ..Totals::default() });
         }
     })?;
-    last
+    Some(Sum::from([(model, last?)]))
 }
 
 /// What goes with a turn's end: the whole and each model's numbers, or `null` when they are not known (a new
@@ -120,11 +123,12 @@ pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
             // the last total stands: the end of the file holds it, at no cost as a session grows
             file.seek(SeekFrom::Start(meta.len().saturating_sub(CODEX_TAIL))).ok()?;
             let tail = codex(std::io::BufReader::new(&file), until);
-            if tail.is_some() {
+            // its model named before the tail: the whole file, the tail's total when that cannot be read
+            if tail.as_ref().is_some_and(|s| !s.contains_key("")) {
                 return tail;
             }
             file.seek(SeekFrom::Start(0)).ok()?;
-            return codex(std::io::BufReader::new(&file), until);
+            return codex(std::io::BufReader::new(&file), until).or(tail);
         }
         claude(std::io::BufReader::new(file), until)
     };
@@ -183,8 +187,32 @@ mod tests {
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null}}"#, "\n",
             r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#, "\n"));
         let got = of_event("codex", &json!({"transcript_path": p})).unwrap();
-        assert_eq!((got["input"].as_i64(), got["output"].as_i64(), got["cache_read"].as_i64()), (Some(9), Some(4), Some(3)));
-        assert_eq!(got["models"], json!([{"model": null, "input": 9, "output": 4, "cache_write": 0, "cache_write_1h": 0, "cache_read": 3}]), "its model is not read");
+        assert_eq!((got["input"].as_i64(), got["output"].as_i64(), got["cache_read"].as_i64()), (Some(6), Some(4), Some(3)), "its input holds the cached part: counted once");
+        assert_eq!(got["models"], json!([{"model": null, "input": 6, "output": 4, "cache_write": 0, "cache_write_1h": 0, "cache_read": 3}]), "no turn names a model");
+    }
+
+    #[test]
+    fn ac129_codex_its_last_turn_s_model_prices_the_whole() {
+        let p = written("tokens-codex-model", concat!(
+            r#"{"type":"session_meta","payload":{"id":"s1","model_provider":"openai"}}"#, "\n",
+            r#"{"type":"turn_context","payload":{"turn_id":"t1","model":"gpt-6.1-terra","cwd":"/Users/alex/api"}}"#, "\n",
+            r#"{"type":"response_item","payload":{"type":"message","content":[{"type":"output_text","text":"a turn_context in its words"}]}}"#, "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":5,"cached_input_tokens":1,"output_tokens":2}}}}"#, "\n",
+            r#"{"type":"turn_context","payload":{"turn_id":"t2","model":"gpt-6.1-sol"}}"#, "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#, "\n"));
+        let got = of_event("codex", &json!({"transcript_path": p})).unwrap();
+        assert_eq!(got["models"], json!([{"model": "gpt-6.1-sol", "input": 6, "output": 4, "cache_write": 0, "cache_write_1h": 0, "cache_read": 3}]), "no path, no text");
+    }
+
+    #[test]
+    fn ac129_codex_a_model_named_before_the_tail_is_found() {
+        let mut text = String::from(r#"{"type":"turn_context","payload":{"model":"gpt-6.1-sol"}}"#);
+        text.push('\n');
+        let filler = format!("{{\"type\":\"response_item\",\"payload\":{{\"text\":\"{}\"}}}}\n", "x".repeat(1000));
+        text.push_str(&filler.repeat((CODEX_TAIL as usize / filler.len()) + 2));
+        text.push_str(r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#);
+        let got = of_event("codex", &json!({"transcript_path": written("tokens-codex-far", &text)})).unwrap();
+        assert_eq!(got["models"][0]["model"], "gpt-6.1-sol");
     }
 
     #[test]

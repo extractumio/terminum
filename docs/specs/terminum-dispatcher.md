@@ -470,7 +470,7 @@ Scenario: AC-129 happy path — on a finished task
   Then its card says "50k · ≈$0.42", and on hover each number and "an estimate at list prices"
   Given API-12 and API-13 in one session
   Then each says the session's whole, and on hover "for API-12 and API-13 together"
-  Given a price it does not know, as for Codex
+  Given a model whose price it does not know
   Then the card says only "50k"
 
 Scenario: AC-129 edge — priced by what each answer was
@@ -478,6 +478,12 @@ Scenario: AC-129 edge — priced by what each answer was
   Then its dollars are 20.00 + 0.50 = 20.50, not twice either price
   Given 1,000,000 cache-write tokens on claude-opus-5-5, 400,000 of them kept for an hour
   Then they are priced 600,000 at 1.25 times input and 400,000 at 2 times: 3.00 + 3.20 = 6.20 dollars
+
+Scenario: AC-129 edge — Codex
+  Given a Codex session whose file's last token count says 1,000,000 input tokens, 400,000 of them cached, and 100,000 output, and whose last turn named gpt-6.1-sol
+  Then it counts 600,000 input, 400,000 cache-read and 100,000 output tokens, all of them gpt-6.1-sol's: 1.20 + 0.04 + 1.00 = 2.24 dollars
+  When no turn names a model
+  Then the card says only the tokens
 
 Scenario: AC-129 edge — counted once
   When a Stop and a SessionEnd report the same total, or a report comes twice
@@ -852,7 +858,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-129 | Codex's model is not read, so its sessions show tokens only. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -930,7 +936,7 @@ A hook's report, the whole and each model's (`""`: not named; 16 models at most)
             {"model": "claude-haiku-5-5", "input": 500, "output": 20, "cache_write": 0, "cache_write_1h": 0, "cache_read": 1000}]}
 ```
 
-A run keeps the last totals it heard of each model, copied to the run that goes on from it; a row holds what grew of one model, or, when the whole fell, each model's whole. Dollars are worked out when shown, from a table of list prices in terminumd, so a corrected price corrects old rows: a cache write is 1.25 times input, 2 times for one kept an hour.
+A run keeps the last totals it heard of each model, copied to the run that goes on from it; a row holds what grew of one model, or, when the whole fell, each model's whole. Dollars are worked out when shown, from a table of list prices in terminumd (Anthropic's; OpenAI's standard ones up to 272K input tokens), so a corrected price corrects old rows: a cache write is 1.25 times input, 2 times for one kept an hour. A model is priced by the longest id that begins its name followed by a dash, a bracket or nothing: `claude-opus-5-5[1m]` is Opus 5.5's, `gpt-5.7-sol` none's.
 
 **Window command.** A fixed wrapper, the folder and the command its arguments, so no quote or `#` in a command can break it, in zsh, bash, fish or sh (csh's `-lic` is not taken: its run fails loud): `/bin/sh` runs with job control (`set -m`, so the terminal comes back to it however the agent ended) and survives the agent's Ctrl-C (`trap : INT`), goes to the folder (`~` is its home), asks the user's login shell to run the command as typed, records the exit code in the pane option `@terminum-exit`, drops what the tty still holds so nothing meant for the agent reaches the shell, then stays as that shell. tmux gets each word apart and runs no shell of its own:
 
