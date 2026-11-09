@@ -219,6 +219,36 @@ fn uninstall_stops_terminumd_and_keeps_state_and_logs() {
     assert!(said(&t.ctx).last().unwrap().contains("tmux sessions untouched"));
 }
 
+/// AC-16 failure (L20): what uninstall could not remove is said, never "Removed terminum".
+#[test]
+fn uninstall_says_what_it_could_not_remove() {
+    let t = T::new();
+    t.install("a").unwrap();
+    let command = t.ctx.bin().join("terminum");
+    std::fs::remove_file(&command).unwrap();
+    std::fs::create_dir_all(command.join("in-the-way")).unwrap();   // a folder: remove_file cannot take it
+    let why = install::uninstall(&t.ctx).unwrap_err();
+    assert!(why.starts_with("terminumd stopped, but these could not be removed: ~/") && why.contains("bin/terminum"), "{why}");
+    assert!(launch::health(&t.ctx).is_none(), "it was stopped all the same");
+    assert!(!said(&t.ctx).iter().any(|l| l.starts_with("Removed terminum")));
+}
+
+/// AC-16 failure (L21): a pid file that cannot be written ends the terminumd just started: no
+/// stop could find it.
+#[test]
+fn a_direct_start_without_its_pid_file_leaves_nothing_running() {
+    let t = T::new();
+    t.install("a").unwrap();
+    direct::stop(&t.ctx);
+    std::fs::create_dir_all(t.ctx.pidfile().join("in-the-way")).unwrap();
+    let why = direct::start(&t.ctx).unwrap_err();
+    assert!(why.ends_with("terminumd was not left running"), "{why}");
+    assert!(t.ctx.children.lock().is_empty(), "the child was ended and reaped");
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(launch::health(&t.ctx).is_none());
+    std::fs::remove_dir_all(t.ctx.pidfile()).unwrap();
+}
+
 #[test]
 fn restart_in_direct_mode_starts_terminumd_again() {
     let t = T::new();
@@ -361,4 +391,27 @@ fn a_failed_upgrade_from_the_old_name_brings_the_old_agent_back() {
     assert_eq!(install::target(&ctx, "current").as_deref(), Some("a"));
     assert!(legacy.exists() && !ctx.plist().exists(), "the old agent is loaded again, the new one gone");
     assert_eq!(verbs(&lc).last().map(String::as_str), Some("bootstrap"));
+}
+
+/// AC-16 failure (L20): the old name's agent that cannot be set aside after the links switched is
+/// rolled back as a start that failed: `current` names the old build again.
+#[test]
+fn a_migration_that_fails_after_the_links_switched_is_rolled_back() {
+    let home = Home::new();
+    let lc = home.path("lc");
+    std::fs::create_dir_all(&lc).unwrap();
+    let tbin = home.path("tbin");
+    write_exec(&tbin.join("tmux"), "#!/bin/sh\n");
+    let mut ctx = home.ctx(&[("TM_NO_OPEN", "1"), ("PATH", &format!("{}:/usr/bin:/bin", tbin.display()))]);
+    ctx.launchctl = stub_launchctl(&lc);
+    ctx.wait = Duration::from_millis(300);
+    let a = ctx.lib().join("a");
+    std::fs::create_dir_all(&a).unwrap();
+    write_exec(&a.join("terminusd"), "#!/bin/sh\n");
+    std::os::unix::fs::symlink("a", ctx.lib().join("current")).unwrap();
+    std::fs::create_dir_all(ctx.agents.join(".io.terminum.terminusd.plist.retired/in-the-way")).unwrap();   // the plist cannot be set aside
+    std::fs::write(ctx.agents.join("io.terminum.terminusd.plist"), "<plist/>").unwrap();
+    let msg = install::install(&ctx, &package(&home, "b", None, false)).unwrap_err();
+    assert!(msg.starts_with("Upgrade to b failed"), "{msg}");
+    assert_eq!(install::target(&ctx, "current").as_deref(), Some("a"), "the links are the old build's again");
 }

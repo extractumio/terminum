@@ -87,9 +87,15 @@ pub fn start(ctx: &Ctx) -> Result<(), String> {
             Ok(())
         });
     }
-    let child = cmd.spawn().map_err(|e| format!("cannot start {}: {e}", program.display()))?;
+    let mut child = cmd.spawn().map_err(|e| format!("cannot start {}: {e}", program.display()))?;
     let pid = child.id();
-    ctx.children.lock().insert(pid, child);
     let line = format!("{pid} {}\n", started_at(pid));
-    crate::config::write_private(&ctx.pidfile(), line.as_bytes()).map_err(|e| format!("{}: {e}", ctx.pidfile().display()))
+    if let Err(e) = crate::config::write_private(&ctx.pidfile(), line.as_bytes()) {
+        // no stop could find it without its pid file: the child it started ends now (L21)
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("{}: {e}; terminumd was not left running", ctx.pidfile().display()));
+    }
+    ctx.children.lock().insert(pid, child);
+    Ok(())
 }

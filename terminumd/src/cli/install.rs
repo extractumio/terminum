@@ -239,8 +239,8 @@ pub fn install(ctx: &Ctx, pkg: &Path) -> Result<(), String> {
         place_command(ctx, &build)?; // also when it does not come up: `terminum status` says why
     }
     let logs = ctx.shown(&ctx.log_dir());
-    launch::migrate_legacy(ctx)?;
-    if let Err(e) = go_live(ctx, &build) {
+    // the old name's service retired after the links switched: its failure is rolled back as a start's (L20)
+    if let Err(e) = launch::migrate_legacy(ctx).and_then(|()| go_live(ctx, &build)) {
         let Some(old) = old.filter(|_| upgrade) else {
             return Err(format!("Install of {build} failed ({e}) — see {logs}/"));
         };
@@ -340,10 +340,19 @@ pub fn uninstall(ctx: &Ctx) -> Result<(), String> {
     launch::migrate_legacy(ctx)?;
     launch::stop(ctx)?;
     launch::forget_legacy(ctx);
-    let _ = std::fs::remove_dir_all(ctx.lib());
-    let _ = std::fs::remove_dir_all(ctx.root.join("daemon"));
-    let _ = std::fs::remove_file(ctx.bin().join("terminum"));
+    let absent = |r: std::io::Result<()>| match r {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+        _ => Ok(()),
+    };
+    let left: Vec<String> = [
+        (ctx.lib(), absent(std::fs::remove_dir_all(ctx.lib()))),
+        (ctx.root.join("daemon"), absent(std::fs::remove_dir_all(ctx.root.join("daemon")))),
+        (ctx.bin().join("terminum"), absent(std::fs::remove_file(ctx.bin().join("terminum")))),
+    ].into_iter().filter_map(|(p, r)| r.err().map(|e| format!("{}: {e}", ctx.shown(&p)))).collect();
     let _ = std::fs::remove_dir(ctx.bin()); // only when empty
+    if !left.is_empty() {
+        return Err(format!("terminumd stopped, but these could not be removed: {}", left.join("; ")));
+    }
     ctx.done(&format!(
         "Removed terminum: terminumd stopped, its {} service, builds and command removed. Settings, state and logs kept in {}; tmux sessions untouched.",
         if ctx.systemd { "systemd" } else { "launchd" },

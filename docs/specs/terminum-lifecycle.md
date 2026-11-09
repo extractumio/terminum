@@ -225,6 +225,8 @@ Scenario: AC-16 failure — the new build does not come up
   And when A does not come up either it says "Upgrade to B failed (<reason>); switched back to A, which did not come up either (<reason>)"
   And a timed-out CLI subprocess ends its own descendants and closes its output readers; no detached reader thread remains
   And direct-mode process records with a zero, overflowing pid or empty start time never name a process to signal
+  And in direct mode a pid file that cannot be written ends the terminumd just started ("<pid file>: <reason>; terminumd was not left running"): no stop could find it
+  And when "terminum uninstall" cannot remove a build, the command or "daemon/", it exits non-zero with "terminumd stopped, but these could not be removed: <path>: <reason>", never "Removed terminum"
 Scenario Outline: AC-16 failure — nothing to do, or someone else is doing it
   When the user runs <command> <given>
   Then it exits non-zero with <message> and nothing changes
@@ -240,7 +242,7 @@ Scenario: AC-16 failure — the build rolled back to does not come up
 Scenario: AC-16 edge — an install from before the server was named terminumd
   Given the launchd agent "io.terminum.terminusd" holds the port
   When a new build installs
-  Then that agent is unloaded and its plist set aside before the new one loads; once the new build answers that plist is removed; when it does not come up the old agent is loaded again and it says "Upgrade to B failed (<reason>); A runs again as before — see ~/.terminum/logs/"
+  Then that agent is unloaded and its plist set aside before the new one loads; once the new build answers that plist is removed; when it does not come up, or the old agent cannot be unloaded or set aside, "current" names A again, the old agent is loaded again and it says "Upgrade to B failed (<reason>); A runs again as before — see ~/.terminum/logs/"
   When the user rolls back to such a build
   Then it is refused with "A is from before the server was named terminumd and cannot run as this agent: install that version again instead"
 Scenario: AC-16 edge — imported state
