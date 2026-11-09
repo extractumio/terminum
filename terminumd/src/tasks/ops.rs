@@ -27,7 +27,7 @@ pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: imp
 }
 
 pub use super::users::{agent_user, pool_user, pool_user_id};
-pub use super::comments::{answers, change_comment, comment, history, last_comment_is, questions};
+pub use super::comments::{answers, change_comment, comment, history, keep_human_comment, questions};
 pub(crate) use super::users::user_name;
 
 pub fn now() -> i64 {

@@ -190,8 +190,9 @@ fn ac138_dropped_on_another_agent_of_its_kind_its_ended_conversation_goes_on_the
         assert_eq!(moved_to(tx, std::slice::from_ref(&t), Some(&r), Some("b"), true)?, None, "Run from scratch");
         let live = Run { state: Phase::Working, ..r.clone() };
         assert_eq!(moved_to(tx, std::slice::from_ref(&t), Some(&live), Some("b"), false)?, None, "a live agent: never two on one conversation");
-        let (_, w) = ways(tx, &t.id, &[], Some("b"), false)?;
+        let (_, w, from) = ways(tx, &t.id, &[], Some("b"), false)?;
         assert!(matches!(w, Ok(Way::Resume(r)) if r.agent_id == "b"), "the press resumes it on Jones");
+        assert_eq!(from.as_deref(), Some("Smith"), "its window names the agent it moves from");
         Ok(())
     }).unwrap();
 }

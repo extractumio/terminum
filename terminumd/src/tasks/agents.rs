@@ -55,16 +55,17 @@ const EVERY_TOOL: [(&str, &str, &[&str]); 2] = [
     ("codex", "--dangerously-bypass-approvals-and-sandbox", &["--dangerously-bypass-approvals-and-sandbox", "--yolo", "--full-auto", "--ask-for-approval", "-a", "--sandbox", "-s"]),
 ];
 
-/// The kind's words for every tool, unless the command says how it asks, or holds ; | & or #: words after it
-/// would go to the last program, not this one.
+/// What ends one program's command and starts another's: words after it would go to the last program.
+const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
+
+/// The kind's words for every tool, unless the command says how it asks, or holds a separator.
 fn every_tool(kind: &str, command: &str) -> Option<&'static str> {
-    let (_, words, _) = EVERY_TOOL.iter().find(|(k, _, _)| *k == kind)?;
-    (!names_mode(kind, command) && !command.contains([';', '|', '&', '#'])).then_some(*words)
+    let (_, words, says) = EVERY_TOOL.iter().find(|(k, _, _)| *k == kind)?;
+    (!names_mode(says, command) && !command.contains(SEPARATORS)).then_some(*words)
 }
 
-/// Whether the command says how its program asks, by a whole word of it.
-fn names_mode(kind: &str, command: &str) -> bool {
-    let says = EVERY_TOOL.iter().find(|(k, _, _)| *k == kind).map_or(&[][..], |(_, _, says)| *says);
+/// Whether the command says how its program asks (`says`: the kind's words for it), by a whole word of it.
+fn names_mode(says: &[&str], command: &str) -> bool {
     command.split_whitespace().any(|w| says.iter().any(|s| w == *s || w.strip_prefix(*s).is_some_and(|rest| rest.starts_with('='))))
 }
 
@@ -133,7 +134,8 @@ impl Given {
             return Err("An agent's command is one line, with no control or invisible characters.".into());
         }
         // every tool goes on one program's command (terminum-dispatcher.md AC-156): said here, never left out unseen
-        if self.command.contains([';', '|', '&', '#']) && !names_mode(&self.kind, &self.command) {
+        let says = EVERY_TOOL.iter().find(|(k, _, _)| *k == self.kind).map_or(&[][..], |(_, _, says)| *says);
+        if self.command.contains(SEPARATORS) && !names_mode(says, &self.command) {
             return Err("Every tool goes on one program's command: this one has ; | & or #. Name its permission mode in the command.".into());
         }
         if !self.effort.is_empty() {
@@ -141,7 +143,7 @@ impl Given {
                 return Err(format!("{} has no effort {}.", self.kind, self.effort));
             }
             // the flag goes after the command: after a `;` it would go to another program
-            if self.command.contains([';', '|', '&', '#']) {
+            if self.command.contains(SEPARATORS) {
                 return Err("An effort goes on one program's command: this one has ; | & or #. Write it in the command.".into());
             }
             // twice on one line, which one the program takes is its own affair

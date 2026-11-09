@@ -20,7 +20,6 @@ use super::{acts, move_one, move_task, procs, say, start, store};
 use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::{answer, told};
-use crate::tasks::files;
 use crate::tasks::ops::{self, Task};
 use crate::tasks::store::HUMAN;
 use crate::termtext::has_control;
@@ -38,7 +37,7 @@ pub fn routes() -> Router<Shared> {
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
     answer(store(&app, move |tx| {
-        let (tasks, w) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
+        let (tasks, w, moved_from) = ways(tx, &id, &also_of(&asked.also), asked.agent.as_deref(), false)?;
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
@@ -57,8 +56,8 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
             return Err("That agent is gone.".to_string());
         }
         // its conversation goes on on another agent: the window names both, Run from scratch stays (AC-138)
-        let moved = match (&w, runs::last_of(tx, &t.key)?) {
-            (Way::Shell(r) | Way::Resume(r), Some(was)) if was.agent_id != r.agent_id => Some(json!({"from": was.agent_name, "to": r.agent_name, "conversation": r.agent_session})),
+        let moved = match (&w, moved_from) {
+            (Way::Shell(r) | Way::Resume(r), Some(from)) => Some(json!({"from": from, "to": r.agent_name, "conversation": r.agent_session})),
             _ => None,
         };
         let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
@@ -93,15 +92,6 @@ enum Next {
     Waits(String),
 }
 
-impl Next {
-    fn answer(self) -> Value {
-        match self {
-            Next::Run(run) => json!({"run": run}),
-            Next::Waits(words) => json!({"waits": words}),
-        }
-    }
-}
-
 /// A slot's limit, or an older wait that has room, keeps this press waiting (AC-158): its words, after the human's
 /// comment is kept, so it shows while it waits.
 fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: &Task, but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
@@ -112,11 +102,10 @@ fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, task: 
             None => return Ok(None),
         },
     };
-    if let Some(c) = comment.filter(|c| !ops::last_comment_is(tx, &task.id, c).unwrap_or(false)) {
-        let event = ops::comment(tx, HUMAN, &task.id, c, ops::now())?;
-        files::attach(tx, files, &task.id, Some(&event))?;
+    if let Some(c) = comment {
+        ops::keep_human_comment(tx, &task.id, c, files, ops::now())?;
     }
-    super::waits::add(tx, &task.key, &agent.id, project, body, ops::now())?;
+    super::waits::add(tx, task, &agent.id, project, body, ops::now())?;
     Ok(Some(super::waits::words(&agent.name, &why)))
 }
 
@@ -152,11 +141,10 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             let name = agents::by_id(tx, &w.agent)?.map_or(w.agent.clone(), |a| a.name);
             return Err(format!("{wanted} waits for {name} already."));
         }
-        let (tasks, w) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
+        let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
-        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = said.as_ref().filter(|c| !ops::last_comment_is(tx, &wanted, c).unwrap_or(false)) {
-            let event = ops::comment(tx, HUMAN, &wanted, c, ops::now())?;
-            files::attach(tx, &attached, &wanted, Some(&event))?;
+        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
+            ops::keep_human_comment(tx, &wanted, c, &attached, ops::now())?;
         }
         // its agent asked: what the humans answered since goes, theirs alone (AC-157)
         let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
@@ -213,7 +201,7 @@ async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Value) -> R
     let server = server_of(app, r.host.as_deref())?;
     let new = match next_run(app, &r, t, again, kept).await? {
         Next::Run(new) => new,
-        waits => return Ok(waits_told(app, t, waits)),
+        Next::Waits(words) => return Ok(waits_told(app, t, words)),
     };
     let project = project_named(app, &t.project);
     start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind, agent: &r.agent_id }).await?;
@@ -222,9 +210,9 @@ async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Value) -> R
 }
 
 /// What a press that started nothing answers, every page told of its task.
-fn waits_told(app: &Shared, t: &Task, next: Next) -> Value {
+fn waits_told(app: &Shared, t: &Task, words: String) -> Value {
     told(app, &t.id);
-    next.answer()
+    json!({"waits": words})
 }
 
 /// What a press types may hold line ends, nothing else unseen: tmux would refuse it after the run was written.
@@ -279,7 +267,7 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
     let new = match next_run(app, r, t, again, kept).await? {
         Next::Run(new) => new,
-        waits => return Ok(waits_told(app, t, waits)),
+        Next::Waits(words) => return Ok(waits_told(app, t, words)),
     };
     let done = start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await;
     crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, &r.ids, &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
@@ -396,12 +384,9 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         }
         let prompt = prompt_of(tx, &now, said.as_deref())?;
         // a wait kept its comment when it began (AC-158)
-        if let Some(c) = said.as_ref().filter(|c| !ops::last_comment_is(tx, &now[0].id, c).unwrap_or(false)) {
-            for (i, t) in now.iter().enumerate() {
-                let event = ops::comment(tx, HUMAN, &t.id, c, ops::now())?;
-                if i == 0 {
-                    files::attach(tx, &attached, &t.id, Some(&event))?;
-                }
+        if let Some(c) = &said && ops::keep_human_comment(tx, &now[0].id, c, &attached, ops::now())?.is_some() {
+            for t in &now[1..] {
+                ops::comment(tx, HUMAN, &t.id, c, ops::now())?;
             }
         }
         for t in &now {
@@ -419,7 +404,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
     }).await?;
     let run = match next {
         Next::Run(run) => run,
-        waits => return Ok(waits_told(app, t, waits)),
+        Next::Waits(words) => return Ok(waits_told(app, t, words)),
     };
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
     launch(app, &run, &server, &t.project, &dir, &a, &ids).await?;
@@ -431,21 +416,20 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).
 async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
+    // a wait is called off, the task where it stood (AC-158); else its run is given up
     let wanted = id.clone();
-    let stopped = store(&app, move |tx| {
+    let done = store(&app, move |tx| {
         let key = ops::key_of(tx, &wanted)?;
-        let Some(w) = super::waits::of_task(tx, &key)? else { return Ok(false) };
-        super::waits::remove(tx, &key)?;
+        let Some(w) = super::waits::of_task(tx, &key)? else { return runs::give_up(tx, &key).map(Some) };
         let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
-        ops::log(tx, &key, super::DISPATCHER, "told", &format!("The human called off its wait for {name}."), None, ops::now()).map(|_| true)
+        super::waits::call_off(tx, &key, &format!("The human called off its wait for {name}.")).map(|()| None)
     }).await;
-    match stopped {
-        Ok(true) => {
+    match done {
+        Ok(None) => {
             told(&app, &id);
             answer(Ok(json!({"ok": true, "ids": [id]})))
         }
-        Ok(false) => let_go_of(&app, store(&app, move |tx| { let key = ops::key_of(tx, &id)?; runs::give_up(tx, &key) }).await),
-        Err(e) => answer::<Value>(Err(e)),
+        given_up => let_go_of(&app, given_up.map(|r| r.unwrap_or_default())),
     }
 }
 

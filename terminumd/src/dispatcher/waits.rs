@@ -43,12 +43,11 @@ pub fn of_task(tx: &Transaction, task: &str) -> Result<Option<Wait>, String> {
     tx.query_row(&format!("{SELECT} WHERE w.task = ?1"), [task], of_row).optional().map_err(sql)
 }
 
-/// Task `task` (its key) waits for `agent` with `body`; one waiting already keeps its place in the line.
-pub fn add(tx: &Transaction, task: &str, agent: &str, project: &str, body: &Value, at: i64) -> Result<(), String> {
-    let status = tx.query_row("SELECT status FROM tasks WHERE id = ?1", [task], |r| r.get::<_, String>(0)).map_err(sql)?;
+/// `task` waits for `agent` with `body`; one waiting already keeps its place in the line.
+pub fn add(tx: &Transaction, task: &ops::Task, agent: &str, project: &str, body: &Value, at: i64) -> Result<(), String> {
     tx.execute("INSERT INTO run_waits (task, agent_id, project, status, body, at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                 ON CONFLICT (task) DO UPDATE SET agent_id = excluded.agent_id, project = excluded.project, status = excluded.status, body = excluded.body",
-               (task, agent, project, status, body.to_string(), at)).map(drop).map_err(sql)
+               (&task.key, agent, project, &task.status, body.to_string(), at)).map(drop).map_err(sql)
 }
 
 /// The wait of `task` ends: it started, or was called off.
@@ -56,13 +55,20 @@ pub fn remove(tx: &Transaction, task: &str) -> Result<bool, String> {
     tx.execute("DELETE FROM run_waits WHERE task = ?1", [task]).map(|n| n > 0).map_err(sql)
 }
 
+/// The wait of `task` is called off, `words` saying why on it.
+pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String> {
+    remove(tx, task)?;
+    ops::log(tx, task, DISPATCHER, "told", words, None, ops::now()).map(drop)
+}
+
 /// An older wait of `agent` or `project` that could start now, but `task`'s own: a press for them goes behind it,
 /// so the walk's beat never lets a newer press take the slot an older one waited for.
 pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result<Option<String>, String> {
     let since = of_task(tx, task)?.map_or(i64::MAX, |w| w.at);
+    let slots = pool::Slots::read(tx)?;
     for w in all(tx)?.into_iter().filter(|w| w.task != task && w.at <= since && (w.agent == agent || w.project == project)) {
         let a = agents::by_id(tx, &w.agent)?;
-        if a.is_some() && pool::check(tx, a.as_ref(), &w.project, None)?.is_none() {
+        if a.is_some() && slots.check(tx, a.as_ref(), &w.project, None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
     }
@@ -80,23 +86,24 @@ pub fn on_cards(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, Strin
             [super::runs::listed_keys(keys)], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
-/// What a wait comes to now: pressed again, still waiting, or called off with these words.
+/// What a wait comes to now: pressed again, still waiting, or called off with these words; the task's ID.
+#[derive(Debug)]
 enum Due {
     Press(String, Value),
     Stays,
-    Off(String),
+    Off(String, String),
 }
 
 fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
     let t = ops::get(tx, &w.task)?;
     let Some(a) = agents::by_id(tx, &w.agent)? else {
-        return Ok(Due::Off("Its wait was called off: its agent is no longer in the pool. Run it again.".into()));
+        return Ok(Due::Off(t.id, "Its wait was called off: its agent is no longer in the pool. Run it again.".into()));
     };
     if t.archived_at.is_some() {
-        return Ok(Due::Off("Its wait was called off: it was archived.".into()));
+        return Ok(Due::Off(t.id, "Its wait was called off: it was archived.".into()));
     }
     if t.status != w.status {
-        return Ok(Due::Off(format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
+        return Ok(Due::Off(t.id, format!("Its wait for {} was called off: it moved to {}.", a.name, t.status)));
     }
     if pool::check(tx, Some(&a), &w.project, None)?.is_some() {
         return Ok(Due::Stays);
@@ -112,33 +119,27 @@ pub async fn start_due(app: &Shared) {
         let wanted = w.clone();
         let decided = super::store(app, move |tx| {
             let d = due(tx, &wanted)?;
-            if let Due::Off(words) = &d {
-                remove(tx, &wanted.task)?;
-                ops::log(tx, &wanted.task, DISPATCHER, "told", words, None, ops::now())?;
+            if let Due::Off(_, words) = &d {
+                call_off(tx, &wanted.task, words)?;
             }
             Ok(d)
         }).await;
-        match decided {
+        let id = match decided {
             Ok(Due::Press(id, body)) => {
                 if let Err(why) = super::api::press_again(app, &id, body).await {
                     let (task, words) = (w.task.clone(), format!("Did not start after its wait: {why}"));
-                    let _ = super::store(app, move |tx| {
-                        remove(tx, &task)?;
-                        ops::log(tx, &task, DISPATCHER, "told", &words, None, ops::now()).map(drop)
-                    }).await;
+                    let _ = super::store(app, move |tx| call_off(tx, &task, &words)).await;
                 }
-                if let Ok(id) = super::store(app, { let k = w.task.clone(); move |tx| ops::get(tx, &k).map(|t| t.id) }).await {
-                    crate::tasks::api::told(app, &id);
-                }
+                id
             }
-            Ok(Due::Off(_)) => {
-                if let Ok(id) = super::store(app, { let k = w.task.clone(); move |tx| ops::get(tx, &k).map(|t| t.id) }).await {
-                    crate::tasks::api::told(app, &id);
-                }
+            Ok(Due::Off(id, _)) => id,
+            Ok(Due::Stays) => continue,
+            Err(e) => {
+                tracing::warn!(event = "dispatcher.wait", error = %e);
+                continue;
             }
-            Ok(Due::Stays) => {}
-            Err(e) => tracing::warn!(event = "dispatcher.wait", error = %e),
-        }
+        };
+        crate::tasks::api::told(app, &id);
     }
 }
 

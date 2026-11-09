@@ -14,8 +14,8 @@ pub const NOTHING: i64 = 3600;
 /// A session closes this long after DONE or FAILED.
 pub const CLOSE: i64 = 7200;
 
-/// Quiet this long after an agent asked a human, two walks, before its session closes (AC-157).
-pub const ASKED_QUIET: i64 = 60;
+/// Quiet this long after an agent asked a human before its session closes (AC-157): as an idle holder's.
+pub const ASKED_QUIET: i64 = IDLE_QUIET;
 
 /// A subagent silent and idle this long gets the main agent one request, then what can be done (AC-127).
 pub const SUB_TELL: i64 = 600;
@@ -267,6 +267,12 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
 /// loses nothing RUN cannot resume (AC-157).
 pub fn asked_human(run: &Run) -> bool {
     run.asked && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
+}
+
+/// Whether a close of either kind may come once `dt` more passes: then the walk reads whether another task of
+/// its session is open (AC-125, AC-157).
+pub fn close_near(run: &Run, dt: i64) -> bool {
+    (finished(&run.status) && run.closing_for + dt >= CLOSE) || (asked_human(run) && run.closing_for + dt >= ASKED_QUIET)
 }
 
 /// Whether a Close for an agent's question still holds, read just before the pane goes.

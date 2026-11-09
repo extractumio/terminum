@@ -18,18 +18,30 @@ pub fn last_comment_is(tx: &Transaction, id: &str, text: &str) -> Result<bool, S
 
 /// A comment (AC-108): the event's id.
 pub fn comment(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
-    check_comment(text)?;
-    let key = key_of(tx, id)?;
-    touch(tx, &key, at)?;
-    log(tx, &key, author, "comment", text, None, at)
+    comment_with(tx, author, id, text, None, at)
 }
 
 /// An agent's questions for a human (terminum-dispatcher.md AC-157): a comment the task's window shows as such.
 pub fn questions(tx: &Transaction, author: &str, id: &str, text: &str, at: i64) -> Result<String, String> {
+    comment_with(tx, author, id, text, Some(&json!({"questions": true})), at)
+}
+
+fn comment_with(tx: &Transaction, author: &str, id: &str, text: &str, data: Option<&Value>, at: i64) -> Result<String, String> {
     check_comment(text)?;
     let key = key_of(tx, id)?;
     touch(tx, &key, at)?;
-    log(tx, &key, author, "comment", text, Some(&json!({"questions": true})), at)
+    log(tx, &key, author, "comment", text, data, at)
+}
+
+/// The human's comment of a press, with its files, once: a press tried again, or pressed again by its wait
+/// (terminum-dispatcher.md AC-158), adds it no second time. Its event, when it was kept now.
+pub fn keep_human_comment(tx: &Transaction, id: &str, text: &str, files: &[String], at: i64) -> Result<Option<String>, String> {
+    if last_comment_is(tx, id, text)? {
+        return Ok(None);
+    }
+    let event = comment(tx, super::store::HUMAN, id, text, at)?;
+    super::files::attach(tx, files, id, Some(&event))?;
+    Ok(Some(event))
 }
 
 /// The humans' comments since the agent's last questions, oldest first: their answers (AC-157).

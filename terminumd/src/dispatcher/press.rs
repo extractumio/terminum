@@ -160,18 +160,23 @@ pub(super) fn moved_to(tx: &rusqlite::Transaction, tasks: &[Task], last: Option<
         .map(|a| Run { agent_id: a.id, agent_name: a.name, agent_color: a.color, command: a.line, ..r.clone() }))
 }
 
-/// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how.
-pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<(Vec<Task>, Result<Way, String>), String> {
+/// A press's tasks, how it goes on, and the agent its conversation moves from.
+pub(super) type Ways = (Vec<Task>, Result<Way, String>, Option<String>);
+
+/// How a press on `id` and `also` goes on: each task as it stands now may go, the first says how; the agent its
+/// conversation moves from, when it moves (AC-138).
+pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<Ways, String> {
     let tasks = members(tx, id, also)?;
     let last = runs::last_of(tx, &tasks[0].key)?;
     let moved = moved_to(tx, &tasks, last.as_ref(), agent, fresh)?;
     let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), agent, fresh);
+    let moved_from = moved.as_ref().and(last.as_ref()).map(|r| r.agent_name.clone());
     let last = moved.or(last);
     let lead = way(&tasks[0], last, anew);
     for other in &tasks[1..] {
         way(other, runs::last_of(tx, &other.key)?, true)?;
     }
-    Ok((tasks, lead))
+    Ok((tasks, lead, moved_from))
 }
 
 #[derive(Deserialize)]

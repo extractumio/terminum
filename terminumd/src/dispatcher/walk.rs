@@ -118,8 +118,7 @@ fn walk_one(tx: &rusqlite::Transaction, hooks: &Hooks, mut r: Run, read: Read, n
     if read.ended && !hooks.working(&read.key) {
         r.open_tools = 0;
     }
-    let due = (plan::finished(&r.status) && r.closing_for + dt >= plan::CLOSE) || (plan::asked_human(&r) && r.closing_for + dt >= plan::ASKED_QUIET);
-    facts.others_open = match r.pane_key.as_deref().filter(|_| due) {
+    facts.others_open = match r.pane_key.as_deref().filter(|_| plan::close_near(&r, dt)) {
         Some(key) => runs::others_open(tx, key, &r.task)?,
         None => false,
     };

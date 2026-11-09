@@ -32,9 +32,9 @@ fn holding(tx: &Transaction, a: &str, project: &str) -> String {
 fn ac158_a_wait_keeps_its_place_and_its_newest_press() {
     store("waits-place").with(|tx| {
         let (one, two) = (task(tx, "api"), task(tx, "api"));
-        add(tx, &one.key, "a", "api", &json!({"comment": "first"}), 10)?;
-        add(tx, &two.key, "a", "api", &json!({}), 20)?;
-        add(tx, &one.key, "b", "api", &json!({"comment": "again"}), 30)?;
+        add(tx, &one, "a", "api", &json!({"comment": "first"}), 10)?;
+        add(tx, &two, "a", "api", &json!({}), 20)?;
+        add(tx, &one, "b", "api", &json!({"comment": "again"}), 30)?;
         let all = all(tx)?;
         assert_eq!(all.iter().map(|w| w.task.as_str()).collect::<Vec<_>>(), [one.key.as_str(), two.key.as_str()], "its place in the line stays");
         assert_eq!((all[0].agent.as_str(), all[0].body["comment"].as_str(), all[0].at, all[0].status.as_str()), ("b", Some("again"), 10, "TODO"));
@@ -48,7 +48,7 @@ fn ac158_a_wait_keeps_its_place_and_its_newest_press() {
 fn ac158_an_older_wait_with_room_goes_first_one_blocked_by_its_project_does_not() {
     store("waits-ahead").with(|tx| {
         let (old, new) = (task(tx, "api"), task(tx, "api"));
-        add(tx, &old.key, "a", "api", &json!({}), 10)?;
+        add(tx, &old, "a", "api", &json!({}), 10)?;
         assert_eq!(ahead(tx, "a", "api", &new.key)?, Some(old.id.clone()), "the slot is free: the older wait takes it, a new press goes behind");
         assert_eq!(ahead(tx, "a", "api", &old.key)?, None, "never behind itself");
         assert_eq!(ahead(tx, "b", "web", &new.key)?, None, "another agent and project");
@@ -56,7 +56,7 @@ fn ac158_an_older_wait_with_room_goes_first_one_blocked_by_its_project_does_not(
         // web holds one at once: a wait there is blocked by its project, and blocks no wait for that agent elsewhere
         holding(tx, "b", "web");
         let blocked = task(tx, "web");
-        add(tx, &blocked.key, "a", "web", &json!({}), 10)?;
+        add(tx, &blocked, "a", "web", &json!({}), 10)?;
         assert_eq!(ahead(tx, "a", "api", &new.key)?, None, "{} waits for web's room, not for Smith's", blocked.id);
         Ok(())
     }).unwrap();
@@ -66,20 +66,20 @@ fn ac158_an_older_wait_with_room_goes_first_one_blocked_by_its_project_does_not(
 fn ac158_a_wait_stays_while_full_and_goes_when_its_task_moved_was_archived_or_its_agent_left() {
     store("waits-due").with(|tx| {
         let t = task(tx, "api");
-        add(tx, &t.key, "a", "api", &json!({"agent": "a"}), 10)?;
+        add(tx, &t, "a", "api", &json!({"agent": "a"}), 10)?;
         let run = holding(tx, "a", "api");
         assert!(matches!(due(tx, &of_task(tx, &t.key)?.unwrap())?, Due::Stays), "Smith is at its limit");
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         assert!(matches!(due(tx, &of_task(tx, &t.key)?.unwrap())?, Due::Press(id, body) if id == t.id && body["agent"] == "a"), "room: pressed again as kept");
         ops::move_to(tx, HUMAN, &t.id, "DONE", 20)?;
-        assert!(matches!(due(tx, &of_task(tx, &t.key)?.unwrap())?, Due::Off(w) if w.contains("moved to DONE")));
+        assert!(matches!(due(tx, &of_task(tx, &t.key)?.unwrap())?, Due::Off(_, w) if w.contains("moved to DONE")));
         let u = task(tx, "api");
-        add(tx, &u.key, "a", "api", &json!({}), 10)?;
+        add(tx, &u, "a", "api", &json!({}), 10)?;
         ops::archive(tx, HUMAN, &u.id, true, 30)?;
-        assert!(matches!(due(tx, &of_task(tx, &u.key)?.unwrap())?, Due::Off(w) if w.contains("archived")));
+        assert!(matches!(due(tx, &of_task(tx, &u.key)?.unwrap())?, Due::Off(_, w) if w.contains("archived")));
         let v = task(tx, "api");
-        add(tx, &v.key, "gone", "api", &json!({}), 10)?;
-        assert!(matches!(due(tx, &of_task(tx, &v.key)?.unwrap())?, Due::Off(w) if w.contains("no longer in the pool")));
+        add(tx, &v, "gone", "api", &json!({}), 10)?;
+        assert!(matches!(due(tx, &of_task(tx, &v.key)?.unwrap())?, Due::Off(_, w) if w.contains("no longer in the pool")));
         Ok(())
     }).unwrap();
 }
