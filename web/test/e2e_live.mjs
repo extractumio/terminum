@@ -166,7 +166,8 @@ async function wide(browser, name) {
   };
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
-  const boards = async (suites = [liveBoard, liveBoardEdge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory]) => {
+  const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
+  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
