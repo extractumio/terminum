@@ -86,6 +86,12 @@ fn ac154_words_change_only_on_an_agents_task_no_human_reworded_and_no_other_sess
     s.with(|tx| ops::edit(tx, HUMAN, &a, ops::Edit { title: Some("Bug: the human's words".into()), ..Default::default() }, 2)).unwrap();
     assert!(call(&s, &dir, json!({"id": a, "title": "Bug: back"})).unwrap_err().contains("holds a human's words"));
     assert!(call(&s, &dir, json!({"id": a, "severity": "P0"})).is_ok(), "its severity is still the agents'");
+    let purged = agents_task(&s, &dir, "Bug: a secret pasted");
+    s.with(|tx| ops::purge_text(tx, HUMAN, &purged, 2)).unwrap();
+    assert!(call(&s, &dir, json!({"id": purged, "text": SECTIONS})).unwrap_err().contains("holds a human's words"), "a purge is a human's word too");
+    let older = agents_task(&s, &dir, "Bug: reworded before data.words");
+    s.with(|tx| ops::log(tx, &ops::get(tx, &older)?.key, HUMAN, "edit", "Alex renamed it", None, 2).map(drop)).unwrap();
+    assert!(call(&s, &dir, json!({"id": older, "title": "Bug: x"})).unwrap_err().contains("holds a human's words"), "an older event, by its text");
     let held = agents_task(&s, &dir, "Bug: held");
     s.with(|tx| ops::link(tx, HUMAN, &held, Some(OTHER), 3)).unwrap();
     assert_eq!(call(&s, &dir, json!({"id": held, "text": SECTIONS})).unwrap_err(), format!("{held} belongs to session %8: comment instead."));

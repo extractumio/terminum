@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::family;
 use super::ops::{self, Edit, Task};
-use super::tools::{arg, author, title_of, visible, Who};
+use super::tools::{arg, author, text_of, title_of, visible, Who};
 use crate::plans::rules;
 
 /// What `parent` says to take a task out of its parent.
@@ -34,32 +34,26 @@ pub(super) fn update(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Resu
     let field = |k: &str| args[k].as_str().filter(|s| !s.is_empty());
     let (title, text, severity, parent) = (field("title"), field("text"), field("severity"), field("parent"));
     let reason = field("reason").map(rules::clean);
+    let change = title.or(text).or(severity).or(parent);
     if field("archive").is_some() {
-        if title.or(text).or(severity).or(parent).is_some() {
+        if change.is_some() {
             return Err("archive goes alone, with its reason.".into());
         }
         let reason = reason.ok_or("Give the reason it leaves the board.")?;
         return archive(tx, who, &t, &reason, at);
     }
-    if title.or(text).or(severity).or(parent).is_none() {
+    if change.is_none() {
         return Err("Give severity, parent, title, text or archive.".into());
-    }
-    if title.or(text).is_some() {
-        agents(tx, who, &t)?;
     }
     // a human's task changes with its why in its history
     if !t.by_agent && reason.is_none() {
         return Err(format!("{id} is a human's: give the reason for the change."));
     }
     let title = title.map(title_of).transpose()?;
-    let text = match text {
-        Some(s) => {
-            let s = rules::clean(s);
-            super::template::check(&s, &super::template::of_project(tx, &t.project)?)?;
-            Some(s)
-        }
-        None => None,
-    };
+    if title.is_some() || text.is_some() {
+        agents(tx, who, &t)?;
+    }
+    let text = text.map(|s| text_of(tx, &t.project, s)).transpose()?;
     let me = author(tx, who)?;
     ops::edit(tx, &me, &t.id, Edit { title, text, severity: severity.map(str::to_string), owner: None }, at)?;
     let mut cards = vec![t.id.clone()];
@@ -85,17 +79,13 @@ fn archive(tx: &Transaction, who: &Who, t: &Task, reason: &str, at: i64) -> Resu
     if crate::dispatcher::runs::holding(tx, &t.key)?.is_some() {
         return Err(format!("{id} is what a human ran: finish it, fail it, or ask."));
     }
-    let kids: Vec<(String, String)> = ops::rows(tx, "SELECT slug, status FROM tasks WHERE parent = ?1 AND archived_at IS NULL", [&t.key], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    if let Some((open, _)) = kids.iter().find(|(_, status)| status != "DONE") {
+    let open: Vec<String> = ops::rows(tx, "SELECT slug FROM tasks WHERE parent = ?1 AND status <> 'DONE' AND archived_at IS NULL LIMIT 1", [&t.key], |r| r.get(0))?;
+    if let Some(open) = open.first() {
         return Err(format!("{id} has an open subtask, {open}: finish it, archive it or take it out first."));
     }
     let me = author(tx, who)?;
     ops::comment(tx, &me, id, &format!("Archived: {reason}"), at)?;
-    let mut cards: Vec<String> = kids.into_iter().map(|(kid, _)| kid).collect();
-    cards.push(id.clone());
-    for task in &cards {
-        ops::archive(tx, &me, task, true, at)?;
-    }
+    let mut cards = super::archiving::with_done_subtasks(tx, &me, &t.key, id, at)?;
     cards.extend(t.parent.clone());
     Ok((format!("{id} is archived: a human can bring it back from the Archived list."), cards))
 }

@@ -83,6 +83,13 @@ pub(super) fn title_of(raw: &str) -> Result<String, String> {
     if LEFT_TO_DO.iter().any(|w| title.starts_with(w)) { Ok(title) } else { Err("Start the title with Bug:, Feat: or Debt:.".into()) }
 }
 
+/// An agent's text: cleaned, in its project's template's sections (AC-145).
+pub(super) fn text_of(tx: &Transaction, project: &str, raw: &str) -> Result<String, String> {
+    let text = rules::clean(raw);
+    super::template::check(&text, &super::template::of_project(tx, project)?)?;
+    Ok(text)
+}
+
 /// Runs one tool in one transaction: its answer and the tasks it changed.
 pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value) -> Result<(String, Vec<String>), String> {
     match tool {
@@ -105,8 +112,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with get_task, and comment if you have more."));
                 }
-                let text = args["text"].as_str().map(rules::clean).unwrap_or_default();
-                super::template::check(&text, &super::template::of_project(tx, &project)?)?;
+                let text = text_of(tx, &project, args["text"].as_str().unwrap_or_default())?;
                 let parent = args["parent"].as_str().map(str::to_string);
                 if let Some(p) = &parent {
                     visible(tx, who, p)?;

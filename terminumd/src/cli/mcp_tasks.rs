@@ -16,6 +16,8 @@ struct Tool {
 }
 
 const ID: (&str, bool, usize) = ("id", true, 24);
+/// update_task's archive: its one value (AC-154).
+const ARCHIVE: [&str; 1] = ["yes"];
 const TASK: (&str, bool, usize) = ("task", true, 24);
 
 /// The tools of tools/list, short as every session pays for them (mcp_tests.rs).
@@ -56,10 +58,10 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     if column.is_some_and(|c| !COLUMNS.contains(&c)) {
         return Err(format!("status: one of {}", COLUMNS.join(", ")));
     }
-    if out.get("archive").is_some_and(|a| a != "yes") {
+    if out.get("archive").and_then(Value::as_str).is_some_and(|a| !ARCHIVE.contains(&a)) {
         return Err("archive: \"yes\" or left out".into());
     }
-    if tool == "attach_file" &&!out.contains_key("path") && !(out.contains_key("name") && out.contains_key("text")) {
+    if tool == "attach_file" && !out.contains_key("path") && !(out.contains_key("name") && out.contains_key("text")) {
         return Err("give path, or name and text".into());
     }
     Ok(Value::Object(out))
@@ -73,7 +75,7 @@ pub fn tools() -> Vec<Value> {
             properties.insert((*field).to_string(), match *field {
                 "status" | "to" => json!({"type": "string", "enum": COLUMNS}),
                 "severity" => json!({"type": "string", "enum": SEVERITIES}),
-                "archive" => json!({"type": "string", "enum": ["yes"]}),
+                "archive" => json!({"type": "string", "enum": ARCHIVE}),
                 _ => json!({"type": "string"}),
             });
         }
