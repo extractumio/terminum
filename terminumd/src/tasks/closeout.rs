@@ -59,7 +59,7 @@ pub fn words(language: &str, finish: &str, each: bool) -> String {
 2. Review the tasks you made in this run: rename, re-prioritize or regroup them by execute_tool(\"update_task\", {{id, title?, severity?, parent?}}) where your work changed them; archive one by execute_tool(\"update_task\", {{id, archive?, reason?}}) only when your work resolved it or it was made in this run and is no longer needed, naming the commit or task in the reason. Another task that looks stale gets a comment, never a change.
 3. The result, in the language named \"{language}\": plain words a newcomer reads without this session, each item short and whole, every heading there (\"None\" when empty):
 {sections}
-Write in \"{language}\" also the titles (after Bug:, Feat: or Debt:), texts and comments you put on the board; the project's template's headings stay as it writes them.")
+Write in \"{language}\" also the titles (after Bug:, Feat: or Debt:), texts and comments you write on tasks; the project's template's headings stay as it writes them.")
 }
 
 #[cfg(test)]

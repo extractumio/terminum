@@ -42,6 +42,8 @@ export async function liveBoardIds(page, opts) {
   const atlas = await until(async () => (await j("/api/tasks/meta")).projects.some((p) => p.name === "Atlas" && p.language === "Русский"), 8000);
   check("AC-159 the project window keeps the language typed in it", atlas && await page.inputValue("#projectlanguage") === "Русский", JSON.stringify((await j("/api/tasks/meta")).projects.find((p) => p.name === "Atlas")));
   await page.click('#projectbox button[value="cancel"]');
+  await page.goto(`${base}/kanban/${now.id}`);
+  await page.waitForSelector("#taskbox[open]");
 
   // AC-149: the task, its subtasks, what was said of it: apart; comments newest first, turned by a key
   await j(`/api/tasks/${now.id}/comments`, "POST", { text: "older word" });
