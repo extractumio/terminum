@@ -96,7 +96,7 @@ fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     Some(sum)
 }
 
-/// What Codex's lines say: the session's last total, its last turn's model, its account's last `rate_limits` (AC-167).
+/// What Codex's lines say: the session's last total, its last turn's model, its account's last `rate_limits` (AC-168).
 #[derive(Default)]
 struct CodexRead {
     total: Option<Totals>,
@@ -137,7 +137,7 @@ fn opened(path: &str) -> Option<(std::fs::File, u64)> {
     Some((std::fs::File::open(path).ok()?, meta.len()))
 }
 
-/// Codex's account's windows as its log's tail last says them (AC-167): numbers alone; None when the tail has none.
+/// Codex's account's windows as its log's tail last says them (AC-168): numbers alone; None when the tail has none.
 pub fn codex_windows(input: &Value) -> Option<Vec<Window>> {
     let (mut file, len) = opened(transcript(input)?)?;
     file.seek(SeekFrom::Start(len.saturating_sub(CODEX_TAIL))).ok()?;
@@ -254,7 +254,7 @@ mod tests {
     }
 
     #[test]
-    fn ac167_codex_s_last_windows_are_read_from_its_tail() {
+    fn ac168_codex_s_last_windows_are_read_from_its_tail() {
         let p = written("limits-codex", concat!(
             r#"{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":20.0,"window_minutes":10080,"resets_at":1794428830},"secondary":null}}}"#, "\n",
             r#"{"type":"response_item","payload":{"type":"message","content":[{"type":"output_text","text":"secret words"}]}}"#, "\n",

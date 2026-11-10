@@ -68,7 +68,7 @@ pub struct Dispatcher {
     beat: AtomicU64,
     /// the agent's session each run's last counted report was of (usage.rs `heard`); a restart learns it anew
     counted_in: Mutex<HashMap<String, String>>,
-    /// each kind's last subscription reading (AC-167)
+    /// each kind's last subscription reading (AC-168)
     pub subscriptions: subscriptions::Readings,
 }
 

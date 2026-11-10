@@ -38,7 +38,7 @@ const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-re
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
 let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's slots hold, and who is at a limit (AC-141)
-let readings = {};                                 // each kind's subscription windows (terminum-dispatcher.md AC-167)
+let readings = {};                                 // each kind's subscription windows (terminum-dispatcher.md AC-168)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();

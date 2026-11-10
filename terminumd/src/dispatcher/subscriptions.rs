@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A subscription's windows (`terminum-dispatcher.md` AC-167): how much of each, five hours and a week,
+//! A subscription's windows (`terminum-dispatcher.md` AC-168): how much of each, five hours and a week,
 //! its agent's account has used, as a session of that kind last read them. Claude Code says them only to a
 //! status line command (`terminum statusline`), Codex in its log's token counts (`terminum hook`); both send
 //! numbers alone, as a `Limits` event. Kept per kind, in memory: the next reading comes with the next session.
@@ -99,7 +99,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac167_claude_s_two_windows() {
+    fn ac168_claude_s_two_windows() {
         let input = json!({"session_id": "s", "cwd": "/Users/alex/api", "model": {"id": "claude-opus-5-5"},
             "rate_limits": {"five_hour": {"used_percentage": 34.5, "resets_at": 1794350000}, "seven_day": {"used_percentage": 21, "resets_at": 1794600000}}});
         let got = of_claude(&input).unwrap();
@@ -108,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn ac167_claude_without_limits_is_no_reading() {
+    fn ac168_claude_without_limits_is_no_reading() {
         assert_eq!(of_claude(&json!({"model": {"id": "x"}})), None, "an API key: nothing");
         assert_eq!(of_claude(&json!({"rate_limits": null})), None);
         assert_eq!(of_claude(&json!({"rate_limits": {"five_hour": null, "seven_day": null}})), None);
@@ -118,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn ac167_codex_s_windows_as_its_log_says_them() {
+    fn ac168_codex_s_windows_as_its_log_says_them() {
         let limits = json!({"limit_id": "codex", "primary": {"used_percent": 21.0, "window_minutes": 10080, "resets_at": 1794428830}, "secondary": null,
             "credits": {"has_credits": true, "balance": "75000"}, "plan_type": "prolite"});
         assert_eq!(of_codex(&limits).unwrap(), vec![Window { minutes: 10080, used: 21.0, resets_at: Some(1794428830) }], "no five-hour window: one");
@@ -129,7 +129,7 @@ mod tests {
     }
 
     #[test]
-    fn ac167_an_event_out_of_range_is_dropped_whole() {
+    fn ac168_an_event_out_of_range_is_dropped_whole() {
         let ok = json!({"windows": [{"minutes": 300, "used": 34, "resets_at": 1794350000}, {"minutes": 10080, "used": 21, "resets_at": null}]});
         assert_eq!(of_event(&ok).map(|w| w.len()), Some(2));
         for bad in [json!({"windows": []}), json!({}), json!({"windows": [{"minutes": 300, "used": -1}]}), json!({"windows": [{"minutes": 300, "used": 101}]}),
@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[test]
-    fn ac167_the_same_numbers_move_its_time_only_when_old() {
+    fn ac168_the_same_numbers_move_its_time_only_when_old() {
         let (r, w) = (Readings::default(), vec![Window { minutes: WEEK, used: 1.0, resets_at: None }]);
         assert!(r.heard("claude", w.clone(), 1000));
         assert!(!r.heard("claude", w.clone(), 1000 + FRESH - 1));
@@ -150,12 +150,12 @@ mod tests {
     }
 
     #[test]
-    fn ac167_a_window_s_name() {
+    fn ac168_a_window_s_name() {
         assert_eq!([label(FIVE_HOURS), label(WEEK), label(1440), label(90)], ["5h", "week", "1d", "2h"]);
     }
 
     #[test]
-    fn ac167_reset_times_in_seconds_or_milliseconds() {
+    fn ac168_reset_times_in_seconds_or_milliseconds() {
         let w = |r: Value| window(Some(300), Some(1.0), &r).map(|w| w.resets_at);
         assert_eq!(w(json!(1794350000)), Some(Some(1794350000)));
         assert_eq!(w(json!(1794350000123u64)), Some(Some(1794350000)), "milliseconds");
@@ -165,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    fn ac167_the_last_reading_of_each_kind_stands() {
+    fn ac168_the_last_reading_of_each_kind_stands() {
         let r = Readings::default();
         assert!(r.heard("claude", vec![Window { minutes: 300, used: 10.0, resets_at: None }], 100), "the first: news");
         assert!(r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 110));

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! `terminum statusline [command…]` (`terminum-dispatcher.md` AC-167): Claude Code's status line, the one place it
+//! `terminum statusline [command…]` (`terminum-dispatcher.md` AC-168): Claude Code's status line, the one place it
 //! says its subscription's windows. The user puts it in Claude Code's settings themselves; terminum never edits them.
 //! It sends terminumd the windows' numbers alone, as a `Limits` hook event of its pane, and runs the user's own status
 //! line command with the same input: one word through `sh -c`, as Claude Code runs it, several as given. Its output and
@@ -72,20 +72,20 @@ mod tests {
     }
 
     #[test]
-    fn ac167_the_users_command_gets_the_same_input_and_says_what_it_says() {
+    fn ac168_the_users_command_gets_the_same_input_and_says_what_it_says() {
         assert_eq!(run(&["read l; echo \"mine: $l\"; exit 3"], "{\"model\":1}\n").unwrap(), (Some(3), "mine: {\"model\":1}".into()), "its output and exit code");
         assert_eq!(run(&["echo ignores it"], &"x".repeat(200_000)).unwrap(), (Some(0), "ignores it".into()), "one that reads nothing is no error");
     }
 
     #[test]
-    fn ac167_one_word_goes_through_sh_several_as_given() {
+    fn ac168_one_word_goes_through_sh_several_as_given() {
         assert_eq!(run(&["echo a b | wc -w"], "").unwrap().1, "2", "one word: a shell's line, as Claude Code runs it");
         assert_eq!(run(&["/bin/echo", "a b", "c"], "").unwrap().1, "a b c", "several: the program and its arguments");
         assert!(run(&["/no/such/program", "a"], "").is_err(), "said, not hidden");
     }
 
     #[test]
-    fn ac167_its_own_line() {
+    fn ac168_its_own_line() {
         let w = |minutes, used| Window { minutes, used, resets_at: None };
         assert_eq!(own_line(&[w(300, 34.4), w(10080, 21.0)]), "5h 34% · week 21%");
         assert_eq!(own_line(&[w(1440, 2.0)]), "1d 2%", "as the board names it");

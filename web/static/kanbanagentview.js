@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// An agent's subscription and work (terminum-dispatcher.md AC-167, AC-143, AC-138): two stripes on its rectangle,
+// An agent's subscription and work (terminum-dispatcher.md AC-168, AC-143, AC-138): two stripes on its rectangle,
 // its kind's windows as terminumd last heard them; in its window the same with when each resets, its tokens, and
 // each live session with its tasks as links. terminumd's numbers; a window not known, reset or old says so.
 import { el } from "./listparts.js";

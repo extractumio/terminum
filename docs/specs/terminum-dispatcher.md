@@ -79,7 +79,7 @@ Open questions:
 | AC-141 | [MUST / P0] | Starting a session takes a slot of its agent and of its project; at a limit RUN is refused, naming what holds it, and an idle holder can be closed with one press; a human typing in a session is never refused. |
 | AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it or closes it, and it counts against both limits. |
 | AC-143 | [SHOULD / P1] | An agent's window shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
-| AC-167 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as a session of that kind last read them; a window not known, reset since, or read long ago says so, never a made-up 0%. |
+| AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as a session of that kind last read them; a window not known, reset since, or read long ago says so, never a made-up 0%. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, with options and its recommended answers, stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
@@ -569,7 +569,7 @@ Scenario: AC-130 failure — hooks missing there
 ```gherkin
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
-  Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-167) and one dot per live session
+  Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its subscription's two stripes (AC-168) and one dot per live session
   And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a phone keeps one row that scrolls
 
 Scenario: AC-138 happy path — its dots
@@ -578,7 +578,7 @@ Scenario: AC-138 happy path — its dots
   When the user presses a dot
   Then that session opens
   When the user presses an agent with nothing chosen
-  Then its window opens: its stripes (AC-167), its week and month (AC-143), and each live session with its project, what it does and Open session
+  Then its window opens: its stripes (AC-168), its week and month (AC-143), and each live session with its project, what it does and Open session
   And under each session its tasks as links, "Working on" those still open and "Finished, session open" those DONE or FAILED in it
   When the user presses one
   Then the agent's window closes and that task's window opens
@@ -779,27 +779,27 @@ Scenario: AC-143 happy path — no limits
 
 Scenario: AC-143 edge — what counts
   Then a week is the last 7 days and a month the last 30, of every run of that agent in every project, input, output and cache writes; cache reads show on hover only
-  And it is terminum's own count, not the provider's account: the provider's are AC-167's
+  And it is terminum's own count, not the provider's account: the provider's are AC-168's
 ```
 
-### AC-167 — Its subscription's windows [SHOULD / P1]
+### AC-168 — Its subscription's windows [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-167 happy path — Claude Code's
+Scenario: AC-168 happy path — Claude Code's
   Given Claude Code's status line runs `terminum statusline`, before the user's own command if there is one
   When a Claude Code session in a pane terminumd lists redraws its status line, its five-hour window at 34% and its week at 21%
   Then within a walk every Claude Code agent's rectangle shows two stripes, "5h 34%" and "week 21%", filled that far in the agent's color
   And the user's own status line prints as it did, also when terminumd does not answer
 
-Scenario: AC-167 happy path — Codex's
+Scenario: AC-168 happy path — Codex's
   When a Codex session's turn ends, its log's last token count saying its week at 21% and no five-hour window
   Then every Codex agent's rectangle shows "week 21%", and its five-hour stripe says "none reported"
 
-Scenario: AC-167 happy path — in its window
+Scenario: AC-168 happy path — in its window
   When the user opens the agent's window
   Then each stripe says its percent and when it resets, and the window when it was read
 
-Scenario: AC-167 edge — not known, reset, old
+Scenario: AC-168 edge — not known, reset, old
   Given no reading of its kind since terminumd started
   Then both stripes are empty and say "not known", and its window says how one comes: `terminum statusline` in Claude Code's status line, a Codex turn's end
   When a window's reset time passes
@@ -807,7 +807,7 @@ Scenario: AC-167 edge — not known, reset, old
   When the last reading is over an hour old
   Then the stripes fade, and their hover says "as of 14:05"
 
-Scenario: AC-167 failure — what is no reading
+Scenario: AC-168 failure — what is no reading
   When a status line's input has no rate limits (an API key, Bedrock, Vertex) or a number out of range
   Then nothing is kept: only percents, window lengths and reset times leave the session, never a path, model, session or text
 ```
@@ -1106,7 +1106,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-167 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last. Readings are kept in memory: after a restart Codex's is not known until a turn ends. | `terminumd/src/dispatcher/subscriptions.rs` |
+| AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last. Readings are kept in memory: after a restart Codex's is not known until a turn ends. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
@@ -1234,7 +1234,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 
 **Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
-**Subscription readings (AC-167).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time, in memory, from panes it lists: the same numbers move its time at most every 10 minutes; a change of either tells pages (`subscriptions`), and `/api/tasks?counts=1` carries them.
+**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time, in memory, from panes it lists: the same numbers move its time at most every 10 minutes; a change of either tells pages (`subscriptions`), and `/api/tasks?counts=1` carries them.
 
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
@@ -1262,7 +1262,7 @@ Measure first: AS-122, AS-125, AS-126, AS-127. Stage 1 rests on them; the gate's
 | Stage 1 | AC-138, AC-137, AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
 | Stage 2 | AC-126 | Time budgets: the one irreversible act on healthy work, once the walk and clocks have run for real. |
 | Stage 3 | AC-127, AC-128, AC-129, AC-130 | Subagents watched, consumption shown and limited, and all of it on remote hosts. |
-| Stage 4 | AC-140, AC-144, AC-141, AC-142, AC-143, AC-167 | A pool independent of projects, limits, sessions with no task, and what each agent spent. |
+| Stage 4 | AC-140, AC-144, AC-141, AC-142, AC-143, AC-168 | A pool independent of projects, limits, sessions with no task, and what each agent spent. |
 
 Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's first version with Dispatcher.
 
@@ -1285,7 +1285,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-167 — `cargo test subscriptions`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs`
+- [x] AC-168 — `cargo test subscriptions`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs`
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`

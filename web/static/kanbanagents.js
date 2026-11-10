@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The pool over the columns, and its window (terminum-dispatcher.md AC-137, AC-138): what a task is dropped
-// on to run: each a rectangle with its color, name, kind, effort, its subscription's stripes (AC-167) and a dot per
+// on to run: each a rectangle with its color, name, kind, effort, its subscription's stripes (AC-168) and a dot per
 // live session; its window shows those, its tokens and its sessions' tasks over its settings. None is a project's.
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm, oneAtATime } from "./dialogs.js";
@@ -14,7 +14,7 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
 
 /** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `slots()`: what each agent's slots hold, as terminumd counts them;
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
- *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-167); `openTask(id)`. */
+ *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`. */
 export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask }) {
   // on the columns' tracks: an agent a column wide, its keys in the fifth (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
@@ -186,7 +186,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   });
   guardCancel(dialog, () => JSON.stringify(values()) === snapshot);   // Cancel means it
 
-  /** Over its settings: its stripes, tokens and live sessions with their tasks (AC-138, AC-143, AC-167); each with Let go:
+  /** Over its settings: its stripes, tokens and live sessions with their tasks (AC-138, AC-143, AC-168); each with Let go:
    *  a + Session's, or one on a host out of reach (AC-142). A task's link closes it and opens the task. */
   function showView(a) {
     const view = $("agentview");

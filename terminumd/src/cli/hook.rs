@@ -53,7 +53,7 @@ pub fn main(agent: &str) -> i32 {
                 let _ = super::sinks::post_all(&sinks[i..=i], "/hook", &heard, BUDGET);
             }
         }
-        // Codex's account's windows, at each turn's end, after it has gone (terminum-dispatcher.md AC-167)
+        // Codex's account's windows, at each turn's end, after it has gone (terminum-dispatcher.md AC-168)
         if agent == "codex" && ev["event"] == "Stop" && let Some(windows) = super::hooktokens::codex_windows(&input) {
             let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
         }
@@ -69,7 +69,7 @@ pub fn main(agent: &str) -> i32 {
     0
 }
 
-/// A `Limits` event of the pane `ev` came from: its windows, and nothing else of the session (AC-167).
+/// A `Limits` event of the pane `ev` came from: its windows, and nothing else of the session (AC-168).
 pub fn limits_event(ev: &Value, windows: &[crate::dispatcher::subscriptions::Window]) -> Value {
     json!({"agent": ev["agent"], "socket": ev["socket"], "socket_path": ev["socket_path"], "pane": ev["pane"], "event": "Limits",
            "windows": windows})
