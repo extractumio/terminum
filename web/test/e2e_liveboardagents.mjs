@@ -129,7 +129,11 @@ const pressAt = async (page, sel) => {
     await new Promise((r) => setTimeout(r, 60));
     b = await (await page.$(sel)).boundingBox();
   }
-  await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+  const at = [b.x + b.width / 2, b.y + b.height / 2];
+  // what stands there when it is pressed, for a check that says where a press went
+  const under = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? `${e.tagName.toLowerCase()}#${e.id}${e.disabled ? " (off)" : ""} in ${e.closest("dialog")?.id ?? "no window"}` : "nothing"; }, at);
+  await page.mouse.click(...at);
+  return `pressed at ${at.map(Math.round)}: ${under}`;
 };
 
 /** AC-138: tasks chosen and dropped on a free agent, one session; busy refuses more; it stays on their cards. */
@@ -405,8 +409,10 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 limits are kept from the project's window", await until(async () => (await j("/api/tasks/meta")).limits.some((l) => l.project === fresh && l.warn === 2 && l.end === 3)), JSON.stringify((await j("/api/tasks/meta")).limits));
   // terminumd keeps them before the page has its answer and closes the limits' window: a press meanwhile lands on it
   await page.waitForSelector("#limitsbox", { state: "hidden" });
-  await pressAt(page, "#projectok");
-  await page.waitForSelector("#projectbox", { state: "hidden" });
+  const done = await pressAt(page, "#projectok");
+  check("AC-139 Done keeps the project and closes its window", await until(() => page.isHidden("#projectbox"), 15000),
+    `${done}; ${JSON.stringify(await page.evaluate(() => ({ says: document.getElementById("projecterror")?.textContent, open: [...document.querySelectorAll("dialog[open]")].map((d) => d.id), busy: document.getElementById("projectbox").dataset.busy ?? null, focus: document.activeElement?.id })))}`);
+  if (await page.isVisible("#projectbox")) await page.evaluate(() => document.getElementById("projectbox").close());
 
   // no folder: no one knows where an agent would start (AC-140)
   const homeless = (await j("/api/tasks", "POST", { title: "nowhere to run", project: fresh })).id;
