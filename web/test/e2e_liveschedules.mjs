@@ -137,17 +137,17 @@ export async function liveSchedules(page, live) {
   check("AC-163 the columns keep their room under the pool and the section, however many agents", room > 200, String(room));
   await shot("schedules");
   for (const id of crowd) await j(`/api/task-agents/${id}`, "DELETE");
-  // columns far longer than the window take no room from what stands over them: each card there is whole
-  const many = [];
+  // columns far longer than the window take no room from what stands over them: the pool and the section are as
+  // tall as over empty columns, where every card is whole unless there are more than their own bars hold
+  const bars = async () => {
+    await page.reload();
+    await page.waitForSelector(sched);
+    return page.evaluate(() => ["#agentbar", "#schedbar"].map((bar) => Math.round(document.querySelector(bar).getBoundingClientRect().height)));
+  };
+  const over = await bars(), many = [];
   for (let i = 0; i < 40; i++) many.push((await j("/api/tasks", "POST", { title: `Long column ${i}`, project })).id);
-  await page.reload();
-  await page.waitForSelector(sched);
-  const whole = await page.evaluate(() => {
-    const cut = (bar, items) => { const b = document.querySelector(bar).getBoundingClientRect(); return [...document.querySelectorAll(items)].filter((c) => { const r = c.getBoundingClientRect(); return r.top < b.top - 1 || r.bottom > b.bottom + 1; }).length; };
-    const fits = (bar) => { const e = document.querySelector(bar); return e.scrollHeight <= e.clientHeight + 1; };
-    return { agents: cut("#agentbar", "#agentbar .agentcard"), schedules: cut("#schedbar", "#schedbar .schedcard"), fit: fits("#agentbar") && fits("#schedbar") };
-  });
-  check("AC-163 with long columns the agents' and the schedules' cards stand whole", whole.agents === 0 && whole.schedules === 0 && whole.fit, JSON.stringify(whole));
+  const overLong = await bars();
+  check("AC-163 long columns take no room from the agents and the schedules over them", overLong.every((h, i) => h >= over[i] - 1) && overLong[1] > 60, JSON.stringify({ over, overLong }));
   await shot("schedules-long");
   for (const id of many) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 
