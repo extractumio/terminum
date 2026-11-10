@@ -27,7 +27,7 @@ In scope:
 - Time budgets, warnings and ending; subagents; CPU, memory and tokens; local and remote hosts.
 
 Out of scope (explicit):
-- Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit waits for its room (AC-158): the press is the human's.
+- Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit waits for its room (AC-158): the press is the human's. A human's schedule is a standing press: its tasks start on their cadence (`terminum-schedules.md`).
 - Choosing an agent's permissions: its command, as the operator writes it, carries them (AC-156).
 - Tasks, the board and the agent's tools: `terminum-kanban.md`.
 - Any act on a session Dispatcher did not start, other than writing its start and end on the task.
@@ -555,6 +555,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its week and month (AC-143) and one dot per live session
+  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a phone keeps one row that scrolls
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -913,6 +914,7 @@ Scenario: AC-131 edge — a sleeping Mac
   Given API-12 with 30 of 60 budget minutes used and a Mac asleep for 8 hours
   When it wakes
   Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and API-12 says once "Clocks paused 480 minutes: no walk saw them pass"
+  And a schedule's due time is the wall clock's: what it missed comes once on wake (terminum-schedules.md AC-162)
   And the same holds for a stopped terminumd and a lost link
 
 Scenario: AC-131 edge — a walk and a window opening
