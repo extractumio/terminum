@@ -19,7 +19,7 @@ store.commit()`;
 }
 
 export async function liveBoardTasks(page, opts) {
-  const { base, app, shots } = opts;
+  const { base, app } = opts;
   const { j } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Family" })).id;
   await page.goto(`${base}/kanban/?project=${project}`);
@@ -55,7 +55,6 @@ export async function liveBoardTasks(page, opts) {
   check("AC-112 a subtask stands right under its parent, whatever its severity", placed, JSON.stringify(await todo()));
   const left = Object.fromEntries(await todo());
   check("AC-112 a subtask stands shifted right; a task of its own does not", left[kid] > left[parent] && left[loner] === left[parent], JSON.stringify(left));
-  if (shots) await page.screenshot({ path: path.join(shots, "subtasks-under-parent.png") });
   // a drop between the parent and its subtask lands after the group, not where the subtask is ranked (P3)
   const dropper = (await j("/api/tasks", "POST", { title: "dropped into the group", project })).id;
   await until(async () => (await todo()).some((c) => c[0] === dropper));
