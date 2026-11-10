@@ -90,7 +90,7 @@ def update_primary(primary):
 def ci_status(tree, run=subprocess.run):
     """One line on GitHub CI's last verdict on main, as gh says: what a landing adds to; it never stops one. A run
     still waiting or running, or cancelled, is no verdict: one newer than the verdict is said after it."""
-    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--event", "push", "--limit", "10",
+    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--event", "push", "--limit", "50",
            "--json", "status,conclusion,headSha,url"]
     try:
         done = run(ask, cwd=tree, capture_output=True, text=True, timeout=10)
@@ -103,9 +103,11 @@ def ci_status(tree, run=subprocess.run):
         if not runs:
             return "CI on main: no run"
         ended = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ("cancelled", "skipped")]
-        last = (ended or runs)[0]
-        sha, state, url = last["headSha"], last["conclusion"] or last["status"], last["url"]
-        newer = runs[0] if ended and runs[0] is not last and runs[0]["status"] != "completed" else None
+        if not ended:
+            return f"CI on main: no verdict in the last {len(runs)} runs; newest: {runs[0]['conclusion'] or runs[0]['status']} on {runs[0]['headSha'][:9]}: {runs[0]['url']}"
+        last = ended[0]
+        sha, state, url = last["headSha"], last["conclusion"], last["url"]
+        newer = runs[0] if runs[0] is not last and runs[0]["status"] != "completed" else None
     except (ValueError, KeyError, TypeError, IndexError) as e:
         return f"CI on main: unknown (gh's answer: {e!r})"
     head = git("rev-parse", BASE, cwd=tree).stdout.strip()

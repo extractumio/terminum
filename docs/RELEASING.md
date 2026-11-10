@@ -96,7 +96,8 @@ waits; of several waiting, GitHub keeps only the newest, so landings closer toge
 (about 25 minutes) share one. A push to another branch cancels that branch's older run. A check
 that fails now and then is run alone, again and again, by hand: `gh workflow run ci -f live="boardpool webkit" -f times=10`
 (the words of `web/test/e2e_live.mjs`), on main's code; it waits apart from the checks' runs and
-fails when any of its runs fails, each run's log in its own group. `gh run view --log` cuts a long
+fails when any of its runs fails, each run's log in its own group; it holds the one runner for up to an hour, its
+cap, and main's next verdict waits for it. `gh run view --log` cuts a long
 job's log short: read the whole one with `gh api repos/extractumio/terminum/actions/jobs/<job>/logs`.
 
 ### The runner (once)

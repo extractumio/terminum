@@ -17,15 +17,18 @@ store.executescript("PRAGMA trusted_schema = ON; " + sys.argv[2])
 store.close()`, path.join(app, "kanban.sqlite"), sql]);
 /** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). What a
  *  press did is read from the page: its window's address, or the card shown whole, pressed once more; a press on a
- *  card the board drew anew meanwhile (its task left TODO) did neither, and is made again. */
+ *  card the board drew anew meanwhile (its task left TODO) did neither and is made again; any other is an error. */
 export async function pressCard(page, id) {
   const sel = `.card[data-id="${id}"]`;
   const took = (s) => location.pathname.endsWith(`/${s.id}`) ? "window" : document.querySelector(`${s.sel}.compact.open`) ? "whole" : null;
   for (let press = 0; press < 3; press++) {
+    const card = await page.$(sel);
     await page.click(sel);
     const did = await page.waitForFunction(took, { id, sel }, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
     if (did === "window") return;
+    if (!did && await card?.evaluate((c) => c.isConnected)) throw new Error(`a press on ${id}'s card did nothing, at ${await page.evaluate(() => location.pathname)}`);
   }
+  throw new Error(`three presses on ${id}'s card opened no window`);
 }
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 /** How a client opens `terminum mcp`, before its calls. */

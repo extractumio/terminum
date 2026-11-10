@@ -96,8 +96,9 @@ class Landing(unittest.TestCase):
 
     def test_a_run_of_an_older_commit_or_one_still_running_says_so(self):  # AC-104
         head = self.on_origin().strip()
-        said = self.ci(stdout='[{"status":"in_progress","conclusion":"","headSha":"0123456789abcdef","url":"u"}]')
-        self.assertEqual(said, f"CI on main: in_progress on 012345678, not origin/main's {head[:9]}: u")
+        said = self.ci(stdout='[{"status":"in_progress","conclusion":"","headSha":"abcdef0123456789","url":"u2"},'
+                              '{"status":"completed","conclusion":"failure","headSha":"0123456789abcdef","url":"u"}]')
+        self.assertEqual(said, f"CI on main: failure on 012345678, not origin/main's {head[:9]}: u; newer: in_progress on abcdef012")
 
     def test_the_verdict_is_the_last_run_that_ended_a_newer_one_said_after_it(self):  # AC-104
         head = self.on_origin().strip()
@@ -107,7 +108,8 @@ class Landing(unittest.TestCase):
         self.assertEqual(said, f"CI on main: success on 222222222, not origin/main's {head[:9]}: u1; newer: queued on {head[:9]}")
         self.assertTrue(said.startswith("CI on main: success"))
         only_cancelled = self.ci(stdout='[{"status":"completed","conclusion":"cancelled","headSha":"1111111111","url":"u2"}]')
-        self.assertIn("CI on main: cancelled on 111111111", only_cancelled)
+        self.assertEqual(only_cancelled, "CI on main: no verdict in the last 1 runs; newest: cancelled on 111111111: u2")
+        self.assertFalse(only_cancelled.startswith("CI on main: success"))
 
     def test_without_gh_or_an_answer_the_status_is_unknown_and_never_an_error(self):  # AC-104
         self.assertEqual(self.ci(error=FileNotFoundError(2, "No such file or directory", "gh")),

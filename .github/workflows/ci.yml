@@ -102,7 +102,7 @@ jobs:
           LIVE: ${{ inputs.live }}
           TIMES: ${{ inputs.times }}
         run: |
-          [[ "$LIVE" =~ ^[a-z\ ]+$ && "$TIMES" =~ ^[1-9][0-9]?$ ]] || { echo "live: words of e2e_live.mjs; times: 1 to 99"; exit 2; }
+          [[ "$LIVE" =~ ^[a-z]+( [a-z]+)*$ && "$TIMES" =~ ^[1-9][0-9]?$ ]] || { echo "live: words of e2e_live.mjs; times: 1 to 99"; exit 2; }
           failed=0
           for i in $(seq "$TIMES"); do
             if node web/test/e2e_live.mjs $LIVE > "$RUNNER_TEMP/live.log" 2>&1; then said=PASS; else said=FAIL; failed=$((failed + 1)); fi
