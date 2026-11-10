@@ -8,11 +8,24 @@ import { until } from "./check.mjs";
 import { ownTmp } from "./testrun.mjs";
 
 export const nap = (ms) => new Promise((r) => setTimeout(r, ms));
-/** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). */
+/** SQL into the private store beside terminumd, for what only a test does to it: Python's sqlite3, since the Linux
+ *  runner has no sqlite3 command; it waits while terminumd holds the store, as terminumd's own connections do, and
+ *  the FTS triggers need a trusted schema (rusqlite's default, not every SQLite build's). */
+export const intoStore = (app, sql) => execFileSync("python3", ["-I", "-c", `import sqlite3, sys
+store = sqlite3.connect(sys.argv[1], timeout=15)
+store.executescript("PRAGMA trusted_schema = ON; " + sys.argv[2])
+store.close()`, path.join(app, "kanban.sqlite"), sql]);
+/** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). What a
+ *  press did is read from the page: its window's address, or the card shown whole, pressed once more; a press on a
+ *  card the board drew anew meanwhile (its task left TODO) did neither, and is made again. */
 export async function pressCard(page, id) {
   const sel = `.card[data-id="${id}"]`;
-  await page.click(sel);
-  if (await page.$(`${sel}.compact[aria-expanded="true"]`) && !(await page.$("#taskbox[open]"))) await page.click(sel);
+  const took = (s) => location.pathname.endsWith(`/${s.id}`) ? "window" : document.querySelector(`${s.sel}.compact.open`) ? "whole" : null;
+  for (let press = 0; press < 3; press++) {
+    await page.click(sel);
+    const did = await page.waitForFunction(took, { id, sel }, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
+    if (did === "window") return;
+  }
 }
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 /** How a client opens `terminum mcp`, before its calls. */
