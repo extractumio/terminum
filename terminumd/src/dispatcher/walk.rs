@@ -272,7 +272,7 @@ async fn walk(app: &Shared) {
         let shells = r.kind == "claude" && (r.turn_ended || ended) && under && p.is_some_and(|p| p.exit.is_none())
             && server.run(format!("capture-pane -p -t {pane}")).await.is_ok_and(|rows| super::screen::background_shells(&r.kind, &rows));
         // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
-        // the 2 hours from running: a prompt's own helpers come and go, and must not leave it open for good
+        // the 5 minutes from running: a prompt's own helpers come and go, and must not leave it open for good
         let program = p.filter(|p| p.exit.is_some() && !crate::tmux::titles::is_shell(&p.command)).map(|p| p.command.clone());
         let job = under && p.is_some_and(|p| p.exit.is_some());
         let facts = Facts {

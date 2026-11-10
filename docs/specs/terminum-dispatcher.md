@@ -18,7 +18,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Expected outcome.** The board is primary: RUN starts an agent on a task; Dispatcher moves the task as the session lives, tells the agent its budget and warns it in time, ends what overran, watches the agent, its subagents and what they consume, and closes the session some time after it ended. Each of its acts is on the task under its name.
 
-**Scenario.** Alex presses RUN on API-12 with a 60-minute budget. A window opens, Claude Code starts and takes the task. Its turn ends with no result: Dispatcher asks it once to finish. It calls `finish_task`; API-12 is DONE. Two hours on, with the agent idle, Dispatcher closes the window and says so on API-12. Next morning Alex comments and presses RUN, and the same conversation goes on in a new window.
+**Scenario.** Alex presses RUN on API-12 with a 60-minute budget. A window opens, Claude Code starts and takes the task. Its turn ends with no result: Dispatcher asks it once to finish. It calls `finish_task`; API-12 is DONE. Five minutes on, with the agent idle, Dispatcher closes the window and says so on API-12. Next morning Alex comments and presses RUN, and the same conversation goes on in a new window.
 
 ## 2. Scope and non-goals
 
@@ -67,7 +67,7 @@ Open questions:
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
 | AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` is DONE; a turn with no result gets one request per run, then WAIT FOR HUMAN as an agent's question (AC-157); an hour with no activity while IN PROGRESS is DONE, marked no result; a clean session end is DONE; a dead agent or a turn's failure is FAILED. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
-| AC-125 | [MUST / P0] | Dispatcher closes a session it started 2 hours after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
+| AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
 | AC-127 | [SHOULD / P1] | A subagent silent and idle for 10 minutes gets the main agent one request to deal with it; at 20 minutes Dispatcher ends it where it can; where it cannot, the task is FAILED and RUN goes on in its session. |
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
@@ -344,23 +344,23 @@ Scenario: AC-124 edge — the agent's own move
 
 ```gherkin
 Scenario: AC-125 happy path — after DONE or FAILED
-  Given a session Dispatcher started and API-12, its only task not yet past its wait, DONE or FAILED for 2 hours, the agent idle (a turn ended, no tool open, no subagent, no hook event since the last walk)
-  Then it checks the pane's @terminum-run, keeps the screen's last 200 rows, redacted, as a file of API-12 when it has no finish_task result, ends what runs in the pane and closes it with no question (the one exception to closing's ask) and writes "Session ended: closed 2 hours after DONE."
+  Given a session Dispatcher started and API-12, its only task not yet past its wait, DONE or FAILED for 5 minutes, the agent idle (a turn ended, no tool open, no subagent, no hook event since the last walk)
+  Then it checks the pane's @terminum-run, keeps the screen's last 200 rows, redacted, as a file of API-12 when it has no finish_task result, ends what runs in the pane and closes it with no question (the one exception to closing's ask) and writes "Session ended: closed 5 minutes after DONE."
   And API-12's card says "session closed" (terminum-kanban.md AC-113)
 
 Scenario: AC-125 edge — not idle
-  When the agent is not idle at that moment, or any agent activity came in those 2 hours
-  Then the 2 hours start again and the task's comment says so once
+  When the agent is not idle at that moment, or any agent activity came in those 5 minutes
+  Then the 5 minutes start again and the task's comment says so once
 
 Scenario: AC-125 happy path — written always
   Then every start and end of a session of a task is on the task, by Dispatcher, with the program, window, host and how it ended; of a session it did not start it only writes this
 
 Scenario: AC-125 edge — other tasks
   Given that session also holds API-13 in TODO, IN PROGRESS or WAIT FOR HUMAN
-  Then it is not closed until each of its tasks is DONE or FAILED and past its 2 hours
+  Then it is not closed until each of its tasks is DONE or FAILED and past its 5 minutes
 
 Scenario: AC-125 edge — new work
-  When a human runs API-12 again or types in the session during those 2 hours
+  When a human runs API-12 again or types in the session during those 5 minutes
   Then the wait ends (AC-122)
 
 Scenario: AC-125 edge — a human's program
@@ -954,7 +954,7 @@ Scenario: AC-131 edge — a walk and a window opening
   Then API-12's pane stays among them: its agent's first hooks are heard, and the prompt it takes does not read as "not taken in 30 s"
 
 Scenario: AC-131 edge — what it decided meanwhile
-  Given a walk that decided to close API-12's session after 2 hours, or to end its agent (AC-126)
+  Given a walk that decided to close API-12's session after 5 minutes, or to end its agent (AC-126)
   When RUN, a human's prompt or a human's keys reach that session before the pane goes or the signal is sent
   Then the run and the pane's last human input are read again under the pane's typing queue, held through kill-pane or the SIGTERM: the session stays and the new work goes on (AC-125)
   And a human's input counts from when it comes: a page's keys and the Panel's text are marked before they wait behind the act, a prompt when its hook comes; a `tmux attach` of the user's own is seen only by its prompt's hook
@@ -1008,7 +1008,7 @@ sequenceDiagram
   D->>DB: IN PROGRESS
   A->>D: finish_task (MCP)
   D->>DB: DONE, result
-  Note over D: 2 hours later, agent idle (AC-125)
+  Note over D: 5 minutes later, agent idle (AC-125)
   D->>TM: check @terminum-run, kill-pane
   D->>DB: comment: session ended
 ```
@@ -1163,7 +1163,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 | WAIT FOR HUMAN after waiting | 2 min from the event |
 | Request after a turn without a result | 5 min, once a run; WAIT FOR HUMAN 10 min later |
 | DONE after no activity | 60 min |
-| Close after DONE or FAILED | 2 h |
+| Close after DONE or FAILED | 5 min: RUN resumes its conversation (AC-122) |
 | Archive after DONE | 2 days (`terminum-kanban.md` AC-118) |
 | Budget | 5 min to 7 days; last warning max(3%, 2 min); SIGTERM, 10 s, SIGKILL |
 | Subagent silent and idle | 10 min request; 20 min end |

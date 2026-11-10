@@ -12,7 +12,7 @@ pub const AFTER_NUDGE: i64 = 600;
 /// DONE, marked no result, after this long with no activity.
 pub const NOTHING: i64 = 3600;
 /// A session closes this long after DONE or FAILED.
-pub const CLOSE: i64 = 7200;
+pub const CLOSE: i64 = 300;
 
 /// Quiet this long after an agent asked a human before its session closes (AC-157): as an idle holder's.
 pub const ASKED_QUIET: i64 = IDLE_QUIET;
@@ -238,13 +238,13 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             acts.push(Act::MemoryWarn(m.gib));
         }
     }
-    // closing after DONE or FAILED (AC-125): any activity starts the 2 hours again, a human's at its
+    // closing after DONE or FAILED (AC-125): any activity starts the 5 minutes again, a human's at its
     // shell too; only an agent ended, or its turn over, is closed under no one
     if finished(&run.status) {
         if f.active {
             if !run.again_said && run.closing_for > 0 {
                 run.again_said = true;
-                acts.push(Act::Say("The 2 hours before closing start again: there is activity in the session.".into()));
+                acts.push(Act::Say("The 5 minutes before closing start again: there is activity in the session.".into()));
             }
             run.closing_for = 0;
         } else {
@@ -256,7 +256,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
                 run.state = Phase::Left;
                 acts.push(Act::Say(format!("Session left open: {program} runs in it")));
             } else {
-                acts.push(Act::Close { words: format!("Session ended: closed 2 hours after {}.", run.status), keep: !run.result });
+                acts.push(Act::Close { words: format!("Session ended: closed 5 minutes after {}.", run.status), keep: !run.result });
             }
         }
     }

@@ -106,7 +106,7 @@ async fn ac125_a_close_decided_before_a_humans_input_leaves_the_pane() {
     let decided = Instant::now();
     s.app.tasks.with(|tx| runs::change(tx, &s.run.id, Run::new_work).map(drop)).unwrap();
     assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, decided, still).await, Ok(Some("it is no longer idle".into())));
-    assert!(s.pane_stands(), "new work after the decision: its 2 hours start again");
+    assert!(s.pane_stands(), "new work after the decision: its 5 minutes start again");
 
     s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| r.closing_for = plan::CLOSE).map(drop)).unwrap();
     assert_eq!(close(&s.app, &s.run, (&s.server, &s.pane), "closed", false, Instant::now(), still).await, Ok(None));

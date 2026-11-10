@@ -88,27 +88,27 @@ fn ac124_two_minutes_of_a_question_wait_for_a_human_and_it_returns() {
 }
 
 #[test]
-fn ac125_it_closes_two_hours_after_the_end_only_when_idle() {
+fn ac125_it_closes_five_minutes_after_the_end_only_when_idle() {
     let ended = |dt| Facts { exit: Some(0), alive: false, dt, ..up(0) };
     let mut r = run("DONE");
     r.state = Phase::Gone;
-    assert!(step(&mut r, &ended(7199)).is_empty());
+    assert!(step(&mut r, &ended(299)).is_empty());
     let acts = step(&mut r, &ended(1));
-    assert_eq!(acts, vec![Act::Close { words: "Session ended: closed 2 hours after DONE.".into(), keep: true }]);
+    assert_eq!(acts, vec![Act::Close { words: "Session ended: closed 5 minutes after DONE.".into(), keep: true }]);
     assert_eq!(r.state, Phase::Gone, "closed only when tmux did it");
     let mut r = run("DONE");
     r.result = true;
     r.turn_ended = true;
-    let acts = step(&mut r, &up(7200));
+    let acts = step(&mut r, &up(300));
     assert!(matches!(&acts[0], Act::Close { keep: false, .. }), "with a result no screen is kept");
 }
 
 #[test]
-fn ac125_activity_starts_the_two_hours_again_said_once() {
+fn ac125_activity_starts_the_five_minutes_again_said_once() {
     let mut r = run("DONE");
-    step(&mut r, &up(7000));
+    step(&mut r, &up(270));
     let acts = step(&mut r, &Facts { active: true, ..up(30) });
-    assert_eq!(acts, vec![Act::Say("The 2 hours before closing start again: there is activity in the session.".into())]);
+    assert_eq!(acts, vec![Act::Say("The 5 minutes before closing start again: there is activity in the session.".into())]);
     assert_eq!(r.closing_for, 0);
     step(&mut r, &up(30));
     assert!(step(&mut r, &Facts { active: true, ..up(30) }).is_empty(), "once");
@@ -119,10 +119,10 @@ fn ac125_a_human_at_the_shell_keeps_it_open() {
     let mut r = run("DONE");
     r.state = Phase::Gone;
     let shell = |dt, active| Facts { exit: Some(0), alive: false, active, dt, ..up(0) };
-    step(&mut r, &shell(7000, false));
+    step(&mut r, &shell(270, false));
     step(&mut r, &shell(30, true));
     assert_eq!(r.closing_for, 0, "their keys start the clock again");
-    assert!(step(&mut r, &shell(7199, false)).is_empty());
+    assert!(step(&mut r, &shell(299, false)).is_empty());
 }
 
 #[test]

@@ -282,7 +282,7 @@ export async function liveDispatcher(page, opts) {
   const closes = await task("closes CLEAN");
   await run(closes);
   await hasStatus(closes, "DONE", 15000);
-  check("AC-125 it closes 2 hours after DONE", await said(closes, "Session ended: closed 2 hours after DONE.", 40000), await history(closes));
+  check("AC-125 it closes 5 minutes after DONE", await said(closes, "Session ended: closed 5 minutes after DONE.", 40000), await history(closes));
   check("AC-125 the card says session closed", await until(async () => (await j(`/api/tasks/${closes}`)).session?.closed === true));
   check("AC-125 with no result its screen stays on the task", (await j(`/api/tasks/${closes}`)).files.some((f) => /screen/.test(f.name)), JSON.stringify((await j(`/api/tasks/${closes}`)).files));
 
