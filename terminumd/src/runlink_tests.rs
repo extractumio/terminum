@@ -118,6 +118,14 @@ fn only_this_macs_dead_sockets_are_removed() {
     let _m = UnixListener::bind(&mine).unwrap();
     std::fs::write(run.join("m-mac1-file.sock"), b"").unwrap();
     setup(&run, "mac1", &mine).unwrap();
+    // a child another test forks in this process holds a copy of the closed listener until it execs: under
+    // load the sweep's connect can still reach it and rightly keeps the socket, so it sweeps again while
+    // that lasts (at most 2 s)
+    for _ in 0..100 {
+        if !dead.exists() { break }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        sweep(&run, "mac1", &mine);
+    }
     assert!(!dead.exists(), "own dead socket removed");
     assert!(other_dead.exists() && other_live.exists(), "another Mac's sockets are never touched");
     assert!(run.join("m-mac1-file.sock").exists(), "not a socket: kept");
