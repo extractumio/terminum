@@ -74,11 +74,6 @@ pub fn set_language(tx: &Transaction, project: &str, language: &str) -> Result<(
     ops::set_project_text(tx, project, ops::LANGUAGE_COLUMN, kept)
 }
 
-/// The close-out of a task of `project`, in its language (`words`).
-pub fn prompt(tx: &Transaction, project: &str, finish: &str, each: bool) -> Result<String, String> {
-    Ok(words(&language_of(tx, project)?, finish, each))
-}
-
 /// What RUN's prompt asks before the result: `finish` is how the result is given; `each`: several
 /// tasks went in one press, each closed out before its own result.
 pub fn words(language: &str, finish: &str, each: bool) -> String {

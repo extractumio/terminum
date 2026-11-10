@@ -231,7 +231,7 @@ async function agentPool(page, opts) {
   tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
-  check("AC-141 the window says what holds it and names the key", /at its limit of 1/.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
+  check("AC-141 the window says what holds it and names the key", /at its limit of 1: [^;]+ (is|are) idle\./.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
   check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && paneAlive(tmux, idlePane), await page.textContent("#runerror"));
