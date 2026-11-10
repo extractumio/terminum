@@ -329,7 +329,7 @@ async fn walk(app: &Shared) {
     let kept: HashSet<&str> = wanted.iter().map(String::as_str).collect();
     app.dispatcher.watch.lock().retain(|k, _| kept.contains(k.as_str()));
     let slots = store(app, super::pool::board).await.unwrap_or(serde_json::Value::Null);
-    let message = serde_json::json!({"t": "taskusage", "items": items, "slots": slots}).to_string();
+    let message = serde_json::json!({"t": "taskusage", "items": items, "slots": slots, "subscriptions": app.dispatcher.subscriptions.shown()}).to_string();
     let mut told = app.dispatcher.usage.lock();
     if *told != message {
         app.pages.tell(&message);

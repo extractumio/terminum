@@ -183,6 +183,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
             }).collect();
             let (counts, slots) = counts.unzip();
             let mut page = json!({"counts": counts, "slots": slots});
+            if page["counts"].is_object() {
+                page["subscriptions"] = app.dispatcher.subscriptions.shown();   // terminum-dispatcher.md AC-167
+            }
             page["tasks"] = Value::Array(shown);       // json! would copy every card
             Json(page).into_response()
         }
