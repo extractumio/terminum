@@ -4,6 +4,7 @@
 //! it does not know is not empty, so a new version's changed screen delays words and never types.
 
 use crate::screen::sgr::{only_applied, parse_line, Style, FAINT};
+use crate::tmux::agentstate::is_rule;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Screen {
@@ -32,10 +33,6 @@ fn row_of(raw: &str) -> Row {
         }
     });
     Row { text, strong }
-}
-
-fn is_rule(row: &str) -> bool {
-    row.trim_start().starts_with("\u{2500}\u{2500}")
 }
 
 /// A choice or its footer: what a question that replaces the box shows, in both agents.
