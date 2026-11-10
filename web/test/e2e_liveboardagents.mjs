@@ -123,13 +123,14 @@ const paneAlive = (tmux, pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").s
 
 const pressAt = async (page, sel) => {
   await page.waitForSelector(sel, { state: "visible" });
-  await (await page.$(sel)).scrollIntoViewIfNeeded();   // a tall window's keys below the screen: a press by place would miss them
-  // a window opening still moves: a press waits for where it stands
-  let was = null, b = await (await page.$(sel)).boundingBox();
+  // a tall window's keys below the screen: a press by place would miss them; a window opening, or redrawn
+  // while terminumd answers, still moves: a press waits for where it stands, on the screen
+  const where = async () => { const e = await page.$(sel); await e.scrollIntoViewIfNeeded(); return e.boundingBox(); };
+  let was = null, b = await where();
   for (let i = 0; i < 40 && JSON.stringify(b) !== was; i++) {
     was = JSON.stringify(b);
     await new Promise((r) => setTimeout(r, 60));
-    b = await (await page.$(sel)).boundingBox();
+    b = await where();
   }
   const at = [b.x + b.width / 2, b.y + b.height / 2];
   // what stands there when it is pressed, for a check that says where a press went
