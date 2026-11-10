@@ -15,7 +15,7 @@ export async function liveFolded(page, live) {
   // three agents and one more: a row of four on the columns' tracks, the fifth starts the next
   const ids = [];
   for (const n of ["Grid one", "Grid two", "Grid three", "Grid four", "Grid five"]) ids.push((await j("/api/task-agents", "POST", { name: n, kind: "claude", command: "claude" })).id);
-  await open();
+  await open("?project=default");                  // its tasks' project: one an earlier suite chose is remembered
   const box = (sel) => page.evaluate((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }, sel);
   const shown = (sel) => page.evaluate((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== "none" && e.getClientRects().length > 0; }, sel);
 
