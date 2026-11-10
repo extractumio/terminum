@@ -73,7 +73,7 @@ function close(back) {
   list.hidden = true;
   select.removeAttribute("aria-expanded");
   if (back) select.selectedIndex = origin;
-  else if (select.selectedIndex !== origin) select.dispatchEvent(new Event("change", { bubbles: true }));
+  else if (select.selectedIndex !== origin) for (const type of ["input", "change"]) select.dispatchEvent(new Event(type, { bubbles: true }));   // both, as a select's own list says them
 }
 
 document.addEventListener("mousedown", (e) => {

@@ -4,7 +4,7 @@
 import { $, say } from "./kanbanutil.js";
 
 /** The task the address names: terminumd finds it by its ID, one it had or its key's start, or says there is none. */
-const addressed = () => /^\/kanban\/([A-Za-z0-9-]+)$/.exec(location.pathname)?.[1];
+const addressed = () => /^\/kanban\/([A-Za-z0-9_-]+)$/.exec(location.pathname)?.[1];
 
 /** windowed: kanbanwin.js's window; needs: tasklines.js's lines of tasks that wait. */
 export function taskAddress({ windowed, needs }) {

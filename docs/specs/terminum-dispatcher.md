@@ -1008,7 +1008,7 @@ Scenario: AC-131 edge — a sleeping Mac
   Given API-12 with 30 of 60 budget minutes used and a Mac asleep for 8 hours
   When it wakes
   Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and API-12 says once "Clocks paused 480 minutes: no walk saw them pass"
-  And a schedule's due time is the wall clock's: what it missed comes once on wake (terminum-schedules.md AC-162)
+  And a schedule's due time is the wall clock's: what it missed is not run on wake (terminum-schedules.md AC-162)
   And the same holds for a stopped terminumd and a lost link
 
 Scenario: AC-131 edge — a walk and a window opening

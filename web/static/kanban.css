@@ -39,7 +39,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #fproject .projrow :is(.projedit, .projsession) { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
 
 /* the columns: a surface each, their cards a step over it */
-#board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 auto; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }
+#board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 0; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-radius: var(--r-lg); background: var(--surface-1); }
 .col.over { background: var(--surface-2); }
 /* a head as tall as a list key and its inset round it, as a group header (style.css): TODO's [+] stays inside on a touch screen */
@@ -73,7 +73,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .schedcard:hover { background: var(--surface-2); } }
 .schedcard:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .schedcard .ctitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.schednext.paused { color: var(--danger-text); }
+.schednext.paused, .schedfailed { color: var(--danger-text); }
 .schedlast { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-meta); color: var(--muted); }
 .schedwaits { color: var(--accent); }
 /* its window's When: a line of the kind's parts, the days as keys, terminumd's words under it */
@@ -165,6 +165,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .card.compact:not(.open) .csev { flex: none; }
 .card.compact:not(.open) .ctitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card.compact:not(.open) .crun { order: 1; margin: calc(var(--sp-1) * -1) 0; }
+.card.compact:not(.open, .onagent) .crun { display: none; }   /* no agent ran it: Run is on the card shown whole */
 .card.picked { box-shadow: var(--m-edge), inset 0 0 0 2px var(--accent); }
 /* the agent a task is on: its color's dot, then its name (terminum-dispatcher.md AC-138) */
 .ctitle { font-size: var(--fs-row); font-weight: var(--fw-ctl); line-height: var(--lh-ui); overflow-wrap: anywhere; }

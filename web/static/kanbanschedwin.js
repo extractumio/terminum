@@ -3,7 +3,7 @@
 // and Paused; terminumd says its next runs, the prompt that will go and the agent's command as it is typed, and
 // refuses what is wrong in the field's words. What was typed is not lost by a slip of Esc (terminum-kanban.md AC-133).
 import { askConfirm, oneAtATime } from "./dialogs.js";
-import { el } from "./listparts.js";
+import { el, plural } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
 import { $, DEFAULT, api, fillSelect, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
@@ -32,8 +32,10 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
   function shownParts() {
     const k = f.kind.value, on = { whenevery: ["minutes", "hours"], whenminute: ["hours"], whenday: ["monthly"], whendate: ["once"], whentime: ["daily", "weekdays", "weekly", "monthly", "once"], schedcron: ["cron"], whendays: ["weekly"] };
     for (const [id, kinds] of Object.entries(on)) $(id).hidden = !kinds.includes(k);
-    const steps = k === "hours" ? HOUR_STEPS : MINUTE_STEPS, was = Number(f.every.value);
-    fillSelect(f.every, steps.map((n) => [String(n), `${n} ${k === "hours" ? (n === 1 ? "hour" : "hours") : "minutes"}`]), String(steps.includes(was) ? was : steps[steps.length > 3 ? 1 : 0]));
+    // another kind's number is not carried over: 1 hour would become every minute
+    const hours = k === "hours", steps = hours ? HOUR_STEPS : MINUTE_STEPS, was = f.every.dataset.kind === k ? Number(f.every.value) : 0;
+    f.every.dataset.kind = k;
+    fillSelect(f.every, steps.map((n) => [String(n), plural(n, hours ? "hour" : "minute")]), String(steps.includes(was) ? was : hours ? 2 : 20));
   }
 
   /** What goes to terminumd. */
@@ -69,8 +71,9 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     clearTimeout(soon);
     soon = setTimeout(preview, 250);
   };
-  for (const k of ["kind", "every", "minute", "day", "date", "time", "cron", "agent", "budget", "project"]) f[k].addEventListener("input", changedWhen);
-  for (const k of ["title", "text"]) f[k].addEventListener("change", changedWhen);   // a long text goes once typed, not at each pause
+  for (const k of ["minute", "day", "date", "time", "cron", "budget"]) f[k].addEventListener("input", changedWhen);
+  // a long text goes once typed, not at each pause; a choice is made once
+  for (const k of ["title", "text", "every", "agent", "project"]) f[k].addEventListener("change", changedWhen);
   f.kind.addEventListener("change", () => { shownParts(); changedWhen(); });
 
   const view = writePreview("sched", f.text, $("schedshown"));

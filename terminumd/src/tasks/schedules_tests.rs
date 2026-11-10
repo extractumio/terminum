@@ -60,9 +60,8 @@ fn ac160_refused_in_the_field_s_words() {
         b["budget_minutes"] = json!(1441);
         assert_eq!(says(b), "Time budget: 1 to 1440 minutes.");
         assert_eq!(says(body("a", "0 24 * * *")), "The hour \"24\" is not 0 to 23.");
-        assert_eq!(says(body("a", "*/5 * * * *")), "Runs come at least 15 minutes apart: this cadence has 5.");
-        assert_eq!(says(body("a", "0,10 * * * *")), "Runs come at least 15 minutes apart: this cadence has 10.");
-        assert!(given(tx, body("a", "*/15 * * * *")).is_ok(), "15 minutes is the floor");
+        assert!(given(tx, body("a", "* * * * *")).is_ok(), "a minute apart, as cron's fields are");
+        assert_eq!(given(tx, body("a", "*/1 * * * *"))?.as_schedule().words(), "Every minute");
         assert_eq!(says(body("a", "0 0 31 2 *")), "This cadence never comes.");
         assert_eq!(says(json!({"title": "t", "agent": "a", "once_at": NOW - 60, "budget_minutes": 5})), "Once: a time still to come.");
         assert_eq!(says(json!({"title": "t", "agent": "a", "budget_minutes": 5})), "When: choose how often it runs.");
