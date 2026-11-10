@@ -101,3 +101,14 @@ fn as125_a_paste_shows_by_its_first_words_or_its_fold() {
     assert!(!shows(&Screen::Empty, "The human ran task"));
     assert!(!shows(&Screen::Asks, "The human ran task"));
 }
+
+#[test]
+fn ac123_claude_s_foot_says_its_background_shells_run() {
+    let foot = |line: &str| vec!["⏺ The checks run in the background.".to_string(), "✻ Churned for 49m 48s · done 11:23 PM · 1 shell still running".to_string(), "─".repeat(40), "❯ ".to_string(), "─".repeat(40), "  ~/work/api main".to_string(), line.to_string(), String::new()];
+    assert!(background_shells("claude", &foot("  ⏵⏵ bypass permissions on · 1 shell · ← 1 agent")));
+    assert!(background_shells("claude", &foot("  ⏵⏵ bypass permissions on · 2 shells · ← 1 agent")));
+    assert!(!background_shells("claude", &foot("  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent")), "none in its foot: what is above it is history");
+    assert!(!background_shells("claude", &foot("  ⏵⏵ accept edits on · 0 shells")));
+    assert!(!background_shells("codex", &foot("  ⏵⏵ bypass permissions on · 1 shell")), "Claude Code's words only");
+    assert!(!background_shells("claude", &["❯ run 2 shells for me".to_string()]), "a count must follow its own ·");
+}

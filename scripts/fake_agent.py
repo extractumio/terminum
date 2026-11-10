@@ -118,6 +118,7 @@ def main():
                 with open(path, "w", encoding="utf8") as f:
                     f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
                 hook("Stop", last_assistant_message="done", transcript_path=path)
+                hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt:
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
             elif "FINISHES" in prompt:
