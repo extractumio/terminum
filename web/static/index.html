@@ -48,7 +48,7 @@
     <!-- the session list: kanban.html holds the same (terminumd test same_session_list) -->
     <div class="nav-head">
       <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
-        <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
+        <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
       <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
@@ -421,7 +421,7 @@
 <dialog id="namebox" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
+    <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <p id="nameerror" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
