@@ -196,8 +196,8 @@ pub struct NewTask {
     pub session: Option<String>,
     pub by_agent: bool,
     pub made_in: Option<String>,
-    /// made IN PROGRESS: a schedule's firing, which never stands in TODO (terminum-schedules.md AC-162)
-    pub started: bool,
+    /// a schedule's firing made it: IN PROGRESS from its first moment, its ID saying so (terminum-schedules.md AC-162)
+    pub scheduled: bool,
 }
 
 pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<Task, String> {
@@ -225,14 +225,14 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         }
     }
     let owner = new.owner.unwrap_or_else(|| HUMAN.to_string());
-    let status = if new.started { "IN PROGRESS" } else { "TODO" };
+    let status = if new.scheduled { "IN PROGRESS" } else { "TODO" };
     let rank = top_rank(tx, status, &severity)?;
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM tasks", [], |r| r.get(0)).map_err(sql)?;
     let key = crate::auth::crypto::random_hex::<16>();
     tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
                rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at, status]).map_err(sql)?;
-    let slug = super::slugs::assign(tx, &key, &project, new.started)?;
+    let slug = super::slugs::assign(tx, &key, &project, new.scheduled)?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     get(tx, &slug)
 }

@@ -32,12 +32,13 @@ pub fn language_of(tx: &Transaction, project: &str) -> Result<String, String> {
 }
 
 /// What `task`'s session leaves on the board, said on the task when it goes to DONE or FAILED (AC-166): the tasks its
-/// session's agent made since `task` last went to IN PROGRESS, still there, oldest first. None with no session,
-/// with a task never IN PROGRESS, or with none made.
+/// session's agent made since `task` last went to IN PROGRESS (a schedule's task: since it was made there), still
+/// there, oldest first. None with no session, with a task never IN PROGRESS, or with none made.
 pub fn made_line(tx: &Transaction, task: &Task) -> Result<Option<String>, String> {
     let Some(pane) = &task.session else { return Ok(None) };
     let made: Vec<String> = rows(tx, "SELECT t.slug FROM tasks t WHERE t.made_in = ?1 AND t.by_agent = 1 AND t.id <> ?2 AND t.archived_at IS NULL AND t.slug IS NOT NULL
-                AND t.created_at >= (SELECT max(e.at) FROM events e WHERE e.task = ?2 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS')
+                AND t.created_at >= coalesce((SELECT max(e.at) FROM events e WHERE e.task = ?2 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS'),
+                                             (SELECT x.created_at FROM tasks x JOIN schedule_fires f ON f.task = x.id WHERE x.id = ?2))
               ORDER BY t.number", (pane, &task.key), |r| r.get(0))?;
     Ok((!made.is_empty()).then(|| format!("Tasks made in its session: {}.", made.join(", "))))
 }
@@ -47,8 +48,9 @@ pub fn made_line(tx: &Transaction, task: &Task) -> Result<Option<String>, String
 pub fn unknown_ids(tx: &Transaction, result: &str) -> Result<Vec<String>, String> {
     let prefixes: Vec<String> = rows(tx, "SELECT prefix FROM projects WHERE prefix IS NOT NULL", [], |r| r.get(0))?;
     let mut unknown: Vec<String> = Vec::new();
-    for word in result.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
-        let named = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
+    // a schedule's task says "S_" before its project's letters (terminum-schedules.md AC-162): one word, found as it is
+    for word in result.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        let named = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p.strip_prefix("S_").unwrap_or(p)) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
         if named && !unknown.iter().any(|u| u == word) && super::slugs::resolve(tx, word)?.is_none() {
             unknown.push(word.to_string());
         }

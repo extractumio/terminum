@@ -47,7 +47,12 @@ fn ac162_a_due_schedule_makes_its_task_as_it_is_then() {
         assert!(history.iter().any(|e| e["text"].as_str().is_some_and(|w| w.starts_with("Dispatcher made it from schedule SCH-1, due "))), "{history:?}");
         assert!(!history.iter().any(|e| e["text"].as_str().is_some_and(|w| w.contains("TODO"))), "{history:?}");
         assert_eq!(schedules::of_task(tx, &t.key)?.map(|o| o.key), Some("SCH-1".into()), "its task carries it");
-        assert_eq!(schedules::unstarted(tx)?, vec![(fire, id.clone())], "made, its run not yet asked for: a restart's walk asks once");
+        assert_eq!(schedules::unstarted(tx)?, vec![(fire, id.clone(), NOW + 10 * 60 + 14)], "made, its run not yet asked for: a restart's walk asks once");
+        // AC-166: its own ID in its result is a task the board holds, and what its session made counts from its making
+        assert!(crate::tasks::closeout::unknown_ids(tx, &format!("See {id}, and {}.", human.id))?.is_empty());
+        ops::link(tx, DISPATCHER, &id, Some("tmux:local:t:%7"), NOW + 11 * 60)?;
+        let left = ops::create(tx, HUMAN, NewTask { title: "Debt: left".into(), by_agent: true, made_in: Some("tmux:local:t:%7".into()), ..Default::default() }, NOW + 12 * 60)?;
+        assert_eq!(crate::tasks::closeout::made_line(tx, &ops::get(tx, &id)?)?, Some(format!("Tasks made in its session: {}.", left.id)));
         assert_eq!(schedules::by_id(tx, &s.id)?.last_due, NOW + 10 * 60);
         assert!(matches!(decide(tx, &s, NOW + 11 * 60, false)?, Next::Nothing), "not due again within the quarter");
         Ok(())
@@ -65,10 +70,13 @@ fn ac162_a_task_of_it_in_progress_skips_the_firing_and_one_waiting_for_a_human_d
         assert_eq!(listed[0]["last"]["status"], "IN PROGRESS");
         let fires = crate::tasks::schedulesapi::fires_of(tx, Some("SCH-1"), None, 10)?;
         assert_eq!((fires[0]["state"].as_str(), fires[0]["why"].as_str()), (Some("skipped"), Some(format!("Skipped: {id} is still in progress.").as_str())));
-        ops::move_to(tx, DISPATCHER, &id, "WAIT FOR HUMAN", NOW + 26 * 60)?;
-        let (next, _) = made(decide(tx, &s, NOW + 40 * 60, false)?);
+        assert!(matches!(decide(tx, &s, NOW + 40 * 60, false)?, Next::Skipped));
+        let fires = crate::tasks::schedulesapi::fires_of(tx, Some("SCH-1"), None, 10)?;
+        assert_eq!((fires.len(), fires[0]["missed"].as_i64(), schedules::listed(tx, NOW + 40 * 60)?[0]["skipped"].as_i64()), (2, Some(1), Some(2)), "skips one after another are one row, each counted");
+        ops::move_to(tx, DISPATCHER, &id, "WAIT FOR HUMAN", NOW + 41 * 60)?;
+        let (next, _) = made(decide(tx, &s, NOW + 55 * 60, false)?);
         assert_ne!(next, id, "its last one waits for a human: the schedule goes on");
-        assert_eq!(schedules::listed(tx, NOW + 40 * 60)?[0]["skipped"], 0, "skips count since the last task made");
+        assert_eq!(schedules::listed(tx, NOW + 55 * 60)?[0]["skipped"], 0, "skips count since the last task made");
         Ok(())
     }).unwrap();
 }
@@ -80,7 +88,8 @@ fn ac162_a_firing_not_run_in_its_time_is_missed_and_never_run_later() {
         // eight hours asleep, awake five minutes after the last due time
         assert!(matches!(decide(tx, &s, NOW + 8 * 3600, false)?, Next::Skipped));
         let fires = crate::tasks::schedulesapi::fires_of(tx, None, None, 10)?;
-        assert_eq!((fires.len(), fires[0]["missed"].as_i64(), fires[0]["task"].as_str(), fires[0]["state"].as_str()), (1, Some(32), None, Some("skipped")));
+        assert_eq!((fires.len(), fires[0]["missed"].as_i64(), fires[0]["task"].as_str(), fires[0]["state"].as_str()), (1, Some(31), None, Some("skipped")));
+        assert_eq!(schedules::listed(tx, NOW + 8 * 3600)?[0]["skipped"], 32, "each firing that passed is counted");
         let why = fires[0]["why"].as_str().unwrap();
         assert!(why.starts_with("Missed, due ") && why.ends_with(": the Mac was asleep or terminumd was not running."), "{why}");
         assert!(matches!(decide(tx, &s, NOW + 8 * 3600 + 60, false)?, Next::Nothing), "nothing of it is run later");
@@ -116,8 +125,13 @@ fn ac162_a_wait_for_room_called_off_fails_a_task_that_never_ran() {
         let t = ops::get(tx, &id)?;
         super::super::waits::add(tx, &t, "a", "default", &json!({}), NOW)?;
         super::super::waits::call_off(tx, &t.key, "Its wait was called off: its agent is no longer in the pool. Run it again.")?;
-        assert_eq!(ops::get(tx, &id)?.status, "FAILED", "IN PROGRESS with nothing running, it would skip every firing after it");
-        made(decide(tx, &s, NOW + 25 * 60, false)?);
+        assert_eq!(ops::get(tx, &id)?.status, "FAILED", "nothing works on it");
+        // one left IN PROGRESS with no run, no wait and its start asked for stops no firing
+        let (left, fire) = made(decide(tx, &s, NOW + 25 * 60, false)?);
+        schedules::fire_started(tx, fire, "its prompt")?;
+        assert_eq!(ops::get(tx, &left)?.status, "IN PROGRESS");
+        let (next, _) = made(decide(tx, &s, NOW + 40 * 60, false)?);
+        assert_ne!(next, left);
         Ok(())
     }).unwrap();
 }
@@ -137,14 +151,14 @@ async fn ac162_a_start_that_fails_fails_its_task_and_the_next_firing_tries_again
     let (status, after, listed, said) = store(&app, move |tx| {
         let listed = schedules::listed(tx, NOW + 11 * 60)?;
         let fires = crate::tasks::schedulesapi::fires_of(tx, None, None, 10)?;
-        let again = matches!(decide(tx, &schedules::by_id(tx, &sid)?, NOW + 25 * 60, false)?, Next::Run(..));
+        let again = matches!(decide(tx, &schedules::by_id(tx, &sid)?, NOW + 25 * 60, false)?, Next::Run(..)) && ops::get(tx, &id)?.archived_at.is_some();
         Ok((ops::get(tx, &id)?.status, schedules::by_id(tx, &sid)?, listed, (fires[0]["state"].clone(), fires[0]["why"].clone(), again)))
     }).await.unwrap();
     assert_eq!(status, "FAILED");
     assert!(!after.paused, "the schedule is not paused");
     let why = listed[0]["failed_why"].as_str().unwrap_or_default().to_string();
     assert!(why.starts_with("It did not start: "), "{listed:?}");
-    assert_eq!((said.0.as_str(), said.1.as_str(), said.2), (Some("failed"), Some(why.as_str()), true), "the firing says why; the next one makes a task");
+    assert_eq!((said.0.as_str(), said.1.as_str(), said.2), (Some("failed"), Some(why.as_str()), true), "the firing says why; the next one makes a task, and the one that never started leaves the board");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }

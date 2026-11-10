@@ -85,8 +85,10 @@ export async function liveSchedules(page, live) {
   await page.fill("#schedtitle", "Nightly deps check");
   await page.fill("#schedtext", "FINISHES the check of dependencies.");
   // the page's own list of a select says "change" alone, as a choice there does (dropdown.js): the window hears it
-  check("AC-160 no agent chosen is said", await until(async () => await page.textContent("#schederror") === "Choose the agent that runs it."));
-  await page.$eval("#schedagent", (s, id) => { s.value = id; s.dispatchEvent(new Event("change", { bubbles: true })); }, agent);
+  const choose = (id) => page.$eval("#schedagent", (s, id) => { s.value = id; s.dispatchEvent(new Event("change", { bubbles: true })); }, id);
+  await choose("");
+  check("AC-160 no agent chosen is said", await until(async () => await page.textContent("#schederror") === "Choose the agent that runs it."), await page.textContent("#schederror"));
+  await choose(agent);
   check("AC-160 an agent chosen, its words go", await until(async () => (await page.textContent("#schedline")).includes("fake_agent.py") && !(await page.isVisible("#schederror"))), await page.textContent("#schederror"));
   await page.selectOption("#schedkind", "minutes");
   await page.selectOption("#schedevery", "15");

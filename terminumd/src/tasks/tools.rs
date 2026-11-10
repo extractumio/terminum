@@ -166,7 +166,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                     session: None,
                     by_agent: true,
                     made_in: Some(who.key.clone()),
-                    started: false,
+                    scheduled: false,
                 }, at)?;
                 Ok((format!("Kept as {}, in TODO.", t.id), vec![t.id]))
             }

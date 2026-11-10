@@ -168,7 +168,7 @@ Scenario: AC-162 happy path — the result
 Scenario: AC-162 happy path — its ID and its columns
   Given Billing's tasks named BILL-39, BILL-40
   Then SCH-1's next task is S_BILL-41, and Billing's next after it BILL-42 or S_BILL-42: one count, "S_" saying a schedule made it (terminum-kanban.md AC-148)
-  And it stands in IN PROGRESS, WAIT FOR HUMAN, DONE or FAILED, and a human's RUN brings it from each of the last three back to IN PROGRESS (AC-161)
+  And it stands in IN PROGRESS, WAIT FOR HUMAN, DONE or FAILED, and a human's RUN brings it from each of the last three back to IN PROGRESS
   When an agent calls move_task with to "TODO" for it
   Then it is told "S_BILL-41 is a run of schedule SCH-1: it does not go to TODO." and it stays
 
@@ -177,7 +177,9 @@ Scenario: AC-162 edge — a task of it still in progress
   When SCH-1 is due again
   Then no task is made, the firing is written "Skipped: S_TERM-44 is still in progress.", and SCH-1's card says "skipped 1"
   But S_TERM-44 in WAIT FOR HUMAN, DONE or FAILED skips nothing: S_TERM-45 is made and runs
-  And a task whose wait for room is called off before it ever ran is FAILED with the words that called it off
+  And skips one after another for one reason are one firing's row, counting each; the card counts each
+  And a task whose wait for room is called off with no run of it live is FAILED with the words that called it off
+  And a task left IN PROGRESS with no run of it live and no wait skips nothing
 
 Scenario: AC-162 edge — its last session still holds the slot
   Given S_TERM-41 DONE, its session open and idle (terminum-dispatcher.md AC-141's idle holder)
@@ -207,11 +209,13 @@ Scenario: AC-162 failure — it cannot start
   When Billing has no folder, the folder is not there, the hooks are not installed for its kind, the agent is gone, or its host does not answer
   Then S_TERM-41 is FAILED with RUN's words (terminum-dispatcher.md AC-140), "It did not start: Billing has no folder: set it in its window.", the firing is written with them and SCH-1's card says them
   And SCH-1 is not paused: its next firing makes S_TERM-42 and tries again, the card's words going once one starts
+  And S_TERM-41, never started and still FAILED, is archived as S_TERM-42 is made: a start that fails at each firing leaves one card
 
 Scenario: AC-162 failure — terminumd stops between the two
   Given S_TERM-41 made and its firing written, and terminumd ended before its run began
   When terminumd starts again
-  Then the next walk runs S_TERM-41 as it would have, once; S_TERM-41 moved or archived by a human meanwhile stays as it is and the firing says so
+  Then the next walk, within 2 minutes of its making, runs S_TERM-41 as it would have, once; later it is FAILED, "It did not start: terminumd stopped before its run began."
+  And S_TERM-41 moved or archived by a human meanwhile stays as it is and the firing says so
   And a S_TERM-41 whose run or wait had begun is not pressed again: its firing is written started
 
 Scenario: AC-162 edge — Once
@@ -259,7 +263,7 @@ Scenario: AC-164 happy path — every firing
   Then "/scheduled/" lists every firing, newest first, 100 at a time with "Show more": when it fired, SCH-1 and its title, S_TERM-41 (a press opens it on the board), its agent, its task's status now, when it went IN PROGRESS and when it ended
   When the user presses a row
   Then it shows "In": the prompt that went, and "Out": the agent's last comment, its finish_task result, or Dispatcher's words on why it failed
-  And a skipped or missed firing's row says why, with no task
+  And a skipped or missed firing's row says why, with no task, and how many firings it stands for
 
 Scenario: AC-164 happy path — one schedule
   When the user picks SCH-1 in Schedule
@@ -316,7 +320,7 @@ CREATE TABLE schedule_fires (id INTEGER PRIMARY KEY, schedule TEXT NOT NULL REFE
   task TEXT REFERENCES tasks, state TEXT NOT NULL, missed INTEGER NOT NULL DEFAULT 0, why TEXT, prompt TEXT);
 ```
 
-A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_at`, never both. `last_due` is the due time of the last firing, or the moment of the last save, so an edit fires nothing it passed: due is the first cadence minute after it, by the Mac's clock read at each walk, so a zone's change needs nothing saved; a firing sets it to the last due time not after now, every one before it counted in `missed`; a due time over 120 s past is not run: its row is `skipped`, `missed` counting it too. `state`: `made` (task made, its run not yet asked for: a restart's walk asks once), `started` (a run or a wait), `failed`, `skipped`, `called off`. A schedule's tasks are those its firings name: `schedule_fires.task` is the one fact, indexed.
+A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_at`, never both. `last_due` is the due time of the last firing, or the moment of the last save, so an edit fires nothing it passed: due is the first cadence minute after it, by the Mac's clock read at each walk, so a zone's change needs nothing saved; a firing sets it to the last due time not after now, every one before it counted in `missed`; a due time over 120 s past is not run: its row is `skipped`. A `skipped` row stands for `missed` + 1 firings: one after another with the same `why` are one row. `state`: `made` (task made, its run not yet asked for: a restart's walk asks once), `started` (a run or a wait), `failed`, `skipped`, `called off`. A schedule's tasks are those its firings name: `schedule_fires.task` is the one fact, indexed.
 
 **Cadence** (`terminumd/src/tasks/cron.rs`). Five fields: minute 0–59, hour 0–23, day 1–31, month 1–12, weekday 0–7 (0 and 7 Sunday); each `*`, `n`, `a-b`, `a-b/s`, `*/s`, `n/s`, lists by commas; names of days and months are refused. Both days named: either matches (Vixie cron). The next minute is found minute by minute in local time, skipping whole hours and days that cannot match, up to eight years. A candidate whose local date and time is not after that of the moment it follows (the last due time) is passed over, so a minute the clock passes twice comes once.
 

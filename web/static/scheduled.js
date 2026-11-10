@@ -26,7 +26,7 @@ function row(f) {
   if (f.agent) line.append(el("span", "fagent", f.agent));
   const times = [f.started_at && `in progress ${at(f.started_at)}`, f.started_at && f.ended_at && `ended after ${span(f.started_at, f.ended_at)}`].filter(Boolean).join(" · ");
   if (times) line.append(el("span", "ftimes", times));
-  const said = [STATES[f.state], f.missed ? `${f.missed} missed` : ""].filter(Boolean).join(" · ");
+  const said = [STATES[f.state], f.missed ? (f.task ? `${f.missed} missed before it` : `${f.missed + 1} firings`) : ""].filter(Boolean).join(" · ");
   if (said) line.append(el("span", `fstate ${f.state.replace(" ", "-")}`, said));
   r.append(line);
   const body = el("div", "firebody");

@@ -78,7 +78,7 @@ Open questions: none.
 | AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
 | AC-139 | [MUST / P0] | + Project makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with the pool's keys beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
-| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
+| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
 | AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history; tasks, subtasks and comments say when they were made and changed; comments come newest first, a key turns the order. |
 | AC-150 | [SHOULD / P1] | The session page counts the tasks made in the shown session, says new ones as reminders are said, lists them and opens the board's own task window. |
 

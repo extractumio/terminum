@@ -270,7 +270,7 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
             _ => Vec::new(),
         };
         let last = last_task(tx, &s)?;
-        let skipped: i64 = tx.query_row("SELECT count(*) FROM schedule_fires WHERE schedule = ?1 AND state = 'skipped'
+        let skipped: i64 = tx.query_row("SELECT coalesce(sum(missed + 1), 0) FROM schedule_fires WHERE schedule = ?1 AND state = 'skipped'
                                          AND id > coalesce((SELECT max(id) FROM schedule_fires WHERE schedule = ?1 AND task IS NOT NULL), 0)", [&s.id], |r| r.get(0)).map_err(sql)?;
         let mut v = json!(s);
         v["words"] = json!(s.words());
@@ -278,11 +278,22 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
-        v["failed_why"] = json!(tx.query_row("SELECT CASE state WHEN 'failed' THEN why END FROM schedule_fires WHERE schedule = ?1 AND task IS NOT NULL ORDER BY id DESC LIMIT 1",
+        v["failed_why"] = json!(tx.query_row("SELECT CASE WHEN f.state = 'failed' AND t.status = 'FAILED' THEN f.why END FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 ORDER BY f.id DESC LIMIT 1",
                                              [&s.id], |r| r.get::<_, Option<String>>(0)).optional().map_err(sql)?.flatten());
         out.push(v);
     }
     Ok(out)
+}
+
+/// A firing skipped, `why`; `missed`: the due times that passed before it. One after another for the same reason
+/// are one row counting them all, so a long run under a short cadence writes one (AC-164).
+pub fn skipped(tx: &Transaction, s: &Schedule, (due, missed): (i64, i64), why: &str, now: i64) -> Result<(), String> {
+    let merged = tx.execute("UPDATE schedule_fires SET missed = missed + ?2 + 1, due_at = ?3, at = ?4
+                             WHERE id = (SELECT max(id) FROM schedule_fires WHERE schedule = ?1) AND state = 'skipped' AND why = ?5", rusqlite::params![s.id, missed, due, now, why]).map_err(sql)?;
+    if merged == 0 {
+        fired(tx, s, (due, missed), None, "skipped", Some(why), now)?;
+    }
+    Ok(())
 }
 
 /// One firing written; its id.
@@ -303,15 +314,26 @@ pub fn fire_is(tx: &Transaction, fire: i64, state: &str, why: Option<&str>) -> R
     tx.execute("UPDATE schedule_fires SET state = ?2, why = coalesce(?3, why) WHERE id = ?1", rusqlite::params![fire, state, why]).map(drop).map_err(sql)
 }
 
-/// Firings whose task was made and whose run was never asked for: terminumd ended between the two (AC-162).
-pub fn unstarted(tx: &Transaction) -> Result<Vec<(i64, String)>, String> {
-    rows(tx, "SELECT f.id, t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.state = 'made' ORDER BY f.id", [], |r| Ok((r.get(0)?, r.get(1)?)))
+/// Firings whose task was made and whose run was never asked for: terminumd ended between the two (AC-162). Its
+/// id, its task, when it was made.
+pub fn unstarted(tx: &Transaction) -> Result<Vec<(i64, String, i64)>, String> {
+    rows(tx, "SELECT f.id, t.slug, f.at FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.state = 'made' ORDER BY f.id", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
 }
 
-/// A task of `s` IN PROGRESS, the newest, by its ID: it runs, or waits for room (AC-162).
+/// The task of `s`'s last firing that did not start and still stands FAILED, by its ID: the next firing's task takes
+/// its place on the board (AC-162).
+pub fn never_started(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
+    tx.query_row("SELECT CASE WHEN f.state = 'failed' AND t.status = 'FAILED' AND t.archived_at IS NULL THEN t.slug END FROM schedule_fires f JOIN tasks t ON t.id = f.task
+                  WHERE f.schedule = ?1 ORDER BY f.id DESC LIMIT 1", [&s.id], |r| r.get::<_, Option<String>>(0)).optional().map(Option::flatten).map_err(sql)
+}
+
+/// A task of `s` IN PROGRESS with something behind it, the newest, by its ID (AC-162): its run about to be asked
+/// for, its wait for room, or a run of it not over. One left IN PROGRESS with none of them stops no firing.
 pub fn running_task(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
-    tx.query_row("SELECT t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL
-                  ORDER BY f.id DESC LIMIT 1", [&s.id], |r| r.get(0)).optional().map_err(sql)
+    tx.query_row(&format!("SELECT t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL
+                  AND (f.state = 'made' OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id)
+                       OR EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND {}))
+                  ORDER BY f.id DESC LIMIT 1", crate::dispatcher::runs::STILL), [&s.id], |r| r.get(0)).optional().map_err(sql)
 }
 
 /// The task of `s`'s last firing, if it made one, with its status.
