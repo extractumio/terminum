@@ -124,6 +124,12 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
    plain grey ring; a task of its queue: a pale grey dot, in the key that opens the queue (terminum-dispatcher.md AC-169) */
 .agkept, .agfree, .agwait { flex: none; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; }
 .agkept { border: 1.5px dashed var(--ag); }
+/* Auto-Dispatcher's round (AC-170): a session that takes no slot: its dot a square */
+.agdot.round { border-radius: 2px; }
+/* its key in the bar: on in the accent, having turned itself off in the danger color */
+#autokey.on { color: var(--accent); }
+#autokey.stopped { color: var(--danger-text); }
+#autobox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 .agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
 .agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
 .agqueue { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 20px; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); }

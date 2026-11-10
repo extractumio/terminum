@@ -3,7 +3,9 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
+FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT; Auto-Dispatcher's
+round (terminum-dispatcher.md AC-170) starts its first candidates, one for each free slot, and finishes; a task a round started
+is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
 none`: never a box; `--start fast`: exits at once with 7."""
 import json
 import os
@@ -106,7 +108,13 @@ def main():
             hook("UserPromptSubmit", prompt=prompt)
             several = re.search(rf"tasks: ((?:{TASK_ID}(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
             tasks = re.findall(TASK_ID, several[1]) if several else re.findall(TASK_ID, prompt)[:1] or [""]
-            if "LIMIT" in prompt:
+            round_of = re.search(rf"^\[terminum Auto-Dispatcher\] Task ({TASK_ID}):.*Free agent slots: (\d+)\. Candidates, this project's TODO tasks: ((?:{TASK_ID}(?:, )?)+)", prompt, re.S)
+            if round_of:
+                for task in re.findall(TASK_ID, round_of[3])[:int(round_of[2])]:
+                    tool("dispatch_task", {"id": task, "why": "RICE 3×2×1÷1 = 6: the first in line"})
+                finish(round_of[1])
+                hook("Stop", last_assistant_message="dispatched")
+            elif "LIMIT" in prompt:
                 hook("StopFailure", error="rate_limit")
             elif "DIES" in prompt:
                 sys.exit(3)
@@ -126,7 +134,7 @@ def main():
                     f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
                 hook("Stop", last_assistant_message="done", transcript_path=path)
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
-            elif "WORKS" in prompt:
+            elif "WORKS" in prompt or prompt.startswith("Auto-Dispatcher, which a human turned on"):
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
             elif "FINISHES" in prompt:
                 hook("PostToolUse", tool_name="Read", tool_input={}, tool_response={})

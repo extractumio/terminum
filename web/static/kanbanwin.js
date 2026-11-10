@@ -88,6 +88,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       stands,
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
+      // the agent that runs it when Auto-Dispatcher starts it (terminum-dispatcher.md AC-170); none: its project's default
+      select("Agent", [["", "Auto-Dispatcher's default"], ...meta.agents.map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => refresh(), (e) => say(e.message))),
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
       select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
       budgetField(t));

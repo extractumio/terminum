@@ -5,11 +5,14 @@
 // kept and says what is wrong.
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
+import { autoDispatcher } from "./kanbanauto.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
-/** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown. */
-export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen }) {
+/** `agents`: the agents' section; `archived`: its Archived list (AC-118); `deleteProject(id)`: asks, as the session list's menu does; `chosen(id)`: a project just made is shown;
+ *  `shownProjects()`: those the board shows, for Auto-Dispatcher's key in its bar (terminum-dispatcher.md AC-170). */
+export function projectWindow({ getMeta, reload, agents, archived, deleteProject, chosen, shownProjects }) {
   const box = $("projectbox"), picker = folderPicker();
+  const auto = autoDispatcher({ getMeta, chosen: shownProjects, reload });
   let shown = null;
 
   const say = (text) => { $("projecterror").textContent = text; $("projecterror").hidden = !text; };
@@ -117,9 +120,10 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   $("projectaddagent").addEventListener("click", () => agents.add());
   $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = templateOf(null); });
   $("projectlimits").addEventListener("click", () => openLimits(shown.id));
+  $("projectauto").addEventListener("click", () => auto.open(getMeta().projects.find((p) => p.id === shown.id)));
   $("projectarchived").addEventListener("click", () => archived.open(shown));
   $("projectdelete").addEventListener("click", () => { box.close(); deleteProject(shown.id); });
-  /** What terminumd now says of the pool. */
-  const refresh = () => { if (box.open && shown) drawAgents(); };
+  /** What terminumd now says of the pool, and of Auto-Dispatcher for the project shown. */
+  const refresh = () => { auto.draw(); if (box.open && shown) drawAgents(); };
   return { open, refresh };
 }

@@ -47,9 +47,9 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
 
   /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
   function dot(s) {
-    const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}`);
+    const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}${s.round ? " round" : ""}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, projectName(s.project), WORDS[now]].filter(Boolean).join(" · ");
+    d.title = [s.tasks, projectName(s.project), WORDS[now], s.round ? "Auto-Dispatcher's round: it takes no slot" : ""].filter(Boolean).join(" · ");
     return d;
   }
 
@@ -68,7 +68,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     const kept = counted().kept?.[a.id] ?? [];
     for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
     dots.append(...mine.map(dot));
-    const used = slots(a).filter((s) => !s.kept).length + kept.length;
+    const used = slots(a).filter((s) => !s.kept && !s.round).length + kept.length;   // a round's session takes no slot (AC-170)
     if (a.at_once <= MOST_FREE) for (let i = used; i < a.at_once; i++) { const m = el("span", "agfree"); m.title = "a free slot"; dots.append(m); }
     if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
     const queued = queueOf(a);

@@ -99,7 +99,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     const d = draft(), agent = $("newagent").value;
     canCreate(true);
     try {
-      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id) } });
+      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: chose || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id) } });
       write(draftKey(), null);
       files = [];
       box.close();

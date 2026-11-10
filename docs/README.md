@@ -28,7 +28,7 @@ A spec is a snapshot of what terminum must do: never a chronicle or a change log
 | [terminum-files.md](specs/terminum-files.md) | The Files panel | AC-51…73, 94, 95 |
 | [terminum-remote.md](specs/terminum-remote.md) | Remote hosts: tmux over ssh, files through an agent, helpers, builds and releases, agents on a host | AC-81…87, 99 |
 | [terminum-kanban.md](specs/terminum-kanban.md) | Tasks, the board at `/kanban/`, projects shared with the session list, agents' task tools, the store | AC-105…120 |
-| [terminum-dispatcher.md](specs/terminum-dispatcher.md) | Dispatcher: RUN, a task's status as its session lives, time budgets, watching and closing sessions | AC-121…131 |
+| [terminum-dispatcher.md](specs/terminum-dispatcher.md) | Dispatcher: RUN, a task's status as its session lives, time budgets, watching and closing sessions, an agent's queue, Auto-Dispatcher | AC-121…131 |
 | [terminum-schedules.md](specs/terminum-schedules.md) | Scheduled tasks: a schedule's window and cadence, its kept slot, its firings, the board's section, the Scheduled page | AC-160…164 |
 
 Each spec has the same sections: 0 Metadata (status only), 1 Overview, 2 Scope and non-goals, 3 Assumptions, dependencies, open questions, 4 Acceptance cases, 5 BDD scenarios, 6 Flow and sequence diagrams, 7 Current behavior and gaps (open gaps only), 8 Recommendation and ownership, 9 Technical details and specifications, 10 Delivery stages (only what is not shipped), 11 Checklist with Definition of Done (one line per case: what proves it).

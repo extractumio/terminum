@@ -45,6 +45,7 @@ import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
+import { liveAuto } from "./e2e_liveauto.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -139,6 +140,7 @@ const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
+const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
 const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
@@ -171,12 +173,16 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue]) => {
+  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
+    return ctx;
+  }
+  if (AUTO_ALONE) {
+    await boards([liveAuto]);
     return ctx;
   }
   if (POOL_ALONE) {
