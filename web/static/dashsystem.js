@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Dashboard's System tab (terminum.md AC-170): the sessions Dispatcher started, how their tasks ended, what
+// The Dashboard's System tab (terminum.md AC-171): the sessions Dispatcher started, how their tasks ended, what
 // failed and why, the agents' load, the schedules' firings. terminumd's numbers; nothing is added up here.
 import { columns } from "./charts.js";
 import { bands, card, delta, kindWords, rankHue, ranked, shareTile, stackCard, tile, was, words } from "./dashkit.js";

@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* The Dashboard (terminum.md AC-152, AC-170, AC-171): its tabs, period and project over figures in tiles, then cards of charts, the output widget's look (a surface a
+/* The Dashboard (terminum.md AC-152, AC-171, AC-172): its tabs, period and project over figures in tiles, then cards of charts, the output widget's look (a surface a
    step over the page, its light edge, no grain: it scrolls). Marks take the theme's colors (msgpage.css). */
 #dtabs, #dperiod, #dproject { flex: none; }
 #dproject summary { max-width: 220px; }

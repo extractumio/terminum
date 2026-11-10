@@ -133,22 +133,29 @@ export async function liveHistory(page, opts) {
   }
   check("AC-152 what is kept does not reach the year before: no comparison, and the page says from when it counts", /no earlier data/.test(await page.textContent("#tiles .tile .tsub")) && /typing counted from Today/.test(await page.textContent("#dnote")), await page.textContent("#dnote"));
   // the other tabs: a session of Dispatcher's, a failed write and a report in the store (e2e_livedispatcher.mjs runs real sessions)
-  intoStore(app, `INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('dash', 'Dash agent', 'claude', 'claude', 2, 1);
-    INSERT INTO runs (id, project, agent_id, agent_name, agent_color, kind, command, folder, state, last_walk) VALUES ('dashrun', 'default', 'dash', 'Dash agent', 2, 'claude', 'claude', '${work}', 'closed', CAST(strftime('%s','now') AS INTEGER) - 600);
-    INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 2400) * 1000, 0, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, '${key}', 'dashrun', 'test');
+  // what other suites of this run left is counted too: the figures are told by what this adds
+  const dash = `dash${Date.now()}`, sys0 = await numbers("tab=system&period=year"), cost0 = await numbers("tab=costs&period=year");
+  intoStore(app, `INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('${dash}', 'Agent ${dash}', 'claude', 'claude', 2, 1);
+    INSERT INTO runs (id, project, agent_id, agent_name, agent_color, kind, command, folder, state, last_walk) VALUES ('${dash}', 'default', '${dash}', 'Agent ${dash}', 2, 'claude', 'claude', '${work}', 'closed', CAST(strftime('%s','now') AS INTEGER) - 600);
+    INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 2400) * 1000, 0, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, '${key}', '${dash}', 'test');
     INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, error, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 900) * 1000, 0, 'human', 'page', 'typed', 'x', 1, '${key}', 'This pane has closed.', 'test');
-    INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read, model) VALUES ('dashrun', 'dash', CAST(strftime('%s','now') AS INTEGER) - 700, 1000000, 100000, 0, 5000000, 'claude-opus-5-5')`);
+    INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read, model) VALUES ('${dash}', '${dash}', CAST(strftime('%s','now') AS INTEGER) - 700, 1000000, 100000, 0, 5000000, 'claude-opus-5-5')`);
+  // a ranked row's text without the mark the page sets after a symbol
+  const rowOf = (list, name) => page.evaluate(([list, name]) => ([...document.querySelectorAll(`#${list} .rrow`)].find((r) => r.textContent.includes(name))?.textContent ?? "").replace("︎", ""), [list, name]);
   await page.click('#dtabs [data-tab="system"]');
-  check("AC-170 System: Dispatcher's sessions, the failures by reason, the agents' load", await until(async () => await tileOf("Sessions started") === "1" && await tileOf("A session lasts") === "30 min", 6000)
-    && /tab=system/.test(page.url()) && /Write: This pane has closed/.test(await page.textContent("#failures")) && /Dash agent/.test(await page.textContent("#agents"))
-    && (await page.$$("#ends rect.hit")).length === 12 && (await page.$$("#load rect.hit")).length === 12 && (await page.$$("#fires rect.hit")).length === 12, await page.textContent("#tiles"));
+  check("AC-171 System: Dispatcher's sessions, the failures by reason, the agents' load", await until(async () => await tileOf("Sessions started") === String(sys0.tiles.sessions + 1), 6000)
+    && /tab=system/.test(page.url()) && /Write: This pane has closed/.test(await page.textContent("#failures")) && new RegExp(`Agent ${dash}\\d+%1$`).test(await rowOf("agents", dash))
+    && (await numbers("tab=system&period=year")).agents.find((a) => a.id === dash)?.busy_ms === 1_800_000
+    && (await page.$$("#ends rect.hit")).length === 12 && (await page.$$("#load rect.hit")).length === 12 && (await page.$$("#fires rect.hit")).length === 12, `${await page.textContent("#tiles")} | ${await rowOf("agents", dash)}`);
   await page.click('#dtabs [data-tab="costs"]');
-  check("AC-171 Costs: dollars at list prices and tokens, by agent, project and model", await until(async () => /^≈\uFE0E?\$7\.00$/.test(await tileOf("Spent")) && await tileOf("Tokens") === "1.1M", 6000)
-    && /claude-opus-5-5/.test(await page.textContent("#models")) && /Dash agent/.test(await page.textContent("#agents")) && /Dash agent · week/.test(await page.textContent("#limits")) && /Dispatcher started/.test(await page.textContent("#dnote")), await page.textContent("#tiles"));
+  const cost1 = await numbers("tab=costs&period=year");
+  check("AC-172 Costs: dollars at list prices and tokens, by agent, project and model", Math.abs(cost1.tiles.usd - cost0.tiles.usd - 7) < 0.005 && cost1.tiles.counted - cost0.tiles.counted === 1_100_000
+    && await until(async () => (await tileOf("Spent"))?.replace("︎", "") === `≈$${cost1.tiles.usd.toFixed(2)}`, 6000) && (await rowOf("agents", dash)).endsWith("≈$7.00")
+    && /claude-opus-5-5/.test(await page.textContent("#models")) && (await page.textContent("#limits")).includes(`Agent ${dash} · week`) && /Dispatcher started/.test(await page.textContent("#dnote")), `${await page.textContent("#tiles")} | ${await rowOf("agents", dash)}`);
   await page.click('#cspent [data-mode="tokens"]');
-  check("AC-171 the charts measure tokens by a key", await until(async () => /1\.1M/.test(await page.textContent("#cspent .legend"))), await page.textContent("#cspent .legend"));
+  check("AC-172 the charts measure tokens by a key, which stays pressed", await until(async () => (await rowOf("agents", dash)).endsWith("1.1M")) && await page.getAttribute('#cspent [data-mode="tokens"]', "aria-pressed") === "true", await rowOf("agents", dash));
   await page.goBack();
-  check("AC-170 Back returns to the tab before", await until(async () => await page.getAttribute('#dtabs [data-tab="system"]', "aria-selected") === "true" && !!(await page.$("#failures")), 6000));
+  check("AC-171 Back returns to the tab before", await until(async () => await page.getAttribute('#dtabs [data-tab="system"]', "aria-selected") === "true" && !!(await page.$("#failures")), 6000));
   if (shots) for (const t of ["system", "costs"]) { await page.goto(`${base}/dashboard/?tab=${t}`); await page.waitForSelector("#tiles .tile"); await nap(400); await page.screenshot({ path: path.join(shots, `dashboard-${t}.png`), fullPage: true }); }
   if (shots) {
     // a month of made-up work to look at: three projects, days of different length, a weekend off

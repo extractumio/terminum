@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The Dashboard's numbers (terminum.md AC-152, AC-170, AC-171): the periods' buckets, the human's
+//! The Dashboard's numbers (terminum.md AC-152, AC-171, AC-172): the periods' buckets, the human's
 //! figures only, Dispatcher's sessions and failures, what they spent.
 
 use std::collections::{BTreeMap, HashMap};
@@ -136,7 +136,7 @@ fn run(tx: &rusqlite::Transaction, agent: &str, project: &str, at: i64, minutes:
 }
 
 #[test]
-fn ac170_dispatcher_s_sessions_failures_and_load() {
+fn ac171_dispatcher_s_sessions_failures_and_load() {
     let s = store("dashboard-system");
     let noon = noon(&s);
     s.with(|tx| {
@@ -175,7 +175,7 @@ fn ac170_dispatcher_s_sessions_failures_and_load() {
 }
 
 #[test]
-fn ac171_what_dispatcher_s_sessions_spent() {
+fn ac172_what_dispatcher_s_sessions_spent() {
     let s = store("dashboard-costs");
     let noon = noon(&s);
     let one = |model: &str, input: i64, output: i64| BTreeMap::from([(model.to_string(), Totals { input, output, ..Totals::default() })]);

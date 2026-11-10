@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Dashboard's Costs tab (terminum.md AC-171): what the sessions Dispatcher started spent: dollars at list
+// The Dashboard's Costs tab (terminum.md AC-172): what the sessions Dispatcher started spent: dollars at list
 // prices and tokens by agent, project and model, and each agent's use against its limits. terminumd's numbers.
 import { columns } from "./charts.js";
 import { bands, card, delta, legend, percent, ranked, tile, words } from "./dashkit.js";

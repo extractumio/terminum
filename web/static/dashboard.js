@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Dashboard at /dashboard/ (terminum.md AC-152, AC-170, AC-171): three tabs over one period and one
+// The Dashboard at /dashboard/ (terminum.md AC-152, AC-171, AC-172): three tabs over one period and one
 // project: You (how much the user works here and how loaded), System (Dispatcher's sessions, failures, the
 // agents' load), Costs (tokens and dollars). The tab, the period and the project are the address's; terminumd
 // counts, a tab draws (dashyou.js, dashsystem.js, dashcosts.js).

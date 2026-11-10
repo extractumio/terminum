@@ -99,11 +99,11 @@ Open questions:
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
 | AC-151 | [SHOULD / P1] | The Message history at `/history/`, Messages among the sections (AC-167): every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
-| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` has three tabs, You, System (AC-170) and Costs (AC-171), over one period (a day, 2 weeks, a month, a quarter, a year) and one project or all. You shows how much the user works here and how loaded, never counting Dispatcher: active time, active days, the longest stretch, switches between sessions, board actions, how long tasks waited for them, off hours, the phone's share, each against the span before; active time by project, the working day, the week's hours, the projects, the sessions at once, the board actions. |
+| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` has three tabs, You, System (AC-171) and Costs (AC-172), over one period (a day, 2 weeks, a month, a quarter, a year) and one project or all. You shows how much the user works here and how loaded, never counting Dispatcher: active time, active days, the longest stretch, switches between sessions, board actions, how long tasks waited for them, off hours, the phone's share, each against the span before; active time by project, the working day, the week's hours, the projects, the sessions at once, the board actions. |
 | AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
 | AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
-| AC-170 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
-| AC-171 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
+| AC-171 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
+| AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 
 ## 5. BDD scenarios
 
@@ -868,7 +868,7 @@ Scenario: AC-151 failure — the store cannot be read
 ```gherkin
 Scenario: AC-152 happy path — tabs, period, project
   When the user opens the Dashboard (`/dashboard/`; Dashboard among the sections, AC-167)
-  Then its tools hold three tabs, You (shown first), System (AC-170) and Costs (AC-171); the period: Day (the last 24 hours, a column an hour), 2 weeks and Month (the last 14 and 30 days, a column a day; Month first), Quarter (the last 13 weeks, a column a week), Year (the last 12 calendar months, a column a month); and the project: All projects or one of the session list's, or none
+  Then its tools hold three tabs, You (shown first), System (AC-171) and Costs (AC-172); the period: Day (the last 24 hours, a column an hour), 2 weeks and Month (the last 14 and 30 days, a column a day; Month first), Quarter (the last 13 weeks, a column a week), Year (the last 12 calendar months, a column a month); and the project: All projects or one of the session list's, or none
   And the tab, the period and the project are in the address (`?tab=&period=&project=`), Back returns to the one before, and a period or a project chosen stays when the tab changes
   And every figure and chart of every tab is of that period and that project, in this Mac's local time, the last column up to now
   And the page scrolls as a document to its last card, at every width
@@ -958,10 +958,10 @@ Scenario: AC-167 edge — a phone
   And the shown section keeps its word and takes the row's rest; every key is at least 44 px wide and 40 px high
 ```
 
-### AC-170 — The Dashboard's System tab [SHOULD / P1]
+### AC-171 — The Dashboard's System tab [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-170 happy path — Dispatcher's sessions and how they ended
+Scenario: AC-171 happy path — Dispatcher's sessions and how they ended
   Given sessions Dispatcher started (`terminum-dispatcher.md`), of the period and the project of AC-152
   When the user opens System
   Then it shows: Sessions started; Tasks done (moved to DONE by Dispatcher or an agent, with those moved to WAIT FOR HUMAN); Failure rate (FAILED of DONE and FAILED; a human's own move to FAILED is none); Failures (failed tasks, failed writes, schedules' firings failed or skipped); Agents' load; A session lasts (the median, start to close); Schedules fired (started, with skipped, called off, failed); each count against the span before as AC-152
@@ -969,21 +969,21 @@ Scenario: AC-170 happy path — Dispatcher's sessions and how they ended
   And "Failures" ranks the reasons, most first, each said as what failed (Task, Write, Schedule) and its reason's class: Dispatcher's words up to a colon, numbers as N, so one cause is one row
   And "Agents" ranks the agents by busy time, each with its load and the sessions it started
 
-Scenario: AC-170 happy path — load
+Scenario: AC-171 happy path — load
   Then a session is busy from its start (its launch's row of the input log) to its last walk once closed or left, else to now; one that waits for a human holds its slot
   And an agent's load is its sessions' busy time of the period's length times its slots as set today (one for an agent no longer in the pool); the whole is all agents' busy time of all their slots
 
-Scenario: AC-170 edge — what is kept
+Scenario: AC-171 edge — what is kept
   Then sessions whose launch row the input log no longer keeps are not counted, and the page says from when it counts, as AC-152
 
-Scenario: AC-170 failure — the numbers cannot be read
+Scenario: AC-171 failure — the numbers cannot be read
   Then as AC-152
 ```
 
-### AC-171 — The Dashboard's Costs tab [SHOULD / P1]
+### AC-172 — The Dashboard's Costs tab [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-171 happy path — what sessions spent
+Scenario: AC-172 happy path — what sessions spent
   Given what the sessions Dispatcher started reported (`terminum-dispatcher.md` AC-129), of the period and the project of AC-152
   When the user opens Costs
   Then it shows: Spent ("≈$7.00", at list prices); Tokens (those that count: input, output, cache writes; cache reads beside them); A task (dollars a task of the sessions that reported, with the tasks and sessions counted); each against the span before as AC-152
@@ -991,14 +991,14 @@ Scenario: AC-171 happy path — what sessions spent
   And "Projects", "Agents" and "Models" rank what each spent, in dollars with tokens, or in tokens; a project's row narrows the Dashboard to it
   And the page says that only the sessions Dispatcher started report tokens, and that dollars are an estimate at API list prices, not a subscription's bill
 
-Scenario: AC-171 happy path — the agents' limits
+Scenario: AC-172 happy path — the agents' limits
   Then "Agents' limits" shows each agent of the pool: its tokens of the last 7 and 30 days, of every project, against its week's and month's limit (`terminum-dispatcher.md` AC-143), over a limit in the danger color; it says that it is not the period's
 
-Scenario: AC-171 edge — a model with no price
+Scenario: AC-172 edge — a model with no price
   When a session reported a model terminum knows no price for
   Then its tokens count, it adds no dollars, its row says "no price", and "Not priced" shows those tokens: never $0 for an unknown price
 
-Scenario: AC-171 failure — the numbers cannot be read
+Scenario: AC-172 failure — the numbers cannot be read
   Then as AC-152
 ```
 
@@ -1077,8 +1077,8 @@ stateDiagram-v2
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
 | AC-152 | The time the page is open and read without typing is not active time: nothing logs a page's presence. | `terminumd/src/dashboard/you.rs` (`read`) |
-| AC-170 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
-| AC-171 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-171 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
+| AC-172 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -1109,7 +1109,7 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `GET /history/`, `/dashboard/` | the Message history and the Dashboard | AC-151, AC-152 |
 | `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, capped}`, the first with `total` and `days`; `project` ids comma-separated, `-` for none | AC-151 |
 | `GET /api/messages/meta`, `/api/messages/{id}/context` | the filters' projects, first day, hosts, the theme; a message's neighbours in its pane | AC-151 |
-| `GET /api/dashboard?tab=you\|system\|costs&period=day\|2w\|month\|quarter\|year&project=` | that tab's numbers of the period: `tiles`, `series` (one a bucket), `buckets` (`from`, `to`, an hour's `hour`), `unit` (hour, day, week, month), `before` (the span before's tiles, null when what is kept does not reach it), `kept_from`; `project` as above | AC-152, AC-170, AC-171 |
+| `GET /api/dashboard?tab=you\|system\|costs&period=day\|2w\|month\|quarter\|year&project=` | that tab's numbers of the period: `tiles`, `series` (one a bucket), `buckets` (`from`, `to`, an hour's `hour`), `unit` (hour, day, week, month), `before` (the span before's tiles, null when what is kept does not reach it), `kept_from`; `project` as above | AC-152, AC-171, AC-172 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | terminum-lifecycle.md AC-08, AC-09 |
 | `POST /folders?wait=<s>` on `terminumd.sock`: opens each protected folder (one run at a time, joined by a second request), answers within `wait` s `{service, done, folders: [{name, path, state: allowed\|refused\|absent\|error\|asking\|pending, error}], tmux_started_by}` | `terminum install`, `terminum folders` | terminum-lifecycle.md AC-08 |
@@ -1309,5 +1309,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs, `cargo test attach::tests` (two attaches at once)
 - [x] AC-165 — `ui/test/e2e_panel_drop.mjs` (in `e2e_panel.mjs`), `web/test/e2e_liveboardbusy.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs boardpool`)
 - [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`
-- [x] AC-170 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
+- [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// What the Dashboard's tabs share (terminum.md AC-152, AC-170, AC-171): a tile, a card with its plot and the line
+// What the Dashboard's tabs share (terminum.md AC-152, AC-171, AC-172): a tile, a card with its plot and the line
 // that says a column's values, a card of columns stacked by kind, a bucket's words by the period's unit, a legend,
 // rows ranked.
 import { el, projectColor } from "./listparts.js";

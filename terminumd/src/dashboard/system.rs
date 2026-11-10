@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The Dashboard's System tab (terminum.md AC-170): the sessions Dispatcher started and how their tasks
+//! The Dashboard's System tab (terminum.md AC-171): the sessions Dispatcher started and how their tasks
 //! ended, what failed and why, the schedules' firings, how busy the agents' slots were. A session lasts
 //! from its launch row in the input log to its last walk once closed or left, else to now.
 

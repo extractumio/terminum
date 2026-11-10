@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The Dashboard's numbers (terminum.md AC-152, AC-170, AC-171), one tab an answer: `you` (how much the
+//! The Dashboard's numbers (terminum.md AC-152, AC-171, AC-172), one tab an answer: `you` (how much the
 //! human works here and how loaded), `system` (Dispatcher's sessions, failures, the agents' load), `costs`
 //! (tokens and dollars). All in this Mac's local time, over a period cut into buckets, each figure against
 //! the same span before. `GET /api/dashboard?tab=&period=&project=`; reads only, off the async workers.

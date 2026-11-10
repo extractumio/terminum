@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The Dashboard's Costs tab (terminum.md AC-171): what the sessions Dispatcher started spent, as their
+//! The Dashboard's Costs tab (terminum.md AC-172): what the sessions Dispatcher started spent, as their
 //! hooks reported it (`dispatcher::usage`): tokens that count, cache reads, dollars at list prices, by
 //! agent, project and model; beside them each agent's last 7 and 30 days against its limits.
 
