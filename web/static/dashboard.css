@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
-/* The Dashboard (terminum.md AC-152): figures in tiles, then cards of charts, the output widget's look (a surface a
+/* The Dashboard (terminum.md AC-152, AC-170, AC-171): its tabs, period and project over figures in tiles, then cards of charts, the output widget's look (a surface a
    step over the page, its light edge, no grain: it scrolls). Marks take the theme's colors (msgpage.css). */
-#dperiod, #dproject { flex: none; }
+#dtabs, #dperiod, #dproject { flex: none; }
 #dproject summary { max-width: 220px; }
 #dproject .box { min-width: min(280px, calc(100vw - var(--sp-6) * 2)); }
 #dnote { min-height: 0; }
@@ -39,6 +39,8 @@
 .rrow { display: grid; grid-template-columns: 8px minmax(60px, 160px) 1fr 40px 56px; align-items: center; gap: var(--sp-2); min-height: 30px; padding: 0 var(--sp-2);
   border: 0; border-radius: var(--r-sm); background: none; color: var(--t-fg); font: inherit; font-size: var(--fs-small); text-align: left; cursor: pointer; }
 @media (hover: hover) { .rrow:hover { background: color-mix(in srgb, var(--t-fg) 6%, transparent); } }
+div.rrow { cursor: default; }
+@media (hover: hover) { div.rrow:hover { background: none; } }
 .rname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rbar { height: 8px; border-radius: 2px; background: linear-gradient(90deg, var(--proj) var(--w), transparent var(--w)); }
 .rnum { font-variant-numeric: tabular-nums; color: var(--muted-text); text-align: right; }

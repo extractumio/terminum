@@ -99,9 +99,11 @@ Open questions:
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
 | AC-151 | [SHOULD / P1] | The Message history at `/history/`, Messages among the sections (AC-167): every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
-| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` shows how much the user drives sessions over 7, 30 or 90 days, never counting Dispatcher: messages, active time, active days, messages an active hour, sessions a day, the phone's share, each against the period before; messages and active time a day by project, the working day, the week's hours, the projects, the sessions a day; a day leads to its messages in the Message history.
+| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` has three tabs, You, System (AC-170) and Costs (AC-171), over one period (a day, 2 weeks, a month, a quarter, a year) and one project or all. You shows how much the user works here and how loaded, never counting Dispatcher: active time, active days, the longest stretch, switches between sessions, board actions, how long tasks waited for them, off hours, the phone's share, each against the span before; active time by project, the working day, the week's hours, the projects, the sessions at once, the board actions. |
 | AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
 | AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
+| AC-170 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
+| AC-171 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 
 ## 5. BDD scenarios
 
@@ -864,26 +866,42 @@ Scenario: AC-151 failure — the store cannot be read
 ### AC-152 — The Dashboard [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-152 happy path — the figures
-  Given messages kept and the input log (AC-147)
+Scenario: AC-152 happy path — tabs, period, project
   When the user opens the Dashboard (`/dashboard/`; Dashboard among the sections, AC-167)
-  Then it counts the human's rows only, never Dispatcher's, in this Mac's local days, over the last 30 days (7, 90 by a key; `?days=`), today up to now
-  And it shows: Messages (and the agents' share), Active time (and per active day), Active days ("26 of 30"), Messages an active hour, Sessions a day (the median over active days, and the most sent to in one hour), From the phone (of what the pages sent: an Enter or a paste, `device` web); each against the same days before up to the same time ("▲ 12% vs the 30 days before"; a small earlier number as a difference; none: "no earlier data"), no color for better or worse; a sparkline of the days under the counts
+  Then its tools hold three tabs, You (shown first), System (AC-170) and Costs (AC-171); the period: Day (the last 24 hours, a column an hour), 2 weeks and Month (the last 14 and 30 days, a column a day; Month first), Quarter (the last 13 weeks, a column a week), Year (the last 12 calendar months, a column a month); and the project: All projects or one of the session list's, or none
+  And the tab, the period and the project are in the address (`?tab=&period=&project=`), Back returns to the one before, and a period or a project chosen stays when the tab changes
+  And every figure and chart of every tab is of that period and that project, in this Mac's local time, the last column up to now
+  And the page scrolls as a document to its last card, at every width
 
-Scenario: AC-152 happy path — the charts
-  Then "A day" draws a column a day of messages stacked by project (its six with the most, their session list colors, a project no longer there a hue by its rank, the rest as Other), or of active time by its key, weekends shaded, today faint; "Working day" a column a day from the first to the last event, the active stretches solid on it, midnight on top; "When you work" the active minutes of each hour of an average week (Monday first; two hours a cell on a phone); "Projects" ranked bars with share and count; "Sessions a day" columns with the most in one hour as a dot
-  And hover, a tap or the keys (← → Home End) say a column's values in a line over its chart; Enter or a click on a day of "A day" or "Sessions a day" opens the Message history of that day, the human's (`?from=&to=&sender=human`), whose count is the same; a project's row or chip narrows to it (`?project=`)
+Scenario: AC-152 happy path — the figures of You
+  Given messages kept, the input log (AC-147) and the tasks' events
+  Then You counts the human's rows only, never Dispatcher's
+  And it shows: Active time (and per active day); Active days ("26 of 30"; a Day: Active hours "6 of 24"); Longest stretch (with no pause over 15 minutes); Switches an active hour (a send into another session than the send before it, within a stretch; with their count and the most sessions written to in one hour); Board actions (tasks the human made, moved, commented, edited, archived); Waited for you (tasks moved to WAIT FOR HUMAN, the median time until each was moved on, those that still wait); Off hours (the share of active time on weekends or from 22:00 to 06:00); From the phone (of what the pages sent, an Enter or a paste: those from an iPhone's or an Android's browser)
+  And each stands against the same span before up to the same time ("▲ 12% vs the 30 days before"; a small earlier number as a difference), no color for better or worse; a sparkline of the columns under the counts
+  And no composite score is shown: each measure of load stands by itself
+
+Scenario: AC-152 happy path — the charts of You
+  Then "Active time" draws a column of active time stacked by project (its six with the most, their session list colors, a project no longer there a hue by its rank, the rest as Other), weekends shaded, the last column faint; "Working day", when a column is a day, a column a day from the first to the last event, the active stretches solid on it, midnight on top; "When you work", but for a Day, the active minutes of each hour of an average week (Monday first; two hours a cell on a phone); "Projects" ranked bars of active time with share; "Sessions at once" columns of the sessions written to, the most in one hour as a dot; "On the board" columns of the human's board actions stacked by kind
+  And hover, a tap or the keys (← → Home End) say a column's values in a line over its chart; Enter or a click on a column of "Active time" opens the Message history of its days, the human's (`?from=&to=&sender=human`); a project's chip narrows the Dashboard to it, a project's row opens its messages of the period
 
 Scenario: AC-152 happy path — active time
-  Then active time is the human's sends and input rows' first and last keys in time order, a pause over 15 minutes ending a stretch, each stretch from its first event to its last and 2 minutes more (reading the answer), split at hours and midnights
+  Then active time is the human's sends, input rows' first and last keys and board actions in time order, a pause over 15 minutes ending a stretch, each stretch from its first event to its last and 2 minutes more (reading the answer), split at hours and midnights
+  And the time after an event, up to the next one of its stretch, is its project's; a task of the default project is no project's
+
+Scenario: AC-152 edge — what is kept does not reach the span before
+  Given the input log keeps 180 days and a number of rows (AC-147)
+  When the span before begins earlier than the oldest row kept
+  Then no figure is compared ("no earlier data"): a part of a span is never set against a whole one
+  When the period itself begins earlier than the oldest row kept
+  Then the page says "Counted from <day>: nothing earlier is kept."
 
 Scenario: AC-152 edge — nothing in the period
-  When nothing was sent in the period
+  When nothing was done in the period
   Then the figures say 0 and "—", the charts stand empty at their size
 
 Scenario: AC-152 failure — the numbers cannot be read
   When terminumd cannot read the store
-  Then the page says "The numbers could not be read: <terminumd's message>" over the charts last drawn
+  Then the page says "The numbers could not be read: <terminumd's message>" over the tab last drawn
 ```
 
 ### AC-165 — One question at a time [MUST / P0]
@@ -938,6 +956,50 @@ Scenario: AC-167 edge — a phone
   Given a width under 860 px
   Then the session page and the board hold the sections first in the list's sheet, beside its close key, the filter a field under them: two presses from a terminal; the other pages hold them across their head
   And the shown section keeps its word and takes the row's rest; every key is at least 44 px wide and 40 px high
+```
+
+### AC-170 — The Dashboard's System tab [SHOULD / P1]
+
+```gherkin
+Scenario: AC-170 happy path — Dispatcher's sessions and how they ended
+  Given sessions Dispatcher started (`terminum-dispatcher.md`), of the period and the project of AC-152
+  When the user opens System
+  Then it shows: Sessions started; Tasks done (moved to DONE by Dispatcher or an agent, with those moved to WAIT FOR HUMAN); Failure rate (FAILED of DONE and FAILED; a human's own move to FAILED is none); Failures (failed tasks, failed writes, schedules' firings failed or skipped); Agents' load; A session lasts (the median, start to close); Schedules fired (started, with skipped, called off, failed); each count against the span before as AC-152
+  And "How tasks ended" draws a column stacked done, asked you, failed; "Agents' load" a column of the busy share of all slots; "Schedules' firings" a column stacked by state
+  And "Failures" ranks the reasons, most first, each said as what failed (Task, Write, Schedule) and its reason's class: Dispatcher's words up to a colon, numbers as N, so one cause is one row
+  And "Agents" ranks the agents by busy time, each with its load and the sessions it started
+
+Scenario: AC-170 happy path — load
+  Then a session is busy from its start (its launch's row of the input log) to its last walk once closed or left, else to now; one that waits for a human holds its slot
+  And an agent's load is its sessions' busy time of the period's length times its slots as set today (one for an agent no longer in the pool); the whole is all agents' busy time of all their slots
+
+Scenario: AC-170 edge — what is kept
+  Then sessions whose launch row the input log no longer keeps are not counted, and the page says from when it counts, as AC-152
+
+Scenario: AC-170 failure — the numbers cannot be read
+  Then as AC-152
+```
+
+### AC-171 — The Dashboard's Costs tab [SHOULD / P1]
+
+```gherkin
+Scenario: AC-171 happy path — what sessions spent
+  Given what the sessions Dispatcher started reported (`terminum-dispatcher.md` AC-129), of the period and the project of AC-152
+  When the user opens Costs
+  Then it shows: Spent ("≈$7.00", at list prices); Tokens (those that count: input, output, cache writes; cache reads beside them); A task (dollars a task of the sessions that reported, with the tasks and sessions counted); each against the span before as AC-152
+  And "Spent" draws a column stacked by agent (the six with the most tokens, the rest as Other), in dollars or by its key in tokens
+  And "Projects", "Agents" and "Models" rank what each spent, in dollars with tokens, or in tokens; a project's row narrows the Dashboard to it
+  And the page says that only the sessions Dispatcher started report tokens, and that dollars are an estimate at API list prices, not a subscription's bill
+
+Scenario: AC-171 happy path — the agents' limits
+  Then "Agents' limits" shows each agent of the pool: its tokens of the last 7 and 30 days, of every project, against its week's and month's limit (`terminum-dispatcher.md` AC-143), over a limit in the danger color; it says that it is not the period's
+
+Scenario: AC-171 edge — a model with no price
+  When a session reported a model terminum knows no price for
+  Then its tokens count, it adds no dollars, its row says "no price", and "Not priced" shows those tokens: never $0 for an unknown price
+
+Scenario: AC-171 failure — the numbers cannot be read
+  Then as AC-152
 ```
 
 ## 6. Flow and sequence diagrams
@@ -1014,6 +1076,9 @@ stateDiagram-v2
 | AC-20 | "Open a pane, p95 < 1 s" has no measurement: `e2e_term.mjs` checks what history pages draw and times nothing. | `web/test/e2e_term.mjs:114` |
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
+| AC-152 | The time the page is open and read without typing is not active time: nothing logs a page's presence. | `terminumd/src/dashboard/you.rs` (`read`) |
+| AC-170 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
+| AC-171 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -1044,7 +1109,7 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `GET /history/`, `/dashboard/` | the Message history and the Dashboard | AC-151, AC-152 |
 | `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, capped}`, the first with `total` and `days`; `project` ids comma-separated, `-` for none | AC-151 |
 | `GET /api/messages/meta`, `/api/messages/{id}/context` | the filters' projects, first day, hosts, the theme; a message's neighbours in its pane | AC-151 |
-| `GET /api/dashboard?days=&project=` | the period's figures and series, and the period before's figures; `project` as above | AC-152 |
+| `GET /api/dashboard?tab=you\|system\|costs&period=day\|2w\|month\|quarter\|year&project=` | that tab's numbers of the period: `tiles`, `series` (one a bucket), `buckets` (`from`, `to`, an hour's `hour`), `unit` (hour, day, week, month), `before` (the span before's tiles, null when what is kept does not reach it), `kept_from`; `project` as above | AC-152, AC-170, AC-171 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | terminum-lifecycle.md AC-08, AC-09 |
 | `POST /folders?wait=<s>` on `terminumd.sock`: opens each protected folder (one run at a time, joined by a second request), answers within `wait` s `{service, done, folders: [{name, path, state: allowed\|refused\|absent\|error\|asking\|pending, error}], tmux_started_by}` | `terminum install`, `terminum folders` | terminum-lifecycle.md AC-08 |
@@ -1126,7 +1191,7 @@ Layout checkpoint and last lines: `terminum-lifecycle.md` §9 Data formats.
 
 The input log (AC-147): table `inputs` of `kanban.sqlite`, a row per write into a pane: `at` and `ended` (unix ms), `sender` (`users.id`: `human`, `dispatcher`), `component` (`page`, `panel`, `dispatcher.gate`, `dispatcher.start`), `kind` (`typed`, `paste`, `path`, `prompt`, `launch`), `text`, `bytes` (all that was sent), `pane` (its key), `machine`, `session`, `window`, `program`, `cwd`, `project`, `project_name`, `run`, `tasks` (IDs, comma-separated), `agent` (its ID), `page`, `device` (`mac`, `web`), `ip`, `browser`, `tailnet_user`, `version`, `error` (tmux's refusal, else NULL). Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, kind, text FROM inputs ORDER BY id DESC LIMIT 20"`.
 
-The message history (AC-147, AC-151, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender`, `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
+The message history (AC-147, AC-151; the Dashboard reads it, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender`, `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
 
 Sign-ins `state/signins.json` (AC-09): `{"items": [{"sha256": "…", "id": "…", "proof_key": "…", "expires": 1794592000, "by": "password"}]}`. Workspaces, bookmarks and the password live in `workspaces.json`, `web-bookmarks.json` and `web.json`.
 
@@ -1240,7 +1305,9 @@ All cases are shipped; nothing is staged.
 - [x] AC-101 — web/test/e2e_tips.mjs
 - [x] AC-147 — `cargo test inputs::`, `cargo test messages::`, `cargo test dispatcher::typed_tests`, `scripts/e2e_inputs.py`, `scripts/e2e_hooks.py`
 - [x] AC-151 — `cargo test messages::`, `web/test/e2e_livehistory.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs history`)
-- [x] AC-152 — `cargo test messages::`, `web/test/e2e_livehistory.mjs`
+- [x] AC-152 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs, `cargo test attach::tests` (two attaches at once)
 - [x] AC-165 — `ui/test/e2e_panel_drop.mjs` (in `e2e_panel.mjs`), `web/test/e2e_liveboardbusy.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs boardpool`)
 - [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`
+- [x] AC-170 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
+- [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`

@@ -98,20 +98,58 @@ export async function liveHistory(page, opts) {
   // the Dashboard: the human's only (earlier suites in this run sent messages too: counted from the store)
   const day = await page.evaluate(() => { const t = new Date(); return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`; });
   const totalOf = (q) => page.evaluate(async (q) => (await (await fetch(`/api/messages?${q}`)).json()).total, q);
-  const human = await totalOf(`from=${day}&to=${day}&sender=human`), all = await totalOf(`from=${day}&to=${day}`);
+  const human = await totalOf(`from=${day}&to=${day}&sender=human`);
+  const numbers = (q) => page.evaluate(async (q) => (await fetch(`/api/dashboard?${q}`)).json(), q);
+  const you = await numbers("tab=you&period=month"), mine = you.series.at(-1);
+  check("AC-152 the You tab counts the human's time, of one project when asked", mine.sent > 0 && mine.active_ms > 0 && you.tiles.active_units >= 1 && (await numbers("tab=you&period=month&project=nosuch")).tiles.active_ms === 0, JSON.stringify([mine, human]));
   await page.goto(`${base}/dashboard/`);
   await page.waitForSelector("#tiles .tile");
-  const tile = await page.textContent("#tiles .tile .tvalue");
-  check("AC-152 Messages counts the human's, never Dispatcher's", tile === human.toLocaleString("en-US") && all > human, { tile, human, all });
-  check("AC-152 every card draws", (await page.$$("#perday rect.hit")).length === 30 && (await page.$$("#heat rect.cell")).length === 7 * 24 && await page.isVisible("#projects .rrow"));
-  await page.focus("#perday");
+  const tileOf = (label) => page.evaluate((label) => [...document.querySelectorAll("#tiles .tile")].find((t) => t.querySelector(".tlabel").textContent === label)?.querySelector(".tvalue").textContent, label);
+  const labels = () => page.$$eval("#tiles .tlabel", (l) => l.map((x) => x.textContent).join());
+  check("AC-152 the first tab is You, its figures the human's time and load", await page.getAttribute('#dtabs [data-tab="you"]', "aria-selected") === "true" && await tileOf("Active time") !== "0 min"
+    && await labels() === "Active time,Active days,Longest stretch,Switches an active hour,Board actions,Waited for you,Off hours,From the phone", await page.textContent("#tiles"));
+  check("AC-152 every card of You draws: a month by the day", (await page.$$("#active rect.hit")).length === 30 && (await page.$$("#days rect.hit")).length === 30 && (await page.$$("#heat rect.cell")).length === 7 * 24
+    && await page.isVisible("#projects .rrow") && (await page.$$("#juggling rect.hit")).length === 30 && (await page.$$("#board rect.hit")).length === 30);
+  // the document scrolls: the cards under the window's end are reached
+  const size = page.viewportSize();
+  await page.setViewportSize({ width: size.width, height: 500 });
+  await page.evaluate(() => scrollTo(0, document.documentElement.scrollHeight));
+  check("AC-152 the page scrolls to its last card", await until(() => page.evaluate(() => scrollY > 0 && document.querySelector("#cboard").getBoundingClientRect().bottom <= innerHeight + 1)), await page.evaluate(() => [scrollY, document.documentElement.scrollHeight, innerHeight].join()));
+  await page.setViewportSize(size);
+  await page.focus("#active");
   await page.keyboard.press("End");
-  check("AC-152 a day chosen by the keys says its count", (await page.textContent("#perdaysay")).startsWith(`Today so far · ${human} messages`), await page.textContent("#perdaysay"));
+  check("AC-152 a day chosen by the keys says its active time", /^Today so far · \d/.test(await page.textContent("#cactive .readout span")), await page.textContent("#cactive .readout span"));
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/history\/\?/);
-  check("AC-152 a day leads to the history of that day, the human's, the same count", await until(async () => (await page.textContent("#hsum")).startsWith(`${human.toLocaleString("en-US")} message`), 6000), await page.textContent("#hsum"));
-  await page.goto(`${base}/dashboard/?days=7`);
-  check("AC-152 the period is in the address", await until(async () => (await page.$$("#perday rect.hit")).length === 7, 6000));
+  check("AC-152 a day leads to the history of that day, the human's", await until(async () => (await page.textContent("#hsum")).startsWith(`${human.toLocaleString("en-US")} message`), 6000), await page.textContent("#hsum"));
+  await page.goto(`${base}/dashboard/?period=2w`);
+  check("AC-152 the period is in the address: two weeks", await until(async () => (await page.$$("#active rect.hit")).length === 14, 6000));
+  await page.click('#dperiod [data-period="day"]');
+  check("AC-152 a day is drawn by the hour, with no working day and no week", await until(async () => (await page.$$("#active rect.hit")).length === 24 && /period=day/.test(page.url()), 6000) && !(await page.$("#days")) && !(await page.$("#heat"))
+    && (await labels()).split(",")[1] === "Active hours", await labels());
+  for (const [period, n] of [["quarter", 13], ["year", 12]]) {
+    await page.click(`#dperiod [data-period="${period}"]`);
+    check(`AC-152 a ${period} is drawn in ${n} columns`, await until(async () => (await page.$$("#active rect.hit")).length === n, 6000));
+  }
+  check("AC-152 what is kept does not reach the year before: no comparison, and the page says from when it counts", /no earlier data/.test(await page.textContent("#tiles .tile .tsub")) && /Counted from Today/.test(await page.textContent("#dnote")), await page.textContent("#dnote"));
+  // the other tabs: a session of Dispatcher's, a failed write and a report in the store (e2e_livedispatcher.mjs runs real sessions)
+  intoStore(app, `INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('dash', 'Dash agent', 'claude', 'claude', 2, 1);
+    INSERT INTO runs (id, project, agent_id, agent_name, agent_color, kind, command, folder, state, last_walk) VALUES ('dashrun', 'default', 'dash', 'Dash agent', 2, 'claude', 'claude', '${work}', 'closed', CAST(strftime('%s','now') AS INTEGER) - 600);
+    INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 2400) * 1000, 0, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, '${key}', 'dashrun', 'test');
+    INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, error, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 900) * 1000, 0, 'human', 'page', 'typed', 'x', 1, '${key}', 'This pane has closed.', 'test');
+    INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read, model) VALUES ('dashrun', 'dash', CAST(strftime('%s','now') AS INTEGER) - 700, 1000000, 100000, 0, 5000000, 'claude-opus-5-5')`);
+  await page.click('#dtabs [data-tab="system"]');
+  check("AC-170 System: Dispatcher's sessions, the failures by reason, the agents' load", await until(async () => await tileOf("Sessions started") === "1" && await tileOf("A session lasts") === "30 min", 6000)
+    && /tab=system/.test(page.url()) && /Write: This pane has closed/.test(await page.textContent("#failures")) && /Dash agent/.test(await page.textContent("#agents"))
+    && (await page.$$("#ends rect.hit")).length === 12 && (await page.$$("#load rect.hit")).length === 12 && (await page.$$("#fires rect.hit")).length === 12, await page.textContent("#tiles"));
+  await page.click('#dtabs [data-tab="costs"]');
+  check("AC-171 Costs: dollars at list prices and tokens, by agent, project and model", await until(async () => /^≈\uFE0E?\$7\.00$/.test(await tileOf("Spent")) && await tileOf("Tokens") === "1.1M", 6000)
+    && /claude-opus-5-5/.test(await page.textContent("#models")) && /Dash agent/.test(await page.textContent("#agents")) && /Dash agent · week/.test(await page.textContent("#limits")) && /Dispatcher started/.test(await page.textContent("#dnote")), await page.textContent("#tiles"));
+  await page.click('#cspent [data-mode="tokens"]');
+  check("AC-171 the charts measure tokens by a key", await until(async () => /1\.1M/.test(await page.textContent("#cspent .legend"))), await page.textContent("#cspent .legend"));
+  await page.goBack();
+  check("AC-170 Back returns to the tab before", await until(async () => await page.getAttribute('#dtabs [data-tab="system"]', "aria-selected") === "true" && !!(await page.$("#failures")), 6000));
+  if (shots) for (const t of ["system", "costs"]) { await page.goto(`${base}/dashboard/?tab=${t}`); await page.waitForSelector("#tiles .tile"); await nap(400); await page.screenshot({ path: path.join(shots, `dashboard-${t}.png`), fullPage: true }); }
   if (shots) {
     // a month of made-up work to look at: three projects, days of different length, a weekend off
     const seed = [];

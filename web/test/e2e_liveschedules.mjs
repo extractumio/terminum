@@ -122,7 +122,9 @@ export async function liveSchedules(page, live) {
     const t = await page.textContent(sched).catch(() => "");
     return /SCH-\d+/.test(t) && t.includes("Nightly deps check") && t.includes("Every minute") && /next /.test(t) && t.includes("Night owl");
   }), await page.textContent(sched).catch(() => ""));
-  const cols = await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
+  check("AC-163 its card has no colored stripe along its side: the agent's dot and name say whose it is", await page.$eval(sched, (c) => !/inset/.test(getComputedStyle(c).boxShadow) && getComputedStyle(c.querySelector(".cagent"), "::before").width === "7px"),
+    await page.$eval(sched, (c) => getComputedStyle(c).boxShadow));
+  const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
   if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);
   const owl = `#agentbar .agentcard[data-agent="${agent}"]`;
