@@ -23,7 +23,7 @@ export async function liveQueue(page, live) {
 
   // offered, and nothing waits before the yes
   const asked = await j(`/api/tasks/${a}/run`, "POST", { agent });
-  check("AC-169 a press at a limit is offered the queue", /is at its limit of 1: SCH-\d+ \(kept\)\. Add it to the queue: it starts when there is room\./.test(asked.full ?? ""), JSON.stringify(asked));
+  check("AC-169 a press at a limit is offered the queue", /is at its limit of 1: SCH-\d+ \(kept\)\. Add it to the queue: it starts when there is room\./.test(asked.full?.queue ?? "") && asked.full.close === null, JSON.stringify(asked));
   check("AC-169 and nothing waits before the human agrees", !(await j(`/api/tasks/${a}`)).waits && (await queue()).length === 0);
   check("AC-161 a kept slot is a dashed ring, a free one a plain ring, none of them a session's dot", await until(async () => await page.locator(`${owl} .agkept`).count() === 1 && await page.locator(`${owl} .agfree`).count() === 0
     && await page.locator(`#agentbar .agentcard[data-agent="${two}"] .agfree`).count() === 3) && await page.evaluate((s) => getComputedStyle(document.querySelector(s)).borderTopStyle, `${owl} .agkept`) === "dashed");
@@ -68,6 +68,9 @@ export async function liveQueue(page, live) {
   // its arrows
   check("AC-169 the first has no way up, the last no way down", await page.isDisabled(`#agentqueue .agqueued:first-child button[aria-label^="Move"][aria-label$="up"]`) && await page.isDisabled(`#agentqueue .agqueued:last-child button[aria-label$="down"]`));
   await page.click(`#agentqueue button[aria-label="Move ${c} up"]`);
+  await page.click(`#agentqueue button[aria-label="Move ${c} up"]`);
+  check("AC-169 two presses of an arrow move a task two places", await listed([c, a, b]), JSON.stringify(await rows()));
+  await page.click(`#agentqueue button[aria-label="Move ${c} down"]`);
   check("AC-169 an arrow moves a task one place", await listed([a, c, b]), JSON.stringify(await rows()));
 
   // a drag: a mouse at once; a finger rests on the row first
@@ -92,6 +95,12 @@ export async function liveQueue(page, live) {
     check("AC-169 a dragged row leaves its dashed slot, its copy under the pointer", await page.locator("#agentqueue .agqueued.dragging").count() === 1 && await page.locator("#agentqueue .dragghost").count() === 1);
     const ghost = await page.$eval("#agentqueue .dragghost", (g) => { const r = g.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width }; });
     check("AC-169 the copy stands where the pointer is", Math.abs(ghost.y + from.h / 2 - (from.y - 12)) < from.h, JSON.stringify({ ghost, from }));
+    await page.keyboard.press("Escape");
+    check("AC-169 Esc puts the dragged row back, the window stays", await page.locator("#agentqueue .dragghost").count() === 0 && await page.isVisible("#agentbox[open]") && (await rows()).join() === [a, c, b].join(), JSON.stringify(await rows()));
+    await page.mouse.up();
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move(from.x, from.y - 12, { steps: 3 });
     await page.mouse.move(to.x, to.y - to.h / 4, { steps: 6 });
     await page.mouse.up();
   }
@@ -102,8 +111,12 @@ export async function liveQueue(page, live) {
   check("AC-169 an order of another queue is refused", /The queue changed meanwhile/.test(stale.error ?? ""), JSON.stringify(stale));
   await page.click(`#agentqueue button[aria-label="Take ${a} out of the queue"]`);
   check("AC-169 its cross takes a task out: it waits no more, where it stood", await listed([b, c]) && (await j(`/api/tasks/${a}`)).status === "TODO" && !(await j(`/api/tasks/${a}`)).waits
-    && (await j(`/api/tasks/${a}`)).history.some((h) => /called off its wait/.test(h.text ?? "")), JSON.stringify(await rows()));
+    && (await j(`/api/tasks/${a}`)).history.some((h) => /called off its wait/.test(h.text ?? "")), JSON.stringify([await rows(), await page.textContent("#agenterror"), await page.evaluate(() => document.querySelector("#agentqueue .agqueuelist").className)]));
   check("AC-169 the agent's dots follow", await until(async () => await page.locator(`${owl} .agqueue .agwait`).count() === 2));
+  const gone = await j(`/api/tasks/${a}/leave-queue`, "POST");
+  check("AC-169 a task that waits no more is not taken out again, nor given up", /waits no more/.test(gone.error ?? "") && (await j(`/api/tasks/${a}`)).status === "TODO", JSON.stringify(gone));
+  const keyBox = await page.$eval(`${owl} .agqueue`, (k) => { const r = k.getBoundingClientRect(); return [Math.round(r.width), Math.round(r.height)]; });
+  if (narrow) check("AC-169 on a phone the queue's key is a finger tall", keyBox[1] >= 44 && keyBox[0] >= 44, JSON.stringify(keyBox));
   check("AC-169 the window stays open through it", await page.isVisible("#agentbox[open]"));
   for (const id of [b, c]) await j(`/api/tasks/${id}/give-up`, "POST");
   check("AC-169 an empty queue says so", await until(async () => /No task waits for this agent/.test(await page.textContent("#agentqueue"))), await page.textContent("#agentqueue"));

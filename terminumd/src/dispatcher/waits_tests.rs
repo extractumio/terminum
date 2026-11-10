@@ -94,7 +94,7 @@ fn ac169_a_queue_is_its_agents_waits_in_the_order_the_human_gave() {
         add(tx, &three, "a", "web", &json!({}), 10)?;
         let ids = |tx: &Transaction, agent: &str| -> Vec<String> { queues(tx).unwrap().remove(agent).unwrap_or_default().iter().map(|t| t["id"].as_str().unwrap().to_string()).collect() };
         assert_eq!(ids(tx, "a"), [one.id.clone(), two.id.clone(), three.id.clone()], "pressed in the same second: in the order they came");
-        assert_eq!(queues(tx)?["a"][2], json!({"id": three.id, "title": "t in web", "project": "web"}));
+        assert_eq!(queues(tx)?["a"][2], json!({"id": three.id, "title": "t in web", "project": "web", "also": []}));
         reorder(tx, "a", &[three.id.clone(), one.id.clone(), two.id.clone()])?;
         assert_eq!(ids(tx, "a"), [three.id.clone(), one.id.clone(), two.id.clone()]);
         assert_eq!(all(tx)?.iter().map(|w| w.task.as_str()).collect::<Vec<_>>(), [three.key.as_str(), other.key.as_str(), one.key.as_str(), two.key.as_str()], "another agent's wait keeps its place among them");
@@ -108,8 +108,17 @@ fn ac169_a_queue_is_its_agents_waits_in_the_order_the_human_gave() {
         assert_eq!(reorder(tx, "a", &[one.id.clone(), one.id.clone(), two.id.clone()]).unwrap_err(), "The queue changed meanwhile: look at it again.");
         assert_eq!(reorder(tx, "a", &[one.id.clone(), two.id.clone(), other.id.clone()]).unwrap_err(), "The queue changed meanwhile: look at it again.", "another agent's task");
         assert_eq!(ids(tx, "a"), [three.id.clone(), one.id.clone(), two.id.clone()], "nothing moved");
-        remove(tx, &one.key)?;
+        // taken out: its wait alone, said on it; a task that started meanwhile is not touched
+        take_out(tx, &one.id)?;
         assert_eq!(ids(tx, "a"), [three.id.clone(), two.id.clone()]);
+        assert!(ops::history(tx, &one.id)?.to_string().contains("The human called off its wait for Smith."));
+        let run = holding(tx, "b", "api");
+        let started = runs::by_id(tx, &run)?.ids[0].clone();
+        assert_eq!(take_out(tx, &started).unwrap_err(), format!("{started} waits no more: it started, or its wait was called off."));
+        assert!(runs::by_id(tx, &run)?.holds_slot(), "its run goes on");
+        // a press for several tasks names the others
+        add(tx, &one, "a", "api", &json!({"also": [other.id]}), 10)?;
+        assert_eq!(queues(tx)?["a"][2]["also"], json!([other.id]));
         assert_eq!(offer("Smith is at its limit of 1: API-1 is working."), "Smith is at its limit of 1: API-1 is working. Add it to the queue: it starts when there is room.");
         Ok(())
     }).unwrap();

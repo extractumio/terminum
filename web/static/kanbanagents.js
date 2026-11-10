@@ -29,6 +29,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   let editing = null, snapshot = "";
 
   const slots = (a) => counted().agents[a.id] ?? [];
+  const projectName = (id) => getMeta().projects.find((p) => p.id === id)?.name;
   const queueOf = (a) => counted().queue?.[a.id] ?? [];
   const MOST_FREE = 8;                             // an agent of more slots than this says them by its count alone
   /** At a limit, as terminumd says: its own, or the one project shown's. */
@@ -55,7 +56,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   function dot(s) {
     const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, getMeta().projects.find((p) => p.id === s.project)?.name, WORDS[now]].filter(Boolean).join(" · ");
+    d.title = [s.tasks, projectName(s.project), WORDS[now]].filter(Boolean).join(" · ");
     return d;
   }
 
@@ -77,7 +78,8 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     const used = slots(a).filter((s) => !s.kept).length + kept.length;
     if (a.at_once <= MOST_FREE) for (let i = used; i < a.at_once; i++) { const m = el("span", "agfree"); m.title = "a free slot"; dots.append(m); }
     if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
-    if (queueOf(a).length) dots.append(queueKey(a, queueOf(a), () => open(a, true)));
+    const queued = queueOf(a);
+    if (queued.length) dots.append(queueKey(a, queued, () => open(a, true)));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
     txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
     b.append(bar, txt);
@@ -90,7 +92,6 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     b.addEventListener("click", (e) => {
-      if (e.target.closest?.(".agqueue")) return;  // its queue's key: its own press
       const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
       if (tasks) run(tasks, a.id);
       else if (key) openSession(key);
@@ -159,7 +160,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     return `${base} ${n}`;
   }
 
-  const queue = queueList($("agentqueue"), { projectName: (id) => getMeta().projects.find((p) => p.id === id)?.name, say: (text) => say(text) });
+  const queue = queueList($("agentqueue"), { projectName, say });
 
   /** Its window: a new one, or `a` to change; `atQueue`: its queue shown first. */
   function open(a = null, atQueue = false) {
@@ -213,7 +214,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
         if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
         try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); li.remove(); list.hidden = !list.children.length; } catch (e) { say(e.message); }
       });
-      li.append(el("span", null, [s.tasks || "+ Session", getMeta().projects.find((p) => p.id === s.project)?.name].filter(Boolean).join(" · ")), go);
+      li.append(el("span", null, [s.tasks || "+ Session", projectName(s.project)].filter(Boolean).join(" · ")), go);
       return li;
     }));
     list.hidden = !mine.length;

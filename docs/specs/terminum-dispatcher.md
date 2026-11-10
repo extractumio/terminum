@@ -951,7 +951,8 @@ Scenario: AC-169 happy path — offered at a limit
 Scenario: AC-169 edge — no room found only at the press
   Given the window showed Opus reviewer with room, or Run goes on in a closed session (AC-122)
   When the press finds no room
-  Then nothing starts and nothing waits: POST /api/tasks/API-13/run answers {"full": "<what holds it> Add it to the queue: it starts when there is room."}, the window says so and its key reads Add to queue
+  Then nothing starts and nothing waits: POST /api/tasks/API-13/run answers {"full": {"words": "<what holds it>", "queue": "<what holds it> Add it to the queue: it starts when there is room.", "close": null}}, as its first read says of an agent with no room; the window says so and its key reads Add to queue
+  And a wait before it that has room counts as no room: "API-13 waits for it first."
   And only a press with "queue": true waits; a schedule's firing and a wait pressed again are such presses
 
 Scenario: AC-169 happy path — on the agent's card
@@ -970,6 +971,9 @@ Scenario: AC-169 happy path — the queue in the agent's window
   And the row dragged leaves a dashed slot and follows the pointer; Esc puts it back
   When the user presses API-13's take out
   Then API-13 waits no more, as Stop waiting calls it off (AC-158), and the window stays open
+  When API-13 started just before that press
+  Then terminumd says "API-13 waits no more: it started, or its wait was called off." and its run goes on
+  And two presses of an arrow in a row move a task two places: the list shows each change at once
   When the queue is empty
   Then the window says "No task waits for this agent. A task run while it is at its limit can be added here."
 
@@ -986,6 +990,11 @@ Scenario: AC-169 edge — another agent's waits
   Given API-20 waiting for Fast fixer between API-13 and API-15 of Opus reviewer
   When Opus reviewer's queue is ordered anew
   Then its tasks take the places its queue held: API-20's place among them does not change
+  And where a project's limit holds them all, the one line decides: a task moved up in Opus reviewer's queue may start before API-20
+
+Scenario: AC-169 edge — a press for several tasks
+  Given API-13 and API-14 run together on Opus reviewer at its limit, added to the queue
+  Then they are one row and one dot, "API-13, API-14", and take out calls off the press for both
 ```
 
 ### AC-166 — An agent closes its task out [SHOULD / P1]
@@ -1180,7 +1189,7 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
 CREATE TABLE run_waits (task TEXT PRIMARY KEY REFERENCES tasks, agent_id TEXT NOT NULL, project TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL, pos INTEGER NOT NULL DEFAULT 0);
 ```
 
-`body` is the press as `POST /api/tasks/<id>/run` took it; `status` the task's column then; `pos` its place in the line, lowest first, one line for all agents: an agent's queue is its waits in that order. Each walk, in the line's order, a wait whose agent and project have room is pressed again; none holds a slot, a pane or a clock. `POST /api/tasks/<id>/give-up` on a waiting task calls the wait off. `POST /api/task-agents/<id>/queue {"tasks": ["API-16", "API-13"]}` deals the places that agent's waits hold anew in that order, refused unless it names exactly its queue. The board's `slots` carry `"queue": {"<agent id>": [{"id": "API-13", "title": "…", "project": "<project id>"}]}`.
+`body` is the press as `POST /api/tasks/<id>/run` took it; `status` the task's column then; `pos` its place in the line, lowest first, one line for all agents: an agent's queue is its waits in that order. Each walk, in the line's order, a wait whose agent and project have room is pressed again; none holds a slot, a pane or a clock. `POST /api/tasks/<id>/give-up` on a waiting task calls the wait off; `POST /api/tasks/<id>/leave-queue` does only that, and refuses a task that waits no more. `POST /api/task-agents/<id>/queue {"tasks": ["API-16", "API-13"]}` deals the places that agent's waits hold anew in that order, refused unless it names exactly its queue. The board's `slots` carry `"queue": {"<agent id>": [{"id": "API-13", "title": "…", "project": "<project id>", "also": ["API-14"]}]}`, `also` the other tasks of a press for several.
 
 `state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `ending` (a limit's end decided, not yet done: done again after a restart, called off by new work or Give up), `gone` (only the shell remains), `left` (a human's program runs there, or it was given up), `closed`; another label in the store is an error, not a run in a state of its own. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 

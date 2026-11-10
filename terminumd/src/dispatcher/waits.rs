@@ -78,10 +78,12 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
     Ok(None)
 }
 
-/// Each agent's queue for the board (AC-169): its waiting tasks in the line's order, each with its title and project.
+/// Each agent's queue for the board (AC-169): its waiting presses in the line's order, each with its task's title and
+/// project, and the other tasks of a press for several (`also`).
 pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> {
-    let found: Vec<(String, Value)> = rows(tx, "SELECT w.agent_id, t.slug, t.title, w.project FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY w.pos, w.rowid", [],
-        |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "project": r.get::<_, String>(3)?}))))?;
+    let found: Vec<(String, Value)> = rows(tx, "SELECT w.agent_id, t.slug, t.title, w.project, COALESCE(json_extract(w.body, '$.also'), '[]') FROM run_waits w JOIN tasks t ON t.id = w.task ORDER BY w.pos, w.rowid", [],
+        |r| Ok((r.get(0)?, serde_json::json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "project": r.get::<_, String>(3)?,
+                                               "also": serde_json::from_str::<Value>(&r.get::<_, String>(4)?).unwrap_or_default()}))))?;
     let mut out: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for (agent, task) in found {
         out.entry(agent).or_default().push(task);
@@ -92,18 +94,27 @@ pub fn queues(tx: &Transaction) -> Result<BTreeMap<String, Vec<Value>>, String> 
 /// The queue of `agent` in the order `ids` (tasks' IDs), the human's: the places its waits held, dealt anew, so no
 /// other agent's wait moves. A queue that is not these tasks changed meanwhile: nothing moves.
 pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), String> {
-    let mine: Vec<Wait> = all(tx)?.into_iter().filter(|w| w.agent == agent).collect();
+    let mine: Vec<(String, i64)> = rows(tx, "SELECT task, pos FROM run_waits WHERE agent_id = ?1 ORDER BY pos, rowid", [agent], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let keys: Vec<String> = ids.iter().map(|id| ops::key_of(tx, id)).collect::<Result<_, _>>()?;
-    let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|w| w.task.as_str()).collect(), keys.iter().map(String::as_str).collect());
+    let (mut had, mut wanted): (Vec<&str>, Vec<&str>) = (mine.iter().map(|(task, _)| task.as_str()).collect(), keys.iter().map(String::as_str).collect());
     had.sort_unstable();
     wanted.sort_unstable();
     if had != wanted {
         return Err("The queue changed meanwhile: look at it again.".to_string());
     }
-    for (key, w) in keys.iter().zip(&mine) {
-        tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (w.pos, key)).map_err(sql)?;
+    for (key, (_, pos)) in keys.iter().zip(&mine) {
+        tx.execute("UPDATE run_waits SET pos = ?1 WHERE task = ?2", (pos, key)).map_err(sql)?;
     }
     Ok(())
+}
+
+/// The human takes `id` out of its queue (AC-169): its wait alone. One that started meanwhile is said, and its run
+/// is not touched.
+pub fn take_out(tx: &Transaction, id: &str) -> Result<(), String> {
+    let key = ops::key_of(tx, id)?;
+    let Some(w) = of_task(tx, &key)? else { return Err(format!("{id} waits no more: it started, or its wait was called off.")) };
+    let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
+    call_off(tx, &key, &format!("The human called off its wait for {name}."))
 }
 
 /// The words a press at a limit is offered the queue with: nothing waits until the human agrees (AC-169).
