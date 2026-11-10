@@ -190,7 +190,7 @@ export function writePreview(prefix, area, shown) {
 /** What was typed is not lost by a slip of Esc or ×: with a change, the window asks first (terminum-kanban.md AC-133). */
 export function guardCancel(dialog, unchanged) {
   dialog.addEventListener("cancel", async (e) => {
-    if (unchanged()) return;
+    if (e.defaultPrevented || unchanged()) return;   // refused while it is kept (dialogs.js oneAtATime, AC-165)
     e.preventDefault();
     if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
   });

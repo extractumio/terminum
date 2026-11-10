@@ -2,7 +2,7 @@
 // A schedule's window (terminum-schedules.md AC-160): its title, text, project, severity, agent, When, time budget
 // and Paused; terminumd says its next runs, the prompt that will go and the agent's command as it is typed, and
 // refuses what is wrong in the field's words. What was typed is not lost by a slip of Esc (terminum-kanban.md AC-133).
-import { askConfirm } from "./dialogs.js";
+import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
 import { $, DEFAULT, api, fillSelect, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
@@ -109,22 +109,19 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     preview();
   }
 
-  async function save() {
+  /** A change to terminumd, one at a time (AC-165): the window closes when it is kept, and says why when it is not. */
+  const send = oneAtATime(dialog, async (path, options) => {
     try {
-      await api(editing ? `/api/schedules/${editing.id}` : "/api/schedules", { method: editing ? "PATCH" : "POST", body: body() });
+      await api(path, options);
       dialog.close();
       changed();
     } catch (e) { showError(error, e.message); }
-  }
+  });
+  const save = () => send(editing ? `/api/schedules/${editing.id}` : "/api/schedules", { method: editing ? "PATCH" : "POST", body: body() });
   $("schedok").addEventListener("click", save);
   onSend(dialog, save);
   $("scheddrop").addEventListener("click", async () => {
-    if (!await askConfirm(`Delete ${editing.key}? Its tasks stay.`, "Delete")) return;
-    try {
-      await api(`/api/schedules/${editing.id}`, { method: "DELETE" });
-      dialog.close();
-      changed();
-    } catch (e) { showError(error, e.message); }
+    if (await askConfirm(`Delete ${editing.key}? Its tasks stay.`, "Delete")) send(`/api/schedules/${editing.id}`, { method: "DELETE" });
   });
   guardCancel(dialog, () => snap() === snapshot);
   return { open };
