@@ -44,6 +44,14 @@ export function query(extra = {}) {
 /** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil,
  *  `newSession(p)` from its + Session (terminum-dispatcher.md AC-142). */
 export function filterBar({ getMeta, changed, editProject, newSession }) {
+  // a menu drawn anew under a press loses it (its summary's or a row's): drawn again only when what it shows changed
+  const drawnAs = new WeakMap();
+  const unchanged = (box, shown) => {
+    const now = JSON.stringify(shown);
+    if (drawnAs.get(box) === now) return true;
+    drawnAs.set(box, now);
+    return false;
+  };
   function setFilters(next) {
     address(next);
     if ("project" in next) write(CHOSEN, next.project.join(",") || null);
@@ -53,6 +61,7 @@ export function filterBar({ getMeta, changed, editProject, newSession }) {
 
   /** The ticks of one filter's menu; its key says how many are on. */
   function picks(box, options, chosen, onChange) {
+    if (unchanged(box, [options, chosen])) return;
     const inner = box.querySelector("div");
     inner.replaceChildren(...options.map(({ id, name }) => {
       const label = el("label", "pickrow");
@@ -74,6 +83,7 @@ export function filterBar({ getMeta, changed, editProject, newSession }) {
   /** Its menu: a name chooses that project alone, a tick adds it to those shown, a pencil edits it (AC-135). */
   function drawProjects(chosen) {
     const box = $("fproject"), { projects } = getMeta();
+    if (unchanged(box, [projects, chosen])) return;
     const only = (ids) => { box.open = false; setFilters({ project: ids }); };
     const rows = projects.map((p) => {
       const line = el("div", "projrow");

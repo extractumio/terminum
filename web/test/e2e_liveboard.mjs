@@ -205,6 +205,11 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-110 a taken name is said, and stays open", await until(async () => /already named Billing/.test(await page.textContent("#projecterror"))) && await page.isVisible("#projectbox"));
   await page.click('#projectbox button[value="cancel"]');
   await page.click("#fproject summary");
+  // a task's change the menu does not show leaves it as drawn: a press meanwhile takes (CI run 42819145517)
+  const row = await page.waitForSelector('#fproject .projrow button:has-text("Default")');
+  await page.evaluate((id) => fetch(`/api/tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "read again" }) }), second);
+  await new Promise((r) => setTimeout(r, 1500));   // past the board's read again
+  check("AC-111 a change the menu does not show leaves it as drawn, and open", await row.evaluate((b) => b.isConnected) && await page.isVisible('#fproject .projrow button:has-text("Default")'));
   await page.click('#fproject .projrow button:has-text("Default")');
   await page.click("#fseverity summary");
   await page.click('#fseverity label:has-text("P0")');

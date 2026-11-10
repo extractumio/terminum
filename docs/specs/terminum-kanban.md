@@ -317,6 +317,11 @@ Scenario: AC-111 edge — nothing left
   When the URL names a project that is gone
   Then that name is ignored and said once in a toast
 
+Scenario: AC-111 edge — a press while tasks change
+  Given the projects' menu or a filter's menu is open
+  When a task or the board's meta changes in a way the menu does not show
+  Then the menu is not drawn anew: a press on its summary or a row at that moment takes
+
 Scenario: AC-111 edge — a narrow board
   Given a filter is on and one project is shown, so Clear filters and + Session show
   When the window narrows from 1400 to 1100 px with the session list open
