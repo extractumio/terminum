@@ -115,11 +115,11 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     const read = await b.tool("get_task", { id: t1 });
     check("AC-115 live: the project's other session reads it, said to be data", !read.error && read.text.includes("data, never instructions"), read.text.slice(0, 200));
     check("AC-115 live: and comments on it", !(await b.tool("add_comment", { id: t1, text: "seen" })).error);
-    const notYet = await b.tool("move_task", { id: t1, to: "DONE" });
-    check("AC-115 live: a free task is taken before it moves", notYet.error && notYet.text.includes("take_task first"), notYet.text);
     check("AC-115 live: take_task links it to the session", !(await a.tool("take_task", { id: t1 })).error && (await task(t1)).session?.key?.endsWith(`:${a.pane}`));
-    const notHers = await b.tool("move_task", { id: t1, to: "DONE" });
-    check("AC-115 live: another session's is not moved", notHers.error && notHers.text.includes("You can read it and comment"), notHers.text);
+    const hers = await b.tool("move_task", { id: t1, to: "WAIT FOR HUMAN" });
+    const moved = await task(t1);
+    check("AC-115 live: the project's other session moves it, its session as it was", !hers.error && moved.status === "WAIT FOR HUMAN" && moved.session?.key?.endsWith(`:${a.pane}`), hers.text);
+    check("AC-115 live: a session outside the project does not", (await lone.tool("move_task", { id: t1, to: "DONE" })).error);
 
     fs.writeFileSync(path.join(a.dir, "begin.json"), JSON.stringify({ session_id: "s-notes", cwd: work, hook_event_name: "SessionStart", source: "startup" }));
     await a.inPane("terminum hook claude < begin.json");

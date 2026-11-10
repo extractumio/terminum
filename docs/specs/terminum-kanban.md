@@ -65,7 +65,7 @@ Open questions: none.
 | AC-112 | [SHOULD / P1] | One level of subtasks, each a full task with a parent: made, put under another task, taken out; the parent's card shows each as a box of its ID in its status's color. |
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
-| AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN runs in another session; a free task can be taken. |
+| AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
@@ -421,9 +421,10 @@ Scenario: AC-115 happy path — others of the project
   And inside a human's RUN too: an agent finishes the subtasks it did, each with its result, then its own task
 
 Scenario: AC-115 failure — another session's running task
-  Given API-13 of the same project, which a human's RUN runs in session %8 (terminum-dispatcher.md AC-121)
+  Given API-13 of the same project, which a human's RUN holds in session %8 (terminum-dispatcher.md AC-121): from RUN until Dispatcher closes that session or lets it go, its turn ended or not
   When the agent of another session calls move_task or finish_task on it
   Then it is refused: "API-13 runs in session %8 at a human's RUN. You can read it and comment."
+  And before that run has its session: "API-13 is starting at a human's RUN. You can read it and comment."
   And once that run is over API-13 is moved as any other
 
 Scenario: AC-115 happy path — taking a free task
@@ -498,7 +499,7 @@ Scenario: AC-154 happy path — severity and parent
   Then API-12 leaves API-31; AC-112's rules hold: one level, one project
 
 Scenario: AC-154 happy path — an agents' task's words
-  Given API-12 made by an agent, its title and text never changed by a human, which no human's RUN runs in another session
+  Given API-12 made by an agent, its title and text never changed by a human, which no human's RUN holds in another session (AC-115)
   When an agent of the project calls update_task {id: "API-12", title, text}
   Then they change by create_task's rules (AC-145): the title says Bug:, Feat: or Debt:, the text is in the template's sections, both cleaned and redacted
 
@@ -514,7 +515,7 @@ Scenario Outline: AC-154 failure — refused with what to do
     | what | words |
     | a human's task's severity or parent, no reason | API-7 is a human's: give the reason for the change. |
     | a title or text, or archive, of a task a human made or reworded | API-7 holds a human's words: they decide its title, text and archive. Comment instead. |
-    | the words of a task a human's RUN runs in another session, or its archive | API-7 runs in session %8 at a human's RUN. You can read it and comment. |
+    | the words of a task a human's RUN holds in another session, or its archive | API-7 runs in session %8 at a human's RUN. You can read it and comment. |
     | archive with an open subtask | API-31 has an open subtask, API-12: finish it, archive it or take it out first. |
     | archive with no reason | Give the reason it leaves the board. |
     | archive with another field | archive goes alone, with its reason. |

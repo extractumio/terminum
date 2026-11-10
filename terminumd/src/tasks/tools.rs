@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! An agent's task tools through `terminum mcp` (AC-115): every task of its project is read, commented,
-//! moved and finished, but one a human's RUN runs in another session; a free one can be taken; only
+//! moved and finished, but one a human's RUN holds in another session; a free one can be taken; only
 //! its own asks the human. A scope, no boundary: `terminum mcp` names the
 //! pane from the agent's environment. What an agent writes is cleaned and redacted before it is
 //! kept; what it reads is said to be data.
@@ -72,17 +72,22 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 }
 
 /// A task of its project to move or finish, whatever session made or holds it (AC-115): only what a
-/// human's RUN runs in another session now is that run's, which Dispatcher watches.
+/// human's RUN still holds in another session is that run's, which Dispatcher watches.
 fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = visible(tx, who, id)?;
     not_run_elsewhere(tx, who, &t).map(|()| t)
 }
 
-/// Refused when a human's RUN runs `t` in another session.
+/// Refused while a human's RUN holds `t` in another session: from its start, before it has a pane, until
+/// Dispatcher closes it or lets it go.
 pub(super) fn not_run_elsewhere(tx: &Transaction, who: &Who, t: &Task) -> Result<(), String> {
-    match crate::dispatcher::runs::holding(tx, &t.key)?.and_then(|r| r.pane_key) {
-        Some(pane) if pane != who.key => Err(format!("{} runs in session {} at a human's RUN. You can read it and comment.", t.id, ops::pane_of(&pane))),
-        _ => Ok(()),
+    let Some(run) = crate::dispatcher::runs::last_of(tx, &t.key)?.filter(|r| r.holds_slot()) else {
+        return Ok(());
+    };
+    match run.pane_key {
+        Some(pane) if pane == who.key => Ok(()),
+        Some(pane) => Err(format!("{} runs in session {} at a human's RUN. You can read it and comment.", t.id, ops::pane_of(&pane))),
+        None => Err(format!("{} is starting at a human's RUN. You can read it and comment.", t.id)),
     }
 }
 

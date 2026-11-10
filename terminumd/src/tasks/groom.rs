@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! An agent grooms its project's board with update_task (terminum-kanban.md AC-154): the severity
 //! and parent of any task it reaches, a human's with a reason; the title and text of an agents'
-//! task no human's RUN runs in another session; such a task off the board, its reason said. Each change is in the
+//! task no human's RUN holds in another session; such a task off the board, its reason said. Each change is in the
 //! task's history, its author the agent, as a human's is.
 
 use rusqlite::Transaction;
@@ -16,7 +16,7 @@ use crate::plans::rules;
 const NO_PARENT: &str = "none";
 
 /// An agents' task: made by an agent, its words never changed by a human since, and not what a
-/// human's RUN runs in another session. Its title and text are agents' to change, and it can leave the board.
+/// human's RUN holds in another session. Its title and text are agents' to change, and it can leave the board.
 fn agents(tx: &Transaction, who: &Who, t: &Task) -> Result<(), String> {
     if !t.by_agent || ops::worded_by_human(tx, &t.key)? {
         return Err(format!("{} holds a human's words: they decide its title, text and archive. Comment instead.", t.id));

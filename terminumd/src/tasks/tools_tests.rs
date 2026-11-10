@@ -103,6 +103,14 @@ fn ac115_what_a_humans_run_runs_in_another_session_is_that_runs() {
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "x"})).unwrap_err(), refused);
     assert!(call(&s, &dir, &w, "add_comment", json!({"id": id, "text": "seen"})).is_ok());
     assert_eq!(status(&s, &id), "TODO");
+    // from its start, with no pane yet, until Dispatcher closes it: a turn's end between does not free it
+    let starting = task(&s, "api", None);
+    s.with(|tx| crate::dispatcher::runs::add(tx, &crate::dispatcher::runs::Run { agent_id: "a2".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, &[ops::key_of(tx, &starting)?], 1).map(drop)).unwrap();
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": starting, "result": "x"})).unwrap_err(), format!("{starting} is starting at a human's RUN. You can read it and comment."));
+    s.with(|tx| { let run = crate::dispatcher::runs::last_of(tx, &ops::key_of(tx, &id)?)?.unwrap(); crate::dispatcher::runs::change(tx, &run.id, |r| r.turn_ended = true).map(drop) }).unwrap();
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "DONE"})).unwrap_err(), refused, "its turn ended, the run not closed");
+    s.with(|tx| { let run = crate::dispatcher::runs::last_of(tx, &ops::key_of(tx, &id)?)?.unwrap(); crate::dispatcher::runs::change(tx, &run.id, |r| r.state = crate::dispatcher::runs::Phase::Closed).map(drop) }).unwrap();
+    assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).is_ok(), "the run over, it is moved as any other");
     let far = task(&s, "web", None);
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": far, "result": "x"})).unwrap_err(), format!("{far} is outside this session's project."), "another project stays out of reach");
     assert_eq!(call(&s, &dir, &who(None), "finish_task", json!({"id": id, "result": "x"})).unwrap_err(), format!("{id} is outside this session's project."), "a session in Default shares nothing");
