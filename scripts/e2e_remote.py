@@ -336,6 +336,8 @@ def main():
         left = sorted(os.listdir(bin_dir))
         check("AC-84 a helper of the old name is replaced by terminumd-agent, its files removed",
               remote.get("state") == "up" and "terminumd-agent" in left and not any(n.startswith("terminusd-agent") for n in left), (remote, left))
+        # its agents, turned on by themselves at the attach, would keep the helper (AC-99): off first
+        unix_request(t.sock, "POST", "/hosts/agents-off", {"name": "devbox"})
         st, body = unix_request(t.sock, "POST", "/hosts/files-remove", {"name": "devbox"})
         rec = next((h for h in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if h["name"] == "devbox"), {})
         check("AC-83 the helper is removed from the host, and its files stay off: nothing sets them up again", st == 200 and not os.path.exists(os.path.join(remote_home, ".terminum/bin/terminumd-agent")) and rec.get("files") == "declined", (body, rec))
