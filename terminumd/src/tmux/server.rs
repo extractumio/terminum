@@ -73,7 +73,9 @@ pub struct Server {
     /// a control client ended (the manager reconnects or reports)
     pub ended: Arc<Notify>,
     pub status: Mutex<Status>,
-    /// bumped whenever control clients are replaced: shown panes capture anew
+    /// the connection's epoch, new whenever control clients are replaced (shown panes capture
+    /// anew), from one counter for every Server: a server made in another's place (a host's
+    /// replaced, AC-87) never starts at an epoch its predecessor had (`first_on_link`)
     pub generation: AtomicU64,
     /// `extended-keys` is on, as asked once per generation (AS-10)
     extended: Mutex<Option<(u64, bool)>>,
@@ -97,6 +99,12 @@ pub struct Server {
     copies: notices::Armed,
 }
 
+/// A connection epoch no Server had before.
+fn next_epoch() -> u64 {
+    static EPOCH: AtomicU64 = AtomicU64::new(1);
+    EPOCH.fetch_add(1, Ordering::Relaxed)
+}
+
 impl Server {
     /// `changed`: told when tmux says this server's list changed (lists.rs).
     pub fn new(name: &str, socket: &str, link: Link, changed: Arc<Notify>) -> Arc<Server> {
@@ -112,7 +120,7 @@ impl Server {
             changed,
             ended: Arc::new(Notify::new()),
             status: Mutex::new(Status::Connecting),
-            generation: AtomicU64::new(0),
+            generation: AtomicU64::new(next_epoch()),
             extended: Mutex::new(None),
             home: Mutex::new(None),
             identity: Mutex::new(None),
@@ -155,6 +163,11 @@ impl Server {
 
     pub fn is_local(&self) -> bool {
         matches!(self.link, Link::Local { .. })
+    }
+
+    /// The connection's epoch (`generation`): another one after each reconnect and for a server made in another's place.
+    pub fn epoch(&self) -> u64 {
+        self.generation.load(Ordering::Relaxed)
     }
 
     /// The server's own name among all (`<host>:<socket>`, a pane key's middle): this Mac may
@@ -374,7 +387,7 @@ impl Server {
             inner.sessions.insert(HOST_SESSION.into(), c.clone());
             inner.bulk = Some(c);
             drop(inner);
-            self.generation.fetch_add(1, Ordering::Relaxed);
+            self.generation.store(next_epoch(), Ordering::Relaxed);
             return Ok(());
         }
         for s in sessions {
@@ -393,7 +406,7 @@ impl Server {
         }
         drop(inner);
         if spawned {
-            self.generation.fetch_add(1, Ordering::Relaxed);
+            self.generation.store(next_epoch(), Ordering::Relaxed);
         }
         Ok(())
     }

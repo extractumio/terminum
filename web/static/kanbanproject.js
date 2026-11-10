@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
 // folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the language its agents write
-// in on the board (terminum-dispatcher.md AC-159), the template its agents write tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
+// in on the board (terminum-dispatcher.md AC-166), the template its agents write tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
 // kept and says what is wrong.
 import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";

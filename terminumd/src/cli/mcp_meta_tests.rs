@@ -129,7 +129,7 @@ fn uncalled(words: &str, name: &str) -> Vec<String> {
 
 #[test]
 fn ac155_terminum_s_words_call_a_tool_not_listed_by_execute_tool() {
-    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), include_str!("../tasks/closeout.rs"), crate::plans::REMINDER];
+    let words = [mcp::INSTRUCTIONS, include_str!("../dispatcher/press.rs"), include_str!("../dispatcher/acts.rs"), include_str!("../dispatcher/fire.rs"), include_str!("../tasks/closeout.rs"), crate::plans::REMINDER];
     let wrong: Vec<String> = mcp::tool_names().into_iter().filter(|n| !DIRECT.contains(n)).flat_map(|n| words.iter().flat_map(move |w| uncalled(w, n))).collect();
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     let listed: Vec<String> = listed().iter().map(|t| t["name"].as_str().unwrap().to_string()).collect();

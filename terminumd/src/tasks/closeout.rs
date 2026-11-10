@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! How an agent closes a task out (terminum-dispatcher.md AC-159): what it noticed goes to tasks, the
+//! How an agent closes a task out (terminum-dispatcher.md AC-166): what it noticed goes to tasks, the
 //! tasks it made are reviewed, and its result is written in fixed sections, in the project's language
 //! (`projects.language`, set in the project's window; none: English).
 
@@ -67,7 +67,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac159_the_words_hold_every_section_in_order() {
+    fn ac166_the_words_hold_every_section_in_order() {
         let w = words("Русский", "execute_tool(\"finish_task\", {id, result})", false);
         let at: Vec<usize> = SECTIONS.iter().map(|(s, _)| w.find(&format!("\n{s}: ")).unwrap_or_else(|| panic!("{s}"))).collect();
         assert!(at.windows(2).all(|p| p[0] < p[1]), "{at:?}");
@@ -76,7 +76,7 @@ mod tests {
     }
 
     #[test]
-    fn ac159_a_language_is_a_name_and_empty_is_the_default() {
+    fn ac166_a_language_is_a_name_and_empty_is_the_default() {
         let s = crate::tasks::store::Store::open(crate::testutil::fresh_dir("closeout").join("kanban.sqlite"));
         s.with(|tx| {
             assert_eq!(language_of(tx, "nope")?, "English");

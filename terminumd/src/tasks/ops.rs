@@ -140,7 +140,7 @@ fn top_rank(tx: &Transaction, status: &str, severity: &str) -> Result<f64, Strin
 }
 
 /// A title as kept: nothing that hides or reorders it, whoever writes it.
-fn check_title(title: &str) -> Result<String, String> {
+pub(super) fn check_title(title: &str) -> Result<String, String> {
     let cleaned = crate::termtext::clean(title, false);
     let t = cleaned.trim();
     if t.is_empty() || t.chars().count() > TITLE_MOST {
@@ -149,7 +149,7 @@ fn check_title(title: &str) -> Result<String, String> {
     Ok(t.to_string())
 }
 
-fn check_text(text: &str) -> Result<(), String> {
+pub(super) fn check_text(text: &str) -> Result<(), String> {
     if text.len() > TEXT_MOST { Err("Text: at most 1 MiB".into()) } else { Ok(()) }
 }
 
@@ -157,7 +157,7 @@ pub(super) fn check_comment(text: &str) -> Result<(), String> {
     if text.len() > COMMENT_MOST { Err("Comment: at most 256 KiB".into()) } else { Ok(()) }
 }
 
-fn check_severity(s: &str) -> Result<(), String> {
+pub(super) fn check_severity(s: &str) -> Result<(), String> {
     if SEVERITIES.contains(&s) { Ok(()) } else { Err(format!("Severity: one of {}", SEVERITIES.join(", "))) }
 }
 

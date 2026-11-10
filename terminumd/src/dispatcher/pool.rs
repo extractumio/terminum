@@ -3,7 +3,7 @@
 //! project's, or is refused naming what holds them. Decided in the transaction that adds the run, so two
 //! presses never both find one free; only starting is gated, a human typing never is.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use rusqlite::Transaction;
 use serde::Serialize;
@@ -13,7 +13,8 @@ use super::plan;
 use super::runs::{self, Run};
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::limits;
-use crate::tasks::ops;
+use crate::tasks::ops::{self, rows};
+use crate::tasks::schedules;
 
 /// A limit reached: what to say, and the idle holder whose closing would make room, if one would.
 #[derive(Debug, PartialEq, Serialize)]
@@ -53,22 +54,61 @@ fn victim<'a>(tx: &Transaction, full: &[(&[&'a Run], i64)]) -> Result<Option<&'a
     Ok(idle.into_iter().max_by_key(|r| r.closing_for))
 }
 
-/// What holds slots now, read once for every agent a window offers.
+/// What holds slots now, read once for every agent a window offers: the runs, the slots schedules keep by agent,
+/// and the run standing in each kept slot, by run, its schedule (terminum-schedules.md AC-161).
 pub struct Slots {
     holding: Vec<Run>,
+    kept: BTreeMap<String, Vec<String>>,
+    in_kept: HashMap<String, String>,
 }
 
 impl Slots {
     pub fn read(tx: &Transaction) -> Result<Slots, String> {
-        Ok(Slots { holding: runs::live(tx)?.into_iter().filter(Run::holds_slot).collect() })
+        let holding: Vec<Run> = runs::live(tx)?.into_iter().filter(Run::holds_slot).collect();
+        let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
+        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding })
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
     /// not counted: the one it goes on from.
     pub fn check(&self, tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
         let holding: Vec<&Run> = self.holding.iter().filter(|r| Some(r.id.as_str()) != but).collect();
-        judge(tx, &holding, agent, project)
+        let kept = agent.and_then(|a| self.kept.get(&a.id)).map_or(&[][..], Vec::as_slice);
+        judge(tx, &holding, agent, project, (kept, &self.in_kept))
     }
+
+    /// `check` for a run of task `task` alone (its key; none: several tasks): one of a schedule of `agent` takes the
+    /// slot kept for it while no other run, but `but`, stands there, only its project's limit holding it (AC-161).
+    pub fn check_for(&self, tx: &Transaction, agent: &Agent, project: &str, task: Option<&str>, but: Option<&str>) -> Result<Option<Full>, String> {
+        let schedule = match task {
+            Some(t) => kept_schedule(tx, &agent.id, t)?,
+            None => None,
+        };
+        let free = schedule.is_some_and(|s| !self.in_kept.iter().any(|(run, of)| *of == s && Some(run.as_str()) != but));
+        self.check(tx, (!free).then_some(agent), project, but)
+    }
+}
+
+/// `check_for`, read now.
+pub fn check_for(tx: &Transaction, agent: &Agent, project: &str, task: Option<&str>, but: Option<&str>) -> Result<Option<Full>, String> {
+    Slots::read(tx)?.check_for(tx, agent, project, task, but)
+}
+
+/// The schedule of `agent` keeping a slot that task `task` (its key) was made by, if one (AC-161).
+fn kept_schedule(tx: &Transaction, agent: &str, task: &str) -> Result<Option<String>, String> {
+    Ok(rows(tx, "SELECT s.id FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
+            (task, agent), |r| r.get(0))?.pop())
+}
+
+/// The run standing in each kept slot, of the runs `ids`: a run of one task of its agent's schedule that keeps one, the
+/// oldest; a second, or a run of several tasks, counts as any run (AC-161). By run, its schedule.
+fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, String>, String> {
+    let found: Vec<(String, String)> = rows(tx, "SELECT r.id, s.id FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN schedule_fires f ON f.task = rt.task JOIN schedules s ON s.id = f.schedule
+                 WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
+                   AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
+            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let mut seen = HashSet::new();
+    Ok(found.into_iter().filter(|(_, s)| seen.insert(s.clone())).collect())
 }
 
 /// `check` of one agent, read now.
@@ -76,15 +116,17 @@ pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option
     Slots::read(tx)?.check(tx, agent, project, but)
 }
 
-fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str) -> Result<Option<Full>, String> {
-    let of_agent: Vec<&Run> = holding.iter().copied().filter(|r| agent.is_some_and(|a| a.id == r.agent_id)).collect();
+/// `kept`: the slots `agent`'s schedules keep, and the runs standing in kept slots: those count once (AC-161).
+fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &str, (kept, in_kept): (&[String], &HashMap<String, String>)) -> Result<Option<Full>, String> {
+    let of_agent: Vec<&Run> = holding.iter().copied().filter(|r| agent.is_some_and(|a| a.id == r.agent_id) && !in_kept.contains_key(&r.id)).collect();
     let of_project: Vec<&Run> = holding.iter().copied().filter(|r| r.project == project).collect();
     let limit = limits::agent_limit(tx, project)?;
     let mut full: Vec<(&[&Run], i64)> = Vec::new();
     let mut words = None;
-    if let Some(a) = agent.filter(|a| of_agent.len() as i64 >= a.at_once) {
-        words = Some(format!("{} is at its limit of {}: {}.", a.name, a.at_once, names(&of_agent)));
-        full.push((&of_agent, a.at_once));
+    if let Some(a) = agent.filter(|a| (of_agent.len() + kept.len()) as i64 >= a.at_once) {
+        let held: Vec<String> = of_agent.iter().map(|r| r.names()).chain(kept.iter().map(|k| format!("{k} (kept)"))).collect();
+        words = Some(format!("{} is at its limit of {}: {}.", a.name, a.at_once, held.join(", ")));
+        full.push((&of_agent, a.at_once - kept.len() as i64));
     }
     if let Some(most) = limit.filter(|most| of_project.len() as i64 >= *most) {
         let name = ops::project_place(tx, project)?.0;
@@ -98,16 +140,23 @@ fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &st
 
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
-    let holding = Slots::read(tx)?.holding;
+    let Slots { holding, kept, in_kept } = Slots::read(tx)?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
+    // a slot its schedules keep counts once, whether its run is live or not (AC-161)
+    let mut others: HashMap<&str, usize> = HashMap::new();
     for r in &holding {
-        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc()}));
+        let in_slot = in_kept.contains_key(&r.id);
+        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot}));
+        if !in_slot {
+            *others.entry(&r.agent_id).or_default() += 1;
+        }
         *in_project.entry(&r.project).or_default() += 1;
     }
-    let full: Vec<String> = agents::list(tx)?.into_iter().filter(|a| of_agent.get(a.id.as_str()).map_or(0, Vec::len) as i64 >= a.at_once).map(|a| a.id).collect();
+    let full: Vec<String> = agents::list(tx)?.into_iter()
+        .filter(|a| (others.get(a.id.as_str()).copied().unwrap_or(0) + kept.get(&a.id).map_or(0, Vec::len)) as i64 >= a.at_once).map(|a| a.id).collect();
     let full_projects: Vec<String> = limits::agent_limits(tx)?.into_iter().filter(|(p, most)| in_project.get(p.as_str()).copied().unwrap_or(0) >= *most).map(|(p, _)| p).collect();
-    Ok(json!({"agents": of_agent, "full": full, "full_projects": full_projects}))
+    Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects}))
 }
 
 #[cfg(test)]

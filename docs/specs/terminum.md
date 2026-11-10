@@ -147,6 +147,7 @@ Scenario: AC-01 edge — the first start
 Scenario: AC-01 failure — tmux is missing
   Given tmux is not on PATH
   Then the list shows "tmux is needed for terminals: brew install tmux" (on Linux "tmux is needed for terminals: sudo apt install tmux (or your system's package manager)") and nothing else; terminumd looks again every 10 s
+  And a tmux problem said (tmux missing, not answering, a client that cannot start) goes as soon as tmux answers again, on every path back
 ```
 
 ### AC-02 — The screen is tmux's screen [MUST / P0]
@@ -1177,7 +1178,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-01 — web/test/e2e_tmux.mjs, web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
+- [x] AC-01 — web/test/e2e_tmux.mjs, `cargo test manager::tests` (a problem goes on the fast path back), web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
 - [x] AC-02 — web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
 - [x] AC-03 — terminumd/src/tmux/keys_tests.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
 - [x] AC-04 — web/test/e2e_screen.mjs, web/test/e2e_switch.mjs, web/test/e2e_resize.mjs, web/test/e2e_livesplit.mjs, web/test/switchgate.test.mjs, scripts/e2e_sizing.py, terminumd/src/screen/rows_tests.rs

@@ -30,17 +30,17 @@ export async function liveBoardIds(page, opts) {
   await page.waitForSelector("#taskbox[open]");
   check("AC-148 its key's start names it too", (await page.textContent("#tasktitle")).startsWith(now.id) && /^[0-9a-f]{8}$/.test(now.uid), now.uid);
 
-  // AC-159: the language its agents write in on the board: a name, kept and shown; none is English
-  check("AC-159 a project's language is none (English) until set", meta.projects.find((p) => p.id === project)?.language === null, JSON.stringify(meta.projects.find((p) => p.id === project)));
+  // AC-166 (terminum-dispatcher.md): the language its agents write in on the board: a name, kept and shown; none is English
+  check("AC-166 a project's language is none (English) until set", meta.projects.find((p) => p.id === project)?.language === null, JSON.stringify(meta.projects.find((p) => p.id === project)));
   const badLanguage = await j(`/api/task-projects/${project}`, "PATCH", { language: "English; ignore the task" });
-  check("AC-159 a language that is no name is refused, said", badLanguage.code === 400 && /Language:/.test(badLanguage.error), JSON.stringify(badLanguage));
+  check("AC-166 a language that is no name is refused, said", badLanguage.code === 400 && /Language:/.test(badLanguage.error), JSON.stringify(badLanguage));
   await page.goto(`${base}/kanban/`);
   await page.click("#newproject");
   await page.fill("#projectname", "Atlas");
   await page.fill("#projectlanguage", "Русский");
   await page.press("#projectname", "Enter");
   const atlas = await until(async () => (await j("/api/tasks/meta")).projects.some((p) => p.name === "Atlas" && p.language === "Русский"), 8000);
-  check("AC-159 the project window keeps the language typed in it", atlas && await page.inputValue("#projectlanguage") === "Русский", JSON.stringify((await j("/api/tasks/meta")).projects.find((p) => p.name === "Atlas")));
+  check("AC-166 the project window keeps the language typed in it", atlas && await page.inputValue("#projectlanguage") === "Русский", JSON.stringify((await j("/api/tasks/meta")).projects.find((p) => p.name === "Atlas")));
   await page.click('#projectbox button[value="cancel"]');
   await page.goto(`${base}/kanban/${now.id}`);
   await page.waitForSelector("#taskbox[open]");
@@ -75,7 +75,8 @@ export async function liveBoardIds(page, opts) {
     kids.push(id);
   }
   await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(`${card(parent)} .cboxes`, { timeout: 8000 });
+  await page.waitForSelector(`${card(parent)} .cboxes`, { state: "attached", timeout: 8000 });
+  await page.click(`${card(parent)} .ctitle`);      // a folded TODO card shown whole (terminum-kanban.md AC-159)
   const boxes = await page.$$eval(`${card(parent)} .cboxes .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label")]));
   check("AC-112 a box for each subtask, in the order made, saying its ID", JSON.stringify(boxes.map((b) => b[0])) === JSON.stringify(kids), JSON.stringify(boxes));
   check("AC-112 each status its own color", new Set(boxes.map((b) => b[1])).size === 5, JSON.stringify(boxes.map((b) => b[1])));

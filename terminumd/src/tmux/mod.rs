@@ -24,12 +24,31 @@ use parking_lot::RwLock;
 
 pub use server::Server;
 
-/// True the first time `what` asks for this connection (generation) of `server`: work done once
-/// a connection, such as giving windows back (`reclaim`) or ending orphans (`orphans`).
+/// True the first time `what` asks for this connection (its epoch, `Server::generation`) of
+/// `server`: work done once a connection, such as giving windows back (`reclaim`) or ending
+/// orphans (`orphans`); a server made in another's place under the same id is a new connection.
 pub fn first_on_link(what: &'static str, server: &Server) -> bool {
     static DONE: parking_lot::Mutex<BTreeMap<(&'static str, String), u64>> = parking_lot::const_mutex(BTreeMap::new());
-    let generation = server.generation.load(std::sync::atomic::Ordering::Relaxed);
-    DONE.lock().insert((what, server.id()), generation) != Some(generation)
+    let epoch = server.epoch();
+    DONE.lock().insert((what, server.id()), epoch) != Some(epoch)
+}
+
+#[cfg(test)]
+mod once_tests {
+    use super::*;
+
+    /// L25 (TERM-50): a host's Server replaced by a new one under the same id does its
+    /// once-a-connection work (orphans, reclaim) again, as a reconnect of the same one does.
+    #[test]
+    fn a_replaced_server_is_a_new_connection_for_once_a_link_work() {
+        let make = || Server::new("devbox-once", "default", server::Link::Ssh { ssh: "unused".into(), args: Vec::new() }, Arc::new(tokio::sync::Notify::new()));
+        let old = make();
+        assert!(first_on_link("test-once", &old));
+        assert!(!first_on_link("test-once", &old), "once a connection");
+        let new = make();
+        assert!(first_on_link("test-once", &new), "its replacement starts at another epoch");
+        assert!(!first_on_link("test-once", &new));
+    }
 }
 
 /// A pane key's parts: `tmux:<host>:<socket>:%N`.

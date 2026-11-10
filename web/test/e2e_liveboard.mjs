@@ -4,6 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { check, until, within } from "./check.mjs";
+import { pressCard } from "./boardkit.mjs";
 
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -90,7 +91,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-107 a card placed shows in its column", await until(async () => (await inColumn("WAIT FOR HUMAN")).includes(second)));
   await place(urgent, "DONE");
   check("AC-107 and goes on its own to another", await until(async () => (await inColumn("DONE")).includes(urgent)));
-  await page.click(card(second));
+  await pressCard(page, second);
   await page.waitForSelector("#taskbox[open] .history");
   check("AC-105 a card's window has its own address", new URL(page.url()).pathname === `/kanban/${second}`, page.url());
   check("AC-107 its status is no field to change", !(await page.$('#taskbody .fieldgrid label:has-text("Status") select')) && /WAIT FOR HUMAN/.test(await page.textContent("#taskbody .fieldvalue")));
@@ -101,7 +102,9 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   // its card pressed again as the window closes, before the close's Back lands (a popstate, later):
   // the window it opens stays, at its address
   await page.evaluate((sel) => new Promise((done) => {
-    document.getElementById("taskbox").addEventListener("close", () => queueMicrotask(() => { document.querySelector(sel).click(); done(); }), { once: true });
+    // a folded card's first press shows it whole (terminum-kanban.md AC-159): pressed until it opens
+    const press = () => { const c = document.querySelector(sel); if (c.matches(".compact:not(.open)")) c.click(); c.click(); };
+    document.getElementById("taskbox").addEventListener("close", () => queueMicrotask(() => { press(); done(); }), { once: true });
     [...document.querySelectorAll(".newcomment button")].find((b) => b.textContent === "Close").click();
   }), card(second));
   await page.waitForTimeout(800);
@@ -248,7 +251,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-105 a title is text", await page.evaluate(() => !window.ranit && !document.querySelector(".ctitle img")));
   if (shots) {
     await page.screenshot({ path: path.join(shots, "board-wide.png") });
-    await page.click(card(first));
+    await pressCard(page, first);
     await page.waitForSelector("#taskbox[open]");
     await page.screenshot({ path: path.join(shots, "task-wide.png") });
     await page.click("#taskclose");

@@ -5,7 +5,7 @@
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
-import { $, button, agentColor, api, countOf, fillSelect, showError } from "./kanbanutil.js";
+import { $, button, agentColor, api, countOf, fillSelect, guardCancel, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
@@ -13,12 +13,14 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
  *  agent; `run(tasks, agent)`. */
 export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession }) {
-  const box = el("section", "agents"), list = el("div", "agentlist");
+  // on the columns' tracks: an agent a column wide, its keys in the fifth (kanban.css .tracks)
+  const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
   addKey.id = "addagent";
   const hint = el("p", "pickhint");
   hint.hidden = true;
-  box.append(list, addKey, hint);
+  side.append(addKey, hint);
+  box.append(list, side);
   const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce"), week_limit: $("agentweek"), month_limit: $("agentmonth") };
   const dialog = $("agentbox"), error = $("agenterror");
   let editing = null, snapshot = "";
@@ -62,12 +64,16 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     bar.style.setProperty("--dot", agentColor(a));
     b.style.setProperty("--ag", agentColor(a));
     const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
+    // a clock for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161)
+    const kept = counted().kept?.[a.id] ?? [];
+    for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
     dots.append(...mine.map(dot));
-    if (a.at_once > 1) dots.append(el("small", "agcount", `${slots(a).length}/${a.at_once}`));
+    const used = slots(a).filter((s) => !s.kept).length + kept.length;
+    if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
     txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
     b.append(bar, txt);
-    b.title = [a.name, `${slots(a).length} of ${a.at_once} at once`, a.line].join(" · ");
+    b.title = [a.name, `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");
     return b;
   }
 
@@ -100,7 +106,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
-    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
+    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
     if (dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));
@@ -182,13 +188,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   $("agentdrop").addEventListener("click", async () => {
     if (await askConfirm(`Delete the agent ${editing.name}? Its tasks and sessions stay.`, "Delete")) send(`/api/task-agents/${editing.id}`, { method: "DELETE" });
   });
-  // what was typed is not lost by a slip of Esc or × (terminum-kanban.md AC-133); Cancel means it
-  dialog.addEventListener("cancel", async (e) => {
-    if (e.defaultPrevented) return;                 // while it is kept (oneAtATime)
-    if (JSON.stringify(values()) === snapshot) return;
-    e.preventDefault();
-    if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
-  });
+  guardCancel(dialog, () => JSON.stringify(values()) === snapshot);   // Cancel means it
 
   /** Its sessions in its window, each with Let go: a + Session's, or one on a host out of reach (AC-142). */
   function showSessions(a) {

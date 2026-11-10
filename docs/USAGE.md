@@ -142,6 +142,10 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   day; narrow by days (the strip of a column a day), project, sender and agents or shells. A row
   opens its session at that message, shows what was sent around it, or copies it. Every choice is in
   the address, so Back and links work.
+- **Scheduled runs** (`/scheduled/`, Scheduled in the Message history's head): every firing of
+  your schedules, newest first: when, the schedule, its task (a press opens it on the board), its
+  agent and status, when it went IN PROGRESS and ended; a row opens to the prompt that went in and
+  the result that came out, or says why nothing ran (skipped, missed, did not start). Schedule picks one.
 - **Dashboard** (`/dashboard/`): how much you drive sessions over 7, 30 or 90 days, never counting
   Dispatcher: messages, active time (your sends and typing; a pause over 15 minutes ends a stretch),
   active days, messages an active hour, sessions a day, the phone's share, each against the period
@@ -216,6 +220,23 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further
   recommendations), written in the project's language: its window's "Language of agents'
   writing on the board" (empty: English), used for its tasks and comments on the board too.
+  TODO and DONE show each card as one line, its ID, severity and title: a press shows one whole
+  (and folds the one before), a press on it then opens its window, Esc folds it. Agents stand a
+  column wide over the columns, four a row.
+  **Scheduled tasks**: the line Scheduled N between the agents and the columns opens (and stays
+  open in that browser) to the schedules of the projects shown; + Schedule opens a schedule's
+  window: title, text, project, severity, the agent that runs it, When (every 15–45 minutes, every
+  N hours, every day, weekdays, chosen days of the week, a day of the month, once, or five cron
+  fields, in the Mac's local time, at least 15 minutes apart, the next three runs said under it),
+  a time budget (required: no one watches the run) and Paused; What the agent gets shows the
+  prompt and the agent's command. Each schedule keeps one slot of its agent while not paused. When
+  it is due, Dispatcher makes a task from it as it is then, in the project's folder, and runs it on
+  that agent, telling it it is a scheduled run and to give its result as Outcome, Summary, Details
+  and For the human, or ask you with `ask_human`; the task then moves as any task, its card saying
+  SCH-1. A firing while its last task is still open is skipped and counted on the schedule's card;
+  runs missed while the Mac slept come once on wake; one that cannot start (no folder, no hooks,
+  agent gone) fails its task and pauses the schedule, saying why. Only you make schedules: agents
+  have no tool for them.
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,

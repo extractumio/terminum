@@ -96,6 +96,12 @@ impl Drop for Tmux {
 
 /// An app over fresh folders (no tmux server is started): (its root, removed by the test; the app).
 pub fn app(tag: &str) -> (PathBuf, crate::app::Shared) {
+    let link = crate::tmux::server::Link::Local { tmux: "unused".into(), socket: format!("tm-test-{tag}"), conf: "/dev/null".into() };
+    app_linked(tag, link)
+}
+
+/// `app` whose terminum tmux is reached by `link` (a test's own server).
+pub fn app_linked(tag: &str, link: crate::tmux::server::Link) -> (PathBuf, crate::app::Shared) {
     let root = fresh_dir(tag);
     let (home, dir) = (root.join("home"), root.join("state"));
     std::fs::create_dir_all(&home).unwrap();
@@ -104,8 +110,8 @@ pub fn app(tag: &str) -> (PathBuf, crate::app::Shared) {
         text_max: 1 << 20, list_cache_mb: 1, ttl_days: 1, roots: root.display().to_string() };
     let cfg = crate::app::Config { port: 0, agent: true, service: false, text_max: 1 << 20,
         history: 1000, dir, home: home.clone(), agent_token: String::new() };
-    let link = crate::tmux::server::Link::Local { tmux: "unused".into(), socket: env.tmux_socket.clone(), conf: "/dev/null".into() };
-    let app = crate::build_app(cfg, &env, crate::looks::Looks::load(&home), link, &env.tmux_socket);
+    let socket = match &link { crate::tmux::server::Link::Local { socket, .. } => socket.clone(), _ => env.tmux_socket.clone() };
+    let app = crate::build_app(cfg, &env, crate::looks::Looks::load(&home), link, &socket);
     (root, app)
 }
 

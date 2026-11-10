@@ -15,7 +15,7 @@ const GET_FILE: &str = "execute_tool(\"get_file\", {task, name})";
 pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})";
 
 /// How an agent asks a human while it works (AC-157): in words, never in its window.
-pub(super) const ASK: &str = "If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
+pub(crate) const ASK: &str = "If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
@@ -29,7 +29,7 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
 }
 
 /// Over this, the prompt names the task's text instead of carrying it (AC-121).
-const MOST_PROMPT: usize = 20_000;
+pub(super) const MOST_PROMPT: usize = 20_000;
 
 /// What goes with one task: as before; several go by their numbers, so no text an agent wrote stands beside
 /// the human's words (AC-138). `message`: what the human wrote for the agent.
@@ -47,6 +47,12 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         return Ok(parts.join("\n\n"));
     }
     let body = ops::text_of(tx, &t.id)?;
+    // a schedule's task goes as the schedule's run, in its own words (terminum-schedules.md AC-162)
+    if let Some(s) = crate::tasks::schedules::of_task(tx, &t.key)? {
+        // its first run is the firing's; any after is a human's RUN
+        let run = super::fire::prompt(&s, &t.id, &t.title, &body, runs::last_of(tx, &t.key)?.is_some());
+        return Ok(match said { Some(m) => format!("{m}\n\n{run}"), None => run });
+    }
     let mut parts = vec![format!("The human ran task {}: {}", t.id, t.title)];
     parts.extend(said);
     if body.chars().count() > MOST_PROMPT {
@@ -67,7 +73,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
     Ok(parts.join("\n\n"))
 }
 
-fn budget_words(total: i64) -> String {
+pub(crate) fn budget_words(total: i64) -> String {
     format!("You have {} minutes for this. Before they end, leave time to close it out, write the result with {FINISH} and end your subagents: at the limit the agent is ended and unsaved work is lost.", total / 60)
 }
 

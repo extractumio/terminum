@@ -47,7 +47,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
   check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nBefore you call execute_tool\("finish_task", \{id, result\}\), close the task out[\s\S]*\nOutcome: [\s\S]*\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
-  check("AC-159 the close-out is in English while the project sets no language", /The result, in the language named "English":/.test(prompt), prompt);
+  check("AC-166 the close-out is in English while the project sets no language", /The result, in the language named "English":/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
