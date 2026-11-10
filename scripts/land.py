@@ -88,8 +88,10 @@ def update_primary(primary):
 
 
 def ci_status(tree, run=subprocess.run):
-    """One line on GitHub CI's last run on main, as gh says: what a landing adds to; it never stops one."""
-    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--limit", "1", "--json", "status,conclusion,headSha,url"]
+    """One line on GitHub CI's last verdict on main, as gh says: what a landing adds to; it never stops one. A run
+    still waiting or running, or cancelled, is no verdict: one newer than the verdict is said after it."""
+    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--event", "push", "--limit", "50",
+           "--json", "status,conclusion,headSha,url"]
     try:
         done = run(ask, cwd=tree, capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -100,13 +102,19 @@ def ci_status(tree, run=subprocess.run):
         runs = json.loads(done.stdout or "[]")
         if not runs:
             return "CI on main: no run"
-        last = runs[0]
-        sha, state, url = last["headSha"], last["conclusion"] or last["status"], last["url"]
+        said = lambda r: f"{r['conclusion'] or r['status']} on {r['headSha'][:9]}"
+        newest = runs[0]
+        ended = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ("cancelled", "skipped")]
+        if not ended:
+            return f"CI on main: no verdict in the last {len(runs)} runs; newest: {said(newest)}: {newest['url']}"
+        last = ended[0]
+        then = f"; newer: {said(newest)}" if newest["status"] != "completed" else ""
+        verdict = f"CI on main: {said(last)}"
     except (ValueError, KeyError, TypeError, IndexError) as e:
         return f"CI on main: unknown (gh's answer: {e!r})"
     head = git("rev-parse", BASE, cwd=tree).stdout.strip()
-    of = "" if sha == head else f", not {BASE}'s {head[:9]}"
-    return f"CI on main: {state} on {sha[:9]}{of}: {url}"
+    of = "" if last["headSha"] == head else f", not {BASE}'s {head[:9]}"
+    return f"{verdict}{of}: {last['url']}{then}"
 
 
 def checks_of(tree, *flags):

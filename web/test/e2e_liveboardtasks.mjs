@@ -2,20 +2,14 @@
 // A task's family and its end on the board, against a real private terminumd (e2e_live.mjs;
 // terminum-kanban.md AC-112, AC-118): subtasks made in a window and shown on demand; DONE for 2 days leaves
 // by itself; a project's own Archived, with Find and Return.
-import { execFileSync } from "node:child_process";
-import path from "node:path";
-import { boardKit, nap, pressCard } from "./boardkit.mjs";
+import { boardKit, intoStore, nap, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const card = (id) => `.card[data-id="${id}"]`;
 
 /** Sets when a task's moves happened, from outside, as a store two days old has them. */
 function ageMoves(app, id, seconds) {
-  const script = `import sqlite3, sys
-store = sqlite3.connect(sys.argv[1], timeout=8)
-store.execute("UPDATE events SET at = at - ? WHERE task = (SELECT id FROM tasks WHERE slug = ?)", (int(sys.argv[2]), sys.argv[3]))
-store.commit()`;
-  execFileSync("python3", ["-I", "-c", script, path.join(app, "kanban.sqlite"), String(seconds), id]);
+  intoStore(app, `UPDATE events SET at = at - ${seconds} WHERE task = (SELECT id FROM tasks WHERE slug = '${id}')`);
 }
 
 export async function liveBoardTasks(page, opts) {

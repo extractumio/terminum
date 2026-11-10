@@ -2,10 +2,8 @@
 // The board's folded cards and its rows on the columns' tracks against a real private terminumd
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
-import { execFileSync } from "node:child_process";
-import path from "node:path";
 import { check, until } from "./check.mjs";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, intoStore, nap } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
   const { j, card, open } = boardKit(page, live);
@@ -132,8 +130,7 @@ export async function liveSchedules(page, live) {
 
   // AC-162: due, fired on the fake agent, its task DONE with its result
   const s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
-  // terminumd may hold the write lock for a moment: wait for it, as its own store does
-  execFileSync("sqlite3", ["-cmd", ".timeout 10000", path.join(live.app, "kanban.sqlite"), `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`]);
+  intoStore(live.app, `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`);
   let task;
   check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
   check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
