@@ -20,7 +20,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from testrun import end_naming, short_tmp  # noqa: E402
+from testrun import end_naming, own_server_pids, short_tmp  # noqa: E402
 
 
 def _ended(sig, _frame):
@@ -62,7 +62,15 @@ def end_tmux(socket_name):
             os.kill(int(pid), signal.SIGKILL)
         except (ValueError, ProcessLookupError):
             pass
-    tmux_on(socket_name, "kill-server")
+    if subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True).returncode == 0:
+        return
+    # it reached none: one whose socket file went (a dying server unlinked its successor's) still runs, ended by its pid
+    listed = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    for pid in own_server_pids(listed, {socket_name}):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
 
 
 def wait_for(read, predicate, seconds=15, every=0.1, last=False):

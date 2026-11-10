@@ -54,6 +54,30 @@ class Servers(unittest.TestCase):
                 testrun._sockets.update(before)
 
 
+    @unittest.skipUnless(shutil.which("tmux"), "no tmux")
+    def test_end_tmux_ends_a_server_whose_socket_went(self):
+        spec = importlib.util.spec_from_file_location("e2e_ws", Path(__file__).resolve().parents[1] / "e2e_ws.py")
+        e2e_ws = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(e2e_ws)
+        with tempfile.TemporaryDirectory(prefix="tt", dir=testrun.short_tmp()) as home:
+            name = f"tm-test-endtmux-{os.getpid()}"
+            saved = os.environ.get("TMUX_TMPDIR")
+            os.environ["TMUX_TMPDIR"] = home
+            try:
+                subprocess.run(["tmux", "-L", name, "-f", "/dev/null", "new-session", "-d", "sleep 60"], check=True)
+                (Path(home) / f"tmux-{os.getuid()}" / name).unlink()  # what a dying predecessor does
+                listed = lambda: testrun.own_server_pids(subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout, {name})  # noqa: E731
+                self.assertEqual(len(listed()), 1)
+                e2e_ws.end_tmux(name)
+                end = time.monotonic() + 5
+                while listed() and time.monotonic() < end:
+                    time.sleep(0.05)
+                self.assertEqual(listed(), [], "ended by its pid where kill-server reached nothing")
+            finally:
+                for pid in listed():
+                    os.kill(pid, 9)
+                os.environ.pop("TMUX_TMPDIR") if saved is None else os.environ.update(TMUX_TMPDIR=saved)
+
 # a parent that starts this Python in a session of its own with HOME in the folder, running the
 # code in argv[1], then waits to be ended (a Mac hides the environment of Apple's own programs)
 ORPHAN = ("import os, subprocess, sys, time; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]], "
