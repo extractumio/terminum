@@ -225,17 +225,19 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   column wide over the columns, four a row.
   **Scheduled tasks**: the line Scheduled N between the agents and the columns opens (and stays
   open in that browser) to the schedules of the projects shown; + Schedule opens a schedule's
-  window: title, text, project, severity, the agent that runs it, When (every 15–45 minutes, every
+  window: title, text, project, severity, the agent that runs it, When (every 1–45 minutes, every
   N hours, every day, weekdays, chosen days of the week, a day of the month, once, or five cron
-  fields, in the Mac's local time, at least 15 minutes apart, the next three runs said under it),
+  fields, in the Mac's local time, the next three runs said under it),
   a time budget (required: no one watches the run) and Paused; What the agent gets shows the
   prompt and the agent's command. Each schedule keeps one slot of its agent while not paused. When
-  it is due, Dispatcher makes a task from it as it is then, in the project's folder, and runs it on
-  that agent, telling it it is a scheduled run and to give its result as Outcome, Summary, Details
-  and For the human, or ask you with `ask_human`; the task then moves as any task, its card saying
-  SCH-1. A firing while its last task is still open is skipped and counted on the schedule's card;
-  runs missed while the Mac slept come once on wake; one that cannot start (no folder, no hooks,
-  agent gone) fails its task and pauses the schedule, saying why. Only you make schedules: agents
+  it is due, Dispatcher makes a task from it as it is then, IN PROGRESS and named S_TERM-8 (S_
+  before its project's next ID), in the project's folder, and runs it on that agent, telling it it
+  is a scheduled run and to give its result as Outcome, Summary, Details and For the human, or ask
+  you with `ask_human`; the task then waits for you, is done or fails as any task, never standing
+  in TODO, its card saying SCH-1. A firing while a task of it is still IN PROGRESS is skipped and
+  counted on the schedule's card; a run missed while the Mac slept is not run on wake: the next
+  comes by the cadence; one that cannot start (no folder, no hooks, agent gone) fails its task,
+  the schedule's card says why, and the next firing tries again. Only you make schedules: agents
   have no tool for them.
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows

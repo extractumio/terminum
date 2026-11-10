@@ -58,7 +58,8 @@ pub fn remove(tx: &Transaction, task: &str) -> Result<bool, String> {
 /// The wait of `task` is called off, `words` saying why on it.
 pub fn call_off(tx: &Transaction, task: &str, words: &str) -> Result<(), String> {
     remove(tx, task)?;
-    ops::log(tx, task, DISPATCHER, "told", words, None, ops::now()).map(drop)
+    ops::log(tx, task, DISPATCHER, "told", words, None, ops::now())?;
+    super::fire::wait_ended(tx, task, words)
 }
 
 /// An older wait of `agent` or `project` that could start now, but `task`'s own: a press for them goes behind it,

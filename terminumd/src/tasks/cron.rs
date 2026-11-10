@@ -137,11 +137,6 @@ pub fn when_words(at: i64) -> String {
     local(at).map_or_else(|| at.to_string(), |t| format!("{} {} {} {}", DAYS[t.weekday as usize], t.day, MONTHS[(t.month - 1) as usize], t.clock()))
 }
 
-/// `at`'s time of day on the Mac's clock: "08:12".
-pub fn clock(at: i64) -> String {
-    local(at).map_or_else(|| at.to_string(), |t| t.clock())
-}
-
 /// A cadence in words, for the kinds the schedule's window writes (AC-160); any other is its fields.
 pub fn words(text: &str) -> String {
     let f: Vec<&str> = text.split_whitespace().collect();
@@ -152,7 +147,7 @@ pub fn words(text: &str) -> String {
         names.map(|n| n.join(", "))
     };
     let said = match f.as_slice() {
-        [m, "*", "*", "*", "*"] if m.starts_with("*/") => m[2..].parse::<u32>().ok().map(|n| format!("Every {n} minutes")),
+        [m, "*", "*", "*", "*"] if m.starts_with("*/") => m[2..].parse::<u32>().ok().map(|n| if n == 1 { "Every minute".into() } else { format!("Every {n} minutes") }),
         [m, h, "*", "*", "*"] if h.starts_with("*/") => num(m).zip(h[2..].parse::<u32>().ok()).map(|(m, n)| format!("Every {n} hours at :{m:02}")),
         [m, h, "*", "*", "*"] => at(h, m).map(|t| format!("Every day at {t}")),
         [m, h, "*", "*", "1-5"] => at(h, m).map(|t| format!("Weekdays at {t}")),

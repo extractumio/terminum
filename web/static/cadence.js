@@ -13,7 +13,7 @@ export const KINDS = [
   ["once", "Once at"],
   ["cron", "Cron"],
 ];
-export const MINUTE_STEPS = [15, 20, 30, 45];
+export const MINUTE_STEPS = [1, 5, 10, 15, 20, 30, 45];
 export const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 const int = (s) => (/^\d+$/.test(s) ? Number(s) : null);
