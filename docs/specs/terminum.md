@@ -265,6 +265,11 @@ Scenario: AC-03 edge — Shift+Enter and Ctrl+Enter
 Scenario: AC-03 edge — a held delete
   When the user holds Backspace in a shell at its prompt or in a coding agent's input box
   Then a character goes at a time, and after 1.5 s a word (C-w) at a time, at most one every 90 ms; in other programs characters only (the pane's program comes with the list, AC-01)
+Scenario: AC-03 edge — a paste taller than the pane stays folded
+  Given Claude Code on the normal screen (its default TUI) folded a paste
+  When the box with the text unfolded would not stay inside the pane, two rows kept (the rows Claude Code redraws with it: from the rows written right above the box's top rule, a busy agent's spinner and list, to its footer's last, the folded prompt's row taken by the text; plus the text's rows at the pane's width less 4, a wide character two columns, a tab four; no top rule in sight: it does not fit)
+  Then terminumd does not paste it again: "[Pasted text #1 +120 lines]" stays, edited as in any terminal, because a box taller than the pane breaks Claude Code's redraw and puts its first lines out of the cursor's reach
+  And on the alternate screen (its fullscreen TUI, which scrolls its own box) it is unfolded at any size
 Scenario: AC-03 failure — the pane is gone or the server stalls
   When "send-keys" answers %error, or the control client has not answered for 3 s
   Then the keys are dropped, not queued forever; the page shows "tmux did not take the keys: <error>" over the terminal; a line "tmux on this Mac is not responding (N s)" counts while the shown pane's server stalls and goes when it answers (another server's stays off this pane, `terminum-remote.md` AC-132); each such line (an error, a stall, "Sized for another screen") has an × that puts it away until it says something new (its seconds counting on are not new)
@@ -1182,7 +1187,7 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-01 — web/test/e2e_tmux.mjs, `cargo test manager::tests` (a problem goes on the fast path back), web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
 - [x] AC-02 — web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
-- [x] AC-03 — terminumd/src/tmux/keys_tests.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
+- [x] AC-03 — terminumd/src/tmux/keys_tests.rs, terminumd/src/page/pastefold.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
 - [x] AC-04 — web/test/e2e_screen.mjs, web/test/e2e_switch.mjs, web/test/e2e_resize.mjs, web/test/e2e_livesplit.mjs, web/test/switchgate.test.mjs, scripts/e2e_sizing.py, terminumd/src/screen/rows_tests.rs
 - [x] AC-05 — web/test/e2e_screen.mjs, web/test/e2e_appscreen.mjs, web/test/e2e_codex.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_sizing.py
 - [x] AC-06 — web/test/e2e_screen.mjs, web/test/e2e_progcopy.mjs, web/test/e2e_liveclip.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_core.py

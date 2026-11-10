@@ -19,7 +19,7 @@ const FEWEST: usize = 4;
 /// without an input box: Claude Code's "❯ " between two rules (a question's options also start
 /// with "❯ 1."), or Codex's "› " composer (not its menu's "› 1. Yes").
 pub fn answer_row(rows: &[String]) -> Option<usize> {
-    let rule = |r: &String| r.trim_start().starts_with("\u{2500}\u{2500}");
+    let rule = |r: &String| agentstate::is_rule(r);
     let option = |t: &str| t.chars().nth(2).is_some_and(|c| c.is_ascii_digit());
     let at = (0..rows.len()).rev().find(|&i| {
         let t = rows[i].trim_start();

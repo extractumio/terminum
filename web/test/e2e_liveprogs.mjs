@@ -129,12 +129,15 @@ async function teammate(tmux, pane, tui) {
   tmux("kill-pane", "-t", mate);
 }
 
+/** `t` pasted with ⌘V into the page's keyboard field. */
+const pasteText = (page, t) => page.evaluate((t) => {
+  const dt = new DataTransfer(); dt.setData("text/plain", t);
+  document.getElementById("kbd").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+}, t);
+
 /** A paste of three lines from the page: all in Claude Code's input, none sent. */
 async function pasted(page, tmux, pane, tui) {
-  await page.evaluate((t) => {
-    const dt = new DataTransfer(); dt.setData("text/plain", t);
-    document.getElementById("kbd").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-  }, PASTE);
+  await pasteText(page, PASTE);
   const inBox = () => {
     const t = tmux("capture-pane", "-p", "-t", pane);
     return /^\s*❯\s+alpha one/m.test(t) && t.includes("beta two") && t.includes("gamma three") && t.split("alpha one").length === 2;   // ❯ and a no-break space
@@ -148,14 +151,23 @@ async function pasted(page, tmux, pane, tui) {
   await new Promise((r) => setTimeout(r, 400));
   // a longer one Claude Code folds is unfolded: its text is seen, once, nothing sent (AC-03)
   const LONG = Array.from({ length: 7 }, (_, i) => `folded line ${i + 1}`).join("\n");
-  await page.evaluate((t) => {
-    const dt = new DataTransfer(); dt.setData("text/plain", t);
-    document.getElementById("kbd").dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
-  }, LONG);
+  await pasteText(page, LONG);
   const unfolded = () => { const t = tmux("capture-pane", "-p", "-t", pane); return t.includes("folded line 1") && t.includes("folded line 7") && !t.includes("[Pasted text") && t.split("folded line 7").length === 2; };
   const seen = await until(unfolded, 6000);
   await new Promise((r) => setTimeout(r, 1000));
   check(`AC-03 real claude (${tui}): a paste it folds is unfolded, its text in the input once, nothing sent`, seen && unfolded(), tmux("capture-pane", "-p", "-t", pane).split("\n").filter((l) => l.trim()).slice(-11).join(" | "));
+  tmux("send-keys", "-t", pane, "C-c");
+  await new Promise((r) => setTimeout(r, 400));
+  // one taller than the pane: on the normal screen it stays folded (its box would break the redraw,
+  // its top out of the cursor's reach); full screen, Claude Code scrolls its box: unfolded
+  const TALL = Array.from({ length: 3 * Number(tmux("display", "-p", "-t", pane, "#{pane_height}")) }, (_, i) => `tall line ${i + 1}`).join("\n");
+  await pasteText(page, TALL);
+  const shown = () => tmux("capture-pane", "-p", "-t", pane), full = tui === "fullscreen";
+  const tall = full ? () => shown().includes("tall line") && !shown().includes("[Pasted text")
+    : () => /❯\s+\[Pasted text #\d+ \+\d+ lines\]/.test(shown()) && !shown().includes("tall line");
+  const tallSeen = await until(tall, 6000);
+  await new Promise((r) => setTimeout(r, 1500));   // an unfold comes within 0.8 s
+  check(`AC-03 real claude (${tui}): a paste taller than the pane is ${full ? "unfolded" : "left folded"}`, tallSeen && tall(), shown().split("\n").filter((l) => l.trim()).slice(-6).join(" | "));
   tmux("send-keys", "-t", pane, "C-c");
   await new Promise((r) => setTimeout(r, 400));
 }

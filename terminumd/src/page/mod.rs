@@ -12,6 +12,7 @@ pub mod folds;
 pub mod pystr;
 pub mod hist;
 pub mod marks;
+mod pastefold;
 pub mod plans;
 mod lost_marks;
 pub mod projects;

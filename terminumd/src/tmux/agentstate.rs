@@ -235,13 +235,17 @@ fn agents_said(rows: &[String]) -> bool {
     })
 }
 
+/// A rule of a coding agent's input box (Claude Code's top one may carry the session's title).
+pub fn is_rule(row: &str) -> bool {
+    row.trim_start().starts_with("\u{2500}\u{2500}")
+}
+
 /// The bottom rule of Claude Code's input box (a rule, "❯ " and what is typed, a rule), when it is
 /// on the screen: a question of its replaces the box, so words above it are the transcript.
 /// (Codex's composer: "›", which its menus start with too.)
 fn claude_box(rows: &[String]) -> Option<usize> {
-    let rule = |r: &String| r.trim_start().starts_with("\u{2500}\u{2500}");
-    let bottom = rows.iter().rposition(rule)?;
-    let top = rows[..bottom].iter().rposition(rule)?;
+    let bottom = rows.iter().rposition(|r| is_rule(r))?;
+    let top = rows[..bottom].iter().rposition(|r| is_rule(r))?;
     rows[top + 1].trim_start().starts_with('\u{276f}').then_some(bottom)
 }
 
