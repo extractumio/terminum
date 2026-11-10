@@ -200,6 +200,14 @@ export async function webTmux(browser, name) {
     await pause(page);
     const failedOff = { text: await page.textContent("#agentslines"), bad: await page.evaluate(() => document.getElementById("agentslines").classList.contains("bad")) };
     await page.click("#agentscancel");
+    f.say({ t: "layout", groups: [...LAYOUT, host("attached", { agents: "failed: ssh: timed out" })] });
+    await pause(page);
+    await headClick(page, G, ".hostbtn");
+    const failedItem = await page.textContent('#hostmenu button[data-action="agents"]');
+    await page.click('#hostmenu button[data-action="agents"]');
+    const failedAsk = await page.textContent("#agentsok");
+    await page.click("#agentscancel");
+    check("AC-99 host menu: turning them on by itself failed: the item says why and turns them on", failedItem === "Coding agents' progress on devbox… (failed: ssh: timed out)" && failedAsk === "Enable", JSON.stringify({ failedItem, failedAsk }));
     check("AC-99 host menu: coding agents' progress asked first (what goes where on the host), the result lines shown as text, turned off with its state",
       agentsItem === "Coding agents' progress on devbox…" && agentAsk.title === "Coding agents' progress on devbox?"
         && agentAsk.text.includes("hooks and MCP server for Claude Code and Codex, in ~/.claude and ~/.codex on devbox") && agentAsk.text.includes("/hooks") && agentAsk.ok === "Enable"

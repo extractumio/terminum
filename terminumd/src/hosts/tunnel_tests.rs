@@ -86,13 +86,21 @@ async fn ac83_a_hosts_files_are_set_up_with_no_question_and_a_failure_or_a_no_is
     let (root, app) = with_host("offer-new", serde_json::json!({"ssh": ["alex@devbox.example"]}), Status::Connecting);
     assert_eq!(state(&app), "enabling", "no decision yet, the host connecting: being set up, never asked");
     set(&app, "devbox", "failed", "the host has no helper for its platform");
+    app.tunnels.0.lock().get_mut("devbox").unwrap().failed_at = Some(Instant::now());
     let failed = crate::hosts::offer(&app, "devbox");
     assert_eq!((failed["state"].as_str(), failed["why"].as_str()), (Some("ask"), Some("the host has no helper for its platform")), "a failed setup says why and offers to try again");
     app.looks.settings.write().hosts["devbox"]["files"] = "declined".into();
+    app.looks.settings.write().hosts["devbox"]["agents"] = "off".into();   // nothing here reaches ssh
     assert_eq!(state(&app), "dismissed", "the user's Not now or Remove: nothing is set up");
     // the next attach tries a failed setup again; a host the user declined starts nothing
     attached(&app, "devbox");
-    assert!(failed_none(&app), "the failure of the connection before is forgotten at the next attach");
+    assert!(!failed_none(&app), "a link that drops and comes back does not try a fresh failure again");
+    retry(&app, "devbox", true);
+    assert!(failed_none(&app), "the user adding the host again does");
+    let (root2, old) = with_host("offer-old", serde_json::json!({"ssh": ["alex@devbox.example"], "helper": "0123456789ab"}), Status::Attached);
+    assert_eq!(state(&old), "dismissed", "a helper's build and no state: the user removed it before removals were recorded");
+    drop(old);
+    std::fs::remove_dir_all(root2).unwrap();
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
     let (root, app) = with_host("offer-off", serde_json::json!({"ssh": ["alex@devbox.example"]}), Status::Off);
@@ -107,16 +115,18 @@ fn failed_none(app: &Shared) -> bool {
 
 #[tokio::test]
 async fn ac99_a_hosts_agents_are_turned_on_by_themselves_once_unless_the_user_turned_them_off() {
-    use crate::tmux::server::Status;
     for (rec, tried, why) in [
         (serde_json::json!({"ssh": ["alex@devbox.example"], "agents": "off"}), false, "the user turned them off"),
         (serde_json::json!({"ssh": ["alex@devbox.example"], "agents": "enabled"}), false, "on already"),
         (serde_json::json!({"ssh": ["alex@devbox.example"]}), true, "no word of the user's yet"),
     ] {
-        let (root, app) = with_host("auto-agents", rec, Status::Off);
+        // no server for the host, so nothing reaches ssh: the setup ends at "not attached"
+        let (root, app) = crate::testutil::app("auto-agents");
+        app.looks.settings.write().hosts.insert("devbox".into(), rec);
         crate::hosts::agents::auto(&app, "devbox");
         crate::hosts::agents::auto(&app, "devbox");
-        assert_eq!(app.hosts.agents_tried.lock().len(), usize::from(tried), "{why}");
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        assert_eq!(crate::hosts::link::agents_state(&app, "devbox"), if tried { "failed: devbox is not attached" } else if app.looks.settings.read().hosts["devbox"]["agents"] == "enabled" { "connecting" } else { "off" }, "{why}");
         drop(app);
         std::fs::remove_dir_all(root).unwrap();
     }

@@ -49,8 +49,9 @@ pub struct Hosts {
     tried: Mutex<HashMap<String, Tried>>,
     /// the Files operation each host's last decision started, while it runs (consent.rs)
     decisions: consent::Decisions,
-    /// hosts whose agents' setup was tried by itself since terminumd started (agents.rs `auto`)
-    agents_tried: Mutex<std::collections::HashSet<String>>,
+    /// hosts whose agents' setup by itself ended since terminumd started, and why it failed
+    /// (none: turned on, or no coding agent there); agents.rs `auto`
+    agents_auto: Mutex<HashMap<String, Option<String>>>,
 }
 
 /// A recipe tried and, once in, its answer.
@@ -269,7 +270,7 @@ pub async fn add(app: &Shared, name: &str, text: &str) -> Result<String, String>
         rec["ssh"] = json!(args);
         hosts.insert(name.clone(), rec);
     })?;
-    tunnel::retry(app, &name);
+    tunnel::retry(app, &name, true);
     Ok(name)
 }
 
@@ -300,6 +301,7 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
     match action {
         "remove" => {
             app.hosts.decisions.withdraw(name);
+            app.hosts.agents_auto.lock().remove(name);
             agents::removed(app, name);
             tunnel::stop(app, name);
             save(app, |h| {
@@ -340,9 +342,12 @@ pub fn set_helper(app: &Shared, name: &str, helper: &str) -> Result<(), String> 
     })
 }
 
-/// A host's files state as recorded.
+/// A host's files state as recorded. A record with a helper's build and no state is one whose
+/// helper the user removed before removals were recorded: declined, never set up again by itself.
 pub fn files_state(app: &Shared, name: &str) -> Option<String> {
-    app.looks.settings.read().hosts.get(name).and_then(|r| r["files"].as_str().map(str::to_string))
+    let hosts = &app.looks.settings.read().hosts;
+    let rec = hosts.get(name)?;
+    rec["files"].as_str().or_else(|| rec["helper"].is_string().then_some("declined")).map(str::to_string)
 }
 
 /// The host's ssh recipe (checked).

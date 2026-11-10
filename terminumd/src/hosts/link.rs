@@ -170,10 +170,11 @@ pub struct LinkTo {
     pub mac: String,
 }
 
-/// The host's agents' link state: "off", "up", "connecting" or "refused: <why>".
+/// The host's agents' link state: "off", "up", "connecting", "refused: <why>", or "failed: <why>"
+/// when turning them on by itself failed (AC-99).
 pub fn agents_state(app: &Shared, host: &str) -> String {
     if !wanted(app, host) {
-        return "off".into();
+        return super::agents::auto_failed(app, host).map_or_else(|| "off".into(), |why| format!("failed: {why}"));
     }
     let g = app.tunnels.0.lock();
     g.get(host).map(|a| a.agents.clone()).filter(|s| !s.is_empty()).unwrap_or_else(|| "connecting".into())

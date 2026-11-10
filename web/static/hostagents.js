@@ -9,12 +9,14 @@ export function hostAgents(send) {
   /** The host menu's item: enable (asked first), or turn off with the link's state ("up",
    *  "refused: why"). Offered on an attached host, or whenever it is on. */
   function item(g, hide) {
-    const on = !!g.agents && g.agents !== "off";
+    // "failed: why": turning them on by itself failed; the item says so and turns them on
+    const failed = (g.agents || "").startsWith("failed");
+    const on = !!g.agents && g.agents !== "off" && !failed;
     if (!on && g.state !== "attached") return [];
     const b = document.createElement("button");
     b.type = "button"; b.dataset.action = "agents";
     b.textContent = on ? `Turn off coding agents' progress on ${g.host}` : `Coding agents' progress on ${g.host}…`;
-    if (on) {
+    if (on || failed) {
       const s = document.createElement("span");
       s.className = "agentsstate"; s.textContent = ` (${g.agents})`;
       b.append(s);

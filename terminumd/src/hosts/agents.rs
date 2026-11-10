@@ -33,6 +33,10 @@ pub(crate) trait Ops {
     fn recipe(&self) -> &[String];
 }
 
+/// How the refusal begins when a host has no coding agent to take the hooks: no failure of the
+/// setup by itself.
+const NO_AGENT: &str = "No coding agent on ";
+
 /// Each agent's line: `<agent>: <result as shown>`.
 pub fn lines(host: &str, got: &[(String, String)]) -> Vec<String> {
     got.iter().map(|(a, r)| format!("{a}: {}", super::agentsinstall::shown(host, r))).collect()
@@ -56,7 +60,7 @@ pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec
         let got = ops.install().await.map_err(|e| format!("Could not set up coding agents' progress on {host}: {e}"))?;
         let shown = lines(host, &got);
         if !took(&got) {
-            return Err(format!("No coding agent on {host} took terminum's hooks: {}", shown.join("; ")));
+            return Err(format!("{NO_AGENT}{host} took terminum's hooks: {}", shown.join("; ")));
         }
         // judged under the settings file's write lock: the record a newer edit left is kept
         let mut saved = false;
@@ -194,20 +198,57 @@ pub async fn set_agents(app: &Shared, host: &str, on: bool) -> Result<Vec<String
     }).await
 }
 
-/// The host attached with no word of the user's on its agents: turned on by itself (AC-99), once
-/// per host while terminumd runs, so a host with no coding agent is asked again only after
-/// terminumd starts anew (an upgrade); the menu and `hosts agents` turn it on at any time.
+/// The host attached with no word of the user's on its agents: turned on by itself (AC-99), in
+/// the host's turn after any on or off running, which it never stops, and only while the record
+/// still says nothing. A host with no coding agent is done until terminumd starts anew (an
+/// upgrade); another failure is shown as the agents' state and tried at the next attach. A helper
+/// it copied for nothing goes again unless Files uses it.
 pub fn auto(app: &Shared, host: &str) {
-    if !super::records(app).get(host).is_some_and(|r| r["agents"].is_null()) || !app.hosts.agents_tried.lock().insert(host.to_string()) {
+    if !undecided(app, host) || matches!(app.hosts.agents_auto.lock().get(host), Some(None)) {
         return;
     }
     let (app, host) = (app.clone(), host.to_string());
     tokio::spawn(async move {
-        match set_agents(&app, &host, true).await {
-            Ok(got) => tracing::info!(event = "agents.auto", host, result = got.join("; ")),
-            Err(why) => tracing::warn!(event = "agents.auto_failed", host, why),
-        }
+        let got = app.agent_turns.after(&host, async {
+            if !undecided(&app, &host) {
+                return Ok(None);
+            }
+            let recipe = super::recipe_of(&app, &host).ok_or_else(|| format!("{host} is not attached"))?;
+            let ops = Live { app: &app, host: &host, recipe };
+            let got = set_with(&ops, &host, true).await;
+            if got.is_err() && !super::records(&app).get(&host).is_some_and(files_use_helper) {
+                let _ = ops.remove_helper().await;
+            }
+            got.map(Some)
+        }).await;
+        let failed = match got {
+            Ok(None) => return,
+            Ok(Some(lines)) => {
+                tracing::info!(event = "agents.auto", host, result = lines.join("; "));
+                None
+            }
+            Err(why) if why.starts_with(NO_AGENT) => {
+                tracing::info!(event = "agents.auto_none", host, why);
+                None
+            }
+            Err(why) => {
+                tracing::warn!(event = "agents.auto_failed", host, why);
+                Some(why)
+            }
+        };
+        app.hosts.agents_auto.lock().insert(host.clone(), failed);
+        crate::lists::host_changed(&app, &host);
     });
+}
+
+/// The host's record has no word of the user's on its agents: neither on nor off.
+fn undecided(app: &Shared, host: &str) -> bool {
+    app.looks.settings.read().hosts.get(host).is_some_and(|r| r["agents"].is_null())
+}
+
+/// Why turning the host's agents on by itself failed, while nothing turned them on or off since.
+pub fn auto_failed(app: &Shared, host: &str) -> Option<String> {
+    app.hosts.agents_auto.lock().get(host).cloned().flatten().filter(|_| undecided(app, host))
 }
 
 /// After AC-84 updated the helper: the host's agents' entries rewritten where they differ, in

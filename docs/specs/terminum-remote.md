@@ -160,7 +160,7 @@ Scenario: AC-83 edge — a login shell that prints
 Scenario: AC-83 failure — the setup fails
   When that setup fails (no helper for the platform, the copy or the trial refused)
   Then "files" is not recorded, and Files says "devbox is a remote host. Its files are not set up: they need a 6 MB helper in ~/.terminum/bin on devbox; it runs only while you use it." with the reason, [Try again] and [Not now]
-  And it is tried again by itself when devbox next attaches, never in a loop on one connection
+  And it is tried again by itself when devbox attaches 10 minutes or more after the failure, or at once when the user adds devbox again; a link that keeps dropping copies nothing at each attach
   And a host that is off or not connected is not being set up: Files says the same without a reason
 
 Scenario: AC-83 edge — Not now, remove, later
@@ -168,6 +168,7 @@ Scenario: AC-83 edge — Not now, remove, later
   Then "files": "declined" is recorded and nothing sets its files up again by itself; Files' menu ("Browse Files of devbox…") or "terminum hosts enable devbox" enables it any time
   When the user picks "Remove Helper from devbox…" and confirms, or runs "terminum hosts files-remove devbox"
   Then the connection closes, "bin/terminumd-agent*" and "logs/agent.log*" are removed from the host's ~/.terminum (the folder when empty; a Mac host keeps its own install), and "files" is "declined": the helper does not come back at the next attach
+  And a record with a helper's build and no "files" (a removal an older terminum made) counts as declined
   And an enabled host asks nothing later, also after an upgrade (the agent is updated, AC-84)
 
 Scenario: AC-83 edge — a later decision while enabling or removing
@@ -279,7 +280,9 @@ Scenario: AC-99 happy path — enable
   Then terminumd copies or updates the helper as for files (AC-83, shared code), links "~/.terminum/bin/terminum-host" to it, creates "~/.terminum/run" (0700), and over ssh in "exec /bin/sh -c '…'" finds claude (known paths, then "$SHELL -lc", then "$SHELL -ic", each without input, 10 s, output between a random marker) and CODEX_HOME
   And runs "~/.terminum/bin/terminum-host hooks install --host-mode" there, with hook and MCP entries calling terminum-host by absolute path; the host's own "~/.terminum/bin/terminum" is never touched
   And records "agents": "enabled" for devbox and shows one result line per agent: "installed", "not found", "installed; trust terminum's hooks in Codex's /hooks once", "uses devbox's own terminum", "refused: an entry named terminum runs <command>, not <terminum-host>", or "failed: <why>"
-  And by itself it runs once per host while terminumd runs, its result in terminumd's log alone: a host where no coding agent took the hooks stays off, with no message, and is tried again after terminumd next starts
+  And by itself it waits for an on or off of the user's running for devbox, never stops one, and does nothing once the record says "enabled" or "off"
+  And a host where no coding agent took the hooks stays off, with no message, and is tried again after terminumd next starts; the helper copied for it is removed unless Files uses it
+  And another failure by itself (a timeout, a refused copy) is the host's agents' state, "failed: <why>", in "terminum hosts" and beside the host menu's "Coding agents' progress on devbox…", which turns them on; it is tried again when devbox next attaches
   And "terminum hosts agents devbox off" or the menu's "Turn off…" records "agents": "off": nothing turns them on again by itself
   And the whole action runs over the ssh recipe read when it began; when devbox's record changes or goes meanwhile, the install is not started after the helper copy, nothing is saved and it says "the host's record changed meanwhile; nothing was saved, try again"
   And "terminum hosts agents devbox on" first says "Enabling coding agents' progress on devbox… (copying the helper and installing)" and waits up to 635 s for the result lines

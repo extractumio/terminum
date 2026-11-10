@@ -2,8 +2,8 @@
 //! A host's files agent (AC-82–AC-85): terminumd itself in agent mode on the host, reached
 //! through `ssh -L <socket on the Mac>:<socket on the host>`, its token on stdin (never a
 //! command line); it exits when that ssh ends. Enabling copies the agent the running build
-//! carries for the host's platform to ~/.terminum/bin (nothing is copied before the user's
-//! click, AC-83); a helper of another build is replaced by this build's (AC-84).
+//! carries for the host's platform to ~/.terminum/bin (by itself once the host attaches, or
+//! at the user's Enable, AC-83); a helper of another build is replaced by this build's (AC-84).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -45,6 +45,8 @@ pub(super) struct Agent {
     state: String,
     note: String,
     updated_at: Option<Instant>,
+    /// when the enabling by itself last failed: tried again at an attach RETRY later
+    failed_at: Option<Instant>,
     /// agents' link: "" (off), "up", "refused: <why>" (link.rs)
     pub(super) agents: String,
     /// the last refused forward: -R is asked again its back-off later (link.rs `backoff`)
@@ -413,6 +415,7 @@ pub fn reconcile(app: &Shared, host: &str) {
         _ if super::link::wanted(app, host) => tokio::spawn(keep(shared, name)),
         // no decision of the user's yet: set up by itself, once per attach (AC-83)
         None | Some("wanted") if attached && !failed => tokio::spawn(async move {
+            // `enable` ends by stopping this host's task, which is this one: nothing awaits after it
             match super::consent::enable(&shared, &name).await {
                 // its agents after its files: the helper is there
                 Ok(()) => super::agents::auto(&shared, &name),
@@ -422,6 +425,9 @@ pub fn reconcile(app: &Shared, host: &str) {
                     let undecided = crate::hosts::recipe_of(&shared, &name).is_some() && crate::hosts::files_state(&shared, &name).is_none_or(|s| s == "wanted");
                     if undecided && !shared.hosts.decisions.is(&name, Decision::Enable) {
                         set(&shared, &name, "failed", &e);
+                        if let Some(a) = shared.tunnels.0.lock().get_mut(&name) {
+                            a.failed_at = Some(Instant::now());
+                        }
                     }
                 }
             }
@@ -431,10 +437,11 @@ pub fn reconcile(app: &Shared, host: &str) {
     g.entry(host.to_string()).or_default().task = Some(task);
 }
 
-/// As [`reconcile`], an enabling that failed before tried again: the host attached anew, or the
-/// user added it again.
-pub fn retry(app: &Shared, host: &str) {
-    if let Some(a) = app.tunnels.0.lock().get_mut(host).filter(|a| a.state == "failed") {
+/// As [`reconcile`], an enabling that failed before tried again: `now` when the user added the
+/// host again, else once the failure is link::RETRY old, so a link that keeps dropping does not
+/// copy the helper at each attach.
+pub fn retry(app: &Shared, host: &str, now: bool) {
+    if let Some(a) = app.tunnels.0.lock().get_mut(host).filter(|a| a.state == "failed" && (now || a.failed_at.is_none_or(|t| t.elapsed() >= super::link::RETRY))) {
         a.state = "down".into();
     }
     reconcile(app, host);
@@ -442,7 +449,7 @@ pub fn retry(app: &Shared, host: &str) {
 
 /// The host attached: its files as [`retry`]; its agents too, where its files need no setup.
 pub fn attached(app: &Shared, host: &str) {
-    retry(app, host);
+    retry(app, host, false);
     if crate::hosts::files_state(app, host).is_some_and(|s| s != "wanted") {
         super::agents::auto(app, host);
     }
