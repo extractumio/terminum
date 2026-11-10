@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! A schedule's firings (`terminum-schedules.md` AC-162): on each walk, a schedule due makes a task from itself as
-//! it is then and runs it on its agent, as RUN's route would; its last task still open skips it; missed firings come
-//! as one; a start that fails pauses it; a task made and never run, terminumd having ended between, runs once.
+//! it is then, IN PROGRESS, and runs it on its agent, as RUN's route would; a task of it still IN PROGRESS skips it;
+//! a firing not run in its time is missed, never run later; a start that fails fails its task and the next firing
+//! tries again; a task made and never run, terminumd having ended between, runs once.
 
 use serde_json::json;
 
@@ -12,7 +13,7 @@ use crate::tasks::cron;
 use crate::tasks::ops::{self, NewTask};
 use crate::tasks::schedules::{self, Schedule};
 
-/// Over this, a firing is said to have come late: the Mac slept or terminumd was not running.
+/// A firing runs within this of its due time, in seconds; later it is missed: the Mac slept or terminumd was not running.
 const LATE: i64 = 120;
 
 /// What a scheduled run's agent is told (AC-162): only the schedule's own words, as its task holds them; a long
@@ -53,10 +54,20 @@ enum Next {
 fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> Result<Next, String> {
     let Some((due, missed)) = schedules::by_id(tx, &s.id)?.due(now) else { return Ok(Next::Nothing) };
     let advance = |tx: &rusqlite::Transaction| tx.execute("UPDATE schedules SET last_due = ?2 WHERE id = ?1", (&s.id, due)).map(drop).map_err(ops::sql);
-    // no two runs of a schedule: any task of it still open skips the firing
-    if let Some(open) = schedules::open_task(tx, s)? {
+    // what was not run in its time is not run later: the next firing comes by the cadence
+    if now - due > LATE {
         advance(tx)?;
-        schedules::fired(tx, s, (due, missed), None, "skipped", Some(&format!("Skipped: {open} is still open.")), now)?;
+        let why = format!("Missed, due {}: the Mac was asleep or terminumd was not running.", cron::when_words(due));
+        schedules::fired(tx, s, (due, missed + 1), None, "skipped", Some(&why), now)?;
+        if s.once_at.is_some() {
+            schedules::pause(tx, &s.id, "missed its time", now)?;
+        }
+        return Ok(Next::Skipped);
+    }
+    // no two runs of a schedule: a task of it IN PROGRESS, running or waiting for room, skips the firing
+    if let Some(running) = schedules::running_task(tx, s)? {
+        advance(tx)?;
+        schedules::fired(tx, s, (due, missed), None, "skipped", Some(&format!("Skipped: {running} is still in progress.")), now)?;
         return Ok(Next::Skipped);
     }
     if let Some(last) = schedules::last_task(tx, s)? && let Some(r) = runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot) {
@@ -68,10 +79,9 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
         return Ok(Next::Skipped);
     }
     advance(tx)?;
-    let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), ..Default::default() }, now)?;
+    let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), started: true, ..Default::default() }, now)?;
     ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
-    let late = if now - due > LATE { format!(", run {}: the Mac was asleep or terminumd was not running", cron::clock(now)) } else { String::new() };
-    ops::log(tx, &t.key, DISPATCHER, "why", &format!("Dispatcher made it from schedule {}, due {}{late}.", s.key, cron::when_words(due)), None, now)?;
+    ops::log(tx, &t.key, DISPATCHER, "why", &format!("Dispatcher made it from schedule {}, due {}.", s.key, cron::when_words(due)), None, now)?;
     let fire = schedules::fired(tx, s, (due, missed), Some(&t.key), "made", None, now)?;
     if s.once_at.is_some() {
         schedules::pause(tx, &s.id, "ran once", now)?;
@@ -79,10 +89,11 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     Ok(Next::Run(t.id, fire))
 }
 
-/// Runs a schedule's task on its agent as RUN's route would; a refusal fails the task and pauses the schedule.
+/// Runs a schedule's task on its agent as RUN's route would; a refusal fails the task, and the schedule goes on:
+/// its next firing tries again.
 async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
     let started = super::api::press_again(app, task, json!({"agent": s.agent})).await;
-    let (id, sid, now, s_now) = (task.to_string(), s.id.clone(), ops::now(), s.clone());
+    let (id, s_now) = (task.to_string(), s.clone());
     let _ = store(app, move |tx| match started {
         Ok(_) => {
             let t = ops::get(tx, &id)?;
@@ -90,11 +101,10 @@ async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
             schedules::fire_started(tx, fire, &prompt(&s_now, &t.id, &t.title, &ops::text_of(tx, &t.id)?, false))
         }
         Err(why) => {
-            let words = format!("Paused: {why}");
+            let words = format!("It did not start: {why}");
             if !super::plan::finished(&ops::get(tx, &id)?.status) {
-                super::move_one(tx, &id, "FAILED", &format!("It did not start: {why}"))?;
+                super::move_one(tx, &id, "FAILED", &words)?;
             }
-            schedules::pause(tx, &sid, &words, now)?;
             schedules::fire_is(tx, fire, "failed", Some(&words))
         }
     }).await;
@@ -118,7 +128,7 @@ pub async fn due(app: &Shared) {
         }).await;
         match found {
             Ok((_, _, true)) => {}
-            Ok((t, Some(owner), false)) if t.status == "TODO" && t.archived_at.is_none() => start(app, &owner, &t.id, fire).await,
+            Ok((t, Some(owner), false)) if t.status == "IN PROGRESS" && t.archived_at.is_none() => start(app, &owner, &t.id, fire).await,
             _ => { let _ = store(app, move |tx| schedules::fire_is(tx, fire, "called off", Some("Its task was moved or archived before it ran."))).await; }
         }
     }
@@ -154,6 +164,16 @@ pub async fn due(app: &Shared) {
 pub fn called_off(tx: &rusqlite::Transaction, id: &str, words: &str) -> Result<(), String> {
     let keys: Vec<String> = ops::rows(tx, "SELECT f.task FROM schedule_fires f JOIN run_waits w ON w.task = f.task WHERE f.schedule = ?1", [id], |r| r.get(0))?;
     keys.iter().try_for_each(|k| super::waits::call_off(tx, k, words))
+}
+
+/// A schedule's task whose wait for room was called off before it ever ran is FAILED with `words`: IN PROGRESS
+/// with nothing running, it would skip every firing after it (AC-162).
+pub fn wait_ended(tx: &rusqlite::Transaction, task: &str, words: &str) -> Result<(), String> {
+    let t = ops::get(tx, task)?;
+    if t.status == "IN PROGRESS" && schedules::of_task(tx, &t.key)?.is_some() && runs::last_of(tx, &t.key)?.is_none() {
+        super::move_one(tx, &t.id, "FAILED", words)?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]

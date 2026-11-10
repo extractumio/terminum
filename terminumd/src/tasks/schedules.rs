@@ -13,12 +13,8 @@ use super::ops::{self, rows, sql};
 
 /// The most schedules a store keeps (§9 Limits).
 const MOST: i64 = 200;
-/// Two runs come at least this far apart, in seconds (AC-160).
-const FLOOR: i64 = 15 * 60;
 /// The most minutes of a scheduled run's budget.
 const BUDGET_MOST: i64 = 24 * 60;
-/// How many runs the floor is checked on.
-const FLOOR_RUNS: usize = 500;
 
 /// A schedule as the board and Dispatcher see it.
 #[derive(Clone, Debug, Serialize)]
@@ -103,7 +99,7 @@ impl Schedule {
         !self.paused && self.deleted_at.is_none()
     }
 
-    /// What is due by `now`: the last due time not after it, and how many before it were missed (AC-162).
+    /// What is due by `now`: the last due time not after it, and how many due times before it passed unseen (AC-162).
     pub fn due(&self, now: i64) -> Option<(i64, i64)> {
         if !self.keeps_slot() {
             return None;
@@ -168,21 +164,13 @@ impl Given {
     }
 }
 
-
-/// A cadence that comes, at least 15 minutes apart (AC-160).
+/// A cadence that comes (AC-160): its runs are a minute apart at the least, as cron's fields are.
 fn check_when(when: &When, now: i64) -> Result<(), String> {
-    let Some(first) = when.next_after(now) else {
-        return Err(match when { When::Once(_) => "Once: a time still to come.", When::Cron(_) => "This cadence never comes." }.into());
-    };
-    let mut at = first;
-    for _ in 0..FLOOR_RUNS {
-        let Some(next) = when.next_after(at) else { break };
-        if next - at < FLOOR {
-            return Err(format!("Runs come at least 15 minutes apart: this cadence has {}.", (next - at) / 60));
-        }
-        at = next;
+    match (when.next_after(now), when) {
+        (Some(_), _) => Ok(()),
+        (None, When::Once(_)) => Err("Once: a time still to come.".into()),
+        (None, When::Cron(_)) => Err("This cadence never comes.".into()),
     }
-    Ok(())
 }
 
 /// The keys of the schedules keeping a slot of `agent`, `but` one not counted.
@@ -267,13 +255,13 @@ pub fn remove(tx: &Transaction, id: &str, now: i64) -> Result<(), String> {
     tx.execute("UPDATE schedules SET deleted_at = ?2, updated_at = ?2 WHERE id = ?1", (id, now)).map(drop).map_err(sql)
 }
 
-/// Pauses one, saying why on its card (AC-162).
+/// Pauses one, saying why on its card: a Once that fired or missed its time (AC-162).
 pub fn pause(tx: &Transaction, id: &str, why: &str, now: i64) -> Result<(), String> {
     tx.execute("UPDATE schedules SET paused = 1, paused_why = ?2, updated_at = ?3 WHERE id = ?1", (id, why, now)).map(drop).map_err(sql)
 }
 
-/// What the board shows of each schedule (AC-163): its next runs, its cadence in words, its last task and the
-/// firings skipped since that task.
+/// What the board shows of each schedule (AC-163): its next runs, its cadence in words, its last task, why that
+/// one did not start, and the firings skipped since it.
 pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for s in all(tx)? {
@@ -290,6 +278,8 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
+        v["failed_why"] = json!(tx.query_row("SELECT CASE state WHEN 'failed' THEN why END FROM schedule_fires WHERE schedule = ?1 AND task IS NOT NULL ORDER BY id DESC LIMIT 1",
+                                             [&s.id], |r| r.get::<_, Option<String>>(0)).optional().map_err(sql)?.flatten());
         out.push(v);
     }
     Ok(out)
@@ -318,9 +308,9 @@ pub fn unstarted(tx: &Transaction) -> Result<Vec<(i64, String)>, String> {
     rows(tx, "SELECT f.id, t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.state = 'made' ORDER BY f.id", [], |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
-/// A task of `s` still open, the newest, by its ID (AC-162).
-pub fn open_task(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
-    tx.query_row("SELECT t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 AND t.status NOT IN ('DONE', 'FAILED') AND t.archived_at IS NULL
+/// A task of `s` IN PROGRESS, the newest, by its ID: it runs, or waits for room (AC-162).
+pub fn running_task(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
+    tx.query_row("SELECT t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL
                   ORDER BY f.id DESC LIMIT 1", [&s.id], |r| r.get(0)).optional().map_err(sql)
 }
 

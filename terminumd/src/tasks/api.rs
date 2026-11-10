@@ -258,6 +258,7 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         session: text(&body, "session"),
         by_agent: false,
         made_in: text(&body, "made_in"),           // a record's session it was made of (AC-116, AC-150)
+        started: false,
     };
     let attached = crate::config::strings(&body["files"]);
     let done = store(&app, move |tx| {

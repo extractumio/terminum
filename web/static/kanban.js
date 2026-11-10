@@ -151,6 +151,7 @@ function card(t, under = "") {
   if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
   if (t.schedule) head.append(el("span", "cfrom", t.schedule));   // made by that schedule (terminum-schedules.md AC-163)
   if (t.agent) head.append(agentChip(t.agent));
+  c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
   // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
   if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
   const foot = el("div", "cfoot"), one = filters().project.length === 1;

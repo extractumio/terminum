@@ -69,7 +69,7 @@ const FAKE = new URL("../../scripts/fake_agent.py", import.meta.url).pathname;
 
 /** AC-160 to AC-164: a schedule made in its window, kept on its agent, fired on a fake agent, its task's result on
  *  the board and its firing on the Scheduled page. Its due time is reached by moving its last due back an hour in
- *  this test's own store, as a Mac asleep would. */
+ *  this test's own store: of a cadence of every minute the last due time is then under a minute past, in its time. */
 export async function liveSchedules(page, live) {
   const { j, card, open, cli } = boardKit(page, live);
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
@@ -84,20 +84,28 @@ export async function liveSchedules(page, live) {
   await page.waitForSelector("#schedbox[open]");
   await page.fill("#schedtitle", "Nightly deps check");
   await page.fill("#schedtext", "FINISHES the check of dependencies.");
-  await page.selectOption("#schedagent", agent);
+  // the page's own list of a select says "change" alone, as a choice there does (dropdown.js): the window hears it
+  check("AC-160 no agent chosen is said", await until(async () => await page.textContent("#schederror") === "Choose the agent that runs it."));
+  await page.$eval("#schedagent", (s, id) => { s.value = id; s.dispatchEvent(new Event("change", { bubbles: true })); }, agent);
+  check("AC-160 an agent chosen, its words go", await until(async () => (await page.textContent("#schedline")).includes("fake_agent.py") && !(await page.isVisible("#schederror"))), await page.textContent("#schederror"));
   await page.selectOption("#schedkind", "minutes");
   await page.selectOption("#schedevery", "15");
   check("AC-160 the picker writes cron fields and terminumd says the next runs", await until(async () => await page.textContent("#schedfields") === "*/15 * * * *" && /^Every 15 minutes\. Next: .+, .+, .+/.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
   check("AC-160 what the agent gets stands open before Save", await page.evaluate(() => document.getElementById("schedwhat").open));
   check("AC-160 what the agent gets: the prompt and its command", (await page.textContent("#schedprompt")).includes("A scheduled run of terminum's schedule SCH-? \"Nightly deps check\" (every 15 minutes)") && (await page.textContent("#schedline")).includes("fake_agent.py"), await page.textContent("#schedprompt"));
   await page.selectOption("#schedkind", "cron");
-  await page.fill("#schedcron", "*/5 * * * *");
-  check("AC-160 a cadence under 15 minutes is refused in the window", await until(async () => await page.textContent("#schederror") === "Runs come at least 15 minutes apart: this cadence has 5."));
+  await page.fill("#schedcron", "0 24 * * *");
+  check("AC-160 a field out of its range is refused in the window", await until(async () => await page.textContent("#schederror") === "The hour \"24\" is not 0 to 23."), await page.textContent("#schederror"));
+  await page.selectOption("#schedkind", "hours");
+  await page.selectOption("#schedevery", "1");
+  await page.selectOption("#schedkind", "minutes");
+  check("AC-160 another kind's number is not carried over: 1 hour is not every minute", await page.inputValue("#schedevery") === "20", await page.inputValue("#schedevery"));
   await page.selectOption("#schedkind", "weekly");
   await page.click('#whendays button:has-text("Fri")');
   check("AC-160 weekly days are keys", await until(async () => (await page.textContent("#schedfields")).endsWith("* * 1,5")), await page.textContent("#schedfields"));
   await page.selectOption("#schedkind", "minutes");
-  await page.selectOption("#schedevery", "15");
+  await page.selectOption("#schedevery", "1");
+  check("AC-160 runs a minute apart are taken", await until(async () => await page.textContent("#schedfields") === "*/1 * * * *" && /^Every minute\. Next: /.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
   await page.fill("#schedbudget", "");
   await page.click("#schedok");
   check("AC-160 no budget is refused, the window stays", await until(async () => await page.textContent("#schederror") === "A scheduled run needs a time budget: no human watches it.") && await page.isVisible("#schedbox[open]"));
@@ -110,7 +118,7 @@ export async function liveSchedules(page, live) {
   const sched = "#schedgrid .schedcard";
   check("AC-163 open, its card: key, title, cadence, next run, agent", await until(async () => {
     const t = await page.textContent(sched).catch(() => "");
-    return /SCH-\d+/.test(t) && t.includes("Nightly deps check") && t.includes("Every 15 minutes") && /next /.test(t) && t.includes("Night owl");
+    return /SCH-\d+/.test(t) && t.includes("Nightly deps check") && t.includes("Every minute") && /next /.test(t) && t.includes("Night owl");
   }), await page.textContent(sched).catch(() => ""));
   const cols = await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
@@ -127,16 +135,30 @@ export async function liveSchedules(page, live) {
   check("AC-163 the columns keep their room under the pool and the section, however many agents", room > 200, String(room));
   await shot("schedules");
   for (const id of crowd) await j(`/api/task-agents/${id}`, "DELETE");
+  // columns far longer than the window take no room from what stands over them: each card there is whole
+  const many = [];
+  for (let i = 0; i < 40; i++) many.push((await j("/api/tasks", "POST", { title: `Long column ${i}`, project })).id);
+  await page.reload();
+  await page.waitForSelector(sched);
+  const whole = await page.evaluate(() => {
+    const cut = (bar, items) => { const b = document.querySelector(bar).getBoundingClientRect(); return [...document.querySelectorAll(items)].filter((c) => { const r = c.getBoundingClientRect(); return r.top < b.top - 1 || r.bottom > b.bottom + 1; }).length; };
+    const fits = (bar) => { const e = document.querySelector(bar); return e.scrollHeight <= e.clientHeight + 1; };
+    return { agents: cut("#agentbar", "#agentbar .agentcard"), schedules: cut("#schedbar", "#schedbar .schedcard"), fit: fits("#agentbar") && fits("#schedbar") };
+  });
+  check("AC-163 with long columns the agents' and the schedules' cards stand whole", whole.agents === 0 && whole.schedules === 0 && whole.fit, JSON.stringify(whole));
+  await shot("schedules-long");
+  for (const id of many) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 
   // AC-162: due, fired on the fake agent, its task DONE with its result
   const s = (await j("/api/schedules")).schedules.find((x) => x.title === "Nightly deps check");
   intoStore(live.app, `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`);
   let task;
   check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
+  intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);   // no second firing a minute on, under the checks below
+  check("AC-162 its task says a schedule made it, and was never in TODO", /^S_[A-Z][A-Z0-9]*-\d+$/.test(task) && !(await j(`/api/tasks/${task}`)).history.some((e) => /TODO/.test(e.text ?? "")), task);
   check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
   const t = await j(`/api/tasks/${task}`);
-  // "late" only when its due time is over 2 minutes past: a 15-minute cadence's may be a moment ago (cargo test dispatcher::fire covers it)
-  check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d(, run \d\d:\d\d: the Mac was asleep or terminumd was not running)?\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
+  check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
   check("AC-163 its window names the schedule", t.schedule?.key === s.key);
   await page.goto(`${live.base}/kanban/${task}`);
   check("AC-163 the window's line opens the schedule", await until(() => page.isVisible(".taskfrom")));

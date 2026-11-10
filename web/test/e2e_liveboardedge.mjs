@@ -206,6 +206,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
     },
     async enter_on_the_run_key() {
       const id = await make("Enter on its key"); await open();
+      if (await page.$(`${card(id)}.compact:not(.open, .onagent)`)) await page.click(`${card(id)} .ctitle`);
       await page.focus(`${card(id)} .crun`); await page.keyboard.press("Enter"); await nap(400);
       const seen = await page.evaluate(() => ({ run: document.querySelector("#runbox").open, win: document.querySelector("#taskbox").open }));
       check("Enter on a card's run key opens the run window alone", seen.run && !seen.win, JSON.stringify(seen));

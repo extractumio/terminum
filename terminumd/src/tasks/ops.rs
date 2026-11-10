@@ -196,6 +196,8 @@ pub struct NewTask {
     pub session: Option<String>,
     pub by_agent: bool,
     pub made_in: Option<String>,
+    /// made IN PROGRESS: a schedule's firing, which never stands in TODO (terminum-schedules.md AC-162)
+    pub started: bool,
 }
 
 pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<Task, String> {
@@ -223,13 +225,14 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         }
     }
     let owner = new.owner.unwrap_or_else(|| HUMAN.to_string());
-    let rank = top_rank(tx, "TODO", &severity)?;
+    let status = if new.started { "IN PROGRESS" } else { "TODO" };
+    let rank = top_rank(tx, status, &severity)?;
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM tasks", [], |r| r.get(0)).map_err(sql)?;
     let key = crate::auth::crypto::random_hex::<16>();
     tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'TODO', ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
-               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at]).map_err(sql)?;
-    let slug = super::slugs::assign(tx, &key, &project)?;
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
+               rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at, status]).map_err(sql)?;
+    let slug = super::slugs::assign(tx, &key, &project, new.started)?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     get(tx, &slug)
 }
@@ -255,6 +258,10 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
     let task = get(tx, id)?;
     if task.status == status {
         return Ok(());
+    }
+    // a schedule's task is a run from its first moment: it waits for a human, is done or failed, and runs again
+    if status == "TODO" && let Some(s) = super::schedules::of_task(tx, &task.key)? {
+        return Err(format!("{} is a run of schedule {}: it does not go to TODO.", task.id, s.key));
     }
     // Dispatcher's own move follows its run: another's task in that session is that task's matter
     if status == "IN PROGRESS" && author != super::store::DISPATCHER
@@ -445,7 +452,7 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
     for k in std::iter::once(&key).chain(kids.iter()) {
         tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
         // it takes the project's next ID; the one it had still finds it (AC-148)
-        let slug = super::slugs::assign(tx, k, project)?;
+        let slug = super::slugs::assign(tx, k, project, false)?;
         log(tx, k, author, "project", &format!("{who} moved it to {name}, as {slug}"), None, at)?;
     }
     Ok(())
