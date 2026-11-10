@@ -102,18 +102,19 @@ def ci_status(tree, run=subprocess.run):
         runs = json.loads(done.stdout or "[]")
         if not runs:
             return "CI on main: no run"
+        said = lambda r: f"{r['conclusion'] or r['status']} on {r['headSha'][:9]}"
+        newest = runs[0]
         ended = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ("cancelled", "skipped")]
         if not ended:
-            return f"CI on main: no verdict in the last {len(runs)} runs; newest: {runs[0]['conclusion'] or runs[0]['status']} on {runs[0]['headSha'][:9]}: {runs[0]['url']}"
+            return f"CI on main: no verdict in the last {len(runs)} runs; newest: {said(newest)}: {newest['url']}"
         last = ended[0]
-        sha, state, url = last["headSha"], last["conclusion"], last["url"]
-        newer = runs[0] if runs[0] is not last and runs[0]["status"] != "completed" else None
+        then = f"; newer: {said(newest)}" if newest["status"] != "completed" else ""
+        verdict = f"CI on main: {said(last)}"
     except (ValueError, KeyError, TypeError, IndexError) as e:
         return f"CI on main: unknown (gh's answer: {e!r})"
     head = git("rev-parse", BASE, cwd=tree).stdout.strip()
-    of = "" if sha == head else f", not {BASE}'s {head[:9]}"
-    then = f"; newer: {newer['status']} on {newer['headSha'][:9]}" if newer else ""
-    return f"CI on main: {state} on {sha[:9]}{of}: {url}{then}"
+    of = "" if last["headSha"] == head else f", not {BASE}'s {head[:9]}"
+    return f"{verdict}{of}: {last['url']}{then}"
 
 
 def checks_of(tree, *flags):

@@ -106,10 +106,8 @@ class Landing(unittest.TestCase):
                               '{"status":"completed","conclusion":"cancelled","headSha":"1111111111","url":"u2"},'
                               '{"status":"completed","conclusion":"success","headSha":"2222222222","url":"u1"}]')
         self.assertEqual(said, f"CI on main: success on 222222222, not origin/main's {head[:9]}: u1; newer: queued on {head[:9]}")
-        self.assertTrue(said.startswith("CI on main: success"))
         only_cancelled = self.ci(stdout='[{"status":"completed","conclusion":"cancelled","headSha":"1111111111","url":"u2"}]')
         self.assertEqual(only_cancelled, "CI on main: no verdict in the last 1 runs; newest: cancelled on 111111111: u2")
-        self.assertFalse(only_cancelled.startswith("CI on main: success"))
 
     def test_without_gh_or_an_answer_the_status_is_unknown_and_never_an_error(self):  # AC-104
         self.assertEqual(self.ci(error=FileNotFoundError(2, "No such file or directory", "gh")),

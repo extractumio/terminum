@@ -20,13 +20,14 @@ store.close()`, path.join(app, "kanban.sqlite"), sql]);
  *  card the board drew anew meanwhile (its task left TODO) did neither and is made again; any other is an error. */
 export async function pressCard(page, id) {
   const sel = `.card[data-id="${id}"]`;
-  const took = (s) => location.pathname.endsWith(`/${s.id}`) ? "window" : document.querySelector(`${s.sel}.compact.open`) ? "whole" : null;
+  const took = ({ id, sel, card }) => location.pathname.endsWith(`/${id}`) ? "window"
+    : document.querySelector(`${sel}.compact.open`) ? "whole" : card && !card.isConnected ? "redrawn" : null;
   for (let press = 0; press < 3; press++) {
     const card = await page.$(sel);
     await page.click(sel);
-    const did = await page.waitForFunction(took, { id, sel }, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
+    const did = await page.waitForFunction(took, { id, sel, card }, { timeout: 5000 }).then((h) => h.jsonValue(), () => null);
     if (did === "window") return;
-    if (!did && await card?.evaluate((c) => c.isConnected)) throw new Error(`a press on ${id}'s card did nothing, at ${await page.evaluate(() => location.pathname)}`);
+    if (!did) throw new Error(`a press on ${id}'s card did nothing, at ${await page.evaluate(() => location.pathname)}`);
   }
   throw new Error(`three presses on ${id}'s card opened no window`);
 }
