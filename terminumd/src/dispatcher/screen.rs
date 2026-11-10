@@ -95,6 +95,16 @@ pub fn read(kind: &str, raw: &[String]) -> Screen {
     }
 }
 
+/// Whether Claude Code's foot says its background shells still run, as "· 2 shells" or "· 1 shell still running"
+/// (AC-123): work no hook tells of. `raw`: its screen as text, its last rows read.
+pub fn background_shells(kind: &str, raw: &[String]) -> bool {
+    let counts = |part: &str| {
+        let w: Vec<&str> = part.split_whitespace().collect();
+        w.len() >= 2 && w[0].parse::<u32>().is_ok_and(|n| n > 0) && matches!(w[1], "shell" | "shells")
+    };
+    kind == "claude" && raw.iter().rev().filter(|r| !r.trim().is_empty()).take(4).any(|r| r.split('\u{b7}').skip(1).any(counts))
+}
+
 /// Whether `screen` shows `text` was pasted: its first words, or the agent's fold of a long paste.
 pub fn shows(screen: &Screen, text: &str) -> bool {
     let Screen::Holds(held) = screen else { return false };

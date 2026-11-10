@@ -26,6 +26,7 @@ export async function liveBoardSessions(page, opts) {
 
   // AC-134: the list's row on the card, whatever the column
   const row = `${card(made)} .csession .item`;
+  await page.click(`${card(made)} .ctitle`);        // a folded TODO card shown whole (terminum-kanban.md AC-159)
   check("AC-134 a card with a live session carries the list's row", await until(() => page.isVisible(row)), await page.textContent(card(made)));
   check("AC-134 a card with no session has none", !(await page.$(`${card(bare)} .csession`)) && !(await page.$(`${card(bare)} .cstate`)));
   hook(a, "SessionStart", { source: "startup" }); hook(a, "UserPromptSubmit", { prompt: "go" });
@@ -46,6 +47,8 @@ export async function liveBoardSessions(page, opts) {
   await j(`/api/tasks/${made}`, "PATCH", { status: "IN PROGRESS" });
   check("AC-134 it goes with the task to IN PROGRESS", await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000));
   await j(`/api/tasks/${made}`, "PATCH", { status: "DONE" });
+  await until(() => page.$(`.col[data-status="DONE"] ${card(made)}`), 4000);
+  await page.click(`.col[data-status="DONE"] ${card(made)} .ctitle`);   // folded in DONE: shown whole (terminum-kanban.md AC-159)
   check("AC-134 and to DONE", await until(() => page.isVisible(`.col[data-status="DONE"] ${row}`), 4000));
   await j(`/api/tasks/${made}`, "PATCH", { status: "IN PROGRESS" });
   await until(() => page.isVisible(`.col[data-status="IN PROGRESS"] ${row}`), 4000);

@@ -100,7 +100,7 @@ Scenario: AC-81 failure — ssh works, tmux does not answer
 
 Scenario: AC-81 edge — a dropped link left its control client on the host
   Given the link dropped while the host stayed up, and the host's tmux kept terminum's control client of it ("tmux -u -C new-session -A -f ignore-size -s terminum", or "attach-session -E -f ignore-size -t <session>" for a session attached by name, its ssh end gone, its parent now init)
-  When terminumd connects to the host again
+  When terminumd connects to the host again (also through a host record replaced by a new one, AC-87: another connection)
   Then it ends that client, also one whose parent is a shell of init's (SIGTERM; detach-client cannot), once for that connection, logged as event=clients.orphans with exactly the pids ended (the script answers in a server option named at random for that sweep); terminum's clients are those tmux lists as control clients with ignore-size (still a tmux process: a pid not reused), and (Linux) the user's processes named "tmux: client" with terminum's command line, also one stuck before tmux listed it
   And where tmux rewrote a client's command line (FreeBSD, OpenBSD: "tmux: client (<socket>)") one of this server's socket with no terminal counts too (an interactive client has one; a command's or another program's control client of this server left orphaned is ended as well, an accepted risk); on a host whose ps cannot say (busybox: no -U, no -p) processes, their names, parents and terminals are read from /proc
   And the tmux server is never one, though a server terminum's command started keeps that command line; a control client whose parent lives (this connection's, another Mac's, through any ssh server), one of another shape, one under a subreaper are left alone; a read that fails leaves its process
@@ -512,7 +512,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-81 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `scripts/e2e_hostattach.py`, `web/test/e2e_tmux.mjs`, `cargo test tmux::orphans`, `cargo test an_ssh_link_that_never_reached_tmux_says_so`
+- [x] AC-81 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `scripts/e2e_hostattach.py`, `web/test/e2e_tmux.mjs`, `cargo test tmux::orphans`, `cargo test tmux::once_tests` (a replaced host is a new connection), `cargo test an_ssh_link_that_never_reached_tmux_says_so`
 - [x] AC-82 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test remote::`
 - [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::consent`, `cargo test hosts::link`
 - [x] AC-84 — `scripts/e2e_remote_sshd.py`, `scripts/e2e_remote.py`

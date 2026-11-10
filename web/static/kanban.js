@@ -17,6 +17,8 @@ import { spentLine, usageWords } from "./kanbanspend.js";
 import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.js";
 import { boardSessions, sessionStrip } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
+import { foldedCards } from "./kanbanfold.js";
+import { scheduledSection } from "./kanbansched.js";
 import { projectWindow } from "./kanbanproject.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
@@ -141,9 +143,11 @@ function card(t) {
   c.draggable = true;
   c.tabIndex = 0;
   c.rowDrawn = "";
+  folds.mark(c, t);
   const head = el("div", "chead");
   head.append(el("span", "cid", t.id), el("span", `csev ${t.severity}`, t.severity));
   if (t.parent) head.append(el("span", "cparent", `in ${t.parent}`));
+  if (t.schedule) head.append(el("span", "cfrom", t.schedule));   // made by that schedule (terminum-schedules.md AC-163)
   if (t.agent) head.append(agentChip(t.agent));
   // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
   if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
@@ -165,8 +169,8 @@ function card(t) {
   c.append(...[head, el("div", "ctitle", t.title), boxes, foot].filter(Boolean));
   showUsage(c, t.id);
   showSession(c, t);
-  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else openTask(t.id); });
-  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) openTask(t.id); });
+  c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else folds.press(c); });
+  c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) folds.press(c); });
   c.addEventListener("dragstart", (e) => {
     dragging = picked.has(t.id) ? pickedTasks() : [t];
     e.dataTransfer.effectAllowed = "move";
@@ -185,6 +189,7 @@ function card(t) {
   return c;
 }
 
+
 const pickedTasks = () => [...cards.values()].flat().filter((t) => picked.has(t.id));
 
 /** ⌘ or Ctrl+click: several tasks for one agent; Esc lets them go. */
@@ -198,7 +203,11 @@ function unpick() {
   document.querySelectorAll(".card.picked").forEach((c) => c.classList.remove("picked"));
   agents.draw();
 }
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && picked.size && !document.querySelector("dialog[open]")) unpick(); });
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || document.querySelector("dialog[open]")) return;
+  if (picked.size) unpick();
+  else folds.fold();
+});
 
 /** RUN's window for `tasks`, on `agent` if chosen; what is said of a refusal is terminumd's. */
 async function runThem(tasks, agent) {
@@ -256,17 +265,21 @@ function send(m) {
   else say("Not connected");
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
+const folds = foldedCards((id) => openTask(id));
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
 $("agentbar").append(agents.box);
+const scheduled = scheduledSection({ getMeta: () => meta, chosen: () => filters().project, openTask });
+$("schedbar").append(scheduled.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 
 /** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
 function draw() {
   if (dragging) return;
+  folds.keep(cards);
   const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
   for (const [column, part] of columns) {
     const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered, filters().project.length === 1]);   // a session's state changes on its card alone (sessionsCame)
@@ -339,6 +352,7 @@ async function loadMeta() {
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     bar.draw();
     agents.draw();
+    scheduled.draw();
     project.refresh();
   } catch (e) {
     failed.meta = e.message;
@@ -354,11 +368,11 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); }, editProject: (p) => project.open(p), newSession });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); scheduled.draw(); }, editProject: (p) => project.open(p), newSession });
 const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 $("newproject").addEventListener("click", () => project.open());
 const needs = taskLines($("asks"), (id) => openTask(id));
-const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }) });
+const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }), openSchedule: (key) => scheduled.openKey(key) });
 const address = taskAddress({ windowed, needs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });
 
@@ -447,6 +461,7 @@ function listen() {
       else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
       else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
       else if (m.t === "taskmarks") needs.came(m);
+      else if (m.t === "schedules") { scheduled.load(); readSoon(); }   // its tasks and the slots it keeps
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
         slots = m.slots ?? slots;
@@ -465,7 +480,7 @@ function listen() {
 signin.showKeptCss();
 signin.loadCss();
 await loadMeta();
-await load();
+await Promise.all([load(), scheduled.load()]);
 listen();
 address.route();
 const asked = new URLSearchParams(location.search);

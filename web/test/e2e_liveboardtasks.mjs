@@ -4,7 +4,7 @@
 // by itself; a project's own Archived, with Find and Return.
 import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, nap, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const card = (id) => `.card[data-id="${id}"]`;
@@ -28,7 +28,7 @@ export async function liveBoardTasks(page, opts) {
   // AC-112: New subtask in its parent's window
   const parent = (await j("/api/tasks", "POST", { title: "the parent", project })).id;
   await page.waitForSelector(card(parent), { timeout: 8000 });
-  await page.click(card(parent));
+  await pressCard(page, parent);
   await page.waitForSelector("#taskbox[open]");
   await page.click('#taskbody .subtasks button:has-text("New subtask")');
   await page.waitForSelector("#newbox[open]");
@@ -46,7 +46,7 @@ export async function liveBoardTasks(page, opts) {
   await page.click("#fsubtasks");
   check("AC-112 Show subtasks makes it a card, saying whose", await until(async () => /in [A-Z][A-Z0-9]*-\d+/.test(await page.textContent(`${card(kid)} .cparent`).catch(() => ""))));
   check("AC-112 Show subtasks stands in the address", new URL(page.url()).searchParams.get("subtasks") === "1");
-  await page.click(card(kid));
+  await pressCard(page, kid);
   await page.waitForSelector("#taskbox[open]");
   check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subtasks h3 .linklike")) && !(await page.$('#taskbody .subtasks button:has-text("New subtask")')));
   // the subtask's window reading itself again, its answer held until its parent has opened: it draws nothing over the parent
