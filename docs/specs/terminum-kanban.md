@@ -76,7 +76,7 @@ Open questions: none.
 | AC-133 | [MUST / P0] | The board's flow survives what people and machines do: the last drop stands, a move shows at once and a refused one goes back; a late answer never stands over a newer; what is typed is never lost by a slip, a refusal or a change by another. |
 | AC-134 | [MUST / P0] | A card with a live session carries that session's own row from the session list: bar in the project's color, pulsing while its agent works, plan, what it does now, every state; a press opens that session. |
 | AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
-| AC-139 | [MUST / P0] | + Project makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with the pool's keys beside. |
+| AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with the pool's keys beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 | AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
 | AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history; tasks, subtasks and comments say when they were made and changed; comments come newest first, a key turns the order. |
@@ -90,7 +90,7 @@ Open questions: none.
 Scenario: AC-105 happy path — the two pages
   When the browser opens "/"
   Then it is redirected to "/sessions/", the session list and terminal of terminum.md AC-01
-  When the user presses Kanban in the page's head
+  When the user presses Kanban among the sections (terminum.md AC-167)
   Then "/kanban/" loads in the same tab, the signed-in browser staying signed in, and the terminals keep running in tmux
   And Sessions in its head loads "/sessions/" again; "/kanban/API-12" opens the board with API-12's window open
 
@@ -111,7 +111,7 @@ Scenario: AC-105 happy path — a card
 Scenario: AC-105 edge — a phone
   Given a width under 860 px
   Then one column shows, a swipe goes to the next, a switch over it names the five with their counts and follows; a card runs by its Run key
-  And its head leaves the cards the room: pages and New task on one row, the project, Find and Filters on the next; the filters open under Filters
+  And its head leaves the cards the room: the list's key and + Task on one row, the project, Find and Filters on the next; the filters open under Filters
 
 Scenario: AC-105 edge — many cards
   Given 1,000 DONE tasks
@@ -154,7 +154,7 @@ Scenario: AC-159 edge — what stays
 
 ```gherkin
 Scenario: AC-106 happy path — the window
-  When the user presses New task
+  When the user presses + Task in the board's head, a key as its neighbours, not a primary one
   Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else Default), Severity P2, Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
@@ -175,8 +175,8 @@ Scenario: AC-106 happy path — the rest folded
 Scenario: AC-106 happy path — from TODO's head
   Then TODO's head always shows a [+] key just before its count, in the look of the session list's group-header [+]
   When the user presses it
-  Then the same window opens as New task's, the draft with it
-  And a phone, which hides the column heads, keeps New task in the board's head
+  Then the same window opens as + Task's, the draft with it
+  And a phone, which hides the column heads, keeps + Task in the board's head
 
 Scenario: AC-106 happy path — from a session and from a terminal's selection
   When the user picks New task in a session's menu
@@ -186,7 +186,7 @@ Scenario: AC-106 happy path — from a session and from a terminal's selection
 
 Scenario: AC-106 edge — a draft
   When the user closes the window with text typed, or reloads the page
-  Then the next New task on that browser offers the draft with its files; Discard drops them, and files of a draft not used for 7 days go, as a paste's do
+  Then the next new task on that browser offers the draft with its files; Discard drops them, and files of a draft not used for 7 days go, as a paste's do
 
 Scenario: AC-106 failure — refused
   When Create has no title, or a title over 200 characters, or a text over 1 MiB
@@ -342,7 +342,7 @@ Scenario: AC-112 happy path — one level
   Then the new-task window says "New subtask of API-12", its project fixed, with a draft of its own
   And API-13 is a full task of API-12's project with its own status, owner, severity and session, and API-12's card shows "0/1"
   And API-12's window lists its subtasks, a press opening each, and API-13's says "Subtask of API-12"
-  And Show subtasks in the head makes subtasks cards of their own, each saying "in API-12"; in API-12's column each stands right under API-12, shifted right, whatever its severity; in another column it keeps its place, unshifted; a task dropped into API-12's group lands after it; off, they show only in their parent's window
+  And Show subtasks in the head, a key that looks pressed as a filter that is on, makes subtasks cards of their own, each saying "in API-12"; in API-12's column each stands right under API-12, shifted right, whatever its severity; in another column it keeps its place, unshifted; a task dropped into API-12's group lands after it; off, they show only in their parent's window
 
 Scenario: AC-112 edge — the parent
   When API-12 ends in DONE with API-13 open
@@ -577,7 +577,7 @@ Scenario: AC-116 failure — not kept
 Scenario: AC-117 happy path — banner and count
   When API-12 moves to WAIT FOR HUMAN or FAILED by an agent or Dispatcher
   Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, on both pages
-  And Kanban in the page's head counts those tasks
+  And Kanban among the sections counts those tasks
 
 Scenario: AC-117 edge — closed and seen
   When the user closes the line, opens the task or moves it on
@@ -783,7 +783,7 @@ Scenario: AC-134 edge — nothing to open
 Scenario: AC-134 happy path — every session has its address
   When the user presses a session in the list, on the session page or the board
   Then the address is "/sessions/#/<its key>/", a press a step of Back; Back shows the session before
-  And a reload shows that session, and the session's header keeps the Kanban key at every width but a phone's, where its list's sheet and the settings menu hold it
+  And a reload shows that session, and the sections stay in its list's head (terminum.md AC-167)
 
 Scenario: AC-134 edge — a drag by the row
   When the user drags API-12's card by its row and drops it on an agent
@@ -821,8 +821,7 @@ Scenario: AC-135 happy path — one width
   Then the other page has the same width, at once if it is open
 
 Scenario: AC-135 happy path — the ways between the pages
-  Then the sessions key stands in the board's top left corner, in the list's head; with the list hidden, in the board's
-  And Kanban stands in the session page's head
+  Then the sections' switcher stands in the list's head on both pages; with the list hidden, in the page's head (terminum.md AC-167)
 
 Scenario: AC-135 happy path — a press opens the session
   When the user presses session api there
@@ -862,7 +861,7 @@ Scenario: AC-135 failure — sessions not read
 
 ```gherkin
 Scenario: AC-139 happy path — a new project
-  When the user presses + Project, types Billing, chooses its server, sets its folder and presses Create
+  When the user opens the project's menu, presses New project…, types Billing, chooses its server, sets its folder and presses Create
   Then the project stands, empty, chosen on the board, and the window stays, now with the pool and its keys
 
 Scenario: AC-139 happy path — changing it

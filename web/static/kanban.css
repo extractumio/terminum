@@ -7,10 +7,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .board-page :is(.nav-foot, #tip) { display: none; }
 .board-page #bar { flex: none; padding-left: var(--gutter); padding-right: var(--gutter); }   /* on the columns' edges */
 .board-page #sessions { padding-bottom: var(--gutter); }
-.board-page .search kbd { display: none; }   /* its head holds one key more: the word stays whole */
-#barsessions { flex: none; }
-#app:not(.nav-hidden) #barsessions { display: none; }
-#tosessions { flex: none; }
 /* keys that do not fit go to a line of their own, never under the board's keys on the right */
 #filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
 #filters .search { flex: 1 1 110px; min-width: 110px; max-width: 220px; height: var(--key-h); }   /* the field gives way first: a line breaks only past its least */
@@ -27,13 +23,13 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #boardacts { display: flex; gap: var(--sp-2); margin-left: auto; }
 
 :is(.pick summary, .colhead) .count { font-size: var(--fs-micro); font-weight: var(--fw-body); font-variant-numeric: tabular-nums; }
-#newproject { display: inline-flex; align-items: center; gap: var(--sp-1); }
 /* the project: its key says which, with its color's dot; its menu's name chooses it alone, its tick adds it, its pencil edits it */
 #fproject { flex: none; }
 #fproject summary { max-width: 200px; }
 .pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #fproject .box { min-width: min(320px, calc(100vw - var(--sp-6) * 2)); }
 .projrow { display: flex; align-items: center; }
+#fproject .projnew { margin-top: var(--sp-2); color: var(--muted-text); }   /* set apart: it makes, the rows above choose */
 #fproject .projrow .projtick { flex: none; width: auto; padding-right: 0; }
 #fproject .projrow .projname { flex: 1 1 auto; width: auto; min-width: 0; }
 #fproject .projrow :is(.projedit, .projsession) { flex: none; width: var(--icon-key-list); height: var(--icon-key-list); padding: 0; justify-content: center; color: var(--muted); }
@@ -199,8 +195,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   .schedtracks > .trackitems { flex-direction: column; }
   .schedlist .item { width: auto; }
   .pickhint { white-space: nowrap; }
-  #app:not(.nav-hidden) #barsessions { display: grid; }
-  #newproject span { display: none; }
   #filters { order: 3; flex: 1 1 100%; }
   #filters .search { flex: 1 1 0; min-width: 80px; max-width: none; }
   #picks { flex-wrap: wrap; }

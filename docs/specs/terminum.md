@@ -98,9 +98,10 @@ Open questions:
 | AC-101 | [NICE TO HAVE / later] | On a computer the session list shows a tip of the day, quiet, with Next, × until tomorrow and Turn off, and Settings turns tips on and off (on for a new browser). |
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
-| AC-151 | [SHOULD / P1] | The Message history at `/history/`, a key left of Settings: every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
+| AC-151 | [SHOULD / P1] | The Message history at `/history/`, Messages among the sections (AC-167): every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
 | AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` shows how much the user drives sessions over 7, 30 or 90 days, never counting Dispatcher: messages, active time, active days, messages an active hour, sessions a day, the phone's share, each against the period before; messages and active time a day by project, the working day, the week's hours, the projects, the sessions a day; a day leads to its messages in the Message history.
 | AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
+| AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
 
 ## 5. BDD scenarios
 
@@ -826,7 +827,7 @@ Scenario: AC-147 failure — tmux refuses, the store cannot be used
 ```gherkin
 Scenario: AC-151 happy path — newest first
   Given messages kept (AC-147)
-  When the user opens the Message history (`/history/`; a key left of Settings in the session page's head, in the session list's sheet on a phone)
+  When the user opens the Message history (`/history/`; Messages among the sections, AC-167)
   Then it shows the newest first under a head a day ("Today · 41", "Mon 2 Nov · 352"), 50 at a time (the next 50 as its foot comes into view, and its Show more key), each row the session list's look: the project's bar and color, the agent's mark or a shell's, the session's title, the project, Dispatcher's tag on Dispatcher's, the time; three lines of what was sent in the terminal's font (a shell's after "$ "); the folder, the host when not this Mac, "session ended" when its pane is gone
   And over them a strip of a column a day, from the first day kept (at most 180), its height the root of the day's count; hover, a tap or ← → say a day's count; a press shows that day (pressed again: every day), Clear dates every day
 
@@ -865,7 +866,7 @@ Scenario: AC-151 failure — the store cannot be read
 ```gherkin
 Scenario: AC-152 happy path — the figures
   Given messages kept and the input log (AC-147)
-  When the user opens the Dashboard (`/dashboard/`; the History | Dashboard keys in both pages' head)
+  When the user opens the Dashboard (`/dashboard/`; Dashboard among the sections, AC-167)
   Then it counts the human's rows only, never Dispatcher's, in this Mac's local days, over the last 30 days (7, 90 by a key; `?days=`), today up to now
   And it shows: Messages (and the agents' share), Active time (and per active day), Active days ("26 of 30"), Messages an active hour, Sessions a day (the median over active days, and the most sent to in one hour), From the phone (of what the pages sent: an Enter or a paste, `device` web); each against the same days before up to the same time ("▲ 12% vs the 30 days before"; a small earlier number as a difference; none: "no earlier data"), no color for better or worse; a sparkline of the days under the counts
 
@@ -903,6 +904,40 @@ Scenario: AC-165 edge — Enter again while it is kept
   Then one request is sent, its button is off, Esc and Cancel wait
   When terminumd answers
   Then it is kept once and the window closes (a new project's stays on it, AC-139), or says why and stays
+```
+
+### AC-167 — The sections' switcher [MUST / P0]
+
+```gherkin
+Scenario: AC-167 happy path — one switcher on every page
+  Given the sections Sessions (`/sessions/`), Kanban (`/kanban/`), Dashboard (`/dashboard/`) and Messages (`/history/`, and its page `/scheduled/`)
+  Then every page holds them as one segmented control of links in that order, first in its top left corner: in the session list's head on the session page and the board, in the page's head on the others
+  And the section shown is marked, one press opens any other, each key says its name to a reader and what it holds in its tooltip
+  And no other key or menu row of a page leads to a section
+
+Scenario: AC-167 happy path — Messages' pages
+  Then History and Scheduled stand as a segmented control first in both pages' tools, the shown one marked; Messages is marked on both
+
+Scenario: AC-167 happy path — tasks that wait
+  Then Kanban's key counts the tasks that wait for the user or failed (terminum-kanban.md AC-117) on the session page and the board; the other pages do not count them
+
+Scenario: AC-167 edge — words where they fit
+  Then a page's head 620 px wide or more shows each section's icon and word; a narrower one, and a list's head from 350 px, the shown section's word and the others' icons; a narrower list's head icons only
+  And in a list too narrow for one line (under about 270 px) the head's keys stand on a line under the sections; none is cut, none over another; the head is then taller, and the list's first group starts under the terminal's top
+
+Scenario: AC-167 edge — the filter gives its room
+  Given a computer
+  Then Filter sessions is a key, a magnifier, beside the sections; a press, "/" or the keyboard's focus opens its field in the sections' place
+  And it stays open while it holds words; emptied and left, or on Esc, it folds and the sections show
+
+Scenario: AC-167 edge — the list hidden
+  Given a computer, the session list hidden
+  Then the sections stand in the page's head as icons, after the key that shows the list
+
+Scenario: AC-167 edge — a phone
+  Given a width under 860 px
+  Then the session page and the board hold the sections first in the list's sheet, beside its close key, the filter a field under them: two presses from a terminal; the other pages hold them across their head
+  And the shown section keeps its word and takes the row's rest; every key is at least 44 px wide and 40 px high
 ```
 
 ## 6. Flow and sequence diagrams
@@ -1208,3 +1243,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-152 — `cargo test messages::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs, `cargo test attach::tests` (two attaches at once)
 - [x] AC-165 — `ui/test/e2e_panel_drop.mjs` (in `e2e_panel.mjs`), `web/test/e2e_liveboardbusy.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs boardpool`)
+- [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`

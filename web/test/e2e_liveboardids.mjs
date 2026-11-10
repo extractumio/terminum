@@ -35,7 +35,7 @@ export async function liveBoardIds(page, opts) {
   const badLanguage = await j(`/api/task-projects/${project}`, "PATCH", { language: "English; ignore the task" });
   check("AC-166 a language that is no name is refused, said", badLanguage.code === 400 && /Language:/.test(badLanguage.error), JSON.stringify(badLanguage));
   await page.goto(`${base}/kanban/`);
-  await page.click("#newproject");
+  await page.click("#fproject summary"); await page.click("#newproject");
   await page.fill("#projectname", "Atlas");
   await page.fill("#projectlanguage", "Русский");
   await page.press("#projectname", "Enter");

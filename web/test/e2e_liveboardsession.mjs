@@ -68,11 +68,11 @@ export async function liveBoardSessions(page, opts) {
   await page.click(`#sessions .item[data-id="${other}"]`);
   check("AC-134 a press on a row changes the address", await until(() => new URL(page.url()).hash === hashOf(other)), page.url());
   check("AC-134 and shows that session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, other)));
-  check("AC-134 Kanban stays in the head", await page.isVisible("#tokanban"));
+  check("AC-134 Kanban stays in the list's head", await page.isVisible('.nav-head .sections a[href="/kanban/"]'));
   await page.evaluate(() => history.back());       // within the page: Playwright's goBack waits for a load that never comes
   check("AC-134 Back returns to the session before", await until(() => new URL(page.url()).hash === hashOf(key)), page.url());
   check("AC-134 and shows it", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key)));
-  check("AC-134 Kanban still in the head", await page.isVisible("#tokanban"));
+  check("AC-134 Kanban still in the list's head", await page.isVisible('.nav-head .sections a[href="/kanban/"]'));
   await page.evaluate(() => history.back());
   const home = await until(() => new URL(page.url()).pathname === "/kanban/", 3000);
   check("AC-134 Back again returns to the board", home, page.url());
@@ -158,7 +158,7 @@ export async function liveBoardSessions(page, opts) {
   await page.reload();
   await page.waitForSelector('.col[data-status="TODO"]');
   check("AC-135 and this browser remembers it", !(await page.isVisible("#nav")));
-  check("AC-135 a way to the session page stays in the head", await page.isVisible("#barsessions"));
+  check("AC-167 with the list hidden the sections stand in the board's head", await page.isVisible('#bar .sections a[href="/sessions/"]') && await page.getAttribute('#bar .sections a[href="/kanban/"]', "aria-current") === "page");
   await page.click("#navbtn");
   check("AC-135 the head's key brings it back", await until(() => page.isVisible("#nav")));
 
@@ -190,9 +190,9 @@ export async function liveBoardSessionsPhone(page, { base }) {
   check("AC-135 the project key stands left of Find", await page.evaluate(() => { const p = document.querySelector("#fproject").getBoundingClientRect(), f = document.querySelector("#filters .search").getBoundingClientRect(); return p.right <= f.left && Math.abs(p.top - f.top) < 8; }));
   const onScreen = () => page.evaluate(() => { const r = document.querySelector("#nav").getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; });
   check("AC-135 the list is closed at first", !(await onScreen()));
-  check("AC-135 the head leads to the session page", await page.isVisible("#barsessions"));
   await page.click("#navbtn");
   check("AC-135 the head's key opens it as a drawer", await until(onScreen));
+  check("AC-167 a phone's sheet leads to the session page", await page.isVisible('.nav-head .sections a[href="/sessions/"]'));
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   check("AC-135 no sideways scroll on a phone", wide <= 0, String(wide));
   await page.click("#drawerclose");

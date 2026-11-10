@@ -7,6 +7,7 @@ import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { api, signInElsewhere } from "./kanbanutil.js";
 import { el, projectInk } from "./listparts.js";
+import "./sections.js";
 
 export { api };
 export const $ = (id) => document.getElementById(id);

@@ -35,8 +35,17 @@ export async function liveHistory(page, opts) {
   await page.keyboard.press("Enter");
   await nap(600);
 
-  check("AC-151 the session page's head leads to the Message history", await page.getAttribute("#tohistory", "href") === "/history/");
+  check("AC-167 the session page's sections lead to the Message history", (await page.$$('#nav .sections a[href="/history/"]')).length === 1);
   await page.goto(`${base}/history/`);
+  const shownSection = () => page.evaluate(() => [...document.querySelectorAll("#bar .sections a")].map((a) => `${a.getAttribute("aria-label")}${a.getAttribute("aria-current") ? "*" : ""}${a.querySelector(".word").getBoundingClientRect().width > 0 ? "" : " (icon)"}`).join());
+  check("AC-167 the Message history's head holds the sections with their words, Messages marked", await until(async () => await shownSection() === "Sessions,Kanban,Dashboard,Messages*"), await shownSection());
+  check("AC-167 Messages' two pages stand first in its tools, History marked", await page.getAttribute('.mpages a[href="/history/"]', "aria-current") === "page" && await page.isVisible('.mpages a[href="/scheduled/"]'));
+  await page.goto(`${base}/dashboard/`);
+  check("AC-167 the Dashboard's head marks Dashboard", await until(async () => await shownSection() === "Sessions,Kanban,Dashboard*,Messages"), await shownSection());
+  await page.goto(`${base}/scheduled/`);
+  check("AC-167 Scheduled is Messages' page: Messages marked", await until(async () => await shownSection() === "Sessions,Kanban,Dashboard,Messages*"), await shownSection());
+  await page.click('#bar .sections a[href="/history/"]');
+  await page.waitForSelector("#results");
   check("AC-151 newest first, every message kept, Dispatcher's too", await until(async () => (await rows(page)).length >= 4, 8000), JSON.stringify(await rows(page)));
   const first = await rows(page);
   check("AC-151 the newest is the shell's command", first[0] === "echo history probe words", first[0]);
@@ -133,6 +142,9 @@ export async function liveHistoryPhone(page, { base, shots }) {
     await page.waitForSelector(p === "history" ? "#results .msg, #results .mempty" : "#tiles .tile");
     const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
     check(`AC-${p === "history" ? 151 : 152} ${p} at a phone's width has no sideways scroll`, wide <= 0, String(wide));
+    const keys = await page.evaluate(() => [...document.querySelectorAll("#bar .sections a")].map((a) => { const b = a.getBoundingClientRect(); return [a.querySelector(".word").getBoundingClientRect().width > 0 ? a.textContent : "", Math.round(b.width), Math.round(b.height)]; }));
+    check(`AC-167 ${p} at a phone's width: the sections across its head, the shown one's word, each a finger's size`,
+      keys.map((k) => k[0]).join() === (p === "history" ? ",,,Messages" : ",,Dashboard,") && keys.every((k) => k[1] >= 44 && k[2] >= 40), JSON.stringify(keys));
     if (shots) await page.screenshot({ path: path.join(shots, `${p}-phone.png`), fullPage: true });
   }
   check("AC-151 the phone's filters stand behind one key", await page.goto(`${base}/history/`).then(() => page.isVisible("#hfilters")) && !(await page.isVisible("#fsender")));
