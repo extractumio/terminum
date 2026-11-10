@@ -98,7 +98,7 @@ let ended = false;
 async function start() {
   if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
-  const env = { ...process.env, TM_TEST_CLOCK_SCALE: process.env.TM_TEST_CLOCK_SCALE ?? "300", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
+  const env = { ...process.env, TM_TEST_CLOCK_SCALE: process.env.TM_TEST_CLOCK_SCALE ?? "300", TM_TEST_CLOSE_AFTER: "7200", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {

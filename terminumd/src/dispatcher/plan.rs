@@ -251,7 +251,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             run.closing_for += f.dt;
         }
         let idle = f.exit.is_some() || (f.alive && run.turn_ended);
-        if run.closing_for >= CLOSE && !f.others_open && f.waiting.is_none() && idle {
+        if run.closing_for >= super::close_after() && !f.others_open && f.waiting.is_none() && idle {
             if let Some(program) = &f.program {
                 run.state = Phase::Left;
                 acts.push(Act::Say(format!("Session left open: {program} runs in it")));
@@ -272,7 +272,7 @@ pub fn asked_human(run: &Run) -> bool {
 /// Whether a close of either kind may come once `dt` more passes: then the walk reads whether another task of
 /// its session is open (AC-125, AC-157).
 pub fn close_near(run: &Run, dt: i64) -> bool {
-    (finished(&run.status) && run.closing_for + dt >= CLOSE) || (asked_human(run) && run.closing_for + dt >= ASKED_QUIET)
+    (finished(&run.status) && run.closing_for + dt >= super::close_after()) || (asked_human(run) && run.closing_for + dt >= ASKED_QUIET)
 }
 
 /// Whether a Close for an agent's question still holds, read just before the pane goes.
@@ -291,7 +291,7 @@ pub fn idle_holder(run: &Run) -> bool {
 
 /// Whether a Close a walk decided still holds, read just before the pane goes: a press or a prompt may have come since.
 pub fn still_closes(run: &Run) -> bool {
-    finished(&run.status) && !run.is_over() && !run.busy() && run.closing_for >= CLOSE
+    finished(&run.status) && !run.is_over() && !run.busy() && run.closing_for >= super::close_after()
 }
 
 /// How far a subagent has been dealt with, by how long it has been silent and idle (AC-127). A busy

@@ -203,9 +203,19 @@ fn typed_at(t: &mut Vec<(String, String, Instant)>, key: &str, prompt: &str) -> 
     t.iter().position(|(k, text, _)| k == key && first(text) == wanted)
 }
 
-/// The test clock (§9 Times): only with a test's own app folder.
+/// A test's own time (§9 Times): only with a test's own app folder.
+fn of_test(name: &str) -> Option<i64> {
+    std::env::var("TM_APP_DIR").ok().and_then(|_| std::env::var(name).ok()).and_then(|s| s.parse().ok()).filter(|s: &i64| *s > 0)
+}
+
+/// The test clock.
 pub fn scale() -> i64 {
-    std::env::var("TM_APP_DIR").ok().and_then(|_| std::env::var("TM_TEST_CLOCK_SCALE").ok()).and_then(|s| s.parse().ok()).filter(|s: &i64| *s > 0).unwrap_or(1)
+    of_test("TM_TEST_CLOCK_SCALE").unwrap_or(1)
+}
+
+/// How long after DONE or FAILED a session closes; a test that acts on a finished session gives it longer.
+pub fn close_after() -> i64 {
+    of_test("TM_TEST_CLOSE_AFTER").unwrap_or(plan::CLOSE)
 }
 
 /// Moves one task and says why, as Dispatcher; one already there says nothing.
