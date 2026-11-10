@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::family;
 use super::ops::{self, Edit, Task};
-use super::tools::{arg, author, movable, text_of, title_of, visible, Who};
+use super::tools::{arg, author, not_run_elsewhere, text_of, title_of, visible, Who};
 use crate::plans::rules;
 
 /// What `parent` says to take a task out of its parent.
@@ -21,7 +21,7 @@ fn agents(tx: &Transaction, who: &Who, t: &Task) -> Result<(), String> {
     if !t.by_agent || ops::worded_by_human(tx, &t.key)? {
         return Err(format!("{} holds a human's words: they decide its title, text and archive. Comment instead.", t.id));
     }
-    movable(tx, who, &t.id).map(drop)
+    not_run_elsewhere(tx, who, t)
 }
 
 /// update_task: what it says, and the tasks whose cards change (a parent left or joined too).

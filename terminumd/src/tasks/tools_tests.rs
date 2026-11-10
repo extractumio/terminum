@@ -51,7 +51,7 @@ fn ac115_an_agent_does_all_on_its_own() {
 }
 
 /// A human's RUN of `id`, its agent working in `pane`.
-fn running(s: &Store, id: &str, pane: &str) {
+pub(crate) fn running(s: &Store, id: &str, pane: &str) {
     use crate::dispatcher::runs::{self, Phase, Run};
     s.with(|tx| {
         let like = Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
@@ -306,12 +306,7 @@ fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_i
     assert_eq!(status, "WAIT FOR HUMAN");
     assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == asked && e["questions"] == true), "kept as questions: {history}");
     assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": other, "questions": "x"})).unwrap_err(), format!("{other} belongs to session %8: only its agent asks on it. You can comment."), "only its own task");
-    s.with(|tx| {
-        let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
-        let key = ops::key_of(tx, &id)?;
-        let run = crate::dispatcher::runs::add(tx, &like, &[key], 1)?;
-        crate::dispatcher::runs::change(tx, &run, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
-    }).unwrap();
+    running(&s, &id, KEY);
     let said = call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap();
     assert!(said.contains("End your turn now") && said.contains("resumes this conversation"), "{said}");
     assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap().contains("End your turn now"), "its own move waits the same way");

@@ -73,11 +73,16 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 
 /// A task of its project to move or finish, whatever session made or holds it (AC-115): only what a
 /// human's RUN runs in another session now is that run's, which Dispatcher watches.
-pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
+fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = visible(tx, who, id)?;
+    not_run_elsewhere(tx, who, &t).map(|()| t)
+}
+
+/// Refused when a human's RUN runs `t` in another session.
+pub(super) fn not_run_elsewhere(tx: &Transaction, who: &Who, t: &Task) -> Result<(), String> {
     match crate::dispatcher::runs::holding(tx, &t.key)?.and_then(|r| r.pane_key) {
-        Some(pane) if pane != who.key => Err(format!("{id} runs in session {} at a human's RUN. You can read it and comment.", ops::pane_of(&pane))),
-        _ => Ok(t),
+        Some(pane) if pane != who.key => Err(format!("{} runs in session {} at a human's RUN. You can read it and comment.", t.id, ops::pane_of(&pane))),
+        _ => Ok(()),
     }
 }
 
@@ -308,4 +313,4 @@ fn file_of(who: &Who, args: &Value) -> Result<(String, Box<dyn std::io::Read>), 
 
 #[cfg(test)]
 #[path = "tools_tests.rs"]
-mod tests;
+pub(super) mod tests;

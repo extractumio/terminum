@@ -33,16 +33,6 @@ fn agents_task(s: &Store, dir: &std::path::Path, title: &str) -> String {
     said.trim_start_matches("Kept as ").split(',').next().unwrap().to_string()
 }
 
-/// A human's RUN of `id`, its agent working in another session.
-fn run_elsewhere(s: &Store, id: &str) {
-    use crate::dispatcher::runs::{self, Phase, Run};
-    s.with(|tx| {
-        let like = Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
-        let run = runs::add(tx, &like, &[ops::get(tx, id)?.key], 1)?;
-        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(OTHER.into()); }).map(drop)
-    }).unwrap();
-}
-
 fn humans_task(s: &Store, project: &str) -> String {
     s.with(|tx| ops::create(tx, HUMAN, NewTask { title: "a human's".into(), project: Some(project.into()), ..Default::default() }, 1)).unwrap().id
 }
@@ -105,7 +95,7 @@ fn ac154_words_change_only_on_an_agents_task_no_human_reworded_and_no_run_elsewh
     let held = agents_task(&s, &dir, "Bug: held");
     s.with(|tx| ops::link(tx, HUMAN, &held, Some(OTHER), 3)).unwrap();
     assert!(call(&s, &dir, json!({"id": held, "text": SECTIONS})).is_ok(), "another session's, of the same project");
-    run_elsewhere(&s, &held);
+    crate::tasks::tools::tests::running(&s, &held, OTHER);
     assert_eq!(call(&s, &dir, json!({"id": held, "text": SECTIONS})).unwrap_err(), format!("{held} runs in session %8 at a human's RUN. You can read it and comment."));
 }
 
@@ -137,7 +127,7 @@ fn ac154_a_humans_task_or_another_project_never_leaves_the_board_by_an_agent() {
     assert_eq!(call(&s, &dir, json!({"id": far, "severity": "P0", "reason": "x"})).unwrap_err(), format!("{far} is outside this session's project."));
     let held = agents_task(&s, &dir, "Bug: held open");
     s.with(|tx| ops::link(tx, HUMAN, &held, Some(OTHER), 3)).unwrap();
-    run_elsewhere(&s, &held);
+    crate::tasks::tools::tests::running(&s, &held, OTHER);
     assert!(call(&s, &dir, json!({"id": held, "archive": "yes", "reason": "x"})).unwrap_err().contains("runs in session %8"));
     let idle = agents_task(&s, &dir, "Bug: held by a session with no run");
     s.with(|tx| ops::link(tx, HUMAN, &idle, Some(OTHER), 4)).unwrap();
