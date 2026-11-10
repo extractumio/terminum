@@ -29,6 +29,25 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
 }
 
 #[test]
+fn ac129_a_stop_without_a_result_never_closes_the_session_of_an_open_task() {
+    // the turn's tokens come after its Stop, from the same hook: only a closed pane drops them (sock.rs),
+    // so walk by walk to the hour's FAILED nothing closes it, however late the agent's next event is
+    let mut r = run("IN PROGRESS");
+    r.turn_ended = true;
+    let mut all = Vec::new();
+    for walk in 0..=(3600 + 300) / 30 {
+        let acts = step(&mut r, &up(30));
+        if acts.contains(&Act::Nudge) {
+            (r.nudged, r.idle_for) = (true, 0);         // as acts.rs writes it once it went
+        }
+        all.extend(acts.into_iter().map(|a| (walk, a)));
+    }
+    assert!(!all.iter().any(|(_, a)| matches!(a, Act::Close { .. } | Act::End)), "{all:?}");
+    assert_eq!(all.iter().filter(|(_, a)| *a == Act::Nudge).count(), 1, "{all:?}");
+    assert!(matches!(all.last(), Some((_, Act::Move { to: "FAILED", .. }))), "{all:?}");
+}
+
+#[test]
 fn ac123_the_request_asks_whether_it_is_finished_and_says_the_hour() {
     let w = nudge_words("API-12");
     assert!(w.starts_with("[terminum Dispatcher] API-12 is still open and you stopped. Is it finished? Call execute_tool(\"finish_task\", {id, result}) with its result in the sections"), "{w}");
