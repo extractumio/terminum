@@ -693,13 +693,14 @@ Scenario: AC-141 happy path — what holds a slot
 Scenario: AC-141 edge — at the agent's limit
   Given Opus reviewer with 1 at once and API-12's session working
   When the user drops API-13 on it, or POST /api/tasks/API-13/run {"agent": ...}
-  Then no session starts; RUN's window says "Opus reviewer is at its limit of 1: API-12. Run waits until it has room, then starts." and the press waits (AC-158)
+  Then no session starts; RUN's window says "Opus reviewer is at its limit of 1: API-12 is working. Run waits until it has room, then starts." and the press waits (AC-158)
+  And each holder is named with what it does: "is starting", "is working", "waits for a human", "is being ended", "is idle" (only such a one can be closed for its slot), "has finished, not idle yet"; one started by + Session is "a session with no task"; with several: "Opus reviewer is at its limit of 3: API-12 is working, API-14 is idle, API-16 waits for a human."
   And it is decided in the transaction that would take the slot: two presses never both find it free
 
 Scenario: AC-141 edge — at the project's limit
   Given api with Agents at once 2, API-12 and API-14 running on any agents
   When the user runs API-13 of api
-  Then no session starts and the press waits: "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12, API-14. It starts when there is room."
+  Then no session starts and the press waits: "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12 is working, API-14 is working. It starts when there is room."
 
 Scenario: AC-141 happy path — an idle holder
   Given Opus reviewer with 1 at once, and API-12 DONE, its turn over, no tool open, quiet for two walks, with an empty input box and no subagent
@@ -876,7 +877,7 @@ Scenario: AC-157 failure — not its task
 Scenario: AC-158 happy path — a press at a limit
   Given Opus reviewer with 1 at once, held by API-12
   When the user runs API-13 on it, first or to go on in a closed session
-  Then the press is kept, its comment kept on API-13 at once, and the answer and a toast say "It waits for Opus reviewer: Opus reviewer is at its limit of 1: API-12. It starts when there is room."
+  Then the press is kept, its comment kept on API-13 at once, and the answer and a toast say "It waits for Opus reviewer: Opus reviewer is at its limit of 1: API-12 is working. It starts when there is room."
   And API-13's card and window say "waits for Opus reviewer"; its column does not change
   When API-12's session closes, its agent goes or it is given up
   Then within a walk API-13's press goes again as RUN would go now: every check of a press read anew, the folder, hooks, the host's link, the text the human saw
@@ -902,6 +903,11 @@ Scenario: AC-158 edge — called off
 Scenario: AC-158 failure — refused when it goes
   When the press, gone again, is refused (the task's text changed, the folder is gone, the host is out of reach)
   Then the wait goes and API-13 says "Did not start after its wait: <reason>"
+
+Scenario: AC-158 edge — terminum upgraded meanwhile
+  Given API-13 waiting, and a new terminum installed whose own words of the prompt differ
+  When its press goes again
+  Then it starts: what the human saw is what its tasks, their project and their schedule hold (titles, texts, files' names, parent, budget, language, the schedule's words), not terminum's own words around them
 
 Scenario: AC-158 edge — a restart
   Given API-13 waiting when terminumd restarts

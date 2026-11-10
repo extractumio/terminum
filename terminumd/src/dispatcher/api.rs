@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, Phase, Run};
-use super::press::{again_words, also_of, budget_told, prompt_of, rev_of, shown_of, way, ways, Asked, Way};
+use super::press::{again_words, also_of, budget_told, facts, way, ways, Asked, Way};
 use super::pool;
 use super::screen::Screen;
 use super::places::{ad_hoc, folder_there, launch, no_folder, place, project_named, server_of};
@@ -61,9 +61,9 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
             _ => None,
         };
         let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
-        let shown = shown_of(tx, &tasks)?;
+        let shown = facts(tx, &tasks)?;
         Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
-                  "prompt_rev": rev_of(&shown), "prompt": shown, "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
+                  "prompt_rev": shown.rev(), "prompt": shown.shown(), "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
 }
 
@@ -362,7 +362,8 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
             way(t, runs::last_of(tx, &t.key)?, true)?;
         }
         // what the human saw is what goes: an agent may have changed a task meanwhile
-        if seen.is_some_and(|rev| rev != rev_of(&shown_of(tx, &now).unwrap_or_default())) {
+        let goes = facts(tx, &now)?;
+        if seen.is_some_and(|rev| rev != goes.rev()) {
             return Err("The task's text changed: look at it again.".to_string());
         }
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder
@@ -373,7 +374,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         if let Some(words) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
             return Ok(Next::Waits(words));
         }
-        let prompt = prompt_of(tx, &now, said.as_deref())?;
+        let prompt = goes.prompt(said.as_deref());
         // a wait kept its comment when it began (AC-158)
         if let Some(c) = &said && ops::keep_human_comment(tx, &now[0].id, c, &attached, ops::now())?.is_some() {
             for t in &now[1..] {
