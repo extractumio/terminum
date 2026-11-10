@@ -146,7 +146,7 @@ Scenario: AC-159 happy path — one shown whole
   Then API-7 is a line again
 
 Scenario: AC-159 edge — what stays
-  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, run by its Run key on hover, and opened by Enter as a press; its state says "expanded" or "collapsed" to a screen reader
+  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, and opened by Enter as a press; one an agent ran, its agent known, is run by its Run key on hover, any other by the key on the card shown whole; its state says "expanded" or "collapsed" to a screen reader
   And the card shown whole stays so as the columns are read again, until it leaves TODO and DONE
 ```
 
@@ -909,6 +909,12 @@ Scenario: AC-148 happy path — by project
   Then their tasks are named TERM-1, TERM-2… and IQUA-1, IQUA-2…, each project counting its own; Default's are TASK-1…
   And a card, a window, the session list's marks, Dispatcher's words and the tools' answers say that ID; the row's key never changes
   And a task's window says its key's first 8 hex characters, "abfed14f", beside when it was made: /kanban/abfed14f and get_task {id: "abfed14f"} find it whatever its ID becomes
+
+Scenario: AC-148 happy path — a schedule's task
+  Given terminum's tasks up to TERM-7
+  When a schedule makes a task in terminum (terminum-schedules.md AC-162)
+  Then it is S_TERM-8 and the next task a human makes TERM-9: one count, "S_" before the letters of what a schedule made
+  And it keeps "S_" under letters set anew and in a project it moves to; no project's letters hold "_"
 
 Scenario: AC-148 happy path — letters taken or set
   Given a second project whose folder is /Users/alex/fork/terminum
