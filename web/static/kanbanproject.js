@@ -3,6 +3,7 @@
 // folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the language its agents write
 // in on the board (terminum-dispatcher.md AC-159), the template its agents write tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
 // kept and says what is wrong.
+import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
@@ -72,7 +73,6 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     if (real) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
-  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
   /** Its letters, language and template, only those changed: a refusal says why and keeps the window. */
   function ownSettings(p) {
     const prefix = $("projectprefix").value.trim().toUpperCase(), template = $("projecttemplate").value;
@@ -84,7 +84,8 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     return body;
   }
 
-  async function keep() {
+  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. One at a time. */
+  const keep = oneAtATime(box, async () => {
     const name = $("projectname").value, dir = $("projectdir").value, host = $("projecthost").value;
     const atOnce = { limit: numberOrNull("projectatonce") };
     try {
@@ -106,7 +107,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
         open(getMeta().projects.find((p) => p.id === id));
       }
     } catch (e) { say(e.message); }
-  }
+  });
 
   $("projectok").addEventListener("click", keep);
   box.addEventListener("keydown", (e) => {
