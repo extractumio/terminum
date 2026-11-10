@@ -1,20 +1,15 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* What the Message history and the Dashboard share (terminum.md AC-151, AC-152): the page, its head (the board's
-   bar: the way back to Sessions, the title, the two pages as one segmented key, the board's key), the charts'
+   bar: the sections' switcher, sections.js), the charts'
    marks. The keys, fields and menus are the page's kinds (controls.css); here only their place. */
 body.msg-page { margin: 0; min-height: 100dvh; background: var(--surface-0); color: var(--t-fg); font-family: var(--ui); }
 #mpage { display: flex; flex-direction: column; min-height: 100dvh; }
-.msg-page #bar { position: sticky; top: 0; z-index: 30; flex: none; gap: var(--sp-2); padding-left: var(--gutter); padding-right: var(--gutter); }
-.mtitle { margin: 0 var(--sp-2) 0 0; font-size: var(--fs-title); font-weight: 600; white-space: nowrap; }
-.mpages { flex: none; }
+.msg-page #bar { position: sticky; top: 0; z-index: 30; flex: none; gap: var(--sp-2); align-items: center; min-height: var(--h-bar); padding: env(safe-area-inset-top) var(--gutter) 0; }   /* one line: no folder line under its keys */
+.mtitle { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }   /* for a reader: the shown section's key says it */
 .mgrow { flex: 1 1 auto; }
-#barsessions, #barkanban { flex: none; }
 @media (max-width: 860px) {
   .wide-only { display: none !important; }
-  .msg-page #bar { flex-wrap: wrap; row-gap: var(--sp-1); }
-  .mtitle { font-size: var(--fs-body); }
-  .msg-page #bar .mpages { order: 5; flex: 1 1 100%; }
-  .msg-page #bar .mpages a { flex: 1 1 0; justify-content: center; }
+  .msg-page #bar .sections { flex: 1 1 0; min-width: 0; }
 }
 /* the tools under the head: a field, keys and menus in a line that wraps */
 .mtools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--gutter) 0; }

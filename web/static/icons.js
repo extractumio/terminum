@@ -34,6 +34,13 @@ const ICONS = {
   ellipsis: [[12, 12, 1], [19, 12, 1], [5, 12, 1]],
   pencil: ["M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z", "m15 5 4 4"],
   search: ["m21 21-4.34-4.34", [11, 11, 8]],
+  // the sections (sections.js)
+  "square-terminal": [FRAME, "m7 11 2-2-2-2", "M11 13h4"],
+  // the board's columns (terminum's own, on Lucide's grid)
+  board: ["M4 4h3a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z", "M11 4h3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z",
+    "M18 4h3a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"],
+  "chart-line": ["M3 3v16a2 2 0 0 0 2 2h16", "m19 9-5 5-4-4-3 3"],
+  "messages-square": ["M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z", "M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"],
   "play": ["M6 3l14 9-14 9z"],
   "chevron-down": ["m6 9 6 6 6-6"],
   "chevron-up": ["m18 15-6-6-6 6"],

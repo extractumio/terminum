@@ -135,14 +135,14 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   space, keeps only why it is not kept. Read it with `sqlite3`; the columns and an example query
   are in `docs/specs/terminum.md` §9 Data formats (AC-147). What an agent was actually given is
   its own record, in the sent history above.
-- **Message history** (`/history/`, the two-bubble key left of Settings; in the session list's
-  sheet on a phone): every prompt and command sent, yours and Dispatcher's (tagged), kept in the
+- **Message history** (`/history/`, Messages among the sections in the page's top
+  left corner): every prompt and command sent, yours and Dispatcher's (tagged), kept in the
   table `messages` beside the input log. Type words to find them, the best matches first (each word
   also as the start of a longer one, `"a phrase"`, `-word` to leave out), or browse newest first by
   day; narrow by days (the strip of a column a day), project, sender and agents or shells. A row
   opens its session at that message, shows what was sent around it, or copies it. Every choice is in
   the address, so Back and links work.
-- **Scheduled runs** (`/scheduled/`, Scheduled in the Message history's head): every firing of
+- **Scheduled runs** (`/scheduled/`, Scheduled beside History in the Message history): every firing of
   your schedules, newest first: when, the schedule, its task (a press opens it on the board), its
   agent and status, when it went IN PROGRESS and ended; a row opens to the prompt that went in and
   the result that came out, or says why nothing ran (skipped, missed, did not start). Schedule picks one.
@@ -193,8 +193,8 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   terminal (Enter) goes there; Resolve (or Delete) settles one, a reminder resolved and a bookmark
   deleted, with Undo for 5 seconds; Esc closes the window. The bar over the terminal has the same
   Resolve.
-- **Tasks** (Kanban in the page's head, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card carries its session's row, a press opens the session, and says what became of its agent; the project key in the head chooses the project, a pencil on its row or + Project opens its window; the session page's list stands left of the columns, as wide as there, and its agents over them; drop a task on a free agent, or ⌘+press several and drop them, write a short message and press Run, or press Run in the new-task window: a task moves only by running; Dispatcher opens the window, types the task once the agent's box is empty, moves the card as the session lives and closes the session 5 minutes after it ended; a task's Budget gives the agent that many minutes, told at the start and at the end, and it is ended at the limit; a card shows its session's CPU, memory, running time and tokens, and a project's memory limits warn and end it (4 and 8 GiB unless set, `dispatcher` in settings.json or Memory limits… in its project's window); WAIT FOR HUMAN and FAILED say so in a line on both pages and in a count on Kanban; Codex needs terminum's hooks trusted in its /hooks): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
-  FAILED and DONE, with a severity, an owner, a project, Markdown comments and files; New task
+- **Tasks** (Kanban among the sections, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card carries its session's row, a press opens the session, and says what became of its agent; the project key in the head chooses the project, a pencil on its row or its menu's New project… opens its window; the session page's list stands left of the columns, as wide as there, and its agents over them; drop a task on a free agent, or ⌘+press several and drop them, write a short message and press Run, or press Run in the new-task window: a task moves only by running; Dispatcher opens the window, types the task once the agent's box is empty, moves the card as the session lives and closes the session 5 minutes after it ended; a task's Budget gives the agent that many minutes, told at the start and at the end, and it is ended at the limit; a card shows its session's CPU, memory, running time and tokens, and a project's memory limits warn and end it (4 and 8 GiB unless set, `dispatcher` in settings.json or Memory limits… in its project's window); WAIT FOR HUMAN and FAILED say so in a line on both pages and in a count on Kanban; Codex needs terminum's hooks trusted in its /hooks): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
+  FAILED and DONE, with a severity, an owner, a project, Markdown comments and files; + Task
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use

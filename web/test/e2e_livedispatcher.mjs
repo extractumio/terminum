@@ -304,7 +304,7 @@ export async function liveDispatcher(page, opts) {
   tmux("kill-pane", "-t", otherPane);
   // AC-117 on the session page too, every project's
   await page.goto(`${base}/sessions/`);
-  check("AC-117 the session page says so too, and counts", await until(() => page.isVisible("#asks .taskline"), 8000) && await until(async () => /\d+/.test(await page.textContent("#tokanban .taskneed").catch(() => "")), 8000));
+  check("AC-117 the session page says so too, and counts", await until(() => page.isVisible("#asks .taskline"), 8000) && await until(async () => /\d+/.test(await page.textContent('.nav-head .sections a[href="/kanban/"] .taskneed').catch(() => "")), 8000));
   await page.click("#asks .taskline .x");
   const left = await page.evaluate(() => document.querySelectorAll("#asks .taskline").length);
   await page.reload();

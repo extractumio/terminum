@@ -7,6 +7,7 @@ import { pageColors } from "./contrast.js";
 import { withScheme } from "./schemes.js";
 import { api, signInElsewhere } from "./kanbanutil.js";
 import { el, projectInk } from "./listparts.js";
+import { mountSections } from "./sections.js";
 
 export { api };
 export const $ = (id) => document.getElementById(id);
@@ -18,6 +19,7 @@ export async function loadMeta() {
   return meta;
 }
 
+mountSections();
 signInElsewhere();                                 // with no sign-in the page goes to /sessions/, whose form signs in
 signin.showKeptCss();
 signin.loadCss();

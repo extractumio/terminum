@@ -21,20 +21,17 @@
 </head>
 <body class="msg-page">
 <main id="mpage">
-  <!-- the shared head of the Message history, Scheduled and the Dashboard (each of history.html, scheduled.html, dashboard.html holds the same) -->
+  <!-- the shared head of the Message history, Scheduled and the Dashboard (each of history.html, scheduled.html, dashboard.html holds the same): the title for a reader, the sections (sections.js) -->
   <header id="bar" class="wavebar">
-    <a id="barsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
     <h1 class="mtitle">Message history</h1>
-    <nav class="seg mpages" aria-label="Pages">
-      <a href="/history/" aria-current="page"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg><span>History</span></a>
-      <a href="/scheduled/"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Scheduled</span></a>
-      <a href="/dashboard/"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="m19 9-5 5-4-4-3 3"/></svg><span>Dashboard</span></a>
-    </nav>
-    <span class="mgrow"></span>
-    <a id="barkanban" class="icon" href="/kanban/" title="Kanban: tasks and their sessions" aria-label="Kanban"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg></a>
+    <nav class="sections seg" aria-label="Sections"></nav>
   </header>
   <!-- /the shared head -->
   <div id="htools" class="mtools">
+    <nav class="seg mpages" aria-label="Messages' pages">
+      <a href="/history/" aria-current="page" title="What you sent, searched"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg><span>History</span></a>
+      <a href="/scheduled/" title="Every run of a schedule"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg><span>Scheduled</span></a>
+    </nav>
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
       <input id="q" type="search" placeholder="Search what you sent" aria-label="Search what you sent" aria-controls="results" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
       <kbd class="wide-only" title="Press / to search">/</kbd>

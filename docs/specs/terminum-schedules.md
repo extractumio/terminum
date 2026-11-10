@@ -237,7 +237,7 @@ Scenario: AC-163 edge — none
 
 ```gherkin
 Scenario: AC-164 happy path — every firing
-  When the user presses Scheduled in the Message history's head, beside History and Dashboard
+  When the user presses Scheduled beside History, first in the Message history's tools (terminum.md AC-167)
   Then "/scheduled/" lists every firing, newest first, 100 at a time with "Show more": when it fired, SCH-1 and its title, TERM-41 (a press opens it on the board), its agent, its task's status now, when it went IN PROGRESS and when it ended
   When the user presses a row
   Then it shows "In": the prompt that went, and "Out": the agent's last comment, its finish_task result, or Dispatcher's words on why it failed

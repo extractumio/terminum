@@ -81,7 +81,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     if (p.startsWith("/fb/")) return route.fulfill({ status: 404, body: "" });
     // the tasks made in the session shown (terminum-kanban.md AC-150): none here
     if (p === "/api/tasks" && u.searchParams.has("made_in")) return route.fulfill({ contentType: "application/json", body: JSON.stringify({ tasks: [] }) });
-    const f = path.join(STATIC, p === "/" ? "index.html" : path.normalize(p));
+    const f = path.join(STATIC, p === "/" || p === "/sessions/" ? "index.html" : path.normalize(p));   // the session page's address, as terminumd serves it
     if (!f.startsWith(STATIC) || !fs.existsSync(f)) return route.fulfill({ status: 404, body: "" });
     let body = fs.readFileSync(f);
     if (f.endsWith("index.html")) body = body.toString().replace("__BUILD__", "test");
