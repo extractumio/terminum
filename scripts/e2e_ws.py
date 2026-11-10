@@ -20,7 +20,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from testrun import short_tmp  # noqa: E402
+from testrun import end_naming, short_tmp  # noqa: E402
 
 
 def _ended(sig, _frame):
@@ -230,9 +230,15 @@ class Terminumd:
             self.proc.terminate()
             self.proc.wait(10)
 
-    def cleanup(self):
+    def cleanup(self, *hosts_tmux):
+        """Ends it, its tmux server and `hosts_tmux` (its fake hosts' servers), then what else still
+        runs with its folder, before the folder goes: a host's `claude plugin …` whose ssh was
+        dropped writes into the fake home after its parent ended (AC-102)."""
         self.stop()
-        end_tmux(self.tmux_socket)
+        for name in (self.tmux_socket, *hosts_tmux):
+            end_tmux(name)
+        for line in end_naming(self.root):
+            print(f"still running with its folder, ended: {line}", file=sys.stderr)
         shutil.rmtree(self.root, ignore_errors=True)
 
     def log(self):

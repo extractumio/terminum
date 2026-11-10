@@ -7,7 +7,6 @@ tries terminumd stops, says why, and Reconnect makes one try. Exits non-zero whe
     python3 scripts/e2e_hostsilent.py      (needs terminumd built: cd terminumd && cargo build)
 """
 import os
-import subprocess
 import sys
 import time
 
@@ -67,8 +66,7 @@ def main():
     finally:
         if os.path.exists(flag):
             os.remove(flag)                    # the silent clients end by themselves
-        t.cleanup()
-        subprocess.run(["tmux", "-L", REMOTE, "kill-server"], stderr=subprocess.DEVNULL)
+        t.cleanup(REMOTE)
     return summary()
 
 

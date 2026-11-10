@@ -125,8 +125,7 @@ def main():
                 os.kill(int(line.split()[0]), signal.SIGTERM)
             except ProcessLookupError:
                 pass
-        t.cleanup()
-        subprocess.run(["tmux", "-L", remote_socket, "kill-server"], stderr=subprocess.DEVNULL)
+        t.cleanup(remote_socket)
     summary()
 
 

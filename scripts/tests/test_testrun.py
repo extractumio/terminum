@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""A run's tmux servers end with it (spec AC-102), a server whose socket file went included."""
+"""A run's tmux servers end with it (spec AC-102), a server whose socket file went included; what a
+private terminumd started ends before its folder goes, one in a session of its own included."""
 import importlib.util
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -50,6 +52,48 @@ class Servers(unittest.TestCase):
             finally:
                 testrun._sockets.clear()
                 testrun._sockets.update(before)
+
+
+# a parent that starts this Python in a session of its own with HOME in the folder, running the
+# code in argv[1], then waits to be ended (a Mac hides the environment of Apple's own programs)
+ORPHAN = ("import os, subprocess, sys, time; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]], "
+          "env={**os.environ, 'HOME': os.path.join(sys.argv[2], 'remote')}, start_new_session=True); time.sleep(60)")
+
+
+class WithItsFolder(unittest.TestCase):
+    def orphan(self, code, folder):
+        """The orphan's parent ended, as terminumd drops a host operation's ssh."""
+        root = subprocess.Popen([sys.executable, "-c", ORPHAN, code, folder])
+        self.addCleanup(lambda: (root.kill(), root.wait()))
+        end = time.monotonic() + 5
+        while not testrun.naming(folder) and time.monotonic() < end:
+            time.sleep(0.02)
+        self.assertTrue(testrun.naming(folder), "the orphan was never seen")
+        root.kill()
+        root.wait()
+
+    def test_an_orphan_writing_into_the_folder_late_is_waited_for(self):
+        with tempfile.TemporaryDirectory(prefix="ts", dir=testrun.short_tmp()) as folder:
+            self.orphan("import os, sys, time; time.sleep(1.5); os.makedirs(sys.argv[1] + '/remote'); open(sys.argv[1] + '/remote/.claude.json', 'w')", folder)
+            self.assertEqual(testrun.end_naming(folder, settle=10), [], "it ended by itself, no signal")
+            self.assertEqual(os.listdir(folder), ["remote"], "its write came before end_naming returned")
+            self.assertEqual(testrun.naming(folder), set())
+
+    def test_one_that_does_not_end_is_ended_by_its_pid(self):
+        with tempfile.TemporaryDirectory(prefix="ts", dir=testrun.short_tmp()) as folder:
+            self.orphan("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)", folder)
+            left = testrun.end_naming(folder, settle=0.3)
+            self.assertEqual(len(left), 1, left)
+            self.assertNotIn("HOME=", left[0], "its command, never its environment")
+            self.assertEqual(testrun.naming(folder), set(), "SIGKILL ended what ignored SIGTERM")
+
+    def test_a_folder_beside_it_with_the_same_start_is_not_its(self):
+        with tempfile.TemporaryDirectory(prefix="ts", dir=testrun.short_tmp()) as folder:
+            child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env={**os.environ, "HOME": folder + "x/remote"})
+            self.addCleanup(lambda: (child.kill(), child.wait()))
+            time.sleep(0.3)
+            self.assertNotIn(child.pid, testrun.naming(folder))
+            self.assertIn(child.pid, testrun.naming(folder + "x"))
 
 
 if __name__ == "__main__":
