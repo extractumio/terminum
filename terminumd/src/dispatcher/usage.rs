@@ -108,9 +108,9 @@ fn grown(seen: Totals, now: Totals) -> Totals {
     Totals::from_fields(std::array::from_fn(|i| n[i] - s[i]))
 }
 
-const TOTALS: &str = "input, output, cache_write, cache_write_1h, cache_read";
+pub(crate) const TOTALS: &str = "input, output, cache_write, cache_write_1h, cache_read";
 
-fn totals_at(r: &rusqlite::Row, i: usize) -> rusqlite::Result<Totals> {
+pub(crate) fn totals_at(r: &rusqlite::Row, i: usize) -> rusqlite::Result<Totals> {
     Ok(Totals::from_fields([r.get(i)?, r.get(i + 1)?, r.get(i + 2)?, r.get(i + 3)?, r.get(i + 4)?]))
 }
 

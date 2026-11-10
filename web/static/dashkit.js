@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the Dashboard's tabs share (terminum.md AC-152, AC-170, AC-171): a tile, a card with its plot and the line
-// that says a column's values, a bucket's words by the period's unit, a legend, rows ranked.
-import { PROJECT_HUES, el, hueColor } from "./listparts.js";
-import { spark } from "./charts.js";
-import { WEEK, count, dayDate, dayLabel, dotOf, monthOf, shortDay } from "./msgpage.js";
+// that says a column's values, a card of columns stacked by kind, a bucket's words by the period's unit, a legend,
+// rows ranked.
+import { el, projectColor } from "./listparts.js";
+import { columns, spark } from "./charts.js";
+import { WEEK, clock, count, dayDate, dayLabel, dotOf, monthOf, shortDay } from "./msgpage.js";
 
 /** The span before, in the period's words. */
 const BEFORE = { day: "the day before", "2w": "the 2 weeks before", month: "the 30 days before", quarter: "the 13 weeks before", year: "the year before" };
@@ -27,20 +28,24 @@ export function tile(label, value, sub, line) {
 }
 
 export const percent = (x) => `${Math.round(x * 100)}%`;
-/** "≈$12.30"; whole dollars past a thousand. */
-export const dollars = (x) => `≈$${x >= 1000 ? Math.round(x).toLocaleString("en-US") : x.toFixed(2)}`;
 /** Parts that are something, joined by a middle dot. */
 export const words = (...parts) => parts.filter(Boolean).join(" · ");
+/** "<x> before" of the span before's figure `x`, when it has one. */
+export const was = (x, fmt = percent) => (x === null || x === undefined ? "" : `${fmt(x)} before`);
+/** A share's tile: `x` of 0…1 or null (said by `none`), `what` it is a share of, the span before's beside it. */
+export const shareTile = (label, x, before, none, what) => tile(label, x === null ? "—" : percent(x), x === null ? none : words(what, was(before)));
+/** The `kinds` ([key, word, color]) `counts` holds, each with its count: "made 2", "moved 1". */
+export const kindWords = (kinds, counts) => kinds.filter(([k]) => counts[k]).map(([k, word]) => `${word} ${counts[k]}`);
 
-/** A card: its title, a hint or a choice of `modes` ([key, word]; `onMode(key)`), then a line that says the chosen
- *  column (`say`, with a link `go` when asked), a legend when asked, a plot (one key stop, `label` for a reader),
- *  or with `list` rows ranked. */
-export function card(id, title, { hint = "", hintTitle = "", wide = false, modes = null, onMode = () => {}, label = "", list = false, legend = false, go = false } = {}) {
+/** A card: its title, a hint or a choice of `modes` ([key, word]; `mode` the pressed one, `onMode(key)`), then a
+ *  line that says the chosen column (`say`, with a link `go` when asked), a legend when asked, a plot (one key
+ *  stop, `label` for a reader), or with `list` rows ranked. `draw()` draws its plot at its width. */
+export function card(id, title, { hint = "", hintTitle = "", wide = false, modes = null, mode = "", onMode = () => {}, label = "", list = false, legend = false, go = false } = {}) {
   const box = el("figure", `card${wide ? " wide" : ""}`);
   box.id = `c${id}`;
   const head = el("figcaption", "chead");
   head.append(el("h2", "", title));
-  const out = { box, hint: null, say: null, go: null, legend: null, plot: null, mode: modes?.[0][0] };
+  const out = { box, say: null, go: null, legend: null, plot: null, draw: () => {} };
   if (modes) {
     const seg = el("div", "seg");
     seg.setAttribute("role", "group");
@@ -49,21 +54,15 @@ export function card(id, title, { hint = "", hintTitle = "", wide = false, modes
       const b = el("button", "", word);
       b.type = "button";
       b.dataset.mode = key;
-      b.setAttribute("aria-pressed", String(key === out.mode));
+      b.setAttribute("aria-pressed", String(key === mode));
+      b.addEventListener("click", () => onMode(key));
       seg.append(b);
     }
-    seg.addEventListener("click", (e) => {
-      const b = e.target.closest("button");
-      if (!b) return;
-      out.mode = b.dataset.mode;
-      for (const x of seg.children) x.setAttribute("aria-pressed", String(x === b));
-      onMode(out.mode);
-    });
     head.append(seg);
   } else {
-    out.hint = el("span", "chint", hint);
-    if (hintTitle) out.hint.title = hintTitle;
-    head.append(out.hint);
+    const h = el("span", "chint", hint);
+    if (hintTitle) h.title = hintTitle;
+    head.append(h);
   }
   box.append(head);
   if (!list) {
@@ -90,7 +89,7 @@ export function card(id, title, { hint = "", hintTitle = "", wide = false, modes
  *  `long(i)` in the line over a chart, `faint(i)` (the one going on), `band(i)` (a weekend's day). */
 export function bucketWords(data) {
   const b = data.buckets, unit = data.unit, last = b.length - 1;
-  const hour = (i) => `${String(b[i].hour).padStart(2, "0")}:00`;
+  const hour = (i) => clock(b[i].hour * 60);
   const short = (i) => {
     if (unit === "hour") return b[i].hour % 3 === 0 ? hour(i) : "";
     if (unit === "month") return monthOf(b[i].from);
@@ -105,7 +104,7 @@ export function bucketWords(data) {
     if (unit === "week") return `${shortDay(b[i].from)} – ${shortDay(b[i].to)}${soFar}`;
     return `${dayLabel(b[i].from)}${soFar}`;
   };
-  return { short, long, faint: (i) => i === last, band: (i) => unit === "day" && [0, 6].includes(dayDate(b[i].from).getDay()), unit };
+  return { short, long, faint: (i) => i === last, band: (i) => unit === "day" && [0, 6].includes(dayDate(b[i].from).getDay()) };
 }
 
 /** A column a bucket for charts.js: `parts(d, i)` its stack, `dot(d)` its dot. */
@@ -113,8 +112,22 @@ export function bands(series, w, parts, dot = () => undefined) {
   return series.map((d, i) => ({ parts: parts(d, i), dot: dot(d), band: w.band(i), faint: w.faint(i) }));
 }
 
+/** A card of columns stacked by `kinds` ([key, word, color]) over each bucket's counts `of(d)`: the legend says
+ *  `totals` (the period's count of each kind), the line a column's kinds, or `sum` with none chosen. */
+export function stackCard(id, title, { data, w }, { kinds, of, totals, sum, hint = "", wide = false, height = 150 }) {
+  const s = data.series;
+  const c = card(id, title, { hint, legend: true, wide });
+  const say = (i) => { c.say.textContent = i < 0 ? sum : words(w.long(i), ...kindWords(kinds, of(s[i]))); };
+  legend(c.legend, kinds.map(([k, word, color]) => ({ color, name: word, num: count(totals[k] ?? 0) })));
+  c.draw = () => {
+    columns(c.plot, bands(s, w, (d) => kinds.map(([k, , color]) => ({ value: of(d)[k] ?? 0, color }))), { height, xlabels: w.short, select: say });
+    say(-1);
+  };
+  return c;
+}
+
 /** A hue by rank for a stack's part that has no color of its own. */
-export const rankHue = (i) => hueColor(PROJECT_HUES[i % PROJECT_HUES.length]);
+export const rankHue = (i) => projectColor({ color: i });
 
 /** A legend's chips: [{color, name, num?, href?, title?}]. */
 export function legend(box, items) {

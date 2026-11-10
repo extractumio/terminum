@@ -8,19 +8,15 @@ import { costs } from "./dashcosts.js";
 import { system } from "./dashsystem.js";
 import { you } from "./dashyou.js";
 import { showError } from "./kanbanutil.js";
-import { $, NONE, api, dayLabel, inkOf, loadMeta, menu, projectLabel, readQuery, writeQuery } from "./msgpage.js";
+import { $, NONE, api, dayLabel, inkOf, loadMeta, menu, projectLabel, queryUrl, readQuery, writeQuery } from "./msgpage.js";
 
 const KEYS = ["tab", "period", "project"];
 const TABS = { you, system, costs }, PERIODS = ["day", "2w", "month", "quarter", "year"];
+/** What the address leaves unsaid. */
+const FIRST = { tab: "you", period: "month" };
 let state = readQuery(KEYS), meta = { projects: [] }, data = null, shown = [], loading = 0;
-const tab = () => (TABS[state.tab] ? state.tab : "you");
-const period = () => (PERIODS.includes(state.period) ? state.period : "month");
-
-/** This page's address with `next` over the tab, period and project in view. */
-function href(next) {
-  const q = new URLSearchParams(Object.entries({ ...state, ...next }).filter(([k, v]) => KEYS.includes(k) && v));
-  return `${location.pathname}${q.size ? `?${q}` : ""}`;
-}
+const tab = () => (TABS[state.tab] ? state.tab : FIRST.tab);
+const period = () => (PERIODS.includes(state.period) ? state.period : FIRST.period);
 
 /** The Message history of `from` … `to` (local days), the human's, of the project in view or `project` ("-": none). */
 function historyUrl(from, to, project = state.project) {
@@ -29,16 +25,19 @@ function historyUrl(from, to, project = state.project) {
   return `/history/?${q}`;
 }
 
-/** The tab anew from the numbers last read. */
+/** The tab anew from the numbers last read; a card's key that held the focus holds it again. */
 function draw() {
   if (!data) return;
-  const ctx = { data, period: period(), w: bucketWords(data), historyUrl, projectHref: (id) => href({ project: id }) };
+  const held = document.activeElement?.closest?.("#cards .card [data-mode]");
+  const at = held && `#${held.closest(".card").id} [data-mode="${held.dataset.mode}"]`;
+  const ctx = { data, period: period(), w: bucketWords(data), historyUrl, projectHref: (id) => queryUrl({ ...state, project: id }, KEYS) };
   const t = TABS[data.tab](ctx, draw);
   shown = t.cards;
   $("tiles").replaceChildren(...t.tiles);
   $("cards").replaceChildren(...shown.map((c) => c.box));
   $("dnote").textContent = `${t.note}${data.kept_from ? ` Counted from ${dayLabel(data.kept_from)}: nothing earlier is kept.` : ""}`;
   for (const c of shown) c.draw();
+  if (at) document.querySelector(at)?.focus();
 }
 
 function drawKeys() {
@@ -77,8 +76,13 @@ async function load() {
   }
 }
 
-$("dtabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) change({ tab: b.dataset.tab === "you" ? "" : b.dataset.tab }); });
-$("dperiod").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) change({ period: b.dataset.period === "month" ? "" : b.dataset.period }); });
+// a tab's or a period's key: the first of each is not said in the address
+for (const key of ["tab", "period"]) {
+  $(`d${key}${key === "tab" ? "s" : ""}`).addEventListener("click", (e) => {
+    const to = e.target.closest("button")?.dataset[key];
+    if (to) change({ [key]: to === FIRST[key] ? "" : to });
+  });
+}
 addEventListener("popstate", () => { state = readQuery(KEYS); drawKeys(); load(); });
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") load(); });
 // the charts fit their width: drawn again when it changes, not when a card's height does

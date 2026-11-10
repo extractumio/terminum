@@ -14,6 +14,10 @@ export const DEFAULT = "default";                  // terminumd's Default projec
 export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h])];
 /** An agent's color: its place in the projects' palette (terminum-dispatcher.md AC-138). */
 export const agentColor = (a) => hueColor(PROJECT_HUES[(a.color ?? 0) % PROJECT_HUES.length]);
+/** An agent's name; one no longer in the pool whose run kept none. */
+export const agentLabel = (a) => a?.name || "Agent gone";
+/** An estimate in dollars: "≈$12.30"; whole dollars past a thousand. */
+export const dollars = (x) => `≈$${x >= 1000 ? Math.round(x).toLocaleString("en-US") : x.toFixed(2)}`;
 export const $ = (id) => document.getElementById(id);
 /** A column's tasks with Show subtasks on (terminum-kanban.md AC-112), as [task, the parent it is drawn under or ""]:
  *  each subtask right under its parent when its parent is in the same list, in their own order; one whose parent is

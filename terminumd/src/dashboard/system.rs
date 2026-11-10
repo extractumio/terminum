@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::{local, median, Ask, Span, DAY};
+use super::{local, median, Ask, Span};
 use crate::tasks::ops::rows;
 
 /// A session of Dispatcher's: its agent, when it began and ended (local ms).
@@ -25,7 +25,6 @@ struct Read {
     fires: Vec<(i64, String)>,
     /// each agent's slots today
     slots: HashMap<String, i64>,
-    kept_from: Option<i64>,
 }
 
 /// A reason without what differs from one time to the next: its words up to a colon, numbers as N.
@@ -41,8 +40,7 @@ pub fn class(why: &str) -> String {
 pub fn numbers(tx: &Transaction, ask: &Ask, now: i64) -> Result<Value, String> {
     let read = read(tx, ask, now)?;
     let mut v = summarize(&read, ask.span);
-    v["before"] = ask.earlier(read.kept_from, || summarize(&read, ask.before)["tiles"].take());
-    v["kept_from"] = json!(read.kept_from.filter(|k| *k > ask.span.lo()).map(|k| super::civil(k.div_euclid(DAY))));
+    v["before"] = ask.earlier(|before| Ok(summarize(&read, before)["tiles"].take()))?;
     Ok(v)
 }
 
@@ -69,8 +67,7 @@ fn read(tx: &Transaction, ask: &Ask, now: i64) -> Result<Read, String> {
         (ask.since, ask.project), |r| Ok((r.get(0)?, r.get(1)?)))?;
     failures.extend(writes.into_iter().map(|(t, why)| (t, "write", class(&why))));
     let slots = rows(tx, "SELECT id, at_once FROM agents", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
-    let kept_from: Option<i64> = tx.query_row(&format!("SELECT {} FROM (SELECT min(at) AS at FROM inputs) WHERE at IS NOT NULL", local("at")), [], |r| r.get(0)).ok();
-    Ok(Read { runs, moves: ended.into_iter().map(|(t, to, _)| (t, to)).collect(), failures, fires: fires.into_iter().map(|(t, state, _)| (t, state)).collect(), slots, kept_from })
+    Ok(Read { runs, moves: ended.into_iter().map(|(t, to, _)| (t, to)).collect(), failures, fires: fires.into_iter().map(|(t, state, _)| (t, state)).collect(), slots })
 }
 
 /// How much of [`a`, `b`) lies in [`lo`, `hi`).
@@ -112,7 +109,7 @@ fn summarize(read: &Read, span: &Span) -> Value {
     ranked.sort_by_key(|a| std::cmp::Reverse(a["busy_ms"].as_i64()));
     let count = |list: &[(i64, String)], what: &str| -> Vec<i64> {
         let mut out = vec![0i64; n];
-        for (t, s) in list { if s == what { if let Some(k) = span.index(*t) { out[k] += 1; } } }
+        for (t, s) in list { if s == what && let Some(k) = span.index(*t) { out[k] += 1; } }
         out
     };
     let (done, failed, asked) = (count(&read.moves, "DONE"), count(&read.moves, "FAILED"), count(&read.moves, "WAIT FOR HUMAN"));
@@ -135,7 +132,7 @@ fn summarize(read: &Read, span: &Span) -> Value {
     let (d, f) = (sum(&done), sum(&failed));
     let kinds = |kind: &str| why.iter().filter(|((k, _), _)| *k == kind).map(|(_, n)| n).sum::<i64>();
     let tiles = json!({
-        "sessions": sum(&started), "done": d, "failed": f, "asked": sum(&asked), "failure_rate": (d + f > 0).then(|| f as f64 / (d + f) as f64),
+        "sessions": sum(&started), "done": d, "failed": f, "ended": d + f, "asked": sum(&asked), "failure_rate": (d + f > 0).then(|| f as f64 / (d + f) as f64),
         "errors": sum(&errors), "failed_writes": kinds("write"), "failed_firings": kinds("schedule"),
         "load": percent(busy.iter().sum(), (hi - lo) * all_slots), "busy_ms": sum(&busy), "slots": all_slots, "session_ms": median(lengths),
         "fires": fire_states.iter().zip(&fires).map(|(s, f)| (*s, sum(f))).collect::<BTreeMap<_, _>>(),

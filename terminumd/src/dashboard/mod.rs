@@ -50,9 +50,9 @@ impl Period {
         }
     }
 
-    /// How far back the span before lies.
-    fn length(self) -> i64 {
-        DAY * match self { Period::Day => 1, Period::TwoWeeks => 14, Period::Month => 30, Period::Quarter => 91, Period::Year => 365 }
+    /// Its days: how far back the span before lies.
+    fn days(self) -> i64 {
+        match self { Period::Day => 1, Period::TwoWeeks => 14, Period::Month => 30, Period::Quarter => 91, Period::Year => 365 }
     }
 }
 
@@ -69,12 +69,12 @@ impl Span {
     /// The span of `period` that ends at `now` (local ms).
     pub fn of(period: Period, now: i64) -> Span {
         let today = now.div_euclid(DAY);
-        let days = |n: i64, step: i64| (0..n / step).map(|i| (today - n + 1 + i * step) * DAY).collect();
+        let n = period.days();
+        let days = |step: i64| (0..n / step).map(|i| (today - n + 1 + i * step) * DAY).collect();
         let (unit, edges) = match period {
             Period::Day => ("hour", (0..24).map(|i| (now.div_euclid(HOUR) - 23 + i) * HOUR).collect()),
-            Period::TwoWeeks => ("day", days(14, 1)),
-            Period::Month => ("day", days(30, 1)),
-            Period::Quarter => ("week", days(91, 7)),
+            Period::TwoWeeks | Period::Month => ("day", days(1)),
+            Period::Quarter => ("week", days(7)),
             Period::Year => {
                 let (y, m, _) = civil_of(today);
                 ("month", (0..12).map(|i| { let k = y * 12 + m - 1 - 11 + i; days_of(k.div_euclid(12), k.rem_euclid(12) + 1, 1) * DAY }).collect())
@@ -85,7 +85,16 @@ impl Span {
 
     /// The same span, `period`'s length earlier, up to the same time.
     pub fn before(&self, period: Period) -> Span {
-        Span { unit: self.unit, edges: self.edges.iter().map(|e| e - period.length()).collect(), until: self.until - period.length() }
+        let by = period.days() * DAY;
+        Span { unit: self.unit, edges: self.edges.iter().map(|e| e - by).collect(), until: self.until - by }
+    }
+
+    pub fn by_hour(&self) -> bool {
+        self.unit == "hour"
+    }
+
+    pub fn by_day(&self) -> bool {
+        self.unit == "day"
     }
 
     pub fn lo(&self) -> i64 {
@@ -119,26 +128,26 @@ impl Span {
     fn json(&self) -> Value {
         (0..self.len()).map(|i| {
             let from = self.edges[i];
-            json!({"from": civil(from.div_euclid(DAY)), "to": civil((self.end(i) - 1).div_euclid(DAY)), "hour": (self.unit == "hour").then(|| from.rem_euclid(DAY) / HOUR)})
+            json!({"from": civil(from.div_euclid(DAY)), "to": civil((self.end(i) - 1).div_euclid(DAY)), "hour": self.by_hour().then(|| from.rem_euclid(DAY) / HOUR)})
         }).collect()
     }
 }
 
-/// What a tab is asked: the span and the one before it, the unix ms no row before which matters, one
-/// project's only (`""`: none's), the session list's colors.
+/// What a tab is asked: the span and, when what is kept reaches its start, the one before it (a part of a
+/// span compared with a whole one would read as a rise); the unix ms no row before which matters; one
+/// project's only (`""`: none's); the session list's colors.
 pub struct Ask<'a> {
     pub span: &'a Span,
-    pub before: &'a Span,
+    pub before: Option<&'a Span>,
     pub since: i64,
     pub project: Option<&'a str>,
     pub colors: &'a HashMap<String, usize>,
 }
 
 impl Ask<'_> {
-    /// The figures of the span before, or null when what is kept (from local ms `kept_from`) does not
-    /// reach its start: a part of a span compared with a whole one would read as a rise.
-    pub fn earlier(&self, kept_from: Option<i64>, tiles: impl FnOnce() -> Value) -> Value {
-        if kept_from.is_some_and(|k| k <= self.before.lo()) { tiles() } else { Value::Null }
+    /// The figures of the span before as `tiles` works them out, or null when it is not compared.
+    pub fn earlier(&self, tiles: impl FnOnce(&Span) -> Result<Value, String>) -> Result<Value, String> {
+        self.before.map_or(Ok(Value::Null), tiles)
     }
 
     /// A tasks' store project of the filter: no project's rows are the default project's there.
@@ -157,9 +166,9 @@ pub fn project_names(tx: &Transaction) -> Result<HashMap<String, String>, String
     Ok(rows(tx, "SELECT CASE WHEN is_default THEN '' ELSE id END, CASE WHEN is_default THEN '' ELSE name END FROM projects", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
-/// The ids of the `STACKED` largest of `ranked` (most first): those a stack colors apart.
-pub fn stacked<T>(ranked: &[(String, T)]) -> Vec<String> {
-    ranked.iter().take(STACKED).map(|p| p.0.clone()).collect()
+/// The first `STACKED` of `ranked` ids (most first): those a stack colors apart.
+pub fn stacked<'a>(ranked: impl Iterator<Item = &'a str>) -> Vec<String> {
+    ranked.take(STACKED).map(str::to_string).collect()
 }
 
 /// `id` when a stack colors it apart, else `other`.
@@ -180,8 +189,12 @@ pub fn numbers(tx: &Transaction, now_ms: i64, tab: &str, period: Period, project
     let now: i64 = tx.query_row(&format!("SELECT {}", local("?1")), [now_ms], |r| r.get(0)).map_err(sql)?;
     let span = Span::of(period, now);
     let before = span.before(period);
+    // what the tab's rows still hold: the input log is trimmed by age and by rows, the reports are not
+    let oldest = if tab == "costs" { "SELECT min(at) * 1000 AS at FROM usage" } else { "SELECT min(at) AS at FROM inputs" };
+    let kept_from: Option<i64> = tx.query_row(&format!("SELECT {} FROM ({oldest}) WHERE at IS NOT NULL", local("at")), [], |r| r.get(0)).ok();
+    let before = Some(&before).filter(|b| kept_from.is_some_and(|k| k <= b.lo()));
     // a day more: the zone's offset may have been another then
-    let ask = Ask { span: &span, before: &before, since: now_ms - (now - before.lo()) - DAY, project, colors };
+    let ask = Ask { span: &span, before, since: now_ms - (now - before.unwrap_or(&span).lo()) - DAY, project, colors };
     let mut v = match tab {
         "system" => system::numbers(tx, &ask, now)?,
         "costs" => costs::numbers(tx, &ask, now_ms / 1000)?,
@@ -189,6 +202,7 @@ pub fn numbers(tx: &Transaction, now_ms: i64, tab: &str, period: Period, project
     };
     v["unit"] = json!(span.unit);
     v["buckets"] = span.json();
+    v["kept_from"] = json!(kept_from.filter(|k| *k > span.lo()).map(|k| civil(k.div_euclid(DAY))));
     Ok(v)
 }
 

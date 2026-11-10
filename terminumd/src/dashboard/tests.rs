@@ -30,7 +30,8 @@ fn msg(at: i64, pane: &str, project: Option<&str>) -> Message {
 }
 
 /// A row of the input log: the human's typed Enter from a browser, or Dispatcher's launch of `run`, or a failed write.
-fn input(tx: &rusqlite::Transaction, at: i64, sender: &str, component: &str, pane: &str, browser: Option<&str>, run: Option<&str>, error: Option<&str>) {
+fn input(tx: &rusqlite::Transaction, at: i64, sender: &str, pane: &str, browser: Option<&str>, run: Option<&str>, error: Option<&str>) {
+    let component = if run.is_some() { "dispatcher.start" } else if sender == DISPATCHER { "dispatcher.gate" } else { "page" };
     tx.execute("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, device, browser, run, error, version)
                 VALUES (?1, ?1, ?2, ?3, ?4, 'ls<Enter>', 3, ?5, ?6, ?7, ?8, ?9, 'test')",
                rusqlite::params![at, sender, component, if run.is_some() { "launch" } else { "typed" }, pane, browser.map(|_| "web"), browser, run, error]).unwrap();
@@ -83,8 +84,8 @@ fn ac152_the_human_s_time_and_load_only() {
         for m in [msg(noon, "k1", Some("p1")), msg(noon + 5 * M, "k2", None), msg(noon + 6 * M, "k2", None), robot.clone(), msg(noon - DAY, "k1", None)] {
             insert(tx, &m)?;
         }
-        input(tx, noon + 6 * M, HUMAN, "page", "k2", Some("Safari 18 · iPhone"), None, None);
-        input(tx, noon + 6 * M, DISPATCHER, "dispatcher.gate", "k3", None, None, None);
+        input(tx, noon + 6 * M, HUMAN, "k2", Some("Safari 18 · iPhone"), None, None);
+        input(tx, noon + 6 * M, DISPATCHER, "k3", None, None, None);
         // the board at 12:30, a pause over 15 minutes: the human makes a task and moves it; an agent's ask at 12:31 moved on at 12:41
         let at = (noon + 30 * M) / 1000;
         let t = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, at)?;
@@ -103,13 +104,14 @@ fn ac152_the_human_s_time_and_load_only() {
     assert_eq!((tiles["longest_ms"].clone(), tiles["active_units"].clone(), tiles["units"].clone()), (json!(8 * M), json!(2), json!(14)));
     assert_eq!((today["sessions"].clone(), today["peak"].clone(), today["switches"].clone(), today["sent"].clone()), (json!(2), json!(2), json!(1), json!(4)), "k1 then k2: one switch");
     assert_eq!(today["spans"], json!([[720, 728], [750, 752]]));
+    assert_eq!((tiles["active_per_unit_ms"].clone(), today["board_n"].clone(), d["other_ms"].clone()), (json!(6 * M), json!(2), json!(0)), "the page adds nothing up");
     assert_eq!((tiles["board"].clone(), tiles["board_by"]["made"].clone(), tiles["board_by"]["move"].clone(), today["board"].clone()), (json!(2), json!(1), json!(1), json!({"made": 1, "move": 1})), "the human's board events only");
     assert_eq!((tiles["asks"].clone(), tiles["waiting"].clone(), tiles["answer_ms"].clone()), (json!(2), json!(1), json!(600_000)), "a wait lasts until the task's next move");
     assert_eq!(tiles["phone"], 1.0, "of what the pages sent");
     assert_eq!(d["before"], Value::Null, "what is kept does not reach the span before: no comparison");
     assert_eq!(d["kept_from"], d["buckets"][13]["from"], "the page says from when it counts");
     // the log reaches back: the day before counts, up to the same time
-    s.with(|tx| { input(tx, noon - 40 * DAY, HUMAN, "page", "k1", None, None, None); Ok(()) }).unwrap();
+    s.with(|tx| { input(tx, noon - 40 * DAY, HUMAN, "k1", None, None, None); Ok(()) }).unwrap();
     let d = ask(&s, noon + 50 * M, "you", Period::Day, None);
     assert_eq!((d["unit"].clone(), d["before"]["active_ms"].clone(), d["kept_from"].clone()), (json!("hour"), json!(2 * M), Value::Null));
     assert_eq!(d["series"][23]["spans"], Value::Null, "a working day is drawn of days only");
@@ -124,7 +126,7 @@ fn run(tx: &rusqlite::Transaction, agent: &str, project: &str, at: i64, minutes:
     let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, at / 1000).unwrap();
     let id = runs::add(tx, &Run { agent_id: agent.into(), agent_name: agent.to_uppercase(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: project.into(), ..Default::default() },
         std::slice::from_ref(&task.key), at / 1000).unwrap();
-    input(tx, at, DISPATCHER, "dispatcher.start", "k9", None, Some(&id), None);
+    input(tx, at, DISPATCHER, "k9", None, Some(&id), None);
     if let Some(m) = minutes {
         runs::change(tx, &id, |r| { r.state = Phase::Closed; r.last_walk = at / 1000 + m * 60; }).unwrap();
     }
@@ -148,13 +150,13 @@ fn ac170_dispatcher_s_sessions_failures_and_load() {
             ops::move_to(tx, HUMAN, &failed, "TODO", at - 4995 + i as i64 * 10)?;
         }
         ops::move_to(tx, HUMAN, &by_hand, "FAILED", at - 60)?;
-        input(tx, noon - 10 * M, HUMAN, "page", "k1", None, None, Some("This pane has closed."));
-        input(tx, noon - 40 * DAY, HUMAN, "page", "k1", None, None, None);
+        input(tx, noon - 10 * M, HUMAN, "k1", None, None, Some("This pane has closed."));
+        input(tx, noon - 40 * DAY, HUMAN, "k1", None, None, None);
         Ok(())
     }).unwrap();
     let d = ask(&s, noon, "system", Period::Day, None);
     let tiles = &d["tiles"];
-    assert_eq!((tiles["sessions"].clone(), tiles["done"].clone(), tiles["failed"].clone(), tiles["failure_rate"].clone()), (json!(3), json!(1), json!(2), json!(2.0 / 3.0)), "a human's own move to FAILED is no failure of the system");
+    assert_eq!((tiles["sessions"].clone(), tiles["done"].clone(), tiles["failed"].clone(), tiles["ended"].clone(), tiles["failure_rate"].clone()), (json!(3), json!(1), json!(2), json!(3), json!(2.0 / 3.0)), "a human's own move to FAILED is no failure of the system");
     assert_eq!(d["failures"], json!([{"kind": "task", "why": "The agent's process ended", "n": 2}, {"kind": "write", "why": "This pane has closed", "n": 1}]), "reasons by their class, most first");
     assert_eq!((tiles["errors"].clone(), tiles["failed_writes"].clone(), tiles["session_ms"].clone()), (json!(3), json!(1), json!(60 * M)));
     // 60 + 30 minutes of a's two slots, an hour of the one slot of an agent no longer in the pool, over 24 hours less what of the first hour is to come
@@ -192,7 +194,7 @@ fn ac171_what_dispatcher_s_sessions_spent() {
     assert_eq!(d["projects"][0], json!({"id": "p1", "name": "Api", "color": 3, "counted": 1_100_000, "cache_read": 0, "usd": 6.0, "unpriced": 0}));
     assert_eq!((d["agents"][0]["name"].clone(), d["agents"][1]["name"].clone(), d["models"][1]["model"].clone()), (json!("Opus"), json!("B"), json!("some-model")), "the pool's name, else the run's");
     assert_eq!((d["series"][23 - 1]["by_usd"].clone(), d["stacked"].clone()), (json!({"a": 6.0, "b": 0.0}), json!(["a", "b"])));
-    assert_eq!(d["limits"], json!([{"id": "a", "name": "Opus", "color": 4, "week": 1_100_000, "month": 1_100_000, "week_limit": 5.0, "month_limit": null}]));
+    assert_eq!(d["limits"], json!([{"id": "a", "name": "Opus", "color": 4, "week": 1_100_000, "month": 1_100_000, "week_limit": 5.0, "month_limit": null, "week_share": 0.22, "month_share": null}]), "the share of a limit used is terminumd's to say");
     assert_eq!(d["before"], Value::Null, "a report does not add the same totals twice: nothing earlier is kept");
     assert_eq!(ask(&s, noon, "costs", Period::Day, Some("p1"))["tiles"]["counted"], 1_100_000);
     assert_eq!(ask(&s, noon, "costs", Period::Day, Some(""))["tiles"]["counted"], 500);
