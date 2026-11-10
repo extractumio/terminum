@@ -124,7 +124,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // a subscription's windows, numbers alone, of an agent kind terminum knows (terminum-dispatcher.md AC-167)
     if ev["event"] == "Limits" {
         if let (Some(kind), Some(windows)) = (ev["agent"].as_str().filter(|a| crate::tmux::hookstate::agent(a).is_some()), crate::dispatcher::subscriptions::of_event(&ev)) {
-            // new numbers reach the board at once; the walk's beat carries the time of the last (AC-167)
+            // new numbers, or the same once old, reach the board at once (AC-167)
             if app.dispatcher.subscriptions.heard(kind, windows, crate::tasks::ops::now()) {
                 app.pages.tell(&json!({"t": "subscriptions", "subscriptions": app.dispatcher.subscriptions.shown()}).to_string());
             }

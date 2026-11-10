@@ -471,7 +471,6 @@ function listen() {
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
         slots = m.slots ?? slots;
-        readings = m.subscriptions ?? readings;
         agents.draw();
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }

@@ -15,10 +15,11 @@ function label(minutes) {
   return minutes % 1440 === 0 ? `${minutes / 1440}d` : `${Math.round(minutes / 60)}h`;
 }
 
-const clock = (s) => new Date(s * 1000).toLocaleString("en", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+const DAY_TIME = new Intl.DateTimeFormat("en", { weekday: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+const dayTime = (s) => DAY_TIME.format(s * 1000);
 
 /** The rows its stripes show at `now` (seconds): its windows, and a five-hour and a week row when the reading lacks one. */
-export function rows(reading, now) {
+function rows(reading, now) {
   const got = (reading?.windows ?? []).slice().sort((a, b) => a.minutes - b.minutes);
   const missing = reading ? "none reported" : "not known";
   const out = got.map((w) => {
@@ -30,21 +31,19 @@ export function rows(reading, now) {
   return out;
 }
 
-/** Whether the reading is over an hour old: its stripes fade. */
-const old = (reading, now) => reading && now - reading.at > HOUR;
-
 /** Its stripes: on its rectangle, or `full` in its window with when each resets. */
 export function stripes(kind, reading, now, full = false) {
-  const box = el("span", `agsubs${old(reading, now) ? " stale" : ""}${full ? " full" : ""}`);
-  const from = reading ? `read ${clock(reading.at)} from a ${agentName(kind)} session` : `no ${agentName(kind)} session has said it yet`;
+  const old = reading && now - reading.at > HOUR;    // over an hour: its stripes fade
+  const box = el("span", `agsubs${old ? " stale" : ""}${full ? " full" : ""}`);
+  const from = reading ? `read ${dayTime(reading.at)} from a ${agentName(kind)} session` : `no ${agentName(kind)} session has said it yet`;
   for (const r of rows(reading, now)) {
-    const line = el("span", "agsub"), track = el("span", "agtrack"), fill = el("span", "agfill");
-    fill.style.width = `${Math.min(100, r.used ?? 0)}%`;
-    track.classList.toggle("high", (r.used ?? 0) >= 90);
+    const line = el("span", "agsub"), track = el("span", "agtrack"), fill = el("span", "agfill"), pct = r.used ?? 0;
+    fill.style.width = `${Math.min(100, pct)}%`;
+    track.classList.toggle("high", pct >= 90);
     track.append(fill);
-    const words = full && r.resets ? `${r.note} · resets ${clock(r.resets)}` : r.note;
+    const words = full && r.resets ? `${r.note} · resets ${dayTime(r.resets)}` : r.note;
     line.append(el("span", "agsublabel", r.label), track, el("span", "agsubpct", words));
-    line.title = `${r.label}: ${r.used == null ? r.note : `${r.note} used`}${r.resets ? `, resets ${clock(r.resets)}` : ""}; ${from}`;
+    line.title = `${r.label}: ${r.used == null ? r.note : `${r.note} used`}${r.resets ? `, resets ${dayTime(r.resets)}` : ""}; ${from}`;
     box.append(line);
   }
   return box;
@@ -92,7 +91,7 @@ function session(s, { projectName, doing, openTask, openSession, letGo }) {
 export function agentView(a, reading, sessions, ctx) {
   const now = Date.now() / 1000, box = el("div", "agview");
   box.append(el("h3", null, `${agentName(a.kind)} subscription`), stripes(a.kind, reading, now, true));
-  box.append(el("p", "hint", reading ? `Read ${clock(reading.at)}; one reading for every ${agentName(a.kind)} agent.` : howTo(a.kind)));
+  box.append(el("p", "hint", reading ? `Read ${dayTime(reading.at)}; one reading for every ${agentName(a.kind)} agent.` : howTo(a.kind)));
   box.append(spent(a), el("h3", null, "Sessions"));
   if (!sessions.length) box.append(el("p", "hint", "No live session."));
   else {

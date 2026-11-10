@@ -195,9 +195,15 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
       if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
       try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); li.remove(); } catch (e) { say(e.message); }
     };
+    // what the user typed in its settings is asked about first, as Cancel does
+    const leave = (go) => async (arg) => {
+      if (JSON.stringify(values()) !== snapshot && !await askConfirm("Discard what you typed?", "Discard")) return;
+      dialog.close();
+      go(arg);
+    };
     view.replaceChildren(agentView(a, readings()[a.kind], slots(a), {
       projectName: (id) => getMeta().projects.find((p) => p.id === id)?.name, doing: (s) => WORDS[doing(s)], letGo,
-      openTask: (id) => { dialog.close(); openTask(id); }, openSession: (key) => { dialog.close(); openSession(key); } }));
+      openTask: leave(openTask), openSession: leave(openSession) }));
   }
 
   /** A new one; once its window closes. */

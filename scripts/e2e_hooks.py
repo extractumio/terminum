@@ -27,37 +27,40 @@ tmux = partial(tmux_on, SOCKET)
 def limits(t, ws, env, pane):
     """terminum-dispatcher.md AC-167: Claude Code's status line and Codex's turn end bring each kind's windows,
     numbers alone, to every page; the user's own status line prints as it did, also without terminumd."""
+    def run(args, text, on=env):
+        return subprocess.run([BIN, *args], input=text, capture_output=True, text=True, env=on)
+
     def told(kind, used):
         m = ws.until(lambda m: m.get("t") == "subscriptions" and [w["used"] for w in m["subscriptions"].get(kind, {}).get("windows", [])] == used, 5)
         return m and m["subscriptions"][kind]
     status = {"session_id": "s", "cwd": "/Users/alex/secret-project", "transcript_path": "/Users/alex/t.jsonl", "model": {"id": "claude-opus-5-5"},
               "rate_limits": {"five_hour": {"used_percentage": 34, "resets_at": 1894350000}, "seven_day": {"used_percentage": 21.5, "resets_at": 1894600000}}}
     start = time.monotonic()
-    p = subprocess.run([BIN, "statusline", "read l; echo \"mine: ${#l}\""], input=json.dumps(status) + "\n", capture_output=True, text=True, env=env)
+    p = run(["statusline", "read l; echo \"mine: ${#l}\""], json.dumps(status) + "\n")
     took = time.monotonic() - start
     check("AC-167 the user's status line prints its own line, its exit code kept", p.returncode == 0 and p.stdout.startswith("mine: ") and p.stderr == "", p)
     got = told("claude", [34, 21.5])
     check("AC-167 Claude Code's two windows reach the page at once", got and [w["minutes"] for w in got["windows"]] == [300, 10080] and got["windows"][0]["resets_at"] == 1894350000, got)
     check("AC-167 numbers alone leave the session", got and "secret" not in json.dumps(got) and "opus" not in json.dumps(got), got)
     check("AC-167 the status line takes under 300 ms", took < 0.3, f"{took * 1000:.0f} ms")
-    p = subprocess.run([BIN, "statusline"], input=json.dumps(status), capture_output=True, text=True, env=env)
+    p = run(["statusline"], json.dumps(status))
     check("AC-167 with no command of its own it says the windows", p.stdout.strip() == "5h 34% · week 22%", p.stdout)
     for bad in [{"model": {"id": "x"}}, {"rate_limits": {"five_hour": {"used_percentage": 140}}}]:
-        subprocess.run([BIN, "statusline", "true"], input=json.dumps(bad), capture_output=True, text=True, env=env)
+        run(["statusline", "true"], json.dumps(bad))
     check("AC-167 an input with no rate limits or one out of range changes nothing", ws.until(lambda m: m.get("t") == "subscriptions", 1.5) is None)
     gone = {**env, "TM_APP_DIR": t.app + "-gone"}
     os.makedirs(gone["TM_APP_DIR"], mode=0o700, exist_ok=True)
-    p = subprocess.run([BIN, "statusline", "echo still mine"], input=json.dumps(status), capture_output=True, text=True, env=gone)
+    p = run(["statusline", "echo still mine"], json.dumps(status), gone)
     check("AC-167 without terminumd the user's line prints as it did", p.returncode == 0 and p.stdout == "still mine\n", p)
     log = os.path.join(t.root, "rollout.jsonl")
     compact = partial(json.dumps, separators=(",", ":"))   # as Codex writes its log: the hook looks for its compact keys
     with open(log, "w") as f:
         f.write(compact({"type": "response_item", "payload": {"type": "message", "content": [{"type": "output_text", "text": "secret words"}]}}) + "\n")
         f.write(compact({"type": "event_msg", "payload": {"type": "token_count", "info": None, "rate_limits": {"primary": {"used_percent": 21.0, "window_minutes": 10080, "resets_at": 1894428830}, "secondary": None, "plan_type": "prolite"}}}) + "\n")
-    subprocess.run([BIN, "hook", "codex"], input=json.dumps({"hook_event_name": "Stop", "session_id": "cx", "turn_id": "t1", "transcript_path": log}), capture_output=True, text=True, env=env)
+    run(["hook", "codex"], json.dumps({"hook_event_name": "Stop", "session_id": "cx", "turn_id": "t1", "transcript_path": log}))
     got = told("codex", [21.0])
     check("AC-167 Codex's turn end brings its week, and no five-hour window it did not report", got and got["windows"] == [{"minutes": 10080, "used": 21.0, "resets_at": 1894428830}], got)
-    hook_end = subprocess.run([BIN, "hook", "codex"], input=json.dumps({"hook_event_name": "SessionEnd", "session_id": "cx"}), capture_output=True, text=True, env=env)
+    hook_end = run(["hook", "codex"], json.dumps({"hook_event_name": "SessionEnd", "session_id": "cx"}))
     check("AC-167 Codex's session ends as before", hook_end.returncode == 0, hook_end)
 
 

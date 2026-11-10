@@ -7,25 +7,30 @@
 use std::collections::BTreeMap;
 
 use parking_lot::Mutex;
+use serde::Serialize;
 use serde_json::{json, Value};
 
 /// The most windows one reading holds; past them a made-up event is not kept.
 const MOST_WINDOWS: usize = 4;
 /// The longest window a reading may name: a month of 31 days, in minutes.
 const LONGEST: u64 = 31 * 24 * 60;
+/// The two windows the plans have, in minutes.
+pub const FIVE_HOURS: u64 = 5 * 60;
+pub const WEEK: u64 = 7 * 24 * 60;
+/// A reading of the same numbers moves its time no oftener: a status line redraws far more often.
+const FRESH: i64 = 600;
 
 /// One window of a reading: its length, the percent used, when it starts anew (Unix seconds).
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Window {
     pub minutes: u64,
     pub used: f64,
     pub resets_at: Option<i64>,
 }
 
-impl Window {
-    fn json(&self) -> Value {
-        json!({"minutes": self.minutes, "used": self.used, "resets_at": self.resets_at})
-    }
+/// A window's name by its length, as the board says it: 5h, week, 1d.
+pub fn label(minutes: u64) -> String {
+    if minutes == WEEK { "week".into() } else if minutes.is_multiple_of(1440) { format!("{}d", minutes / 1440) } else { format!("{}h", (minutes as f64 / 60.0).round()) }
 }
 
 /// A time as Unix seconds, as both agents say it; a number past 10^11 is taken for milliseconds.
@@ -49,27 +54,22 @@ pub fn of_event(ev: &Value) -> Option<Vec<Window>> {
     list.iter().map(|w| window(w["minutes"].as_u64(), w["used"].as_f64(), &w["resets_at"])).collect()
 }
 
+/// Those of `found` that are windows; None when none is.
+fn some(found: impl Iterator<Item = Option<Window>>) -> Option<Vec<Window>> {
+    let found: Vec<Window> = found.flatten().collect();
+    (!found.is_empty()).then_some(found)
+}
+
 /// Claude Code's status line input: `rate_limits.five_hour` and `seven_day`, each `used_percentage` and `resets_at`.
 /// None when it has neither (an API key, Bedrock, Vertex, before its first answer).
 pub fn of_claude(input: &Value) -> Option<Vec<Window>> {
     let limits = &input["rate_limits"];
-    let found: Vec<Window> = [("five_hour", 300), ("seven_day", 7 * 24 * 60)].iter()
-        .filter_map(|(k, minutes)| limits.get(*k).filter(|w| w.is_object()).and_then(|w| window(Some(*minutes), w["used_percentage"].as_f64(), &w["resets_at"])))
-        .collect();
-    (!found.is_empty()).then_some(found)
+    some([("five_hour", FIVE_HOURS), ("seven_day", WEEK)].iter().map(|(k, minutes)| window(Some(*minutes), limits[*k]["used_percentage"].as_f64(), &limits[*k]["resets_at"])))
 }
 
 /// Codex's `rate_limits` of a token count: `primary` and `secondary`, each `used_percent`, `window_minutes`, `resets_at`.
 pub fn of_codex(limits: &Value) -> Option<Vec<Window>> {
-    let found: Vec<Window> = ["primary", "secondary"].iter()
-        .filter_map(|k| limits.get(*k).filter(|w| w.is_object()).and_then(|w| window(w["window_minutes"].as_u64(), w["used_percent"].as_f64(), &w["resets_at"])))
-        .collect();
-    (!found.is_empty()).then_some(found)
-}
-
-/// Windows as an event carries them.
-pub fn json_of(windows: &[Window]) -> Value {
-    windows.iter().map(Window::json).collect()
+    some(["primary", "secondary"].iter().map(|k| window(limits[*k]["window_minutes"].as_u64(), limits[*k]["used_percent"].as_f64(), &limits[*k]["resets_at"])))
 }
 
 /// The last reading of each kind, and when it came.
@@ -77,14 +77,20 @@ pub fn json_of(windows: &[Window]) -> Value {
 pub struct Readings(Mutex<BTreeMap<String, (i64, Vec<Window>)>>);
 
 impl Readings {
-    /// A reading of `kind` came at `at`: it replaces the last. Whether its numbers differ from the last's.
+    /// A reading of `kind` came at `at`: it replaces the last when its numbers differ or the last is `FRESH` old.
+    /// Whether it did: pages are told then.
     pub fn heard(&self, kind: &str, windows: Vec<Window>, at: i64) -> bool {
-        self.0.lock().insert(kind.to_string(), (at, windows.clone())).is_none_or(|(_, was)| was != windows)
+        let mut all = self.0.lock();
+        if all.get(kind).is_some_and(|(was_at, was)| *was == windows && at - was_at < FRESH) {
+            return false;
+        }
+        all.insert(kind.to_string(), (at, windows));
+        true
     }
 
     /// As pages show them: by kind, `{at, windows}`.
     pub fn shown(&self) -> Value {
-        self.0.lock().iter().map(|(k, (at, w))| (k.clone(), json!({"at": at, "windows": json_of(w)}))).collect::<serde_json::Map<_, _>>().into()
+        self.0.lock().iter().map(|(k, (at, w))| (k.clone(), json!({"at": at, "windows": w}))).collect::<serde_json::Map<_, _>>().into()
     }
 }
 
@@ -98,7 +104,7 @@ mod tests {
             "rate_limits": {"five_hour": {"used_percentage": 34.5, "resets_at": 1794350000}, "seven_day": {"used_percentage": 21, "resets_at": 1794600000}}});
         let got = of_claude(&input).unwrap();
         assert_eq!(got, vec![Window { minutes: 300, used: 34.5, resets_at: Some(1794350000) }, Window { minutes: 10080, used: 21.0, resets_at: Some(1794600000) }]);
-        assert_eq!(json_of(&got).to_string().contains("alex"), false, "numbers alone leave the session");
+        assert!(!json!(got).to_string().contains("alex"), "numbers alone leave the session");
     }
 
     #[test]
@@ -135,6 +141,20 @@ mod tests {
     }
 
     #[test]
+    fn ac167_the_same_numbers_move_its_time_only_when_old() {
+        let (r, w) = (Readings::default(), vec![Window { minutes: WEEK, used: 1.0, resets_at: None }]);
+        assert!(r.heard("claude", w.clone(), 1000));
+        assert!(!r.heard("claude", w.clone(), 1000 + FRESH - 1));
+        assert!(r.heard("claude", w, 1000 + FRESH), "an old reading's time moves: its stripes do not fade while it is said");
+        assert_eq!(r.shown()["claude"]["at"], 1000 + FRESH);
+    }
+
+    #[test]
+    fn ac167_a_window_s_name() {
+        assert_eq!([label(FIVE_HOURS), label(WEEK), label(1440), label(90)], ["5h", "week", "1d", "2h"]);
+    }
+
+    #[test]
     fn ac167_reset_times_in_seconds_or_milliseconds() {
         let w = |r: Value| window(Some(300), Some(1.0), &r).map(|w| w.resets_at);
         assert_eq!(w(json!(1794350000)), Some(Some(1794350000)));
@@ -149,9 +169,9 @@ mod tests {
         let r = Readings::default();
         assert!(r.heard("claude", vec![Window { minutes: 300, used: 10.0, resets_at: None }], 100), "the first: news");
         assert!(r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 110));
-        assert!(!r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 115), "the same numbers: no news, a later time");
+        assert!(!r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 115), "the same numbers soon after: no news");
         assert!(r.heard("claude", vec![Window { minutes: 300, used: 12.0, resets_at: None }], 120));
         assert_eq!(r.shown(), json!({"claude": {"at": 120, "windows": [{"minutes": 300, "used": 12.0, "resets_at": null}]},
-                                     "codex": {"at": 115, "windows": [{"minutes": 10080, "used": 21.0, "resets_at": 5}]}}));
+                                     "codex": {"at": 110, "windows": [{"minutes": 10080, "used": 21.0, "resets_at": 5}]}}));
     }
 }

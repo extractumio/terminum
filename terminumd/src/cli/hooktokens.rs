@@ -96,19 +96,19 @@ fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     Some(sum)
 }
 
-/// What Codex's lines say: the session's last total, its last turn's model, its account's last windows (AC-167).
+/// What Codex's lines say: the session's last total, its last turn's model, its account's last `rate_limits` (AC-167).
 #[derive(Default)]
 struct CodexRead {
     total: Option<Totals>,
     model: String,
-    windows: Option<Vec<Window>>,
+    limits: Value,
 }
 
 /// Codex's lines: a `token_count` event holds the session's total, its input with the cached part in it, and its
 /// account's `rate_limits`; a `turn_context` names the turn's model. The last of each: the whole is priced at the last model.
 fn codex(reader: impl BufRead, until: Instant) -> Option<CodexRead> {
     let mut read = CodexRead::default();
-    each_line(reader, until, &[r#""type":"token_count""#, r#""type":"turn_context""#], |_, v: Value| {
+    each_line(reader, until, &[r#""type":"token_count""#, r#""type":"turn_context""#], |_, mut v: Value| {
         if v["type"] == "turn_context" && let Some(m) = v["payload"]["model"].as_str() {
             read.model = m.chars().take(MOST_MODEL).collect();
         } else if v["payload"]["type"] == "token_count" {
@@ -116,17 +116,22 @@ fn codex(reader: impl BufRead, until: Instant) -> Option<CodexRead> {
                 let cached = int(u, "cached_input_tokens");
                 read.total = Some(Totals { input: (int(u, "input_tokens") - cached).max(0), output: int(u, "output_tokens"), cache_read: cached, ..Totals::default() });
             }
-            if let Some(w) = subscriptions::of_codex(&v["payload"]["rate_limits"]) {
-                read.windows = Some(w);
+            // a count without them is no reset: the last that has them stands, read once at the end
+            if v["payload"]["rate_limits"].is_object() {
+                read.limits = v["payload"]["rate_limits"].take();
             }
         }
     })?;
     Some(read)
 }
 
-/// A transcript `input` names, opened when it is a regular file of a size the hook reads; its length.
-fn opened(input: &Value) -> Option<(std::fs::File, u64)> {
-    let path = input.get("transcript_path").and_then(Value::as_str)?;
+/// The transcript an event names.
+fn transcript(input: &Value) -> Option<&str> {
+    input.get("transcript_path").and_then(Value::as_str)
+}
+
+/// `path` opened when it is a regular file of a size the hook reads; its length.
+fn opened(path: &str) -> Option<(std::fs::File, u64)> {
     // a regular file: a FIFO or a device named there would block past any limit
     let meta = std::fs::metadata(path).ok().filter(|m| m.is_file() && m.len() <= MOST_BYTES)?;
     Some((std::fs::File::open(path).ok()?, meta.len()))
@@ -134,18 +139,18 @@ fn opened(input: &Value) -> Option<(std::fs::File, u64)> {
 
 /// Codex's account's windows as its log's tail last says them (AC-167): numbers alone; None when the tail has none.
 pub fn codex_windows(input: &Value) -> Option<Vec<Window>> {
-    let (mut file, len) = opened(input)?;
+    let (mut file, len) = opened(transcript(input)?)?;
     file.seek(SeekFrom::Start(len.saturating_sub(CODEX_TAIL))).ok()?;
-    codex(std::io::BufReader::new(&file), Instant::now() + MOST_TIME)?.windows
+    subscriptions::of_codex(&codex(std::io::BufReader::new(&file), Instant::now() + MOST_TIME)?.limits)
 }
 
 /// What goes with a turn's end: the whole and each model's numbers, or `null` when they are not known (a new
 /// agent version's format, a file gone, too long a read); nothing when the event names no transcript.
 pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
-    input.get("transcript_path").and_then(Value::as_str)?;
+    let path = transcript(input)?;
     let until = Instant::now() + MOST_TIME;
     let read = || -> Option<Sum> {
-        let (mut file, len) = opened(input)?;
+        let (mut file, len) = opened(path)?;
         if agent == "codex" {
             // the last total and model: the end of the file holds them, at no cost as a session grows; what it
             // lacks is looked for before it, the tail's alone when that is past the time

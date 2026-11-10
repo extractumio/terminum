@@ -15,41 +15,41 @@ use crate::dispatcher::subscriptions::{self, Window};
 /// The most of its input kept: Claude Code's is a few KB.
 const KEEP: u64 = 1 << 20;
 
-/// The user's command, started with its input on the way, its output to `out`; None with none given.
-fn start(args: &[String], input: &[u8], out: Stdio) -> Option<std::io::Result<std::process::Child>> {
-    let (prog, rest) = args.split_first()?;
-    let mut cmd = if rest.is_empty() { let mut c = Command::new("/bin/sh"); c.arg("-c").arg(prog); c } else { let mut c = Command::new(prog); c.args(rest); c };
-    Some(cmd.stdin(Stdio::piped()).stdout(out).spawn().map(|mut child| {
-        // a command that does not read it is its own business: a closed pipe is no error here
-        if let Some(mut stdin) = child.stdin.take() {
-            let _ = stdin.write_all(input);
-        }
-        child
-    }))
+/// The user's command (`args`, not empty), started with its input on the way, its output to `out`.
+fn start(args: &[String], input: &[u8], out: Stdio) -> std::io::Result<std::process::Child> {
+    let mut cmd = if let [line] = args { let mut c = Command::new("/bin/sh"); c.arg("-c").arg(line); c } else { let mut c = Command::new(&args[0]); c.args(&args[1..]); c };
+    let mut child = cmd.stdin(Stdio::piped()).stdout(out).spawn()?;
+    // a command that does not read it is its own business: a closed pipe is no error here
+    if let Some(mut stdin) = child.stdin.take() {
+        let _ = stdin.write_all(input);
+    }
+    Ok(child)
 }
 
 /// The windows told to terminumd, from the pane the status line runs in; nothing outside tmux or a pane.
-fn tell(input: &[u8]) {
-    let (Ok(v), Ok(tmux), Ok(pane)) = (serde_json::from_slice::<Value>(input), std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return };
-    let (Some(windows), Some(ev)) = (subscriptions::of_claude(&v), super::hook::event("claude", &json!({"hook_event_name": "Limits"}), &tmux, &pane)) else { return };
-    let _ = super::sinks::post_all(&super::sinks::all(), "/hook", &super::hook::limits_event(&ev, &windows), super::hook::BUDGET);
+fn tell(windows: &[Window]) {
+    let (Ok(tmux), Ok(pane)) = (std::env::var("TMUX"), std::env::var("TMUX_PANE")) else { return };
+    let Some(ev) = super::hook::event("claude", &json!({"hook_event_name": "Limits"}), &tmux, &pane) else { return };
+    let _ = super::sinks::post_all(&super::sinks::all(), "/hook", &super::hook::limits_event(&ev, windows), super::hook::BUDGET);
 }
 
 /// The line it prints when it runs alone: each window's percent.
 pub fn own_line(windows: &[Window]) -> String {
-    windows.iter().map(|w| format!("{} {}%", if w.minutes == 300 { "5h".to_string() } else if w.minutes == 10080 { "week".to_string() } else { format!("{}h", w.minutes / 60) }, w.used.round()))
-        .collect::<Vec<_>>().join(" · ")
+    windows.iter().map(|w| format!("{} {}%", subscriptions::label(w.minutes), w.used.round())).collect::<Vec<_>>().join(" · ")
 }
 
 pub fn main(args: &[String]) -> i32 {
     let mut input = Vec::new();
     let _ = std::io::stdin().lock().take(KEEP).read_to_end(&mut input);
-    let child = start(args, &input, Stdio::inherit());
-    tell(&input);
+    // the user's line first: its command runs while terminumd is told
+    let child = (!args.is_empty()).then(|| start(args, &input, Stdio::inherit()));
+    let windows = serde_json::from_slice::<Value>(&input).ok().and_then(|v| subscriptions::of_claude(&v));
+    if let Some(w) = &windows {
+        tell(w);
+    }
     match child {
         None => {
-            let windows = serde_json::from_slice::<Value>(&input).ok().and_then(|v| subscriptions::of_claude(&v)).unwrap_or_default();
-            let _ = writeln!(std::io::stdout().lock(), "{}", own_line(&windows));
+            let _ = writeln!(std::io::stdout().lock(), "{}", own_line(&windows.unwrap_or_default()));
             0
         }
         Some(Err(e)) => {
@@ -67,7 +67,7 @@ mod tests {
     /// `args` run on `input`: the exit code and what it printed.
     fn run(args: &[&str], input: &str) -> std::io::Result<(Option<i32>, String)> {
         let args: Vec<String> = args.iter().map(|a| a.to_string()).collect();
-        let out = start(&args, input.as_bytes(), Stdio::piped()).unwrap()?.wait_with_output()?;
+        let out = start(&args, input.as_bytes(), Stdio::piped())?.wait_with_output()?;
         Ok((out.status.code(), String::from_utf8_lossy(&out.stdout).trim().to_string()))
     }
 
@@ -75,7 +75,6 @@ mod tests {
     fn ac167_the_users_command_gets_the_same_input_and_says_what_it_says() {
         assert_eq!(run(&["read l; echo \"mine: $l\"; exit 3"], "{\"model\":1}\n").unwrap(), (Some(3), "mine: {\"model\":1}".into()), "its output and exit code");
         assert_eq!(run(&["echo ignores it"], &"x".repeat(200_000)).unwrap(), (Some(0), "ignores it".into()), "one that reads nothing is no error");
-        assert!(start(&[], b"", Stdio::null()).is_none(), "no command: its own line");
     }
 
     #[test]
@@ -89,7 +88,7 @@ mod tests {
     fn ac167_its_own_line() {
         let w = |minutes, used| Window { minutes, used, resets_at: None };
         assert_eq!(own_line(&[w(300, 34.4), w(10080, 21.0)]), "5h 34% · week 21%");
-        assert_eq!(own_line(&[w(1440, 2.0)]), "24h 2%");
+        assert_eq!(own_line(&[w(1440, 2.0)]), "1d 2%", "as the board names it");
         assert_eq!(own_line(&[]), "", "an API key: an empty line");
     }
 }

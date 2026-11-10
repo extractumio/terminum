@@ -72,7 +72,7 @@ pub fn main(agent: &str) -> i32 {
 /// A `Limits` event of the pane `ev` came from: its windows, and nothing else of the session (AC-167).
 pub fn limits_event(ev: &Value, windows: &[crate::dispatcher::subscriptions::Window]) -> Value {
     json!({"agent": ev["agent"], "socket": ev["socket"], "socket_path": ev["socket_path"], "pane": ev["pane"], "event": "Limits",
-           "windows": crate::dispatcher::subscriptions::json_of(windows)})
+           "windows": windows})
 }
 
 /// The first sink whose answer reminds, and its reminder line, if any.
