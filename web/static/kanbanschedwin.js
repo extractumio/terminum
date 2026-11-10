@@ -72,7 +72,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     soon = setTimeout(preview, 250);
   };
   for (const k of ["minute", "day", "date", "time", "cron", "budget"]) f[k].addEventListener("input", changedWhen);
-  // a long text goes once typed, not at each pause; a choice in the page's own list says "change" only (dropdown.js)
+  // a long text goes once typed, not at each pause; a choice is made once
   for (const k of ["title", "text", "every", "agent", "project"]) f[k].addEventListener("change", changedWhen);
   f.kind.addEventListener("change", () => { shownParts(); changedWhen(); });
 

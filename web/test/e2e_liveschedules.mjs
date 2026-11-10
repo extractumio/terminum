@@ -84,7 +84,7 @@ export async function liveSchedules(page, live) {
   await page.waitForSelector("#schedbox[open]");
   await page.fill("#schedtitle", "Nightly deps check");
   await page.fill("#schedtext", "FINISHES the check of dependencies.");
-  // the page's own list of a select says "change" alone, as a choice there does (dropdown.js): the window hears it
+  // a choice that says "change" alone is heard too
   const choose = (id) => page.$eval("#schedagent", (s, id) => { s.value = id; s.dispatchEvent(new Event("change", { bubbles: true })); }, id);
   await choose("");
   check("AC-160 no agent chosen is said", await until(async () => await page.textContent("#schederror") === "Choose the agent that runs it."), await page.textContent("#schederror"));
