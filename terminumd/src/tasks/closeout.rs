@@ -20,7 +20,7 @@ pub const SECTIONS: [(&str, &str); 9] = [
     ("Checked", "how each was verified, on what, with what result; what was not verified, and why"),
     ("Not done", "what of the task is left or dropped, and why; what is left names its task's ID"),
     ("Needs a human", "decisions, access, answers"),
-    ("New tasks", "ID: one sentence on the problem or change, with its context; only tasks on the board: terminum says under the result which ones this session made"),
+    ("New tasks", "ID: one sentence on the problem or change, with its context; only tasks that exist: terminum says under the result which ones this session made"),
     ("Tasks changed", "ID: renamed, re-prioritized, regrouped or archived, and why"),
     ("Issues and discoveries", "what went into no task, and why"),
     ("Further recommendations", "what to do next; each one a human would plan names its task's ID"),
