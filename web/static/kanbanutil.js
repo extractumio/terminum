@@ -9,6 +9,7 @@ import { askConfirm } from "./dialogs.js";
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
 export const THIS_MAC = "This Mac";
+export const AT_LIMIT = "at its limit: its queue";   // an agent with no room, in a list of agents: Run offers its queue (terminum-dispatcher.md AC-169)
 export const DEFAULT = "default";                  // terminumd's Default project
 /** A server's choices: none is this Mac. */
 export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h])];

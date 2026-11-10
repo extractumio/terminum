@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
+import { $, AT_LIMIT, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -62,11 +62,11 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const view = writePreview("new", $("newtext"), $("newshown"));
 
   /** The pool: the agent the user picked, else the project's last run's, else the first; one at a limit is chosen
-   *  all the same, said so: Run waits for its room (terminum-dispatcher.md AC-158). None picked stays none,
+   *  all the same, said so: Run offers its queue (terminum-dispatcher.md AC-169). None picked stays none,
    *  whatever changes meanwhile (AC-106). */
   function showAgents() {
     const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
-    const busy = (a) => (now.full.includes(a.id) ? "at its limit: Run waits" : now.full_projects.includes(project) ? "the project is at its limit: Run waits" : "");
+    const busy = (a) => (now.full.includes(a.id) ? AT_LIMIT : now.full_projects.includes(project) ? `the project is ${AT_LIMIT}` : "");
     fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : "Choose when it runs");
   }
 

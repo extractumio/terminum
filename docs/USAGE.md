@@ -203,8 +203,11 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   an agent Dispatcher starts runs its command as you wrote it, so write the permissions it needs there (`claude --dangerously-skip-permissions`); when it
   needs you it asks with `ask_human`: its questions, with its recommended answers, stand on the task
   in WAIT FOR HUMAN and its session closes; answer in comments and press Run, and the same
-  conversation goes on (dropped on another agent of its kind, there). Run on a busy agent waits
-  for its room and starts by itself; Stop waiting in the task's window calls it off;
+  conversation goes on (dropped on another agent of its kind, there). Run on a busy agent offers
+  its queue: Add to queue, and the task starts by itself when a slot frees; the agent's card shows a pale dot for
+  each queued task, and its "queued" key opens the queue, where you drag tasks (on a phone: rest a finger on one
+  first) or use the arrows to change their order and the cross to take one out; Stop waiting in the task's window
+  does the same;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
