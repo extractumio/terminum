@@ -694,13 +694,13 @@ Scenario: AC-141 edge — at the agent's limit
   Given Opus reviewer with 1 at once and API-12's session working
   When the user drops API-13 on it, or POST /api/tasks/API-13/run {"agent": ...}
   Then no session starts; RUN's window says "Opus reviewer is at its limit of 1: API-12 is working. Run waits until it has room, then starts." and the press waits (AC-158)
-  And each holder is named with what it does: "is starting", "is working", "waits for a human", "is being ended", "is idle" (only such a one can be closed for its slot), "has finished, not idle yet"; one started by + Session is "a session with no task"; with several: "Opus reviewer is at its limit of 3: API-12 is working, API-14 is idle, API-16 waits for a human."
+  And each holder is named with what it does: "is starting", "is working", "waits for a human", "is being ended", "is idle" (only such a one can be closed for its slot), "has finished, not idle yet"; one started by + Session is "a session with no task"; with several: "Opus reviewer is at its limit of 3: API-12 is working; API-14 is idle; API-16 waits for a human."; a run of several tasks: "API-12, API-13 are working"
   And it is decided in the transaction that would take the slot: two presses never both find it free
 
 Scenario: AC-141 edge — at the project's limit
   Given api with Agents at once 2, API-12 and API-14 running on any agents
   When the user runs API-13 of api
-  Then no session starts and the press waits: "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12 is working, API-14 is working. It starts when there is room."
+  Then no session starts and the press waits: "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12 is working; API-14 is working. It starts when there is room."
 
 Scenario: AC-141 happy path — an idle holder
   Given Opus reviewer with 1 at once, and API-12 DONE, its turn over, no tool open, quiet for two walks, with an empty input box and no subagent
@@ -907,7 +907,7 @@ Scenario: AC-158 failure — refused when it goes
 Scenario: AC-158 edge — terminum upgraded meanwhile
   Given API-13 waiting, and a new terminum installed whose own words of the prompt differ
   When its press goes again
-  Then it starts: what the human saw is what its tasks, their project and their schedule hold (titles, texts, files' names, parent, budget, language, the schedule's words), not terminum's own words around them
+  Then it starts: what the human saw is what its tasks, their project and their schedule hold (titles, texts, files' names, parent, budget, language, the schedule's cadence), not terminum's own words around them
 
 Scenario: AC-158 edge — a restart
   Given API-13 waiting when terminumd restarts

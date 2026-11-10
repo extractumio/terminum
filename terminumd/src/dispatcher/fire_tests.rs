@@ -104,6 +104,9 @@ fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
         let (id, _) = made(decide(tx, &s, NOW + DAY, false)?);
         let t = ops::get(tx, &id)?;
         assert_eq!(super::super::press::prompt_of(tx, std::slice::from_ref(&t), None)?, prompt(&s, &id, &t.title, "Check them.", false), "the firing's RUN goes as the schedule's run");
+        // AC-158: what the human saw holds the schedule's cadence as kept, not terminum's words for it
+        let own = json!([[[t.id, t.title, "Check them.", t.by_agent, t.parent, t.budget_seconds]], [], ["SCH-1", "Nightly deps check", "0 3 * * *", null, 1800, false], "English"]).to_string();
+        assert_eq!(super::super::press::facts(tx, std::slice::from_ref(&t))?.rev(), crate::auth::crypto::sha256_hex(own.as_bytes()));
         assert!(prompt(&s, &id, &t.title, "Check them.", true).starts_with(&format!("The human ran task {id} again: Nightly deps check. A task of terminum's schedule SCH-1")), "a human's RUN after says so");
         assert!(prompt(&s, &id, &t.title, &"x".repeat(20_001), false).contains(&format!("Its text, by execute_tool(\"get_task\", {{id}}) for {id}, is your assignment")), "a long text by get_task");
         Ok(())

@@ -117,7 +117,7 @@ impl Facts {
     /// and none of terminum's own words: a press that waited through an upgrade of terminum still goes (AC-158).
     pub(super) fn rev(&self) -> String {
         let tasks: Vec<_> = self.tasks.iter().zip(&self.texts).map(|(t, text)| (&t.id, &t.title, text, t.by_agent, &t.parent, t.budget_seconds)).collect();
-        let schedule = self.schedule.as_ref().map(|(s, again)| (&s.key, &s.title, s.words(), s.budget_seconds, again));
+        let schedule = self.schedule.as_ref().map(|(s, again)| (&s.key, &s.title, &s.cron, s.once_at, s.budget_seconds, again));
         crate::auth::crypto::sha256_hex(serde_json::json!([tasks, self.files, schedule, self.language]).to_string().as_bytes())
     }
 }
