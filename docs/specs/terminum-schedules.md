@@ -115,7 +115,7 @@ Scenario: AC-160 failure — refused
 ```gherkin
 Scenario: AC-161 happy path — kept
   Given Opus reviewer with 2 at once and SCH-1 on it
-  Then the agent's card shows a clock mark "kept for SCH-1" before its dots and counts "1/2" with nothing running
+  Then the agent's card shows a dashed ring "kept for SCH-1" before its dots (terminum-dispatcher.md AC-169) and counts "1/2" with nothing running
   When the user runs API-12 on it
   Then it starts; API-13 next is told "Opus reviewer is at its limit of 2: API-12 is working; SCH-1 (kept)." and waits (AC-158)
 

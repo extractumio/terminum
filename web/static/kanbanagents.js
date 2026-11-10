@@ -6,6 +6,7 @@ import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
 import { asTyped } from "./astyped.js";
+import { queueKey, queueList } from "./kanbanqueue.js";
 import { $, button, agentColor, api, countOf, fillSelect, guardCancel, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
@@ -28,6 +29,8 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   let editing = null, snapshot = "";
 
   const slots = (a) => counted().agents[a.id] ?? [];
+  const queueOf = (a) => counted().queue?.[a.id] ?? [];
+  const MOST_FREE = 8;                             // an agent of more slots than this says them by its count alone
   /** At a limit, as terminumd says: its own, or the one project shown's. */
   const full = (a) => counted().full.includes(a.id) || (chosen().length === 1 && counted().full_projects.includes(chosen()[0]));
 
@@ -66,12 +69,15 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     bar.style.setProperty("--dot", agentColor(a));
     b.style.setProperty("--ag", agentColor(a));
     const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
-    // a clock for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161)
+    // a dashed ring for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161); a plain
+    // ring for each slot still free; then a pale dot for each task of its queue, in the key that opens it (AC-169)
     const kept = counted().kept?.[a.id] ?? [];
     for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
     dots.append(...mine.map(dot));
     const used = slots(a).filter((s) => !s.kept).length + kept.length;
+    if (a.at_once <= MOST_FREE) for (let i = used; i < a.at_once; i++) { const m = el("span", "agfree"); m.title = "a free slot"; dots.append(m); }
     if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
+    if (queueOf(a).length) dots.append(queueKey(a, queueOf(a), () => open(a, true)));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
     txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
     b.append(bar, txt);
@@ -84,6 +90,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     const b = row(a);
     b.append(iconButton("agedit", "pencil", `Edit ${a.name}`, `Edit ${a.name}`, () => open(a)));
     b.addEventListener("click", (e) => {
+      if (e.target.closest?.(".agqueue")) return;  // its queue's key: its own press
       const tasks = given(), key = e.target.closest?.(".agdot")?.dataset.key;
       if (tasks) run(tasks, a.id);
       else if (key) openSession(key);
@@ -92,7 +99,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     b.addEventListener("dragover", (e) => {
       if (!dragging()) return;
       e.preventDefault();
-      if (!full(a)) b.classList.add("over");
+      b.classList.add("over");                     // at its limit too: a drop there is offered its queue (AC-169)
     });
     b.addEventListener("dragleave", () => b.classList.remove("over"));
     b.addEventListener("drop", (e) => {
@@ -108,7 +115,8 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
-    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
+    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, counted().queue, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
+    if (dialog.open && editing) queue.show(editing, queueOf(editing));   // its window follows what other pages did
     if (dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));
@@ -151,20 +159,24 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     return `${base} ${n}`;
   }
 
-  /** Its window: a new one, or `a` to change. */
-  function open(a = null) {
+  const queue = queueList($("agentqueue"), { projectName: (id) => getMeta().projects.find((p) => p.id === id)?.name, say: (text) => say(text) });
+
+  /** Its window: a new one, or `a` to change; `atQueue`: its queue shown first. */
+  function open(a = null, atQueue = false) {
     editing = a;
     const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1, week_limit: null, month_limit: null };
     for (const k of ["kind", "name", "command", "at_once", "week_limit", "month_limit"]) field[k].value = v[k] ?? "";
     fillEfforts(v.effort);
     showSessions(a);
+    queue.show(a, a ? queueOf(a) : []);
     $("agenthead").textContent = a ? a.name : "Add agent";
     $("agentok").textContent = a ? "Save" : "Add";
     $("agentdrop").hidden = !a;
     say("");
     snapshot = JSON.stringify(values());
     dialog.showModal();
-    field.name.select();
+    if (atQueue) queue.at();
+    else field.name.select();
   }
 
   /** A change to terminumd, one at a time: the window closes when it is kept, and says why when it is not. */

@@ -31,6 +31,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/tasks/{id}/give-up", post(give_up))
         .route("/api/task-projects/{id}/session", post(ad_hoc))
         .route("/api/runs/{id}/let-go", post(let_go))
+        .route("/api/task-agents/{id}/queue", post(queue_order))
 }
 
 /// What RUN's dialog shows (AC-121, AC-138): the pool, each saying what keeps it busy; an agent named that cannot
@@ -50,6 +51,9 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
             let full = slots.check_for(tx, a, &t.project, (tasks.len() == 1).then_some(t.key.as_str()), None)?;
             let mut v = json!(a);
             v["full"] = json!(full);
+            if let Some(f) = &full {
+                v["full"]["queue"] = json!(super::waits::offer(&f.words));
+            }
             offered.push(v);
         }
         if asked.agent.as_ref().is_some_and(|named| !all.iter().any(|a| &a.id == named)) && matches!(w, Way::First) {
@@ -81,18 +85,37 @@ struct Press {
     /// the other tasks of this press (AC-138)
     #[serde(default)]
     also: Vec<String>,
+    /// the human agreed to its place in the queue, should there be no room (AC-169)
+    #[serde(default)]
+    queue: bool,
 }
 
-/// What a press that would start a process comes to: its run, or a wait for a slot (AC-158).
+/// What a press that would start a process comes to: its run, a wait for a slot (AC-158), or the queue offered,
+/// nothing kept (AC-169).
 enum Next {
     Run(String),
     Waits(String),
+    Offered(String),
+}
+
+impl Next {
+    /// Its run, or what a press that started nothing answers; a wait is told to every page.
+    fn told(self, app: &Shared, t: &Task) -> Result<String, Value> {
+        match self {
+            Next::Run(run) => Ok(run),
+            Next::Waits(words) => {
+                told(app, &t.id);
+                Err(json!({"waits": words}))
+            }
+            Next::Offered(words) => Err(json!({"full": words})),
+        }
+    }
 }
 
 /// A slot's limit, or an older wait that has room, keeps this press waiting (AC-158): its words, after the human's
-/// comment is kept, so it shows while it waits.
+/// comment is kept, so it shows while it waits. A press that did not agree to the queue is offered it (AC-169).
 /// `alone`: the press runs `task` alone: one of a schedule's may take its kept slot (terminum-schedules.md AC-161).
-fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<String>, String> {
+fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>, (body, comment, files): (&Value, Option<&str>, &[String])) -> Result<Option<Next>, String> {
     let why = match pool::check_for(tx, agent, project, alone.then_some(task.key.as_str()), but)? {
         Some(full) => full.words,
         None => match super::waits::ahead(tx, &agent.id, project, &task.key)? {
@@ -100,17 +123,21 @@ fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task,
             None => return Ok(None),
         },
     };
+    if body["queue"] != json!(true) {
+        return Ok(Some(Next::Offered(super::waits::offer(&why))));
+    }
     if let Some(c) = comment {
         ops::keep_human_comment(tx, &task.id, c, files, ops::now())?;
     }
     super::waits::add(tx, task, &agent.id, project, body, ops::now())?;
-    Ok(Some(super::waits::words(&agent.name, &why)))
+    Ok(Some(Next::Waits(super::waits::words(&agent.name, &why))))
 }
 
 /// A wait's press, as its route took it, pressed again now (AC-158).
 pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<Value, String> {
     let mut body: Press = serde_json::from_value(body).map_err(|e| format!("its kept press is not readable: {e}"))?;
     body.close = None;
+    body.queue = true;                             // a wait, or a schedule's standing press: it waits again
     pressed(app, id, body).await
 }
 
@@ -190,20 +217,14 @@ async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Value) -> R
         return could_not_continue(app, &r, "its first folder is gone").await;
     }
     let server = server_of(app, r.host.as_deref())?;
-    let new = match next_run(app, &r, t, again, kept).await? {
-        Next::Run(new) => new,
-        Next::Waits(words) => return Ok(waits_told(app, t, words)),
+    let new = match next_run(app, &r, t, again, kept).await?.told(app, t) {
+        Ok(new) => new,
+        Err(answer) => return Ok(answer),
     };
     let project = project_named(app, &t.project);
     start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind, agent: &r.agent_id }).await?;
     start::watch(app, &new);
     Ok(json!({"run": new}))
-}
-
-/// What a press that started nothing answers, every page told of its task.
-fn waits_told(app: &Shared, t: &Task, words: String) -> Value {
-    told(app, &t.id);
-    json!({"waits": words})
 }
 
 /// What a press types may hold line ends, nothing else unseen: tmux would refuse it after the run was written.
@@ -256,9 +277,9 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
         return Err(format!("{program} runs in its pane."));
     }
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
-    let new = match next_run(app, r, t, again, kept).await? {
-        Next::Run(new) => new,
-        Next::Waits(words) => return Ok(waits_told(app, t, words)),
+    let new = match next_run(app, r, t, again, kept).await?.told(app, t) {
+        Ok(new) => new,
+        Err(answer) => return Ok(answer),
     };
     let done = start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await;
     crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, &r.ids, &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
@@ -313,8 +334,8 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Value) 
         // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
         let agent = agents::by_id(tx, &old.agent_id)?;
         match &agent {
-            Some(a) => if let Some(words) = wait_if_full(tx, a, &old.project, (&task, true), Some(&old.id), (&kept, None, &[]))? {
-                return Ok(Next::Waits(words));
+            Some(a) => if let Some(next) = wait_if_full(tx, a, &old.project, (&task, true), Some(&old.id), (&kept, None, &[]))? {
+                return Ok(next);
             },
             None => if let Some(full) = pool::check(tx, None, &old.project, Some(&old.id))? {
                 return Err(full.words);
@@ -371,8 +392,8 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         if closing && let Some(full) = pool::check_for(tx, &ag, &project, (now.len() == 1).then_some(now[0].key.as_str()), None)? {
             return Err(full.words);
         }
-        if let Some(words) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
-            return Ok(Next::Waits(words));
+        if let Some(next) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
+            return Ok(next);
         }
         let prompt = goes.prompt(said.as_deref());
         // a wait kept its comment when it began (AC-158)
@@ -394,9 +415,9 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         super::waits::remove(tx, &keys[0])?;
         runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, ops::now()).map(Next::Run)
     }).await?;
-    let run = match next {
-        Next::Run(run) => run,
-        Next::Waits(words) => return Ok(waits_told(app, t, words)),
+    let run = match next.told(app, t) {
+        Ok(run) => run,
+        Err(answer) => return Ok(answer),
     };
     let ids: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
     launch(app, &run, &server, &t.project, &dir, &a, &ids).await?;
@@ -404,6 +425,21 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Value, comme
         told(app, id);
     }
     Ok(json!({"run": run}))
+}
+
+#[derive(Deserialize)]
+struct QueueOrder {
+    tasks: Vec<String>,
+}
+
+/// The human's order of an agent's queue (AC-169); every page hears.
+async fn queue_order(State(app): State<Shared>, Path(agent): Path<String>, Json(body): Json<QueueOrder>) -> Response {
+    let first = body.tasks.first().cloned();
+    let done = store(&app, move |tx| super::waits::reorder(tx, &agent, &body.tasks).map(|()| json!({"ok": true}))).await;
+    if let (Ok(_), Some(id)) = (&done, first) {
+        told(&app, &id);
+    }
+    answer(done)
 }
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).

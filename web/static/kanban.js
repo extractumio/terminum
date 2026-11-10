@@ -386,7 +386,7 @@ async function runMade(t, agent) {
   if (!agent) return runThem([t]);
   try {
     const started = await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent } });
-    if (started?.waits) say(started.waits);
+    if (started?.full) return void runs.open([t], { agent }).catch((no) => say(no.message));   // no room: RUN's window offers its queue (AC-169)
     (meta.last_agents ??= {})[t.project] = agent;
     readSoon();
   } catch (e) {

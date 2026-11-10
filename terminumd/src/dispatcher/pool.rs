@@ -182,7 +182,7 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
     let full: Vec<String> = agents::list(tx)?.into_iter()
         .filter(|a| (others.get(a.id.as_str()).copied().unwrap_or(0) + kept.get(&a.id).map_or(0, Vec::len)) as i64 >= a.at_once).map(|a| a.id).collect();
     let full_projects: Vec<String> = limits::agent_limits(tx)?.into_iter().filter(|(p, most)| in_project.get(p.as_str()).copied().unwrap_or(0) >= *most).map(|(p, _)| p).collect();
-    Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects}))
+    Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects, "queue": super::waits::queues(tx)?}))
 }
 
 #[cfg(test)]

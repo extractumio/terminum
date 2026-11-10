@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // RUN's window (terminum-dispatcher.md AC-121, AC-122, AC-138): which of the pool's agents starts the tasks and
-// with what message; one at its limit is chosen all the same, and Run waits for its room (AC-158); where is the
+// with what message; one at its limit is chosen all the same: the window offers its queue, and the task waits there
+// for room only once the human agrees (AC-169, AC-158); where is the
 // project's (AC-140), said here; the agent dropped on, or the last chosen, already picked: one press. Several tasks
 // go by their numbers; what each says shows here first. Dropped on another agent, a conversation goes on there.
 import { $, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
@@ -15,18 +16,21 @@ export function runWindow({ addAgent, noFolder, done }) {
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
-  /** At a limit: chosen, it waits for its room (AC-158). */
-  const busy = (a) => (a.full ? "at its limit: Run waits" : "");
+  /** At a limit: chosen, its queue is offered (AC-169). */
+  const busy = (a) => (a.full ? "at its limit: its queue" : "");
   let said = "";                                   // what the window says whatever agent is chosen
+  let offered = "";                                // terminumd's offer of the queue to a press that found no room
 
-  /** The chosen agent's, else the window's own words; at its limit with an idle holder, one press closes it and runs
-   *  (AC-141), else Run waits for its room (AC-158). */
+  /** The chosen agent's, else the window's own words; at its limit the queue is offered: Add to queue is the human's
+   *  yes (AC-169); with an idle holder one press closes it and runs instead (AC-141). */
   function showAgent() {
-    const full = chosen()?.full, close = full?.close;
-    const words = said || (full ? (close ? full.words : `${full.words} Run waits until it has room, then starts.`) : "");
+    const full = fresh || offer.first ? chosen()?.full : null, close = offered ? null : full?.close;
+    const queue = offered || full?.queue;
+    const words = offered || said || (close ? full.words : queue) || "";
     $("runnone").textContent = words;
     $("runnone").hidden = !words;
-    $("rungo").textContent = close ? `Close ${close.tasks}'s session and run` : "Run";
+    $("rungo").textContent = close ? `Close ${close.tasks}'s session and run` : queue ? "Add to queue" : "Run";
+    $("runqueue").hidden = !close;
     $("runserver").textContent = offer.host ?? THIS_MAC;
     $("runfolder").textContent = offer.dir;
     $("runcommand").textContent = chosen()?.line ?? "";
@@ -34,6 +38,7 @@ export function runWindow({ addAgent, noFolder, done }) {
 
   function draw(scratch) {
     fresh = scratch;
+    offered = "";
     const first = fresh || offer.first, none = first && !offer.agents.length, moved = !first && offer.moved;
     const names = tasks.map((t) => t.id).join(", "), on = offer.agents.find((a) => a.id === dropped);
     $("runhead").textContent = moved ? `Continue ${names} on ${moved.to}` : !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
@@ -82,22 +87,31 @@ export function runWindow({ addAgent, noFolder, done }) {
     return new Promise((resolve) => { answer = resolve; });
   }
 
-  async function go() {
+  /** Run; `toQueue`: Add to queue beside the key that closes an idle holder. A press that finds no room where the
+   *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). */
+  async function go(toQueue = false) {
     say("");
     $("rungo").disabled = true;
     try {
-      const first = fresh || offer.first;
+      const first = fresh || offer.first, full = first ? chosen()?.full : null;
+      const queue = toQueue || Boolean(offered) || Boolean(full && !full.close);
       // going on, it is its session's agent, or the one it was dropped on (AC-138)
-      const started = await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: first ? chosen()?.full?.close?.run : undefined, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });
-      box.close("run");
-      done(started?.waits);
+      const started = await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });
+      if (started?.full) {
+        offered = started.full;
+        showAgent();
+      } else {
+        box.close("run");
+        done(started?.waits);
+      }
     } catch (e) { say(e.message); }
     $("rungo").disabled = false;
   }
 
-  $("rungo").addEventListener("click", go);
-  onSend($("runmessage"), go);
-  $("runagent").addEventListener("change", showAgent);
+  $("rungo").addEventListener("click", () => go());
+  $("runqueue").addEventListener("click", () => go(true));
+  onSend($("runmessage"), () => go());
+  $("runagent").addEventListener("change", () => { offered = ""; showAgent(); });
   $("runfresh").addEventListener("click", () => draw(true));
   $("runadd").addEventListener("click", async () => {
     await addAgent();

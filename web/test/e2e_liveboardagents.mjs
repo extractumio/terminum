@@ -191,16 +191,16 @@ async function agentPool(page, opts) {
   check("AC-138 a task in progress has no play key, its card names the agent", await until(async () => !(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
-  // busy: a third waits for its room (AC-158), said in RUN's window and by terminumd
+  // busy: a third is offered the queue (AC-169) and, agreed, waits for its room (AC-158), said in RUN's window and by terminumd
   await page.click(`${card(c)} .ctitle`, { modifiers: ["Meta"] });
   await page.click(pool);
-  check("AC-158 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Run waits/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
+  check("AC-158 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Add it to the queue/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
   await page.click('#runbox button[value="cancel"]');
   await page.keyboard.press("Escape");
-  const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
+  const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
   check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
-  const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
+  const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a press again on that agent waits on, in its place", /It waits for Fast fixer/.test(again.waits), JSON.stringify(again));
   await j(`/api/tasks/${c}/give-up`, "POST");
   check("AC-158 Stop waiting calls it off and the third stays", await status(c) === "TODO" && !(await j(`/api/tasks/${c}`)).waits, JSON.stringify(await j(`/api/tasks/${c}`)));
@@ -356,13 +356,13 @@ async function agentPool(page, opts) {
   check("AC-141 two at once start", await hasStatus(one, "IN PROGRESS") && await hasStatus(two, "IN PROGRESS"), `${await status(one)} ${await status(two)}`);
   check("AC-138 a dot each", await dotted((d) => d.length === 2 && d[0].includes(one) && d[1].includes(two)), JSON.stringify(await dots()));
   check("AC-138 and it counts them", await until(async () => (await page.textContent(`${pool} .agcount`).catch(() => "")) === "2/2"));
-  const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer });
+  const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a third waits, naming both", /at its limit of 2/.test(third.waits) && third.waits.includes(one) && third.waits.includes(two), JSON.stringify(third));
   await j(`/api/tasks/${three}/give-up`, "POST");
   const other = (await j("/api/task-agents", "POST", { name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   check("AC-141 Agents at once takes 1 to 100 or nothing", /1 to 100/.test((await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 0 })).error));
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 2 });
-  const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other });
+  const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other, queue: true });
   check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.waits), JSON.stringify(limited));
   await j(`/api/tasks/${three}/give-up`, "POST");
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: null });
