@@ -7,6 +7,7 @@ import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
 import { agentView, stripes } from "./kanbanagentview.js";
+import { asTyped } from "./astyped.js";
 import { $, agentColor, api, fillSelect, guardCancel, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
@@ -25,6 +26,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   box.append(list, side);
   const field = { name: $("agentname"), kind: $("agentkind"), effort: $("agenteffort"), command: $("agentcommand"), at_once: $("agentatonce"), week_limit: $("agentweek"), month_limit: $("agentmonth") };
   const dialog = $("agentbox"), error = $("agenterror");
+  asTyped(field.command);
   let editing = null, snapshot = "";
 
   const slots = (a) => counted().agents[a.id] ?? [];

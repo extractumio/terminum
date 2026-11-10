@@ -38,7 +38,7 @@
     <div class="nav-head">
       <a id="tosessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
       <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
-        <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" spellcheck="false" aria-label="Filter sessions">
+        <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
       <button id="navnew" class="icon wide-only" type="button" aria-expanded="false" aria-controls="newsess" title="New session" aria-label="New session"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><path d="M5 12h14"/><path d="M12 5v14"/></svg></button>
@@ -117,7 +117,7 @@
     <details id="fproject" class="pick" name="picks"><summary class="textkey" title="The project the board shows">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
     <button id="newproject" class="textkey" type="button" title="A new project, empty"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Project</span></button>
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
-      <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
     <button id="filtersbtn" class="textkey" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
     <div id="picks">
       <details id="fseverity" class="pick" name="picks"><summary class="textkey">Severity</summary><div class="box menurows" role="group" aria-label="Severity"></div></details>
@@ -220,7 +220,7 @@
         <span id="whenday" class="whenpart"><input id="schedday" class="field" type="number" min="1" max="31" step="1" aria-label="Day of the month"></span>
         <span id="whendate" class="whenpart"><input id="scheddate" class="field" type="date" aria-label="Date"></span>
         <span id="whentime" class="whenpart">at <input id="schedtime" class="field" type="time" aria-label="Time"></span>
-        <input id="schedcron" class="field whenpart" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="0 3 * * *" aria-label="Cron: minute hour day month weekday">
+        <input id="schedcron" class="field whenpart" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="0 3 * * *" aria-label="Cron: minute hour day month weekday">
       </div>
       <div id="whendays" class="whenpart whendays seg" role="group" aria-label="Days"></div>
       <p class="whensaid"><code id="schedfields"></code> <span id="schednext" aria-live="polite"></span></p>
@@ -248,14 +248,14 @@
     <div class="dhead"><h2 id="agenthead">Add agent</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="agentview" hidden></div>
     <div class="fieldgrid">
-      <label class="fieldrow">Name <input id="agentname" class="field" type="text" autocomplete="off" spellcheck="false"></label>
+      <label class="fieldrow">Name <input id="agentname" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
       <label class="fieldrow">Kind <select id="agentkind" class="field"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></label>
       <label class="fieldrow">Effort <select id="agenteffort" class="field"></select></label>
       <label class="fieldrow">At once <input id="agentatonce" class="field" type="number" min="1" max="100" step="1"></label>
       <label class="fieldrow">Week's limit, M tokens <input id="agentweek" class="field" type="number" min="0" step="any" placeholder="None"></label>
       <label class="fieldrow">Month's limit, M tokens <input id="agentmonth" class="field" type="number" min="0" step="any" placeholder="None"></label>
     </div>
-    <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" aria-describedby="agentcommandhint"></label>
+    <label class="fieldrow">Command <input id="agentcommand" class="field" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="agentcommandhint"></label>
     <p id="agentcommandhint" class="hint">It runs with no one watching: give it the permissions its work needs here, as <code>claude --dangerously-skip-permissions</code> or <code>codex --dangerously-bypass-approvals-and-sandbox</code>. Dispatcher adds only the effort and, going on, its conversation.</p>
     <p id="agenterror" role="alert" hidden></p>
     <div class="actions">
@@ -271,15 +271,15 @@
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="projectfields">
       <div class="fieldgrid">
-        <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" spellcheck="false"></label>
+        <label class="fieldrow">Name <input id="projectname" class="field" type="text" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
         <label class="fieldrow">Server <select id="projecthost" class="field"></select></label>
       </div>
       <div class="fieldrow"><label for="projectdir">Folder</label>
-        <div class="dirline"><textarea id="projectdir" class="field" rows="2" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="/Users/alex/code/billing"></textarea><button id="projectpick" class="textkey" type="button">Choose…</button></div>
+        <div class="dirline"><textarea id="projectdir" class="field" rows="2" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="/Users/alex/code/billing"></textarea><button id="projectpick" class="textkey" type="button">Choose…</button></div>
         <p id="projectnodir" class="colempty" hidden>No agent can start here until it has a folder.</p>
       </div>
-      <label class="fieldrow">Task ID letters <input id="projectprefix" class="field" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="From the folder's name"></label>
-      <label class="fieldrow">Language of agents' writing on the board <input id="projectlanguage" class="field" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="English"></label>
+      <label class="fieldrow">Task ID letters <input id="projectprefix" class="field" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false" placeholder="From the folder's name"></label>
+      <label class="fieldrow">Language of agents' writing on the board <input id="projectlanguage" class="field" type="text" maxlength="40" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="English"></label>
       <p class="colempty">Its tasks are named by them, as TERM-7. Changed, its tasks keep their numbers and their old IDs still find them.</p>
       <details id="projecttemplatebox" class="more"><summary>Template for agents' tasks</summary>
         <div class="fieldrow"><label for="projecttemplate">An agent's create_task writes its text by this; each "## " heading without "(optional)" must stand in it.</label>
@@ -318,7 +318,7 @@
 <dialog id="archivedbox" class="box dlg" aria-labelledby="archivedhead">
   <form method="dialog">
     <div class="dhead"><h2 id="archivedhead">Archived</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <input id="archivedfind" class="field" type="search" placeholder="Find" aria-label="Find archived tasks" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <input id="archivedfind" class="field" type="search" placeholder="Find" aria-label="Find archived tasks" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <ul id="archivedlist" class="filelist"></ul>
     <p id="archivednone" class="colempty" hidden>Nothing here.</p>
     <div class="actions">
@@ -360,7 +360,7 @@
 <dialog id="namebox" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" spellcheck="false">
+    <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
     <p id="nameerror" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
