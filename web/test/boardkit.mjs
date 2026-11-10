@@ -33,9 +33,13 @@ export async function pressCard(page, id) {
 }
 /** A press on a card's Run key: a folded card no agent ran shows the key only when whole (terminum-kanban.md AC-159). */
 export async function pressRun(page, id) {
+  await showRun(page, id);
+  await page.click(`.card[data-id="${id}"] .crun`);
+}
+/** A card's Run key shown: a folded card with no agent is shown whole first. */
+export async function showRun(page, id) {
   const sel = `.card[data-id="${id}"]`;
   if (await page.$(`${sel}.compact:not(.open, .onagent)`)) await page.click(`${sel} .ctitle`);
-  await page.click(`${sel} .crun`);
 }
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 /** How a client opens `terminum mcp`, before its calls. */

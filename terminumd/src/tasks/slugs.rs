@@ -13,7 +13,7 @@ pub const PREFIX_MOST: usize = 8;
 /// The first characters of the key that name a task, as shown.
 pub const UID_LEN: usize = 8;
 /// What stands before the ID of a task a schedule made (terminum-schedules.md AC-162); no prefix holds "_".
-const SCHEDULED: &str = "S_";
+pub(super) const SCHEDULED: &str = "S_";
 
 /// A prefix as kept: 1–8 of A–Z and 0–9, a letter first; lower case taken as upper.
 pub fn check_prefix(prefix: &str) -> Result<String, String> {
@@ -97,8 +97,8 @@ pub fn assign(tx: &Transaction, key: &str, project: &str, scheduled: bool) -> Re
         fill_project(tx, project, &dir, &name)?;       // a project written since the last fill
         return assign(tx, key, project, scheduled);
     };
-    let had: Option<String> = tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get(0)).optional().map_err(sql)?.flatten();
-    let mark = if scheduled || had.is_some_and(|s| s.starts_with(SCHEDULED)) { SCHEDULED } else { "" };
+    let had = |tx: &Transaction| tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get::<_, Option<String>>(0)).optional().map(Option::flatten).map_err(sql);
+    let mark = if scheduled || had(tx)?.is_some_and(|s| s.starts_with(SCHEDULED)) { SCHEDULED } else { "" };
     let slug = format!("{mark}{prefix}-{seq}");
     tx.execute("UPDATE projects SET next_seq = ?1 WHERE id = ?2", (seq + 1, project)).map_err(sql)?;
     put_slug(tx, key, &slug)?;

@@ -278,8 +278,7 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
         v["next"] = json!(next);
         v["last"] = json!(last.map(|t| json!({"task": t.id, "status": t.status})));
         v["skipped"] = json!(skipped);
-        v["failed_why"] = json!(tx.query_row("SELECT CASE WHEN f.state = 'failed' AND t.status = 'FAILED' THEN f.why END FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 ORDER BY f.id DESC LIMIT 1",
-                                             [&s.id], |r| r.get::<_, Option<String>>(0)).optional().map_err(sql)?.flatten());
+        v["failed_why"] = json!(never_started(tx, &s)?.map(|(_, why)| why));
         out.push(v);
     }
     Ok(out)
@@ -320,17 +319,19 @@ pub fn unstarted(tx: &Transaction) -> Result<Vec<(i64, String, i64)>, String> {
     rows(tx, "SELECT f.id, t.slug, f.at FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.state = 'made' ORDER BY f.id", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
 }
 
-/// The task of `s`'s last firing that did not start and still stands FAILED, by its ID: the next firing's task takes
-/// its place on the board (AC-162).
-pub fn never_started(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
-    tx.query_row("SELECT CASE WHEN f.state = 'failed' AND t.status = 'FAILED' AND t.archived_at IS NULL THEN t.slug END FROM schedule_fires f JOIN tasks t ON t.id = f.task
-                  WHERE f.schedule = ?1 ORDER BY f.id DESC LIMIT 1", [&s.id], |r| r.get::<_, Option<String>>(0)).optional().map(Option::flatten).map_err(sql)
+/// The task of `s`'s last firing, if it did not start and still stands FAILED on the board: its ID and why. Its
+/// schedule's card says why, and the next firing's task takes its place (AC-162, AC-163).
+pub fn never_started(tx: &Transaction, s: &Schedule) -> Result<Option<(String, String)>, String> {
+    let last: Option<(String, Option<String>, bool)> = tx.query_row("SELECT t.slug, f.why, f.state = 'failed' AND t.status = 'FAILED' AND t.archived_at IS NULL
+                  FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 ORDER BY f.id DESC LIMIT 1", [&s.id], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
+    Ok(last.filter(|(_, _, failed)| *failed).map(|(id, why, _)| (id, why.unwrap_or_default())))
 }
 
 /// A task of `s` IN PROGRESS with something behind it, the newest, by its ID (AC-162): its run about to be asked
 /// for, its wait for room, or a run of it not over. One left IN PROGRESS with none of them stops no firing.
 pub fn running_task(tx: &Transaction, s: &Schedule) -> Result<Option<String>, String> {
-    tx.query_row(&format!("SELECT t.slug FROM schedule_fires f JOIN tasks t ON t.id = f.task WHERE f.schedule = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL
+    // from the few tasks IN PROGRESS to their firings, never through a schedule's whole history
+    tx.query_row(&format!("SELECT t.slug FROM tasks t CROSS JOIN schedule_fires f ON f.task = t.id WHERE f.schedule = ?1 AND t.status = 'IN PROGRESS' AND t.archived_at IS NULL
                   AND (f.state = 'made' OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id)
                        OR EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = t.id AND {}))
                   ORDER BY f.id DESC LIMIT 1", crate::dispatcher::runs::STILL), [&s.id], |r| r.get(0)).optional().map_err(sql)

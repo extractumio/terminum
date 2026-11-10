@@ -50,7 +50,7 @@ pub fn unknown_ids(tx: &Transaction, result: &str) -> Result<Vec<String>, String
     let mut unknown: Vec<String> = Vec::new();
     // a schedule's task says "S_" before its project's letters (terminum-schedules.md AC-162): one word, found as it is
     for word in result.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
-        let named = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p.strip_prefix("S_").unwrap_or(p)) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
+        let named = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p.strip_prefix(super::slugs::SCHEDULED).unwrap_or(p)) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
         if named && !unknown.iter().any(|u| u == word) && super::slugs::resolve(tx, word)?.is_none() {
             unknown.push(word.to_string());
         }

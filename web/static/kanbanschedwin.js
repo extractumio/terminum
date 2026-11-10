@@ -3,7 +3,7 @@
 // and Paused; terminumd says its next runs, the prompt that will go and the agent's command as it is typed, and
 // refuses what is wrong in the field's words. What was typed is not lost by a slip of Esc (terminum-kanban.md AC-133).
 import { askConfirm, oneAtATime } from "./dialogs.js";
-import { el } from "./listparts.js";
+import { el, plural } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
 import { $, DEFAULT, api, fillSelect, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
@@ -35,7 +35,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     // another kind's number is not carried over: 1 hour would become every minute
     const hours = k === "hours", steps = hours ? HOUR_STEPS : MINUTE_STEPS, was = f.every.dataset.kind === k ? Number(f.every.value) : 0;
     f.every.dataset.kind = k;
-    fillSelect(f.every, steps.map((n) => [String(n), `${n} ${hours ? "hour" : "minute"}${n === 1 ? "" : "s"}`]), String(steps.includes(was) ? was : hours ? 2 : 20));
+    fillSelect(f.every, steps.map((n) => [String(n), plural(n, hours ? "hour" : "minute")]), String(steps.includes(was) ? was : hours ? 2 : 20));
   }
 
   /** What goes to terminumd. */
