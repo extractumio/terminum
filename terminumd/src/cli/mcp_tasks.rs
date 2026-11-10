@@ -34,7 +34,7 @@ const TOOLS: [Tool; 11] = [
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_file", read_only: false, description: "Attaches a file to a task: path in this session's folder; from a host name and text.", fields: &[TASK, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
     Tool { name: "get_file", read_only: true, description: "Gets a task's file, by name: its path here.", fields: &[TASK, ("name", true, 300)] },
-    Tool { name: "finish_task", read_only: false, description: "Your task is done: its result (what changed, where, how checked, what is left) becomes a comment; it moves to DONE. Call before you stop.", fields: &[ID, ("result", true, COMMENT_MOST)] },
+    Tool { name: "finish_task", read_only: false, description: "Your task is done: its result becomes a comment and the task moves to DONE; call it before you stop. The result's sections, each there (\"None\" when empty): Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations.", fields: &[ID, ("result", true, COMMENT_MOST)] },
 ];
 
 /// The arguments terminumd gets (only the known fields), or why they are refused.
@@ -108,6 +108,12 @@ mod tests {
         // AC-154
         assert_eq!(checked("update_task", &json!({"id": "T-1", "archive": "no"})).unwrap_err(), "archive: \"yes\" or left out");
         assert_eq!(checked("update_task", &json!({"id": "T-1", "severity": "P5"})).unwrap_err(), "severity: one of P0, P1, P2, P3");
+    }
+
+    #[test]
+    fn ac166_finish_task_names_the_result_s_sections() {
+        let d = TOOLS.iter().find(|t| t.name == "finish_task").unwrap().description;
+        assert!(d.ends_with(&format!("{}.", crate::tasks::closeout::SECTIONS.map(|(s, _)| s).join(", "))), "{d}");
     }
 
     #[test]

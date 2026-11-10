@@ -220,9 +220,8 @@ async fn meta(State(app): State<Shared>) -> Response {
             super::projectapi::settings(tx)?,
         ))).unwrap_or_default();
         for p in &mut projects {
-            if let Some(v) = p["id"].as_str().and_then(|id| own.get(id)) {
-                p["prefix"] = v["prefix"].clone();
-                p["template"] = v["template"].clone();
+            if let (Some(v), Some(p)) = (p["id"].as_str().and_then(|id| own.get(id)).and_then(Value::as_object).cloned(), p.as_object_mut()) {
+                p.extend(v);
             }
         }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())

@@ -3,9 +3,9 @@
 //! heading of it without "(optional)" must stand in the text of an agent's create_task; a human's text
 //! is never checked.
 
-use rusqlite::{OptionalExtension, Transaction};
+use rusqlite::Transaction;
 
-use super::ops::sql;
+use super::ops;
 
 /// What a project's template may hold: it goes into every agent's list of tools.
 pub const TEMPLATE_MOST: usize = 8 << 10;
@@ -31,8 +31,7 @@ For a bug: the shortest way to see it.
 
 /// The template a project's agents follow.
 pub fn of_project(tx: &Transaction, project: &str) -> Result<String, String> {
-    let own: Option<Option<String>> = tx.query_row("SELECT task_template FROM projects WHERE id = ?1", [project], |r| r.get(0)).optional().map_err(sql)?;
-    Ok(own.flatten().unwrap_or_else(|| DEFAULT_TEMPLATE.to_string()))
+    Ok(ops::project_text(tx, project, ops::TEMPLATE_COLUMN)?.unwrap_or_else(|| DEFAULT_TEMPLATE.to_string()))
 }
 
 /// A template as kept: empty or the default itself means the default (none kept).
@@ -42,8 +41,7 @@ pub fn set(tx: &Transaction, project: &str, template: &str) -> Result<(), String
     }
     let kept = template.trim();
     let kept = (!kept.is_empty() && kept != DEFAULT_TEMPLATE.trim()).then_some(kept);
-    tx.execute("UPDATE projects SET task_template = ?1 WHERE id = ?2", (kept, project)).map_err(sql)?;
-    Ok(())
+    ops::set_project_text(tx, project, ops::TEMPLATE_COLUMN, kept)
 }
 
 /// A heading as compared: its words, lower case, "(optional)" left out.
