@@ -249,7 +249,7 @@ const columns = new Map(COLUMNS.map((column) => {
   const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
   col.dataset.status = column;
   head.append(el("span", null, column), count);
-  if (column === "TODO") count.before(iconButton("new", "plus", "New task", "A new task in TODO", () => form.open()));   // AC-106
+  if (column === "TODO") count.before(iconButton("icon new", "plus", "New task", "A new task in TODO", () => form.open()));   // AC-106
   col.append(head, list);
   col.addEventListener("dragover", (e) => { if (dragging?.length === 1 && dragging[0].status === column) { e.preventDefault(); col.classList.add("over"); } });
   col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });

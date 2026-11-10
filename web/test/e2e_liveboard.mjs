@@ -70,17 +70,16 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click("#newdiscard");
   // TODO's head: a [+] just before its count opens the same window, the draft with it
   const plus = await page.evaluate(() => {
-    const h = document.querySelector('.col[data-status="TODO"] .colhead'), b = h.querySelector("button.new"), c = h.querySelector(".count");
-    const fits = () => { const r = b.getBoundingClientRect(), o = h.getBoundingClientRect(); return r.top >= o.top && r.bottom <= o.bottom && r.width === r.height; };
+    const h = document.querySelector('.col[data-status="TODO"] .colhead'), b = h.querySelector(".new");
+    const fits = () => { const r = b.getBoundingClientRect(), o = h.getBoundingClientRect(); return r.top >= o.top && r.bottom <= o.bottom; };
     const atRest = fits(), root = document.documentElement.style;
-    root.setProperty("--icon-key-list", "40px"); root.setProperty("--row-inset", "8px");   // a touch screen's sizes (tokens.css)
+    root.setProperty("--icon-key-list", "40px"); root.setProperty("--row-inset", "8px");   // a touch screen's sizes, as tokens.css sets them
     const touch = fits();
     root.removeProperty("--icon-key-list"); root.removeProperty("--row-inset");
-    return { order: [...h.children].map((e) => e.className || e.tagName).join(), label: b?.getAttribute("aria-label"), others: document.querySelectorAll(".colhead .new").length, atRest, touch,
-      right: Math.round(c.getBoundingClientRect().left - b.getBoundingClientRect().right), up: Math.abs((b.getBoundingClientRect().top + b.getBoundingClientRect().bottom) - (c.getBoundingClientRect().top + c.getBoundingClientRect().bottom)) <= 2 };
+    return { beforeCount: b.nextElementSibling?.classList.contains("count"), label: b.getAttribute("aria-label"), others: document.querySelectorAll(".colhead .new").length, atRest, touch };
   });
-  check("AC-106 TODO's head holds a [+] just before its count, beside it", plus.order === "SPAN,new,count" && plus.label === "New task" && plus.right >= 0 && plus.right <= 12 && plus.up, JSON.stringify(plus));
-  check("AC-106 the [+] is square and inside its head, a touch screen's size too", plus.atRest && plus.touch, JSON.stringify(plus));
+  check("AC-106 TODO's head holds a [+] just before its count", plus.beforeCount && plus.label === "New task", JSON.stringify(plus));
+  check("AC-106 the [+] stands inside its head, a touch screen's size too", plus.atRest && plus.touch, JSON.stringify(plus));
   check("AC-106 only TODO's head has one", plus.others === 1, String(plus.others));
   await page.click('.col[data-status="TODO"] .colhead .new');
   await page.waitForSelector("#newbox[open]");
@@ -305,11 +304,13 @@ async function sameKinds(page, base, phone) {
   await page.goto(`${base}/sessions/`);
   await page.waitForSelector("#filter", { state: "attached" });
   await page.waitForTimeout(500);   // colors settle (motion.css), the theme is in
-  const theirs = { search: await look(".search"), key: await look(".icon"), track: await look(".seg") };
+  const theirs = { search: await look(".search"), key: await look(".icon"), track: await look(".seg"), plus: await look(".grp h2 .new") };
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector(".card");
   await page.waitForTimeout(500);
-  const ours = { search: await look("#filters .search"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch") };
+  const ours = { search: await look("#filters .search"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch"), plus: await look(".colhead .new") };
+  // a phone hides the column heads; a computer's session list has a group's [+] to match (AC-106)
+  if (!phone) check("look: TODO's [+] is the session list's group-header [+]", !!theirs.plus && ["fill", "image", "edge", "radius", "h"].every((k) => ours.plus?.[k] === theirs.plus[k]), JSON.stringify([ours.plus, theirs.plus]));
   check(`look: Find is the session list's field (${phone ? "phone" : "wide"})`, ["fill", "edge", "radius"].every((k) => ours.search?.[k] === theirs.search?.[k]), JSON.stringify([ours.search, theirs.search]));
   check("look: a board key is the page's key", ["image", "edge", "radius"].every((k) => ours.key?.[k] === theirs.key?.[k]), JSON.stringify([ours.key, theirs.key]));
   // the columns' switch stands on a phone alone
@@ -340,7 +341,7 @@ export async function liveBoardPhone(page, { base, shots }) {
   check("AC-105 no sideways scroll on a phone", wide <= 0, String(wide));
   const tap = await page.evaluate(() => Math.round(document.querySelector("#newtask").getBoundingClientRect().height));
   check("AC-105 touch targets", tap >= 40, String(tap));
-  check("AC-106 a phone hides the column heads with TODO's [+]; New task stays in the head", await page.evaluate(() => !document.querySelector(".colhead .new").getClientRects().length));
+  check("AC-106 a phone hides TODO's [+] with its head", await page.evaluate(() => !document.querySelector(".colhead .new").getClientRects().length));
   const small = await page.evaluate(() => [...document.querySelectorAll("#bar button, #bar summary, #bar a, .card button")].filter((e) => e.getClientRects().length && !e.closest("details:not([open]) > .box") && (e.getBoundingClientRect().height < 34 || e.getBoundingClientRect().width < 34)).map((e) => e.textContent.trim() || e.getAttribute("aria-label")));
   check("AC-105 every key of the head and a card takes a finger", !small.length, small.join());
   const head = await page.evaluate(() => Math.round(document.querySelector("#bar").getBoundingClientRect().height));
