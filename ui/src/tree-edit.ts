@@ -22,7 +22,7 @@ export class InlineEdit {
   constructor(private hooks: EditHooks) {
     this.el = document.createElement("div");
     this.el.className = "inline-edit";
-    this.el.innerHTML = '<input spellcheck="false" autocomplete="off"><div class="err"></div>';
+    this.el.innerHTML = '<input spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"><div class="err"></div>';
     this.input = this.el.querySelector("input")!;
     this.err = this.el.querySelector(".err")!;
     this.input.addEventListener("keydown", (e) => {

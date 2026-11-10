@@ -308,6 +308,11 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
    `maximum-scale=1` keeps iOS from zooming in on a field below 16px. Chrome
    (header, list, menus, footer buttons, banners, toast) uses `--ui` at the §2.3 scale. A new
    popup follows the first rule.
+7. **Machine text**: a field for a command, a path, a name, a cron line or a search carries
+   `autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"` (a project's language
+   keeps its capital), asking Smart Dashes and Smart Quotes to leave `--` and `"` alone (a page test holds it). A
+   command line, where they are syntax, also takes `asTyped` (astyped.js): a browser may substitute anyway. Prose
+   (a title, Markdown) keeps them.
 
 ## 5. Adding UI
 

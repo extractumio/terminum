@@ -29,6 +29,13 @@ export async function liveBoardAgents(page, opts) {
   await page.fill("#agentcommand", "codex --search");
   await page.selectOption("#agentkind", "claude");
   check("AC-137 what the user wrote stays", await page.inputValue("#agentcommand") === "codex --search" && await page.inputValue("#agentname") === "Claude Code");
+  // a browser's Smart Dashes and Smart Quotes, as Safari makes them while one types; a paste stays as it came
+  const smart = (value, inputType) => page.$eval("#agentcommand", (f, [v, t]) => { f.value = v; f.dispatchEvent(new InputEvent("input", { inputType: t, bubbles: true })); return f.value; }, [value, inputType]);
+  await smart("claude -", "insertText");
+  check("AC-137 a command kept as typed: -- stays", await smart("claude —", "insertText") === "claude --");
+  check("AC-137 a command kept as typed: quotes stay", await smart("claude --append-system-prompt “be brief”", "insertReplacementText") === "claude --append-system-prompt \"be brief\"");
+  check("AC-137 a paste stays as it came", await smart("claude --append-system-prompt \"be brief — always\"", "insertFromPaste") === "claude --append-system-prompt \"be brief — always\"");
+  check("AC-137 the field asks for no autocorrect", await page.getAttribute("#agentcommand", "autocorrect") === "off");
   await page.fill("#agentname", "Opus reviewer");
   await page.fill("#agentcommand", COMMAND);
   if (shots) await page.screenshot({ path: path.join(shots, "agent-window.png") });

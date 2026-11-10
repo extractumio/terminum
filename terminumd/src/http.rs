@@ -196,4 +196,36 @@ mod page_tests {
         assert_eq!(head(HISTORY), head(DASHBOARD));
         assert_eq!(head(HISTORY), head(SCHEDULED));
     }
+
+    /// A field for machine text (a command, a path, a name, a cron line, a search) asks the browser for no
+    /// autocorrect, so Smart Dashes and Smart Quotes leave `--` and `"` alone (docs/UI-GUIDELINES.md §4.7);
+    /// prose keeps them.
+    #[test]
+    fn machine_text_fields_ask_no_autocorrect() {
+        const PROSE: [&str; 8] = ["newtitle", "newtext", "schedtitle", "schedtext", "converttitle", "askq", "marknote", "projecttemplate"];
+        const NOT_TEXT: [&str; 12] = ["checkbox", "radio", "number", "password", "color", "file", "range", "hidden", "date", "time", "month", "week"];
+        let pages = [
+            ("index.html", include_str!("../../web/static/index.html")),
+            ("kanban.html", include_str!("../../web/static/kanban.html")),
+            ("history.html", include_str!("../../web/static/history.html")),
+            ("dashboard.html", include_str!("../../web/static/dashboard.html")),
+            ("scheduled.html", include_str!("../../web/static/scheduled.html")),
+            ("the Panel's index.html", include_str!("../../ui/public/index.html")),
+        ];
+        let mut seen = 0;
+        for (name, page) in pages {
+            for tag in ["<input", "<textarea"] {
+                for (at, _) in page.match_indices(tag) {
+                    let field = &page[at..at + page[at..].find('>').expect("a tag's end")];
+                    let has = |attr: &str| field.contains(attr);
+                    if PROSE.iter().any(|id| has(&format!("id=\"{id}\""))) || NOT_TEXT.iter().any(|t| has(&format!("type=\"{t}\""))) {
+                        continue;
+                    }
+                    seen += 1;
+                    assert!(has("autocorrect=\"off\"") && has("spellcheck=\"false\""), "{name}: {field}");
+                }
+            }
+        }
+        assert!(seen >= 20, "only {seen} fields found");
+    }
 }
