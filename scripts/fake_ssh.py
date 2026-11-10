@@ -194,7 +194,7 @@ def main():
         sys.exit(255)
     if os.environ.get("FAKE_SSH_PIDS"):
         with open(os.environ["FAKE_SSH_PIDS"], "a") as f:
-            f.write(f"{os.getpid()} {dest} {command[:100]}\n")
+            f.write(f"{os.getpid()} {dest} {' '.join(command[:100].split())}\n")   # one line a run: a script's lines joined
     home = os.environ.get("FAKE_SSH_HOME") or sys.exit("fake ssh: FAKE_SSH_HOME is not set")
     sock = os.environ.get("FAKE_SSH_TMUX_SOCKET") or sys.exit("fake ssh: FAKE_SSH_TMUX_SOCKET is not set")
     listeners = []
