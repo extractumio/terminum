@@ -963,6 +963,12 @@ Scenario: AC-150 happy path — listed and opened
   When the user presses API-31
   Then the board's own task window opens over the session page: the same parts, keys, RUN and its window; New subtask goes to the board's new-task window
 
+Scenario: AC-150 edge — a press while tasks change elsewhere
+  Given the pane lists API-30…API-33
+  When another task changes, or one of these changes in a way its line does not show
+  Then the list is not drawn anew: a press on API-31 at that moment opens its window
+  And a change its line shows (a status, a title) draws the list anew
+
 Scenario: AC-150 edge — told once
   Given this browser said API-30 when session api was shown
   When api is shown again

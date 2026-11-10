@@ -199,6 +199,11 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     await page.click("#tasksfab");
     await page.waitForSelector("#taskspane:not([hidden])");
     check("AC-150 its pane lists the tasks by ID and title", await until(async () => (await page.textContent("#tplist")).includes(`${conv.id}A asks`)), await page.textContent("#tplist"));
+    // a change its line does not show draws nothing anew: a press meanwhile is not lost (run 42817067686)
+    const item = await page.$(`#tplist .tpitem:has-text("A asks")`);
+    await page.evaluate((id) => fetch(`/api/tasks/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: "its text, changed" }) }), conv.id);
+    await wait(1500);                                // past the list's read again, 300 ms after a burst
+    check("AC-150 a change its line does not show leaves the list as drawn", await item.evaluate((b) => b.isConnected));
     await page.click(`#tplist .tpitem:has-text("A asks")`);
     await page.waitForSelector("#taskbox[open]", { timeout: 8000 });
     check("AC-150 a press opens the board's own task window here", (await page.textContent("#tasktitle")).startsWith(conv.id) && !!(await page.$("#taskbody .taskown")) && !!(await page.$("#taskbody .activity")));

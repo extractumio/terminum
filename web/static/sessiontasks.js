@@ -20,7 +20,7 @@ const SAY_FOR = 5000;
  *  panes(), projects(): the list's sessions and projects, for Convert to task. */
 export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
   const fab = $("tasksfab");
-  let list = [], of = null, asked = 0, timer = 0, windowed = null, meta = null, failed = "";
+  let list = [], of = null, asked = 0, timer = 0, windowed = null, meta = null, failed = "", drawn = "";
   const records = recordTasks({ sid, name, panes, projects, made: (t) => { seenNow([t]); toast(`${t.id} is in TODO: ${t.title.slice(0, TITLE_MOST)}`, SAY_FOR); load(); } });
   const pane = fabPane({ fab, pane: $("taskspane"), close: $("tpclose"), onToggle: (on) => { if (on) draw(); } });
 
@@ -72,6 +72,10 @@ export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
 
   function draw() {
     const ul = $("tplist");
+    // a list drawn anew under a press loses it: drawn again only when what it shows changed
+    const now = failed ? `!${failed}` : JSON.stringify(list.map((t) => [t.id, t.status, t.title]));
+    if (now === drawn) return pane.place();
+    drawn = now;
     if (failed) {
       const why = document.createElement("li");
       why.className = "tpwhy";
