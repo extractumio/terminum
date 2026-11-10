@@ -126,7 +126,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
         web: Default::default(),
         hosts: Default::default(),
         tunnels: Default::default(),
-        agent_turns: Default::default(),
+        helper_turns: Default::default(),
         links: Default::default(),
         restore: Default::default(),
         recorder: page::trace::Recorder::new(cfg.home.join("logs")),

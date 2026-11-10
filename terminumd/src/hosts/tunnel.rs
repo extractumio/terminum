@@ -317,7 +317,8 @@ async fn keep(app: Shared, host: String) {
                 let _ = run.child.kill().await;
                 crate::remote::unregister(&app, &host, run.registered);
                 set(&app, &host, "updating", &format!("updating the helper on {host}…"));
-                match update(&recipe).await {
+                // in the host's turn: no removal of the helper runs beside its copy
+                match app.helper_turns.hold(&host, update(&recipe)).await {
                     Ok(()) => {
                         tracing::info!(event = "agent.updated", host, to = crate::agent::AGENT_ID);
                         let _ = crate::hosts::set_helper(&app, &host, crate::agent::AGENT_ID);
@@ -416,18 +417,14 @@ pub fn reconcile(app: &Shared, host: &str) {
         // no decision of the user's yet: set up by itself, once per attach (AC-83)
         None | Some("wanted") if attached && !failed => tokio::spawn(async move {
             // `enable` ends by stopping this host's task, which is this one: nothing awaits after it
-            match super::consent::enable(&shared, &name).await {
-                // its agents after its files: the helper is there
-                Ok(()) => super::agents::auto(&shared, &name),
-                Err(e) => {
-                    tracing::warn!(event = "agent.enable_failed", host = name, why = e);
-                    // the host removed, Not now or Remove meanwhile, or a later click's enable runs
-                    let undecided = crate::hosts::recipe_of(&shared, &name).is_some() && crate::hosts::files_state(&shared, &name).is_none_or(|s| s == "wanted");
-                    if undecided && !shared.hosts.decisions.is(&name, Decision::Enable) {
-                        set(&shared, &name, "failed", &e);
-                        if let Some(a) = shared.tunnels.0.lock().get_mut(&name) {
-                            a.failed_at = Some(Instant::now());
-                        }
+            if let Err(e) = super::consent::enable(&shared, &name).await {
+                tracing::warn!(event = "agent.enable_failed", host = name, why = e);
+                // the host removed, Not now or Remove meanwhile, or a later click's enable runs
+                let undecided = crate::hosts::recipe_of(&shared, &name).is_some() && crate::hosts::files_state(&shared, &name).is_none_or(|s| s == "wanted");
+                if undecided && !shared.hosts.decisions.is(&name, Decision::Enable) {
+                    set(&shared, &name, "failed", &e);
+                    if let Some(a) = shared.tunnels.0.lock().get_mut(&name) {
+                        a.failed_at = Some(Instant::now());
                     }
                 }
             }

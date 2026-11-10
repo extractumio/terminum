@@ -15,6 +15,7 @@ pub mod link;
 pub mod recipe;
 mod silent;
 pub mod tunnel;
+pub mod turns;
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -326,8 +327,6 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
         "enable" => consent::enable(app, name).await,
         // Not now just after an enable recorded "enabled": the connection it started closes
         "decline" => consent::decide(app, name, Some("declined")).map(|was| if was { link::changed(app, name) }),
-        // agents on keep the helper: only Files goes
-        "files-remove" if link::wanted(app, name) => consent::decide(app, name, Some("declined")).map(|_| link::changed(app, name)),
         "files-remove" => consent::remove(app, name).await,
         _ => Err(format!("unknown host action: {action}")),
     }
