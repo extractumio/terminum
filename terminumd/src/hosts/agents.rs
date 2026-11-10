@@ -124,10 +124,13 @@ pub async fn set_agents(app: &Shared, host: &str, on: bool) -> Result<Vec<String
     if !super::records(app).contains_key(host) {
         return Err(format!("no host named {host}"));
     }
-    app.helper_turns.run(host, async {
-        // read in its turn: an earlier operation may have changed the record
-        let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
-        set_with(&Live { app, host, recipe }, host, on).await
+    let (app, host) = (app.clone(), host.to_string());
+    super::to_its_end(async move {
+        app.helper_turns.run(&host, async {
+            // read in its turn: an earlier operation may have changed the record
+            let recipe = super::recipe_of(&app, &host).ok_or_else(|| format!("{host} is not attached"))?;
+            set_with(&Live { app: &app, host: &host, recipe }, &host, on).await
+        }).await
     }).await
 }
 

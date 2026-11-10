@@ -324,12 +324,21 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
             }
             Ok(())
         }
-        "enable" => consent::enable(app, name).await,
+        "enable" | "files-remove" => {
+            let (app, name, remove) = (app.clone(), name.to_string(), action == "files-remove");
+            to_its_end(async move { if remove { consent::remove(&app, &name).await } else { consent::enable(&app, &name).await } }).await
+        }
         // Not now just after an enable recorded "enabled": the connection it started closes
         "decline" => consent::decide(app, name, Some("declined")).map(|was| if was { link::changed(app, name) }),
-        "files-remove" => consent::remove(app, name).await,
         _ => Err(format!("unknown host action: {action}")),
     }
+}
+
+/// `work`, an operation asked by a request (the CLI, a page), run to its end also when that
+/// request goes while it waits for the host's turn (turns.rs) or runs: an off is not lost, and
+/// the CLI's "it may still be working" holds.
+async fn to_its_end<T: Send + 'static>(work: impl std::future::Future<Output = Result<T, String>> + Send + 'static) -> Result<T, String> {
+    tokio::spawn(work).await.map_err(|e| format!("the operation ended early: {e}"))?
 }
 
 /// Records the build of a host's helper.

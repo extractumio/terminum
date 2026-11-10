@@ -131,19 +131,30 @@ trait Steps {
     /// A trial connection through the forward, answered by this build's helper.
     async fn trial(&self) -> Result<(), String>;
     fn save(&self, f: &mut dyn FnMut(&mut Map<String, Value>)) -> Result<(), String>;
+    /// The helper copied for nothing taken off the host again, unless Files or agents use it.
+    async fn discard(&self);
     fn recipe(&self) -> &[String];
 }
 
 /// Enable (AC-83) after the user's click or tick: "files": "enabled" and the helper's build
 /// recorded only while Enable is still the last decision and the recipe the one it started with;
 /// a step after a later Not now or Remove is not taken, the first neither when one came while
-/// the enable waited for its turn.
+/// the enable waited for its turn. An enable that fails after its copy leaves no helper behind.
 async fn enable_with(steps: &impl Steps, decisions: &Decisions, host: &str) -> Result<(), String> {
     let still = || if decisions.is(host, Decision::Enable) { Ok(()) } else { Err(OVERTAKEN.to_string()) };
     still()?;
     let platform = steps.probe().await?;
     still()?;
     steps.copy(platform).await?;
+    let result = record_after_copy(steps, host, still).await;
+    if result.is_err() {
+        steps.discard().await;
+    }
+    result
+}
+
+/// An enable's steps after its copy.
+async fn record_after_copy(steps: &impl Steps, host: &str, still: impl Fn() -> Result<(), String>) -> Result<(), String> {
     still()?;
     steps.trial().await?;
     still()?;
@@ -236,6 +247,12 @@ impl Steps for Live<'_> {
     }
     fn save(&self, f: &mut dyn FnMut(&mut Map<String, Value>)) -> Result<(), String> {
         super::save(self.app, f)
+    }
+    async fn discard(&self) {
+        let used = super::link::wanted(self.app, self.host) || super::files_state(self.app, self.host).as_deref() == Some("enabled");
+        if !used && let Err(why) = super::tunnel::remove_helper(&self.recipe).await {
+            tracing::warn!(event = "agent.discard_failed", host = self.host, why);
+        }
     }
     fn recipe(&self) -> &[String] {
         &self.recipe

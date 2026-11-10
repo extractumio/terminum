@@ -160,6 +160,7 @@ Scenario: AC-83 edge — a login shell that prints
 Scenario: AC-83 failure — the setup fails
   When that setup fails (no helper for the platform, the copy or the trial refused)
   Then "files" is not recorded, and Files says "devbox is a remote host. Its files are not set up: they need a 6 MB helper in ~/.terminum/bin on devbox; it runs only while you use it." with the reason, [Try again] and [Not now]
+  And a helper already copied by that setup is removed from devbox again, unless its agents are on; so is one copied by an enable that Not now overtook
   And it is tried again by itself when devbox attaches 10 minutes or more after the failure, or at once when the user adds devbox again; a link that keeps dropping copies nothing at each attach
   And a host that is off or not connected is not being set up: Files says the same without a reason
 
@@ -189,6 +190,7 @@ Scenario: AC-83 edge — one operation at a host's helper at a time
   Then it waits for the one running and runs after it, in the order asked, so no copy meets a removal on devbox; other hosts' run beside it
   And Files' enable, Files' removal and the helper's update are never stopped by a later one; among agents' on and off the last asked wins (AC-99)
   And each judges who else uses the helper in its turn: a removal of Files leaves the helper while agents are on and records "declined" only, an agents off leaves it while Files is enabled; so the helper is never gone with Files or agents on, nor left with both off
+  And an operation asked by "terminum hosts" or a page runs to its end also when that command gave up waiting or that page closed meanwhile: an off waiting for its turn is not lost
 
 Scenario: AC-83 failure — the host cannot take it
   When ssh fails, the platform has no agent in the package, the copy or the probe times out

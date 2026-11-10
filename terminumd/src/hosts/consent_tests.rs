@@ -80,6 +80,9 @@ impl Steps for Fake {
         f(&mut self.hosts.lock());
         Ok(())
     }
+    async fn discard(&self) {
+        self.step("discard");
+    }
     fn recipe(&self) -> &[String] {
         &self.recipe
     }
@@ -108,7 +111,10 @@ fn not_now_during_an_enable_stands_and_no_step_follows_it() {
         let f = fake(Meanwhile::Decline, at);
         assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Err(OVERTAKEN.into()), "after {at}");
         assert_eq!(f.files("devbox"), "declined", "after {at}: the later decision is never written over");
-        assert_eq!(*f.steps.lock(), all[..taken], "after {at}: not copied after a Not now during the probe either");
+        let steps = f.steps.lock();
+        assert_eq!(steps[..taken], all[..taken], "after {at}: not copied after a Not now during the probe either");
+        // a helper copied for nothing is not left on the host with Files off
+        assert_eq!(steps[taken..], if taken > 1 { vec!["discard"] } else { vec![] }, "after {at}");
     }
 }
 
@@ -144,6 +150,7 @@ fn a_failed_save_is_the_enables_failure() {
     f.save_fails = true;
     let err = run(enable_with(&f, &f.decisions, "devbox")).unwrap_err();
     assert!(err.contains("cannot be written"), "{err}");
+    assert_eq!(f.steps.lock().last(), Some(&"discard"), "the helper copied for nothing goes");
 }
 
 #[test]
