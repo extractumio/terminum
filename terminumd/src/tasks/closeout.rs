@@ -5,7 +5,7 @@
 
 use rusqlite::Transaction;
 
-use super::ops;
+use super::ops::{self, rows};
 
 /// The language when a project sets none.
 pub const DEFAULT_LANGUAGE: &str = "English";
@@ -18,17 +18,25 @@ pub const SECTIONS: [(&str, &str); 9] = [
     ("Outcome", "done, partly done or not done; where the work stands (merged, committed on a branch, nothing committed)"),
     ("Done", "each change, why, and where (files, commits, tasks by ID); each choice the task left open, and why"),
     ("Checked", "how each was verified, on what, with what result; what was not verified, and why"),
-    ("Not done", "what of the task is left or dropped, and why"),
+    ("Not done", "what of the task is left or dropped, and why; what is left names its task's ID"),
     ("Needs a human", "decisions, access, answers"),
-    ("New tasks", "ID: one sentence on the problem or change, with its context"),
+    ("New tasks", "ID: one sentence on the problem or change, with its context; only tasks on the board: terminum lists under the result the ones this session made"),
     ("Tasks changed", "ID: renamed, re-prioritized, regrouped or archived, and why"),
     ("Issues and discoveries", "what went into no task, and why"),
-    ("Further recommendations", "what to do next"),
+    ("Further recommendations", "what to do next; each one a human would plan names its task's ID"),
 ];
 
 /// The language a project's agents write in on the board.
 pub fn language_of(tx: &Transaction, project: &str) -> Result<String, String> {
     Ok(ops::project_text(tx, project, ops::LANGUAGE_COLUMN)?.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string()))
+}
+
+/// The tasks session `pane` made for task `key` and still on the board: made by its agent since `key` last went to
+/// IN PROGRESS (never: all the pane made), not `key` itself. Their IDs, oldest first: finishing says them (AC-166).
+pub fn made_for(tx: &Transaction, pane: &str, key: &str) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT t.slug FROM tasks t WHERE t.made_in = ?1 AND t.by_agent = 1 AND t.id <> ?2 AND t.archived_at IS NULL AND t.slug IS NOT NULL
+                AND t.created_at >= coalesce((SELECT max(e.at) FROM events e WHERE e.task = ?2 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS'), 0)
+              ORDER BY t.number", (pane, key), |r| r.get(0))
 }
 
 /// A language as kept: a name of letters, spaces, hyphens and brackets; empty means the default (none kept).
@@ -54,8 +62,8 @@ pub fn prompt(tx: &Transaction, project: &str, finish: &str, each: bool) -> Resu
 pub fn words(language: &str, finish: &str, each: bool) -> String {
     let sections = SECTIONS.iter().map(|(name, what)| format!("{name}: {what}.")).collect::<Vec<_>>().join("\n");
     let (before, that) = if each { (format!("Before each {finish}, close that task out"), "that task's") } else { (format!("Before you call {finish}, close the task out"), "the task's") };
-    format!("{before}; short of time, write the result (step 3) first.
-1. What you noticed and did not do that a human would plan work for (a bug or gap outside {that} scope, a follow-up, a decision to take): look for an open task on it with execute_tool(\"list_tasks\", {{}}); none: a task by execute_tool(\"create_task\", {{title, severity, text}}); one: a comment on it by execute_tool(\"add_comment\", {{id, text}}). Smaller things go into the result's Issues and discoveries.
+    format!("{before}; short of time, write the result (step 3) first. The session closes minutes after the result: work left that is in no task is lost then.
+1. What you noticed and did not do that a human would plan work for (what is left of {that} own work, a bug or gap outside {that} scope, a follow-up, a decision to take): look for an open task on it with execute_tool(\"list_tasks\", {{}}); none: a task by execute_tool(\"create_task\", {{title, severity, text}}); one: a comment on it by execute_tool(\"add_comment\", {{id, text}}). Smaller things go into the result's Issues and discoveries.
 2. Review the tasks you made in this run: rename, re-prioritize or regroup them by execute_tool(\"update_task\", {{id, title?, severity?, parent?}}) where your work changed them; archive one by execute_tool(\"update_task\", {{id, archive?, reason?}}) only when your work resolved it or it was made in this run and is no longer needed, naming the commit or task in the reason. Another task that looks stale gets a comment, never a change.
 3. The result, in the language named \"{language}\": plain words a newcomer reads without this session, each item short and whole, every heading there (\"None\" when empty):
 {sections}
@@ -73,6 +81,8 @@ mod tests {
         assert!(at.windows(2).all(|p| p[0] < p[1]), "{at:?}");
         assert!(w.starts_with("Before you call execute_tool(\"finish_task\", {id, result}), close the task out") && w.contains("The result, in the language named \"Русский\":"));
         assert!(words("English", "F", true).starts_with("Before each F, close that task out") && words("English", "F", true).contains("that task's scope"));
+        assert!(w.contains("The session closes minutes after the result: work left that is in no task is lost then.") && w.contains("(what is left of the task's own work, "), "nothing is left in the session alone: {w}");
+        assert!(w.contains("\nNot done: what of the task is left or dropped, and why; what is left names its task's ID.\n") && w.contains("each one a human would plan names its task's ID."));
     }
 
     #[test]

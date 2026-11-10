@@ -319,3 +319,28 @@ fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_i
     assert!(said.contains("End your turn now") && said.contains("resumes this conversation"), "{said}");
     assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap().contains("End your turn now"), "its own move waits the same way");
 }
+
+#[test]
+fn ac166_finishing_says_the_tasks_its_session_made_as_the_board_holds_them() {
+    let (s, dir) = fresh("tt-made");
+    let w = who(Some("api"));
+    let made_id = |said: String| said.trim_start_matches("Kept as ").split(',').next().unwrap().to_string();
+    let early = made_id(call(&s, &dir, &w, "create_task", json!({"title": "Debt: before this task", "severity": "P3"})).unwrap());
+    s.with(|tx| tx.execute("UPDATE tasks SET created_at = 1 WHERE slug = ?1", [&early]).map(drop).map_err(ops::sql)).unwrap();
+    let id = task(&s, "api", None);
+    call(&s, &dir, &w, "take_task", json!({"id": id})).unwrap();
+    call(&s, &dir, &w, "move_task", json!({"id": id, "to": "IN PROGRESS"})).unwrap();
+    let left = made_id(call(&s, &dir, &w, "create_task", json!({"title": "Bug: left for later", "severity": "P2"})).unwrap());
+    let dropped = made_id(call(&s, &dir, &w, "create_task", json!({"title": "Debt: no longer needed", "severity": "P3"})).unwrap());
+    s.with(|tx| tx.execute("UPDATE tasks SET archived_at = 2 WHERE slug = ?1", [&dropped]).map(drop).map_err(ops::sql)).unwrap();
+    let line = format!("Tasks made in this session: {left}.");
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "New tasks: T-99, which is nowhere"})).unwrap(), format!("{id} is DONE, with your result. {line}"),
+               "one made before the task was started, and one archived since, are not its follow-ups");
+    let history = s.with(|tx| ops::history(tx, &id)).unwrap();
+    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "told" && e["text"] == line.as_str()), "terminum's own line, under the result: {history}");
+    let plain = task(&s, "api", None);
+    assert_eq!(call(&s, &dir, &who(Some("api")), "finish_task", json!({"id": plain, "result": "did it"})).unwrap(), format!("{plain} is DONE, with your result. Tasks made in this session: {early}, {left}."), "never IN PROGRESS: all its pane made");
+    let other = Who { key: OTHER.into(), ..who(Some("api")) };
+    let none = task(&s, "api", None);
+    assert_eq!(call(&s, &dir, &other, "finish_task", json!({"id": none, "result": "did it"})).unwrap(), format!("{none} is DONE, with your result."), "a session that made none says nothing");
+}

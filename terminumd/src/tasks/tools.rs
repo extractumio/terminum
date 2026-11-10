@@ -216,8 +216,17 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 ops::comment(tx, &me, id, &rules::clean(arg(args, "result")?), at)?;
                 ops::move_to(tx, &me, id, "DONE", at)?;
-                crate::dispatcher::runs::finished(tx, &ops::key_of(tx, id)?)?;
-                Ok((format!("{id} is DONE, with your result."), vec![id.to_string()]))
+                let key = ops::key_of(tx, id)?;
+                crate::dispatcher::runs::finished(tx, &key)?;
+                // what it leaves behind is on the board, by terminum's word, not the agent's (AC-166)
+                let made = super::closeout::made_for(tx, &who.key, &key)?;
+                let mut said = format!("{id} is DONE, with your result.");
+                if !made.is_empty() {
+                    let line = format!("Tasks made in this session: {}.", made.join(", "));
+                    ops::log(tx, &key, super::store::DISPATCHER, "told", &line, None, at)?;
+                    said = format!("{said} {line}");
+                }
+                Ok((said, vec![id.to_string()]))
             }
             "get_file" => {
                 if who.dir.is_none() {
