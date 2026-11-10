@@ -59,5 +59,5 @@ export function system(ctx) {
     stackCard("ends", "How tasks ended", ctx, { kinds: ENDS, of: (d) => d, totals: t, sum: words(...ENDS.map(([k, word]) => `${count(t[k])} ${word}`)), hint: "moved by Dispatcher or an agent", wide: true, height: 200 }),
     failuresCard(ctx), agentsCard(ctx), loadCard(ctx),
     stackCard("fires", "Schedules' firings", ctx, { kinds: FIRES, of: (d) => d.fires, totals: t.fires, sum: `${count(t.fires.started)} started`, hint: "by state" }),
-  ], note: "The sessions Dispatcher started. This Mac's time." };
+  ], note: "The sessions Dispatcher started. This Mac's time.", kept: "sessions counted from" };
 }

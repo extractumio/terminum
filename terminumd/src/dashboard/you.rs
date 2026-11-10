@@ -75,7 +75,8 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
     }
     // a row is its first and its last key; the first one says whether it sent and from where
     let sent = "component = 'page' AND (kind = 'paste' OR (kind = 'typed' AND text LIKE '%<Enter>'))";
-    let phone = "coalesce(device, '') = 'web' AND (browser LIKE '%iPhone%' OR browser LIKE '%Android%')";
+    // a client that sent no User-Agent has no browser: not a phone
+    let phone = "coalesce(device, '') = 'web' AND (coalesce(browser, '') LIKE '%iPhone%' OR coalesce(browser, '') LIKE '%Android%')";
     let mut st = tx.prepare_cached(&format!("SELECT {}, {}, coalesce(project, ''), pane, {sent}, {phone} FROM inputs
         WHERE sender = 'human' AND at >= ?1 {only}", local("at"), local("ended"))).map_err(crate::tasks::ops::sql)?;
     let mut found = st.query((ask.since, ask.project)).map_err(crate::tasks::ops::sql)?;

@@ -131,7 +131,7 @@ export async function liveHistory(page, opts) {
     await page.click(`#dperiod [data-period="${period}"]`);
     check(`AC-152 a ${period} is drawn in ${n} columns`, await until(async () => (await page.$$("#active rect.hit")).length === n, 6000));
   }
-  check("AC-152 what is kept does not reach the year before: no comparison, and the page says from when it counts", /no earlier data/.test(await page.textContent("#tiles .tile .tsub")) && /Counted from Today/.test(await page.textContent("#dnote")), await page.textContent("#dnote"));
+  check("AC-152 what is kept does not reach the year before: no comparison, and the page says from when it counts", /no earlier data/.test(await page.textContent("#tiles .tile .tsub")) && /typing counted from Today/.test(await page.textContent("#dnote")), await page.textContent("#dnote"));
   // the other tabs: a session of Dispatcher's, a failed write and a report in the store (e2e_livedispatcher.mjs runs real sessions)
   intoStore(app, `INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('dash', 'Dash agent', 'claude', 'claude', 2, 1);
     INSERT INTO runs (id, project, agent_id, agent_name, agent_color, kind, command, folder, state, last_walk) VALUES ('dashrun', 'default', 'dash', 'Dash agent', 2, 'claude', 'claude', '${work}', 'closed', CAST(strftime('%s','now') AS INTEGER) - 600);

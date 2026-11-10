@@ -68,5 +68,5 @@ export function costs(ctx, redraw) {
     rankedCard("agents", "Agents", data.agents, agentLabel, agentColor),
     rankedCard("models", "Models", data.models, (m) => m.model || "Model not said", () => "var(--ring)"),
     limitsCard(ctx),
-  ], note: "Only the sessions Dispatcher started report tokens. Dollars: an estimate at API list prices, not a subscription's bill." };
+  ], note: "Only the sessions Dispatcher started report tokens. Dollars: an estimate at API list prices, not a subscription's bill.", kept: "the first report is of" };
 }

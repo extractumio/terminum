@@ -46,9 +46,10 @@ pub fn numbers(tx: &Transaction, ask: &Ask, now: i64) -> Result<Value, String> {
 
 fn read(tx: &Transaction, ask: &Ask, now: i64) -> Result<Read, String> {
     let args = (ask.since, ask.task_project());
+    // a session that began up to a week before the rows asked for may still run in the span
     let runs = rows(tx, &format!("SELECT r.agent_id, r.agent_name, r.agent_color, {}, {}, r.state NOT IN ('closed', 'left') FROM runs r
-        JOIN (SELECT run, min(at) AS at FROM inputs WHERE at >= ?1 AND component = 'dispatcher.start' GROUP BY run) s ON s.run = r.id
-        WHERE (?2 IS NULL OR r.project = ?2)", local("s.at"), local("r.last_walk * 1000")), args,
+        JOIN (SELECT run, min(at) AS at FROM inputs WHERE at >= ?1 - {LONGEST} AND component = 'dispatcher.start' GROUP BY run) s ON s.run = r.id
+        WHERE (?2 IS NULL OR r.project = ?2)", local("s.at"), local("r.last_walk * 1000"), LONGEST = 7 * super::DAY), args,
         |r| Ok(Run { agent: r.get(0)?, name: r.get(1)?, color: r.get(2)?, start: r.get(3)?, end: r.get(4)?, open: r.get(5)? }))?
         .into_iter().map(|r| Run { end: if r.open { now } else { r.end.max(r.start) }, ..r }).collect();
     let at = local("e.at * 1000");

@@ -893,7 +893,7 @@ Scenario: AC-152 edge — what is kept does not reach the span before
   When the span before begins earlier than the oldest row kept
   Then no figure is compared ("no earlier data"): a part of a span is never set against a whole one
   When the period itself begins earlier than the oldest row kept
-  Then the page says "Counted from <day>: nothing earlier is kept."
+  Then the page says from which day the tab's rows are kept ("Nothing earlier is kept: typing counted from <day>."; messages and board actions before it still count)
 
 Scenario: AC-152 edge — nothing in the period
   When nothing was done in the period

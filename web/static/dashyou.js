@@ -113,5 +113,5 @@ export function you(ctx) {
   const { data } = ctx, t = data.tiles;
   const board = stackCard("board", "On the board", ctx, { kinds: BOARD, of: (d) => d.board, totals: t.board_by, sum: plural(t.board, "action"), hint: "what you did to tasks" });
   return { tiles: tiles(ctx), cards: [activeCard(ctx), data.unit === "day" ? daysCard(ctx) : null, data.unit === "hour" ? null : heatCard(ctx), projectsCard(ctx), jugglingCard(ctx), board].filter(Boolean),
-    note: "You only: Dispatcher's messages are not counted. This Mac's time." };
+    note: "You only: Dispatcher's messages are not counted. This Mac's time.", kept: "typing counted from" };
 }

@@ -86,6 +86,8 @@ fn ac152_the_human_s_time_and_load_only() {
         }
         input(tx, noon + 6 * M, HUMAN, "k2", Some("Safari 18 · iPhone"), None, None);
         input(tx, noon + 6 * M, DISPATCHER, "k3", None, None, None);
+        // a page of another device whose client named no browser: no phone, and no failure
+        tx.execute("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, device, version) VALUES (?1, ?1, 'human', 'page', 'typed', 'x', 1, 'k2', 'web', 'test')", [noon + 6 * M]).map_err(sql)?;
         // the board at 12:30, a pause over 15 minutes: the human makes a task and moves it; an agent's ask at 12:31 moved on at 12:41
         let at = (noon + 30 * M) / 1000;
         let t = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, at)?;

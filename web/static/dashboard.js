@@ -35,7 +35,7 @@ function draw() {
   shown = t.cards;
   $("tiles").replaceChildren(...t.tiles);
   $("cards").replaceChildren(...shown.map((c) => c.box));
-  $("dnote").textContent = `${t.note}${data.kept_from ? ` Counted from ${dayLabel(data.kept_from)}: nothing earlier is kept.` : ""}`;
+  $("dnote").textContent = `${t.note}${data.kept_from ? ` Nothing earlier is kept: ${t.kept} ${dayLabel(data.kept_from)}.` : ""}`;
   for (const c of shown) c.draw();
   if (at) document.querySelector(at)?.focus();
 }
