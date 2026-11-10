@@ -138,7 +138,8 @@ export async function liveSchedules(page, live) {
   check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
   check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));
   const t = await j(`/api/tasks/${task}`);
-  check("AC-162 its history says the schedule, late as after a sleep", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due .+, run \d\d:\d\d: the Mac was asleep/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
+  // "late" only when its due time is over 2 minutes past: a 15-minute cadence's may be a moment ago (cargo test dispatcher::fire covers it)
+  check("AC-162 its history says the schedule and its due time", t.history.some((e) => /^Dispatcher made it from schedule SCH-\d+, due \w{3} \d+ \w{3} \d\d:\d\d(, run \d\d:\d\d: the Mac was asleep or terminumd was not running)?\.$/.test(e.text ?? "")), JSON.stringify(t.history.map((e) => e.text)));
   check("AC-163 its window names the schedule", t.schedule?.key === s.key);
   await page.goto(`${live.base}/kanban/${task}`);
   check("AC-163 the window's line opens the schedule", await until(() => page.isVisible(".taskfrom")));
