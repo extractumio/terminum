@@ -27,7 +27,7 @@ In scope:
 - Time budgets, warnings and ending; subagents; CPU, memory and tokens; local and remote hosts.
 
 Out of scope (explicit):
-- Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit waits for its room (AC-158): the press is the human's. A human's schedule is a standing press: its tasks start on their cadence (`terminum-schedules.md`).
+- Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit joins its agent's queue once the human agrees (AC-169) and waits for its room (AC-158): the press is the human's. A human's schedule is a standing press: its tasks start on their cadence (`terminum-schedules.md`).
 - Choosing an agent's permissions: its command, as the operator writes it, carries them (AC-156).
 - Tasks, the board and the agent's tools: `terminum-kanban.md`.
 - Any act on a session Dispatcher did not start, other than writing its start and end on the task.
@@ -76,14 +76,15 @@ Open questions:
 | AC-137 | [MUST / P0] | The pool lists the agents terminum can start: a name, Claude Code or Codex, the command that starts it, an effort, how many may run at once, and its week's and month's limits. An agent belongs to no project, server or folder; the board is the only way terminum offers to add, change or delete one. |
 | AC-138 | [MUST / P0] | The pool stands over the board, each agent with its color, kind, effort, its week and month, and one dot per live session, blinking while it works; a task, or several chosen, dropped on an agent runs in one session with a short message; a finished task stays on its agent; a run that cannot be reached can be given up. |
 | AC-140 | [MUST / P0] | A project is a full path on one server: every agent of it starts there, and with no folder none starts; Default is the home folder of the Mac terminumd runs on. |
-| AC-141 | [MUST / P0] | Starting a session takes a slot of its agent and of its project; at a limit RUN is refused, naming what holds it, and an idle holder can be closed with one press; a human typing in a session is never refused. |
+| AC-141 | [MUST / P0] | Starting a session takes a slot of its agent and of its project; at a limit RUN starts nothing, names what holds it and offers the queue (AC-169), and an idle holder can be closed with one press; a human typing in a session is never refused. |
 | AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it or closes it, and it counts against both limits. |
 | AC-143 | [SHOULD / P1] | An agent's window shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
 | AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as a session of that kind last read them; a window not known, reset since, or read long ago says so, never a made-up 0%. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, with options and its recommended answers, stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
-| AC-158 | [MUST / P0] | A RUN at its agent's or project's limit waits for room instead of being refused, oldest first, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
+| AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169) waits for room, in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
+| AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-166 | [SHOULD / P1] | RUN's prompt asks the agent to close its task out: what it noticed goes to tasks, the tasks it made are reviewed, and its result has fixed sections, written in the project's language (English when none is set); a task's end says on it which tasks its session made, and finishing says which IDs its result names that the board lacks. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
 
@@ -718,19 +719,19 @@ Scenario: AC-141 happy path — what holds a slot
 Scenario: AC-141 edge — at the agent's limit
   Given Opus reviewer with 1 at once and API-12's session working
   When the user drops API-13 on it, or POST /api/tasks/API-13/run {"agent": ...}
-  Then no session starts; RUN's window says "Opus reviewer is at its limit of 1: API-12 is working. Run waits until it has room, then starts." and the press waits (AC-158)
+  Then no session starts; RUN's window says "Opus reviewer is at its limit of 1: API-12 is working. Add it to the queue: it starts when there is room." and its key reads Add to queue (AC-169)
   And each holder is named with what it does: "is starting", "is working", "waits for a human", "is being ended", "is idle" (only such a one can be closed for its slot), "has finished, not idle yet"; one started by + Session is "a session with no task"; with several: "Opus reviewer is at its limit of 3: API-12 is working; API-14 is idle; API-16 waits for a human."; a run of several tasks: "API-12, API-13 are working"
   And it is decided in the transaction that would take the slot: two presses never both find it free
 
 Scenario: AC-141 edge — at the project's limit
   Given api with Agents at once 2, API-12 and API-14 running on any agents
   When the user runs API-13 of api
-  Then no session starts and the press waits: "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12 is working; API-14 is working. It starts when there is room."
+  Then no session starts and the queue is offered; added, the answer says "It waits for Opus reviewer: api runs 2 agents at once, its limit: API-12 is working; API-14 is working. It starts when there is room."
 
 Scenario: AC-141 happy path — an idle holder
   Given Opus reviewer with 1 at once, and API-12 DONE, its turn over, no tool open, quiet for two walks, with an empty input box and no subagent
   When the user drops API-13 on it
-  Then the window says "Opus reviewer is at its limit of 1: API-12 is idle." with a key "Close API-12's session and run"
+  Then the window says "Opus reviewer is at its limit of 1: API-12 is idle." with a key "Close API-12's session and run", and Add to queue beside it (AC-169)
   When the user presses it
   Then API-12's pane closes as AC-125 closes one, its mark checked and its screen kept, and API-13 starts in the slot
   When the pane did not close, or API-13 cannot start
@@ -931,7 +932,7 @@ Scenario: AC-157 failure — not its task
 ```gherkin
 Scenario: AC-158 happy path — a press at a limit
   Given Opus reviewer with 1 at once, held by API-12
-  When the user runs API-13 on it, first or to go on in a closed session
+  When the user runs API-13 on it, first or to go on in a closed session, and adds it to the queue (AC-169)
   Then the press is kept, its comment kept on API-13 at once, and the answer and a toast say "It waits for Opus reviewer: Opus reviewer is at its limit of 1: API-12 is working. It starts when there is room."
   And API-13's card and window say "waits for Opus reviewer"; its column does not change
   When API-12's session closes, its agent goes or it is given up
@@ -940,7 +941,7 @@ Scenario: AC-158 happy path — a press at a limit
 Scenario: AC-158 edge — in turn
   Given API-13 waiting for Opus reviewer, and API-15 pressed on it after
   When a slot frees
-  Then API-13 takes it; a press while an older wait has room goes behind it
+  Then API-13 takes it: the first of the queue as the human ordered it (AC-169); a press while a wait before it has room goes behind it
   And a wait held by its project's limit holds no other agent's or project's wait
 
 Scenario: AC-158 edge — pressed again
@@ -967,6 +968,67 @@ Scenario: AC-158 edge — terminum upgraded meanwhile
 Scenario: AC-158 edge — a restart
   Given API-13 waiting when terminumd restarts
   Then the wait is in the store and the first walk after it goes on with it
+```
+
+### AC-169 — An agent's queue [MUST / P0]
+
+```gherkin
+Scenario: AC-169 happy path — offered at a limit
+  Given Opus reviewer with 1 at once, held by API-12
+  When the user runs API-13 on it
+  Then RUN's window says what holds it and "Add it to the queue: it starts when there is room.", its key reads Add to queue, and nothing waits yet
+  When the user presses Add to queue
+  Then API-13 is the last of Opus reviewer's queue and waits for room (AC-158)
+  When the user closes the window instead
+  Then nothing waits and API-13 stays where it stood
+
+Scenario: AC-169 edge — no room found only at the press
+  Given the window showed Opus reviewer with room, or Run goes on in a closed session (AC-122)
+  When the press finds no room
+  Then nothing starts and nothing waits: POST /api/tasks/API-13/run answers {"full": {"words": "<what holds it>", "queue": "<what holds it> Add it to the queue: it starts when there is room.", "close": null}}, as its first read says of an agent with no room; the window says so and its key reads Add to queue
+  And a wait before it that has room counts as no room: "API-13 waits for it first."
+  And only a press with "queue": true waits; a schedule's firing and a wait pressed again are such presses
+
+Scenario: AC-169 happy path — on the agent's card
+  Given Opus reviewer with 3 at once, one session working, SCH-1 keeping a slot (terminum-schedules.md AC-161), API-13 and API-15 in its queue
+  Then its dots read, in order: a dashed ring in its color for the kept slot, the session's dot, a plain grey ring for the free slot, "2/3"
+  And a key after them holds a pale grey dot for each queued task and "2 queued", naming them on hover
+  And an agent of more than 8 at once says its free slots by the count alone; a queue of more than 6 shows 6 dots and its count
+  When the user presses that key
+  Then the agent's window opens with its queue in view; a press elsewhere on the card opens the same window
+
+Scenario: AC-169 happy path — the queue in the agent's window
+  Given API-13, API-15 and API-16 in Opus reviewer's queue
+  Then its window lists them in the order they start, each with its place, ID, title and project, and keys: up, down, take out
+  When the user drags API-16 over API-13, with a mouse at once or with a finger after resting on the row, or presses its up key twice
+  Then the queue is API-16, API-13, API-15 on every page, and API-16 starts first when a slot frees
+  And the row dragged leaves a dashed slot and follows the pointer; Esc puts it back
+  When the user presses API-13's take out
+  Then API-13 waits no more, as Stop waiting calls it off (AC-158), and the window stays open
+  When API-13 started just before that press
+  Then terminumd says "API-13 waits no more: it started, or its wait was called off." and its run goes on
+  And two presses of an arrow in a row move a task two places: the list shows each change at once
+  When the queue is empty
+  Then the window says "No task waits for this agent. A task run while it is at its limit can be added here."
+
+Scenario: AC-169 edge — a phone
+  Given the board on a phone
+  Then the queue's rows fit the window with no sideways scroll, the project's name left out, and each key is a finger wide
+
+Scenario: AC-169 failure — the queue changed meanwhile
+  Given another page took API-15 out
+  When this page sends an order naming API-15
+  Then terminumd says "The queue changed meanwhile: look at it again.", nothing moves and the list shows what terminumd has
+
+Scenario: AC-169 edge — another agent's waits
+  Given API-20 waiting for Fast fixer between API-13 and API-15 of Opus reviewer
+  When Opus reviewer's queue is ordered anew
+  Then its tasks take the places its queue held: API-20's place among them does not change
+  And where a project's limit holds them all, the one line decides: a task moved up in Opus reviewer's queue may start before API-20
+
+Scenario: AC-169 edge — a press for several tasks
+  Given API-13 and API-14 run together on Opus reviewer at its limit, added to the queue
+  Then they are one row and one dot, "API-13, API-14", and take out calls off the press for both
 ```
 
 ### AC-166 — An agent closes its task out [SHOULD / P1]
@@ -1156,13 +1218,13 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
 
 `asked` (AC-157): its agent asked a human itself (`ask_human`, `move_task` to WAIT FOR HUMAN), set in that call's transaction, cleared by its own move off it and by new work.
 
-**Waits** (AC-158): a press at a slot's limit, one a task, its place in the line kept when it is pressed anew:
+**Waits** (AC-158, AC-169): a press at a slot's limit that agreed to the queue (`"queue": true`), one a task, its place in the line kept when it is pressed anew:
 
 ```sql
-CREATE TABLE run_waits (task TEXT PRIMARY KEY REFERENCES tasks, agent_id TEXT NOT NULL, project TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE run_waits (task TEXT PRIMARY KEY REFERENCES tasks, agent_id TEXT NOT NULL, project TEXT NOT NULL, status TEXT NOT NULL, body TEXT NOT NULL, at INTEGER NOT NULL, pos INTEGER NOT NULL DEFAULT 0);
 ```
 
-`body` is the press as `POST /api/tasks/<id>/run` took it; `status` the task's column then. Each walk, oldest first, a wait whose agent and project have room is pressed again; none holds a slot, a pane or a clock. `POST /api/tasks/<id>/give-up` on a waiting task calls the wait off.
+`body` is the press as `POST /api/tasks/<id>/run` took it; `status` the task's column then; `pos` its place in the line, lowest first, one line for all agents: an agent's queue is its waits in that order. Each walk, in the line's order, a wait whose agent and project have room is pressed again; none holds a slot, a pane or a clock. `POST /api/tasks/<id>/give-up` on a waiting task calls the wait off; `POST /api/tasks/<id>/leave-queue` does only that, and refuses a task that waits no more. `POST /api/task-agents/<id>/queue {"tasks": ["API-16", "API-13"]}` deals the places that agent's waits hold anew in that order, refused unless it names exactly its queue. The board's `slots` carry `"queue": {"<agent id>": [{"id": "API-13", "title": "…", "project": "<project id>", "also": ["API-14"]}]}`, `also` the other tasks of a press for several.
 
 `state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `ending` (a limit's end decided, not yet done: done again after a restart, called off by new work or Give up), `gone` (only the shell remains), `left` (a human's program runs there, or it was given up), `closed`; another label in the store is an error, not a run in a state of its own. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 
@@ -1280,6 +1342,7 @@ Measure first: AS-122, AS-125, AS-126, AS-127. Stage 1 rests on them; the gate's
 | Stage 2 | AC-126 | Time budgets: the one irreversible act on healthy work, once the walk and clocks have run for real. |
 | Stage 3 | AC-127, AC-128, AC-129, AC-130 | Subagents watched, consumption shown and limited, and all of it on remote hosts. |
 | Stage 4 | AC-140, AC-144, AC-141, AC-142, AC-143, AC-168 | A pool independent of projects, limits, sessions with no task, and what each agent spent. |
+| Stage 5 | AC-158, AC-169 | Queue tasks on a busy agent, see the queue on it, order it and take tasks out. |
 
 Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's first version with Dispatcher.
 
@@ -1306,5 +1369,6 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
+- [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

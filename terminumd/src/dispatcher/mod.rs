@@ -8,6 +8,7 @@ pub mod fire;
 pub mod api;
 mod press;
 mod places;
+mod queue;
 mod gate;
 mod hooks;
 pub mod plan;

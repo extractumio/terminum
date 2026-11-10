@@ -115,13 +115,39 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agtask .linklike { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cspent { font-variant-numeric: tabular-nums; }
 /* a dot for each live session: blinking while it works, still when it waits or idles */
-.agdots { display: flex; align-items: center; gap: var(--sp-1); min-height: 12px; padding-left: 20px; }
+.agdots { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: 12px; padding-left: 20px; }
 .agdot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: var(--surface-4); cursor: pointer; }
 .agdot.on { --dot: var(--ag); background: var(--ag); animation: pulse-bar 1.4s ease-in-out infinite; }   /* the session list's pulse: a state, kept under Reduce Motion */
 .agdot.waits { background: var(--ag); }
 .agdot.idle { background: color-mix(in srgb, var(--ag) 35%, var(--surface-4)); }
-/* a slot a schedule keeps: a clock's ring in the agent's color (terminum-schedules.md AC-161) */
-.agkept { flex: none; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; border: 2px solid var(--ag); }
+/* a slot a schedule keeps: an empty ring in the agent's color, dashed (terminum-schedules.md AC-161); a free slot: a
+   plain grey ring; a task of its queue: a pale grey dot, in the key that opens the queue (terminum-dispatcher.md AC-169) */
+.agkept, .agfree, .agwait { flex: none; width: 9px; height: 9px; box-sizing: border-box; border-radius: 50%; }
+.agkept { border: 1.5px dashed var(--ag); }
+.agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
+.agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.agqueue { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 20px; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); }
+.agqueue:hover, .agqueue:focus-visible { background: var(--surface-3); }
+/* the queue in the agent's window: a row a task, dragged by its body or moved by its arrows */
+.agqueuebox { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.agqueuebox[hidden] { display: none; }
+.agqueuehead { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted-text); }
+.agqueuelist { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); }
+.agqueuelist:empty { display: none; }
+.agqueued { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; min-height: var(--key-h); padding: 0 var(--sp-1) 0 var(--sp-2); border-radius: var(--r-sm); background: var(--surface-1);
+  font-size: var(--fs-label); }
+.agqueued .item { flex: 1; display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.agqueued .qgrip { flex: none; width: 8px; height: 14px; opacity: .5; background: radial-gradient(circle, currentColor 1px, transparent 1.5px) 0 0 / 4px 5px; }
+.agqueued .qplace { flex: none; min-width: 1.2em; color: var(--muted); font-variant-numeric: tabular-nums; text-align: right; }
+.agqueued .qtitle { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agqueued b { flex: none; white-space: nowrap; }
+.agqueued small { flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+@media (max-width: 520px) { .agqueued small { display: none; } }
+.agqueued .acts { flex: none; display: flex; align-items: center; }
+/* its drag's look is the session list's (listdrag.css); here only what differs */
+.agqueuelist :is(.lifted, .dragghost) { background: var(--surface-3); border-radius: var(--r-sm); }
+.agqueuelist .dragging { background: none; border-radius: var(--r-sm); }
+@media (max-width: 860px), (pointer: coarse) { .agqueue { min-height: var(--h-touch); min-width: var(--h-touch); } }
 .cfrom { font-size: var(--fs-small); color: var(--muted); }
 .taskfrom { margin: 0; font-size: var(--fs-small); color: var(--muted); }
 .agcount { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -130,7 +156,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .agentcard:not(:hover, :focus-within) .agedit { opacity: 0; } }
 .agentlist .item.over { background: var(--surface-3); box-shadow: inset 0 0 0 2px var(--accent); }
 .dragtask #agentbar .item:not(.busy) { background: var(--surface-2); }
-.dragtask #agentbar .item.busy { opacity: var(--key-disabled); cursor: not-allowed; }
+.dragtask #agentbar .item.busy { opacity: var(--key-disabled); }   /* at its limit: a drop is offered its queue */
 .agentlist .pbar { opacity: .75; }
 .agentlist .pbar.busy { opacity: 1; }
 .pickhint { margin: 0; min-width: 0; font-size: var(--fs-small); color: var(--accent); }
