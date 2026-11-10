@@ -40,6 +40,26 @@ export async function liveBoardTasks(page, opts) {
   await page.click("#fsubtasks");
   check("AC-112 Show subtasks makes it a card, saying whose", await until(async () => /in [A-Z][A-Z0-9]*-\d+/.test(await page.textContent(`${card(kid)} .cparent`).catch(() => ""))));
   check("AC-112 Show subtasks stands in the address", new URL(page.url()).searchParams.get("subtasks") === "1");
+  // by rank a P2 task of its own stands between the parent (P2) and its subtask (P3): [parent, loner | kid]
+  await j(`/api/tasks/${kid}`, "PATCH", { severity: "P3" });
+  const loner = (await j("/api/tasks", "POST", { title: "a task of its own", project })).id;
+  await j(`/api/tasks/${loner}`, "PATCH", { order_end: true });
+  const todo = () => page.$$eval('.col[data-status="TODO"] .card', (l) => l.map((c) => [c.dataset.id, Math.round(c.getBoundingClientRect().left)]));
+  const placed = await until(async () => { const ids = (await todo()).map((c) => c[0]); return ids.indexOf(kid) === ids.indexOf(parent) + 1 && ids.includes(loner); });
+  check("AC-112 a subtask stands right under its parent, whatever its severity", placed, JSON.stringify(await todo()));
+  const left = Object.fromEntries(await todo());
+  check("AC-112 a subtask stands shifted right; a task of its own does not", left[kid] > left[parent] && left[loner] === left[parent], JSON.stringify(left));
+  // a drop between the parent and its subtask lands after the group, not where the subtask is ranked (P3)
+  const dropper = (await j("/api/tasks", "POST", { title: "dropped into the group", project })).id;
+  await until(async () => (await todo()).some((c) => c[0] === dropper));
+  await page.dragAndDrop(card(dropper), card(kid), { targetPosition: { x: 20, y: 3 } });
+  const after = [parent, kid, dropper, loner].join();
+  check("AC-112 a task dropped into a parent's group lands after it", await until(async () => (await todo()).map((c) => c[0]).join() === after), JSON.stringify(await todo()));
+  // its parent in another column: it keeps its place there, unshifted
+  await j(`/api/tasks/${kid}`, "PATCH", { status: "FAILED" });
+  check("AC-112 a subtask away from its parent's column is not shifted", await until(async () => (await page.$eval(card(kid), (c) => !c.classList.contains("sub") && c.closest(".col").dataset.status === "FAILED").catch(() => false))));
+  await j(`/api/tasks/${kid}`, "PATCH", { status: "TODO" });
+  await until(async () => (await todo()).some((c) => c[0] === kid));
   await pressCard(page, kid);
   await page.waitForSelector("#taskbox[open]");
   check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subtasks h3 .linklike")) && !(await page.$('#taskbody .subtasks button:has-text("New subtask")')));
