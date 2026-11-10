@@ -88,8 +88,10 @@ def update_primary(primary):
 
 
 def ci_status(tree, run=subprocess.run):
-    """One line on GitHub CI's last run on main, as gh says: what a landing adds to; it never stops one."""
-    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--limit", "1", "--json", "status,conclusion,headSha,url"]
+    """One line on GitHub CI's last verdict on main, as gh says: what a landing adds to; it never stops one. A run
+    still waiting or running, or cancelled, is no verdict: one newer than the verdict is said after it."""
+    ask = ["gh", "run", "list", "--branch", "main", "--workflow", "ci", "--event", "push", "--limit", "10",
+           "--json", "status,conclusion,headSha,url"]
     try:
         done = run(ask, cwd=tree, capture_output=True, text=True, timeout=10)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -100,13 +102,16 @@ def ci_status(tree, run=subprocess.run):
         runs = json.loads(done.stdout or "[]")
         if not runs:
             return "CI on main: no run"
-        last = runs[0]
+        ended = [r for r in runs if r["status"] == "completed" and r["conclusion"] not in ("cancelled", "skipped")]
+        last = (ended or runs)[0]
         sha, state, url = last["headSha"], last["conclusion"] or last["status"], last["url"]
+        newer = runs[0] if ended and runs[0] is not last and runs[0]["status"] != "completed" else None
     except (ValueError, KeyError, TypeError, IndexError) as e:
         return f"CI on main: unknown (gh's answer: {e!r})"
     head = git("rev-parse", BASE, cwd=tree).stdout.strip()
     of = "" if sha == head else f", not {BASE}'s {head[:9]}"
-    return f"CI on main: {state} on {sha[:9]}{of}: {url}"
+    then = f"; newer: {newer['status']} on {newer['headSha'][:9]}" if newer else ""
+    return f"CI on main: {state} on {sha[:9]}{of}: {url}{then}"
 
 
 def checks_of(tree, *flags):
