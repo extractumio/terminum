@@ -11,8 +11,12 @@ AllowStreamLocalForwarding no would, and a stale file or a missing folder is ref
 `Warning:` line and the command runs, or with `-o ExitOnForwardFailure=yes` its `Error:` line
 and exit 255 (terminum-remote.md AS-84). Other `-o` options (ControlPath=none…) are ignored. SIGTERM drops
 the link (the remote side's processes end with it). Each run writes its pid into FAKE_SSH_PIDS, so a check can drop
-"the link" by killing it. FAKE_SSH_TMUX_SILENT: see `tmux_shim`. Never used outside tests: terminumd takes it through TM_SSH."""
+"the link" by killing it. FAKE_SSH_SLOW="<seconds>:<regex>" holds each run whose command matches <regex> that long
+before it starts, its pid's line in FAKE_SSH_PIDS followed by "<pid> held", so a check can ask
+for a second operation while the first one's ssh runs.
+FAKE_SSH_TMUX_SILENT: see `tmux_shim`. Never used outside tests: terminumd takes it through TM_SSH."""
 import os
+import re
 import shutil
 import signal
 import socket
@@ -195,6 +199,12 @@ def main():
     if os.environ.get("FAKE_SSH_PIDS"):
         with open(os.environ["FAKE_SSH_PIDS"], "a") as f:
             f.write(f"{os.getpid()} {dest} {' '.join(command[:100].split())}\n")   # one line a run: a script's lines joined
+    seconds, _, pattern = os.environ.get("FAKE_SSH_SLOW", "").partition(":")
+    if pattern and re.search(pattern, command):
+        if os.environ.get("FAKE_SSH_PIDS"):
+            with open(os.environ["FAKE_SSH_PIDS"], "a") as f:
+                f.write(f"{os.getpid()} held\n")
+        time.sleep(float(seconds))
     home = os.environ.get("FAKE_SSH_HOME") or sys.exit("fake ssh: FAKE_SSH_HOME is not set")
     sock = os.environ.get("FAKE_SSH_TMUX_SOCKET") or sys.exit("fake ssh: FAKE_SSH_TMUX_SOCKET is not set")
     listeners = []
