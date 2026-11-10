@@ -160,6 +160,7 @@ Scenario: AC-83 edge — a login shell that prints
 Scenario: AC-83 failure — the setup fails
   When that setup fails (no helper for the platform, the copy or the trial refused)
   Then "files" is not recorded, and Files says "devbox is a remote host. Its files are not set up: they need a 6 MB helper in ~/.terminum/bin on devbox; it runs only while you use it." with the reason, [Try again] and [Not now]
+  And a helper already copied by that setup is removed from devbox again, unless its agents are on; so is one copied by an enable that Not now overtook
   And it is tried again by itself when devbox attaches 10 minutes or more after the failure, or at once when the user adds devbox again; a link that keeps dropping copies nothing at each attach
   And a host that is off or not connected is not being set up: Files says the same without a reason
 
@@ -177,10 +178,19 @@ Scenario: AC-83 edge — a later decision while enabling or removing
   Then the later decision stands: the enable takes no step after it, "enabled" is never written over it, and no connection starts; Files says "Could not enable devbox: Not now or Remove came for this host meanwhile; nothing was recorded"
   When Enable comes again before the enable ends
   Then that click is the last decision, and the enable running goes on to "enabled"
+  And an Enable that comes while one runs starts no second copy and answers with that enable's result, its failure too, never before it ends
   When a removal of the helper runs
   Then no connection to devbox starts until it ends, Enable says "Could not enable devbox: its helper is being removed; try again when that ends"; if the removal fails, its message is shown, "files" stays "enabled" and the connection returns
   When Not now comes just after an enable recorded "enabled"
   Then "declined" is recorded and the connection that enable started closes
+
+Scenario: AC-83 edge — one operation at a host's helper at a time
+  Given an operation that copies devbox's helper or removes it runs: Files' enable or removal, agents on or off, their setup by itself or their refresh (AC-99), the helper's update (AC-84)
+  When another of them is asked for devbox
+  Then it waits for the one running and runs after it, in the order asked, so no copy meets a removal on devbox; other hosts' run beside it
+  And Files' enable, Files' removal and the helper's update are never stopped by a later one; among agents' on and off the last asked wins (AC-99)
+  And each judges who else uses the helper in its turn: a removal of Files leaves the helper while agents are on and records "declined" only, an agents off leaves it while Files is enabled; so the helper is never gone with Files or agents on, nor left with both off
+  And an operation asked by "terminum hosts" or a page runs to its end also when that command gave up waiting or that page closed meanwhile, and the setup by itself when devbox's connection is replaced: an off waiting for its turn is not lost
 
 Scenario: AC-83 failure — the host cannot take it
   When ssh fails, the platform has no agent in the package, the copy or the probe times out
@@ -348,6 +358,7 @@ Scenario: AC-99 edge — on and off asked while the other runs
   When the user turns agents off for devbox (the menu or the CLI)
   Then the on is stopped at once and says "a later agents on or off for this host took over; this one was stopped": its ssh is ended, and its script on devbox with it (the script watches its ssh's input and ends its process group when it closes, as sshd leaves a command running); only then the off runs as above: the on saves nothing after it and installs nothing after its removal
   And one on or off runs at a time per host, the last asked winning: one still waiting when a later one is asked never begins; other hosts' run beside it; removing devbox stops one running and takes the entries out in its turn; the hooks' refresh after a helper update waits for the one running and is stopped by a later one
+  And an on or off waits for Files' enable, Files' removal or the helper's update running for devbox and never stops it (AC-83, one operation at a host's helper at a time)
 
 Scenario: AC-99 edge — a host with its own terminum
   Given devbox runs its own terminum whose hooks are installed
@@ -430,6 +441,7 @@ stateDiagram-v2
 | AC | Gap | Evidence |
 |---|---|---|
 | AC-82 | A save that fails on a host says terminumd's words, "devbox is not connected" or "devbox not reachable — try again", with no "Not saved": the page passes them on raw. | `ui/src/viewer-save.ts:58`, `terminumd/src/remote.rs:80` |
+| AC-83 | The order of Files' and agents' operations at a host's helper is tested on the gate alone: no test runs an agents on or off beside a Files enable or removal over ssh. | `terminumd/src/hosts/turns_tests.rs` |
 | AC-84 | The Files header's "(helper updated to <build>)" for 60 s is absent: the page shows only the toast. | `ui/src/host-offer.ts:19` |
 | AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:408`, `terminumd/src/hosts/mod.rs:390` |
 | AC-84 | The 10-minute retry after a failed copy has no test. | `terminumd/src/hosts/tunnel.rs:31` |
@@ -520,10 +532,10 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-81 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `scripts/e2e_hostattach.py`, `web/test/e2e_tmux.mjs`, `cargo test tmux::orphans`, `cargo test tmux::once_tests` (a replaced host is a new connection), `cargo test an_ssh_link_that_never_reached_tmux_says_so`
 - [x] AC-82 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test remote::`
-- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::consent`, `cargo test hosts::link`, `cargo test remote::tests` (an ended connection lets go of its own only)
+- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::consent`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test remote::tests` (an ended connection lets go of its own only)
 - [x] AC-84 — `scripts/e2e_remote_sshd.py`, `scripts/e2e_remote.py`
 - [x] AC-85 — `scripts/e2e_remote.py`
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
 - [x] AC-87 — `scripts/e2e_remote.py`, `scripts/e2e_review.py host`, `cargo test hosts::`, `cargo test hosts_list`
-- [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
+- [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
 - [x] AC-132 — `scripts/e2e_isolation.py`, `web/test/e2e_isolation.mjs`, `cargo test tmux::control`, `cargo test lists`, `cargo test page::turns`, `cargo test page::typing`, `cargo test page::reads`, `cargo test tmux::agentstate`

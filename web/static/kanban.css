@@ -120,6 +120,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .card { position: relative; flex: none; display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); border-radius: var(--r-sm); background: var(--surface-3); box-shadow: var(--m-edge); cursor: pointer; min-width: 0; }
 .card:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }   /* inside the card: its column's scroll would cut it */
 .card.lifted { opacity: var(--key-disabled); }
+.card.sub { margin-left: var(--sp-4); }   /* Show subtasks: a subtask drawn under its parent stands shifted right (AC-112) */
 @media (hover: hover) { .card:hover { background: var(--surface-4); } }
 .chead { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .cid { font-variant-numeric: tabular-nums; }

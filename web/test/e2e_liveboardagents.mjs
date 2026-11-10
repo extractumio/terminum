@@ -396,6 +396,8 @@ async function projectWindowChecks(page, opts) {
   await page.fill("#limitend", "3");
   await pressAt(page, "#limitsok");
   check("AC-139 limits are kept from the project's window", await until(async () => (await j("/api/tasks/meta")).limits.some((l) => l.project === fresh && l.warn === 2 && l.end === 3)), JSON.stringify((await j("/api/tasks/meta")).limits));
+  // terminumd keeps them before the page has its answer and closes the limits' window: a press meanwhile lands on it
+  await page.waitForSelector("#limitsbox", { state: "hidden" });
   await pressAt(page, "#projectok");
   await page.waitForSelector("#projectbox", { state: "hidden" });
 

@@ -7,21 +7,31 @@ name: ci
 on:
   push:
   workflow_dispatch:
+    inputs:
+      live:
+        description: "Only web/test/e2e_live.mjs with these words (e.g. 'boardpool webkit'), again and again, to tell a race from the runner's load; empty: the whole run"
+        default: ""
+      times:
+        description: "How many times, with live"
+        default: "10"
 
 permissions: {}
 
+# a run on main ends with its verdict: a push meanwhile waits, and GitHub keeps only the newest waiting
+# one; on another branch the newest push wins. Repeats wait apart from the checks.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.ref }}-${{ inputs.live && 'repeat' || 'checks' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   linux:
     name: Tests on Linux (Ubuntu), the page in Chromium and WebKit
     runs-on: [self-hosted, linux, x64, terminum]
-    # a passing run takes 20-25 min, both browsers' page tests included (2026-11-08); a build
-    # stuck at the memory cap does not fail, it thrashes the disk until cancelled (~60-80 GiB
-    # written an hour, 2026-10-31), so 30 min bounds that at ~30-40 GiB
-    timeout-minutes: 30
+    # a passing run takes ~26 min: 9.5 before the page's checks (unit tests 6.7, clippy 1.2, build 1,
+    # install 0.5), the Files panel 1, the page 6-7 in each browser (2026-11-10); a build stuck at
+    # the memory cap does not fail, it thrashes the disk until cancelled (~60-80 GiB written an hour,
+    # 2026-10-31), so 40 min bounds that at ~40-55 GiB; a repeat by hand gets an hour
+    timeout-minutes: ${{ inputs.live && 60 || 40 }}
     env:
       # the runner's memory cap (docs/RELEASING.md) sits in a VM shared with coding agents: one
       # rustc at a time, no debug info (two rustc with it took the whole VM out of memory, 2026-10-25)
@@ -56,18 +66,21 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
 
       - name: Unit tests (Rust, scripts, UI, page)
+        if: inputs.live == ''
         # the largest process's peak is rustc's, the number that has to fit under the cap
         # (GNU time is the "time" package: without it the tests run unmeasured, never not at all)
         run: |
           if [ -x /usr/bin/time ]; then /usr/bin/time -f 'largest process peak RSS: %M KiB' make test; else make test; fi
 
       - name: No warnings
+        if: inputs.live == ''
         run: cd terminumd && cargo clippy --locked --all-targets -- -D warnings
 
       - name: terminumd, the debug build the checks below run
-        run: cd terminumd && cargo build --locked
+        run: make ui && cd terminumd && cargo build --locked   # its page: built by the unit tests' make test, alone on a repeat
 
       - name: Install, upgrade, rollback, uninstall (direct mode, a temporary HOME)
+        if: inputs.live == ''
         run: TERMINUMD_BIN=terminumd/target/debug/terminumd bash scripts/e2e_install.sh
 
       - name: Browsers for the page's checks
@@ -76,13 +89,31 @@ jobs:
       # The page's own checks (web/test/e2e_all.mjs) measure Safari's and Chrome's layout on the
       # Mac, the page's clients: they run on a Mac (make test-mac), not with Linux's fonts here.
       - name: The Files panel and the page against a private terminumd and tmux
+        if: inputs.live == ''
         run: | # each runs, so one run shows every failure
           rc=0
           (cd ui && node test/e2e_panel.mjs) || rc=1
           node web/test/e2e_live.mjs || rc=1
           exit $rc
 
+      - name: The page's live checks named, again and again (a manual run's)
+        if: inputs.live != ''
+        env:
+          LIVE: ${{ inputs.live }}
+          TIMES: ${{ inputs.times }}
+        run: |
+          [[ "$LIVE" =~ ^[a-z]+( [a-z]+)*$ && "$TIMES" =~ ^[1-9][0-9]?$ ]] || { echo "live: words of e2e_live.mjs; times: 1 to 99"; exit 2; }
+          failed=0
+          for i in $(seq "$TIMES"); do
+            if node web/test/e2e_live.mjs $LIVE > "$RUNNER_TEMP/live.log" 2>&1; then said=PASS; else said=FAIL; failed=$((failed + 1)); fi
+            echo "::group::$i of $TIMES: $said"; cat "$RUNNER_TEMP/live.log"; echo "::endgroup::"
+            grep -E '^FAIL ' "$RUNNER_TEMP/live.log" | sed "s/^/run $i: /" || true
+          done
+          echo "$failed of $TIMES failed"
+          [ "$failed" = 0 ]
+
       - name: Security checks
+        if: inputs.live == ''
         run: bash scripts/security_check.sh
 
       # a kill here with no cap hit of this job's own came from the group above it, shared with the
