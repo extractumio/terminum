@@ -324,21 +324,26 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
             }
             Ok(())
         }
-        "enable" | "files-remove" => {
-            let (app, name, remove) = (app.clone(), name.to_string(), action == "files-remove");
-            to_its_end(async move { if remove { consent::remove(&app, &name).await } else { consent::enable(&app, &name).await } }).await
-        }
+        "enable" => consent::enable(app, name).await,
+        "files-remove" => consent::remove(app, name).await,
         // Not now just after an enable recorded "enabled": the connection it started closes
         "decline" => consent::decide(app, name, Some("declined")).map(|was| if was { link::changed(app, name) }),
         _ => Err(format!("unknown host action: {action}")),
     }
 }
 
-/// `work`, an operation asked by a request (the CLI, a page), run to its end also when that
-/// request goes while it waits for the host's turn (turns.rs) or runs: an off is not lost, and
-/// the CLI's "it may still be working" holds.
+/// `work`, an operation at a host's helper, run to its end also when whoever asked goes (the
+/// CLI gave up waiting, a page closed, the host's connection was replaced) while it waits for
+/// the host's turn (turns.rs) or runs: an off is not lost, and the CLI's "it may still be
+/// working" holds.
 async fn to_its_end<T: Send + 'static>(work: impl std::future::Future<Output = Result<T, String>> + Send + 'static) -> Result<T, String> {
     tokio::spawn(work).await.map_err(|e| format!("the operation ended early: {e}"))?
+}
+
+/// Whether the host's record says its helper is in use: by Files (enabled, or ticked for it by
+/// an older terminum) or by its agents. Judged in the host's turn (turns.rs) before a removal.
+fn helper_used(rec: &Value) -> bool {
+    matches!(rec["files"].as_str(), Some("enabled" | "wanted")) || rec["agents"].as_str() == Some("enabled")
 }
 
 /// Records the build of a host's helper.

@@ -416,7 +416,7 @@ pub fn reconcile(app: &Shared, host: &str) {
         _ if super::link::wanted(app, host) => tokio::spawn(keep(shared, name)),
         // no decision of the user's yet: set up by itself, once per attach (AC-83)
         None | Some("wanted") if attached && !failed => tokio::spawn(async move {
-            // `enable` ends by stopping this host's task, which is this one: nothing awaits after it
+            // `enable` runs in a task of its own and ends by stopping this one
             if let Err(e) = super::consent::enable(&shared, &name).await {
                 tracing::warn!(event = "agent.enable_failed", host = name, why = e);
                 // the host removed, Not now or Remove meanwhile, or a later click's enable runs

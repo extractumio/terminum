@@ -42,11 +42,6 @@ pub fn took(got: &[(String, String)]) -> bool {
     got.iter().any(|(_, r)| matches!(r.as_str(), "installed" | "needs-trust" | "skipped-own"))
 }
 
-/// Files uses the helper: it stays when agents go off.
-fn files_use_helper(rec: &Value) -> bool {
-    matches!(rec["files"].as_str(), Some("enabled" | "wanted"))
-}
-
 /// On: nothing is saved when the record changed during the ssh steps (a stale operation never
 /// writes over a newer record). Off: saved and the link closed first, so /hook and /agent stop at
 /// once; the host's entries go after that, bounded, with their own result.
@@ -75,7 +70,7 @@ pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec
     ops.save(&mut |h| {
         if let Some(r) = h.get_mut(host) {
             r["agents"] = Value::from("off");
-            keep_helper = files_use_helper(r);
+            keep_helper = super::helper_used(r);
         }
     })?;
     ops.changed();
@@ -152,7 +147,7 @@ pub fn auto(app: &Shared, host: &str) {
             let recipe = super::recipe_of(&app, &host).ok_or_else(|| format!("{host} is not attached"))?;
             let ops = Live { app: &app, host: &host, recipe };
             let got = set_with(&ops, &host, true).await;
-            if got.is_err() && !super::records(&app).get(&host).is_some_and(files_use_helper) {
+            if got.is_err() && !super::records(&app).get(&host).is_some_and(super::helper_used) {
                 let _ = ops.remove_helper().await;
             }
             got.map(Some)

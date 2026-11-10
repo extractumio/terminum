@@ -180,8 +180,8 @@ fn a_host_is_enabling_exactly_while_its_enable_runs() {
         let Start::Run(ticket, _to) = d.enable("devbox") else { panic!("none runs") };
         assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "enabling");
         assert_eq!(crate::hosts::offer(&app, "devbox")["state"], "enabling");
-        drop(Running { app: &app, host: "devbox", ticket });
-        assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "down", "also an enable stopped mid-step");
+        d.done("devbox", ticket);
+        assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "down");
         assert!(matches!(d.enable("devbox"), Start::Run(..)), "Enable can be tried again");
         root
     });
@@ -218,8 +218,8 @@ fn a_later_enable_gets_the_result_of_the_one_running() {
 }
 
 #[test]
-fn a_later_enable_hears_that_the_one_running_was_stopped() {
-    // AC-83 failure: the enable's task ended with the host's connection; no wait without end
+fn a_later_enable_hears_that_the_one_running_ended_without_a_result() {
+    // AC-83 failure: no wait without end
     run(async {
         let d = Decisions::default();
         let Start::Run(_, to) = d.enable("devbox") else { panic!("none runs") };

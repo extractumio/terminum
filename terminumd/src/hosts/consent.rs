@@ -25,7 +25,7 @@ pub(super) enum Decision {
     Remove,
 }
 
-/// Said to an Enable that joined one stopped before its end (its host's connection replaced).
+/// Said to an Enable that joined one that ended without a result.
 const STOPPED: &str = "the setup running was stopped; try again";
 
 /// An enable's result once it ended, for the Enables that joined it.
@@ -43,10 +43,15 @@ enum Start {
 
 /// A host's last decision.
 struct Last {
-    decision: Decision,
     ticket: u64,
-    /// an Enable's: where its result comes
+    /// an Enable's: where its result comes; none: a removal
     result: Option<watch::Receiver<Outcome>>,
+}
+
+impl Last {
+    fn decision(&self) -> Decision {
+        if self.result.is_some() { Decision::Enable } else { Decision::Remove }
+    }
 }
 
 #[derive(Default)]
@@ -56,9 +61,9 @@ struct Table {
 }
 
 impl Table {
-    fn issue(&mut self, host: &str, decision: Decision, result: Option<watch::Receiver<Outcome>>) -> u64 {
+    fn issue(&mut self, host: &str, result: Option<watch::Receiver<Outcome>>) -> u64 {
         self.issued += 1;
-        self.last.insert(host.to_string(), Last { decision, ticket: self.issued, result });
+        self.last.insert(host.to_string(), Last { ticket: self.issued, result });
         self.issued
     }
 }
@@ -70,22 +75,22 @@ pub struct Decisions(Mutex<Table>);
 impl Decisions {
     fn enable(&self, host: &str) -> Start {
         let mut t = self.0.lock();
-        match t.last.get(host) {
-            Some(Last { decision: Decision::Remove, .. }) => Start::Refused,
-            Some(Last { result: Some(result), .. }) => Start::Join(result.clone()),
-            _ => {
+        match t.last.get(host).map(|l| &l.result) {
+            Some(None) => Start::Refused,
+            Some(Some(result)) => Start::Join(result.clone()),
+            None => {
                 let (to, result) = watch::channel(None);
-                Start::Run(t.issue(host, Decision::Enable, Some(result)), to)
+                Start::Run(t.issue(host, Some(result)), to)
             }
         }
     }
 
     fn remove(&self, host: &str) -> u64 {
-        self.0.lock().issue(host, Decision::Remove, None)
+        self.0.lock().issue(host, None)
     }
 
     pub(super) fn is(&self, host: &str, d: Decision) -> bool {
-        self.0.lock().last.get(host).is_some_and(|l| l.decision == d)
+        self.0.lock().last.get(host).is_some_and(|l| l.decision() == d)
     }
 
     /// The operation of `ticket` ended: its decision goes, unless a later one replaced it;
@@ -99,23 +104,21 @@ impl Decisions {
         last
     }
 
-    /// Not now, a removal without the helper's, Files unticked, the host removed: whatever runs
+    /// Not now, the host removed: whatever runs
     /// stops at its next step.
     pub(super) fn withdraw(&self, host: &str) {
         self.0.lock().last.remove(host);
     }
 }
 
-/// Not now (or a removal while agents keep the helper) recorded as the host's last decision;
-/// whether Files was enabled.
+/// `files` recorded as the host's last decision (Not now); whether Files was enabled.
 fn record(decisions: &Decisions, h: &mut Map<String, Value>, host: &str, files: Option<&str>) -> bool {
     let Some(r) = h.get_mut(host) else { return false };
     decisions.withdraw(host);
     std::mem::replace(&mut r["files"], files.map_or(Value::Null, Value::from)) == "enabled"
 }
 
-/// Records `files` for `host` (Not now, or Files removed while agents keep the helper); whether
-/// Files was enabled.
+/// Records `files` for `host` (Not now); whether Files was enabled.
 pub fn decide(app: &Shared, host: &str, files: Option<&str>) -> Result<bool, String> {
     let mut was = false;
     super::save(app, |h| was = record(&app.hosts.decisions, h, host, files))?;
@@ -146,28 +149,25 @@ async fn enable_with(steps: &impl Steps, decisions: &Decisions, host: &str) -> R
     let platform = steps.probe().await?;
     still()?;
     steps.copy(platform).await?;
-    let result = record_after_copy(steps, host, still).await;
-    if result.is_err() {
+    let recorded = async {
+        still()?;
+        steps.trial().await?;
+        still()?;
+        let mut result = Err(format!("{host} changed while it was set up"));
+        steps.save(&mut |h| {
+            if let Some(r) = h.get_mut(host).filter(|r| r["ssh"] == Value::from(steps.recipe())) {
+                result = still().map(|()| {
+                    r["files"] = Value::from("enabled");
+                    r["helper"] = Value::from(crate::agent::AGENT_ID);
+                });
+            }
+        })?;
+        result
+    }.await;
+    if recorded.is_err() {
         steps.discard().await;
     }
-    result
-}
-
-/// An enable's steps after its copy.
-async fn record_after_copy(steps: &impl Steps, host: &str, still: impl Fn() -> Result<(), String>) -> Result<(), String> {
-    still()?;
-    steps.trial().await?;
-    still()?;
-    let mut result = Err(format!("{host} changed while it was set up"));
-    steps.save(&mut |h| {
-        if let Some(r) = h.get_mut(host).filter(|r| r["ssh"] == Value::from(steps.recipe())) {
-            result = still().map(|()| {
-                r["files"] = Value::from("enabled");
-                r["helper"] = Value::from(crate::agent::AGENT_ID);
-            });
-        }
-    })?;
-    result
+    recorded
 }
 
 /// The result of the enable running, for an Enable that joined it.
@@ -178,25 +178,15 @@ async fn joined(mut result: watch::Receiver<Outcome>) -> Result<(), String> {
     }
 }
 
-/// An enable running: its end takes its decision, so the host leaves "enabling", also when it is
-/// dropped mid-step (its task stopped with the host's connection).
-struct Running<'a> {
-    app: &'a Shared,
-    host: &'a str,
-    ticket: u64,
-}
-
-impl Drop for Running<'_> {
-    fn drop(&mut self) {
-        self.app.hosts.decisions.done(self.host, self.ticket);
-        crate::lists::host_changed(self.app, self.host);
-    }
-}
-
 /// Enable (AC-83), in the host's turn at its helper: the platform, the copy, a first connection;
 /// then "files": "enabled", unless a later decision came, and its agents by themselves (AC-99).
-/// An Enable while one runs joins it and gets its result.
+/// An Enable while one runs joins it and gets its result. It runs to its end whoever asked goes.
 pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
+    let (app, host) = (app.clone(), host.to_string());
+    super::to_its_end(async move { enable_now(&app, &host).await }).await
+}
+
+async fn enable_now(app: &Shared, host: &str) -> Result<(), String> {
     if app.tmux.host(host).is_some_and(|s| matches!(*s.status.lock(), crate::tmux::server::Status::Off)) {
         return Err(format!("Could not enable {host}: it is off; turn it on first"));
     }
@@ -211,13 +201,13 @@ pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
         Start::Refused => return Err(format!("Could not enable {host}: its helper is being removed; try again when that ends")),
     };
     crate::lists::host_changed(app, host);
-    let running = Running { app, host, ticket };
     let result = app.helper_turns.hold(host, async {
         // read in its turn: an earlier operation may have changed the record
         let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
         enable_with(&Live { app, host, recipe }, decisions, host).await
     }).await.map_err(|e| format!("Could not enable {host}: {e}"));
-    drop(running);
+    decisions.done(host, ticket);
+    crate::lists::host_changed(app, host);
     if result.is_ok() {
         super::tunnel::stop(app, host); // an agents-only connection restarts with Files
         super::tunnel::reconcile(app, host);
@@ -249,7 +239,7 @@ impl Steps for Live<'_> {
         super::save(self.app, f)
     }
     async fn discard(&self) {
-        let used = super::link::wanted(self.app, self.host) || super::files_state(self.app, self.host).as_deref() == Some("enabled");
+        let used = super::records(self.app).get(self.host).is_some_and(super::helper_used);
         if !used && let Err(why) = super::tunnel::remove_helper(&self.recipe).await {
             tracing::warn!(event = "agent.discard_failed", host = self.host, why);
         }
@@ -262,8 +252,13 @@ impl Steps for Live<'_> {
 /// "Remove helper from <host>" (AC-83), in the host's turn at its helper: while agents are on
 /// they keep the helper and only Files goes; else no connection starts while it is removed. At
 /// its end "files" is "declined", so nothing sets it up again by itself, unless a later decision
-/// came; when it fails, Files stays enabled and connects again.
+/// came; when it fails, Files stays enabled and connects again. It runs to its end whoever asked goes.
 pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
+    let (app, host) = (app.clone(), host.to_string());
+    super::to_its_end(async move { remove_now(&app, &host).await }).await
+}
+
+async fn remove_now(app: &Shared, host: &str) -> Result<(), String> {
     let decisions = &app.hosts.decisions;
     let ticket = decisions.remove(host);
     let result = app.helper_turns.hold(host, async {

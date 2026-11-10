@@ -27,36 +27,31 @@ struct Turn {
     stop: Notify,
 }
 
-/// How an operation takes its turn.
-#[derive(Clone, Copy, PartialEq)]
-enum Way {
-    /// stops the agents' operation running or waiting, and is stopped by a later one
-    TakeOver,
-    /// leaves the one running be; a later [`Way::TakeOver`] stops it
-    After,
-    /// leaves the one running be and is never stopped
-    Hold,
-}
-
 impl Turns {
     /// An agents on or off, `work`, in `host`'s turn: the last asked wins. It stops the agents'
     /// operation running (dropped mid-step, its ssh killed) and goes after it, so an off given
     /// during a long on is never written over by that on's late save, nor its removal raced by
     /// that on's install.
     pub(super) async fn run<T>(&self, host: &str, work: impl Future<Output = Result<T, String>>) -> Result<T, String> {
-        self.turn(host, Way::TakeOver, work).await
+        self.turn(host, true, work).await
     }
 
     /// `work` in `host`'s turn after the one running, which it leaves be (the agents' setup by
     /// itself, their refresh); a later [`Turns::run`] stops it all the same.
     pub(super) async fn after<T>(&self, host: &str, work: impl Future<Output = Result<T, String>>) -> Result<T, String> {
-        self.turn(host, Way::After, work).await
+        self.turn(host, false, work).await
     }
 
     /// `work` in `host`'s turn after the one running, and never stopped by a later one, which
     /// waits for it: Files' enable and removal, the helper's update.
     pub(super) async fn hold<T>(&self, host: &str, work: impl Future<Output = Result<T, String>>) -> Result<T, String> {
-        self.turn(host, Way::Hold, work).await
+        let turn = self.of(host);
+        let _running = turn.running.lock().await;
+        work.await
+    }
+
+    fn of(&self, host: &str) -> Arc<Turn> {
+        self.0.lock().entry(host.to_string()).or_default().clone()
     }
 
     /// Whether an operation of `host` runs or waits now.
@@ -64,9 +59,10 @@ impl Turns {
         self.0.lock().get(host).is_some_and(|t| t.running.try_lock().is_err())
     }
 
-    async fn turn<T>(&self, host: &str, way: Way, work: impl Future<Output = Result<T, String>>) -> Result<T, String> {
-        let turn = self.0.lock().entry(host.to_string()).or_default().clone();
-        let mine = if way == Way::TakeOver {
+    /// `work` in `host`'s turn, stopped by a later one that takes over.
+    async fn turn<T>(&self, host: &str, take_over: bool, work: impl Future<Output = Result<T, String>>) -> Result<T, String> {
+        let turn = self.of(host);
+        let mine = if take_over {
             let mine = turn.asked.fetch_add(1, Ordering::SeqCst) + 1;
             turn.stop.notify_waiters();
             mine
@@ -74,9 +70,6 @@ impl Turns {
             turn.asked.load(Ordering::SeqCst)
         };
         let _running = turn.running.lock().await;
-        if way == Way::Hold {
-            return work.await;
-        }
         let stopped = async {
             loop {
                 let woke = turn.stop.notified();

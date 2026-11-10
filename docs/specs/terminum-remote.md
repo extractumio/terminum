@@ -178,7 +178,7 @@ Scenario: AC-83 edge — a later decision while enabling or removing
   Then the later decision stands: the enable takes no step after it, "enabled" is never written over it, and no connection starts; Files says "Could not enable devbox: Not now or Remove came for this host meanwhile; nothing was recorded"
   When Enable comes again before the enable ends
   Then that click is the last decision, and the enable running goes on to "enabled"
-  And an Enable that comes while one runs starts no second copy and answers with that enable's result, its failure too, never before it ends; when the enable running is stopped with devbox's connection it says "the setup running was stopped; try again"
+  And an Enable that comes while one runs starts no second copy and answers with that enable's result, its failure too, never before it ends
   When a removal of the helper runs
   Then no connection to devbox starts until it ends, Enable says "Could not enable devbox: its helper is being removed; try again when that ends"; if the removal fails, its message is shown, "files" stays "enabled" and the connection returns
   When Not now comes just after an enable recorded "enabled"
@@ -190,7 +190,7 @@ Scenario: AC-83 edge — one operation at a host's helper at a time
   Then it waits for the one running and runs after it, in the order asked, so no copy meets a removal on devbox; other hosts' run beside it
   And Files' enable, Files' removal and the helper's update are never stopped by a later one; among agents' on and off the last asked wins (AC-99)
   And each judges who else uses the helper in its turn: a removal of Files leaves the helper while agents are on and records "declined" only, an agents off leaves it while Files is enabled; so the helper is never gone with Files or agents on, nor left with both off
-  And an operation asked by "terminum hosts" or a page runs to its end also when that command gave up waiting or that page closed meanwhile: an off waiting for its turn is not lost
+  And an operation asked by "terminum hosts" or a page runs to its end also when that command gave up waiting or that page closed meanwhile, and the setup by itself when devbox's connection is replaced: an off waiting for its turn is not lost
 
 Scenario: AC-83 failure — the host cannot take it
   When ssh fails, the platform has no agent in the package, the copy or the probe times out

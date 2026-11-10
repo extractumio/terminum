@@ -50,7 +50,7 @@ async fn the_last_asked_wins_and_one_waiting_meanwhile_never_runs() {
 #[tokio::test]
 async fn one_waiting_when_a_later_one_is_asked_never_begins() {
     let (turns, log) = (Arc::new(Turns::default()), Arc::new(Mutex::new(Vec::new())));
-    let turn = turns.0.lock().entry("devbox".into()).or_default().clone();
+    let turn = turns.of("devbox");
     let ending = turn.running.lock().await;                     // a turn still ending
     let ask = |name| { let (turns, log) = (turns.clone(), log.clone()); tokio::spawn(async move { turns.run("devbox", step(&log, name, 10)).await }) };
     let off = ask("off");
