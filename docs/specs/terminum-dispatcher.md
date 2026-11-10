@@ -288,6 +288,8 @@ Scenario: AC-123 happy path — an hour of nothing
 Scenario: AC-123 edge — a running tool is activity
   Given a tool started with no end yet (`gh run watch`, a remote build) or a counted subagent
   Then no idle clock runs, bounded by the budget when one is set
+  Given the agent's turn is over and Claude Code's foot says its background shells still run ("· 2 shells")
+  Then that is activity too: no request, no WAIT FOR HUMAN and no closing while they run (its checks, a landing)
 
 Scenario: AC-123 happy path — the session ends cleanly
   When the window command records exit 0, API-12 open
@@ -1135,7 +1137,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 | Budget | 5 min to 7 days; last warning max(3%, 2 min); SIGTERM, 10 s, SIGKILL |
 | Subagent silent and idle | 10 min request; 20 min end |
 
-**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
+**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
