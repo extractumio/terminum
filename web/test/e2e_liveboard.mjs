@@ -68,6 +68,19 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click("#newtask");
   check("AC-106 the draft went with Create", await page.inputValue("#newtitle") === "");
   await page.click("#newdiscard");
+  // TODO's head: a [+] just before its count opens the same window, the draft with it
+  const plus = await page.evaluate(() => { const h = document.querySelector('.col[data-status="TODO"] .colhead'), b = h.querySelector("button.new"), c = h.querySelector(".count");
+    return { order: [...h.children].map((e) => e.className || e.tagName).join(), label: b?.getAttribute("aria-label"), others: document.querySelectorAll(".colhead .new").length,
+      right: Math.round(c.getBoundingClientRect().left - b.getBoundingClientRect().right), up: Math.abs((b.getBoundingClientRect().top + b.getBoundingClientRect().bottom) - (c.getBoundingClientRect().top + c.getBoundingClientRect().bottom)) <= 2 }; });
+  check("AC-106 TODO's head holds a [+] just before its count, beside it", plus.order === ",new,count" && plus.label === "New task" && plus.right >= 0 && plus.right <= 12 && plus.up, JSON.stringify(plus));
+  check("AC-106 only TODO's head has one", plus.others === 1, String(plus.others));
+  await page.click('.col[data-status="TODO"] .colhead .new');
+  await page.waitForSelector("#newbox[open]");
+  await page.fill("#newtitle", "From the head");
+  await page.click("#newclose");
+  await page.click("#newtask");
+  check("AC-106 the head's [+] keeps the same draft as New task", await page.inputValue("#newtitle") === "From the head", await page.inputValue("#newtitle"));
+  await page.click("#newdiscard");
 
   // severity order, new on top of its own
   await make("second p2");

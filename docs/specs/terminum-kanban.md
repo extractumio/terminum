@@ -172,6 +172,11 @@ Scenario: AC-106 happy path — Run
 Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
 
+Scenario: AC-106 happy path — from TODO's head
+  Then TODO's head holds a [+] key just before its count, as the session list's group headers hold theirs
+  When the user presses it
+  Then the same window opens as New task's, the draft with it
+
 Scenario: AC-106 happy path — from a session and from a terminal's selection
   When the user picks New task in a session's menu
   Then the window opens with that session and its project
