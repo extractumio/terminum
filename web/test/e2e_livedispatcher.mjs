@@ -112,8 +112,10 @@ export async function liveDispatcher(page, opts) {
   await run(drafted);
   await hasStatus(drafted, "IN PROGRESS", 15000);
   tmux("send-keys", "-t", await paneOf(drafted), "-l", "my own words");
-  check("AC-123 a draft in the box is not typed over: the request cannot be made, FAILED at once", await said(drafted, "Dispatcher could not ask the agent for its result: its input box holds a draft.", 15000) && await status(drafted) === "FAILED", await history(drafted));
-  check("AC-123 it stands as it was", /my own words/.test(tmux("capture-pane", "-p", "-t", await paneOf(drafted))));
+  await nap(4000);                                     // past the request's 5 minutes: each walk meets the draft
+  const box = tmux("capture-pane", "-p", "-t", await paneOf(drafted));
+  check("AC-123 a draft in the box is not typed over: it stands, nothing said", /my own words/.test(box) && !/still open and you stopped/.test(box) && await status(drafted) === "IN PROGRESS", box);
+  check("AC-123 then the hour of nothing ends it", await hasStatus(drafted, "FAILED", 30000) && await said(drafted, "No activity for 60 minutes and no result from the agent."), await history(drafted));
 
   // AC-123 failures and ends
   const limited = await task("out of limits LIMIT");

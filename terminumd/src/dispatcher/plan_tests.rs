@@ -21,9 +21,9 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
     assert_eq!(step(&mut r, &up(1)), vec![Act::Nudge]);
     assert!(!r.nudged && r.nudge_turn, "`nudged` is written once it went (acts.rs)");
     assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
-    r.nudged = true;
+    (r.nudged, r.idle_for) = (true, 0);                 // as acts.rs writes it once it went
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
-    assert_eq!(moved(&step(&mut r, &up(3600 - 61))), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
+    assert_eq!(moved(&step(&mut r, &up(3600 - 31))), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
     let (to, words) = moved(&step(&mut r, &up(1))).unwrap();
     assert_eq!((to, words.as_str()), ("FAILED", "No result from the agent within an hour of Dispatcher's request."));
 }
@@ -43,7 +43,7 @@ fn ac123_activity_after_the_request_starts_its_hour_anew() {
     r.nudged = true;
     step(&mut r, &up(3000));
     step(&mut r, &Facts { active: true, ..up(30) });
-    assert_eq!(moved(&step(&mut r, &up(3899))), None, "the agent worked after the request: its hour counts from then");
+    assert_eq!(moved(&step(&mut r, &up(3599))), None, "the agent worked after the request: its hour counts from then");
     assert_eq!(moved(&step(&mut r, &up(1))).unwrap().0, "FAILED");
 }
 

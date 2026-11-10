@@ -288,9 +288,9 @@ Scenario: AC-123 happy path — a turn ended with no result
   Given a Stop, or an idle screen after a turn with no Stop (an interrupt), API-12 IN PROGRESS, and no activity (§9) for 5 minutes
   Then once per run, until a human's prompt or RUN, through the gate: "[terminum Dispatcher] API-12 is still open and you stopped. Is it finished? Call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for, or ask a human by execute_tool("ask_human", {id, questions}) what you need; with neither, it is FAILED after an hour."
   And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing; its tools are activity
-  When the request cannot be typed (its pane is not this run's, only its shell remains, a tmux mode, a draft or a question in its box)
-  Then API-12 is FAILED at once with "Dispatcher could not ask the agent for its result: <why>."; an agent in a new turn is asked once that turn ends
-  When 60 more minutes pass with no activity and no result
+  When the request cannot be typed (a tmux mode, a draft or a question in its box, a turn begun)
+  Then nothing is typed or said and a later walk asks again; the hour of nothing below ends it all the same; a session that cannot be typed into for good (its window closed, its agent ended) is FAILED at once by the scenarios below
+  When 60 minutes pass from the request with no activity and no result
   Then API-12 is FAILED with "No result from the agent within an hour of Dispatcher's request.", and terminum-kanban.md AC-117 reminds
   And activity after the request starts that hour anew: an agent that went back to work is not failed under it
   When the agent asks a human instead (ask_human)
@@ -1184,7 +1184,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 
 **Resume.** The run's own command (another agent's of its kind when dropped on it, AC-138) then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9][A-Za-z0-9-]{0,99}`, so it is no flag and no shell word: a hook's field can be posted by any process of the user or a broken host.
 
-**The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result fails it (AC-123):
+**The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result says nothing: a later walk asks again (AC-123):
 
 1. The pane's `@terminum-run` is this run's.
 2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
@@ -1202,7 +1202,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 | Walk | every 30 s; a gap over 2 minutes adds nothing to a clock |
 | Agent's box after start | 60 s; prompt taken 30 s |
 | WAIT FOR HUMAN after waiting | 2 min from the event |
-| Request after a turn without a result | 5 min, once a run; FAILED 60 min after it with no activity (65 min of quiet when work came between) |
+| Request after a turn without a result | 5 min, once a run; FAILED 60 min after it with no activity |
 | FAILED after no activity | 60 min |
 | Close after DONE or FAILED | 5 min: RUN resumes its conversation (AC-122) |
 | Archive after DONE | 2 days (`terminum-kanban.md` AC-118) |

@@ -124,8 +124,9 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     fs.writeFileSync(path.join(a.dir, "begin.json"), JSON.stringify({ session_id: "s-notes", cwd: work, hook_event_name: "SessionStart", source: "startup" }));
     await a.inPane("terminum hook claude < begin.json");
     const bare = await a.tool("finish_task", { id: t1, result: "**Fixed** it" });
-    const kept = await task(t1);
-    check("AC-123 live: a result without its sections is a comment, not a result", !bare.error && /^Not a result: it lacks Outcome, /.test(bare.text) && kept.status === "WAIT FOR HUMAN" && kept.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it"), bare.text);
+    const unfinished = await task(t1);
+    check("AC-123 live: a result without its sections is a comment, not a result", !bare.error && /^Not a result: it lacks Outcome, /.test(bare.text) && unfinished.status === "WAIT FOR HUMAN" && unfinished.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it"), bare.text);
+    // the sections as terminumd/src/tasks/closeout.rs names them (SECTIONS)
     const result = ["**Outcome:** fixed", ...["Done", "Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"].map((s) => `## ${s}\nNone`)].join("\n");
     const done = await a.tool("finish_task", { id: t1, result });
     const finished = await task(t1);

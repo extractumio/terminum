@@ -337,17 +337,6 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
     change(tx, &run.id, |r| r.state = Phase::Left)
 }
 
-/// The request for a result could not be typed: its tasks FAILED at once, with why, unless new work came since the walk
-/// decided it (AC-123).
-pub fn unasked(tx: &Transaction, id: &str, why: &str) -> Result<(), String> {
-    let run = by_id(tx, id)?;
-    if run.status != "IN PROGRESS" || run.nudged || !run.nudge_turn {
-        return Ok(());
-    }
-    change(tx, id, |r| r.nudge_turn = false)?;
-    super::move_task(tx, &run, "FAILED", &format!("Dispatcher could not ask the agent for its result: {why}."))
-}
-
 /// A run that still holds `task` open: its session stays until it ends, or the human gives up (AC-138).
 pub fn holding(tx: &Transaction, task: &str) -> Result<Option<Run>, String> {
     Ok(last_of(tx, task)?.filter(Run::busy))

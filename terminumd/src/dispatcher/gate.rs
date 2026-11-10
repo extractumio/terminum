@@ -31,15 +31,6 @@ impl std::fmt::Display for Miss {
     }
 }
 
-impl Miss {
-    /// The agent is in a turn: words wait for its end.
-    pub fn working(&self) -> bool {
-        matches!(self, Miss::Other(why) if why == WORKING)
-    }
-}
-
-const WORKING: &str = "the agent is working";
-
 fn other(why: impl Into<String>) -> Miss {
     Miss::Other(why.into())
 }
@@ -82,7 +73,7 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
     }
     let key = server.key(pane);
     if !first && (!run.turn_ended || app.hooks.working(&key)) {
-        return Err(other(WORKING));
+        return Err(other("the agent is working"));
     }
     match read(server, pane, &run.kind).await.map_err(other)? {
         Screen::Empty => {}

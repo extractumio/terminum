@@ -243,19 +243,3 @@ fn ac131_a_runs_phase_is_one_it_knows() {
         Ok(())
     }).unwrap();
 }
-
-#[test]
-fn ac123_a_request_that_cannot_be_typed_fails_the_run_at_once_unless_new_work_came() {
-    store("runs-unasked").with(|tx| {
-        let (r, t) = working(tx, "a", &["one"]);
-        unasked(tx, &r.id, "its input box holds a draft").unwrap();
-        assert_eq!(ops::get(tx, &t[0].id).unwrap().status, "IN PROGRESS", "no request decided: nothing moves");
-        change(tx, &r.id, |r| r.nudge_turn = true).unwrap();
-        unasked(tx, &r.id, "its input box holds a draft").unwrap();
-        let history = ops::history(tx, &t[0].id).unwrap();
-        assert_eq!(ops::get(tx, &t[0].id).unwrap().status, "FAILED");
-        assert!(history.as_array().unwrap().iter().any(|e| e["text"] == "Dispatcher could not ask the agent for its result: its input box holds a draft."), "{history}");
-        assert!(!by_id(tx, &r.id).unwrap().nudge_turn);
-        Ok(())
-    }).unwrap();
-}
