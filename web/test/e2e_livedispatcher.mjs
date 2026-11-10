@@ -280,8 +280,8 @@ export async function liveDispatcher(page, opts) {
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");
   await run(closes);
-  await hasStatus(closes, "DONE", 15000);
-  check("AC-125 it closes 5 minutes after DONE", await said(closes, "Session ended: closed 5 minutes after DONE.", 40000), await history(closes));
+  await hasStatus(closes, "FAILED", 15000);
+  check("AC-125 it closes 5 minutes after FAILED", await said(closes, "Session ended: closed 5 minutes after FAILED.", 40000), await history(closes));
   check("AC-125 the card says session closed", await until(async () => (await j(`/api/tasks/${closes}`)).session?.closed === true));
   check("AC-125 with no result its screen stays on the task", (await j(`/api/tasks/${closes}`)).files.some((f) => /screen/.test(f.name)), JSON.stringify((await j(`/api/tasks/${closes}`)).files));
 
@@ -298,7 +298,7 @@ export async function liveDispatcher(page, opts) {
   await start();
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector('.col[data-status="TODO"]');
-  check("AC-131 after a restart it goes on where it was", await hasStatus(restart, "WAIT FOR HUMAN", 30000) || await status(restart) === "DONE", await history(restart));
+  check("AC-131 after a restart it goes on where it was: asked once, then FAILED an hour later (AC-123)", await hasStatus(restart, "FAILED", 30000) && await said(restart, "No result from the agent within an hour of Dispatcher's request."), await history(restart));
   tmux("kill-pane", "-t", otherPane);
   // AC-117 on the session page too, every project's
   await page.goto(`${base}/sessions/`);
