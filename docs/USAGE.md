@@ -193,7 +193,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   terminal (Enter) goes there; Resolve (or Delete) settles one, a reminder resolved and a bookmark
   deleted, with Undo for 5 seconds; Esc closes the window. The bar over the terminal has the same
   Resolve.
-- **Tasks** (Kanban among the sections, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card carries its session's row, a press opens the session, and says what became of its agent; the project key in the head chooses the project, a pencil on its row or its menu's New project… opens its window; the session page's list stands left of the columns, as wide as there, and its agents over them; drop a task on a free agent, or ⌘+press several and drop them, write a short message and press Run, or press Run in the new-task window: a task moves only by running; Dispatcher opens the window, types the task once the agent's box is empty, moves the card as the session lives and closes the session 5 minutes after it ended; a task's Budget gives the agent that many minutes, told at the start and at the end, and it is ended at the limit; a card shows its session's CPU, memory, running time and tokens, and a project's memory limits warn and end it (4 and 8 GiB unless set, `dispatcher` in settings.json or Memory limits… in its project's window); WAIT FOR HUMAN and FAILED say so in a line on both pages and in a count on Kanban; Codex needs terminum's hooks trusted in its /hooks): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
+- **Tasks** (Kanban among the sections, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card carries its session's row, a press opens the session, and says what became of its agent; the project key in the head chooses the project, a pencil on its row or its menu's New project… opens its window; the session page's list stands left of the columns, as wide as there, and its agents over them, each with two stripes of its subscription's use (below, "Subscription limits on the board"); a press on an agent opens its window: its stripes with their reset times, its tokens of 7 and 30 days, and each live session with its tasks as links, those it works on and those finished while the session stays open; drop a task on a free agent, or ⌘+press several and drop them, write a short message and press Run, or press Run in the new-task window: a task moves only by running; Dispatcher opens the window, types the task once the agent's box is empty, moves the card as the session lives and closes the session 5 minutes after it ended; a task's Budget gives the agent that many minutes, told at the start and at the end, and it is ended at the limit; a card shows its session's CPU, memory, running time and tokens, and a project's memory limits warn and end it (4 and 8 GiB unless set, `dispatcher` in settings.json or Memory limits… in its project's window); WAIT FOR HUMAN and FAILED say so in a line on both pages and in a count on Kanban; Codex needs terminum's hooks trusted in its /hooks): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
   FAILED and DONE, with a severity, an owner, a project, Markdown comments and files; + Task
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
@@ -321,6 +321,27 @@ where it is:
   turn's length), terminum asks it once through the hook's answer (Claude Code: a synchronous
   PostToolBatch hook; Codex: its PostToolUse); nothing is typed into the pane, and an idle,
   waiting or finished plan is never reminded.
+
+### Subscription limits on the board
+
+Each agent over the board's columns shows two stripes: how much of its subscription's five-hour
+window and week is used, as the last session of its kind said it, one reading for every agent of
+that kind. "not known": none said it since terminumd started; "reset": the window started anew
+since; "none reported": the account has no such window (a Codex plan with a week alone); faded:
+read over an hour ago. 90% or more is drawn in the danger color. Its window says when each resets.
+
+- **Codex** says its limits in its session log: terminum's hook reads them at each turn's end.
+- **Claude Code** says them only to its status line. terminum never edits Claude Code's settings,
+  so add it yourself in `~/.claude/settings.json`; your own status line command, if you have one,
+  goes after it as one argument and prints as before, with the same input:
+
+  ```json
+  "statusLine": { "type": "command", "command": "terminum statusline 'your own status line command'" }
+  ```
+
+  Alone, `terminum statusline` prints "5h 34% · week 21%". It sends terminumd the percents, window
+  lengths and reset times only, and only from a pane terminum lists. An API key, Bedrock or Vertex
+  has no plan limits: nothing is sent.
 
 ### When the Plan pane is empty or wrong
 

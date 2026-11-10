@@ -17,6 +17,7 @@ pub mod usage;
 pub mod procs;
 pub mod runs;
 pub mod screen;
+pub mod subscriptions;
 mod start;
 mod walk;
 pub mod waits;
@@ -68,6 +69,8 @@ pub struct Dispatcher {
     beat: AtomicU64,
     /// the agent's session each run's last counted report was of (usage.rs `heard`); a restart learns it anew
     counted_in: Mutex<HashMap<String, String>>,
+    /// each kind's last subscription reading (AC-168)
+    pub subscriptions: subscriptions::Readings,
 }
 
 /// What is known of a watched pane beyond the store; a restart learns it anew.
