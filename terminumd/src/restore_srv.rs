@@ -293,11 +293,15 @@ fn report(app: &Shared, place: &str, m: Made) {
 /// failed with nothing back and the server is another one now).
 pub async fn users_local(app: &Shared, server: &Server) {
     let by_user = server.took_closed_by_user();
-    if !server.is_local() || !app.looks.settings.read().restore || by_user {
-        return;                                         // the user closed its last pane: it stays closed
+    if !server.is_local() || !app.looks.settings.read().restore {
+        return;
     }
     let Some(saved) = saved(app, &server.id()) else { return };
     let key = format!("{}@{}", server.id(), saved["at"]);
+    if by_user {
+        app.restore.end(&key, &Made::default(), server.epoch());   // the user closed its last pane: it stays closed
+        return;
+    }
     let Some(_one) = app.restore.turn_if_due(&key, server.epoch()).await else { return };
     users_make(app, server, &saved, &key).await;
 }
@@ -330,13 +334,18 @@ async fn users_make(app: &Shared, server: &Server, saved: &Value, key: &str) {
 /// the sessions running there.
 pub async fn host(app: &Shared, server: &Server, seen: &[(String, String)]) {
     let by_user = server.took_closed_by_user();
-    if server.is_local() || !app.looks.settings.read().restore || by_user {
-        return;                                         // the user closed its last pane and its tmux ended with it
+    if server.is_local() || !app.looks.settings.read().restore {
+        return;
     }
     let Some(saved) = saved(app, &server.id()) else { return };
     let started = started(server).await.unwrap_or(0);
     let key = format!("{}@{started}", server.id());
     if started <= saved["at"].as_i64().unwrap_or(i64::MAX) {
+        return;
+    }
+    if by_user {
+        // the user closed its last pane and its tmux ended with it: this start of it is never filled
+        app.restore.end(&key, &Made::default(), server.epoch());
         return;
     }
     let Some(_one) = app.restore.turn_if_due(&key, server.epoch()).await else { return };
