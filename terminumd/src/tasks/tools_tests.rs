@@ -337,7 +337,7 @@ fn ac166_a_task_s_end_says_what_its_session_made_and_what_its_result_names_in_va
     let said = call(&s, &dir, &w, "finish_task", json!({"id": id, "result": format!("New tasks: {left}, API-99 and API-99 again; UTF-8 and AC-125 are no tasks")})).unwrap();
     assert_eq!(said, format!("{id} is DONE, with your result. {line} {}", closeout::unknown_words(std::slice::from_ref(&"API-99".to_string()))), "one made before the task was started, and one archived since, are not its follow-ups");
     let told = |id: &str| s.with(|tx| ops::history(tx, id)).unwrap().as_array().unwrap().iter().filter(|e| e["kind"] == "told").map(|e| e["text"].as_str().unwrap().to_string()).collect::<Vec<_>>();
-    assert_eq!(told(&id), [line.clone()], "terminum's own line, under the result");
+    assert_eq!(told(&id), std::slice::from_ref(&line), "terminum's own line, under the result");
     // however it ends: a human's or Dispatcher's move says it too
     s.with(|tx| { ops::move_to(tx, HUMAN, &id, "IN PROGRESS", 1)?; ops::move_to(tx, crate::tasks::store::DISPATCHER, &id, "FAILED", 2) }).unwrap();
     assert_eq!(told(&id).len(), 2, "FAILED by Dispatcher: {:?}", told(&id));
