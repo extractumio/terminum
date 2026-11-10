@@ -173,9 +173,10 @@ Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
 
 Scenario: AC-106 happy path — from TODO's head
-  Then TODO's head holds a [+] key just before its count, as the session list's group headers hold theirs
+  Then TODO's head always shows a [+] key just before its count, in the look of the session list's group-header [+]
   When the user presses it
   Then the same window opens as New task's, the draft with it
+  And a phone, which hides the column heads, keeps New task in the board's head
 
 Scenario: AC-106 happy path — from a session and from a terminal's selection
   When the user picks New task in a session's menu
