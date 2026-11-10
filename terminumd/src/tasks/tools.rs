@@ -217,6 +217,11 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
                 ops::comment(tx, &me, id, &result, at)?;
+                // a result is there only in its sections: else its words stay a comment, the task as it was (AC-123)
+                let lacks = closeout::missing(&result, closeout::form_of(tx, &t.key)?);
+                if !lacks.is_empty() {
+                    return Ok((closeout::missing_words(id, &t.status, &lacks), vec![id.to_string()]));
+                }
                 ops::move_to(tx, &me, id, "DONE", at)?;
                 crate::dispatcher::runs::finished(tx, &t.key)?;
                 // what it leaves is on the board by terminum's word, and what it names and is not there is said (AC-166)

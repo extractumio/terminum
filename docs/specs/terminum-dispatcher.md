@@ -65,7 +65,7 @@ Open questions:
 |---|---|---|
 | AC-121 | [MUST / P0] | RUN opens a window at its project's place (AC-140), starts the chosen agent there by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
-| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` is DONE; a turn with no result gets one request per run, then WAIT FOR HUMAN as an agent's question (AC-157); an hour with no activity while IN PROGRESS is DONE, marked no result; a clean session end is DONE; a dead agent or a turn's failure is FAILED. |
+| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` with a result in its sections is DONE, one without them stays a comment; a turn with no result gets one request per run asking whether the task is finished, then an hour with no result is FAILED; an hour with no activity while IN PROGRESS is FAILED; a session that ends with no result, a dead agent or a turn's failure is FAILED; no clock makes a task DONE. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
@@ -276,20 +276,36 @@ Scenario: AC-122 failure — not Dispatcher's
 
 ```gherkin
 Scenario: AC-123 happy path — the agent says so
-  When the agent calls finish_task {id: "API-12", result}
+  When the agent calls finish_task {id: "API-12", result}, the result holding every section of its form
   Then API-12 is DONE with the result as a comment, whatever the Unread flag says (terminum-agents.md AC-93)
+  And the form is AC-166's sections, or for a schedule's task the form its firing's prompt names (terminum-schedules.md AC-162)
+  And a section is a line that starts, past Markdown's marks ("#", "*", "_", "-", "+", ">", a number with "." or ")") and spaces, with its name in any case, then the line's end, ":", "*" or "_"
+
+Scenario: AC-123 edge — DONE by a move
+  When a human, or an agent by move_task, moves API-12 of a run to DONE with no result
+  Then its card says "DONE, no result", and terminum-kanban.md AC-117 reminds
+
+Scenario: AC-123 failure — a result without its sections
+  When the agent calls finish_task {id: "API-12", result: "Fixed it."}
+  Then its words are a comment by the agent, not its result, and API-12 stays as it was: a session ended next loses no words
+  And the call answers "Not a result: it lacks Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations. Your text is kept as a comment and API-12 stays IN PROGRESS. Write each section as a line "Name:" or a heading, its name as given ("None" when empty), then call it again.", naming only the sections it lacks, so the agent writes it again in the same turn
 
 Scenario: AC-123 happy path — a turn ended with no result
   Given a Stop, or an idle screen after a turn with no Stop (an interrupt), API-12 IN PROGRESS, and no activity (§9) for 5 minutes
-  Then once per run, until a human's prompt or RUN, through the gate: "[terminum Dispatcher] API-12 is still open and you stopped. Call execute_tool("finish_task", {id, result}) with the result, or ask a human by execute_tool("ask_human", {id, questions}) what you need."
-  When 10 more minutes pass with no activity
-  Then API-12 is WAIT FOR HUMAN with "The agent stopped without a result", waiting as an agent's question does: its session closes once quiet, RUN resumes it (AC-157), and no clock moves it on
-  And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing
+  Then once per run, until a human's prompt or RUN, through the gate: "[terminum Dispatcher] API-12 is still open and you stopped. Is it finished? Call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for, or ask a human by execute_tool("ask_human", {id, questions}) what you need; with neither, it is FAILED after an hour."
+  And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing; its tools are activity
+  When the request cannot be typed (a tmux mode, a draft or a question in its box, a turn begun)
+  Then nothing is typed or said and a later walk asks again; the hour of nothing below ends it all the same; a session that cannot be typed into for good (its window closed, its agent ended) is FAILED at once by the scenarios below
+  When 60 minutes pass from the request with no activity and no result
+  Then API-12 is FAILED with "No result from the agent within an hour of Dispatcher's request.", and terminum-kanban.md AC-117 reminds
+  And activity after the request starts that hour anew: an agent that went back to work is not failed under it
+  When the agent asks a human instead (ask_human)
+  Then API-12 waits in WAIT FOR HUMAN as AC-157 says, and no clock moves it on
 
 Scenario: AC-123 happy path — an hour of nothing
   Given API-12 IN PROGRESS, no activity (§9) for 60 minutes, and the agent does not wait for an answer (AC-124)
-  Then API-12 is DONE with the comment "Dispatcher closed it: no activity for 60 minutes and no result from the agent."
-  And its card says "DONE, no result", and terminum-kanban.md AC-117 reminds
+  Then API-12 is FAILED with the comment "No activity for 60 minutes and no result from the agent.", and terminum-kanban.md AC-117 reminds
+  And a main task with its subtasks open is the same case: it is never DONE without a result
   And a task in WAIT FOR HUMAN is never moved on by a clock: it waits for the human
 
 Scenario: AC-123 edge — a running tool is activity
@@ -300,7 +316,7 @@ Scenario: AC-123 edge — a running tool is activity
 
 Scenario: AC-123 happy path — the session ends cleanly
   When the window command records exit 0, API-12 open
-  Then API-12 is DONE with the comment "The session ended without finish_task." and the "no result" mark
+  Then API-12 is FAILED with the comment "The session ended without a result.": no result can be asked for any more
   When SessionEnd comes with another reason
   Then the exit code decides at the next read: a signal's says `other` too (AS-127)
   When SessionEnd comes from /clear
@@ -961,7 +977,7 @@ Scenario: AC-166 happy path — the close-out in RUN's prompt
   Then RUN's prompt holds, before "When it is done, call execute_tool("finish_task", {id, result}) with the result.", the close-out: "Before you call execute_tool("finish_task", {id, result}), close the task out; short of time, write the result (step 3) first. The session closes minutes after the result: work left that is in no task is lost then." and three steps
   And step 1: what the agent noticed and did not do that a human would plan work for (what is left of the task's own work, a bug or gap outside its scope, a follow-up, a decision to take) gets a task, after list_tasks finds no open one on it, else a comment on that one; smaller things go into the result's Issues and discoveries
   And step 2: the agent reviews the tasks it made in this run (renamed, re-prioritized, regrouped where its work changed them); it archives one only when its work resolved it, or it made it in this run and it is no longer needed, naming the commit or task in the reason; another task that looks stale gets a comment, never a change
-  And step 3: the result "in the language named "Русский"" (the name quoted as data), plain words a newcomer reads without the session, every heading there ("None" when empty), in this order: Outcome (done, partly or not; merged, on a branch or nothing committed), Done (each change, why, where; each choice the task left open), Checked (how, on what, with what result; what was not verified), Not done (what is left names its task's ID), Needs a human, New tasks (ID and one sentence each, only tasks that exist), Tasks changed (ID and why), Issues and discoveries, Further recommendations (each one a human would plan names its task's ID)
+  And step 3: the result "in the language named "Русский"" (the name quoted as data), plain words a newcomer reads without the session, every heading there, its name as written ("None" when empty), in this order: Outcome (done, partly or not; merged, on a branch or nothing committed), Done (each change, why, where; each choice the task left open), Checked (how, on what, with what result; what was not verified), Not done (what is left names its task's ID), Needs a human, New tasks (ID and one sentence each, only tasks that exist), Tasks changed (ID and why), Issues and discoveries, Further recommendations (each one a human would plan names its task's ID)
   And the titles after Bug:, Feat: or Debt:, the texts and the comments the agent puts on the board are in Русский too; the template's headings stay as it writes them
   And the budget's words ask to leave time for the close-out (AC-126)
   And finish_task's description names the same sections, for an agent that took a task without RUN
@@ -1044,16 +1060,16 @@ stateDiagram-v2
   [*] --> TODO
   TODO --> IN_PROGRESS: RUN, prompt taken (AC-121)
   TODO --> FAILED: did not start (AC-121)
-  IN_PROGRESS --> WAIT_FOR_HUMAN: waits 2 min (AC-124), or no result for 15 min (AC-123)
+  IN_PROGRESS --> WAIT_FOR_HUMAN: waits 2 min (AC-124), ask_human (AC-157)
   WAIT_FOR_HUMAN --> IN_PROGRESS: agent goes on (AC-124), RUN (AC-122)
-  IN_PROGRESS --> DONE: finish_task, clean end, 60 min of nothing (AC-123)
-  IN_PROGRESS --> FAILED: dead or failed turn (AC-123), budget (AC-126), memory (AC-128)
+  IN_PROGRESS --> DONE: finish_task with a result (AC-123)
+  IN_PROGRESS --> FAILED: no result an hour after the request, 60 min of nothing, an end with no result, dead or failed turn (AC-123), budget (AC-126), memory (AC-128)
   DONE --> IN_PROGRESS: RUN, a human's prompt (AC-122)
   FAILED --> IN_PROGRESS: RUN, a human's prompt (AC-122)
   DONE --> ARCHIVED: 2 days (terminum-kanban.md AC-118)
 ```
 
-A wait for an answer stops the idle and budget clocks; WAIT FOR HUMAN waits for the human, its session closed when the agent asked or stopped without a result (AC-157).
+A wait for an answer stops the idle and budget clocks; WAIT FOR HUMAN waits for the human, its session closed when the agent asked (AC-157).
 
 ```mermaid
 sequenceDiagram
@@ -1096,6 +1112,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC | Gap | Evidence |
 |---|---|---|
 | AC-122 | A human's own prompt in the session of an archived task does not return it; Run does. | `terminumd/src/dispatcher/hooks.rs` |
+| AC-123 | An agent's move_task to DONE keeps no result: a task goes DONE without one that way (TERM-85). | `terminumd/src/tasks/tools.rs` |
 | AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
 | AC-131 | A restored tmux server's new pane is not followed: its run says its window was closed. | `terminumd/src/dispatcher/plan.rs` |
@@ -1134,7 +1151,7 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
   host TEXT, folder TEXT NOT NULL, pane_key TEXT, agent_session TEXT, state TEXT NOT NULL, prompt TEXT, turn_ended INTEGER NOT NULL DEFAULT 0, open_tools INTEGER NOT NULL DEFAULT 0,
   idle_for INTEGER NOT NULL DEFAULT 0, waited_for INTEGER NOT NULL DEFAULT 0, closing_for INTEGER NOT NULL DEFAULT 0, budget_used INTEGER NOT NULL DEFAULT 0,
   nudged INTEGER NOT NULL DEFAULT 0, nudge_turn INTEGER NOT NULL DEFAULT 0, warned INTEGER NOT NULL DEFAULT 0, held INTEGER NOT NULL DEFAULT 0,
-  wait_moved INTEGER NOT NULL DEFAULT 0, no_result_wait INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, again_said INTEGER NOT NULL DEFAULT 0, close_tried INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0);
+  wait_moved INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, again_said INTEGER NOT NULL DEFAULT 0, close_tried INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0);
 ```
 
 `asked` (AC-157): its agent asked a human itself (`ask_human`, `move_task` to WAIT FOR HUMAN), set in that call's transaction, cleared by its own move off it and by new work.
@@ -1207,7 +1224,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 
 **Resume.** The run's own command (another agent's of its kind when dropped on it, AC-138) then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9][A-Za-z0-9-]{0,99}`, so it is no flag and no shell word: a hook's field can be posted by any process of the user or a broken host.
 
-**The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>":
+**The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result says nothing: a later walk asks again (AC-123):
 
 1. The pane's `@terminum-run` is this run's.
 2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
@@ -1225,8 +1242,8 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 | Walk | every 30 s; a gap over 2 minutes adds nothing to a clock |
 | Agent's box after start | 60 s; prompt taken 30 s |
 | WAIT FOR HUMAN after waiting | 2 min from the event |
-| Request after a turn without a result | 5 min, once a run; WAIT FOR HUMAN 10 min later |
-| DONE after no activity | 60 min |
+| Request after a turn without a result | 5 min, once a run; FAILED 60 min after it with no activity |
+| FAILED after no activity | 60 min |
 | Close after DONE or FAILED | 5 min: RUN resumes its conversation (AC-122) |
 | Archive after DONE | 2 days (`terminum-kanban.md` AC-118) |
 | Budget | 5 min to 7 days; last warning max(3%, 2 min); SIGTERM, 10 s, SIGKILL |
@@ -1272,7 +1289,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
-- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
+- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals

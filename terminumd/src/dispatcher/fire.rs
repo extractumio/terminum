@@ -33,8 +33,8 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool) ->
         parts.push(body.to_string());
     }
     parts.push(budget_words(s.budget_seconds));
-    parts.push([&*format!("This is a scheduled run: its result is read later on the board. When it is done, call {FINISH} with the result in this form, each on its own line:"),
-                "Outcome: ok, attention or failed", "Summary: one or two sentences", "Details: what was checked or done", "For the human: what they should do, or nothing"].join("\n"));
+    let form = crate::tasks::closeout::SCHEDULED.iter().map(|(name, what)| format!("\n{name}: {what}")).collect::<String>();
+    parts.push(format!("This is a scheduled run: its result is read later on the board. When it is done, call {FINISH} with the result in this form, each on its own line:{form}"));
     parts.push(ASK.to_string());
     parts.join("\n\n")
 }

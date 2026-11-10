@@ -197,16 +197,16 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             Ok(())
         }
         Act::Nudge => {
-            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call {} with the result, or ask a human by {} what you need.", super::press::FINISH, super::press::ASK_HUMAN);
-            let sent = gate::deliver(app, &l.run, &server, &pane, &text, false).await;
-            went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
-            match sent {
-                Ok(()) => Ok(()),
-                Err(why) => {
-                    let r = l.run.clone();
-                    store(app, move |tx| say(tx, &r, &format!("Not delivered: {why}"))).await
-                }
-            }
+            let text = plan::nudge_words(&task);
+            // its hour starts once it went; a miss (a draft, a mode, a turn begun) is asked again by a later walk, and
+            // an hour of nothing ends it all the same (AC-123)
+            let mark: fn(&mut Run) = if gate::deliver(app, &l.run, &server, &pane, &text, false).await.is_ok() {
+                |r| if r.idle_for >= plan::NUDGE { (r.nudged, r.idle_for) = (true, 0) }
+            } else {
+                |r| r.nudge_turn = false
+            };
+            went(app, &l.run, mark).await;
+            Ok(())
         }
         // a session that waits for a human's answers closes only at an empty box: a draft there is someone's (AC-157)
         Act::Close { .. } if plan::asked_human(&l.run) && !matches!(gate::read(&server, &pane, &l.run.kind).await, Ok(super::screen::Screen::Empty)) => Ok(()),

@@ -14,18 +14,37 @@ fn moved(acts: &[Act]) -> Option<(&'static str, String)> {
 }
 
 #[test]
-fn ac123_a_turn_with_no_result_gets_one_request_then_a_human() {
+fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
     let mut r = run("IN PROGRESS");
     r.turn_ended = true;
     assert!(step(&mut r, &up(299)).is_empty());
     assert_eq!(step(&mut r, &up(1)), vec![Act::Nudge]);
     assert!(!r.nudged && r.nudge_turn, "`nudged` is written once it went (acts.rs)");
     assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
-    r.nudged = true;
+    (r.nudged, r.idle_for) = (true, 0);                 // as acts.rs writes it once it went
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
-    let acts = step(&mut r, &up(570));
-    assert_eq!(moved(&acts).unwrap(), ("WAIT FOR HUMAN", "The agent stopped without a result".to_string()));
-    assert!(r.no_result_wait && asked_human(&Run { agent_session: Some("c0ffee".into()), status: "WAIT FOR HUMAN".into(), ..r.clone() }), "it waits as an agent's question does: its session closes, RUN resumes it (AC-157)");
+    assert_eq!(moved(&step(&mut r, &up(3600 - 31))), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
+    let (to, words) = moved(&step(&mut r, &up(1))).unwrap();
+    assert_eq!((to, words.as_str()), ("FAILED", "No result from the agent within an hour of Dispatcher's request."));
+}
+
+#[test]
+fn ac123_the_request_asks_whether_it_is_finished_and_says_the_hour() {
+    let w = nudge_words("API-12");
+    assert!(w.starts_with("[terminum Dispatcher] API-12 is still open and you stopped. Is it finished? Call execute_tool(\"finish_task\", {id, result}) with its result in the sections"), "{w}");
+    assert!(w.contains("execute_tool(\"ask_human\", {id, questions})") && w.ends_with("it is FAILED after an hour."), "{w}");
+    assert!(!w.chars().any(char::is_control), "typed through the gate: one line, no control characters");
+}
+
+#[test]
+fn ac123_activity_after_the_request_starts_its_hour_anew() {
+    let mut r = run("IN PROGRESS");
+    r.turn_ended = true;
+    r.nudged = true;
+    step(&mut r, &up(3000));
+    step(&mut r, &Facts { active: true, ..up(30) });
+    assert_eq!(moved(&step(&mut r, &up(3599))), None, "the agent worked after the request: its hour counts from then");
+    assert_eq!(moved(&step(&mut r, &up(1))).unwrap().0, "FAILED");
 }
 
 #[test]
@@ -39,24 +58,22 @@ fn ac123_activity_starts_the_idle_clock_anew() {
 }
 
 #[test]
-fn ac123_an_hour_of_nothing_is_done_with_no_result() {
+fn ac123_an_hour_of_nothing_is_failed_never_done() {
     let mut r = run("IN PROGRESS");
-    let acts = step(&mut r, &up(3600));
-    let (to, words) = moved(&acts).unwrap();
-    assert_eq!(to, "DONE");
-    assert!(words.contains("no activity for 60 minutes"));
-    let mut waited = run("WAIT FOR HUMAN");
-    waited.no_result_wait = true;
-    assert_eq!(moved(&step(&mut waited, &up(3600))), None, "after it stopped without a result it waits for the human (AC-157)");
+    assert_eq!(moved(&step(&mut r, &up(3599))), None);
+    let (to, words) = moved(&step(&mut r, &up(1))).unwrap();
+    assert_eq!((to, words.as_str()), ("FAILED", "No activity for 60 minutes and no result from the agent."));
+    // TERM-58: a main task with its subtasks open is the same case, and a task in WAIT FOR HUMAN waits for the human
     let mut asked = run("WAIT FOR HUMAN");
-    assert_eq!(moved(&step(&mut asked, &up(3600))), None, "not a wait for an answer");
+    asked.asked = true;
+    assert_eq!(moved(&step(&mut asked, &up(7200))), None, "WAIT FOR HUMAN is never moved on by a clock");
 }
 
 #[test]
 fn ac123_the_exit_code_decides_a_clean_end_from_a_signal() {
     let mut r = run("IN PROGRESS");
     let (to, words) = moved(&step(&mut r, &Facts { exit: Some(0), alive: false, ..up(0) })).unwrap();
-    assert_eq!((to, words.as_str()), ("DONE", "The session ended without finish_task."));
+    assert_eq!((to, words.as_str()), ("FAILED", "The session ended without a result."), "no result can be asked for any more");
     assert_eq!(r.state, Phase::Gone);
     let mut r = run("IN PROGRESS");
     let (to, words) = moved(&step(&mut r, &Facts { exit: Some(143), alive: false, ..up(0) })).unwrap();
@@ -361,4 +378,13 @@ fn ac157_working_again_starts_its_quiet_anew() {
     assert_eq!(r.closing_for, 0, "its own move back");
     r.status = "WAIT FOR HUMAN".into();
     assert!(!closes(&step(&mut r, &up(30))));
+}
+
+#[test]
+fn ac123_a_request_that_never_goes_holds_no_task_past_the_hour() {
+    let mut r = run("IN PROGRESS");
+    r.turn_ended = true;
+    assert_eq!(step(&mut r, &up(300)), vec![Act::Nudge]);
+    assert_eq!(step(&mut r, &up(3299)), vec![Act::Nudge], "a new turn met it: asked again");
+    assert_eq!(moved(&step(&mut r, &up(1))).unwrap().1, "No activity for 60 minutes and no result from the agent.");
 }

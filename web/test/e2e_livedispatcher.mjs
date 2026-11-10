@@ -101,20 +101,21 @@ export async function liveDispatcher(page, opts) {
   tmux("send-keys", "-t", pane, "Down");
   check("AC-121 once answered the prompt goes in and it ends", await hasStatus(asks, "DONE", 15000), await history(asks));
 
-  // AC-123 a turn with no result: one request through the gate, then a human
+  // AC-123 a turn with no result: one request through the gate, then FAILED an hour later, never DONE
   const stops = await task("stops midway");
   await run(stops);
-  check("AC-123 a turn with no result gets one request", await until(async () => /still open and you stopped/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "WAIT FOR HUMAN", 15000));
-  check("AC-123 then WAIT FOR HUMAN", await hasStatus(stops, "WAIT FOR HUMAN", 15000) && await said(stops, "The agent stopped without a result"), await history(stops));
-  check("AC-157 stopped without a result, its session closes and it waits for the human", await said(stops, "Session closed: it waits for the human", 30000) && await status(stops) === "WAIT FOR HUMAN", await history(stops));
+  check("AC-123 a turn with no result gets one request", await until(async () => /still open and you stopped\. Is it finished\?/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "FAILED", 15000));
+  check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
 
   // AC-123 the gate never types on a draft
   const drafted = await task("a draft stands");
   await run(drafted);
   await hasStatus(drafted, "IN PROGRESS", 15000);
   tmux("send-keys", "-t", await paneOf(drafted), "-l", "my own words");
-  check("AC-123 a draft in the box is not typed over: said", await said(drafted, "Not delivered: its input box holds a draft", 15000), await history(drafted));
-  check("AC-123 it stands as it was", /my own words/.test(tmux("capture-pane", "-p", "-t", await paneOf(drafted))));
+  await nap(4000);                                     // past the request's 5 minutes: each walk meets the draft
+  const box = tmux("capture-pane", "-p", "-t", await paneOf(drafted));
+  check("AC-123 a draft in the box is not typed over: it stands, nothing said", /my own words/.test(box) && !/still open and you stopped/.test(box) && await status(drafted) === "IN PROGRESS", box);
+  check("AC-123 then the hour of nothing ends it", await hasStatus(drafted, "FAILED", 30000) && await said(drafted, "No activity for 60 minutes and no result from the agent."), await history(drafted));
 
   // AC-123 failures and ends
   const limited = await task("out of limits LIMIT");
@@ -125,10 +126,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-123 a dead agent is FAILED with its exit", await hasStatus(dying, "FAILED", 15000) && await said(dying, "The agent's process ended: exit 3."), await history(dying));
   const clean = await task("ends CLEAN");
   await run(clean);
-  check("AC-123 a clean end is DONE, no result", await hasStatus(clean, "DONE", 15000) && await said(clean, "The session ended without finish_task."), await history(clean));
-  await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(clean));
-  check("AC-123 its card says DONE, no result", await until(async () => /DONE, no result/.test(await page.textContent(card(clean))), 4000), await page.textContent(card(clean)));
+  check("AC-123 a clean end with no result is FAILED", await hasStatus(clean, "FAILED", 15000) && await said(clean, "The session ended without a result."), await history(clean));
 
   // AC-124 waits
   const waits = await task("asks ASKS");
@@ -282,8 +280,8 @@ export async function liveDispatcher(page, opts) {
   // AC-125 closing, with the screen kept when there is no result
   const closes = await task("closes CLEAN");
   await run(closes);
-  await hasStatus(closes, "DONE", 15000);
-  check("AC-125 it closes 5 minutes after DONE", await said(closes, "Session ended: closed 5 minutes after DONE.", 40000), await history(closes));
+  await hasStatus(closes, "FAILED", 15000);
+  check("AC-125 it closes 5 minutes after FAILED", await said(closes, "Session ended: closed 5 minutes after FAILED.", 40000), await history(closes));
   check("AC-125 the card says session closed", await until(async () => (await j(`/api/tasks/${closes}`)).session?.closed === true));
   check("AC-125 with no result its screen stays on the task", (await j(`/api/tasks/${closes}`)).files.some((f) => /screen/.test(f.name)), JSON.stringify((await j(`/api/tasks/${closes}`)).files));
 
@@ -300,7 +298,7 @@ export async function liveDispatcher(page, opts) {
   await start();
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector('.col[data-status="TODO"]');
-  check("AC-131 after a restart it goes on where it was", await hasStatus(restart, "WAIT FOR HUMAN", 30000) || await status(restart) === "DONE", await history(restart));
+  check("AC-131 after a restart it goes on where it was: asked once, then FAILED an hour later (AC-123)", await hasStatus(restart, "FAILED", 30000) && await said(restart, "No result from the agent within an hour of Dispatcher's request."), await history(restart));
   tmux("kill-pane", "-t", otherPane);
   // AC-117 on the session page too, every project's
   await page.goto(`${base}/sessions/`);
@@ -328,7 +326,7 @@ export async function liveDispatcherReal(page, opts) {
   const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
-  const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
+  const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result in its sections, Outcome: ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
   // a folder it does not know: Dispatcher waits for the human's answer, which leaves that folder's trust entry in ~/.claude.json
@@ -354,7 +352,7 @@ export async function liveDispatcherReal(page, opts) {
   opts.tmux("send-keys", "-t", pane, "Enter");
   check("AC-123 real Claude Code: /exit records its exit code", await until(() => opts.tmux("display", "-p", "-t", pane, "#{@terminum-exit}").trim() === "0", 30000), opts.tmux("display", "-p", "-t", pane, "#{@terminum-exit}"));
   await nap(2000);
-  const again = await j(`/api/tasks/${t}/run`, "POST", { comment: "Reply with the word ok again, then call finish_task with the result ok again" });
+  const again = await j(`/api/tasks/${t}/run`, "POST", { comment: "Reply with the word ok again, then call finish_task with the result in its sections, Outcome: ok again" });
   check("AC-122 real Claude Code: the resume starts in its pane", !!again.run, JSON.stringify(again));
   check("AC-122 real Claude Code: the conversation goes on: the agent took it again", await until(async () => (await history(t)).split("The agent took it.").length === 3, 90000), await history(t));
   check("AC-122 real Claude Code: and it ends", await hasStatus(t, "DONE", 180000), await history(t));

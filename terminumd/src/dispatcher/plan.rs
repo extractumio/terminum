@@ -6,10 +6,9 @@ use super::runs::{Phase, Run};
 
 /// WAIT FOR HUMAN after an agent's question stands this long.
 pub const WAIT: i64 = 120;
-/// The request after a turn with no result, and WAIT FOR HUMAN this long after it.
+/// The request after a turn with no result.
 pub const NUDGE: i64 = 300;
-pub const AFTER_NUDGE: i64 = 600;
-/// DONE, marked no result, after this long with no activity.
+/// FAILED, with no result, after this long with no activity: counted from that request once it went.
 pub const NOTHING: i64 = 3600;
 /// A session closes this long after DONE or FAILED.
 pub const CLOSE: i64 = 300;
@@ -87,6 +86,11 @@ pub enum Act {
     Close { words: String, keep: bool },
 }
 
+/// The one request for a result (AC-123): fixed words and the task's ID, typed through the gate (§9).
+pub fn nudge_words(task: &str) -> String {
+    format!("[terminum Dispatcher] {task} is still open and you stopped. Is it finished? Call {} with its result in the sections you were asked for, or ask a human by {} what you need; with neither, it is FAILED after an hour.", super::press::FINISH, super::press::ASK_HUMAN)
+}
+
 /// When the last warning goes: 3% of the budget left, at least 2 minutes (AC-126).
 pub fn warn_at(total: i64) -> i64 {
     (total * 3 / 100).max(120)
@@ -142,11 +146,9 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
             None => "no exit recorded".to_string(),
         };
         if movable {
-            if f.exit == Some(0) {
-                acts.push(Act::Move { to: "DONE", words: "The session ended without finish_task.".into() });
-            } else {
-                acts.push(Act::Move { to: "FAILED", words: format!("The agent's process ended: {how}.") });
-            }
+            // no result can be asked for any more (AC-123)
+            let words = if f.exit == Some(0) { "The session ended without a result.".to_string() } else { format!("The agent's process ended: {how}.") };
+            acts.push(Act::Move { to: "FAILED", words });
         } else {
             acts.push(Act::Say(format!("Session ended: {} ended, {how}.", run.kind)));
         }
@@ -183,20 +185,16 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     } else if f.waiting.is_none() {
         run.idle_for += f.dt;
     }
-    if alive && f.waiting.is_none() {
-        if run.status == "IN PROGRESS" && run.turn_ended {
-            // `nudged` is written once it went (acts.rs): a restart before then asks again
-            if run.idle_for >= NUDGE && !run.nudged {
-                run.nudge_turn = true;
-                acts.push(Act::Nudge);
-            } else if run.nudged && run.idle_for >= NUDGE + AFTER_NUDGE {
-                // it waits for the human as an agent's question does: its session closes, RUN resumes it (AC-157)
-                run.no_result_wait = true;
-                acts.push(Act::Move { to: "WAIT FOR HUMAN", words: "The agent stopped without a result".into() });
-            }
-        }
-        if run.status == "IN PROGRESS" && run.idle_for >= NOTHING {
-            acts.push(Act::Move { to: "DONE", words: "Dispatcher closed it: no activity for 60 minutes and no result from the agent.".into() });
+    // no result: one request once its turn is over, then an hour of nothing is FAILED, never DONE (AC-123)
+    if alive && f.waiting.is_none() && run.status == "IN PROGRESS" {
+        // the hour first, so a request that keeps missing never holds a task open; once the request went, `nudged` is
+        // written and the hour counts from it (acts.rs): a restart before then asks again
+        if run.idle_for >= NOTHING {
+            let words = if run.nudged { "No result from the agent within an hour of Dispatcher's request." } else { "No activity for 60 minutes and no result from the agent." };
+            acts.push(Act::Move { to: "FAILED", words: words.into() });
+        } else if run.turn_ended && run.idle_for >= NUDGE && !run.nudged {
+            run.nudge_turn = true;
+            acts.push(Act::Nudge);
         }
     }
     // the agent asked a human itself (ask_human, move_task): once its turn is over and quiet, the session
@@ -270,7 +268,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
 /// Whether its tasks wait for a human by the agent's own word, in a session whose conversation is known: closing it
 /// loses nothing RUN cannot resume (AC-157).
 pub fn asked_human(run: &Run) -> bool {
-    (run.asked || run.no_result_wait) && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
+    run.asked && run.status == "WAIT FOR HUMAN" && run.state == Phase::Working && !run.ad_hoc() && run.agent_session.is_some()
 }
 
 /// Whether a close of either kind may come once `dt` more passes: then the walk reads whether another task of
