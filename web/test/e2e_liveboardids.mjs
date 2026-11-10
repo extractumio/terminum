@@ -60,7 +60,8 @@ export async function liveBoardIds(page, opts) {
     kids.push(id);
   }
   await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(`${card(parent)} .cboxes`, { timeout: 8000 });
+  await page.waitForSelector(`${card(parent)} .cboxes`, { state: "attached", timeout: 8000 });
+  await page.click(`${card(parent)} .ctitle`);      // a folded TODO card shown whole (terminum-kanban.md AC-159)
   const boxes = await page.$$eval(`${card(parent)} .cboxes .stbox`, (b) => b.map((x) => [x.textContent, getComputedStyle(x).backgroundColor, x.getAttribute("aria-label")]));
   check("AC-112 a box for each subtask, in the order made, saying its ID", JSON.stringify(boxes.map((b) => b[0])) === JSON.stringify(kids), JSON.stringify(boxes));
   check("AC-112 each status its own color", new Set(boxes.map((b) => b[1])).size === 5, JSON.stringify(boxes.map((b) => b[1])));

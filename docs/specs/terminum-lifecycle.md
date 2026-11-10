@@ -198,6 +198,10 @@ Scenario: AC-15 edge — what is never stored
 Scenario: AC-15 failure — a session cannot be made
   When "new-session" fails (tmux missing, a bad name)
   Then the report names it, the other sessions are restored, and "Restore again" in the page's menu retries once
+  And "Restore again" covers every server the checkpoint names that answers (terminum's, a host, the user's own tmux), sessions that run kept, one restore at a time (two asked at once make each session once); a host's `terminum` session takes its windows only while its own restore is owed
+  When a host's or the user's own tmux's restore fails with nothing made (its link dropped meanwhile)
+  Then its checkpoint is kept, and it is made again by itself once its link is a new one, else by "Restore again"; one that made some is not made again by itself
+  And a report that cannot be written to the state folder says so among its errors
   And a failed checkpoint write is retried on the next checkpoint even when the layout has not changed
   And restored window names and folders containing "#S" or "#{session_name}" stay literal through both local commands and host control clients
 ```
@@ -806,7 +810,7 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-08 — `scripts/e2e_install.sh`; `scripts/e2e_core.py`; `cargo test cli::tests` (`install_tests`, `launch_tests`, `systemd_tests`, `folders_tests`, `upgrade_tests`); `cargo test folders`; `scripts/tests/test_package.py`; `terminumd/tests/launchd.rs` (opt-in, `TM_LAUNCHD_TEST=1`)
 - [x] AC-14 — `scripts/e2e_core.py`; `web/test/e2e_live.mjs`; `terminumd/tests/launchd.rs` (opt-in); `cargo test tmux::control`
-- [x] AC-15 — `scripts/e2e_restore.py`; `cargo test restore_srv`; `web/test/e2e_tmux.mjs`
+- [x] AC-15 — `scripts/e2e_restore.py` (Restore again on the user's own tmux, twice at once); `cargo test restore` (a failed restore retried on another link); `web/test/e2e_tmux.mjs`
 - [x] AC-16 — `scripts/e2e_install.sh`; `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`

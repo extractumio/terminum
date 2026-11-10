@@ -4,6 +4,7 @@ import * as signin from "./signin.js";
 import { PROJECT_HUES, el, hueColor, iconButton } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
+import { askConfirm } from "./dialogs.js";
 
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
@@ -170,4 +171,27 @@ export async function renderInto(box, text) {
 /** 1,234 as 1.2k, 4,800,000 as 4.8M. */
 export function countOf(n) {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1).replace(/\.0$/, "")}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1).replace(/\.0$/, "")}k` : String(n);
+}
+
+/** A text's Write and Preview keys (`${prefix}write`, `${prefix}preview`) over its area and its rendered Markdown; the view. */
+export function writePreview(prefix, area, shown) {
+  const view = (preview) => {
+    $(`${prefix}write`).setAttribute("aria-selected", String(!preview));
+    $(`${prefix}preview`).setAttribute("aria-selected", String(preview));
+    area.hidden = preview;
+    shown.hidden = !preview;
+    if (preview) renderInto(shown, area.value);
+  };
+  $(`${prefix}write`).addEventListener("click", () => view(false));
+  $(`${prefix}preview`).addEventListener("click", () => view(true));
+  return view;
+}
+
+/** What was typed is not lost by a slip of Esc or ×: with a change, the window asks first (terminum-kanban.md AC-133). */
+export function guardCancel(dialog, unchanged) {
+  dialog.addEventListener("cancel", async (e) => {
+    if (e.defaultPrevented || unchanged()) return;   // refused while it is kept (dialogs.js oneAtATime, AC-165)
+    e.preventDefault();
+    if (await askConfirm("Discard what you typed?", "Discard")) dialog.close();
+  });
 }

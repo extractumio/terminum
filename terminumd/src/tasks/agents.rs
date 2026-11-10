@@ -178,6 +178,12 @@ fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
 
 fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     given.fits(tx, id)?;
+    // its schedules keep their slots (terminum-schedules.md AC-161)
+    let kept = super::schedules::kept_on(tx, id, None)?;
+    if kept.len() as i64 > given.at_once {
+        let n = kept.len();
+        return Err(format!("{} keeps {n} slot{} for {}: at once is at least {n}.", given.name, if n == 1 { "" } else { "s" }, kept.join(", ")));
+    }
     // what it wrote stays under its name, the new one (AC-137)
     tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(id), &given.name)).map_err(sql)?;
     match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6, week_limit = ?7, month_limit = ?8 WHERE id = ?1",
@@ -188,6 +194,11 @@ fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
 }
 
 fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
+    let runs_them: Vec<String> = rows(tx, "SELECT 'SCH-' || number FROM schedules WHERE agent_id = ?1 AND deleted_at IS NULL ORDER BY number", [id], |r| r.get(0))?;
+    if !runs_them.is_empty() {
+        let name = by_id(tx, id)?.map_or_else(|| id.to_string(), |a| a.name);
+        return Err(format!("{name} runs schedules {}: give them another agent first.", runs_them.join(", ")));
+    }
     if let Some(run) = crate::dispatcher::runs::holding_agent(tx, id)? {
         return Err(format!("{} has a session open: {}. Close it, or Give up, first.", run.agent_name, run.names()));
     }

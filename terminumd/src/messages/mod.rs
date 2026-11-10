@@ -40,8 +40,9 @@ pub struct Message {
 
 /// How a turn a coding agent writes into its own conversation begins, which its hook speaks as
 /// a prompt though no one typed it: Claude Code's notice that a background task ended, another
-/// session's or agent's message, a delivery notice (AC-90). Never kept.
-const INJECTED: [&str; 4] = ["<task-notification>", "<cross-session-message", "<agent-message", "[Cross-session "];
+/// session's or agent's message, a delivery notice, a status check the agent scheduled itself
+/// (AC-90). Never kept.
+const INJECTED: [&str; 5] = ["<task-notification>", "<cross-session-message", "<agent-message", "[Cross-session ", "[status timer]"];
 
 /// Whether a coding agent's prompt is one of its own turns (`INJECTED`), not a human's or Dispatcher's.
 pub fn injected(text: &str) -> bool {

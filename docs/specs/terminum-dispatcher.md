@@ -27,7 +27,7 @@ In scope:
 - Time budgets, warnings and ending; subagents; CPU, memory and tokens; local and remote hosts.
 
 Out of scope (explicit):
-- Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit waits for its room (AC-158): the press is the human's.
+- Starting a task with no human's press, automatic restarts: refused by the owner. A human's RUN at a slot's limit waits for its room (AC-158): the press is the human's. A human's schedule is a standing press: its tasks start on their cadence (`terminum-schedules.md`).
 - Choosing an agent's permissions: its command, as the operator writes it, carries them (AC-156).
 - Tasks, the board and the agent's tools: `terminum-kanban.md`.
 - Any act on a session Dispatcher did not start, other than writing its start and end on the task.
@@ -288,6 +288,8 @@ Scenario: AC-123 happy path — an hour of nothing
 Scenario: AC-123 edge — a running tool is activity
   Given a tool started with no end yet (`gh run watch`, a remote build) or a counted subagent
   Then no idle clock runs, bounded by the budget when one is set
+  Given the agent's turn is over and Claude Code's foot says its background shells still run ("· 2 shells")
+  Then that is activity too: no request, no WAIT FOR HUMAN and no closing while they run (its checks, a landing)
 
 Scenario: AC-123 happy path — the session ends cleanly
   When the window command records exit 0, API-12 open
@@ -556,6 +558,7 @@ Scenario: AC-130 failure — hooks missing there
 Scenario: AC-138 happy path — over the board
   Given a pool of Opus reviewer (Claude Code, high), Fast fixer (Claude Code) and Codex (Codex, low)
   Then three rectangles stand over the columns, each in its color, with its name, kind, effort, its week and month (AC-143) and one dot per live session
+  And each is a column wide, on the columns' own tracks: four to a row, the fifth track holding + Agent; a fifth agent starts the next row; a phone keeps one row that scrolls
 
 Scenario: AC-138 happy path — its dots
   Given Opus reviewer with API-12's session working and API-14's waiting at its input box
@@ -914,6 +917,7 @@ Scenario: AC-131 edge — a sleeping Mac
   Given API-12 with 30 of 60 budget minutes used and a Mac asleep for 8 hours
   When it wakes
   Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and API-12 says once "Clocks paused 480 minutes: no walk saw them pass"
+  And a schedule's due time is the wall clock's: what it missed comes once on wake (terminum-schedules.md AC-162)
   And the same holds for a stopped terminumd and a lost link
 
 Scenario: AC-131 edge — a walk and a window opening
@@ -1136,7 +1140,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 | Budget | 5 min to 7 days; last warning max(3%, 2 min); SIGTERM, 10 s, SIGKILL |
 | Subagent silent and idle | 10 min request; 20 min end |
 
-**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
+**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 

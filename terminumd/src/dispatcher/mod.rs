@@ -4,6 +4,7 @@
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
 mod acts;
+pub mod fire;
 pub mod api;
 mod press;
 mod places;

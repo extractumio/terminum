@@ -179,17 +179,22 @@ mod page_tests {
         }
     }
 
-    /// The Message history and the Dashboard share one head (terminum.md AC-151, AC-152): the same markup but
-    /// their title and the page key pressed.
+    /// The Message history, the Scheduled page and the Dashboard share one head (terminum.md AC-151, AC-152,
+    /// terminum-schedules.md AC-164): the same markup but their title and the page key pressed.
     #[test]
     fn same_message_pages_head() {
         const HISTORY: &str = include_str!("../../web/static/history.html");
         const DASHBOARD: &str = include_str!("../../web/static/dashboard.html");
+        const SCHEDULED: &str = include_str!("../../web/static/scheduled.html");
         let head = |page: &str| {
             let at = page.find("<!-- the shared head").expect("its head");
             let end = page.find("<!-- /the shared head -->").expect("its end");
-            page[at..end].replace(" aria-current=\"page\"", "").replace("(dashboard.html holds the same)", "").replace("(history.html holds the same)", "")
+            let h = page[at..end].replace(" aria-current=\"page\"", "");
+            let title = h.find("<h1 class=\"mtitle\">").expect("its title");
+            let after = title + h[title..].find("</h1>").expect("its title's end");
+            format!("{}{}", &h[..title], &h[after..])
         };
-        assert_eq!(head(HISTORY).replace(">Message history<", ">T<"), head(DASHBOARD).replace(">Dashboard</h1>", ">T</h1>"));
+        assert_eq!(head(HISTORY), head(DASHBOARD));
+        assert_eq!(head(HISTORY), head(SCHEDULED));
     }
 }

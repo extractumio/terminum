@@ -54,6 +54,8 @@ pub fn pages(app: Shared) -> Router {
         .route("/kanban/{id}", get(board))
         .route("/history", get(|| async { axum::response::Redirect::permanent("/history/") }))
         .route("/history/", get(|headers: HeaderMap| async move { http::page_named("history.html", &headers) }))
+        .route("/scheduled", get(|| async { axum::response::Redirect::permanent("/scheduled/") }))
+        .route("/scheduled/", get(|headers: HeaderMap| async move { http::page_named("scheduled.html", &headers) }))
         .route("/dashboard", get(|| async { axum::response::Redirect::permanent("/dashboard/") }))
         .route("/dashboard/", get(|headers: HeaderMap| async move { http::page_named("dashboard.html", &headers) }))
         .route("/ws", get(crate::page::ws::socket))
