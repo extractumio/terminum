@@ -170,7 +170,7 @@ fn ac152_the_human_s_numbers_only() {
 
 #[test]
 fn ac90_an_agents_own_turns_are_told_apart_and_the_trim_takes_those_kept_before() {
-    for t in ["<task-notification>\n<task-id>b1</task-id>", " \n<cross-session-message from=\"x\">", "<agent-message from=\"a\">ok", "[Cross-session delivery notice] sent"] {
+    for t in ["<task-notification>\n<task-id>b1</task-id>", " \n<cross-session-message from=\"x\">", "<agent-message from=\"a\">ok", "[Cross-session delivery notice] sent", "[status timer] x"] {
         assert!(injected(t), "{t}");
     }
     for t in ["fix the <task-notification> parser", "[Image #1] the strip", "<pasted_content id=\"1\">text", "[terminum Dispatcher] T-1: its time budget is off."] {
@@ -178,7 +178,7 @@ fn ac90_an_agents_own_turns_are_told_apart_and_the_trim_takes_those_kept_before(
     }
     let s = store("messages-injected");
     let hook = |at, text: &str| Message { via: "hook".into(), ..msg(at, "k1", text) };
-    put(&s, &[hook(1_000, "<task-notification>\n<task-id>b1</task-id>"), hook(2_000, "\n <agent-message from=\"a\">ok"), hook(3_000, "[Cross-session idle notice] x"),
+    put(&s, &[hook(1_000, "<task-notification>\n<task-id>b1</task-id>"), hook(2_000, "\n <agent-message from=\"a\">ok"), hook(3_000, "[Cross-session idle notice] x"), hook(3_500, "[status timer] x"),
               hook(4_000, "<pasted_content id=\"1\">mine"), hook(5_000, "fix it"), msg(6_000, "k1", "<task-notification> as a shell's text")]);
     s.with(|tx| trim(tx, 7_000, 30, 2000)).unwrap();
     let left = s.with(|tx| page(tx, &Filter::default(), false, None)).unwrap();
