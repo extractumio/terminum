@@ -5,9 +5,30 @@ import { esc } from "./api";
 
 export interface Choice { id: string; label: string; primary?: boolean; danger?: boolean }
 
+// The keys go to the newest open question or menu alone (a question over a menu), so one key answers one
+// (terminum.md AC-165); questions asked together wait in turn, the first asked shown first.
+const owners: ((e: KeyboardEvent) => void)[] = [];
+const keys = (e: KeyboardEvent) => owners.at(-1)?.(e);
+const own = (key: (e: KeyboardEvent) => void) => {
+  if (!owners.length) document.addEventListener("keydown", keys, true);
+  owners.push(key);
+  return () => {
+    owners.splice(owners.indexOf(key), 1);
+    if (!owners.length) document.removeEventListener("keydown", keys, true);
+  };
+};
+let queue: Promise<unknown> = Promise.resolve();
+
 /** Modal with a message and buttons, × in its corner as the Page's dialogs. Resolves to the chosen
- *  id, or "cancel" on × and Esc. */
+ *  id, or "cancel" on × and Esc. Asked while another is open, it waits for that one's answer (two Finder
+ *  drops' "already there", two tabs closed). */
 export function ask(title: string, message: string, choices: Choice[]): Promise<string> {
+  const turn = queue.then(() => show(title, message, choices));
+  queue = turn.catch(() => {});                    // one that throws does not stop the next
+  return turn;
+}
+
+function show(title: string, message: string, choices: Choice[]): Promise<string> {
   return new Promise((resolve) => {
     const previous = document.activeElement as HTMLElement | null;
     const back = document.createElement("div");
@@ -19,8 +40,11 @@ export function ask(title: string, message: string, choices: Choice[]): Promise<
       (message ? `<div class="mtext">${esc(message)}</div>` : "") +
       `<div class="mbtns">${choices.map((c) =>
         `<button data-id="${esc(c.id)}" class="btn${c.primary ? " primary" : ""}${c.danger ? " danger" : ""}">${esc(c.label)}</button>`).join("")}</div></div>`;
+    let open = true, disown = () => {};
     const done = (id: string) => {
-      back.remove(); document.removeEventListener("keydown", key, true);
+      if (!open) return;                            // a click and a key at once: the first answers
+      open = false;
+      back.remove(); disown();
       if (previous?.isConnected) previous.focus({ preventScroll: true });
       resolve(id);
     };
@@ -43,9 +67,9 @@ export function ask(title: string, message: string, choices: Choice[]): Promise<
       if (b) done(b.dataset.id!);
       else if (e.target === back) done("cancel");
     });
-    document.addEventListener("keydown", key, true);
+    disown = own(key);
     document.body.append(back);
-    back.querySelector<HTMLButtonElement>(".btn.primary, .btn")?.focus();
+    (back.querySelector<HTMLButtonElement>(".btn.primary") ?? back.querySelector<HTMLButtonElement>(".btn"))?.focus();   // a list of selectors would take the first button
   });
 }
 
@@ -113,11 +137,13 @@ export function menu(x: number, y: number, entries: MenuEntry[]): Promise<string
       openSub(lv, m);
       focus(lv + 1, 0);
     };
+    let ended = false, disown = () => {};
     const done = (id: string | null) => {
+      ended = true;
       shut = null;
       close(0);
       document.removeEventListener("pointerdown", outside, true);
-      document.removeEventListener("keydown", key, true);
+      disown();
       resolve(id);
     };
     const outside = (e: Event) => { if (!levels.some((l) => l.el.contains(e.target as Node))) done(null); };
@@ -137,8 +163,9 @@ export function menu(x: number, y: number, entries: MenuEntry[]): Promise<string
     open(entries, { x, y });
     shut = () => done(null);
     setTimeout(() => {
+      if (ended) return;                            // closed before its keys were taken
       document.addEventListener("pointerdown", outside, true);
-      document.addEventListener("keydown", key, true);
+      disown = own(key);
     });
   });
 }
