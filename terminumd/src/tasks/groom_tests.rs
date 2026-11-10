@@ -33,6 +33,16 @@ fn agents_task(s: &Store, dir: &std::path::Path, title: &str) -> String {
     said.trim_start_matches("Kept as ").split(',').next().unwrap().to_string()
 }
 
+/// A human's RUN of `id`, its agent working in another session.
+fn run_elsewhere(s: &Store, id: &str) {
+    use crate::dispatcher::runs::{self, Phase, Run};
+    s.with(|tx| {
+        let like = Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
+        let run = runs::add(tx, &like, &[ops::get(tx, id)?.key], 1)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(OTHER.into()); }).map(drop)
+    }).unwrap();
+}
+
 fn humans_task(s: &Store, project: &str) -> String {
     s.with(|tx| ops::create(tx, HUMAN, NewTask { title: "a human's".into(), project: Some(project.into()), ..Default::default() }, 1)).unwrap().id
 }
@@ -76,7 +86,7 @@ fn ac154_a_humans_task_changes_only_with_its_reason() {
 }
 
 #[test]
-fn ac154_words_change_only_on_an_agents_task_no_human_reworded_and_no_other_session_holds() {
+fn ac154_words_change_only_on_an_agents_task_no_human_reworded_and_no_run_elsewhere_holds() {
     let (s, dir) = fresh("gr-words");
     let a = agents_task(&s, &dir, "Bug: first words");
     call(&s, &dir, json!({"id": a, "title": "Bug: better words", "text": SECTIONS.replace("\nx\n", "\nthe cause\n")})).unwrap();
@@ -94,7 +104,9 @@ fn ac154_words_change_only_on_an_agents_task_no_human_reworded_and_no_other_sess
     assert!(call(&s, &dir, json!({"id": older, "title": "Bug: x"})).unwrap_err().contains("holds a human's words"), "an older event, by its text");
     let held = agents_task(&s, &dir, "Bug: held");
     s.with(|tx| ops::link(tx, HUMAN, &held, Some(OTHER), 3)).unwrap();
-    assert_eq!(call(&s, &dir, json!({"id": held, "text": SECTIONS})).unwrap_err(), format!("{held} belongs to session %8: comment instead."));
+    assert!(call(&s, &dir, json!({"id": held, "text": SECTIONS})).is_ok(), "another session's, of the same project");
+    run_elsewhere(&s, &held);
+    assert_eq!(call(&s, &dir, json!({"id": held, "text": SECTIONS})).unwrap_err(), format!("{held} runs in session %8 at a human's RUN. You can read it and comment."));
 }
 
 #[test]
@@ -125,8 +137,10 @@ fn ac154_a_humans_task_or_another_project_never_leaves_the_board_by_an_agent() {
     assert_eq!(call(&s, &dir, json!({"id": far, "severity": "P0", "reason": "x"})).unwrap_err(), format!("{far} is outside this session's project."));
     let held = agents_task(&s, &dir, "Bug: held open");
     s.with(|tx| ops::link(tx, HUMAN, &held, Some(OTHER), 3)).unwrap();
-    assert!(call(&s, &dir, json!({"id": held, "archive": "yes", "reason": "x"})).unwrap_err().contains("belongs to session %8"));
-    s.with(|tx| ops::move_to(tx, HUMAN, &held, "DONE", 4)).unwrap();
-    assert!(call(&s, &dir, json!({"id": held, "archive": "yes", "reason": "finished"})).is_ok(), "another session's agents' task, once DONE");
+    run_elsewhere(&s, &held);
+    assert!(call(&s, &dir, json!({"id": held, "archive": "yes", "reason": "x"})).unwrap_err().contains("runs in session %8"));
+    let idle = agents_task(&s, &dir, "Bug: held by a session with no run");
+    s.with(|tx| ops::link(tx, HUMAN, &idle, Some(OTHER), 4)).unwrap();
+    assert!(call(&s, &dir, json!({"id": idle, "archive": "yes", "reason": "a duplicate"})).is_ok(), "another session's agents' task of the project");
     assert_eq!(call(&s, &dir, json!({"id": h})).unwrap_err(), "Give severity, parent, title, text or archive.");
 }

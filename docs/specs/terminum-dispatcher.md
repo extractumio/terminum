@@ -862,7 +862,7 @@ Scenario: AC-157 failure — not Dispatcher's session
 
 Scenario: AC-157 failure — not its task
   When the agent calls ask_human on a task of another session
-  Then it is refused as move_task is: "API-13 belongs to session %8. You can read it and comment."
+  Then it is refused: "API-13 belongs to session %8: only its agent asks on it. You can comment."; one with no session: "API-13 has no session: take_task first, or comment."
 ```
 
 ### AC-158 — Waiting for room [MUST / P0]
@@ -1108,7 +1108,7 @@ GET /api/tasks/meta → {"agents": [{"id": "a81f", "name": "Opus reviewer", "kin
 | `pool::take(agent, project)`, in the transaction that adds the run | RUN, + Session | a slot of each or a refusal naming the holders | AC-141's words |
 | `start::open`, `exit_of`, `end_agent` | Dispatcher | a command started at a place under a run's mark, read and ended by that mark | FAILED with the reason |
 | `hooks::heard`, one queue | an agent's hook, by the socket | events applied in the order they came, to the run of their pane | a pane with no run costs a lookup |
-| `run_tasks`, `finish_task` | RUN, `terminum mcp` | a task is moved by its run or its agent: pane → run → tasks | "API-13 belongs to session %7." |
+| `run_tasks`, `finish_task` | RUN, `terminum mcp` | a task a run holds is moved by that run's agent alone: pane → run → tasks (terminum-kanban.md AC-115) | "API-13 runs in session %7 at a human's RUN." |
 | `start::resume_command(run)` | RUN | the same conversation, the run's own settings, in the run's own folder | "use Run from scratch." |
 | `usage::add`, `of_task`, `of_agent` | a hook's report, a card, the pool | what grew, counted once, in the store | "Tokens not known" |
 

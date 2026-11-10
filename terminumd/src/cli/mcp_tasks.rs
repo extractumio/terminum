@@ -29,12 +29,12 @@ const TOOLS: [Tool; 11] = [
     Tool { name: "update_task", read_only: false, description: "Changes a task of your project: severity (priority), parent (a subtask of it; \"none\": out of it); title, text (create_task's rules) of an agents' task; archive \"yes\": an agents' task off the board. reason: required for archive or a human's task, kept as a comment.",
         fields: &[ID, ("severity", false, 2), ("parent", false, 24), ("title", false, 800), ("text", false, TEXT_MOST), ("archive", false, 3), ("reason", false, COMMENT_MOST)] },
     Tool { name: "take_task", read_only: false, description: "Takes a free task of your project: it becomes this session's, in its column.", fields: &[ID] },
-    Tool { name: "move_task", read_only: false, description: "Moves this session's task to another column (status). WAIT FOR HUMAN when only a person can go on.", fields: &[ID, ("to", true, 20)] },
+    Tool { name: "move_task", read_only: false, description: "Moves a task of your project to another column (status): yours, or one no other session runs. WAIT FOR HUMAN when only a person can go on.", fields: &[ID, ("to", true, 20)] },
     Tool { name: "ask_human", read_only: false, description: "Asks the human what only a person decides: questions on your task, each with options and the one you recommend. Then end your turn.", fields: &[ID, ("questions", true, COMMENT_MOST)] },
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_file", read_only: false, description: "Attaches a file to a task: path in this session's folder; from a host name and text.", fields: &[TASK, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
     Tool { name: "get_file", read_only: true, description: "Gets a task's file, by name: its path here.", fields: &[TASK, ("name", true, 300)] },
-    Tool { name: "finish_task", read_only: false, description: "Your task is done: its result becomes a comment and the task moves to DONE; call it before you stop. The result's sections, each there (\"None\" when empty): Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations.", fields: &[ID, ("result", true, COMMENT_MOST)] },
+    Tool { name: "finish_task", read_only: false, description: "Your task is done, or one of your project you did: its result becomes a comment and the task moves to DONE; call it for yours before you stop. The result's sections, each there (\"None\" when empty): Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations.", fields: &[ID, ("result", true, COMMENT_MOST)] },
 ];
 
 /// The arguments terminumd gets (only the known fields), or why they are refused.

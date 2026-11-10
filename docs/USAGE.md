@@ -199,7 +199,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use
   `list_tasks`, `get_task`, `create_task`, `take_task`, `move_task`, `ask_human`, `add_comment`, `attach_file`,
-  `get_file` and `finish_task`: all on their own tasks, read and comment on their project's others;
+  `get_file` and `finish_task`: on every task of their project, whatever session made or holds it, but one a human's RUN runs in another session;
   an agent Dispatcher starts runs its command as you wrote it, so write the permissions it needs there (`claude --dangerously-skip-permissions`); when it
   needs you it asks with `ask_human`: its questions, with its recommended answers, stand on the task
   in WAIT FOR HUMAN and its session closes; answer in comments and press Run, and the same

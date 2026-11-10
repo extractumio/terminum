@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! An agent's task tools through `terminum mcp` (AC-115): all on its own tasks, read and comment on
-//! its project's others, a free one can be taken. A scope, no boundary: `terminum mcp` names the
+//! An agent's task tools through `terminum mcp` (AC-115): every task of its project is read, commented,
+//! moved and finished, but one a human's RUN runs in another session; a free one can be taken; only
+//! its own asks the human. A scope, no boundary: `terminum mcp` names the
 //! pane from the agent's environment. What an agent writes is cleaned and redacted before it is
 //! kept; what it reads is said to be data.
 
@@ -60,12 +61,23 @@ pub(super) fn visible(tx: &Transaction, who: &Who, id: &str) -> Result<Task, Str
     if query::within_reach(tx, ops::number_of(tx, id)?, &who.key, who.project.as_deref())? { Ok(t) } else { Err(format!("{id} is outside this session's project.")) }
 }
 
+/// The session's own task: the one its agent asks the human on.
 fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = ops::get(tx, id)?;
     match &t.session {
         Some(s) if s == &who.key => Ok(t),
-        Some(s) => Err(format!("{id} belongs to session {}. You can read it and comment.", ops::pane_of(s))),
-        None => Err(format!("{id} has no session: take_task first.")),
+        Some(s) => Err(format!("{id} belongs to session {}: only its agent asks on it. You can comment.", ops::pane_of(s))),
+        None => Err(format!("{id} has no session: take_task first, or comment.")),
+    }
+}
+
+/// A task of its project to move or finish, whatever session made or holds it (AC-115): only what a
+/// human's RUN runs in another session now is that run's, which Dispatcher watches.
+pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
+    let t = visible(tx, who, id)?;
+    match crate::dispatcher::runs::holding(tx, &t.key)?.and_then(|r| r.pane_key) {
+        Some(pane) if pane != who.key => Err(format!("{id} runs in session {} at a human's RUN. You can read it and comment.", ops::pane_of(&pane))),
+        _ => Ok(t),
     }
 }
 
@@ -165,12 +177,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             "move_task" => {
                 let (id, to) = (arg(args, "id")?, arg(args, "to")?);
-                let t = own(tx, who, id)?;
+                let t = movable(tx, who, id)?;
                 if to == "TODO" && crate::dispatcher::runs::holding(tx, &t.key)?.is_some() {
                     return Err(format!("{id} is what the human ran: finish it, fail it, or ask."));
                 }
                 ops::move_to(tx, &me()?, id, to, at)?;
-                let then = asked(tx, who, to == "WAIT FOR HUMAN")?;
+                // the wait is this session's run's only for the task it holds
+                let then = if t.session.as_deref() == Some(&who.key) { asked(tx, who, to == "WAIT FOR HUMAN")? } else { "" };
                 Ok((format!("{id} is in {to}.{then}"), vec![id.to_string()]))
             }
             "ask_human" => {
@@ -189,7 +202,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             "finish_task" => {
                 let id = arg(args, "id")?;
-                own(tx, who, id)?;
+                movable(tx, who, id)?;
                 let me = me()?;
                 ops::comment(tx, &me, id, &rules::clean(arg(args, "result")?), at)?;
                 ops::move_to(tx, &me, id, "DONE", at)?;

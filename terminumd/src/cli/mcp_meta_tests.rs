@@ -149,7 +149,7 @@ fn ac155_a_name_outside_its_call_or_a_wrong_argument_is_found() {
 fn ac155_search_answers_signatures_or_the_areas() {
     let out = search(&json!({"query": "move my task to another column"})).unwrap();
     assert!(out.starts_with("Tools for \"move my task to another column\", best first"), "{out}");
-    assert!(out.contains("1. move_task(id, to: TODO|IN PROGRESS|WAIT FOR HUMAN|FAILED|DONE) [tasks]: Moves this session's task to another column (status)."), "{out}");
+    assert!(out.contains("1. move_task(id, to: TODO|IN PROGRESS|WAIT FOR HUMAN|FAILED|DONE) [tasks]: Moves a task of your project to another column (status): yours, or one no other session runs."), "{out}");
     assert!(out.contains("execute_tool"), "{out}");
     let none = search(&json!({"query": "zzz qqq"})).unwrap();
     assert!(none.starts_with("No tool matches \"zzz qqq\"") && none.contains("files (on a task: attach, get): attach_file, get_file"), "{none}");

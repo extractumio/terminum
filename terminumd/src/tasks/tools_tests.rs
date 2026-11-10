@@ -50,16 +50,62 @@ fn ac115_an_agent_does_all_on_its_own() {
     assert!(lines.iter().any(|e| e["kind"] == "comment" && e["text"] == "**fixed**" && e["author_name"] == "claude · api"), "its result is its comment, its author the agent");
 }
 
+/// A human's RUN of `id`, its agent working in `pane`.
+fn running(s: &Store, id: &str, pane: &str) {
+    use crate::dispatcher::runs::{self, Phase, Run};
+    s.with(|tx| {
+        let like = Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
+        let run = runs::add(tx, &like, &[ops::key_of(tx, id)?], 1)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(pane.into()); }).map(drop)
+    }).unwrap();
+}
+
+fn status(s: &Store, id: &str) -> String {
+    s.with(|tx| ops::get(tx, id)).unwrap().status
+}
+
 #[test]
-fn ac115_others_of_the_project_are_read_and_commented_never_moved() {
+fn ac115_a_task_of_the_project_is_moved_and_finished_whatever_session_holds_it() {
     let (s, dir) = fresh("tt-others");
     let w = who(Some("api"));
+    let (held, free) = (task(&s, "api", Some(OTHER)), task(&s, "api", None));
+    assert!(call(&s, &dir, &w, "get_task", json!({"id": held})).is_ok());
+    assert!(call(&s, &dir, &w, "add_comment", json!({"id": held, "text": "seen"})).is_ok());
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{held} is in WAIT FOR HUMAN."), "another session's: moved, and this session's own wait is not said");
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": held, "result": "did it"})).unwrap(), format!("{held} is DONE, with your result."));
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": free, "result": "and this"})).unwrap(), format!("{free} is DONE, with your result."), "a free one, with no take_task");
+    assert_eq!((status(&s, &held), status(&s, &free)), ("DONE".into(), "DONE".into()));
+    let history = s.with(|tx| ops::history(tx, &held)).unwrap();
+    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == "did it" && e["author_name"] == "claude · api"), "its history says who finished it: {history}");
+    assert_eq!(s.with(|tx| ops::get(tx, &held)).unwrap().session.as_deref(), Some(OTHER), "its session stays its session");
+}
+
+#[test]
+fn ac115_inside_a_humans_run_an_agent_finishes_its_projects_other_tasks_too() {
+    let (s, dir) = fresh("tt-inrun");
+    let w = who(Some("api"));
+    let (mine, kid) = (task(&s, "api", Some(KEY)), task(&s, "api", None));
+    running(&s, &mine, KEY);
+    assert!(call(&s, &dir, &w, "take_task", json!({"id": kid})).unwrap_err().contains("finish that first"), "taking stays refused in a RUN");
+    assert!(call(&s, &dir, &w, "finish_task", json!({"id": kid, "result": "the subtask"})).is_ok());
+    assert!(call(&s, &dir, &w, "finish_task", json!({"id": mine, "result": "the main one"})).is_ok());
+    assert_eq!((status(&s, &kid), status(&s, &mine)), ("DONE".into(), "DONE".into()));
+}
+
+#[test]
+fn ac115_what_a_humans_run_runs_in_another_session_is_that_runs() {
+    let (s, dir) = fresh("tt-held");
+    let w = who(Some("api"));
     let id = task(&s, "api", Some(OTHER));
-    assert!(call(&s, &dir, &w, "get_task", json!({"id": id})).is_ok());
+    running(&s, &id, OTHER);
+    let refused = format!("{id} runs in session %8 at a human's RUN. You can read it and comment.");
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "DONE"})).unwrap_err(), refused);
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "x"})).unwrap_err(), refused);
     assert!(call(&s, &dir, &w, "add_comment", json!({"id": id, "text": "seen"})).is_ok());
-    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "DONE"})).unwrap_err(), format!("{id} belongs to session %8. You can read it and comment."));
-    assert!(call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "x"})).is_err());
-    assert_eq!(s.with(|tx| ops::get(tx, &id)).unwrap().status, "TODO");
+    assert_eq!(status(&s, &id), "TODO");
+    let far = task(&s, "web", None);
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": far, "result": "x"})).unwrap_err(), format!("{far} is outside this session's project."), "another project stays out of reach");
+    assert_eq!(call(&s, &dir, &who(None), "finish_task", json!({"id": id, "result": "x"})).unwrap_err(), format!("{id} is outside this session's project."), "a session in Default shares nothing");
 }
 
 #[test]
@@ -131,7 +177,6 @@ fn ac115_a_free_task_can_be_taken_one_with_a_session_cannot() {
     let (s, dir) = fresh("tt-take");
     let w = who(Some("api"));
     let free = task(&s, "api", None);
-    assert!(call(&s, &dir, &w, "move_task", json!({"id": free, "to": "DONE"})).unwrap_err().contains("take_task first"));
     call(&s, &dir, &w, "take_task", json!({"id": free})).unwrap();
     let t = s.with(|tx| ops::get(tx, &free)).unwrap();
     assert_eq!((t.session.as_deref(), t.status.as_str(), t.owner_name.as_str()), (Some(KEY), "TODO", "claude · api"), "linked, owned and still in TODO");
@@ -260,7 +305,7 @@ fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_i
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
     assert_eq!(status, "WAIT FOR HUMAN");
     assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == asked && e["questions"] == true), "kept as questions: {history}");
-    assert!(call(&s, &dir, &w, "ask_human", json!({"id": other, "questions": "x"})).unwrap_err().contains("belongs to session"), "only its own task");
+    assert_eq!(call(&s, &dir, &w, "ask_human", json!({"id": other, "questions": "x"})).unwrap_err(), format!("{other} belongs to session %8: only its agent asks on it. You can comment."), "only its own task");
     s.with(|tx| {
         let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
         let key = ops::key_of(tx, &id)?;
