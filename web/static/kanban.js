@@ -38,6 +38,7 @@ const narrow = matchMedia("(max-width: 860px)"), still = matchMedia("(prefers-re
 let dragging = null;                               // the tasks of a drag
 const picked = new Set();                          // the tasks ⌘ or Ctrl+click chose (terminum-dispatcher.md AC-138)
 let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's slots hold, and who is at a limit (AC-141)
+let readings = {};                                 // each kind's subscription windows (terminum-dispatcher.md AC-167)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
 let loading = 0, changing = 0, chain = Promise.resolve();
@@ -70,12 +71,13 @@ async function load() {
     const parts = await Promise.all(COLUMNS.map(async (c, i) => {
       const pages = Math.max(1, Math.ceil(cards.get(c).length / PAGE));
       const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${query({ status: c, limit: PAGE, after: n ? n * PAGE : undefined, counts: i === 0 && !n ? 1 : undefined })}`)));
-      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, slots: got[0].slots };
+      return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, slots: got[0].slots, readings: got[0].subscriptions };
     }));
     if (mine !== loading || changing) return;
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     counts = parts[0].counts;
     slots = parts[0].slots ?? slots;
+    readings = parts[0].readings ?? readings;
     agents.draw();
     failed.tasks = "";
     banner();
@@ -273,7 +275,7 @@ const folds = foldedCards((id) => openTask(id));
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
-  dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession });
+  dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession, readings: () => readings, openTask });
 $("agentbar").append(agents.box);
 const scheduled = scheduledSection({ getMeta: () => meta, chosen: () => filters().project, openTask });
 $("schedbar").append(scheduled.box);
@@ -469,9 +471,11 @@ function listen() {
       else if (m.t === "taskusage") {
         usage = m.items ?? {};
         slots = m.slots ?? slots;
+        readings = m.subscriptions ?? readings;
         agents.draw();
         for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
       }
+      else if (m.t === "subscriptions") { readings = m.subscriptions; agents.draw(); }
       else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
       else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
       else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }

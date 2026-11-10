@@ -1280,7 +1280,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [ ] AC-167 — `cargo test subscriptions`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `node web/test/e2e_all.mjs agentstripes`
+- [ ] AC-167 — `cargo test subscriptions`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs`
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
