@@ -16,7 +16,7 @@ use serde_json::{json, Map, Value};
 
 /// The most of the event read (its rest is read and dropped).
 const KEEP: usize = 1 << 20;
-const BUDGET: Duration = Duration::from_millis(150);
+pub(super) const BUDGET: Duration = Duration::from_millis(150);
 
 /// Runs the hook for `agent`; always 0 when an agent runs it. Run by a person (an unknown
 /// agent, or a terminal for stdin), it says what to run instead: it would wait for the keys.
@@ -53,6 +53,10 @@ pub fn main(agent: &str) -> i32 {
                 let _ = super::sinks::post_all(&sinks[i..=i], "/hook", &heard, BUDGET);
             }
         }
+        // Codex's account's windows, at each turn's end, after it has gone (terminum-dispatcher.md AC-168)
+        if agent == "codex" && ev["event"] == "Stop" && let Some(windows) = super::hooktokens::codex_windows(&input) {
+            let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
+        }
         // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it
         let asked = answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["tokens"] == true));
         if asked && let Some(tokens) = super::hooktokens::of_event(agent, &input) {
@@ -63,6 +67,12 @@ pub fn main(agent: &str) -> i32 {
         }
     }
     0
+}
+
+/// A `Limits` event of the pane `ev` came from: its windows, and nothing else of the session (AC-168).
+pub fn limits_event(ev: &Value, windows: &[crate::dispatcher::subscriptions::Window]) -> Value {
+    json!({"agent": ev["agent"], "socket": ev["socket"], "socket_path": ev["socket_path"], "pane": ev["pane"], "event": "Limits",
+           "windows": windows})
 }
 
 /// The first sink whose answer reminds, and its reminder line, if any.

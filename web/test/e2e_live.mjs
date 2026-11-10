@@ -44,6 +44,7 @@ import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
+import { liveQueue } from "./e2e_livequeue.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -170,7 +171,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules]) => {
+  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -187,7 +188,7 @@ async function wide(browser, name) {
     return ctx;
   }
   if (SCHEDULES_ALONE) {
-    await boards([liveFolded, liveSchedules]);
+    await boards([liveFolded, liveSchedules, liveQueue]);
     return ctx;
   }
   if (TASKS_ALONE) {
@@ -376,7 +377,9 @@ async function phone(browser, name) {
     return;
   }
   if (SCHEDULES_ALONE) {
-    await liveFolded(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` });
+    const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
+    await liveFolded(page, live);
+    await liveQueue(page, live);
     await ctx.close();
     return;
   }

@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The pool over the columns, and its window (terminum-dispatcher.md AC-137, AC-138): what a task is dropped
-// on to run: each a rectangle with its color, name, kind, effort and a dot per live session. None is a project's.
+// on to run: each a rectangle with its color, name, kind, effort, its subscription's stripes (AC-168) and a dot per
+// live session; its window shows those, its tokens and its sessions' tasks over its settings. None is a project's.
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
+import { agentView, stripes } from "./kanbanagentview.js";
 import { asTyped } from "./astyped.js";
-import { $, button, agentColor, api, countOf, fillSelect, guardCancel, showError } from "./kanbanutil.js";
+import { queueKey, queueList } from "./kanbanqueue.js";
+import { $, agentColor, api, fillSelect, guardCancel, showError } from "./kanbanutil.js";
 
 const KINDS = ["claude", "codex"];                 // their commands are their names: what a kind fills in
 
 /** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `slots()`: what each agent's slots hold, as terminumd counts them;
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
- *  agent; `run(tasks, agent)`. */
-export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession }) {
+ *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`. */
+export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask }) {
   // on the columns' tracks: an agent a column wide, its keys in the fifth (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
@@ -28,6 +31,9 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   let editing = null, snapshot = "";
 
   const slots = (a) => counted().agents[a.id] ?? [];
+  const projectName = (id) => getMeta().projects.find((p) => p.id === id)?.name;
+  const queueOf = (a) => counted().queue?.[a.id] ?? [];
+  const MOST_FREE = 8;                             // an agent of more slots than this says them by its count alone
   /** At a limit, as terminumd says: its own, or the one project shown's. */
   const full = (a) => counted().full.includes(a.id) || (chosen().length === 1 && counted().full_projects.includes(chosen()[0]));
 
@@ -39,20 +45,11 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits" : "working";
   }
 
-  /** Its last 7 and 30 days (AC-143): of its limit when it has one, else the tokens; past a limit in the danger color. */
-  function spentOf(a) {
-    const s = a.spent, part = (word, used, limit) => (limit ? `${word} ${Math.round((used / (limit * 1e6)) * 100)}%` : `${word} ${countOf(used)}`);
-    const line = el("span", "agspent", `${part("week", s.week, a.week_limit)} · ${part("month", s.month, a.month_limit)}`);
-    line.classList.toggle("over", (a.week_limit && s.week > a.week_limit * 1e6) || (a.month_limit && s.month > a.month_limit * 1e6));
-    line.title = `${s.week.toLocaleString("en")} tokens in 7 days, ${s.month.toLocaleString("en")} in 30, of every project: terminum's own count`;
-    return line;
-  }
-
   /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
   function dot(s) {
     const now = doing(s), d = el("span", `agdot ${now === "working" || now === "starting" ? "on" : now}`);
     d.dataset.key = s.key ?? "";
-    d.title = [s.tasks, getMeta().projects.find((p) => p.id === s.project)?.name, WORDS[now]].filter(Boolean).join(" · ");
+    d.title = [s.tasks, projectName(s.project), WORDS[now]].filter(Boolean).join(" · ");
     return d;
   }
 
@@ -66,14 +63,18 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     bar.style.setProperty("--dot", agentColor(a));
     b.style.setProperty("--ag", agentColor(a));
     const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
-    // a clock for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161)
+    // a dashed ring for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161); a plain
+    // ring for each slot still free; then a pale dot for each task of its queue, in the key that opens it (AC-169)
     const kept = counted().kept?.[a.id] ?? [];
     for (const k of kept) { const m = el("span", "agkept"); m.title = `kept for ${k}`; m.setAttribute("aria-label", `kept for ${k}`); dots.append(m); }
     dots.append(...mine.map(dot));
     const used = slots(a).filter((s) => !s.kept).length + kept.length;
+    if (a.at_once <= MOST_FREE) for (let i = used; i < a.at_once; i++) { const m = el("span", "agfree"); m.title = "a free slot"; dots.append(m); }
     if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
+    const queued = queueOf(a);
+    if (queued.length) dots.append(queueKey(a, queued, () => open(a, true)));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
-    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), spentOf(a), dots);
+    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : [])], false), stripes(a.kind, readings()[a.kind], Date.now() / 1000), dots);
     b.append(bar, txt);
     b.title = [a.name, `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");
     return b;
@@ -92,7 +93,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     b.addEventListener("dragover", (e) => {
       if (!dragging()) return;
       e.preventDefault();
-      if (!full(a)) b.classList.add("over");
+      b.classList.add("over");                     // at its limit too: a drop there is offered its queue (AC-169)
     });
     b.addEventListener("dragleave", () => b.classList.remove("over"));
     b.addEventListener("drop", (e) => {
@@ -108,7 +109,9 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
-    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length]);
+    // the minute: a window's reset and a reading's age show without news
+    const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, counted().queue, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length, readings(), Math.floor(Date.now() / 60000)]);
+    if (dialog.open && editing) queue.show(editing, queueOf(editing));   // its window follows what other pages did
     if (dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));
@@ -151,20 +154,24 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     return `${base} ${n}`;
   }
 
-  /** Its window: a new one, or `a` to change. */
-  function open(a = null) {
+  const queue = queueList($("agentqueue"), { projectName, say });
+
+  /** Its window: a new one, or `a` to change; `atQueue`: its queue shown first. */
+  function open(a = null, atQueue = false) {
     editing = a;
     const v = a ?? { kind: "claude", name: freeName("claude"), command: "claude", effort: "", at_once: 1, week_limit: null, month_limit: null };
     for (const k of ["kind", "name", "command", "at_once", "week_limit", "month_limit"]) field[k].value = v[k] ?? "";
     fillEfforts(v.effort);
-    showSessions(a);
+    showView(a);
+    queue.show(a, a ? queueOf(a) : []);
     $("agenthead").textContent = a ? a.name : "Add agent";
     $("agentok").textContent = a ? "Save" : "Add";
     $("agentdrop").hidden = !a;
     say("");
     snapshot = JSON.stringify(values());
     dialog.showModal();
-    field.name.select();
+    if (atQueue) queue.at();
+    else field.name.select();
   }
 
   /** A change to terminumd, one at a time: the window closes when it is kept, and says why when it is not. */
@@ -192,19 +199,26 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   });
   guardCancel(dialog, () => JSON.stringify(values()) === snapshot);   // Cancel means it
 
-  /** Its sessions in its window, each with Let go: a + Session's, or one on a host out of reach (AC-142). */
-  function showSessions(a) {
-    const list = $("agentsessions"), mine = a ? slots(a) : [];
-    list.replaceChildren(...mine.map((s) => {
-      const li = el("li");
-      const go = button(null, "Let go", async () => {
-        if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
-        try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); li.remove(); list.hidden = !list.children.length; } catch (e) { say(e.message); }
-      });
-      li.append(el("span", null, [s.tasks || "+ Session", getMeta().projects.find((p) => p.id === s.project)?.name].filter(Boolean).join(" · ")), go);
-      return li;
-    }));
-    list.hidden = !mine.length;
+  /** Over its settings: its stripes, tokens and live sessions with their tasks (AC-138, AC-143, AC-168); each with Let go:
+   *  a + Session's, or one on a host out of reach (AC-142). A task's link closes it and opens the task. */
+  function showView(a) {
+    const view = $("agentview");
+    view.hidden = !a;
+    if (!a) return view.replaceChildren();
+    view.style.setProperty("--ag", agentColor(a));   // its stripes in its color, as on its rectangle
+    const letGo = async (s, li) => {
+      if (!await askConfirm(`Let go of ${s.tasks || "this session"}? Its open tasks fail; the window stays.`, "Let go")) return;
+      try { await api(`/api/runs/${s.run}/let-go`, { method: "POST" }); li.remove(); } catch (e) { say(e.message); }
+    };
+    // what the user typed in its settings is asked about first, as Cancel does
+    const leave = (go) => async (arg) => {
+      if (JSON.stringify(values()) !== snapshot && !await askConfirm("Discard what you typed?", "Discard")) return;
+      dialog.close();
+      go(arg);
+    };
+    view.replaceChildren(agentView(a, readings()[a.kind], slots(a), {
+      projectName, doing: (s) => WORDS[doing(s)], letGo,
+      openTask: leave(openTask), openSession: leave(openSession) }));
   }
 
   /** A new one; once its window closes. */

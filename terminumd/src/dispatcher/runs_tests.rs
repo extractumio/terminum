@@ -98,9 +98,12 @@ fn ac138_each_agent_lists_what_its_slots_hold() {
         assert_eq!(lines["a"][0]["tasks"], t[0].id);
         assert_eq!(lines["a"][1]["tasks"], u[0].id);
         assert_eq!(lines["a"][0]["idle"], false);
+        assert_eq!(lines["a"][0]["list"], serde_json::json!([{"id": t[0].id, "title": t[0].title, "status": "IN PROGRESS"}]), "its tasks, each a link in its window");
         ops::move_to(tx, HUMAN, &t[0].id, "DONE", 3)?;
         change(tx, &one.id, |r| r.turn_ended = true)?;
-        assert_eq!(crate::dispatcher::pool::board(tx)?["agents"]["a"][0]["idle"], true);
+        let after = crate::dispatcher::pool::board(tx)?;
+        assert_eq!(after["agents"]["a"][0]["idle"], true);
+        assert_eq!(after["agents"]["a"][0]["list"][0]["status"], "DONE", "finished, its session still open");
         Ok(())
     }).unwrap();
 }

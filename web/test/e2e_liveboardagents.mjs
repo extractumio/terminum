@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { boardKit, pressCard, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
+import { subscriptionStripes } from "./e2e_liveboardsubs.mjs";
 
 const COMMAND = "claude --model opus";
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -122,6 +123,7 @@ const paneAlive = (tmux, pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").s
 
 const pressAt = async (page, sel) => {
   await page.waitForSelector(sel, { state: "visible" });
+  await (await page.$(sel)).scrollIntoViewIfNeeded();   // a tall window's keys below the screen: a press by place would miss them
   // a window opening still moves: a press waits for where it stands
   let was = null, b = await (await page.$(sel)).boundingBox();
   for (let i = 0; i < 40 && JSON.stringify(b) !== was; i++) {
@@ -135,7 +137,7 @@ const pressAt = async (page, sel) => {
 /** AC-138: tasks chosen and dropped on a free agent, one session; busy refuses more; it stays on their cards. */
 async function agentPool(page, opts) {
   const { base, work, tmux, shots } = opts;
-  const { j, card, cli } = boardKit(page, opts);
+  const { j, card, cli, newPane, envOf } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Pool", dir: work })).id;
   const fixer = (await j("/api/task-agents", "POST", { name: "Fast fixer", kind: "claude", effort: "high", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   const task = async (title) => (await j("/api/tasks", "POST", { title, project })).id;
@@ -157,6 +159,7 @@ async function agentPool(page, opts) {
   const said = await page.textContent(pool);
   check("AC-138 a rectangle shows the agent's name, kind and effort", /Fast fixer/.test(said) && /Claude Code/.test(said) && /high/.test(said), said);
   check("AC-138 and no dot: nothing of it runs", (await dots()).length === 0, JSON.stringify(await dots()));
+  await subscriptionStripes(page, { pool, cli, newPane, envOf, tmux, shots });
   check("AC-138 a card names no project when one is chosen", !(await page.$(`${card(a)} .cproj`)));
   await page.click(`${card(a)} .ctitle`);           // a folded TODO card shown whole (terminum-kanban.md AC-159)
   check("AC-138 a task on no agent shows its owner", await page.isVisible(`${card(a)} .cowner`) && !(await page.$(`${card(a)} .cagent`)));
@@ -191,16 +194,16 @@ async function agentPool(page, opts) {
   check("AC-138 a task in progress has no play key, its card names the agent", await until(async () => !(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
-  // busy: a third waits for its room (AC-158), said in RUN's window and by terminumd
+  // busy: a third is offered the queue (AC-169) and, agreed, waits for its room (AC-158), said in RUN's window and by terminumd
   await page.click(`${card(c)} .ctitle`, { modifiers: ["Meta"] });
   await page.click(pool);
-  check("AC-158 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Run waits/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
+  check("AC-158 an agent at its limit takes a third to wait: said in its window", await until(async () => /Fast fixer is at its limit of 1.*Add it to the queue/.test(await page.textContent("#runnone").catch(() => ""))), await page.textContent("#runnone").catch(() => ""));
   await page.click('#runbox button[value="cancel"]');
   await page.keyboard.press("Escape");
-  const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
+  const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
   check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
-  const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer });
+  const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a press again on that agent waits on, in its place", /It waits for Fast fixer/.test(again.waits), JSON.stringify(again));
   await j(`/api/tasks/${c}/give-up`, "POST");
   check("AC-158 Stop waiting calls it off and the third stays", await status(c) === "TODO" && !(await j(`/api/tasks/${c}`)).waits, JSON.stringify(await j(`/api/tasks/${c}`)));
@@ -309,6 +312,18 @@ async function agentPool(page, opts) {
   check("AC-138 a press of several by the route starts", !!ran.run, JSON.stringify(ran));
   await hasStatus(held, "IN PROGRESS");
   const heldPane = await paneOf(held);
+  // its window: the session's tasks as links (AC-138)
+  await page.click(pool, { position: { x: 60, y: 8 } });
+  await page.waitForSelector("#agentbox[open]");
+  const view = async () => page.textContent("#agentview");
+  check("AC-138 its window lists the session's tasks under Working on, each a link", await until(async () => /Working on/.test(await view()) && await page.isVisible(`#agentview .agtask .stbox:has-text("${held2}")`)), await view());
+  check("AC-143 its tokens are in its window, not on its rectangle", /Tokens: week/.test(await view()) && !/Tokens/.test(await page.textContent(pool)), await page.textContent(pool));
+  if (shots) await page.screenshot({ path: path.join(shots, "agent-window-tasks.png") });
+  await page.click(`#agentview .agtask button.linklike >> nth=1`);
+  check("AC-138 a task's link opens that task, the agent's window closed", await until(() => page.$("#taskbox[open]")) && !(await page.$("#agentbox[open]")));
+  check("AC-138 the task it named", await until(async () => new RegExp(held2).test(page.url())), page.url());
+  await page.click("#taskclose");
+  await shown();
   await pressCard(page, held);
   await page.waitForSelector("#taskbox[open]");
   check("AC-138 a task its run holds offers Give up, not Run", await until(() => page.isVisible('#taskbody .newcomment button:has-text("Give up")')) && !(await page.isVisible('#taskbody .newcomment button:has-text("Run")')));
@@ -335,8 +350,8 @@ async function agentPool(page, opts) {
   await shown();
   await page.click(pool, { position: { x: 60, y: 8 } });
   await page.waitForSelector("#agentbox[open]");
-  check("AC-142 its agent's window lists it, with Let go", await until(() => page.isVisible('#agentsessions button:has-text("Let go")')));
-  await page.click('#agentsessions button:has-text("Let go")');
+  check("AC-142 its agent's window lists it, with Let go", await until(() => page.isVisible('#agentview button:has-text("Let go")')));
+  await page.click('#agentview button:has-text("Let go")');
   await pressAt(page, "#confirmok");
   check("AC-142 Let go frees its slot", await until(async () => !(await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.length, 15000));
   check("AC-142 and leaves its window", adPane && paneAlive(tmux, adPane));
@@ -356,13 +371,13 @@ async function agentPool(page, opts) {
   check("AC-141 two at once start", await hasStatus(one, "IN PROGRESS") && await hasStatus(two, "IN PROGRESS"), `${await status(one)} ${await status(two)}`);
   check("AC-138 a dot each", await dotted((d) => d.length === 2 && d[0].includes(one) && d[1].includes(two)), JSON.stringify(await dots()));
   check("AC-138 and it counts them", await until(async () => (await page.textContent(`${pool} .agcount`).catch(() => "")) === "2/2"));
-  const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer });
+  const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a third waits, naming both", /at its limit of 2/.test(third.waits) && third.waits.includes(one) && third.waits.includes(two), JSON.stringify(third));
   await j(`/api/tasks/${three}/give-up`, "POST");
   const other = (await j("/api/task-agents", "POST", { name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   check("AC-141 Agents at once takes 1 to 100 or nothing", /1 to 100/.test((await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 0 })).error));
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 2 });
-  const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other });
+  const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other, queue: true });
   check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.waits), JSON.stringify(limited));
   await j(`/api/tasks/${three}/give-up`, "POST");
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: null });

@@ -164,16 +164,33 @@ fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &st
     Ok(Some(Full { words, close }))
 }
 
+/// Each of `runs`' tasks, as the agent's window lists them (AC-138): ID, title and status, in the order they were made.
+fn in_runs(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, Vec<Value>>, String> {
+    if ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    let found: Vec<(String, Value)> = rows(tx, "SELECT m.run, x.slug, x.title, x.status FROM run_tasks m JOIN tasks x ON x.id = m.task
+                 WHERE m.run IN (SELECT value FROM json_each(?1)) ORDER BY x.number",
+            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, json!({"id": r.get::<_, String>(1)?, "title": r.get::<_, String>(2)?, "status": r.get::<_, String>(3)?}))))?;
+    let mut out: HashMap<String, Vec<Value>> = HashMap::new();
+    for (run, task) in found {
+        out.entry(run).or_default().push(task);
+    }
+    Ok(out)
+}
+
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
     let Slots { holding, kept, in_kept } = Slots::read(tx)?;
+    let mut tasks = in_runs(tx, &holding.iter().map(|r| r.id.as_str()).collect::<Vec<_>>())?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
     // a slot its schedules keep counts once, whether its run is live or not (AC-161)
     let mut others: HashMap<&str, usize> = HashMap::new();
     for r in &holding {
         let in_slot = in_kept.contains_key(&r.id);
-        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot}));
+        of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
+            "list": tasks.remove(&r.id).unwrap_or_default()}));
         if !in_slot {
             *others.entry(&r.agent_id).or_default() += 1;
         }
@@ -182,7 +199,7 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
     let full: Vec<String> = agents::list(tx)?.into_iter()
         .filter(|a| (others.get(a.id.as_str()).copied().unwrap_or(0) + kept.get(&a.id).map_or(0, Vec::len)) as i64 >= a.at_once).map(|a| a.id).collect();
     let full_projects: Vec<String> = limits::agent_limits(tx)?.into_iter().filter(|(p, most)| in_project.get(p.as_str()).copied().unwrap_or(0) >= *most).map(|(p, _)| p).collect();
-    Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects}))
+    Ok(json!({"agents": of_agent, "kept": kept, "full": full, "full_projects": full_projects, "queue": super::waits::queues(tx)?}))
 }
 
 #[cfg(test)]

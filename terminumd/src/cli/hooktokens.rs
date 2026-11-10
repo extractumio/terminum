@@ -11,6 +11,7 @@ use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
+use crate::dispatcher::subscriptions::{self, Window};
 use crate::dispatcher::usage::{Totals, MOST_MODEL};
 
 /// Past these it says nothing rather than overrun the hook's 3 s.
@@ -95,42 +96,73 @@ fn claude(reader: impl BufRead, until: Instant) -> Option<Sum> {
     Some(sum)
 }
 
-/// Codex's lines: a `token_count` event holds the session's total, its input with the cached part in it; a
-/// `turn_context` names the turn's model. The last of each: the whole is priced at the last model.
-fn codex(reader: impl BufRead, until: Instant) -> Option<(Option<Totals>, String)> {
-    let (mut last, mut model) = (None, String::new());
-    each_line(reader, until, &[r#""type":"token_count""#, r#""type":"turn_context""#], |_, v: Value| {
+/// What Codex's lines say: the session's last total, its last turn's model, its account's last `rate_limits` (AC-168).
+#[derive(Default)]
+struct CodexRead {
+    total: Option<Totals>,
+    model: String,
+    limits: Value,
+}
+
+/// Codex's lines: a `token_count` event holds the session's total, its input with the cached part in it, and its
+/// account's `rate_limits`; a `turn_context` names the turn's model. The last of each: the whole is priced at the last model.
+fn codex(reader: impl BufRead, until: Instant) -> Option<CodexRead> {
+    let mut read = CodexRead::default();
+    each_line(reader, until, &[r#""type":"token_count""#, r#""type":"turn_context""#], |_, mut v: Value| {
         if v["type"] == "turn_context" && let Some(m) = v["payload"]["model"].as_str() {
-            model = m.chars().take(MOST_MODEL).collect();
-        } else if v["payload"]["type"] == "token_count" && let Some(u) = v.pointer("/payload/info/total_token_usage") {
-            let cached = int(u, "cached_input_tokens");
-            last = Some(Totals { input: (int(u, "input_tokens") - cached).max(0), output: int(u, "output_tokens"), cache_read: cached, ..Totals::default() });
+            read.model = m.chars().take(MOST_MODEL).collect();
+        } else if v["payload"]["type"] == "token_count" {
+            if let Some(u) = v.pointer("/payload/info/total_token_usage") {
+                let cached = int(u, "cached_input_tokens");
+                read.total = Some(Totals { input: (int(u, "input_tokens") - cached).max(0), output: int(u, "output_tokens"), cache_read: cached, ..Totals::default() });
+            }
+            // a count without them is no reset: the last that has them stands, read once at the end
+            if v["payload"]["rate_limits"].is_object() {
+                read.limits = v["payload"]["rate_limits"].take();
+            }
         }
     })?;
-    Some((last, model))
+    Some(read)
+}
+
+/// The transcript an event names.
+fn transcript(input: &Value) -> Option<&str> {
+    input.get("transcript_path").and_then(Value::as_str)
+}
+
+/// `path` opened when it is a regular file of a size the hook reads; its length.
+fn opened(path: &str) -> Option<(std::fs::File, u64)> {
+    // a regular file: a FIFO or a device named there would block past any limit
+    let meta = std::fs::metadata(path).ok().filter(|m| m.is_file() && m.len() <= MOST_BYTES)?;
+    Some((std::fs::File::open(path).ok()?, meta.len()))
+}
+
+/// Codex's account's windows as its log's tail last says them (AC-168): numbers alone; None when the tail has none.
+pub fn codex_windows(input: &Value) -> Option<Vec<Window>> {
+    let (mut file, len) = opened(transcript(input)?)?;
+    file.seek(SeekFrom::Start(len.saturating_sub(CODEX_TAIL))).ok()?;
+    subscriptions::of_codex(&codex(std::io::BufReader::new(&file), Instant::now() + MOST_TIME)?.limits)
 }
 
 /// What goes with a turn's end: the whole and each model's numbers, or `null` when they are not known (a new
 /// agent version's format, a file gone, too long a read); nothing when the event names no transcript.
 pub fn of_event(agent: &str, input: &Value) -> Option<Value> {
-    let path = input.get("transcript_path").and_then(Value::as_str)?;
+    let path = transcript(input)?;
     let until = Instant::now() + MOST_TIME;
     let read = || -> Option<Sum> {
-        // a regular file: a FIFO or a device named there would block past any limit
-        let meta = std::fs::metadata(path).ok().filter(|m| m.is_file() && m.len() <= MOST_BYTES)?;
-        let mut file = std::fs::File::open(path).ok()?;
+        let (mut file, len) = opened(path)?;
         if agent == "codex" {
             // the last total and model: the end of the file holds them, at no cost as a session grows; what it
             // lacks is looked for before it, the tail's alone when that is past the time
-            let start = meta.len().saturating_sub(CODEX_TAIL);
+            let start = len.saturating_sub(CODEX_TAIL);
             file.seek(SeekFrom::Start(start)).ok()?;
-            let (mut total, mut model) = codex(std::io::BufReader::new(&file), until).unwrap_or_default();
+            let CodexRead { mut total, mut model, .. } = codex(std::io::BufReader::new(&file), until).unwrap_or_default();
             if start > 0 && (total.is_none() || model.is_empty()) {
                 file.seek(SeekFrom::Start(0)).ok()?;
-                if let Some((t, m)) = codex(std::io::BufReader::new((&file).take(start)), until) {
-                    total = total.or(t);
+                if let Some(r) = codex(std::io::BufReader::new((&file).take(start)), until) {
+                    total = total.or(r.total);
                     if model.is_empty() {
-                        model = m;
+                        model = r.model;
                     }
                 }
             }
@@ -219,6 +251,21 @@ mod tests {
         text.push_str(r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}}}}"#);
         let got = of_event("codex", &json!({"transcript_path": written("tokens-codex-far", &text)})).unwrap();
         assert_eq!(got["models"][0]["model"], "gpt-6.1-sol");
+    }
+
+    #[test]
+    fn ac168_codex_s_last_windows_are_read_from_its_tail() {
+        let p = written("limits-codex", concat!(
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":{"primary":{"used_percent":20.0,"window_minutes":10080,"resets_at":1794428830},"secondary":null}}}"#, "\n",
+            r#"{"type":"response_item","payload":{"type":"message","content":[{"type":"output_text","text":"secret words"}]}}"#, "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":9,"cached_input_tokens":3,"output_tokens":4}},"rate_limits":{"limit_id":"codex","primary":{"used_percent":21.0,"window_minutes":10080,"resets_at":1794428830},"secondary":{"used_percent":3.5,"window_minutes":300,"resets_at":1794350000},"plan_type":"plus"}}}"#, "\n",
+            r#"{"type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":null}}"#, "\n"));
+        let got = codex_windows(&json!({"transcript_path": p})).unwrap();
+        assert_eq!(got, vec![Window { minutes: 10080, used: 21.0, resets_at: Some(1794428830) }, Window { minutes: 300, used: 3.5, resets_at: Some(1794350000) }],
+                   "the last that has them stands: a count without them is no reset");
+        assert_eq!(codex_windows(&json!({"transcript_path": written("limits-none", "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}\n")})), None, "none in the tail: nothing, not 0%");
+        assert_eq!(codex_windows(&json!({"transcript_path": "/dev/zero"})), None);
+        assert_eq!(codex_windows(&json!({})), None);
     }
 
     #[test]
