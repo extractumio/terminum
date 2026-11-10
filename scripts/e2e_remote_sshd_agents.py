@@ -240,7 +240,7 @@ def main():
               time.time() - began >= 95 and "no Mac connected" not in log() and log().count('event="start"') == starts, log()[-300:])
 
         # refused forward: alexb's sshd allows only local stream forwards
-        st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refuser", "recipe": f"alexb@127.0.0.1 -p {BOB_PORT} -i {work}/key", "files": True})
+        st, _ = unix_request(t.sock, "POST", "/hosts/add", {"name": "refuser", "recipe": f"alexb@127.0.0.1 -p {BOB_PORT} -i {work}/key"})
         item_of(ws, "refuser")
         st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "refuser"})
         rec = state_until(t, "refuser", lambda s: s.startswith("refused"))

@@ -90,11 +90,11 @@ Install tmux on the host (Linux or macOS) and make sure the machine running term
 with `ssh`; then, there:
 
 ```bash
-terminum hosts add devbox 'alex@devbox.example' --files
+terminum hosts add devbox 'alex@devbox.example'
 ```
 
-Its tmux sessions and, with `--files`, its files show on the page; terminum copies its helper
-there and keeps it at terminum's version.
+Its tmux sessions, its files and its coding agents' progress show on the page; terminum copies its
+helper there, puts its hooks into Claude Code and Codex there, and keeps both at terminum's version.
 
 ### Over Tailscale
 

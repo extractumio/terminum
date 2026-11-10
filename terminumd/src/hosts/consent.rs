@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The user's Files decisions on a host (AC-83): Enable, Not now, Remove. An enable or a removal
+//! A host's Files set up or turned off (AC-83): the enable that runs by itself once the host attaches or
+//! at the user's Enable, and the user's Not now and Remove, which it never undoes. An enable or a removal
 //! runs for seconds to minutes over ssh; a later decision (another page, `terminum hosts`) wins.
 //! Each long one records its result only while it is still the host's last decision, judged
 //! under settings.json's write lock, where Not now and Remove record theirs too. A host is
@@ -139,19 +140,6 @@ async fn enable_with(steps: &impl Steps, decisions: &Decisions, host: &str) -> R
     result
 }
 
-/// A ticked enabling that failed: "wanted" cleared, unless a later decision replaced it; whether
-/// it was (the question then comes back with the reason).
-pub(super) fn unwant(app: &Shared, host: &str) -> Result<bool, String> {
-    let mut cleared = false;
-    super::update(app, host, |r| {
-        if r["files"] == "wanted" {
-            r["files"] = Value::Null;
-            cleared = true;
-        }
-    })?;
-    Ok(cleared)
-}
-
 /// Enable (AC-83): the platform, the copy, a first connection; then "files": "enabled", unless
 /// a later decision came.
 pub async fn enable(app: &Shared, host: &str) -> Result<(), String> {
@@ -206,7 +194,7 @@ impl Steps for Live<'_> {
 }
 
 /// "Remove helper from <host>" (AC-83): no connection starts while it runs; at its end "files"
-/// is cleared, unless a later decision came; when it fails, Files stays enabled and connects
+/// is "declined", so nothing sets it up again by itself, unless a later decision came; when it fails, Files stays enabled and connects
 /// again.
 pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
     let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
@@ -216,7 +204,7 @@ pub async fn remove(app: &Shared, host: &str) -> Result<(), String> {
     let result = super::tunnel::remove_helper(&recipe).await.map_err(|e| format!("Could not remove the helper from {host}: {e}"));
     let result = result.and_then(|()| super::update(app, host, |r| {
         if decisions.done(host, ticket) {
-            r["files"] = Value::Null;
+            r["files"] = Value::from("declined");
         }
     }));
     // where the save's check never ran: a failure, the host's record gone

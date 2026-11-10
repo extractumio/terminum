@@ -40,7 +40,7 @@ pub(crate) const HELPER_REMOVE_LIMIT: Duration = Duration::from_secs(60);
 
 #[derive(Default)]
 pub(super) struct Agent {
-    /// connecting, updating, up, down; failed (a ticked enabling, AC-83); "enabling" is the
+    /// connecting, updating, up, down; failed (the enabling by itself, AC-83); "enabling" is the
     /// Enable running (consent.rs), never stored
     state: String,
     note: String,
@@ -404,32 +404,51 @@ pub fn reconcile(app: &Shared, host: &str) {
     if g.get(host).and_then(|a| a.task.as_ref()).is_some_and(|t| !t.is_finished()) {
         return;
     }
+    let failed = g.get(host).is_some_and(|a| a.state == "failed");
     let (shared, name) = (app.clone(), host.to_string());
     // the task is held under the lock, so `stop` (the host removed) aborts it
     let task = match state.as_deref() {
         // not while its helper is being removed (consent.rs `remove`)
         Some("enabled") if !app.hosts.decisions.is(host, Decision::Remove) => tokio::spawn(keep(shared, name)),
         _ if super::link::wanted(app, host) => tokio::spawn(keep(shared, name)),
-        Some("wanted") if attached => tokio::spawn(async move {
-            let Err(e) = super::consent::enable(&shared, &name).await else { return };
-            tracing::warn!(event = "agent.enable_failed", host = name, why = e);
-            if crate::hosts::recipe_of(&shared, &name).is_none() {
-                return;
+        // no decision of the user's yet: set up by itself, once per attach (AC-83)
+        None | Some("wanted") if attached && !failed => tokio::spawn(async move {
+            match super::consent::enable(&shared, &name).await {
+                // its agents after its files: the helper is there
+                Ok(()) => super::agents::auto(&shared, &name),
+                Err(e) => {
+                    tracing::warn!(event = "agent.enable_failed", host = name, why = e);
+                    // the host removed, Not now or Remove meanwhile, or a later click's enable runs
+                    let undecided = crate::hosts::recipe_of(&shared, &name).is_some() && crate::hosts::files_state(&shared, &name).is_none_or(|s| s == "wanted");
+                    if undecided && !shared.hosts.decisions.is(&name, Decision::Enable) {
+                        set(&shared, &name, "failed", &e);
+                    }
+                }
             }
-            let note = match super::consent::unwant(&shared, &name) {
-                Ok(false) => return, // Not now or Remove came meanwhile
-                _ if shared.hosts.decisions.is(&name, Decision::Enable) => return, // a later click's enable runs
-                Ok(true) => e,
-                Err(w) => format!("{e} (and settings.json not written: {w})"),
-            };
-            set(&shared, &name, "failed", &note);
         }),
         _ => return,
     };
     g.entry(host.to_string()).or_default().task = Some(task);
 }
 
-/// Why the enabling the user ticked failed, until it is tried again.
+/// As [`reconcile`], an enabling that failed before tried again: the host attached anew, or the
+/// user added it again.
+pub fn retry(app: &Shared, host: &str) {
+    if let Some(a) = app.tunnels.0.lock().get_mut(host).filter(|a| a.state == "failed") {
+        a.state = "down".into();
+    }
+    reconcile(app, host);
+}
+
+/// The host attached: its files as [`retry`]; its agents too, where its files need no setup.
+pub fn attached(app: &Shared, host: &str) {
+    retry(app, host);
+    if crate::hosts::files_state(app, host).is_some_and(|s| s != "wanted") {
+        super::agents::auto(app, host);
+    }
+}
+
+/// Why the enabling by itself failed, until it is tried again.
 pub fn failed(app: &Shared, host: &str) -> Option<String> {
     app.tunnels.0.lock().get(host).filter(|a| a.state == "failed").map(|a| a.note.clone())
 }

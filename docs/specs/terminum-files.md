@@ -116,8 +116,8 @@ Scenario: AC-51 failure — the folder is gone
 Scenario: AC-51 failure — no folder to show
   Given tmux does not answer for the pane
   Then Files shows "The pane's folder is not known: <tmux's error>" in the frame's place
-  Given the pane is on a host whose files are not enabled
-  Then the badge shows "REMOTE", and Files says so and how to fix it (enable the host in Files on the Mac), offering Enable and Not now (`terminum-remote.md` AC-83)
+  Given the pane is on a host whose files are not set up
+  Then the badge shows "REMOTE", and Files says so: "Setting up…" while terminumd sets them up, else why not, offering Try again and Not now (`terminum-remote.md` AC-83)
 ```
 
 ### AC-52 — Very large folders [MUST / P0]

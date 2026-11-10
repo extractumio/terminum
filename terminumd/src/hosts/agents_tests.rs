@@ -87,7 +87,7 @@ fn on_stores_nothing_when_no_agent_took_them_or_the_host_failed() {
 fn off_clears_the_record_and_removes_the_helper_only_when_files_are_off() {
     let f = fake(Value::Null, json!("enabled"), Ok(vec![]), Ok(got(&[("claude", "removed"), ("codex", "off")])));
     assert_eq!(run(set_with(&f, "devbox", false)).unwrap(), ["claude: removed", "codex: off", "helper removed from devbox"]);
-    assert!(f.hosts.lock()["devbox"]["agents"].is_null());
+    assert!(f.hosts.lock()["devbox"]["agents"] == "off");
     assert_eq!(f.hosts.lock()["other"]["agents"], "enabled", "another host's record is kept");
     assert_eq!(*f.steps.lock(), ["save", "changed", "remove", "remove_helper"], "off here and the link closed before the host is reached");
     for files in ["enabled", "wanted"] {
@@ -103,7 +103,7 @@ fn off_turns_the_link_off_even_when_the_host_cannot_be_reached_and_says_so() {
     let f = fake(Value::Null, json!("enabled"), Ok(vec![]), Err("ssh: Connection timed out".into()));
     let e = run(set_with(&f, "devbox", false)).unwrap_err();
     assert!(e.contains("Turned off here") && e.contains("timed out"), "{e}");
-    assert!(f.hosts.lock()["devbox"]["agents"].is_null());
+    assert!(f.hosts.lock()["devbox"]["agents"] == "off");
     assert_eq!(*f.steps.lock(), ["save", "changed", "remove"], "the helper is not touched on a host not reached");
 }
 

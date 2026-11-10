@@ -328,7 +328,7 @@ async fn kill(app: &Shared, id: &str) -> Result<(), String> {
 pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     let result = match msg["t"].as_str().unwrap_or("") {
-        "addhost" => crate::hosts::add(app, &s("name"), &s("recipe"), msg["files"].as_bool().unwrap_or(false)).await.map(|name| {
+        "addhost" => crate::hosts::add(app, &s("name"), &s("recipe")).await.map(|name| {
             page.send_json(&json!({"t": "hostadded", "name": name}));
         }),
         "hostagents" => {

@@ -259,7 +259,7 @@ def main():
               st == 200 and tg.get("items") == [] and "the same tmux as devbox" in tg.get("why", "") and dg.get("items"), (st, tg, dg.get("items")))
         unix_request(t.sock, "POST", "/hosts/remove", {"name": "twin"})
 
-        # AC-83: files ticked in Add host are set up once the host is attached; a failure asks again
+        # AC-83: a host's files are set up once it is attached, with no question; a failure says why, adding it again tries again
         def offer_until(pred):
             remote = {}
             for _ in range(80):
@@ -272,16 +272,16 @@ def main():
         blocker = os.path.join(remote_home, ".terminum")
         shutil.rmtree(blocker, ignore_errors=True)
         open(blocker, "w").close()   # a file where the helper's folder goes: the copy fails
-        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2222", "files": True})
+        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2222"})
         remote = offer_until(lambda r: r.get("why"))
         rec = next((h for h in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if h["name"] == "devbox"), {})
-        check("AC-83 a ticked setup that fails clears the tick; Files asks again with the reason",
+        check("AC-83 a setup that fails records nothing; Files says why and offers to try again",
               st == 200 and remote.get("state") == "ask" and "Could not enable devbox" in remote.get("why", "") and rec.get("files") is None, (remote, rec))
         os.remove(blocker)
-        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2222", "files": True})
+        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "", "recipe": "alex@devbox.example -p 2222"})
         remote = offer_until(lambda r: r.get("state") == "up")
         rec = next((h for h in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if h["name"] == "devbox"), {})
-        check("AC-83 files ticked in Add host: the helper is copied and files are enabled",
+        check("AC-83 an added host, no tick and no click: the helper is copied and files are enabled",
               st == 200 and remote.get("state") == "up" and rec.get("files") == "enabled"
               and os.path.exists(os.path.join(remote_home, ".terminum/bin/terminumd-agent")), (remote, rec))
         listing = None
@@ -337,7 +337,8 @@ def main():
         check("AC-84 a helper of the old name is replaced by terminumd-agent, its files removed",
               remote.get("state") == "up" and "terminumd-agent" in left and not any(n.startswith("terminusd-agent") for n in left), (remote, left))
         st, body = unix_request(t.sock, "POST", "/hosts/files-remove", {"name": "devbox"})
-        check("AC-83 the helper is removed from the host", st == 200 and not os.path.exists(os.path.join(remote_home, ".terminum/bin/terminumd-agent")), body)
+        rec = next((h for h in unix_request(t.sock, "GET", "/hosts")[1]["hosts"] if h["name"] == "devbox"), {})
+        check("AC-83 the helper is removed from the host, and its files stay off: nothing sets them up again", st == 200 and not os.path.exists(os.path.join(remote_home, ".terminum/bin/terminumd-agent")) and rec.get("files") == "declined", (body, rec))
         st, body = unix_request(t.sock, "POST", "/hosts/remove", {"name": "devbox"})
         gone = wait_layout(ws, lambda gs: host_group(gs, "devbox") is None, 10)
         check("AC-87 a removed host leaves the list", st == 200 and gone is not None)

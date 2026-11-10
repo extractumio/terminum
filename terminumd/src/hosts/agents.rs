@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A host's coding agents' progress turned on or off (AC-99): `terminum hosts agents <host>
-//! on|off` and the host menu. On: the helper copied (as Files does, without registering Files),
+//! A host's coding agents' progress turned on or off (AC-99): by itself once the host attaches,
+//! `terminum hosts agents <host> on|off` and the host menu. On: the helper copied (as Files does, without registering Files),
 //! terminum's hooks and MCP server installed in the host's agents, `"agents": "enabled"` stored
-//! only when one took them. Off: they are taken out, the record cleared, the helper removed only
+//! only when one took them. Off: they are taken out, `"agents": "off"` stored so nothing turns them on
+//! again by itself, the helper removed only
 //! when Files does not use it. The ssh steps are behind [`Ops`] so the decisions are tested.
 
 use std::collections::HashMap;
@@ -74,7 +75,7 @@ pub(crate) async fn set_with(ops: &impl Ops, host: &str, on: bool) -> Result<Vec
     let mut keep_helper = true;
     ops.save(&mut |h| {
         if let Some(r) = h.get_mut(host) {
-            r["agents"] = Value::Null;
+            r["agents"] = Value::from("off");
             keep_helper = files_use_helper(r);
         }
     })?;
@@ -191,6 +192,22 @@ pub async fn set_agents(app: &Shared, host: &str, on: bool) -> Result<Vec<String
         let recipe = super::recipe_of(app, host).ok_or_else(|| format!("{host} is not attached"))?;
         set_with(&Live { app, host, recipe }, host, on).await
     }).await
+}
+
+/// The host attached with no word of the user's on its agents: turned on by itself (AC-99), once
+/// per host while terminumd runs, so a host with no coding agent is asked again only after
+/// terminumd starts anew (an upgrade); the menu and `hosts agents` turn it on at any time.
+pub fn auto(app: &Shared, host: &str) {
+    if !super::records(app).get(host).is_some_and(|r| r["agents"].is_null()) || !app.hosts.agents_tried.lock().insert(host.to_string()) {
+        return;
+    }
+    let (app, host) = (app.clone(), host.to_string());
+    tokio::spawn(async move {
+        match set_agents(&app, &host, true).await {
+            Ok(got) => tracing::info!(event = "agents.auto", host, result = got.join("; ")),
+            Err(why) => tracing::warn!(event = "agents.auto_failed", host, why),
+        }
+    });
 }
 
 /// After AC-84 updated the helper: the host's agents' entries rewritten where they differ, in

@@ -33,7 +33,7 @@ mod tests;
 
 pub use ctx::Ctx;
 
-const ADD_USAGE: &str = "usage: terminum hosts add [<name>] '<ssh destination and options>' [--files]";
+const ADD_USAGE: &str = "usage: terminum hosts add [<name>] '<ssh destination and options>'";
 
 const USAGE: &str = "\
 usage: terminum [command]
@@ -45,9 +45,9 @@ usage: terminum [command]
   password                the password every browser signs in with (8+ characters)
   signout                 sign out every browser
   hosts                   the remote hosts and their state
-  hosts add [<name>] '<ssh destination and options>' [--files]
+  hosts add [<name>] '<ssh destination and options>'
                           as after ssh in a shell; no name: the destination's host;
-                          --files: browse its files (copies a helper once attached)
+                          its files and agents' progress are set up once attached
   hosts remove|enable|files-remove|off|on|retry <name>
   hosts agents <name> on|off
                           coding agents' progress from the host: terminum's hooks and
@@ -86,8 +86,8 @@ pub enum Cmd {
     Password,
     Signout,
     Hosts(Option<String>, Option<String>, Vec<String>),
-    /// `hosts add [<name>] '<recipe>' [--files]`
-    HostsAdd { name: Option<String>, recipe: Vec<String>, files: bool },
+    /// `hosts add [<name>] '<recipe>'`
+    HostsAdd { name: Option<String>, recipe: Vec<String> },
     /// `tmux [attach|detach <session> [--socket S | --host H]]` (AC-89): action, session, and
     /// where ("socket" or "host", and its value; empty: plain `tmux` here)
     Tmux(Option<(String, String, String, String)>),
@@ -137,12 +137,12 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
         "hosts" => match rest {
             [] => Ok(Cmd::Hosts(None, None, vec![])),
             [h, more @ ..] if h == "add" => {
-                let files = more.iter().any(|a| a == "--files");
+                // --files: what older scripts gave to have a host's files; every host has them
                 let words: Vec<String> = more.iter().filter(|a| *a != "--files").cloned().collect();
                 match words.as_slice() {
                     [] => Err(usage(ADD_USAGE)),
-                    [recipe] => Ok(Cmd::HostsAdd { name: None, recipe: vec![recipe.clone()], files }),
-                    [name, recipe @ ..] => Ok(Cmd::HostsAdd { name: Some(name.clone()), recipe: recipe.to_vec(), files }),
+                    [recipe] => Ok(Cmd::HostsAdd { name: None, recipe: vec![recipe.clone()] }),
+                    [name, recipe @ ..] => Ok(Cmd::HostsAdd { name: Some(name.clone()), recipe: recipe.to_vec() }),
                 }
             }
             [h, name, v] if h == "agents" && (v == "on" || v == "off") => Ok(Cmd::Hosts(Some(format!("agents-{v}")), Some(name.clone()), vec![])),
@@ -215,7 +215,7 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
         Cmd::Password => commands::password(ctx)?,
         Cmd::Hosts(None, ..) => commands::hosts_list(ctx)?,
         Cmd::Hosts(Some(h), None, _) => return Err(format!("usage: terminum hosts {h} <name>")),
-        Cmd::HostsAdd { name, recipe, files } => commands::hosts_add(ctx, name.as_deref(), &recipe, files)?,
+        Cmd::HostsAdd { name, recipe } => commands::hosts_add(ctx, name.as_deref(), &recipe)?,
         Cmd::Hosts(Some(h), Some(_), recipe) if !recipe.is_empty() => return Err(format!("usage: terminum hosts {h} <name>")),
         Cmd::Hosts(Some(h), Some(name), _) => commands::hosts_action(ctx, &h, &name)?,
         Cmd::Tmux(None) => commands::tmux_list(ctx)?,

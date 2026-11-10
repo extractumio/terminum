@@ -94,13 +94,11 @@ export function listTools({ send, store, groups, onResize = () => {} }) {
     pending = "newsess";
     send({ t: "newsession", name });
   });
-  // Enter on the tick sends the form too (WebKit submits only from a text field)
-  $("addhostfiles").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("addhost").requestSubmit(); } });
   $("addhost").addEventListener("submit", (e) => {
     e.preventDefault();
     $("addhosterr").textContent = "";
     pending = "addhost";
-    send({ t: "addhost", name: $("addhostname").value.trim(), recipe: $("addhostssh").value.trim(), files: $("addhostfiles").checked });
+    send({ t: "addhost", name: $("addhostname").value.trim(), recipe: $("addhostssh").value.trim() });
   });
   /** An `error` from terminumd: true when it answers a form's request (shown there). */
   function formError(msg) {
@@ -121,7 +119,6 @@ export function listTools({ send, store, groups, onResize = () => {} }) {
     if (pending !== "addhost") return;
     closeForm("addhost");
     $("addhostname").value = $("addhostssh").value = "";
-    $("addhostfiles").checked = false;
     tmux.hostAdded(name);
   }
   /** terminumd attached the sessions: the form closes. */

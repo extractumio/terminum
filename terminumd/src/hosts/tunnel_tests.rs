@@ -67,3 +67,57 @@ fn a_zsh_login_shell_runs_the_helpers_scripts_as_sh() {
     assert!(String::from_utf8_lossy(&old.stderr).contains("no matches found"), "{old:?}");
     let _ = std::fs::remove_dir_all(&home);
 }
+
+/// An app with host `devbox` in `status`, its record `rec`; no link is started.
+fn with_host(tag: &str, rec: serde_json::Value, status: crate::tmux::server::Status) -> (std::path::PathBuf, Shared) {
+    let (root, app) = crate::testutil::app(tag);
+    app.looks.settings.write().hosts.insert("devbox".into(), rec);
+    let link = crate::tmux::server::Link::Ssh { ssh: "unused".into(), args: vec!["alex@devbox.example".into()] };
+    let host = crate::tmux::server::Server::new("devbox", "default", link, app.changed.clone());
+    *host.status.lock() = status;
+    app.tmux.add_host(host);
+    (root, app)
+}
+
+#[tokio::test]
+async fn ac83_a_hosts_files_are_set_up_with_no_question_and_a_failure_or_a_no_is_said() {
+    use crate::tmux::server::Status;
+    let state = |app: &Shared| crate::hosts::offer(app, "devbox")["state"].as_str().unwrap().to_string();
+    let (root, app) = with_host("offer-new", serde_json::json!({"ssh": ["alex@devbox.example"]}), Status::Connecting);
+    assert_eq!(state(&app), "enabling", "no decision yet, the host connecting: being set up, never asked");
+    set(&app, "devbox", "failed", "the host has no helper for its platform");
+    let failed = crate::hosts::offer(&app, "devbox");
+    assert_eq!((failed["state"].as_str(), failed["why"].as_str()), (Some("ask"), Some("the host has no helper for its platform")), "a failed setup says why and offers to try again");
+    app.looks.settings.write().hosts["devbox"]["files"] = "declined".into();
+    assert_eq!(state(&app), "dismissed", "the user's Not now or Remove: nothing is set up");
+    // the next attach tries a failed setup again; a host the user declined starts nothing
+    attached(&app, "devbox");
+    assert!(failed_none(&app), "the failure of the connection before is forgotten at the next attach");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+    let (root, app) = with_host("offer-off", serde_json::json!({"ssh": ["alex@devbox.example"]}), Status::Off);
+    assert_eq!(state(&app), "ask", "a host that is off is not being set up");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+fn failed_none(app: &Shared) -> bool {
+    failed(app, "devbox").is_none()
+}
+
+#[tokio::test]
+async fn ac99_a_hosts_agents_are_turned_on_by_themselves_once_unless_the_user_turned_them_off() {
+    use crate::tmux::server::Status;
+    for (rec, tried, why) in [
+        (serde_json::json!({"ssh": ["alex@devbox.example"], "agents": "off"}), false, "the user turned them off"),
+        (serde_json::json!({"ssh": ["alex@devbox.example"], "agents": "enabled"}), false, "on already"),
+        (serde_json::json!({"ssh": ["alex@devbox.example"]}), true, "no word of the user's yet"),
+    ] {
+        let (root, app) = with_host("auto-agents", rec, Status::Off);
+        crate::hosts::agents::auto(&app, "devbox");
+        crate::hosts::agents::auto(&app, "devbox");
+        assert_eq!(app.hosts.agents_tried.lock().len(), usize::from(tried), "{why}");
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

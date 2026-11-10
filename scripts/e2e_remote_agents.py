@@ -132,7 +132,7 @@ def agents_only(t, home, hb, pane):
     check("setup: files off", st == 200, body)
     st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "devbox"})
     up = until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 15)
-    check("setup: agents on, files off, the link up", st == 200 and up.get("agents") == "up" and up.get("files") is None, (body, up))
+    check("setup: agents on, files off, the link up", st == 200 and up.get("agents") == "up" and up.get("files") == "declined", (body, up))
     evdir = os.path.join(home, "proj")
     in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; ({hb} hook claude < ev0.json; echo "hook-rc=$?") &', "hook-rc=0")
     check("AC-99 agents only: the pane's hook state is known", hooks_known(REMOTE_SOCKET, pane, evdir, hb), open(os.path.join(evdir, "get.out")).read()[-400:])
@@ -182,14 +182,16 @@ def main():
     try:
         t.start()
         ws = t.page(t.signin())
-        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "devbox", "recipe": "alex@devbox.example", "files": True})
+        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "devbox", "recipe": "alex@devbox.example"})
         check("setup: the host is added with files", st == 200, body)
         groups = wait_layout(ws, lambda gs: any(g.get("host") == "devbox" and g["items"] for g in gs), 10) or []
         item = next((g["items"][0] for g in groups if g.get("host") == "devbox" and g["items"]), {})
         key = item.get("id", "")
         until(lambda: host_rec(t), lambda h: h.get("files") == "enabled", 20)
+        auto = until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 60)
+        check("AC-99 an added host, no click: its agents are turned on by themselves after its files", (auto or {}).get("agents") == "up", auto)
 
-        # 2. agents on
+        # 2. agents on, by the user: the same result lines
         st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "devbox"})
         msg = (body or {}).get("message") or ""
         print("    agents on:", json.dumps(body.get("message") if body else body))

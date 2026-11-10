@@ -48,7 +48,7 @@ def main():
         secret = t.signin()
         call = lambda path, method="GET", body=None: api(t, secret, path, method=method, body=json.dumps(body).encode() if body is not None else None,  # noqa: E731
                                                          headers={"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT}"})
-        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "devbox", "recipe": "alex@devbox.example", "files": True})
+        st, body = unix_request(t.sock, "POST", "/hosts/add", {"name": "devbox", "recipe": "alex@devbox.example"})
         check("setup: the host is added", st == 200, body)
         folder = os.path.join(home, "proj")
         project = call("/api/task-projects", "POST", {"name": "Far", "host": "devbox", "dir": folder})[1]["id"]

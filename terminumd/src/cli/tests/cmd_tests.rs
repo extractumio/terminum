@@ -200,15 +200,15 @@ fn hosts_add_sends_the_recipe_and_shows_terminumd_refusals() {
     }))]));
     let (err, out) = t.cli(&["hosts", "add", "devbox", "-p 2222 alex@devbox.example"]);
     assert_eq!(err, None);
-    assert_eq!(s.requests.lock().last().unwrap().2, Some(json!({"name": "devbox", "recipe": "-p 2222 alex@devbox.example", "files": false})));
+    assert_eq!(s.requests.lock().last().unwrap().2, Some(json!({"name": "devbox", "recipe": "-p 2222 alex@devbox.example"})));
     assert!(out[0].contains("Added devbox"));
     t.cli(&["hosts", "add", "devbox", "-p", "2222", "alex@devbox.example"]);
     assert_eq!(s.requests.lock().last().unwrap().2.as_ref().unwrap()["recipe"], "-p 2222 alex@devbox.example", "unquoted words are joined");
     assert_eq!(t.cli(&["hosts", "add", "x", "alex@h -o ProxyCommand=nc"]).0.as_deref(), Some("option not allowed: -o"));
     assert!(t.cli(&["hosts", "add"]).0.unwrap().contains("usage"));
     t.cli(&["hosts", "add", "--files", "alex@devbox.example -p 2222"]);
-    assert_eq!(s.requests.lock().last().unwrap().2, Some(json!({"name": "", "recipe": "alex@devbox.example -p 2222", "files": true})),
-        "one word: the recipe, terminumd names the host");
+    assert_eq!(s.requests.lock().last().unwrap().2, Some(json!({"name": "", "recipe": "alex@devbox.example -p 2222"})),
+        "one word: the recipe, terminumd names the host; an older script's --files is no part of it");
 }
 
 #[test]

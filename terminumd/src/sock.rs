@@ -367,15 +367,13 @@ struct HostBody {
     name: String,
     #[serde(default)]
     recipe: String,
-    #[serde(default)]
-    files: bool,
 }
 
 /// `terminum hosts add|remove|enable|files-remove|off|on|retry` (AC-87), `hosts agents` (AC-99).
 async fn host_action(State(app): State<Shared>, UrlPath(action): UrlPath<String>, Json(b): Json<HostBody>) -> Response {
     let mut message = None;
     let result = match action.as_str() {
-        "add" => crate::hosts::add(&app, &b.name, &b.recipe, b.files).await,
+        "add" => crate::hosts::add(&app, &b.name, &b.recipe).await,
         // AC-99: the per-agent result lines are the CLI's message
         "agents-on" | "agents-off" => crate::hosts::agents::set_agents(&app, &b.name, action == "agents-on").await.map(|lines| {
             message = Some(lines.join("\n"));

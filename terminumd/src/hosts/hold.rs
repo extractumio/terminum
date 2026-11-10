@@ -32,7 +32,7 @@ pub(super) async fn hold(app: Shared, server: Arc<Server>, retry: Arc<Notify>) {
                 *server.status.lock() = Status::Attached;
                 (backoff, silent_tries) = (1, 0);
                 server.list_changed();
-                tunnel::reconcile(&app, &server.name);
+                tunnel::attached(&app, &server.name);
                 // judged by its `terminum` client alone: the user's session clients (AC-89)
                 // end and come back with it
                 while server.attached() {

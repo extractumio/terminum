@@ -96,16 +96,16 @@ export async function webTmux(browser, name) {
     if (await page.isHidden("#addhostbtn")) await drawer();
     await pressFoot(page, "#addhostbtn");
     const first = await page.evaluate(() => document.activeElement?.id);
+    const sets = await page.textContent("#addhost .sets");
     await page.keyboard.type("alex@devbox.example -p 2222");
-    await page.check("#addhostfiles");
     await page.click('#addhost button[type="submit"]');
     await pause(page);
     const waits = await page.isVisible("#addhost");
     f.say({ t: "hostadded", name: "devbox" });
     await pause(page);
-    check("AC-81 Add host: what follows ssh, no name, the files tick; it closes and clears once terminumd added it",
-      first === "addhostssh" && waits && JSON.stringify(last("addhost")) === JSON.stringify({ t: "addhost", name: "", recipe: "alex@devbox.example -p 2222", files: true })
-        && await page.isHidden("#addhost") && await page.inputValue("#addhostssh") === "" && !(await page.isChecked("#addhostfiles")),
+    check("AC-81 Add host: what follows ssh, no name, no tick, what it sets up said; it closes and clears once terminumd added it",
+      first === "addhostssh" && waits && JSON.stringify(last("addhost")) === JSON.stringify({ t: "addhost", name: "", recipe: "alex@devbox.example -p 2222" })
+        && await page.isHidden("#addhost") && await page.inputValue("#addhostssh") === "" && !(await page.$("#addhostfiles")) && sets.includes("by themselves"),
       JSON.stringify({ first, waits, sent: last("addhost") }));
 
     // a host's group: cornflower blue, its state; rows name the host in violet; its menu

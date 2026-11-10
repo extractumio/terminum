@@ -63,12 +63,12 @@ Open questions:
 |---|---|---|
 | AC-81 | [MUST / P0] | The user adds a host by its ssh string and sees its `terminum` session in the list within 5 s, opens and types into its panes, and after a dropped link the host reconnects with back-off and says so; when ssh works and its tmux does not answer it stops after three tries, says why and offers Reconnect; nothing is printed into any terminal. |
 | AC-82 | [SHOULD / P1] | The user browses, reads, edits, creates, renames and trashes a host's files as if local, with live refresh, once the host's files are enabled. |
-| AC-83 | [SHOULD / P1] | The user enables a host's files with one click the first time its pane is shown; nothing is installed on a host without that click; a host's helper can be removed with one action. |
+| AC-83 | [SHOULD / P1] | A host's files are set up by themselves once it attaches, with no question: adding the host is the consent; a failure is said with why and tried again; a host's helper can be removed with one action, and what the user turned off stays off. |
 | AC-84 | [SHOULD / P1] | After the Mac's terminum is upgraded, the helper on every attached host follows by itself and the page says so. |
 | AC-85 | [SHOULD / P1] | Pasted images and uploaded files reach a host's pane as paths on that host. |
 | AC-86 | [SHOULD / P1] | The maintainer builds terminumd for macOS arm64 and x86_64 and Linux x86_64 and arm64 with one script and publishes signed releases from the Mac, while every push is tested on the owner's runner. |
 | AC-87 | [SHOULD / P1] | Hosts are their ssh destinations: two hosts reporting the same name are two hosts; a host's identity and options live in settings and the `terminum hosts` command manages them. |
-| AC-99 | [SHOULD / P1] | Once the user enables coding agents' progress on a host, Claude Code and Codex in that host's tmux report status and plans to the host's rows and the Plan pane as local panes do (AC-97), and use their project's tasks (terminum-kanban.md AC-120); a host that cannot forward says why and keeps its files. |
+| AC-99 | [SHOULD / P1] | Once a host attaches, coding agents' progress is turned on there by itself, unless the user turned it off for that host: Claude Code and Codex in that host's tmux report status and plans to the host's rows and the Plan pane as local panes do (AC-97), and use their project's tasks (terminum-kanban.md AC-120); a host that cannot forward says why and keeps its files. |
 | AC-132 | [MUST / P0] | One tmux server's hang or slow link never slows another server's list, screens, typing or actions; a slow link is not cut while bytes arrive, and it carries less. |
 
 ## 5. BDD scenarios
@@ -139,12 +139,13 @@ Scenario: AC-82 security — the agent
 ### AC-83 — Enable a host's files [SHOULD / P1]
 
 ```gherkin
-Scenario: AC-83 happy path — first time
-  Given devbox is attached and its files never enabled or declined
-  When the page shows a pane of devbox and the user opens Files
-  Then Files says "devbox is a remote host. Browse its files? This copies a 6 MB helper to ~/.terminum/bin on devbox; it runs only while you use it." with [Enable] and [Not now]
-  When the user clicks Enable
-  Then terminumd reads the platform over the host's ssh recipe, copies the agent the package carries for it to "~/.terminum/bin/terminumd-agent-<agent id>", links "~/.terminum/bin/terminumd-agent" to it, checks it through a trial tunnel, records "files": "enabled" in settings.json, and Files shows the host's folder within seconds; the agent logs to "~/.terminum/logs/agent.log" on the host (1 MB, one older kept)
+Scenario: AC-83 happy path — set up by itself
+  Given the user added devbox (Add host, "terminum hosts add"), or devbox's record says nothing of its files
+  When devbox attaches
+  Then, with no question, terminumd reads the platform over the host's ssh recipe, copies the agent the package carries for it to "~/.terminum/bin/terminumd-agent-<agent id>", links "~/.terminum/bin/terminumd-agent" to it, checks it through a trial tunnel, records "files": "enabled" in settings.json, and Files shows the host's folder within seconds; the agent logs to "~/.terminum/logs/agent.log" on the host (1 MB, one older kept)
+  And meanwhile Files says "devbox is a remote host. Setting up its files: a 6 MB helper in ~/.terminum/bin on devbox; it runs only while you use it." with [Setting up…] and [Not now] disabled
+  And Add host has no tick: it says its files and its coding agents' progress are set up on the host by themselves; "terminum hosts add" takes an older script's "--files" and does the same without it
+  And then its coding agents' progress is turned on the same way (AC-99)
 
 Scenario: AC-83 edge — a host whose login shell is not sh
   Given devbox's login shell is zsh (macOS's since 10.15), fish or csh
@@ -156,21 +157,21 @@ Scenario: AC-83 edge — a login shell that prints
   When terminumd probes the host or checks a copied helper
   Then the probe's answer is read after a random marker line and the helper's id from the last non-empty line, so enabling succeeds
 
-Scenario: AC-83 happy path — ticked in Add host
-  When the user ticks "Browse its files" in Add host (the tick is the click)
-  Then "files": "wanted" is recorded, Files shows "Setting up…" instead of the question, and once the host is attached terminumd enables it as Enable does; at success "files": "enabled"
-  When that enabling fails
-  Then "wanted" is cleared, and Files shows the question with the reason; Enable tries again
+Scenario: AC-83 failure — the setup fails
+  When that setup fails (no helper for the platform, the copy or the trial refused)
+  Then "files" is not recorded, and Files says "devbox is a remote host. Its files are not set up: they need a 6 MB helper in ~/.terminum/bin on devbox; it runs only while you use it." with the reason, [Try again] and [Not now]
+  And it is tried again by itself when devbox next attaches, never in a loop on one connection
+  And a host that is off or not connected is not being set up: Files says the same without a reason
 
 Scenario: AC-83 edge — Not now, remove, later
   When the user clicks Not now
-  Then "files": "declined" is recorded and the question is not asked again; Files' menu ("Browse Files of devbox…") or "terminum hosts enable devbox" enables it any time
+  Then "files": "declined" is recorded and nothing sets its files up again by itself; Files' menu ("Browse Files of devbox…") or "terminum hosts enable devbox" enables it any time
   When the user picks "Remove Helper from devbox…" and confirms, or runs "terminum hosts files-remove devbox"
-  Then the connection closes, "bin/terminumd-agent*" and "logs/agent.log*" are removed from the host's ~/.terminum (the folder when empty; a Mac host keeps its own install), and "files" is cleared
+  Then the connection closes, "bin/terminumd-agent*" and "logs/agent.log*" are removed from the host's ~/.terminum (the folder when empty; a Mac host keeps its own install), and "files" is "declined": the helper does not come back at the next attach
   And an enabled host asks nothing later, also after an upgrade (the agent is updated, AC-84)
 
 Scenario: AC-83 edge — a later decision while enabling or removing
-  Given an enable of devbox runs (a click or the tick)
+  Given an enable of devbox runs (by itself or a click)
   When Not now or a removal of devbox comes meanwhile (another page, "terminum hosts")
   Then the later decision stands: the enable takes no step after it, "enabled" is never written over it, and no connection starts; Files says "Could not enable devbox: Not now or Remove came for this host meanwhile; nothing was recorded"
   When Enable comes again before the enable ends
@@ -274,11 +275,12 @@ Scenario: AC-87 failure — a bad record
 ```gherkin
 Scenario: AC-99 happy path — enable
   Given devbox is attached
-  When the user picks "Coding agents' progress on devbox…" in the host menu, or runs "terminum hosts agents devbox on"
+  When its files were just set up or need no setup (AC-83) and its record says nothing of its agents, or the user picks "Coding agents' progress on devbox…" in the host menu, or runs "terminum hosts agents devbox on"
   Then terminumd copies or updates the helper as for files (AC-83, shared code), links "~/.terminum/bin/terminum-host" to it, creates "~/.terminum/run" (0700), and over ssh in "exec /bin/sh -c '…'" finds claude (known paths, then "$SHELL -lc", then "$SHELL -ic", each without input, 10 s, output between a random marker) and CODEX_HOME
   And runs "~/.terminum/bin/terminum-host hooks install --host-mode" there, with hook and MCP entries calling terminum-host by absolute path; the host's own "~/.terminum/bin/terminum" is never touched
   And records "agents": "enabled" for devbox and shows one result line per agent: "installed", "not found", "installed; trust terminum's hooks in Codex's /hooks once", "uses devbox's own terminum", "refused: an entry named terminum runs <command>, not <terminum-host>", or "failed: <why>"
-  And nothing is installed in devbox's ~/.claude or ~/.codex before that action; Add host has no tick for it
+  And by itself it runs once per host while terminumd runs, its result in terminumd's log alone: a host where no coding agent took the hooks stays off, with no message, and is tried again after terminumd next starts
+  And "terminum hosts agents devbox off" or the menu's "Turn off…" records "agents": "off": nothing turns them on again by itself
   And the whole action runs over the ssh recipe read when it began; when devbox's record changes or goes meanwhile, the install is not started after the helper copy, nothing is saved and it says "the host's record changed meanwhile; nothing was saved, try again"
   And "terminum hosts agents devbox on" first says "Enabling coding agents' progress on devbox… (copying the helper and installing)" and waits up to 635 s for the result lines
 

@@ -450,14 +450,21 @@ To remove it: `tailscale serve clear svc:terminum`.
 ## Remote hosts
 
 ```bash
-terminum hosts add devbox 'alex@devbox.example -p 2222' --files   # or "Add host" under the list
+terminum hosts add devbox 'alex@devbox.example -p 2222'   # or "Add host" under the list
 terminum hosts                                             # each host, its state, files and agents
-terminum hosts enable devbox                               # browse its files (copies a helper)
-terminum hosts agents devbox on|off                        # coding agents' progress from devbox
+terminum hosts enable devbox                               # its files again, after files-remove or a failed setup
+terminum hosts agents devbox on|off                        # coding agents' progress from devbox, off or on again
 terminum hosts off|on|retry|remove|files-remove devbox
 ```
 
 A host whose ssh works but whose tmux does not answer stops being tried after three tries: its group says why and has a **Reconnect** button (`terminum hosts retry devbox`). The usual cause is a new tmux binary with the old server still running: restart that server, or bring the old binary back. Use tmux 3.6 or newer on a host: older ones leak memory with every screen terminum reads.
+
+Once a host attaches, terminum sets it up by itself, with no question: its helper for Files
+(6 MB in `~/.terminum/bin`), then terminum's hooks and MCP server in Claude Code and Codex there.
+Both follow this Mac's terminum at each upgrade. `hosts files-remove devbox` (Files' menu: "Remove
+Helper from devbox…", or Not now) and `hosts agents devbox off` turn one off for that host; what
+you turned off stays off until you turn it on. A host with no coding agent is looked at again
+when terminum next starts.
 
 `hosts agents devbox on` (or the host menu's "Coding agents' progress on devbox…") puts terminum's
 hooks and MCP server into Claude Code and Codex on devbox (`~/.claude`, `~/.codex`) and prints one
@@ -465,7 +472,7 @@ line per agent: installed, not found, needs Codex trust (/hooks), uses devbox's 
 refused (a terminum entry of another command) or failed and why. Codex asks once to trust them in
 `/hooks`; restart agent sessions already running there. devbox's rows and Plan pane then show its
 agents as local ones (Plans, progress and notes, above). `off`, or removing the host, takes them
-out again; nothing is written to devbox's `~/.claude` or `~/.codex` before you turn it on.
+out again.
 
 The events ride on the Files helper's ssh as a reverse Unix-socket forward, so devbox's sshd must
 allow it: `AllowStreamLocalForwarding yes` (the default) and, on Alpine, `AllowTcpForwarding yes`

@@ -253,7 +253,7 @@ pub fn hosts_list(ctx: &Ctx) -> Result<(), String> {
     let answer = checked(ctx, "GET", "/hosts", None)?;
     let hosts = answer["hosts"].as_array().cloned().unwrap_or_default();
     if hosts.is_empty() {
-        ctx.say("No hosts yet: terminum hosts add '<ssh destination and options>' [--files]");
+        ctx.say("No hosts yet: terminum hosts add '<ssh destination and options>'");
     }
     for x in hosts {
         let recipe = match x["ssh"].as_array() {
@@ -269,16 +269,15 @@ pub fn hosts_list(ctx: &Ctx) -> Result<(), String> {
     Ok(())
 }
 
-/// `hosts add [<name>] '<recipe>' [--files]`: no name, terminumd names it after the destination.
-pub fn hosts_add(ctx: &Ctx, name: Option<&str>, recipe: &[String], files: bool) -> Result<(), String> {
+/// `hosts add [<name>] '<recipe>'`: no name, terminumd names it after the destination.
+pub fn hosts_add(ctx: &Ctx, name: Option<&str>, recipe: &[String]) -> Result<(), String> {
     if recipe.is_empty() {
-        return Err("usage: terminum hosts add [<name>] '<ssh destination and options>' [--files]".into());
+        return Err("usage: terminum hosts add [<name>] '<ssh destination and options>'".into());
     }
     let text = if recipe.len() == 1 { recipe[0].clone() } else { join(recipe) };
-    let answer = checked(ctx, "POST", "/hosts/add", Some(json!({"name": name.unwrap_or(""), "recipe": text, "files": files})))?;
+    let answer = checked(ctx, "POST", "/hosts/add", Some(json!({"name": name.unwrap_or(""), "recipe": text})))?;
     let added = answer["name"].as_str().or(name).unwrap_or("the host");
-    let then = if files { "; its files are set up once it attaches" } else { "" };
-    ctx.say(answer["message"].as_str().map_or_else(|| format!("Added {added}; it attaches within seconds (terminum hosts){then}"), str::to_string));
+    ctx.say(answer["message"].as_str().map_or_else(|| format!("Added {added}; it attaches within seconds (terminum hosts); its files and agents' progress are set up once it attaches"), str::to_string));
     Ok(())
 }
 

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Remote hosts (terminum-remote.md): a host is its record in settings.json (`hosts.<name>`:
-//! its checked ssh recipe, files enabled or declined, the helper's build), never a name it
+//! its checked ssh recipe, files and agents enabled or turned off, the helper's build), never a name it
 //! reports (AC-87). terminumd holds each host's `terminum` session over ssh as a control
 //! client, reconnecting after a drop with back-off 1, 2, 4 … 30 s (AC-81); a host's files go
-//! through its agent once enabled (tunnel.rs, AC-82–AC-85; the user's decisions: consent.rs).
+//! through its agent, set up by itself once the host attaches (tunnel.rs, AC-82–AC-85; the user's
+//! decisions: consent.rs), and its coding agents report over it (agents.rs, AC-99).
 
 pub mod agents;
 pub mod agentsinstall;
@@ -48,6 +49,8 @@ pub struct Hosts {
     tried: Mutex<HashMap<String, Tried>>,
     /// the Files operation each host's last decision started, while it runs (consent.rs)
     decisions: consent::Decisions,
+    /// hosts whose agents' setup was tried by itself since terminumd started (agents.rs `auto`)
+    agents_tried: Mutex<std::collections::HashSet<String>>,
 }
 
 /// A recipe tried and, once in, its answer.
@@ -243,9 +246,9 @@ fn let_go(app: &Shared, old: Arc<Server>) {
 }
 
 /// `hosts add <name> '<destination and options>'` or the page's "Add host": an empty name is
-/// the destination's host; `files` records the user's tick to enable its files once attached
-/// (AC-83). Returns the host's name.
-pub async fn add(app: &Shared, name: &str, text: &str, files: bool) -> Result<String, String> {
+/// the destination's host; its files and agents are set up once attached (AC-83, AC-99), unless
+/// the user turned them off for it before. Returns the host's name.
+pub async fn add(app: &Shared, name: &str, text: &str) -> Result<String, String> {
     let args = recipe::parse(text)?;
     let recs = records(app);
     let name = if name.is_empty() {
@@ -264,17 +267,9 @@ pub async fn add(app: &Shared, name: &str, text: &str, files: bool) -> Result<St
     save(app, |hosts| {
         let mut rec = hosts.get(&name).cloned().unwrap_or_else(|| json!({}));
         rec["ssh"] = json!(args);
-        if files && rec["files"] != "enabled" {
-            rec["files"] = json!("wanted");
-        } else if !files && rec["files"] == "wanted" {
-            rec["files"] = Value::Null;
-            app.hosts.decisions.withdraw(&name); // unticked: a setup it started stops
-        }
         hosts.insert(name.clone(), rec);
     })?;
-    if files {
-        tunnel::reconcile(app, &name);
-    }
+    tunnel::retry(app, &name);
     Ok(name)
 }
 
@@ -330,7 +325,7 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
         // Not now just after an enable recorded "enabled": the connection it started closes
         "decline" => consent::decide(app, name, Some("declined")).map(|was| if was { link::changed(app, name) }),
         // agents on keep the helper: only Files goes
-        "files-remove" if link::wanted(app, name) => consent::decide(app, name, None).map(|_| link::changed(app, name)),
+        "files-remove" if link::wanted(app, name) => consent::decide(app, name, Some("declined")).map(|_| link::changed(app, name)),
         "files-remove" => consent::remove(app, name).await,
         _ => Err(format!("unknown host action: {action}")),
     }
@@ -378,15 +373,16 @@ pub fn list(app: &Shared) -> Vec<Value> {
     }).collect()
 }
 
-/// The Files panel's offer for a host's pane (AC-83): ask, dismissed, enabling, connecting,
-/// updating, up, down.
+/// The Files panel's offer for a host's pane (AC-83): enabling (set up by itself once the host
+/// attaches), ask (that setup failed, with why: Enable tries again), dismissed (the user turned
+/// its files off), connecting, updating, up, down.
 pub fn offer(app: &Shared, name: &str) -> Value {
     let state = match files_state(app, name).as_deref() {
         Some("declined") => "dismissed".to_string(),
         Some("enabled") => tunnel::state(app, name),
-        // ticked in Add host: set up once attached; a host not reaching it is asked again
-        Some("wanted") if app.tmux.host(name).is_some_and(|s| matches!(*s.status.lock(), Status::Attached | Status::Connecting)) => "enabling".into(),
         _ if tunnel::state(app, name) == "enabling" => "enabling".into(),
+        _ if tunnel::failed(app, name).is_some() => "ask".into(),
+        _ if app.tmux.host(name).is_some_and(|s| matches!(*s.status.lock(), Status::Attached | Status::Connecting)) => "enabling".into(),
         _ => "ask".into(),
     };
     let mut v = json!({"key": name, "name": name, "state": state});

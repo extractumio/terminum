@@ -70,7 +70,7 @@
       <p class="hint">As after <code>ssh</code> in a terminal: a Host of ~/.ssh/config, or user@host with -p -l -i -J. Your keys sign in; ssh must not ask for a password.</p>
       <input id="addhostname" class="field" maxlength="32" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
         aria-label="Name in the list" placeholder="Name in the list (optional)">
-      <label class="tick"><input id="addhostfiles" type="checkbox"> Browse its files <span>(copies a small helper to the host)</span></label>
+      <p class="sets">Its files and its coding agents' progress are set up on the host by themselves (a small helper in ~/.terminum, terminum's hooks in ~/.claude and ~/.codex).</p>
       <p id="addhosterr" role="alert"></p>
       <div class="actions"><button id="addhostcancel" type="button">Cancel</button><button class="primary" type="submit">Add host</button></div>
     </form>
