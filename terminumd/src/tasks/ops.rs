@@ -161,6 +161,24 @@ pub(super) fn check_severity(s: &str) -> Result<(), String> {
     if SEVERITIES.contains(&s) { Ok(()) } else { Err(format!("Severity: one of {}", SEVERITIES.join(", "))) }
 }
 
+/// A project's own text setting, a column of `projects` (none: the caller's default).
+pub(super) fn project_text(tx: &Transaction, project: &str, column: ProjectText) -> Result<Option<String>, String> {
+    let own: Option<Option<String>> = tx.query_row(&format!("SELECT {} FROM projects WHERE id = ?1", column.0), [project], |r| r.get(0)).optional().map_err(sql)?;
+    Ok(own.flatten())
+}
+
+/// Keeps a project's text setting; `None` keeps none (the default).
+pub(super) fn set_project_text(tx: &Transaction, project: &str, column: ProjectText, kept: Option<&str>) -> Result<(), String> {
+    tx.execute(&format!("UPDATE projects SET {} = ?1 WHERE id = ?2", column.0), (kept, project)).map_err(sql)?;
+    Ok(())
+}
+
+/// A text column of `projects` a setting is kept in: only these, never a name from outside.
+#[derive(Clone, Copy)]
+pub(super) struct ProjectText(&'static str);
+pub(super) const TEMPLATE_COLUMN: ProjectText = ProjectText("task_template");
+pub(super) const LANGUAGE_COLUMN: ProjectText = ProjectText("language");
+
 pub(super) fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
     let found: Option<i64> = tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [project], |r| r.get(0)).optional().map_err(sql)?;
     found.map(|_| ()).ok_or_else(|| "That project is gone.".to_string())

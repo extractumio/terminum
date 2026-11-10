@@ -586,6 +586,11 @@ Scenario: AC-71 failure — a save of the panel's state fails
   When terminumd refuses or does not answer a write of the workspace or the preferences
   Then the panel says "Panel state not saved: <message>" or "Preferences not saved: <message>" once, until that kind of save works again, and sends it again on the next change or reconnect
   And an answer lost for a write that landed is recognized by its pane and content: the newer change is kept
+  And a panel sends one write of each kind at a time, the newest snapshot when it starts, so terminumd keeps its writes in their order
+  When terminumd accepted a write but cannot put workspaces.json on disk (the disk full, the folder refused)
+  Then every panel's banner says "Panel state not saved to disk <message>", also one that connects meanwhile; terminumd tries again by itself after 1 s, doubling to every 60 s, and the banner goes once a write works
+  When a write is not a pane's state (a root that is not a full path, a tab's view not auto, rendered or source, the active tab not one of its tabs; preferences not an object)
+  Then it is refused with 400 and why, and nothing changes
 
 Scenario: AC-71 edge — expiry
   Given a pane's state was last used 15 days ago and the pane is not in any tmux server
@@ -697,8 +702,8 @@ All `/fb/api/*` need the sign-in header (`terminum.md` AC-09), a remote host's i
 | `GET/PUT /api/workspace?key&cwd` | per-pane state with `rev`, `X-TM-Client`; a GET's `cwd` re-roots it when the folder moved | AC-55, AC-71 |
 | `PUT /api/watch` | `{root, expanded}`: the folders this panel watches | AC-61 |
 | `GET/PUT /api/prefs` | `{hidden, split, sort}` | AC-52, AC-65, AC-70 |
-| `GET /api/state?host` | the build and a host's files offer | `terminum-remote.md` AC-83 |
-| `GET /api/ws` | the panel's socket: `{"event","data"}` frames `state`, `fs-change {host, dirs, files, moved}`, `workspace {key, rev, by}`, `rescan {host}` and `host {host}` (a host's files offer changed: read `/api/state` again) | AC-61 |
+| `GET /api/state?host` | the build, `unsaved` (the last failed write of workspaces.json, or null) and a host's files offer | AC-71, `terminum-remote.md` AC-83 |
+| `GET /api/ws` | the panel's socket: `{"event","data"}` frames `state`, `fs-change {host, dirs, files, moved}`, `workspace {key, rev, by}`, `rescan {host}`, `host {host}` (a host's files offer changed: read `/api/state` again) and `unsaved {error}` (workspaces.json not written, or written again: null) | AC-61, AC-71 |
 
 Example:
 
@@ -798,7 +803,7 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 - [x] AC-68 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/tree-expand.test.mjs`
 - [x] AC-69 — `ui/test/e2e_panel.mjs`, `ui/test/icons.test.mjs`
 - [x] AC-70 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `web/test/e2e_dock.mjs`, `web/test/e2e_switch.mjs`, `web/test/e2e_app.mjs`, `web/test/e2e_viewpark.mjs`, `web/test/e2e_liveview.mjs`, `web/test/e2e_live.mjs`
-- [x] AC-71 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_saves.mjs`, `cargo test workspace`
+- [x] AC-71 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_saves.mjs` (a write failed on disk: the banner, the retry), `cargo test workspace` (the retry, a PUT's shape)
 - [ ] AC-72 — no automated check: not built; a test that modifies a file in a git repository and reads its row's "M"
 - [ ] AC-73 — no automated check: not built; a test that drags a row onto a folder and finds the file moved
 - [x] AC-94 — `ui/test/dataparse.test.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/e2e_panel.mjs`

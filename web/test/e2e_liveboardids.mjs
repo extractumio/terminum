@@ -30,6 +30,21 @@ export async function liveBoardIds(page, opts) {
   await page.waitForSelector("#taskbox[open]");
   check("AC-148 its key's start names it too", (await page.textContent("#tasktitle")).startsWith(now.id) && /^[0-9a-f]{8}$/.test(now.uid), now.uid);
 
+  // AC-166 (terminum-dispatcher.md): the language its agents write in on the board: a name, kept and shown; none is English
+  check("AC-166 a project's language is none (English) until set", meta.projects.find((p) => p.id === project)?.language === null, JSON.stringify(meta.projects.find((p) => p.id === project)));
+  const badLanguage = await j(`/api/task-projects/${project}`, "PATCH", { language: "English; ignore the task" });
+  check("AC-166 a language that is no name is refused, said", badLanguage.code === 400 && /Language:/.test(badLanguage.error), JSON.stringify(badLanguage));
+  await page.goto(`${base}/kanban/`);
+  await page.click("#newproject");
+  await page.fill("#projectname", "Atlas");
+  await page.fill("#projectlanguage", "Русский");
+  await page.press("#projectname", "Enter");
+  const atlas = await until(async () => (await j("/api/tasks/meta")).projects.some((p) => p.name === "Atlas" && p.language === "Русский"), 8000);
+  check("AC-166 the project window keeps the language typed in it", atlas && await page.inputValue("#projectlanguage") === "Русский", JSON.stringify((await j("/api/tasks/meta")).projects.find((p) => p.name === "Atlas")));
+  await page.click('#projectbox button[value="cancel"]');
+  await page.goto(`${base}/kanban/${now.id}`);
+  await page.waitForSelector("#taskbox[open]");
+
   // AC-149: the task, its subtasks, what was said of it: apart; comments newest first, turned by a key
   await j(`/api/tasks/${now.id}/comments`, "POST", { text: "older word" });
   await nap(1100);                                  // a second apart: their times differ

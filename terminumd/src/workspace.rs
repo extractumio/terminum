@@ -55,9 +55,27 @@ struct File {
     panes: HashMap<String, Pane>,
 }
 
+/// A failed write is tried again after this long, doubling up to `RETRY_MAX`.
+const RETRY_FIRST: Duration = Duration::from_secs(1);
+const RETRY_MAX: Duration = Duration::from_secs(60);
+
+/// The views a tab can be in (ui/src/api.ts `Tab`).
+const VIEWS: [&str; 3] = ["auto", "rendered", "source"];
+
+/// Why a PUT was not applied.
+#[derive(Debug)]
+pub enum Refused {
+    /// another revision is current (it is the answer)
+    Stale(Pane),
+    /// not a pane's state: what is wrong
+    Bad(String),
+}
+
 pub struct Store {
     data: Mutex<File>,
     writing: Mutex<()>,
+    /// the last write's error while the file lags what was accepted (said to every panel)
+    unsaved: Mutex<Option<String>>,
     path: PathBuf,
     dirty: Notify,
     bus: Bus,
@@ -85,27 +103,52 @@ impl Store {
         data.version = 1;
         // Wait for authoritative liveness before pruning: a live inactive pane may
         // predate the TTL when fbd restarts.
-        let store = Arc::new(Store { data: Mutex::new(data), writing: Mutex::new(()), path, dirty: Notify::new(), bus,
-            ttl: ttl_days.saturating_mul(86400) });
-        let s = store.clone();
-        tokio::spawn(async move {
-            loop {
-                s.dirty.notified().await;
-                tokio::time::sleep(Duration::from_millis(500)).await;
-                let s = s.clone();
-                let _ = tokio::task::spawn_blocking(move || s.flush()).await;
-            }
-        });
+        let store = Arc::new(Store { data: Mutex::new(data), writing: Mutex::new(()), unsaved: Mutex::new(None), path,
+            dirty: Notify::new(), bus, ttl: ttl_days.saturating_mul(86400) });
+        tokio::spawn(store.clone().write_on_change());
         store
     }
 
-    pub fn flush(&self) {
+    /// Writes 500 ms after a change; a failed write is said and tried again with back-off
+    /// until one works (a change meanwhile waits for it).
+    async fn write_on_change(self: Arc<Self>) {
+        let mut wait = RETRY_FIRST;
+        loop {
+            self.dirty.notified().await;
+            tokio::time::sleep(Duration::from_millis(500)).await;
+            let s = self.clone();
+            let done = tokio::task::spawn_blocking(move || s.flush()).await.unwrap_or_else(|e| Err(e.to_string()));
+            if done.is_ok() {
+                wait = RETRY_FIRST;
+                continue;
+            }
+            tokio::time::sleep(wait).await;
+            wait = (wait * 2).min(RETRY_MAX);
+            self.dirty.notify_one();
+        }
+    }
+
+    /// Writes the file now; its outcome is kept and said to the panels when it changes.
+    pub fn flush(&self) -> Result<(), String> {
         // Shutdown and the debounce worker must serialize snapshot capture and publication.
         let _writing = self.writing.lock();
         let bytes = serde_json::to_vec(&*self.data.lock()).unwrap_or_default(); // lock held only to serialize
-        if crate::settings::write_atomic(&self.path, &bytes).is_err() {
-            tracing::warn!(event = "workspace.write_failed", path = %self.path.display());
+        let done = crate::settings::write_atomic(&self.path, &bytes).map_err(|e| e.to_string());
+        if let Err(e) = &done {
+            tracing::warn!(event = "workspace.write_failed", path = %self.path.display(), error = %e);
         }
+        let error = done.clone().err();
+        let mut unsaved = self.unsaved.lock();
+        if *unsaved != error {
+            *unsaved = error.clone();
+            self.bus.send(Event::Unsaved { error });
+        }
+        done
+    }
+
+    /// The last write's error while the file lags what was accepted.
+    pub fn unsaved(&self) -> Option<String> {
+        self.unsaved.lock().clone()
     }
 
     fn touched(&self, key: &str, rev: u64, by: Option<String>) {
@@ -142,14 +185,16 @@ impl Store {
         true
     }
 
-    /// Replace a pane's state if the client saw the latest revision; else the current one.
-    /// The new rev, and whether what is watched (root, expanded folders, tabs) changed.
-    pub fn put(&self, key: &str, mut pane: Pane, by: Option<String>) -> Result<(u64, bool), Pane> {
+    /// Replace a pane's state if the client saw the latest revision (else the current one) and
+    /// it is a pane's state. The new rev, and whether what is watched (root, expanded folders,
+    /// tabs) changed.
+    pub fn put(&self, key: &str, mut pane: Pane, by: Option<String>) -> Result<(u64, bool), Refused> {
+        checked(&pane).map_err(Refused::Bad)?;
         let (rev, watched) = {
             let mut data = self.data.lock();
             let cur = data.panes.entry(key.to_string()).or_default();
             if pane.rev != cur.rev || (!cur.root.is_empty() && pane.root != cur.root) {
-                return Err(cur.clone());
+                return Err(Refused::Stale(cur.clone()));
             }
             let watched = pane.root != cur.root || pane.expanded != cur.expanded
                 || !pane.tabs.iter().map(|t| &t.path).eq(cur.tabs.iter().map(|t| &t.path));
@@ -166,9 +211,14 @@ impl Store {
         self.data.lock().prefs.clone()
     }
 
-    pub fn set_prefs(&self, prefs: Value) {
+    /// The panel's preferences: an object (or null, none).
+    pub fn set_prefs(&self, prefs: Value) -> Result<(), String> {
+        if !(prefs.is_object() || prefs.is_null()) {
+            return Err("Preferences are an object".into());
+        }
         self.data.lock().prefs = prefs;
         self.dirty.notify_one();
+        Ok(())
     }
 
     pub fn len(&self) -> usize {
@@ -202,6 +252,25 @@ impl Store {
     }
 }
 
+/// A pane's state as a panel may write it: an absolute root (or none yet), tabs in a known
+/// view, the active tab one of them.
+fn checked(p: &Pane) -> Result<(), String> {
+    if !p.root.is_empty() && !p.root.starts_with('/') {
+        return Err(format!("The root is not a full path: {}", p.root));
+    }
+    if let Some(t) = p.tabs.iter().find(|t| !VIEWS.contains(&t.view.as_str())) {
+        return Err(format!("A tab's view is one of {}: {}", VIEWS.join(", "), t.view));
+    }
+    if p.active_tab.is_some_and(|a| a >= p.tabs.len()) {
+        return Err(format!("The active tab is not one of the {} tabs", p.tabs.len()));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "workspace_tests.rs"]
+mod more_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,12 +279,12 @@ mod tests {
     fn a_waiting_flush_captures_the_latest_snapshot_after_the_writer_lock() {
         let path = crate::testutil::temp_root().join(format!("fbd-ws-flush-{}.json", std::process::id()));
         let s = Arc::new(Store { data: Mutex::new(File { version: 1, ..Default::default() }),
-            writing: Mutex::new(()), path: path.clone(), dirty: Notify::new(), bus: Bus::new(), ttl: 14 * 86400 });
+            writing: Mutex::new(()), unsaved: Mutex::new(None), path: path.clone(), dirty: Notify::new(), bus: Bus::new(), ttl: 14 * 86400 });
         let write = s.writing.lock();
         let (started, waiting) = std::sync::mpsc::channel();
         let thread = {
             let s = s.clone();
-            std::thread::spawn(move || { started.send(()).unwrap(); s.flush(); })
+            std::thread::spawn(move || { started.send(()).unwrap(); s.flush().unwrap(); })
         };
         waiting.recv().unwrap();
         s.data.lock().prefs = serde_json::json!({"newest": "large snapshot".repeat(1000)});
@@ -246,7 +315,7 @@ mod tests {
         assert_eq!(s.get("live", None).updated, at, "no five-second disk writes");
         s.maintain_at(&keys, false, at + 10);
         assert_eq!(s.len(), 1, "resolved absence permits tmux TTL cleanup");
-        s.flush();
+        s.flush().unwrap();
         let loaded = Store::load(path.clone(), 14, Bus::new());
         assert_eq!(loaded.len(), 1);
         let _ = fs::remove_file(path);
@@ -284,13 +353,13 @@ mod tests {
         p.scroll = 40.0;
         assert_eq!(s.put("p1", p.clone(), None).ok(), Some((3, false)), "a scroll: nothing watched changed");
         // a second panel still holding an older rev is refused
-        assert!(matches!(s.put("p1", p.clone(), None), Err(cur) if cur.rev == 3));
+        assert!(matches!(s.put("p1", p.clone(), None), Err(Refused::Stale(cur)) if cur.rev == 3));
         s.set_root("p1", "/b");
         let p = s.get("p1", None);
         assert!(p.expanded.is_empty() && p.selected.is_empty());
         assert_eq!(p.tabs.len(), 1);
         assert_eq!(p.root, "/b");
-        s.flush();
+        s.flush().unwrap();
         let s2 = Store::load(path.clone(), 14, Bus::new());
         assert_eq!(s2.get("p1", None).tabs.len(), 1);
         fs::write(&path, "{not json").unwrap();

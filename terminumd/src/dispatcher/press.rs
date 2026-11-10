@@ -5,7 +5,7 @@
 use serde::Deserialize;
 
 use super::runs::{self, Phase, Run};
-use crate::tasks::files;
+use crate::tasks::{closeout, files};
 use crate::tasks::ops::{self, Task};
 
 /// How an agent of a run gives its result (terminum-agents.md AC-155: not listed, run through execute_tool).
@@ -42,6 +42,7 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         parts.extend(said);
         let total = tasks.iter().filter_map(|t| t.budget_seconds).reduce(|a, b| a + b);
         parts.extend(total.map(budget_words));
+        parts.push(closeout::prompt(tx, &t.project, FINISH, true)?);
         parts.push(format!("When one is done, call {FINISH} with its result; do so for each. {ASK}"));
         return Ok(parts.join("\n\n"));
     }
@@ -67,12 +68,13 @@ pub(super) fn prompt_of(tx: &rusqlite::Transaction, tasks: &[Task], message: Opt
         parts.push(format!("Its parent task: {parent}"));
     }
     parts.extend(t.budget_seconds.map(budget_words));
+    parts.push(closeout::prompt(tx, &t.project, FINISH, false)?);
     parts.push(format!("When it is done, call {FINISH} with the result. {ASK}"));
     Ok(parts.join("\n\n"))
 }
 
 pub(crate) fn budget_words(total: i64) -> String {
-    format!("You have {} minutes for this. Before they end, write the result with {FINISH} and end your subagents: at the limit the agent is ended and unsaved work is lost.", total / 60)
+    format!("You have {} minutes for this. Before they end, leave time to close it out, write the result with {FINISH} and end your subagents: at the limit the agent is ended and unsaved work is lost.", total / 60)
 }
 
 /// What the human sees before Run: what goes, then each task's text when several go by number.

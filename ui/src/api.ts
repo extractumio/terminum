@@ -81,6 +81,7 @@ export interface TermState {
   version: number; bridge: boolean; key?: string; session?: string; title?: string;
   mode?: string; note?: string; job?: string; busy?: boolean; cwd?: string | null; stale?: boolean; theme?: Theme;
   build?: string;   // terminumd's build: another one than this page's means an upgrade (AC-16)
+  unsaved?: string | null;   // why terminumd could not write the panels' state to disk (AC-71)
   host?: string;    // a remote pane's host: its files are reached through that host's agent (AC 82)
   /** a remote pane's host as offered to the user (AC 83): key = its name */
   remote?: {

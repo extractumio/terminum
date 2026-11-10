@@ -46,7 +46,8 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
-  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
+  check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nBefore you call execute_tool\("finish_task", \{id, result\}\), close the task out[\s\S]*\nOutcome: [\s\S]*\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
+  check("AC-166 the close-out is in English while the project sets no language", /The result, in the language named "English":/.test(prompt), prompt);
   if (shots) await page.screenshot({ path: path.join(shots, "run-window.png") });
   await page.click("#rungo");
   check("AC-121 the window closes on the press", await until(async () => !(await page.$("#runbox[open]"))));
@@ -269,7 +270,7 @@ export async function liveDispatcher(page, opts) {
   await hasStatus(tokens, "IN PROGRESS", 15000);
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(tokens));
-  check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
+  check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), `${await page.textContent(card(tokens))} | ${await history(tokens)}`);
   check("AC-143 its agent's week and month count it", (await j("/api/tasks/meta")).agents.some((a) => a.spent?.week >= 1234 && a.spent?.month >= 1234));
   await j(`/api/tasks/${tokens}/give-up`, "POST");
   let spent;

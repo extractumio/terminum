@@ -215,6 +215,11 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   each call (`execute_tool("finish_task", {id, result})`). An agent that Dispatcher starts
   without permission prompts needs `execute_tool` allowed (Claude Code:
   `--allowedTools mcp__plugin_terminum_terminum__execute_tool`), and that allows every task tool.
+  A RUN's prompt also asks the agent to close the task out: what it noticed goes to tasks, it
+  reviews the tasks it made, and its result comes in fixed sections (Outcome, Done, Checked, Not
+  done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further
+  recommendations), written in the project's language: its window's "Language of agents'
+  writing on the board" (empty: English), used for its tasks and comments on the board too.
   TODO and DONE show each card as one line, its ID, severity and title: a press shows one whole
   (and folds the one before), a press on it then opens its window, Esc folds it. Agents stand a
   column wide over the columns, four a row.
