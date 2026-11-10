@@ -100,6 +100,7 @@ Open questions:
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
 | AC-151 | [SHOULD / P1] | The Message history at `/history/`, a key left of Settings: every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
 | AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` shows how much the user drives sessions over 7, 30 or 90 days, never counting Dispatcher: messages, active time, active days, messages an active hour, sessions a day, the phone's share, each against the period before; messages and active time a day by project, the working day, the week's hours, the projects, the sessions a day; a day leads to its messages in the Message history.
+| AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
 
 ## 5. BDD scenarios
 
@@ -877,6 +878,26 @@ Scenario: AC-152 failure — the numbers cannot be read
   Then the page says "The numbers could not be read: <terminumd's message>" over the charts last drawn
 ```
 
+### AC-165 — One question at a time [MUST / P0]
+
+```gherkin
+Scenario: AC-165 edge — two questions at once
+  Given two files dropped from Finder at once on a folder that has both names (AC-95), or two of the page's questions asked at once
+  When the first question shows
+  Then the second waits behind it, unseen, and the one shown has its primary choice in focus (Keep Both; Cancel where Cancel is primary)
+  When the user presses Enter
+  Then only the question shown is answered (Keep Both keeps one file); the second shows then, and Esc answers it alone
+  When a question comes over an open context menu of the Files panel
+  Then Esc answers the question alone; the menu stays for the next key
+
+Scenario: AC-165 edge — Enter again while it is kept
+  Given an agent's window, a new project's window, or a name's dialog that terminumd checks (Add existing)
+  When the user presses Enter and again before terminumd answered
+  Then one request is sent, its button is off, Esc and Cancel wait
+  When terminumd answers
+  Then it is kept once and the window closes (a new project's stays on it, AC-139), or says why and stays
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -1179,3 +1200,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-151 — `cargo test messages::`, `web/test/e2e_livehistory.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs history`)
 - [x] AC-152 — `cargo test messages::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs, `cargo test attach::tests` (two attaches at once)
+- [x] AC-165 — `ui/test/e2e_panel_drop.mjs` (in `e2e_panel.mjs`), `web/test/e2e_liveboardbusy.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs boardpool`)
