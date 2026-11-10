@@ -88,8 +88,31 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #schedbox { width: min(720px, calc(100vw - var(--sp-6) * 2)); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
-.agspent { padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled in the agent's color, the percent;
+   an old reading fades; in its window the reset time follows the percent */
+.agsubs { display: flex; flex-direction: column; gap: 3px; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.agsubs.stale { opacity: .55; }
+.agsub { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
+.agsublabel { flex: none; width: 3.2em; }
+.agtrack { flex: 1; min-width: 24px; height: 4px; border-radius: 2px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; }
+.agfill { display: block; height: 100%; background: var(--ag, var(--accent)); }
+.agtrack.high .agfill { background: var(--danger); }
+.agsubpct { flex: none; min-width: 3.4em; text-align: right; white-space: nowrap; }
+.agsubs.full { padding-left: 0; gap: var(--sp-1); font-size: var(--fs-small); }
+.agsubs.full .agtrack { height: 6px; border-radius: 3px; }
+.agsubs.full .agsubpct { min-width: 12em; }
+/* the agent's window over its settings: stripes, tokens, its sessions with their tasks as links (AC-138, AC-143) */
+.agview { display: flex; flex-direction: column; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.agview h3 { margin: var(--sp-1) 0 0; font-size: var(--fs-label); font-weight: var(--fw-head); color: var(--muted-text); }
+.agview h4 { margin: var(--sp-1) 0 0; font-size: var(--fs-small); font-weight: normal; color: var(--muted-text); }
+.agspent { margin: 0; font-size: var(--fs-small); color: var(--muted-text); font-variant-numeric: tabular-nums; }
 .agspent.over { color: var(--danger-text); }
+:is(.agsessions, .agtasks) { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: var(--sp-1); }
+.agsession { padding: var(--sp-2); border-radius: var(--r-sm); background: var(--surface-1); }
+.agsesshead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.agsessname { flex: 1; min-width: 0; font-size: var(--fs-label); overflow-wrap: anywhere; }
+.agtask { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; font-size: var(--fs-label); }
+.agtask .linklike { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cspent { font-variant-numeric: tabular-nums; }
 /* a dot for each live session: blinking while it works, still when it waits or idles */
 .agdots { display: flex; align-items: center; gap: var(--sp-1); min-height: 12px; padding-left: 20px; }
