@@ -255,10 +255,9 @@ const columns = new Map(COLUMNS.map((column) => {
   col.addEventListener("drop", (e) => {
     e.preventDefault();
     col.classList.remove("over");
-    let under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging[0].id; });
     // into another parent's group it goes after the group: its subtasks are drawn there, not ranked there (AC-112)
-    while (under && ((under.dataset.under && under.dataset.under !== dragging[0].parent) || under.dataset.id === dragging[0].id)) under = under.nextElementSibling?.closest(".card");
-    dropOn(under?.dataset.id);
+    const next = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(), up = c.dataset.under; return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging[0].id && (!up || up === dragging[0].parent); });
+    dropOn(next?.dataset.id);
   });
   return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
 }));
@@ -292,8 +291,7 @@ function draw() {
     if (shown === part.drawn) continue;
     part.drawn = shown;
     const scroll = part.list.scrollTop;
-    const here = new Set(have.map((t) => t.id));
-    part.list.replaceChildren(...underParents(have).map((t) => card(t, here.has(t.parent) ? t.parent : "")));
+    part.list.replaceChildren(...underParents(have).map(([t, under]) => card(t, under)));
     if (!have.length) part.list.append(el("p", "colempty", filtered ? "No tasks match" : "No tasks"));
     if (have.length < n) part.list.append(button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column)));
     part.list.scrollTop = scroll;

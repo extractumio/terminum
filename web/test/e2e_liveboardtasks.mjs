@@ -59,12 +59,7 @@ export async function liveBoardTasks(page, opts) {
   // a drop between the parent and its subtask lands after the group, not where the subtask is ranked (P3)
   const dropper = (await j("/api/tasks", "POST", { title: "dropped into the group", project })).id;
   await until(async () => (await todo()).some((c) => c[0] === dropper));
-  await page.evaluate(([from, to]) => {
-    const dt = new DataTransfer(), held = document.querySelector(from), col = document.querySelector('.col[data-status="TODO"]'), r = document.querySelector(to).getBoundingClientRect();
-    const at = { bubbles: true, cancelable: true, dataTransfer: dt, clientX: r.left + 40, clientY: r.top + 2 };
-    held.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
-    col.dispatchEvent(new DragEvent("dragover", at)); col.dispatchEvent(new DragEvent("drop", at)); held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
-  }, [card(dropper), card(kid)]);
+  await page.dragAndDrop(card(dropper), card(kid), { targetPosition: { x: 20, y: 3 } });
   const after = [parent, kid, dropper, loner].join();
   check("AC-112 a task dropped into a parent's group lands after it", await until(async () => (await todo()).map((c) => c[0]).join() === after), JSON.stringify(await todo()));
   // its parent in another column: it keeps its place there, unshifted
