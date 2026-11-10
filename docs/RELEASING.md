@@ -91,6 +91,14 @@ the runner has no user manager, and giving it one (linger) would let a job leave
 outside the runner's confinement; the systemd half is covered by its unit tests (a stub
 systemctl) and checked by hand on a disposable machine before a release that changes it.
 
+Every landing on main gets a verdict: a run on main is never cancelled by the next push, which
+waits; of several waiting, GitHub keeps only the newest, so landings closer together than a run
+(about 25 minutes) share one. A push to another branch cancels that branch's older run. A check
+that fails now and then is run alone, again and again, by hand: `gh workflow run ci -f live="boardpool webkit" -f times=10`
+(the words of `web/test/e2e_live.mjs`), on main's code; it waits apart from the checks' runs and
+fails when any of its runs fails, each run's log in its own group. `gh run view --log` cuts a long
+job's log short: read the whole one with `gh api repos/extractumio/terminum/actions/jobs/<job>/logs`.
+
 ### The runner (once)
 
 An Ubuntu 24.04 machine; the runner under an unprivileged user of its own (no sudo, no docker,
