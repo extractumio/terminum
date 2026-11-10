@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, results, summary, tmux_on, unix_request  # noqa: E402
+from e2e_ws import Terminumd, check, end_tmux, results, summary, tmux_on, unix_request  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-restore"), own("tm-test-rown")
@@ -167,8 +167,8 @@ def main():
     finally:
         if not all(results):
             print(t.log())
+        end_tmux(OWN)   # first: what terminumd made in it runs with its folder (cleanup's AC-102 check)
         t.cleanup()
-        subprocess.run(["tmux", "-L", OWN, "kill-server"], stderr=subprocess.DEVNULL)
         subprocess.run(["rm", "-rf", work])
     summary()
 

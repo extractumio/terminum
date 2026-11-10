@@ -15,7 +15,7 @@ import tempfile
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, summary, tmux_on, unix_request, wait_for, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, end_tmux, summary, tmux_on, unix_request, wait_for, wait_layout  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-att"), own("tm-test-own")
@@ -130,8 +130,8 @@ def main():
         check("AC-89 detaching forgets the session and leaves it running", not group(groups, "work") and "work" in own("ls"), own("ls"))
         check("AC-89 its windows get tmux's own size back (no window-size manual left)", "manual" not in size_of(own, "work:"), size_of(own, "work:"))
     finally:
+        end_tmux(OWN)   # first: what terminumd made in it runs with its folder (cleanup's AC-102 check)
         t.cleanup()
-        own("kill-server")
         os.system(f"rm -rf '{work}'")
     return summary()
 
