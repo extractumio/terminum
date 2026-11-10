@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -39,7 +39,7 @@ export async function liveDispatcher(page, opts) {
   await open();
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(first));
-  await page.click(`${card(first)} .crun`);
+  await pressRun(page, first);
   check("AC-121 a card's play key asks which agent", await until(() => page.$("#runbox[open]")));
   check("AC-121 it stays where it was until one takes it", await status(first) === "TODO");
   check("AC-121 the dialog offers the pool", await page.$eval("#runagent", (e, id) => [...e.options].some((o) => o.value === id), plain));

@@ -78,7 +78,7 @@ Open questions: none.
 | AC-135 | [MUST / P0] | The board's head chooses the project; left of the columns stands the session page's own list, as wide as there, with its menus and its head, without its foot; it hides and shows; a press opens a session. |
 | AC-139 | [MUST / P0] | + Project makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with the pool's keys beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
-| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
+| AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
 | AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history; tasks, subtasks and comments say when they were made and changed; comments come newest first, a key turns the order. |
 | AC-150 | [SHOULD / P1] | The session page counts the tasks made in the shown session, says new ones as reminders are said, lists them and opens the board's own task window. |
 
@@ -146,7 +146,7 @@ Scenario: AC-159 happy path — one shown whole
   Then API-7 is a line again
 
 Scenario: AC-159 edge — what stays
-  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, run by its Run key on hover, and opened by Enter as a press; its state says "expanded" or "collapsed" to a screen reader
+  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, and opened by Enter as a press; one an agent ran, its agent known, is run by its Run key on hover, any other by the key on the card shown whole; its state says "expanded" or "collapsed" to a screen reader
   And the card shown whole stays so as the columns are read again, until it leaves TODO and DONE
 ```
 
@@ -909,6 +909,12 @@ Scenario: AC-148 happy path — by project
   Then their tasks are named TERM-1, TERM-2… and IQUA-1, IQUA-2…, each project counting its own; Default's are TASK-1…
   And a card, a window, the session list's marks, Dispatcher's words and the tools' answers say that ID; the row's key never changes
   And a task's window says its key's first 8 hex characters, "abfed14f", beside when it was made: /kanban/abfed14f and get_task {id: "abfed14f"} find it whatever its ID becomes
+
+Scenario: AC-148 happy path — a schedule's task
+  Given terminum's tasks up to TERM-7
+  When a schedule makes a task in terminum (terminum-schedules.md AC-162)
+  Then it is S_TERM-8 and the next task a human makes TERM-9: one count, "S_" before the letters of what a schedule made
+  And it keeps "S_" under letters set anew and in a project it moves to; no project's letters hold "_"
 
 Scenario: AC-148 happy path — letters taken or set
   Given a second project whose folder is /Users/alex/fork/terminum

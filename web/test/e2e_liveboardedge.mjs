@@ -7,7 +7,7 @@ import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, nap, pressCard } from "./boardkit.mjs";
+import { boardKit, nap, pressCard, showRun } from "./boardkit.mjs";
 import { check as report, ranToItsEnd, slack, until } from "./check.mjs";
 
 const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "agent_process_dies", "pane_closes"]);
@@ -206,6 +206,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
     },
     async enter_on_the_run_key() {
       const id = await make("Enter on its key"); await open();
+      await showRun(page, id);
       await page.focus(`${card(id)} .crun`); await page.keyboard.press("Enter"); await nap(400);
       const seen = await page.evaluate(() => ({ run: document.querySelector("#runbox").open, win: document.querySelector("#taskbox").open }));
       check("Enter on a card's run key opens the run window alone", seen.run && !seen.win, JSON.stringify(seen));

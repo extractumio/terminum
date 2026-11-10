@@ -17,6 +17,8 @@ import tty
 RULE = "\x1b[37m" + "─" * 60 + "\x1b[0m"
 # Longer than this, what is in the box shows as a mark, not its text.
 FOLD = 800
+# a task's ID as a prompt names it; a schedule's task says so first (terminum-schedules.md AC-162)
+TASK_ID = r"(?:S_)?[A-Z][A-Z0-9]*-\d+"
 
 
 def main():
@@ -102,8 +104,8 @@ def main():
             if kind == "codex":
                 hook("SessionStart", source="startup")
             hook("UserPromptSubmit", prompt=prompt)
-            several = re.search(r"tasks: ((?:[A-Z][A-Z0-9]*-\d+(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
-            tasks = re.findall(r"[A-Z][A-Z0-9]*-\d+", several[1]) if several else re.findall(r"[A-Z][A-Z0-9]*-\d+", prompt)[:1] or [""]
+            several = re.search(rf"tasks: ((?:{TASK_ID}(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
+            tasks = re.findall(TASK_ID, several[1]) if several else re.findall(TASK_ID, prompt)[:1] or [""]
             if "LIMIT" in prompt:
                 hook("StopFailure", error="rate_limit")
             elif "DIES" in prompt:

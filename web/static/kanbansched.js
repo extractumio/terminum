@@ -26,7 +26,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   const win = scheduleWindow({ getMeta, chosen, changed: () => load() });
 
 
-  /** Its card: SCH-1, severity, title, cadence, next run or why it is paused, agent, last task, skips. */
+  /** Its card: SCH-1, severity, title, cadence, next run or why it is paused, agent, last task, skips, why its last run did not start. */
   function card(s) {
     const c = el("article", "item schedcard");
     c.dataset.id = s.id;
@@ -46,6 +46,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
       if (s.last.status === "WAIT FOR HUMAN") last.append(el("span", "schedwaits", "waits for you"));
     }
     if (s.skipped) last.append(el("span", "schedskips", `skipped ${s.skipped}`));
+    if (s.failed_why) last.append(el("span", "schedfailed", s.failed_why));   // its last run did not start: the next firing tries again
     c.append(...[top, el("div", "ctitle", s.title), foot, last.children.length ? last : null].filter(Boolean));
     c.title = `${s.key} · set by ${s.author_name || "you"}`;
     const go = () => win.open(s);

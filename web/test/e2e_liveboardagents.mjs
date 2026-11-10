@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, pressCard } from "./boardkit.mjs";
+import { boardKit, pressCard, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const COMMAND = "claude --model opus";
@@ -29,6 +29,13 @@ export async function liveBoardAgents(page, opts) {
   await page.fill("#agentcommand", "codex --search");
   await page.selectOption("#agentkind", "claude");
   check("AC-137 what the user wrote stays", await page.inputValue("#agentcommand") === "codex --search" && await page.inputValue("#agentname") === "Claude Code");
+  // a browser's Smart Dashes and Smart Quotes, as Safari makes them while one types; a paste stays as it came
+  const smart = (value, inputType) => page.$eval("#agentcommand", (f, [v, t]) => { f.value = v; f.dispatchEvent(new InputEvent("input", { inputType: t, bubbles: true })); return f.value; }, [value, inputType]);
+  await smart("claude -", "insertText");
+  check("AC-137 a command kept as typed: -- stays", await smart("claude —", "insertText") === "claude --");
+  check("AC-137 a command kept as typed: quotes stay", await smart("claude --append-system-prompt “be brief”", "insertReplacementText") === "claude --append-system-prompt \"be brief\"");
+  check("AC-137 a paste stays as it came", await smart("claude --append-system-prompt \"be brief — always\"", "insertFromPaste") === "claude --append-system-prompt \"be brief — always\"");
+  check("AC-137 the field asks for no autocorrect", await page.getAttribute("#agentcommand", "autocorrect") === "off");
   await page.fill("#agentname", "Opus reviewer");
   await page.fill("#agentcommand", COMMAND);
   if (shots) await page.screenshot({ path: path.join(shots, "agent-window.png") });
@@ -229,7 +236,7 @@ async function agentPool(page, opts) {
   check("AC-141 once two walks are quiet the idle holder can be closed", await until(offered, 15000), JSON.stringify(await offered()));
   const idlePane = await paneOf(a);
   tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
-  await page.click(`${card(c)} .crun`);
+  await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   check("AC-141 the window says what holds it and names the key", /at its limit of 1: [^;]+ (is|are) idle\./.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
   await page.fill("#runmessage", "WORKS");
@@ -237,7 +244,7 @@ async function agentPool(page, opts) {
   check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && paneAlive(tmux, idlePane), await page.textContent("#runerror"));
   await page.click('#runbox button[value="cancel"]');
   tmux("send-keys", "-t", idlePane, "C-u");
-  await page.click(`${card(c)} .crun`);
+  await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
@@ -407,7 +414,7 @@ async function projectWindowChecks(page, opts) {
   await page.click("#fproject summary");
   check("AC-140 its row in the menu says no folder", await until(async () => /no folder/.test(await page.textContent('#fproject .projrow:has-text("Fresh")'))));
   await page.click("#fproject summary");
-  await page.click(`.card[data-id="${homeless}"] .crun`);
+  await pressRun(page, homeless);
   check("AC-140 a press on Run says it and opens its window", await until(() => page.$("#projectbox[open]")) && /Fresh has no folder/.test(await page.textContent("#toast")), await page.textContent("#toast"));
   check("AC-140 no run window opens", !(await page.$("#runbox[open]")));
   check("AC-139 its window says nothing can start", await page.isVisible("#projectnodir") && /No agent can start here until it has a folder\./.test(await page.textContent("#projectnodir")));

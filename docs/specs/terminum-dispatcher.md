@@ -175,6 +175,11 @@ Scenario: AC-137 edge — a slip
   When the user presses Esc or ×
   Then it asks "Discard what you typed?"; Cancel closes it with no question
 
+Scenario: AC-137 edge — a command kept as typed
+  Given a browser whose Smart Dashes or Smart Quotes are on (Safari on a Mac or an iPhone)
+  When the user types claude --append-system-prompt "be brief" in Command
+  Then Command holds those characters: no "—" for "--", no “ ” for " "; a paste or a drop stays as it came
+
 Scenario: AC-137 edge — which are listed
   Given one project or several shown, or All projects
   Then the whole pool stands, the same list; each agent's dots are the sessions of what is shown, its limit counts all of them (AC-141)
@@ -985,7 +990,7 @@ Scenario: AC-131 edge — a sleeping Mac
   Given API-12 with 30 of 60 budget minutes used and a Mac asleep for 8 hours
   When it wakes
   Then no clock gained those hours: a gap between walks over 2 minutes adds nothing to budget, idle or closing clocks, nothing fires, and API-12 says once "Clocks paused 480 minutes: no walk saw them pass"
-  And a schedule's due time is the wall clock's: what it missed comes once on wake (terminum-schedules.md AC-162)
+  And a schedule's due time is the wall clock's: what it missed is not run on wake (terminum-schedules.md AC-162)
   And the same holds for a stopped terminumd and a lost link
 
 Scenario: AC-131 edge — a walk and a window opening
@@ -1245,7 +1250,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 
 - [x] AC-121 — `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries a project agent's command
+- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
