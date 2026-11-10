@@ -4,18 +4,10 @@
 // shell's command from the page land in the store; words find them by rank, filters narrow them in
 // the address, Back undoes one; Open in session shows the pane at the message; the Dashboard counts
 // the human's only and a day leads to the same count in the history.
-import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { boardKit, nap } from "./boardkit.mjs";
+import { boardKit, intoStore, nap } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
-/** SQL into the private store beside terminumd, which holds it now and then: Python's sqlite3, as the board's tests
- *  write it (the Linux runner has no sqlite3 command), waits for it as terminumd's own connections do, and the FTS
- *  triggers need a trusted schema (rusqlite's default, not every SQLite build's). */
-const intoStore = (app, sql) => execFileSync("python3", ["-I", "-c", `import sqlite3, sys
-store = sqlite3.connect(sys.argv[1], timeout=15)
-store.executescript("PRAGMA trusted_schema = ON; " + sys.argv[2])
-store.close()`, path.join(app, "kanban.sqlite"), sql]);
 const rows = (page) => page.$$eval("#results .msg", (r) => r.map((x) => x.querySelector(".mtext").textContent));
 
 export async function liveHistory(page, opts) {

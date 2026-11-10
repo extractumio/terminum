@@ -452,10 +452,11 @@ Scenario: AC-104 edge — a session hears of a changed pipeline
   When the session's prompt hook runs in that tree
   Then it says "origin/main changed the checks or the landing (scripts/land.py): read it there and merge it (CLAUDE.md §9)"
 
-Scenario: AC-104 edge — the landing says GitHub CI's last run on main
-  Given GitHub CI's last run on main failed on origin/main's head 8f3c2a1d0
+Scenario: AC-104 edge — the landing says GitHub CI's last verdict on main
+  Given GitHub CI's last run on main to end, not cancelled, failed on origin/main's head 8f3c2a1d0
   When make land runs
   Then its first line is "CI on main: failure on 8f3c2a1d0: https://github.com/extractumio/terminum/actions/runs/42436430099"
+  And a newer run still waiting or running is said after it, "; newer: in_progress on <commit>", the verdict staying the older run's
   And the same line is printed again last, landed or not, and the landing goes on as with a green run
   And without gh, or with no answer in 10 seconds, the line is "CI on main: unknown (<why>)" and the landing goes on
 
