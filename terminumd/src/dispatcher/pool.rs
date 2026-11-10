@@ -35,8 +35,32 @@ pub fn closable(tx: &Transaction, r: &Run) -> Result<bool, String> {
     Ok(plan::idle_holder(r) && !r.pane_key.as_deref().map_or(Ok(false), |key| runs::others_open(tx, key, &r.task))?)
 }
 
-fn names(holders: &[&Run]) -> String {
-    holders.iter().map(|r| r.names()).collect::<Vec<_>>().join(", ")
+/// A holder and what it does, as the store knows it, in the words of a limit (AC-141): only one "idle" can be closed for
+/// its slot.
+fn doing(tx: &Transaction, r: &Run) -> Result<String, String> {
+    if r.ad_hoc() {
+        return Ok("a session with no task".to_string());
+    }
+    // one task, several
+    let (one, many) = if r.is_starting() {
+        ("is starting", "are starting")
+    } else if r.state == runs::Phase::Ending {
+        ("is being ended", "are being ended")
+    } else if r.status == "WAIT FOR HUMAN" {
+        ("waits for a human", "wait for a human")
+    } else if r.busy() {
+        ("is working", "are working")
+    } else if closable(tx, r)? {
+        ("is idle", "are idle")
+    } else {
+        ("has finished, not idle yet", "have finished, not idle yet")
+    };
+    let what = if r.targets().len() > 1 { many } else { one };
+    Ok(format!("{} {what}", r.names()))
+}
+
+fn said(tx: &Transaction, holders: &[&Run]) -> Result<Vec<String>, String> {
+    holders.iter().map(|r| doing(tx, r)).collect()
 }
 
 /// One closing frees a place only for what stands exactly at its limit, and only if it holds a slot of each that does.
@@ -124,13 +148,15 @@ fn judge(tx: &Transaction, holding: &[&Run], agent: Option<&Agent>, project: &st
     let mut full: Vec<(&[&Run], i64)> = Vec::new();
     let mut words = None;
     if let Some(a) = agent.filter(|a| (of_agent.len() + kept.len()) as i64 >= a.at_once) {
-        let held: Vec<String> = of_agent.iter().map(|r| r.names()).chain(kept.iter().map(|k| format!("{k} (kept)"))).collect();
-        words = Some(format!("{} is at its limit of {}: {}.", a.name, a.at_once, held.join(", ")));
+        let held: Vec<String> = said(tx, &of_agent)?.into_iter().chain(kept.iter().map(|k| format!("{k} (kept)"))).collect();
+        words = Some(format!("{} is at its limit of {}: {}.", a.name, a.at_once, held.join("; ")));
         full.push((&of_agent, a.at_once - kept.len() as i64));
     }
     if let Some(most) = limit.filter(|most| of_project.len() as i64 >= *most) {
         let name = ops::project_place(tx, project)?.0;
-        words.get_or_insert_with(|| format!("{name} runs {most} agents at once, its limit: {}.", names(&of_project)));
+        if words.is_none() {
+            words = Some(format!("{name} runs {most} agents at once, its limit: {}.", said(tx, &of_project)?.join("; ")));
+        }
         full.push((&of_project, most));
     }
     let Some(words) = words else { return Ok(None) };
@@ -200,9 +226,21 @@ mod tests {
             assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?, None);
             let (_, t) = working(tx, "a", "api");
             let full = check(tx, Some(&agent("a", 1)), "api", None)?.unwrap();
-            assert_eq!(full, Full { words: format!("A is at its limit of 1: {}.", t.id), close: None }, "working: nothing to close");
+            assert_eq!(full, Full { words: format!("A is at its limit of 1: {} is working.", t.id), close: None }, "working: nothing to close");
             assert_eq!(check(tx, Some(&agent("a", 2)), "api", None)?, None, "two at once");
             assert_eq!(check(tx, Some(&agent("b", 1)), "api", None)?, None, "another agent's slots are its own");
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
+    fn ac141_a_run_of_several_tasks_is_one_holder() {
+        store("pool-several").with(|tx| {
+            project(tx, "api", None)?;
+            let (id, t) = working(tx, "a", "api");
+            let other = ops::create(tx, HUMAN, NewTask { title: "its second".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+            tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, &other.key)).map_err(ops::sql)?;
+            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().words, format!("A is at its limit of 1: {}, {} are working.", t.id, other.id));
             Ok(())
         }).unwrap();
     }
@@ -215,7 +253,7 @@ mod tests {
             let (_, one) = working(tx, "a", "api");
             let (_, two) = working(tx, "b", "api");
             let full = check(tx, Some(&agent("c", 1)), "api", None)?.unwrap();
-            assert_eq!(full.words, format!("api runs 2 agents at once, its limit: {}, {}.", one.id, two.id));
+            assert_eq!(full.words, format!("api runs 2 agents at once, its limit: {} is working; {} is working.", one.id, two.id));
             assert_eq!(check(tx, Some(&agent("c", 1)), "web", None)?, None, "another project's");
             Ok(())
         }).unwrap();
@@ -228,7 +266,11 @@ mod tests {
             let (old, t) = idle(tx, "a", "api");
             let full = check(tx, Some(&agent("a", 1)), "api", None)?.unwrap();
             assert_eq!(full.close, Some(Holder { run: old.clone(), tasks: t.id.clone() }));
-            working(tx, "a", "api");
+            assert_eq!(full.words, format!("A is at its limit of 1: {} is idle.", t.id));
+            let (_, w) = working(tx, "a", "api");
+            assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().words, format!("A is at its limit of 1: {} is idle; {} is working.", t.id, w.id), "each holder with what it does");
+            ops::move_to(tx, HUMAN, &w.id, "WAIT FOR HUMAN", 3)?;
+            assert!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().words.ends_with(&format!("{} waits for a human.", w.id)));
             assert_eq!(check(tx, Some(&agent("a", 1)), "api", None)?.unwrap().close, None, "over its limit: one closing would not do, a human may have typed");
             assert!(check(tx, Some(&agent("a", 2)), "api", None)?.unwrap().close.is_some(), "at its limit of two, one idle");
             Ok(())
