@@ -3,6 +3,7 @@
 // this browser remembers (AC-135).
 import { el, iconButton, projectInk, read, write } from "./listparts.js";
 import { $, SEVERITIES, button } from "./kanbanutil.js";
+import { icon } from "./icons.js";
 
 const CHOSEN = "board.project";
 const toggled = (list, id, on) => (on ? [...list, id] : list.filter((x) => x !== id));
@@ -43,7 +44,7 @@ export function query(extra = {}) {
 
 /** The filters' keys over `getMeta()`'s projects; `changed` after any change, `editProject(p)` from a project's pencil,
  *  `newSession(p)` from its + Session (terminum-dispatcher.md AC-142). */
-export function filterBar({ getMeta, changed, editProject, newSession }) {
+export function filterBar({ getMeta, changed, editProject, newProject, newSession }) {
   // a menu drawn anew under a press loses it (its summary's or a row's): drawn again only when what it shows changed
   const drawnAs = new WeakMap();
   const unchanged = (box, shown) => {
@@ -99,7 +100,10 @@ export function filterBar({ getMeta, changed, editProject, newSession }) {
       line.append(also, name, edit, session);
       return line;
     });
-    box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows);
+    const add = button("projnew", "", () => { box.open = false; newProject(); });   // rare: in the menu, not a key of the bar
+    add.id = "newproject";
+    add.append(icon("plus", 14), "New project…");
+    box.querySelector("div").replaceChildren(button(null, "All projects", () => only([])), ...rows, add);
     const first = projects.find((p) => p.id === chosen[0]);
     const words = !chosen.length ? "All projects" : `${first?.name ?? chosen[0]}${chosen.length > 1 ? ` +${chosen.length - 1}` : ""}`;
     box.querySelector("summary").replaceChildren(...(first ? [dot(first)] : []), el("span", "pname", words));

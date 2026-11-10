@@ -30,9 +30,9 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
 
   await page.goto(`${base}/`);
   check("AC-105 / leads to /sessions/", new URL(page.url()).pathname === "/sessions/", page.url());
-  await page.click("#tokanban");
+  await page.click('.nav-head .sections a[href="/kanban/"]');
   await page.waitForSelector("#board .col", { timeout: 5000 });
-  check("AC-105 Kanban in the page's head loads /kanban/", new URL(page.url()).pathname === "/kanban/", page.url());
+  check("AC-105 Kanban in the sections' switcher loads /kanban/ (AC-167)", new URL(page.url()).pathname === "/kanban/", page.url());
   const heads = await page.evaluate(() => [...document.querySelectorAll('.col .colhead span:first-child')].map((h) => h.textContent));
   check("AC-105 five columns", heads.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", heads.join());
 
@@ -210,7 +210,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-113 and its status stays", (await inColumn("IN PROGRESS")).includes(first));
 
   // a project made on the board, in the session list too; filters in the URL
-  await page.click("#newproject");
+  await page.click("#fproject summary"); await page.click("#newproject");
   await page.fill("#projectname", "Billing");
   await page.press("#projectname", "Enter");
   await page.waitForFunction(() => document.querySelector("#projecthead").textContent === "Billing", null, { timeout: 5000 });
@@ -221,7 +221,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-111 a picker floats on its own background, never its text over a column's", await page.evaluate(() => { const c = getComputedStyle(document.querySelector("#fproject > div")).backgroundColor; return c !== "rgba(0, 0, 0, 0)" && c !== "transparent"; }));
   check("AC-92 a project's color on the board is the session list's: its tokens are here too", await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--proj-l").trim() !== ""));
   await page.keyboard.press("Escape");
-  await page.click("#newproject");
+  await page.click("#fproject summary"); await page.click("#newproject");
   await page.fill("#projectname", "Billing");
   await page.press("#projectname", "Enter");
   check("AC-110 a taken name is said, and stays open", await until(async () => /already named Billing/.test(await page.textContent("#projecterror"))) && await page.isVisible("#projectbox"));
@@ -261,7 +261,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-111 Find reads the URL", await until(async () => (await inColumn("IN PROGRESS")).join() === first && (await inColumn("DONE")).length === 0));
 
   // the session list shows the empty project
-  await page.click("#tosessions");
+  await page.click('.nav-head .sections a[href="/sessions/"]');
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
   check("AC-110 and the session list shows it, with no session", await until(() => page.isVisible('#sessions section.project .label:has-text("Billing")')));
   await page.click('#sessions section.project:has(.label:has-text("Billing")) > h2', { button: "right" });
@@ -303,6 +303,7 @@ async function sameKinds(page, base, phone) {
   }, sel);
   await page.goto(`${base}/sessions/`);
   await page.waitForSelector("#filter", { state: "attached" });
+  if (!phone) await page.focus("#filter");   // a computer's is a key until it is opened (terminum.md AC-167)
   await page.waitForTimeout(500);   // colors settle (motion.css), the theme is in
   const theirs = { search: await look(".search"), key: await look(".icon"), track: await look(".seg"), plus: await look(".grp h2 .new") };
   await page.goto(`${base}/kanban/`);

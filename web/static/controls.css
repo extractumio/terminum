@@ -27,9 +27,10 @@
 :is(dialog.dlg, .footform, #findbox) .primary, #login button, .textkey.primary {
   --kf: var(--key-primary-fill); --kc: var(--key-primary-ink); --focus: var(--key-primary-ink); }
 @media (hover: hover) { :is(dialog.dlg, .footform, #findbox) .primary:not(:disabled):hover, .textkey.primary:not(:disabled):hover { filter: brightness(1.08); } }
-/* a key that opens something: as an icon key's; a filter on: the accent's mix */
+/* a key that opens something: as an icon key's; a filter on, a menu's or a toggle's (pressed): the accent's mix */
 :is(.textkey[aria-expanded="true"], .pick[open] > .textkey) { background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
-.pick.on > .textkey { --kf: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); }
+.pick.on > .textkey, .textkey[aria-pressed="true"] { --kf: color-mix(in srgb, var(--accent) 22%, var(--chrome-2)); }
+.textkey[aria-pressed="true"] { --kc: var(--t-fg); box-shadow: var(--m-well); }   /* a toggle that is on stays sunk, as the header's */
 /* disabled: faded, flat, never pressed */
 :where(button):disabled { opacity: var(--key-disabled); cursor: default; filter: none; }
 :where(button):disabled:active { box-shadow: var(--m-edge-ctl); }
@@ -47,6 +48,13 @@
   color: var(--t-fg); background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):active:not(:disabled) {
   box-shadow: var(--m-well); }
+/* the session list's filter folded on a computer (style.css): an icon key until it opens */
+@media (min-width: 861px) {
+  .nav-head .search:not(:focus-within):has(input:placeholder-shown) { color: var(--icon-ink); background-color: var(--key-fill); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl);
+    &:active { box-shadow: var(--m-well); }
+    @media (hover: hover) { &:hover { color: var(--t-fg); background-color: var(--key-fill-hover); } }
+  }
+}
 /* a thin bar's small ones (the quick shell's, a name's pencil, a bookmark row's), the session list's (--ik: its size,
    so no selector's weight decides it) */
 :is(#quick .qbar .icon, #rename, .mkdel, .mkmake) { --ik: var(--icon-key-sm); }
@@ -59,6 +67,21 @@
 .seg :is(button, a) { border-radius: var(--r-xs); }
 .seg :is(button, a):is([aria-pressed="true"], [aria-selected="true"], [aria-current="page"]) { color: var(--t-fg); background-color: var(--key-fill-hover);
   background-image: var(--m-matte); box-shadow: var(--m-edge-ctl); }
+
+/* ---- the sections' switcher (sections.js, terminum.md AC-167): a segmented control of links, first in every page's
+   top left corner: the session list's head, or the page's bar where no list shows. Where its words do not fit a
+   section is its icon; the shown one keeps its word longest ---- */
+.sections { flex: none; }
+.sections a { position: relative; flex: none; justify-content: center; padding: 0 var(--sx, 11px); }
+.sections .word { display: var(--word, inline); }
+:is(.nav-head, .msg-page #bar) { container-type: inline-size; }
+.nav-head .sections a:not([aria-current]), #app #bar > .sections a { --word: none; --sx: var(--sp-2); }
+@container (max-width: 349px) { .nav-head .sections a { --word: none; --sx: var(--sp-2); } }
+@container (max-width: 619px) { .msg-page .sections a:not([aria-current]) { --word: none; --sx: var(--sp-2); } }
+@media (max-width: 860px) { .sections { flex: 1 1 0; min-width: 0; } }   /* a phone: across its row (the list's sheet, a page's head) */
+/* in a bar beside a hidden list (a computer's): icons, after ☰ */
+#app #bar > .sections { display: none; }
+@media (min-width: 861px) { #app.nav-hidden #bar > .sections { display: inline-flex; } }
 
 /* ---- fields: a recess at rest; in focus edged in the accent, its fill as at rest (no gradient) ---- */
 :is(.field, .search, .filter, .inline-edit input), #findq { border: 0; border-radius: var(--key-r); color: inherit;
@@ -112,6 +135,8 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   :is(#foldfab, #planfab, #findfab, #splitfab, #sentfab, #tasksfab, #attachfab, #marksfab, #remindfab, #markcopy, #markadd, #askfab) { width: 44px; height: 44px; }   /* a selection's three stand where the column does, as large */
   #menu .row { min-height: 44px; }
   .seg :is(button, a) { height: 34px; }   /* a segment in a full-width row */
+  .sections a { height: 40px; min-width: 44px; }   /* a section: a finger's */
+  .sections a[aria-current] { flex: 1 1 auto; }   /* the shown one takes the row's rest */
   #planpane button { min-height: 44px; min-width: 44px; }   /* the Plan pane (planpane.css) */
   .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
 }

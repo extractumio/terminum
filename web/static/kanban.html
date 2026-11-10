@@ -30,14 +30,11 @@
 <body class="board-page">
 <div id="app">
   <aside id="nav" aria-label="Sessions">
-    <div class="nav-title narrow-only"><h1>Sessions</h1>
-      <a id="sheetsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
-      <button id="drawerclose" class="icon" type="button" aria-label="Close the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-    </div>
     <!-- the session list: kanban.html holds the same (terminumd test same_session_list) -->
     <div class="nav-head">
-      <a id="tosessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
-      <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+      <nav class="sections seg" aria-label="Sections"></nav>
+      <button id="drawerclose" class="icon narrow-only" type="button" aria-label="Close the session list"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+      <label class="search field" title="Filter sessions (/)"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
         <input id="filter" type="search" placeholder="Filter sessions" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="Filter sessions">
         <kbd class="wide-only" title="Press / to filter">/</kbd>
       </label>
@@ -112,10 +109,9 @@
       <button id="navbtn" class="icon" type="button" aria-label="Show sessions" aria-controls="nav" aria-expanded="false">
         <svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:18px"><path d="M4 5h16"/><path d="M4 12h16"/><path d="M4 19h16"/></svg>
       </button>
-      <a id="barsessions" class="icon" href="/sessions/" title="Sessions" aria-label="Sessions"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:17px"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="m7 11 2-2-2-2"/><path d="M11 13h4"/></svg></a>
+      <nav class="sections seg" aria-label="Sections"></nav>
   <div id="filters">
     <details id="fproject" class="pick" name="picks"><summary class="textkey" title="The project the board shows">All projects</summary><div class="box menurows" role="group" aria-label="Projects"></div></details>
-    <button id="newproject" class="textkey" type="button" title="A new project, empty"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Project</span></button>
     <label class="search field"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:15px"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
       <input id="find" type="search" placeholder="Find tasks" aria-label="Find tasks" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
     <button id="filtersbtn" class="textkey" type="button" aria-expanded="false" aria-controls="picks">Filters</button>
@@ -127,7 +123,7 @@
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
   </div>
-  <div id="boardacts"><button id="adhocsession" class="textkey" type="button" title="A session of an agent in this project, no task" hidden>+ Session</button><button id="newtask" class="textkey primary" type="button">New task</button></div>
+  <div id="boardacts"><button id="adhocsession" class="textkey" type="button" title="A session of an agent in this project, no task" aria-label="New session" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Session</span></button><button id="newtask" class="textkey" type="button" title="A new task, in TODO" aria-label="New task"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Task</span></button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>

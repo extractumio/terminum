@@ -158,8 +158,8 @@ mod tests {
 
 #[cfg(test)]
 mod page_tests {
-    /// The session list is one widget on two pages (terminum-kanban.md AC-135): its markup is the same, but for the
-    /// board's way back; the server serves files as they are, so they are two files kept alike by this.
+    /// The session list is one widget on two pages (terminum-kanban.md AC-135): its markup is the same; the server
+    /// serves files as they are, so they are two files kept alike by this.
     #[test]
     fn same_session_list() {
         const INDEX: &str = include_str!("../../web/static/index.html");
@@ -170,17 +170,16 @@ mod page_tests {
             page[at..end].to_string()
         };
         let list = |page: &str| part(page, "<!-- the session list:", "<!-- /the session list -->");
-        let (a, b) = (list(INDEX), list(BOARD));
-        let way_back = part(&b, "      <a id=\"tosessions\"", "</a>\n");
-        assert_eq!(a, b.replace(&way_back, ""));
+        assert_eq!(list(INDEX), list(BOARD));
+        assert!(list(INDEX).contains("<nav class=\"sections seg\""), "the sections' switcher stands in the list's head (terminum.md AC-167)");
         for dialog in ["rowmenu", "lastlines", "agentsbox"] {
             let from = format!("<dialog id=\"{dialog}\"");
             assert_eq!(part(INDEX, &from, "</dialog>"), part(BOARD, &from, "</dialog>"), "{dialog}");
         }
     }
 
-    /// The Message history, the Scheduled page and the Dashboard share one head (terminum.md AC-151, AC-152,
-    /// terminum-schedules.md AC-164): the same markup but their title and the page key pressed.
+    /// The Message history, the Scheduled page and the Dashboard share one head (terminum.md AC-151, AC-152, AC-167,
+    /// terminum-schedules.md AC-164): the same markup but their title.
     #[test]
     fn same_message_pages_head() {
         const HISTORY: &str = include_str!("../../web/static/history.html");
@@ -189,7 +188,7 @@ mod page_tests {
         let head = |page: &str| {
             let at = page.find("<!-- the shared head").expect("its head");
             let end = page.find("<!-- /the shared head -->").expect("its end");
-            let h = page[at..end].replace(" aria-current=\"page\"", "");
+            let h = &page[at..end];
             let title = h.find("<h1 class=\"mtitle\">").expect("its title");
             let after = title + h[title..].find("</h1>").expect("its title's end");
             format!("{}{}", &h[..title], &h[after..])

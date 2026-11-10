@@ -393,9 +393,9 @@ async function projectWindowChecks(page, opts) {
   const { base, work } = opts;
   const { j } = boardKit(page, opts);
   await page.goto(`${base}/kanban/`);
-  await page.waitForSelector("#newproject");
+  await page.waitForSelector("#fproject summary");
   const named = async (name) => (await j("/api/tasks/meta")).projects.find((p) => p.name === name);
-  await page.click("#newproject");
+  await page.click("#fproject summary"); await page.click("#newproject");
   await page.waitForSelector("#projectbox[open]");
   check("AC-139 a new project's window asks no agents yet", !(await page.isVisible("#projectagents")) && !(await page.isVisible("#projectdelete")));
   await page.fill("#projectname", "Fresh");

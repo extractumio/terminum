@@ -82,7 +82,7 @@
   --blob-d: 44% 56% 49% 51% / 52% 43% 57% 48%;
 
   /* ---- type: --ui at fixed sizes for chrome; --term-font at --size for what is typed (§4.6) ---- */
-  --fs-display: 22px;   /* 600: the phone sheet's title */
+  --fs-display: 22px;   /* 600: the Dashboard's figures */
   --fs-title: 15px;     /* 600: header title, dialog title */
   --fs-body: 14px;      /* 500: footer buttons, menu rows */
   --fs-row: 13.5px;     /* 500: a list row's title */

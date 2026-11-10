@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's drawer: on a phone it slides over the terminal, on a computer it is a
-// column the user can hide (remembered per browser); "/" opens it and filters.
+// column the user can hide (remembered per browser); "/" opens it and filters. Its head holds the
+// sections' switcher, which draws itself (sections.js).
+import "./sections.js";
+
 const $ = (id) => document.getElementById(id);
 
 /** `hiddenKey`: what this page remembers hiding by: the board's is its own (terminum-kanban.md AC-135). */
