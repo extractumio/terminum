@@ -331,7 +331,7 @@ Scenario: AC-112 happy path — one level
   Then the new-task window says "New subtask of API-12", its project fixed, with a draft of its own
   And API-13 is a full task of API-12's project with its own status, owner, severity and session, and API-12's card shows "0/1"
   And API-12's window lists its subtasks, a press opening each, and API-13's says "Subtask of API-12"
-  And Show subtasks in the head makes subtasks cards of their own, each saying "in API-12"; off, they show only in their parent's window
+  And Show subtasks in the head makes subtasks cards of their own, each saying "in API-12"; in API-12's column each stands right under API-12, shifted right, whatever its severity; in another column it keeps its place, unshifted; a task dropped into API-12's group lands after it; off, they show only in their parent's window
 
 Scenario: AC-112 edge — the parent
   When API-12 ends in DONE with API-13 open

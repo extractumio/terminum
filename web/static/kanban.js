@@ -25,7 +25,7 @@ import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
 import { choose } from "./dialogs.js";
 import { el, iconButton, plural, projectInk } from "./listparts.js";
-import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 signInElsewhere();                                 // with no sign-in the board goes to /sessions/, whose form signs in
 
@@ -136,9 +136,11 @@ function showSession(c, t) {
   if (item) c.append(sessionStrip(item, p));
 }
 
-function card(t) {
-  const c = el("article", `card sev-${t.severity}${picked.has(t.id) ? " picked" : ""}`);
+/** `under`: the parent it is drawn under, shifted right (AC-112). */
+function card(t, under = "") {
+  const c = el("article", `card sev-${t.severity}${under ? " sub" : ""}${picked.has(t.id) ? " picked" : ""}`);
   c.dataset.id = t.id;
+  c.dataset.under = under;
   c.dataset.budget = t.budget_seconds ?? "";
   c.draggable = true;
   c.tabIndex = 0;
@@ -253,7 +255,9 @@ const columns = new Map(COLUMNS.map((column) => {
   col.addEventListener("drop", (e) => {
     e.preventDefault();
     col.classList.remove("over");
-    const under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging[0].id; });
+    let under = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(); return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging[0].id; });
+    // into another parent's group it goes after the group: its subtasks are drawn there, not ranked there (AC-112)
+    while (under && ((under.dataset.under && under.dataset.under !== dragging[0].parent) || under.dataset.id === dragging[0].id)) under = under.nextElementSibling?.closest(".card");
     dropOn(under?.dataset.id);
   });
   return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
@@ -288,7 +292,8 @@ function draw() {
     if (shown === part.drawn) continue;
     part.drawn = shown;
     const scroll = part.list.scrollTop;
-    part.list.replaceChildren(...have.map(card));
+    const here = new Set(have.map((t) => t.id));
+    part.list.replaceChildren(...underParents(have).map((t) => card(t, here.has(t.parent) ? t.parent : "")));
     if (!have.length) part.list.append(el("p", "colempty", filtered ? "No tasks match" : "No tasks"));
     if (have.length < n) part.list.append(button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column)));
     part.list.scrollTop = scroll;

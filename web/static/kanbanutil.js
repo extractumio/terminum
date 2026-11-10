@@ -15,6 +15,13 @@ export const hostOptions = (hosts) => [["", THIS_MAC], ...hosts.map((h) => [h, h
 /** An agent's color: its place in the projects' palette (terminum-dispatcher.md AC-138). */
 export const agentColor = (a) => hueColor(PROJECT_HUES[(a.color ?? 0) % PROJECT_HUES.length]);
 export const $ = (id) => document.getElementById(id);
+/** A column's tasks with Show subtasks on (terminum-kanban.md AC-112): each subtask right under its parent when its
+ *  parent is in the same list, in their own order; one whose parent is elsewhere keeps its place. */
+export function underParents(tasks) {
+  const here = new Set(tasks.map((t) => t.id)), kids = new Map();
+  for (const t of tasks) if (t.parent && here.has(t.parent)) kids.set(t.parent, [...(kids.get(t.parent) ?? []), t]);
+  return tasks.flatMap((t) => (t.parent && here.has(t.parent) ? [] : [t, ...(kids.get(t.id) ?? [])]));
+}
 
 /** What a refused sign-in does: nothing on the session page, which signs in by itself (a task's window opens
  *  there too: terminum-kanban.md AC-150); the board goes to /sessions/, whose form signs in (signInElsewhere). */
