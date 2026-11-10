@@ -4,6 +4,7 @@
 //! as the session lives, and closes what it started. All its clocks and facts are in the store.
 
 mod acts;
+pub mod auto;
 pub mod fire;
 pub mod api;
 mod press;
@@ -118,6 +119,11 @@ impl Drop for Held {
 const MOST_SUBS: usize = 64;
 
 impl Dispatcher {
+    /// A walk is due now: a setting changed what it would do.
+    pub fn soon(&self) {
+        self.soon.notify_one();
+    }
+
     /// Activity in pane `key` (§9): a hook's event, a character a human typed.
     pub fn touched(&self, key: &str) {
         if self.has_run(key) {

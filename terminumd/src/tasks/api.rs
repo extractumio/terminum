@@ -29,6 +29,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::projectapi::routes())
         .merge(super::agents::routes())
         .merge(super::limits::routes())
+        .merge(super::auto::routes())
         .merge(super::folder::routes())
         .merge(super::schedulesapi::routes())
         .merge(crate::dispatcher::api::routes())
@@ -211,10 +212,12 @@ async fn meta(State(app): State<Shared>) -> Response {
             super::limits::agent_limits(tx)?,
             super::projectapi::settings(tx)?,
         ))).unwrap_or_default();
+        let auto: HashMap<String, Value> = a.tasks.with(|tx| Ok(super::auto::for_board(tx)?.into_iter().collect())).unwrap_or_default();
         for p in &mut projects {
             if let (Some(v), Some(p)) = (p["id"].as_str().and_then(|id| own.get(id)).and_then(Value::as_object).cloned(), p.as_object_mut()) {
                 p.extend(v);
             }
+            p["auto"] = p["id"].as_str().and_then(|id| auto.get(id)).cloned().unwrap_or(Value::Null);
         }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();
@@ -264,10 +267,11 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         made_in: text(&body, "made_in"),           // a record's session it was made of (AC-116, AC-150)
         scheduled: false,
     };
-    let attached = crate::config::strings(&body["files"]);
+    let (attached, runs_on) = (crate::config::strings(&body["files"]), text(&body, "agent"));
     let done = store(&app, move |tx| {
         let task = ops::create(tx, HUMAN, new, ops::now())?;
         files::attach(tx, &attached, &task.id, None)?;
+        super::auto::set_agent(tx, &task.id, runs_on.as_deref(), ops::now())?;   // the agent a human chose to run it
         ops::get(tx, &task.id)
     }).await;
     if let Ok(t) = &done {
@@ -292,9 +296,10 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         let waits = crate::dispatcher::waits::on_cards(tx, &[&t.key])?.remove(&t.key);
         let kids = query::subtasks(tx, &t.key)?;
         let from = super::schedules::of_task(tx, &t.key)?.map(|s| json!({"key": s.key, "title": s.title}));
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from), agent, kids, t))
+        let runs_on = super::auto::agent_of(tx, &t.key)?;
+        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from, runs_on), agent, kids, t))
     }).await;
-    answer(done.map(|(body, history, attached, (held, waits, from), agent, kids, t)| {
+    answer(done.map(|(body, history, attached, (held, waits, from, runs_on), agent, kids, t)| {
         let mut v = card(&app, &t);
         v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));
@@ -304,6 +309,7 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         v["run_holds"] = json!(held);
         v["waits"] = json!(waits);
         v["schedule"] = json!(from);
+        v["runs_on"] = json!(runs_on);                // the agent a human chose to run it (terminum-dispatcher.md AC-170)
         if let Some(agent) = agent {
             v["agent"] = agent;
         }

@@ -84,21 +84,36 @@ pub struct Slots {
     holding: Vec<Run>,
     kept: BTreeMap<String, Vec<String>>,
     in_kept: HashMap<String, String>,
+    /// the runs of Auto-Dispatcher's rounds: live and shown, but no slot is theirs (AC-170)
+    rounds: HashSet<String>,
 }
 
 impl Slots {
     pub fn read(tx: &Transaction) -> Result<Slots, String> {
         let holding: Vec<Run> = runs::live(tx)?.into_iter().filter(Run::holds_slot).collect();
         let ids: Vec<&str> = holding.iter().map(|r| r.id.as_str()).collect();
-        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding })
+        let rounds = rows(tx, "SELECT m.run FROM run_tasks m JOIN auto_rounds a ON a.task = m.task WHERE m.run IN (SELECT value FROM json_each(?1))", [runs::listed_keys(&ids)], |r| r.get(0))?.into_iter().collect();
+        Ok(Slots { in_kept: in_kept(tx, &ids)?, kept: schedules::kept_by_agent(tx)?, holding, rounds })
     }
 
     /// Whether a process of `agent` (none: one deleted since, its slot no one's) can start in `project`, `but` run
     /// not counted: the one it goes on from.
     pub fn check(&self, tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
-        let holding: Vec<&Run> = self.holding.iter().filter(|r| Some(r.id.as_str()) != but).collect();
+        let holding: Vec<&Run> = self.counted().filter(|r| Some(r.id.as_str()) != but).collect();
         let kept = agent.and_then(|a| self.kept.get(&a.id)).map_or(&[][..], Vec::as_slice);
         judge(tx, &holding, agent, project, (kept, &self.in_kept))
+    }
+
+    /// The runs that hold a slot: all but a round's.
+    fn counted(&self) -> impl Iterator<Item = &Run> {
+        self.holding.iter().filter(|r| !self.rounds.contains(&r.id))
+    }
+
+    /// How many more processes of `agent` can start, and how many more in `project` (none: it has no limit).
+    pub fn free(&self, tx: &Transaction, agent: &Agent, project: &str) -> Result<(i64, Option<i64>), String> {
+        let mine = self.counted().filter(|r| r.agent_id == agent.id && !self.in_kept.contains_key(&r.id)).count() + self.kept.get(&agent.id).map_or(0, Vec::len);
+        let there = self.counted().filter(|r| r.project == project).count() as i64;
+        Ok(((agent.at_once - mine as i64).max(0), limits::agent_limit(tx, project)?.map(|most| (most - there).max(0))))
     }
 
     /// `check` for a run of task `task` alone (its key; none: several tasks): one of a schedule of `agent` takes the
@@ -181,7 +196,7 @@ fn in_runs(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, Vec<Value>>
 
 /// What the board shows of the slots (AC-138): each agent's sessions, and the agents and projects at their limit.
 pub fn board(tx: &Transaction) -> Result<Value, String> {
-    let Slots { holding, kept, in_kept } = Slots::read(tx)?;
+    let Slots { holding, kept, in_kept, rounds } = Slots::read(tx)?;
     let mut tasks = in_runs(tx, &holding.iter().map(|r| r.id.as_str()).collect::<Vec<_>>())?;
     let mut of_agent: BTreeMap<&str, Vec<Value>> = BTreeMap::new();
     let mut in_project: HashMap<&str, i64> = HashMap::new();
@@ -190,7 +205,11 @@ pub fn board(tx: &Transaction) -> Result<Value, String> {
     for r in &holding {
         let in_slot = in_kept.contains_key(&r.id);
         of_agent.entry(&r.agent_id).or_default().push(json!({"run": r.id, "tasks": r.names(), "state": r.state, "key": r.pane_key, "project": r.project, "idle": !r.busy() && !r.ad_hoc(), "kept": in_slot,
-            "list": tasks.remove(&r.id).unwrap_or_default()}));
+            "round": rounds.contains(&r.id), "list": tasks.remove(&r.id).unwrap_or_default()}));
+        // a round's session is shown and takes no slot (AC-170)
+        if rounds.contains(&r.id) {
+            continue;
+        }
         if !in_slot {
             *others.entry(&r.agent_id).or_default() += 1;
         }

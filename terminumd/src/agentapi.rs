@@ -81,6 +81,10 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
     };
+    if tool == "dispatch_task" {
+        // Auto-Dispatcher's round starts a task (terminum-dispatcher.md AC-170): a press, not a store's write
+        return match crate::dispatcher::auto::dispatch(app, &who.key, &args).await { Ok(text) => answer(&text, false), Err(e) => answer(&e, true) };
+    }
     if tool == "get_file" && let Some(host) = host {
         return match host_file(app, &host, who, args).await { Ok(text) => answer(&text, false), Err(e) => answer(&e, true) };
     }

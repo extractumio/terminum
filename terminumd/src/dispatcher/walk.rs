@@ -352,7 +352,7 @@ pub async fn run(app: Shared) {
     }
     loop {
         let a = app.clone();
-        if let Err(e) = tokio::spawn(async move { archive_due(&a).await; super::fire::due(&a).await; walk(&a).await; super::waits::start_due(&a).await }).await {
+        if let Err(e) = tokio::spawn(async move { archive_due(&a).await; super::fire::due(&a).await; walk(&a).await; super::waits::start_due(&a).await; super::auto::due(&a).await }).await {
             tracing::error!(event = "dispatcher.panic", error = %e);
             acts::note(&app, "Dispatcher's walk failed: see terminumd's log. It goes on at the next beat.".to_string());
         }

@@ -67,7 +67,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
     }).await)
 }
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Clone, Default, Deserialize, Serialize)]
 struct Press {
     agent: Option<String>,
     comment: Option<String>,
@@ -84,6 +84,9 @@ struct Press {
     /// the human agreed to its place in the queue, should there be no room (AC-169)
     #[serde(default)]
     queue: bool,
+    /// Auto-Dispatcher's press, no human's (AC-170): never read from a request
+    #[serde(skip)]
+    auto: bool,
 }
 
 /// What a press that would start a process comes to: its run, a wait for a slot (AC-158), or the queue offered,
@@ -149,6 +152,12 @@ pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<V
     body.close = None;
     body.queue = true;                             // a wait, or a schedule's standing press: it waits again
     pressed(app, id, body).await
+}
+
+/// Auto-Dispatcher's press (AC-170): a round on the agent that picks, or a task a round chose on its agent; with no
+/// room it answers `full` and nothing waits.
+pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Value, String> {
+    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, ..Default::default() }).await
 }
 
 /// The press on RUN: a comment is kept whatever follows (AC-122).
@@ -393,7 +402,8 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             way(t, runs::last_of(tx, &t.key)?, true)?;
         }
         // what the human saw is what goes: an agent may have changed a task meanwhile
-        let goes = facts(tx, &now)?;
+        let mut goes = facts(tx, &now)?;
+        goes.auto = kept.auto;
         if seen.is_some_and(|rev| rev != goes.rev()) {
             return Err("The task's text changed: look at it again.".to_string());
         }
@@ -402,7 +412,9 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
         if closing && let Some(full) = pool::check_for(tx, &ag, &project, (now.len() == 1).then_some(now[0].key.as_str()), None)? {
             return Err(full.words);
         }
-        if let Some(kept) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
+        // a round's session takes no slot and waits behind none (AC-170)
+        let round = kept.auto && crate::tasks::auto::round_of(tx, &now[0].key)?.is_some();
+        if !round && let Some(kept) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
             return Ok(Next::Kept(kept));
         }
         let prompt = goes.prompt(said.as_deref());

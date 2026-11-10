@@ -34,9 +34,10 @@ pub const SCHEDULED: [(&str, &str); 4] = [
     ("For the human", "what they should do, or nothing"),
 ];
 
-/// The form `task`'s result is written in: a schedule's task its own, any other the close-out's.
+/// The form `task`'s result is written in: a schedule's task and Auto-Dispatcher's round the short one, any other the
+/// close-out's.
 pub fn form_of(tx: &Transaction, task: &str) -> Result<&'static [(&'static str, &'static str)], String> {
-    Ok(if super::schedules::of_task(tx, task)?.is_some() { &SCHEDULED } else { &SECTIONS })
+    Ok(if super::schedules::of_task(tx, task)?.is_some() || super::auto::round_of(tx, task)?.is_some() { &SCHEDULED } else { &SECTIONS })
 }
 
 /// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's

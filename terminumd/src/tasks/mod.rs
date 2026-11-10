@@ -4,6 +4,7 @@
 pub mod agents;
 pub mod api;
 pub mod archiving;
+pub mod auto;
 pub mod closeout;
 pub mod comments;
 pub mod cron;

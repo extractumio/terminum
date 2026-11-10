@@ -53,6 +53,8 @@ pub const CARDS: &[Card] = &[
         example: r#"{"task": "TERM-12", "name": "report.md"}"# },
     Card { name: "finish_task", area: "tasks", keywords: "finish my task, mark it done, complete, close, resolve, report the result, wrap up",
         example: r#"{"id": "TERM-12", "result": "Fixed in tasks/ops.rs; cargo test tasks passes; nothing left."}"# },
+    Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
+        example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8: a small fix many sessions hit"}"# },
 ];
 
 pub fn card(name: &str) -> Option<&'static Card> {

@@ -383,3 +383,24 @@ fn ac123_a_section_is_a_heading_line_and_a_schedule_has_its_own_form() {
     assert_eq!(closeout::missing("Not done: x\nDone by hand\nThe Outcome: y", &closeout::SECTIONS[..3]), ["Outcome", "Done", "Checked"], "a heading starts its line and ends at its name");
     assert!(closeout::missing("Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing", &closeout::SCHEDULED).is_empty());
 }
+
+/// terminum-dispatcher.md AC-170: Auto-Dispatcher's round reads and finishes its own; it makes, takes and moves nothing.
+#[test]
+fn ac170_a_rounds_pane_makes_takes_and_moves_nothing() {
+    use crate::dispatcher::runs::{self, Phase, Run};
+    let (s, dir) = fresh("tools-round");
+    let (other, round) = (task(&s, "api", None), task(&s, "api", None));
+    s.with(|tx| {
+        let key = ops::key_of(tx, &round)?;
+        crate::tasks::auto::add_round(tx, &crate::tasks::auto::Round { task: key.clone(), project: "api".into(), slots: 1, candidates: vec![other.clone()] }, 1)?;
+        let run = runs::add(tx, &Run { agent_id: "p".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, &[key], 1)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
+    }).unwrap();
+    let w = who(Some("api"));
+    for (tool, args) in [("create_task", json!({"title": "Bug: more work", "severity": "P1"})), ("take_task", json!({"id": other})), ("move_task", json!({"id": other, "to": "DONE"})),
+                         ("update_task", json!({"id": other, "severity": "P0", "reason": "x"})), ("ask_human", json!({"id": round, "questions": "1?"}))] {
+        assert_eq!(call(&s, &dir, &w, tool, args).unwrap_err(), format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own: {tool} is not its."));
+    }
+    assert!(call(&s, &dir, &w, "get_task", json!({"id": other})).is_ok());
+    assert!(call(&s, &dir, &who(Some("api")), "list_tasks", json!({})).is_ok());
+}
