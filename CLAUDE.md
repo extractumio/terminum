@@ -100,6 +100,7 @@ end everything started (terminumd, tmux servers, ssh stand-ins, browsers, contai
 before delivering: look for leftovers of your runs (`ps`, `tmux -L`/`-S` sockets, `docker ps`), end them as above; a leftover is a test bug to fix, not only to end
 guard: `make check` and `make land` run each step under `scripts/check_step.py`, which fails one that leaves something (AC-102)
 test folders: `crate::testutil::temp_root()` (Rust), `short_tmp()`/`shortTmp()` of `scripts/testrun.py`, `web/test/testrun.mjs`; !hard-coded `/tmp`
+real model: where only a real coding agent can show the behavior (whether it follows a prompt's words), a few short runs on a Sonnet model (the cheap one) need no asking; behind a variable of their own (`TM_TEST_REAL_…`), !in `make check`, !a larger model without the maintainer's word
 run the checks, show results; unverified work is unfinished
 
 ## Workflow
