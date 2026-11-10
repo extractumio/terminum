@@ -39,16 +39,11 @@ export async function webHeader(browser, name) {
       };
       const at = await underButton();
       check("AC-07 the settings button is a cog, its menu opens right under it, inside the window", at.cog && at.gap === 6 && at.overlaps && at.inside, JSON.stringify(at));
-      // AC-07: 420 px wide; Kanban a row like the others, never a link's blue or visited purple (AC-153's field there)
+      // AC-07: 420 px wide (Kanban left the menu for the sections' switcher, AC-167)
       await page.click("#menubtn");
       await pause(page, 500);
-      const look = await page.evaluate(() => {
-        const css = (s) => getComputedStyle(document.querySelector(s));
-        return { width: Math.round(document.getElementById("menu").getBoundingClientRect().width), kanban: css('#menu a.row').color, row: css("#planmenu").color,
-          line: css('#menu a.row').textDecorationLine, small: css('#menu a.row small').color, rowSmall: css("#menu label.row small").color };
-      });
-      check("AC-07 the settings menu is 420 px wide; Kanban wears a row's colors, not underlined",
-        look.width === 420 && look.kanban === look.row && look.small === look.rowSmall && look.line === "none", JSON.stringify(look));
+      const width = await page.evaluate(() => Math.round(document.getElementById("menu").getBoundingClientRect().width));
+      check("AC-07 the settings menu is 420 px wide", width === 420, String(width));
       f.say({ t: "settings", page: { agentExitDays: 5 } });
       await pause(page, 200);
       const shown = await page.inputValue("#agentexit");
