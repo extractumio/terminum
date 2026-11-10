@@ -215,6 +215,11 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let t = movable(tx, who, id)?;
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
+                // a result is there only in its sections: else nothing is kept and the agent writes it again (AC-123)
+                let lacks = closeout::missing(&result, closeout::form_of(tx, &t.key)?);
+                if !lacks.is_empty() {
+                    return Err(closeout::missing_words(&lacks));
+                }
                 ops::comment(tx, &me, id, &result, at)?;
                 ops::move_to(tx, &me, id, "DONE", at)?;
                 crate::dispatcher::runs::finished(tx, &t.key)?;

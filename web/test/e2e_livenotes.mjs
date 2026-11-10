@@ -123,9 +123,12 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
 
     fs.writeFileSync(path.join(a.dir, "begin.json"), JSON.stringify({ session_id: "s-notes", cwd: work, hook_event_name: "SessionStart", source: "startup" }));
     await a.inPane("terminum hook claude < begin.json");
-    const done = await a.tool("finish_task", { id: t1, result: "**Fixed** it" });
+    const bare = await a.tool("finish_task", { id: t1, result: "**Fixed** it" });
+    check("AC-123 live: a result without its sections is not kept", bare.error && /^Not kept: the result lacks Outcome, /.test(bare.text) && (await task(t1)).status === "WAIT FOR HUMAN", bare.text);
+    const result = ["**Outcome:** fixed", ...["Done", "Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"].map((s) => `## ${s}\nNone`)].join("\n");
+    const done = await a.tool("finish_task", { id: t1, result });
     const finished = await task(t1);
-    check("AC-115 live: finish_task: DONE, its result a comment by the agent", !done.error && finished.status === "DONE" && finished.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it" && e.author_kind === "agent"), done.text);
+    check("AC-115 live: finish_task: DONE, its result a comment by the agent", !done.error && finished.status === "DONE" && finished.history.some((e) => e.kind === "comment" && e.text === result && e.author_kind === "agent"), done.text);
 
     // the user's records stay a session's own
     await show(a.pane);

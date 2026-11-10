@@ -197,7 +197,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             Ok(())
         }
         Act::Nudge => {
-            let text = format!("[terminum Dispatcher] {task} is still open and you stopped. Call {} with the result, or ask a human by {} what you need.", super::press::FINISH, super::press::ASK_HUMAN);
+            let text = plan::nudge_words(&task);
             let sent = gate::deliver(app, &l.run, &server, &pane, &text, false).await;
             went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
             match sent {

@@ -48,8 +48,12 @@ def main():
                  rpc(2, "tools/call", {"name": name, "arguments": arguments})]
         subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
 
+    # a result is kept only in its sections (AC-123): the close-out's and a schedule's, both there
+    SECTIONS = ["Outcome", "Done", "Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries",
+                "Further recommendations", "Summary", "Details", "For the human"]
+
     def finish(task):
-        tool("finish_task", {"id": task, "result": "All done."})
+        tool("finish_task", {"id": task, "result": "\n".join(f"{s}: {'All done.' if s == 'Outcome' else 'None'}" for s in SECTIONS)})
 
     if "--stubborn" in args:
         signal.signal(signal.SIGTERM, signal.SIG_IGN)

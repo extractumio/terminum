@@ -101,12 +101,11 @@ export async function liveDispatcher(page, opts) {
   tmux("send-keys", "-t", pane, "Down");
   check("AC-121 once answered the prompt goes in and it ends", await hasStatus(asks, "DONE", 15000), await history(asks));
 
-  // AC-123 a turn with no result: one request through the gate, then a human
+  // AC-123 a turn with no result: one request through the gate, then FAILED an hour later, never DONE
   const stops = await task("stops midway");
   await run(stops);
-  check("AC-123 a turn with no result gets one request", await until(async () => /still open and you stopped/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "WAIT FOR HUMAN", 15000));
-  check("AC-123 then WAIT FOR HUMAN", await hasStatus(stops, "WAIT FOR HUMAN", 15000) && await said(stops, "The agent stopped without a result"), await history(stops));
-  check("AC-157 stopped without a result, its session closes and it waits for the human", await said(stops, "Session closed: it waits for the human", 30000) && await status(stops) === "WAIT FOR HUMAN", await history(stops));
+  check("AC-123 a turn with no result gets one request", await until(async () => /still open and you stopped\. Is it finished\?/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "FAILED", 15000));
+  check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
 
   // AC-123 the gate never types on a draft
   const drafted = await task("a draft stands");
@@ -125,10 +124,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-123 a dead agent is FAILED with its exit", await hasStatus(dying, "FAILED", 15000) && await said(dying, "The agent's process ended: exit 3."), await history(dying));
   const clean = await task("ends CLEAN");
   await run(clean);
-  check("AC-123 a clean end is DONE, no result", await hasStatus(clean, "DONE", 15000) && await said(clean, "The session ended without finish_task."), await history(clean));
-  await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(clean));
-  check("AC-123 its card says DONE, no result", await until(async () => /DONE, no result/.test(await page.textContent(card(clean))), 4000), await page.textContent(card(clean)));
+  check("AC-123 a clean end with no result is FAILED", await hasStatus(clean, "FAILED", 15000) && await said(clean, "The session ended without a result."), await history(clean));
 
   // AC-124 waits
   const waits = await task("asks ASKS");

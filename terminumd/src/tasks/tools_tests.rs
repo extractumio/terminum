@@ -25,10 +25,19 @@ fn task(s: &Store, project: &str, session: Option<&str>) -> String {
 /// A text in the default template's sections (AC-145).
 const SECTIONS: &str = "## Problem or goal\nx\n## Context\ny\n## Expected result\nz\n## Prerequisites\nNone";
 
-/// A create_task with no text gets one in the template's sections: what these tests check is elsewhere.
+/// The close-out's sections after `head`, each "None" (AC-166).
+fn closed_out(head: &str) -> String {
+    closeout::SECTIONS.iter().fold(head.to_string(), |r, (name, _)| format!("{r}\n{name}: None"))
+}
+
+/// A create_task with no text gets one in the template's sections, a finish_task's result the close-out's: what these
+/// tests check is elsewhere.
 fn call(s: &Store, dir: &Path, w: &Who, tool: &str, mut args: Value) -> Result<String, String> {
     if tool == "create_task" && args.get("text").is_none() && args.get("title").is_some() {
         args["text"] = json!(SECTIONS);
+    }
+    if tool == "finish_task" && let Some(head) = args["result"].as_str() {
+        args["result"] = json!(closed_out(head));
     }
     run(s, dir, w, tool, &args).map(|(t, _)| t)
 }
@@ -47,7 +56,7 @@ fn ac115_an_agent_does_all_on_its_own() {
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
     assert_eq!(status, "DONE");
     let lines = history.as_array().unwrap();
-    assert!(lines.iter().any(|e| e["kind"] == "comment" && e["text"] == "**fixed**" && e["author_name"] == "claude · api"), "its result is its comment, its author the agent");
+    assert!(lines.iter().any(|e| e["kind"] == "comment" && e["text"] == closed_out("**fixed**") && e["author_name"] == "claude · api"), "its result is its comment, its author the agent");
 }
 
 /// A human's RUN of `id`, its agent working in `pane`.
@@ -76,7 +85,7 @@ fn ac115_a_task_of_the_project_is_moved_and_finished_whatever_session_holds_it()
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": free, "result": "and this"})).unwrap(), format!("{free} is DONE, with your result."), "a free one, with no take_task");
     assert_eq!((status(&s, &held), status(&s, &free)), ("DONE".into(), "DONE".into()));
     let history = s.with(|tx| ops::history(tx, &held)).unwrap();
-    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == "did it" && e["author_name"] == "claude · api"), "its history says who finished it: {history}");
+    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "comment" && e["text"] == closed_out("did it") && e["author_name"] == "claude · api"), "its history says who finished it: {history}");
     assert_eq!(s.with(|tx| ops::get(tx, &held)).unwrap().session.as_deref(), Some(OTHER), "its session stays its session");
 }
 
@@ -344,4 +353,28 @@ fn ac166_a_task_s_end_says_what_its_session_made_and_what_its_result_names_in_va
     let plain = task(&s, "api", None);
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": plain, "result": "did it"})).unwrap(), format!("{plain} is DONE, with your result."), "no session, never IN PROGRESS: nothing is claimed");
     assert!(told(&plain).is_empty());
+}
+
+#[test]
+fn ac123_a_result_is_kept_only_in_its_sections() {
+    let (s, dir) = fresh("tt-sections");
+    let w = who(Some("api"));
+    let id = task(&s, "api", Some(KEY));
+    let bare = run(&s, &dir, &w, "finish_task", &json!({"id": id, "result": "Outcome: done\nDone: the fix"})).unwrap_err();
+    assert_eq!(bare, closeout::missing_words(&["Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"]));
+    let (status, comments) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?.as_array().unwrap().iter().filter(|e| e["kind"] == "comment").count()))).unwrap();
+    assert_eq!((status.as_str(), comments), ("TODO", 0), "refused: nothing kept, nothing moved");
+    let markdown = closeout::SECTIONS.iter().map(|(name, _)| format!("## {name}\nNone")).collect::<Vec<_>>().join("\n");
+    assert!(run(&s, &dir, &w, "finish_task", &json!({"id": id, "result": markdown})).is_ok(), "Markdown headings count too");
+}
+
+#[test]
+fn ac123_a_section_is_a_heading_line_and_a_schedule_has_its_own_form() {
+    for (before, after) in [("", ": x"), ("**", ":** x"), ("### ", ""), ("__", "__\nx"), ("- ", " ")] {
+        let r = closeout::SECTIONS.iter().map(|(n, _)| format!("{before}{}{after}", n.to_uppercase())).collect::<Vec<_>>().join("\n");
+        let lacks = closeout::missing(&r, &closeout::SECTIONS);
+        assert_eq!(lacks.is_empty(), before != "- ", "{r}: {lacks:?}");
+    }
+    assert_eq!(closeout::missing("Not done: x\nDone by hand\nThe Outcome: y", &closeout::SECTIONS[..3]), ["Outcome", "Done", "Checked"], "a heading starts its line and ends at its name");
+    assert!(closeout::missing("Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing", &closeout::SCHEDULED).is_empty());
 }

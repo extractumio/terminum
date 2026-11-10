@@ -26,6 +26,34 @@ pub const SECTIONS: [(&str, &str); 9] = [
     ("Further recommendations", "what to do next; each one a human would plan names its task's ID"),
 ];
 
+/// A scheduled run's result, in its own shorter form (terminum-schedules.md AC-162): the firing's prompt names it.
+pub const SCHEDULED: [(&str, &str); 4] = [
+    ("Outcome", "ok, attention or failed"),
+    ("Summary", "one or two sentences"),
+    ("Details", "what was checked or done"),
+    ("For the human", "what they should do, or nothing"),
+];
+
+/// The form `task`'s result is written in: a schedule's task its own, any other the close-out's.
+pub fn form_of(tx: &Transaction, task: &str) -> Result<&'static [(&'static str, &'static str)], String> {
+    Ok(if super::schedules::of_task(tx, task)?.is_some() { &SCHEDULED } else { &SECTIONS })
+}
+
+/// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
+/// `#`, `*`, `_` and spaces, with its name in any case, then the line's end, `:`, `*` or `_`.
+pub fn missing<'a>(result: &str, form: &[(&'a str, &str)]) -> Vec<&'a str> {
+    let heads: Vec<String> = result.lines().map(|l| l.trim_start_matches(['#', '*', '_', ' ', '\t']).trim_end().to_lowercase()).collect();
+    form.iter().map(|(name, _)| *name).filter(|name| {
+        let name = name.to_lowercase();
+        !heads.iter().any(|h| h.strip_prefix(&name).is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '*', '_'])))
+    }).collect()
+}
+
+/// What finishing answers on a result without them: nothing is kept, the agent's turn goes on to write it again.
+pub fn missing_words(names: &[&str]) -> String {
+    format!("Not kept: the result lacks {}. Write each section as a line \"Name:\" or a heading, its name as given (\"None\" when empty), then call it again.", names.join(", "))
+}
+
 /// The language a project's agents write in on the board.
 pub fn language_of(tx: &Transaction, project: &str) -> Result<String, String> {
     Ok(ops::project_text(tx, project, ops::LANGUAGE_COLUMN)?.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string()))
@@ -87,7 +115,7 @@ pub fn words(language: &str, finish: &str, each: bool) -> String {
     format!("{before}; short of time, write the result (step 3) first. The session closes minutes after the result: work left that is in no task is lost then.
 1. What you noticed and did not do that a human would plan work for (what is left of {that} own work, a bug or gap outside {that} scope, a follow-up, a decision to take): look for an open task on it with execute_tool(\"list_tasks\", {{}}); none: a task by execute_tool(\"create_task\", {{title, severity, text}}); one: a comment on it by execute_tool(\"add_comment\", {{id, text}}). Smaller things go into the result's Issues and discoveries.
 2. Review the tasks you made in this run: rename, re-prioritize or regroup them by execute_tool(\"update_task\", {{id, title?, severity?, parent?}}) where your work changed them; archive one by execute_tool(\"update_task\", {{id, archive?, reason?}}) only when your work resolved it or it was made in this run and is no longer needed, naming the commit or task in the reason. Another task that looks stale gets a comment, never a change.
-3. The result, in the language named \"{language}\": plain words a newcomer reads without this session, each item short and whole, every heading there (\"None\" when empty):
+3. The result, in the language named \"{language}\": plain words a newcomer reads without this session, each item short and whole, every heading there, its name as written below (\"None\" when empty):
 {sections}
 Write in \"{language}\" also the titles (after Bug:, Feat: or Debt:), texts and comments you write on tasks; the project's template's headings stay as it writes them.")
 }

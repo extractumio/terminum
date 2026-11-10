@@ -96,7 +96,6 @@ pub struct Run {
     pub nudge_turn: bool,
     pub warned: bool,
     pub wait_moved: bool,
-    pub no_result_wait: bool,
     pub result: bool,
     pub again_said: bool,
     pub close_tried: bool,
@@ -177,7 +176,6 @@ impl Run {
         }
         self.nudged = false;
         self.nudge_turn = false;
-        self.no_result_wait = false;
         self.wait_moved = false;
         self.again_said = false;
         self.idle_for = 0;
@@ -196,7 +194,7 @@ const SELECT: &str = "SELECT r.id, COALESCE(r.task, ''),
     r.project,
     (SELECT sum(x.budget_seconds) FROM run_tasks m JOIN tasks x ON x.id = m.task WHERE m.run = r.id),
     r.agent_id, r.agent_name, r.agent_color, r.kind, r.command, r.host, r.folder, r.pane_key, r.agent_session, r.state, r.prompt,
-    r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait,
+    r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used, r.nudged, r.nudge_turn, r.warned, r.wait_moved,
     NOT EXISTS (SELECT 1 FROM run_tasks m WHERE m.run = r.id AND m.result = 0), r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked
     FROM runs r";
 /// A run Dispatcher still holds, over `runs r`.
@@ -212,7 +210,7 @@ fn of_row(r: &Row) -> rusqlite::Result<Run> {
     Ok(Run {
         id: r.get(0)?, task: r.get(1)?, ids: listed(r.get(2)?), open: listed(r.get(3)?), status: r.get(4)?, project: r.get(5)?, budget: r.get(6)?, agent_id: r.get(7)?, agent_name: r.get(8)?, agent_color: r.get(9)?, kind: r.get(10)?, command: r.get(11)?, host: r.get(12)?, folder: r.get(13)?,
         pane_key: r.get(14)?, agent_session: r.get(15)?, state: r.get(16)?, prompt: r.get(17)?, turn_ended: r.get(18)?, open_tools: r.get(19)?, idle_for: r.get(20)?, waited_for: r.get(21)?,
-        closing_for: r.get(22)?, budget_used: r.get(23)?, nudged: r.get(24)?, nudge_turn: r.get(25)?, warned: r.get(26)?, wait_moved: r.get(27)?, no_result_wait: r.get(28)?, result: r.get(29)?, again_said: r.get(30)?, close_tried: r.get(31)?, last_walk: r.get(32)?, memory_warned: r.get(33)?, asked: r.get(34)?,
+        closing_for: r.get(22)?, budget_used: r.get(23)?, nudged: r.get(24)?, nudge_turn: r.get(25)?, warned: r.get(26)?, wait_moved: r.get(27)?, result: r.get(28)?, again_said: r.get(29)?, close_tried: r.get(30)?, last_walk: r.get(31)?, memory_warned: r.get(32)?, asked: r.get(33)?,
     })
 }
 
@@ -275,9 +273,9 @@ pub fn add(tx: &Transaction, like: &Run, tasks: &[String], at: i64) -> Result<St
 /// Writes what changes as a run goes on.
 pub fn save(tx: &Transaction, r: &Run) -> Result<(), String> {
     tx.execute("UPDATE runs SET pane_key = ?2, agent_session = ?3, state = ?4, prompt = ?5, turn_ended = ?6, open_tools = ?7, idle_for = ?8, waited_for = ?9, closing_for = ?10, budget_used = ?11,
-                nudged = ?12, nudge_turn = ?13, warned = ?14, wait_moved = ?15, no_result_wait = ?16, again_said = ?17, close_tried = ?18, last_walk = ?19, memory_warned = ?20, asked = ?21 WHERE id = ?1",
+                nudged = ?12, nudge_turn = ?13, warned = ?14, wait_moved = ?15, again_said = ?16, close_tried = ?17, last_walk = ?18, memory_warned = ?19, asked = ?20 WHERE id = ?1",
                rusqlite::params![r.id, r.pane_key, r.agent_session, r.state, r.prompt, r.turn_ended, r.open_tools, r.idle_for, r.waited_for, r.closing_for, r.budget_used,
-                                 r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.no_result_wait, r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked]).map(|_| ()).map_err(sql)
+                                 r.nudged, r.nudge_turn, r.warned, r.wait_moved, r.again_said, r.close_tried, r.last_walk, r.memory_warned, r.asked]).map(|_| ()).map_err(sql)
 }
 
 /// The agent gave `task`'s result (`finish_task`): no screen is kept for it (AC-125).
