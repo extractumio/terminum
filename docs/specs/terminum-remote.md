@@ -441,7 +441,6 @@ stateDiagram-v2
 | AC | Gap | Evidence |
 |---|---|---|
 | AC-82 | A save that fails on a host says terminumd's words, "devbox is not connected" or "devbox not reachable — try again", with no "Not saved": the page passes them on raw. | `ui/src/viewer-save.ts:58`, `terminumd/src/remote.rs:80` |
-| AC-83 | The order of Files' and agents' operations at a host's helper is tested on the gate alone: no test runs an agents on or off beside a Files enable or removal over ssh. | `terminumd/src/hosts/turns_tests.rs` |
 | AC-84 | The Files header's "(helper updated to <build>)" for 60 s is absent: the page shows only the toast. | `ui/src/host-offer.ts:19` |
 | AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:408`, `terminumd/src/hosts/mod.rs:390` |
 | AC-84 | The 10-minute retry after a failed copy has no test. | `terminumd/src/hosts/tunnel.rs:31` |
@@ -532,10 +531,10 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-81 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `scripts/e2e_hostattach.py`, `web/test/e2e_tmux.mjs`, `cargo test tmux::orphans`, `cargo test tmux::once_tests` (a replaced host is a new connection), `cargo test an_ssh_link_that_never_reached_tmux_says_so`
 - [x] AC-82 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test remote::`
-- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::consent`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test remote::tests` (an ended connection lets go of its own only)
+- [x] AC-83 — `scripts/e2e_remote.py`, `scripts/e2e_remote_turns.py` (agents on or off beside Files' enable or removal, both orders), `scripts/e2e_remote_sshd.py`, `cargo test hosts::tunnel`, `cargo test hosts::consent`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test remote::tests` (an ended connection lets go of its own only)
 - [x] AC-84 — `scripts/e2e_remote_sshd.py`, `scripts/e2e_remote.py`
 - [x] AC-85 — `scripts/e2e_remote.py`
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
 - [x] AC-87 — `scripts/e2e_remote.py`, `scripts/e2e_review.py host`, `cargo test hosts::`, `cargo test hosts_list`
-- [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
+- [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_turns.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
 - [x] AC-132 — `scripts/e2e_isolation.py`, `web/test/e2e_isolation.mjs`, `cargo test tmux::control`, `cargo test lists`, `cargo test page::turns`, `cargo test page::typing`, `cargo test page::reads`, `cargo test tmux::agentstate`
