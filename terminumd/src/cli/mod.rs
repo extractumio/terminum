@@ -8,6 +8,7 @@ pub(crate) mod agentrefresh;
 pub mod agentsetup;
 mod commands;
 pub mod hook;
+pub mod statusline;
 mod hookplan;
 mod hooktokens;
 pub(crate) mod hostmode;
@@ -63,6 +64,8 @@ usage: terminum [command]
                           the coding agents found and terminum's hooks in them: exact
                           states, prompts and reminders (no agent named: every one found)
   mcp                     the MCP server a coding agent starts (plans, notes: hooks install)
+  statusline [command…]   Claude Code's status line: its subscription's use for the board's
+                          agents, then your own status line command, if any, as it was
   import                  workspaces, bookmarks and hosts of iterm-enhancer
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";

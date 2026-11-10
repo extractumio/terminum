@@ -196,6 +196,10 @@ fn main() {
     if args.get(1).map(String::as_str) == Some("hook") {
         std::process::exit(cli::hook::main(args.get(2).map_or("", String::as_str)));
     }
+    // Claude Code's status line (AC-168): as often as it redraws, nothing else first
+    if args.get(1).map(String::as_str) == Some("statusline") {
+        std::process::exit(cli::statusline::main(&args[2..]));
+    }
     if cli::wanted(&args) {
         std::process::exit(cli::main(&args));
     }
