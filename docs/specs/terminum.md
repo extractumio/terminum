@@ -100,6 +100,7 @@ Open questions:
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
 | AC-151 | [SHOULD / P1] | The Message history at `/history/`, a key left of Settings: every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
 | AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` shows how much the user drives sessions over 7, 30 or 90 days, never counting Dispatcher: messages, active time, active days, messages an active hour, sessions a day, the phone's share, each against the period before; messages and active time a day by project, the working day, the week's hours, the projects, the sessions a day; a day leads to its messages in the Message history.
+| AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
 
 ## 5. BDD scenarios
 
@@ -146,6 +147,7 @@ Scenario: AC-01 edge — the first start
 Scenario: AC-01 failure — tmux is missing
   Given tmux is not on PATH
   Then the list shows "tmux is needed for terminals: brew install tmux" (on Linux "tmux is needed for terminals: sudo apt install tmux (or your system's package manager)") and nothing else; terminumd looks again every 10 s
+  And a tmux problem said (tmux missing, not answering, a client that cannot start) goes as soon as tmux answers again, on every path back
 ```
 
 ### AC-02 — The screen is tmux's screen [MUST / P0]
@@ -555,6 +557,7 @@ Scenario: AC-13 edge — another tmux client is attached
 Scenario: AC-13 failure — the resize is refused
   When "resize-window" answers %error
   Then the view draws the pane as one of another width (AC-04) with "Sized for another screen (<cols>×<rows>): <error>" (another page's size is said only over a full-screen program), and the log has the error; nothing is retried faster than once a second
+  And the window stays whoever's it was before (the refused page's claim is undone, unless another page claimed it meanwhile): a view change of the page that sized it still resizes it, and a `window-size manual` tmux did apply is still given back when no page shows it
 ```
 
 ### AC-18 — Hot keys and touch [SHOULD / P1]
@@ -736,6 +739,7 @@ Scenario: AC-89 edge — many sessions on a host
 Scenario: AC-89 failure — refused
   When the user attaches a session attached already, one of terminum's own server ("main") or a host's "terminum", a name with ":" or ".", or a 33rd session (hosts and this Mac together)
   Then the form (or the command) says why and nothing changes
+  And two attaches of one session at once attach it once (the other says it is attached already); a session whose control client cannot start is said failed with tmux's words, not attached
 Scenario: AC-89 edge — one tmux reached twice
   Given two hosts are one machine (two ssh strings for it), a host is this Mac, or a window is in two sessions of one tmux (grouped sessions, a linked window)
   Then each pane is listed once, under the first group of the list that shows it (by an id terminumd gives each tmux server, its option @terminum-id, set where none is and read once a connection); a group left without rows says "the same tmux as devbox's terminum: shown there" and offers no new window
@@ -874,6 +878,26 @@ Scenario: AC-152 edge — nothing in the period
 Scenario: AC-152 failure — the numbers cannot be read
   When terminumd cannot read the store
   Then the page says "The numbers could not be read: <terminumd's message>" over the charts last drawn
+```
+
+### AC-165 — One question at a time [MUST / P0]
+
+```gherkin
+Scenario: AC-165 edge — two questions at once
+  Given two files dropped from Finder at once on a folder that has both names (AC-95), or two of the page's questions asked at once
+  When the first question shows
+  Then the second waits behind it, unseen, and the one shown has its primary choice in focus (Keep Both; Cancel where Cancel is primary)
+  When the user presses Enter
+  Then only the question shown is answered (Keep Both keeps one file); the second shows then, and Esc answers it alone
+  When a question comes over an open context menu of the Files panel
+  Then Esc answers the question alone; the menu stays for the next key
+
+Scenario: AC-165 edge — Enter again while it is kept
+  Given an agent's window, a new project's window, or a name's dialog that terminumd checks (Add existing)
+  When the user presses Enter and again before terminumd answered
+  Then one request is sent, its button is off, Esc and Cancel wait
+  When terminumd answers
+  Then it is kept once and the window closes (a new project's stays on it, AC-139), or says why and stays
 ```
 
 ## 6. Flow and sequence diagrams
@@ -1156,7 +1180,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-01 — web/test/e2e_tmux.mjs, web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
+- [x] AC-01 — web/test/e2e_tmux.mjs, `cargo test manager::tests` (a problem goes on the fast path back), web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
 - [x] AC-02 — web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
 - [x] AC-03 — terminumd/src/tmux/keys_tests.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
 - [x] AC-04 — web/test/e2e_screen.mjs, web/test/e2e_switch.mjs, web/test/e2e_resize.mjs, web/test/e2e_livesplit.mjs, web/test/switchgate.test.mjs, scripts/e2e_sizing.py, terminumd/src/screen/rows_tests.rs
@@ -1166,7 +1190,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
-- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing`, scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
+- [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
 - [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)
@@ -1177,4 +1201,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-147 — `cargo test inputs::`, `cargo test messages::`, `cargo test dispatcher::typed_tests`, `scripts/e2e_inputs.py`, `scripts/e2e_hooks.py`
 - [x] AC-151 — `cargo test messages::`, `web/test/e2e_livehistory.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs history`)
 - [x] AC-152 — `cargo test messages::`, `web/test/e2e_livehistory.mjs`
-- [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs
+- [x] AC-89 — scripts/e2e_attach.py, scripts/e2e_hostattach.py, web/test/e2e_tmux.mjs, terminumd/src/settings_tests.rs, `cargo test attach::tests` (two attaches at once)
+- [x] AC-165 — `ui/test/e2e_panel_drop.mjs` (in `e2e_panel.mjs`), `web/test/e2e_liveboardbusy.mjs` (in `e2e_live.mjs`; alone: `node web/test/e2e_live.mjs boardpool`)

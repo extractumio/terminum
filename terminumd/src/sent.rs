@@ -111,6 +111,15 @@ impl Sent {
         Some(text)
     }
 
+    /// `text`, accepted for pane `key`, could not be kept: the other report of the same Enter
+    /// (the page's or the hook's) may keep it (S26).
+    pub fn unaccept(&self, key: &str, text: &str) {
+        let mut last = self.last.lock();
+        if last.get(key).is_some_and(|(t, _)| t == text) {
+            last.remove(key);
+        }
+    }
+
     /// The page saw `text` sent at `line` in hooked pane `key`: its hook's prompt takes the line.
     pub fn hint(&self, key: &str, text: &str, line: i64) {
         let first = first_loose(text);
@@ -273,6 +282,8 @@ mod tests {
         assert_eq!(s.accept("k", "   "), None);
         assert_eq!(s.accept("k", "make test  \n").as_deref(), Some("make test"));
         assert_eq!(s.accept("k", "make test"), None, "one Enter told by the hook and the page");
+        s.unaccept("k", "make test");
+        assert_eq!(s.accept("k", "make test").as_deref(), Some("make test"), "not kept the first time: the other report keeps it (S26)");
         assert!(s.accept("k2", "make test").is_some(), "another pane");
         assert_eq!(redact("export GITHUB_TOKEN=ghp_abc def"), "export GITHUB_TOKEN=[redacted] def");
         assert_eq!(redact("mysql --password hunter2 -u root"), "mysql --password [redacted] -u root");

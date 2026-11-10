@@ -30,14 +30,41 @@ pub struct Marks {
     asked: AtomicBool,
 }
 
+/// A task changed: the marks are read again on a task of their own, and pages told when they
+/// changed; a read that fails is tried again with back-off (D16), else they would stand stale
+/// until the next change.
+pub fn read_later(app: &Shared) {
+    if !app.task_marks.ask() {
+        return;                                        // a read yet to begin sees this change too
+    }
+    let a = app.clone();
+    tokio::spawn(async move {
+        let mut wait = std::time::Duration::from_secs(1);
+        loop {
+            let b = a.clone();
+            match tokio::task::spawn_blocking(move || b.task_marks.refresh(&b.tasks)).await.map_err(|e| e.to_string()).and_then(|r| r) {
+                Ok(true) => return tell(&a),
+                Ok(false) => return,
+                Err(e) => tracing::warn!(event = "tasks.marks", error = %e),
+            }
+            if !a.task_marks.ask() {
+                return;                                // one a newer change asked for reads instead
+            }
+            tokio::time::sleep(wait).await;
+            wait = (wait * 2).min(std::time::Duration::from_secs(60));
+        }
+    });
+}
+
 impl Marks {
     /// A change came: whether its caller must start a `refresh`; else one yet to begin will see it.
     pub fn ask(&self) -> bool {
         !self.asked.swap(true, Ordering::AcqRel)
     }
 
-    /// Reads them from the store: whether they changed. Off the async workers.
-    pub fn refresh(&self, store: &Store) -> bool {
+    /// Reads them from the store: whether they changed, or why they could not be read (the last
+    /// numbers stand). Off the async workers.
+    pub fn refresh(&self, store: &Store) -> Result<bool, String> {
         let _turn = self.turn.lock();
         self.asked.store(false, Ordering::Release);
         let read = store.with(|tx| {
@@ -53,11 +80,11 @@ impl Marks {
             Ok(Held { counts, sessions, attention })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
-        let Ok(read) = read else { return false };
+        let read = read?;
         let mut held = self.held.lock();
         let changed = *held != read;
         *held = read;
-        changed
+        Ok(changed)
     }
 
     /// Whether a task not done stands linked to session `key`.
@@ -97,7 +124,7 @@ mod tests {
         let marks = Marks::default();
         assert!(marks.ask(), "the first starts a read");
         assert!(!marks.ask(), "a read yet to begin sees this one too");
-        marks.refresh(&store);
+        marks.refresh(&store).unwrap();
         assert!(marks.ask(), "what comes after a read began needs another");
     }
 
@@ -105,15 +132,15 @@ mod tests {
     fn ac113_marks_hold_open_tasks_and_say_when_they_changed() {
         let store = Store::open(crate::testutil::fresh_dir("marks").join("kanban.sqlite"));
         let marks = Marks::default();
-        assert!(!marks.refresh(&store), "nothing yet");
+        assert!(!marks.refresh(&store).unwrap(), "nothing yet");
         let key = "tmux:local:terminum:%7";
         let t = store.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), session: Some(key.into()), ..Default::default() }, 1)).unwrap();
-        assert!(marks.refresh(&store));
-        assert!(!marks.refresh(&store), "the same again is no change");
+        assert!(marks.refresh(&store).unwrap());
+        assert!(!marks.refresh(&store).unwrap(), "the same again is no change");
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
         assert_eq!(told, json!({"t": "taskmarks", "marks": {key: [t.id]}, "counts": {"default": 1}, "need": 0, "lines": []}));
         store.with(|tx| move_to(tx, HUMAN, &t.id, "DONE", 2)).unwrap();
-        assert!(marks.refresh(&store));
+        assert!(marks.refresh(&store).unwrap());
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
         assert_eq!(told, json!({"t": "taskmarks", "marks": {}, "counts": {"default": 1}, "need": 0, "lines": []}), "DONE leaves its row, and still counts in its project");
     }
@@ -122,7 +149,7 @@ mod tests {
     fn ac113_a_store_that_fails_keeps_the_last_numbers() {
         let marks = Marks::default();
         marks.held.lock().counts.insert("api".into(), 3);
-        assert!(!marks.refresh(&Store::absent()));
+        assert!(marks.refresh(&Store::absent()).is_err(), "said, so its caller tries again (D16)");
         assert_eq!(marks.held.lock().counts["api"], 3);
     }
 }

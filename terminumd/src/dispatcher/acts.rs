@@ -147,11 +147,12 @@ pub(super) async fn tell(app: &Shared, run: &Run, server: &Arc<Server>, pane: &s
     let words = match sent {
         Ok(()) => format!("{what} was given."),
         Err(why) => {
-            app.task_lines.push(&key, run.ids.first().map_or("", String::as_str), text);
-            match why {
+            let dropped = app.task_lines.push(&key, run.ids.first().map_or("", String::as_str), text);
+            let waits = match why {
                 Some(why) => format!("{what} waits for the agent's next tool call: {why}."),
                 None => format!("{what} waits for the agent's next tool call."),
-            }
+            };
+            if dropped { format!("{waits} The oldest line waiting went: at most 20 wait.") } else { waits }
         }
     };
     let r = run.clone();

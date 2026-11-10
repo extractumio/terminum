@@ -465,7 +465,7 @@ Scenario: AC-90 happy path — the marks on the right edge
   And the bars are drawn again when the pane is shown, when its history starts anew, when a message is kept in that pane (not another's) and when the bookmarks change; a narrower window or a phone has no strip
 
 Scenario: AC-90 edge — left out
-  Then a line starting with a space (a shell's "not in history"), an empty one, the same text from the same pane within 10 s (one Enter told twice) and Enter in other programs (an editor, less) are not kept; nor are what a coding agent's hooks speak as a prompt though no one typed it: a subagent's prompt and the agent's own turns, Claude Code's notice that a background task ended ("<task-notification>"), another session's or agent's message ("<cross-session-message", "<agent-message") and a delivery notice ("[Cross-session "); such turns kept before go at the history's hourly trim and count as no human's typing (terminum-dispatcher.md AC-131); the values of words named like secrets ("API_TOKEN=…", "--password …") and words of secrets' shapes ("sk-…", "ghp_…", "AKIA…", "eyJ…") are kept as "[redacted]"; 2000 per project are kept (cut back once 2500), 20,000 characters each
+  Then a line starting with a space (a shell's "not in history"), an empty one, the same text from the same pane within 10 s (one Enter told twice) and Enter in other programs (an editor, less) are not kept; nor are what a coding agent's hooks speak as a prompt though no one typed it: a subagent's prompt and the agent's own turns, Claude Code's notice that a background task ended ("<task-notification>"), another session's or agent's message ("<cross-session-message", "<agent-message"), a delivery notice ("[Cross-session ") and a status check the agent scheduled itself ("[status timer]"); such turns kept before go at the history's hourly trim and count as no human's typing (terminum-dispatcher.md AC-131); the values of words named like secrets ("API_TOKEN=…", "--password …") and words of secrets' shapes ("sk-…", "ghp_…", "AKIA…", "eyJ…") are kept as "[redacted]"; 2000 per project are kept (cut back once 2500), 20,000 characters each
   And an entry index outside the history, including the largest unsigned integer, returns no entry and the actual history count without a panic
   And a secret value named by an option or assignment stays fully redacted across quoted spaces, escaped quotes and an unfinished quoted value; ordinary quoted command text stays readable
   And an apostrophe in prose before or inside a value ("it's", "don't") hides no more than that value's word: the rest of a prompt stays readable
@@ -473,7 +473,7 @@ Scenario: AC-90 edge — left out
 
 Scenario: AC-90 failure — not written
   When the file cannot be written
-  Then the command goes to the terminal all the same and terminumd's log says why; a folder that cannot be read says "The pane's folder is not known: …" in the pane; a project with none says "Nothing sent in this folder yet."
+  Then the command goes to the terminal all the same and terminumd's log says why, and the other report of the same Enter (the page's or the hook's) may still keep it; a folder that cannot be read says "The pane's folder is not known: …" in the pane; a project with none says "Nothing sent in this folder yet."
 ```
 
 ### AC-91 — Reminders [SHOULD / P1]
@@ -506,7 +506,7 @@ Scenario: AC-91 happy path — said when they come up
   When they came up in another session
   Then it says so when that session is shown next (an unread one, or any); each reminder up is said once in a page; a bookmark is never said
 Scenario: AC-91 happy path — a session's own
-  Then a reminder belongs to its session, as a bookmark does (AC-33): it comes up when that session's agent ends a turn, never another session's of its project; the session list marks only its row, with a wavy pink line beside the orange one; an orphaned reminder never comes up and is listed under Reminders below the sessions
+  Then a reminder belongs to its session, as a bookmark does (AC-33): it comes up when that session's agent ends a turn, never another session's of its project; the session list marks only its row, with a wavy pink line beside the orange one; an orphaned reminder never comes up, one up when its session goes is no longer up, and it is listed under Reminders below the sessions; only a reminder is closed or resolved (a bookmark is refused)
   When another session is shown while the bell's pane is open
   Then the pane closes (its reminders are the last session's)
 Scenario: AC-91 edge — restarts, kinds, resolved ones
@@ -727,5 +727,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-37 — `cargo test sent::`, `web/test/seltext.test.mjs`, `web/test/ask.test.mjs`, `web/test/e2e_clip.mjs`, `web/test/e2e_touch.mjs`, `web/test/e2e_ask.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_liveclip.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_switch.mjs`
 - [x] AC-38 — `cargo test page::trace`, `web/test/trace.test.mjs`, `web/test/tracereplay.test.mjs`, `web/test/e2e_trace.mjs`, `web/test/e2e_ctxtrace.mjs`, `scripts/e2e_core.py`
 - [x] AC-90 — `cargo test sent::`, `cargo test messages::`, `cargo test sock::hook_tests`, `web/test/sent.test.mjs`, `web/test/e2e_sent.mjs`, `web/test/e2e_panewin.mjs`, `scripts/e2e_hooks.py`
-- [x] AC-91 — `cargo test page::bookmarks`, `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
+- [x] AC-91 — `cargo test page::bookmarks` (an orphan never up, a bookmark not settled), `web/test/e2e_sent.mjs`, `web/test/e2e_fold.mjs`, `web/test/e2e_panewin.mjs`, `web/test/e2e_marks.mjs`, `scripts/e2e_hooks.py`
 - [x] AC-40 — `web/test/boxnav.test.mjs`, `web/test/agentbox.test.mjs`, `web/test/rejoin.test.mjs`, `web/test/heldelete.test.mjs`, `web/test/kbdtouch.test.mjs`, `web/test/e2e_boxnav.mjs`, `web/test/e2e_codex.mjs`, `web/test/e2e_touch.mjs`

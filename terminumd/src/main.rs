@@ -96,7 +96,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
     let tasks = Arc::new(if cfg.agent { tasks::store::Store::absent() } else { tasks::store::Store::open(dir.join("kanban.sqlite")) });
     let projects = if cfg.agent { Default::default() } else { page::projects::Projects::load(tasks.clone(), &dir.join("projects.json")) };
     let task_marks = tasks::marks::Marks::default();
-    task_marks.refresh(&tasks);
+    let _ = task_marks.refresh(&tasks);              // a store that fails says so where it is shown
     Arc::new(App {
         store: Store::load(dir.join("workspaces.json"), env.ttl_days, bus.clone()),
         roots: Roots::parse(&env.roots),
@@ -146,7 +146,7 @@ fn build_app(cfg: Config, env: &Env, looks: looks::Looks, link: Link, socket: &s
 
 /// Saves the workspaces and exits (WebSockets never end, so there is no graceful drain).
 fn exit_with(store: &Store, reason: &str) -> ! {
-    store.flush();
+    let _ = store.flush();                          // a failure is logged there
     agent::cleanup();
     tracing::info!(event = "stop", reason);
     std::process::exit(0);

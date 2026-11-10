@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The Panel's own state writes fail loud and are sent again (main.ts saveNow, savePrefs): a refused
 // PUT /api/workspace or /api/prefs says so in a toast and the next change sends it again; a write
-// whose answer was lost after it landed (stale_rev with its own content) keeps the newer change.
-import { base, check, PANE_A, within, wsKey } from "./e2e_harness.mjs";
+// whose answer was lost after it landed (stale_rev with its own content) keeps the newer change; a
+// write terminumd accepted but could not put on disk is said in the banner until its retry works.
+import fs from "node:fs";
+import path from "node:path";
+import { APP, base, check, PANE_A, within, wsKey } from "./e2e_harness.mjs";
 
 const REFUSED = { status: 500, contentType: "application/json", body: JSON.stringify({ error: "io", message: "disk full (test)" }) };
 
@@ -53,6 +56,24 @@ export async function panelSaves(page) {
   check("AC-71 a write whose answer was lost after it landed: the newer change is kept and saved, not undone",
     lost >= 1 && JSON.stringify(kept.selected) === JSON.stringify([rows[0]]) && !shown.includes(rows[2]), JSON.stringify({ lost, rows, selected: kept.selected, shown, puts }));
   page.off("response", seen);
+
+  // accepted, but workspaces.json cannot be written (a folder in its place): the banner says so,
+  // terminumd tries again by itself, and the banner goes once the write works
+  const file = path.join(APP, "workspaces.json");
+  fs.rmSync(file, { force: true });
+  fs.mkdirSync(path.join(file, "in-the-way"), { recursive: true });
+  const banner = () => page.textContent("#notice");
+  try {
+    await pick(rows[1]);
+    await within("AC-71 a workspace write that fails on disk says so in the banner", (ms) =>
+      page.waitForFunction(() => document.getElementById("notice").textContent.startsWith("Panel state not saved to disk"), null, { timeout: ms }));
+  } finally {
+    fs.rmSync(file, { recursive: true, force: true });
+  }
+  await within("AC-71 the failed write is tried again by itself and the banner goes", (ms) =>
+    page.waitForFunction(() => !document.getElementById("notice").textContent.startsWith("Panel state not saved"), null, { timeout: ms }));
+  const onDisk = JSON.parse(fs.readFileSync(file, "utf8")).panes?.[wsKey(PANE_A)]?.selected;
+  check("AC-71 the retry put what was accepted on disk", JSON.stringify(onDisk) === JSON.stringify([rows[1]]), JSON.stringify({ onDisk, banner: await banner() }));
 
   // preferences refused once: a toast; the next change sends them again
   let prefs = 0;

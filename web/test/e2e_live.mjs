@@ -38,10 +38,12 @@ import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
+import { liveBoardBusy } from "./e2e_liveboardbusy.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
+import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -136,6 +138,7 @@ const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
+const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
 const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
@@ -167,7 +170,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory]) => {
+  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -176,11 +179,15 @@ async function wide(browser, name) {
     return ctx;
   }
   if (POOL_ALONE) {
-    await boards([liveBoardAgents, liveDispatcher]);
+    await boards([liveBoardAgents, liveBoardBusy, liveDispatcher]);
     return ctx;
   }
   if (HISTORY_ALONE) {
     await boards([liveHistory]);
+    return ctx;
+  }
+  if (SCHEDULES_ALONE) {
+    await boards([liveFolded, liveSchedules]);
     return ctx;
   }
   if (TASKS_ALONE) {
@@ -365,6 +372,11 @@ async function phone(browser, name) {
   await signIn(page);
   if (HISTORY_ALONE) {
     await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
+    await ctx.close();
+    return;
+  }
+  if (SCHEDULES_ALONE) {
+    await liveFolded(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` });
     await ctx.close();
     return;
   }

@@ -186,6 +186,21 @@ fn ac113_moving_across_projects_asks_can_unlink_and_sees_a_session_s_other_tasks
     assert_eq!(moved(&free, None).unwrap(), ProjectMove::Done, "already there");
 }
 
+/// AC-113 failure (D02): a task whose session could not follow goes back where it was the way
+/// moves::move_back takes it, its subtasks too, and its session stays linked.
+#[test]
+fn ac113_a_task_whose_session_could_not_follow_goes_back() {
+    let s = store("t-move-back");
+    s.with(|tx| tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '', 0)", []).map_err(sql)).unwrap();
+    let a = new(&s, "a", "P2").id;
+    let key = "tmux:local:terminum:%8";
+    s.with(|tx| link(tx, HUMAN, &a, Some(key), 1)).unwrap();
+    assert_eq!(s.with(|tx| change_project(tx, HUMAN, &a, "web", Some("move"), 2)).unwrap(), ProjectMove::SessionFollows(key.to_string()));
+    s.with(|tx| change_project(tx, HUMAN, &a, "default", Some("move"), 3)).unwrap();
+    let t = s.with(|tx| get(tx, &a)).unwrap();
+    assert_eq!((t.project.as_str(), t.session.as_deref()), ("default", Some(key)));
+}
+
 #[test]
 fn ac111_filters_hold_together_and_count_columns() {
     let s = store("t-filter");

@@ -129,6 +129,8 @@ struct Pane {
 pub struct Seen {
     identity: String,
     panes: HashMap<String, Pane>,
+    /// files of closed panes a round could not delete: tried again on the next rounds
+    undeleted: Vec<PathBuf>,
 }
 
 impl Seen {
@@ -142,7 +144,7 @@ impl Seen {
                 panes.insert(format!("%{n}"), Pane::default());
             }
         }
-        Seen { identity: identity.to_string(), panes }
+        Seen { identity: identity.to_string(), panes, undeleted: Vec::new() }
     }
 
     /// The panes of this read to capture: never read, or their window printed in or after the
@@ -159,6 +161,13 @@ impl Seen {
         let p = self.panes.entry(pane.to_string()).or_default();
         p.read_at = at;
         std::mem::replace(&mut p.hash, h.finish()) != p.hash
+    }
+
+    /// `pane`'s text could not be written: it is read and written again next round, changed or not.
+    pub fn unsaved(&mut self, pane: &str) {
+        if let Some(p) = self.panes.get_mut(pane) {
+            (p.read_at, p.hash) = (0, 0);
+        }
     }
 
     /// The panes closed: absent from this read and from reads since `GONE_FOR` ago. They are
@@ -268,36 +277,60 @@ async fn keep(app: &Shared, s: &Server, n: usize, mine: &mut Seen, answered: &An
         let text = tail(&parts, n);
         if mine.read(&r.pane, at, &text) {
             let v = json!({"key": s.key(&r.pane), "session": r.session, "window": r.window, "dir": r.dir, "at": at, "text": text});
-            writes.push((file(&dir, &identity, &r.pane, false), v));
+            writes.push((r.pane.clone(), file(&dir, &identity, &r.pane, false), v));
         }
     }
-    let gone: Vec<PathBuf> = mine.closed(&rows, Instant::now()).iter().flat_map(|p| [false, true].map(|b| file(&dir, &identity, p, b))).collect();
+    let mut gone: Vec<PathBuf> = std::mem::take(&mut mine.undeleted);
+    gone.extend(mine.closed(&rows, Instant::now()).iter().flat_map(|p| [false, true].map(|b| file(&dir, &identity, p, b))));
     if writes.is_empty() && gone.is_empty() {
         return;
     }
     let a = app.clone();
-    let _ = tokio::task::spawn_blocking(move || save(&a, &dir, &identity, &writes, &gone)).await;
+    let Ok(left) = tokio::task::spawn_blocking(move || save(&a, &dir, &identity, &writes, &gone)).await else { return };
+    // what did not reach the disk is tried again: a quiet pane would never be due again (V1)
+    for pane in &left.unwritten {
+        mine.unsaved(pane);
+    }
+    mine.undeleted = left.undeleted;
 }
 
-/// The round's files written and the closed panes' deleted, while lastLines is still on and no
-/// restore took `identity`'s lines meanwhile (the round read the server before it restarted).
-fn save(app: &Shared, dir: &Path, identity: &str, writes: &[(PathBuf, Value)], gone: &[PathBuf]) {
+/// What a round could not do on disk.
+#[derive(Default)]
+struct Left {
+    /// panes whose text was not written
+    unwritten: Vec<String>,
+    /// closed panes' files not deleted
+    undeleted: Vec<PathBuf>,
+}
+
+/// The round's files written (`writes`: pane, file, contents) and the closed panes' deleted,
+/// while lastLines is still on and no restore took `identity`'s lines meanwhile (the round read
+/// the server before it restarted); what failed is logged and returned.
+fn save(app: &Shared, dir: &Path, identity: &str, writes: &[(String, PathBuf, Value)], gone: &[PathBuf]) -> Left {
     let _one = WRITING.lock();
     if wanted(app) == 0 || RETIRED.lock().iter().any(|r| r == identity) {
-        return;
+        return Left::default();
     }
+    let mut left = Left::default();
     if let Err(e) = private_dir(&root(app)).and_then(|_| private_dir(dir)) {
         tracing::warn!(event = "lastlines.unsaved", error = %e);
-        return;
+        left.unwritten = writes.iter().map(|(p, _, _)| p.clone()).collect();
+        left.undeleted = gone.to_vec();
+        return left;
     }
-    for (path, v) in writes {
+    for (pane, path, v) in writes {
         if let Err(e) = crate::auth::store::write_private(path, v) {
             tracing::warn!(event = "lastlines.unsaved", file = %path.display(), error = %e);
+            left.unwritten.push(pane.clone());
         }
     }
     for path in gone {
-        let _ = std::fs::remove_file(path);
+        if let Err(e) = crate::config::remove_if_there(path) {
+            tracing::warn!(event = "lastlines.undeleted", file = %path.display(), error = %e);
+            left.undeleted.push(path.clone());
+        }
     }
+    left
 }
 
 /// A 0700 folder; the top one also kept out of Time Machine (macOS) when made, by a thread of

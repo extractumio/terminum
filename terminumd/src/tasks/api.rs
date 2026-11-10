@@ -4,9 +4,8 @@
 
 use std::collections::HashMap;
 
-use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, Query as Params, State};
-use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::extract::{Path, Query as Params, State};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, post};
 use axum::{Json, Router};
@@ -31,14 +30,14 @@ pub fn routes() -> Router<Shared> {
         .merge(super::agents::routes())
         .merge(super::limits::routes())
         .merge(super::folder::routes())
+        .merge(super::schedulesapi::routes())
         .merge(crate::dispatcher::api::routes())
         .route("/api/tasks/{id}", get(window).patch(change))
         .route("/api/tasks/{id}/comments", post(add_comment))
         .route("/api/tasks/{id}/comments/{event}", patch(edit_comment).delete(drop_comment))
         .route("/api/tasks/{id}/purge", post(purge))
         .route("/api/tasks/{id}/archive", post(archive))
-        .route("/api/task-files", post(upload).layer(DefaultBodyLimit::max(files::MOST_BYTES + 1024)))
-        .route("/api/task-files/{id}", get(download).delete(remove_file))
+        .merge(super::fileapi::routes())
 }
 
 /// Runs `f` in one transaction off the async workers.
@@ -83,19 +82,7 @@ pub(super) fn history_heard(app: &Shared, task: &str) {
 /// A task's change: every page hears of it, and the session list of what it shows of tasks.
 pub fn told(app: &Shared, task: &str) {
     change_heard(app, task);
-    if !app.task_marks.ask() {
-        return;                                        // a read yet to begin sees this change too
-    }
-    let a = app.clone();
-    tokio::spawn(async move {
-        let refreshed = tokio::task::spawn_blocking({
-            let a = a.clone();
-            move || a.task_marks.refresh(&a.tasks)
-        }).await;
-        if matches!(refreshed, Ok(true)) {
-            super::marks::tell(&a);
-        }
-    });
+    super::marks::read_later(app);
 }
 
 /// A link only to a session that is there: a page's picker can be older than the list (AC-133).
@@ -158,16 +145,17 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         let keys: Vec<&str> = tasks.iter().map(|t| t.key.as_str()).collect();
         let (run_marks, on_agents) = (runs::card_marks(tx, &keys)?, runs::card_agents(tx, &keys)?);
         let waits = crate::dispatcher::waits::on_cards(tx, &keys)?;
+        let from = super::schedules::on_cards(tx, &keys)?;
         let parents: Vec<&str> = tasks.iter().filter(|t| t.subtasks > 0).map(|t| t.key.as_str()).collect();
         let boxes = super::family::boxes(tx, &parents)?;
         // only a finished task says what it spent (AC-129)
         let finished: Vec<&str> = tasks.iter().filter(|t| crate::dispatcher::plan::finished(&t.status)).map(|t| t.key.as_str()).collect();
         let spent = crate::dispatcher::usage::of_tasks(tx, &finished)?;
         let counts = if with_counts { Some((query::counts(tx, &filter)?, crate::dispatcher::pool::board(tx)?)) } else { None };
-        Ok((tasks, counts, run_marks, on_agents, spent, boxes, waits))
+        Ok((tasks, counts, run_marks, on_agents, spent, boxes, (waits, from)))
     }).await;
     match done {
-        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes, waits)) => {
+        Ok((tasks, counts, run_marks, on_agents, spent, mut boxes, (waits, from))) => {
             let layout = app.layout.read();
             let linked = tasks.iter().any(|t| t.session.is_some());
             let rows: HashMap<&str, &Value> = crate::page::marks::layout_rows(&layout).filter(|_| linked).filter_map(|it| Some((it["id"].as_str()?, it))).collect();
@@ -187,6 +175,9 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
                 }
                 if let Some(kids) = boxes.remove(&t.key) {
                     v["boxes"] = json!(kids);
+                }
+                if let Some(s) = from.get(&t.key) {
+                    v["schedule"] = json!(s);             // made by that schedule (terminum-schedules.md AC-163)
                 }
                 v
             }).collect();
@@ -217,9 +208,8 @@ async fn meta(State(app): State<Shared>) -> Response {
             super::projectapi::settings(tx)?,
         ))).unwrap_or_default();
         for p in &mut projects {
-            if let Some(v) = p["id"].as_str().and_then(|id| own.get(id)) {
-                p["prefix"] = v["prefix"].clone();
-                p["template"] = v["template"].clone();
+            if let (Some(v), Some(p)) = (p["id"].as_str().and_then(|id| own.get(id)).and_then(Value::as_object).cloned(), p.as_object_mut()) {
+                p.extend(v);
             }
         }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
@@ -237,7 +227,7 @@ async fn start_empty(State(app): State<Shared>) -> Response {
     let a = app.clone();
     let done = off(move || {
         a.tasks.start_empty()?;
-        a.task_marks.refresh(&a.tasks);
+        let _ = a.task_marks.refresh(&a.tasks);
         a.projects.lock().reload()
     }).await;
     if done.is_ok() {
@@ -296,9 +286,10 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         let agent = runs::card_agents(tx, &[&t.key])?.remove(&t.key);
         let waits = crate::dispatcher::waits::on_cards(tx, &[&t.key])?.remove(&t.key);
         let kids = query::subtasks(tx, &t.key)?;
-        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits), agent, kids, t))
+        let from = super::schedules::of_task(tx, &t.key)?.map(|s| json!({"key": s.key, "title": s.title}));
+        Ok((ops::text_of(tx, &id)?, ops::history(tx, &id)?, files::of_task(tx, &id)?, (held, waits, from), agent, kids, t))
     }).await;
-    answer(done.map(|(body, history, attached, (held, waits), agent, kids, t)| {
+    answer(done.map(|(body, history, attached, (held, waits, from), agent, kids, t)| {
         let mut v = card(&app, &t);
         v["children"] = json!(kids);
         v["text_rev"] = json!(text_rev(&body));
@@ -307,6 +298,7 @@ async fn window(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         v["files"] = json!(attached);
         v["run_holds"] = json!(held);
         v["waits"] = json!(waits);
+        v["schedule"] = json!(from);
         if let Some(agent) = agent {
             v["agent"] = agent;
         }
@@ -360,7 +352,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
             match ops::change_project(tx, HUMAN, &id, project, choice.as_deref(), at)? {
                 // it has a session: the page's dialog asks what becomes of it, and sends `session_choice`
                 ProjectMove::Ask => return Ok(Err((StatusCode::CONFLICT, "session_choice"))),
-                ProjectMove::SessionFollows(s) => follow = Some((s, project.clone())),
+                ProjectMove::SessionFollows(s) => follow = Some((s, project.clone(), was.project.clone())),
                 ProjectMove::Done => {}
             }
         }
@@ -388,9 +380,13 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         Ok(Err((status, why))) => return refuse(status, why),
         Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
     };
-    let note = match follow {
-        Some((session, project)) => follow_session(&app, session, project).await.err(),
-        None => None,
+    // the session follows its task, else the task goes back where it was: never one of them moved (D02)
+    let (task, note) = match follow {
+        Some((session, project, was)) => match super::moves::follow_session(&app, session, project).await {
+            Ok(()) => (task, None),
+            Err(e) => super::moves::move_back(&app, task, was, e).await,
+        },
+        None => (task, None),
     };
     if budget.is_some() {
         crate::dispatcher::api::budget_changed(&app, &task);
@@ -398,20 +394,9 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
     told(&app, if reparented { "" } else { &task.id });   // reparented: its parents' cards, old and new, count it
     let mut answered = card(&app, &task);
     if let Some(n) = note {
-        answered["note"] = json!(format!("The task moved, its session did not: {n}"));
+        answered["note"] = json!(n);
     }
     Json(answered).into_response()
-}
-
-/// A session goes where its task went, Default meaning no project (AC-113).
-async fn follow_session(app: &Shared, session: String, project: String) -> Result<(), String> {
-    let a = app.clone();
-    let joined = off(move || {
-        let mut ps = a.projects.lock();
-        if project == DEFAULT_PROJECT { ps.remove(&session) } else { ps.add_to(&session, &project, None) }
-    }).await;
-    crate::page::projects::tell(app);
-    joined
 }
 
 async fn add_comment(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
@@ -465,42 +450,4 @@ async fn purge(State(app): State<Shared>, Path(id): Path<String>) -> Response {
         scrub(&app).await;
     }
     told_answer(&app, &id, done)
-}
-
-async fn upload(State(app): State<Shared>, Params(q): Params<HashMap<String, String>>, data: Bytes) -> Response {
-    let name = q.get("name").cloned().unwrap_or_default();
-    let a = app.clone();
-    answer(off(move || files::keep(&a.tasks, &a.cfg.dir, &name, &data, ops::now())).await)
-}
-
-/// Bytes with the header sign-in only: a raster picture shows, all else downloads (AC-109).
-async fn download(State(app): State<Shared>, Path(id): Path<String>, headers: HeaderMap) -> Response {
-    let a = app.clone();
-    let range = headers.get(header::RANGE).and_then(|v| v.to_str().ok()).map(str::to_string);
-    let done = off(move || {
-        let (file, bytes, inline) = files::open(&a.tasks, &a.cfg.dir, &id)?;
-        let len = bytes.metadata().map_err(|e| format!("{}: {e}", file.name))?.len();
-        Ok((file, inline, crate::raw_body::response(bytes, len, range.as_deref())))
-    }).await;
-    let (file, inline, mut res) = match done {
-        Ok(d) => d,
-        Err(e) => return refuse(StatusCode::NOT_FOUND, e),
-    };
-    let h = res.headers_mut();
-    h.insert(header::CONTENT_TYPE, HeaderValue::from_static(inline.unwrap_or("application/octet-stream")));
-    let safe: String = file.name.chars().map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '_' }).collect();
-    let how = if inline.is_some() { "inline" } else { "attachment" };
-    if let Ok(v) = HeaderValue::from_str(&format!("{how}; filename=\"{safe}\"")) {
-        h.insert(header::CONTENT_DISPOSITION, v);
-    }
-    res
-}
-
-async fn remove_file(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    let a = app.clone();
-    let done = off(move || files::delete(&a.tasks, &a.cfg.dir, &id, HUMAN, ops::now())).await;
-    if let Ok(Some(task)) = &done {
-        told(&app, task);
-    }
-    answer(done.map(|_| json!({"ok": true})))
 }

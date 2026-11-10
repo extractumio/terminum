@@ -28,7 +28,7 @@ pub async fn keep(app: &Shared, host: &str, path: &str, key: &str, text: &str, i
         at: crate::inputs::now_ms(), sender: str_of("sender").unwrap_or_else(|| crate::tasks::store::HUMAN.into()), via: str_of("via").unwrap_or_else(|| "page".into()),
         agent: str_of("agent"), pane: key.to_string(), line, host: host.to_string(), cwd: path.to_string(), title: Some(title_of(app, key)).filter(|t| !t.is_empty()), text: kept, ..Default::default()
     };
-    let a = app.clone();
+    let (a, text) = (app.clone(), m.text.clone());
     // the projects' lock is held across their file's save: off the async workers, as the store
     let kept = crate::http::off(move || {
         if let Some(p) = a.projects.lock().of(&m.pane) {
@@ -38,7 +38,10 @@ pub async fn keep(app: &Shared, host: &str, path: &str, key: &str, text: &str, i
     }).await;
     match kept {
         Ok(_) => app.pages.tell(&json!({"t": "sentnew", "host": host, "path": path, "key": key}).to_string()),
-        Err(e) => tracing::warn!(event = "sent.unsaved", error = %e),
+        Err(e) => {
+            tracing::warn!(event = "sent.unsaved", error = %e);
+            app.sent.unaccept(key, &text);
+        }
     }
 }
 

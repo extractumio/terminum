@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's window (terminum-kanban.md AC-139): a new empty one, or one to change: its name, server,
-// folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the template its agents write
-// tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
+// folder (typed, or chosen in its picker), the letters of its tasks' IDs (AC-148), the language its agents write
+// in on the board (terminum-dispatcher.md AC-166), the template its agents write tasks by (AC-145) and memory limits, the pool's keys beside them. terminumd checks what is
 // kept and says what is wrong.
+import { oneAtATime } from "./dialogs.js";
 import { folderPicker } from "./kanbanfolder.js";
 import { $, DEFAULT, api, fillSelect, hostOptions } from "./kanbanutil.js";
 
@@ -57,6 +58,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     $("projectdir").value = p?.dir ?? "";
     $("projectatonce").value = p?.agent_limit ?? "";
     $("projectprefix").value = p?.prefix ?? "";
+    $("projectlanguage").value = p?.language ?? "";
     $("projecttemplate").value = templateOf(p);
     $("projecthead").textContent = p ? p.name : "New project";
     $("projectok").textContent = p ? "Done" : "Create";
@@ -71,17 +73,19 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     if (real) $(p && !p.dir ? "projectdir" : "projectname").focus();
   }
 
-  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. */
-  /** Its letters and template, only those changed: a refusal says why and keeps the window. */
+  /** Its letters, language and template, only those changed: a refusal says why and keeps the window. */
   function ownSettings(p) {
     const prefix = $("projectprefix").value.trim().toUpperCase(), template = $("projecttemplate").value;
     const body = {};
     if (prefix && prefix !== (p?.prefix ?? "")) body.prefix = prefix;
     if (template !== templateOf(p)) body.template = template;
+    const language = $("projectlanguage").value.trim();
+    if (language !== (p?.language ?? "")) body.language = language;
     return body;
   }
 
-  async function keep() {
+  /** Created, the window stays, with the pool's keys; else what changed is kept and it closes. One at a time. */
+  const keep = oneAtATime(box, async () => {
     const name = $("projectname").value, dir = $("projectdir").value, host = $("projecthost").value;
     const atOnce = { limit: numberOrNull("projectatonce") };
     try {
@@ -103,7 +107,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
         open(getMeta().projects.find((p) => p.id === id));
       }
     } catch (e) { say(e.message); }
-  }
+  });
 
   $("projectok").addEventListener("click", keep);
   box.addEventListener("keydown", (e) => {

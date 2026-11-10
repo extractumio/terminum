@@ -55,6 +55,7 @@ Open questions: none.
 | ID | Priority | Case |
 |---|---|---|
 | AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, in severity order and by hand within a severity; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity and title; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment closes with RUN or CLOSE. |
@@ -124,6 +125,29 @@ Scenario: AC-105 failure — its projects and filters not read
   Given the read of the board's projects and filters fails while its columns' read answers
   Then the banner says "The board is out of date: <the message>" after the columns come too
   And they are read again every 2 s; once they come, the banner goes and the filters show
+```
+
+### AC-159 — Folded cards [MUST / P0]
+
+```gherkin
+Scenario: AC-159 happy path — a line a card
+  Given API-3 and API-7 in TODO, API-1 in DONE and API-9 IN PROGRESS
+  Then API-3, API-7 and API-1 are one line each: the ID, the severity, the title cut to the line; their foot, subtasks, session, agent and parent are not shown
+  And API-9's card is whole, as AC-105 says
+
+Scenario: AC-159 happy path — one shown whole
+  When the user presses API-3
+  Then API-3 shows whole, its Run key with it, no window opening
+  When the user presses API-7, or API-1 in DONE
+  Then that one shows whole and API-3 is a line again
+  When the user presses API-7 shown whole
+  Then its window opens (AC-105)
+  When the user presses Esc with nothing chosen and no window open
+  Then API-7 is a line again
+
+Scenario: AC-159 edge — what stays
+  Then a folded card is dragged, chosen with ⌘ or Ctrl+press, run by its Run key on hover, and opened by Enter as a press; its state says "expanded" or "collapsed" to a screen reader
+  And the card shown whole stays so as the columns are read again, until it leaves TODO and DONE
 ```
 
 ### AC-106 — Making a task [MUST / P0]
@@ -233,6 +257,11 @@ Scenario: AC-109 edge — files stay with the task
 Scenario: AC-109 failure — too large
   When a file is over 100 MB
   Then it is refused with "shot.mov is over 100 MB" and the rest of the window is kept
+
+Scenario: AC-109 failure — a purge or a keep cut short
+  When a purge fails (the store refuses it) or terminumd stops halfway through one or through keeping a file
+  Then a file is whole or gone, never a row without its bytes: a failed purge keeps both, and what a stop left (bytes set aside by a purge, bytes an hour old with no row) goes at the next sweep
+  And an agent's file is attached only to a task still within its session's reach when it attaches
 ```
 
 ### AC-110 — Projects shared [MUST / P0]
@@ -350,6 +379,7 @@ Scenario Outline: AC-112 failure — refused, said in the dialog
 Scenario: AC-113 happy path — linking
   When the user picks Session → api on API-12
   Then API-12 is linked to that pane and its row in the session list shows a task mark that opens API-12
+  And the marks follow each change of the tasks; a read of them that fails is tried again after 1 s, doubling to every 60 s, the last marks shown meanwhile
   And the link keeps its pane through a restore (terminum.md AC-92) and the agent's session ID from its hooks
   And a server started anew, its `@terminum-id` changed, drops the link: its pane IDs name other panes, and the task says so
 
@@ -362,6 +392,7 @@ Scenario: AC-113 happy path — across projects
   When API-12 with its session moves from api to web
   Then a dialog offers Move the session too, Unlink the session, Cancel
   And Move the session too refuses with why when that session has other open tasks; the session is told either way (AC-114)
+  And when the session cannot move (its project's record not written), API-12 goes back to api with it and the board says "Its session could not move (<why>): API-12 stays in its project."
 
 Scenario: AC-113 happy path — a session closes
   When API-12's session closes
@@ -1062,14 +1093,15 @@ Depends on: nothing more.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
+- [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
-- [x] AC-109 — `cargo test tasks::files`, `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
+- [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
 - [x] AC-110 — `cargo test page::projects`, `scripts/e2e_core.py`, `web/test/e2e_projects.mjs`, `web/test/e2e_livelistplace.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
-- [x] AC-113 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
+- [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
 - [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`

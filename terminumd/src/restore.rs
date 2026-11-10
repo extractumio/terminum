@@ -19,25 +19,63 @@ use crate::tmux::server::Link;
 const EVERY: Duration = Duration::from_secs(5);
 use crate::restore_srv::{make, sessions_of, Exec, Made, IDENTITY, PANES, WINDOWS};
 
+/// How the restore of one server's start went (its key: `<server id>@<start or checkpoint>`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Attempt {
+    Running,
+    /// made again, or nothing was missing
+    Done,
+    /// an error on the connection `generation` (Server::generation); `made`: some of it is back
+    Failed { generation: u64, made: bool },
+}
+
 #[derive(Default)]
 pub struct Restore {
     /// the last checkpoint written (its JSON), to write only changes
     last: Mutex<String>,
     /// the report of the last restore, until a page has shown it
     pub report: Mutex<Option<Value>>,
-    /// the servers (and a host's tmux start) made again while terminumd runs: once each
-    tried: Mutex<std::collections::HashSet<String>>,
+    /// each server's start made again while terminumd runs, and how it went
+    attempts: Mutex<std::collections::HashMap<String, Attempt>>,
+    /// one restore at a time: a reboot's, a host's, the user's own tmux, a Restore again
+    one: tokio::sync::Mutex<()>,
 }
 
 impl Restore {
-    /// Whether `what` is tried for the first time (then it is not again).
-    pub fn first_try(&self, what: &str) -> bool {
-        self.tried.lock().insert(what.to_string())
+    /// Whether `what` is to be made again by itself on the connection `generation`: never
+    /// tried, or failed with nothing back on another connection (a link that dropped meanwhile).
+    pub fn due(&self, what: &str, generation: u64) -> bool {
+        match self.attempts.lock().get(what) {
+            None => true,
+            Some(Attempt::Failed { generation: g, made: false }) => *g != generation,
+            Some(_) => false,
+        }
     }
 
-    /// Whether `what` was tried already.
-    pub fn was_tried(&self, what: &str) -> bool {
-        self.tried.lock().contains(what)
+    pub fn begin(&self, what: &str) {
+        self.attempts.lock().insert(what.to_string(), Attempt::Running);
+    }
+
+    /// The outcome of `what`'s attempt `m` on the connection `generation`.
+    pub fn end(&self, what: &str, m: &Made, generation: u64) {
+        let a = if m.errors.is_empty() { Attempt::Done } else { Attempt::Failed { generation, made: m.sessions + m.windows > 0 } };
+        self.attempts.lock().insert(what.to_string(), a);
+    }
+
+    /// The one restore's turn for `what`, when it is due by itself (checked before the wait and again
+    /// after it: another restore may have made it meanwhile).
+    pub async fn turn_if_due(&self, what: &str, generation: u64) -> Option<tokio::sync::MutexGuard<'_, ()>> {
+        if !self.due(what, generation) {
+            return None;
+        }
+        let one = self.one.lock().await;
+        self.due(what, generation).then_some(one)
+    }
+
+    /// Whether `what` waits for its layout: being made, or failed with nothing back (its
+    /// checkpoint is all there is of it, so it is not written over).
+    pub fn waits(&self, what: &str) -> bool {
+        matches!(self.attempts.lock().get(what), None | Some(Attempt::Running | Attempt::Failed { made: false, .. }))
     }
 }
 
@@ -154,14 +192,20 @@ pub async fn at_start(app: &Shared) -> bool {
     }
     let Ok(text) = std::fs::read_to_string(path(app)) else { return false };
     let Ok(saved) = serde_json::from_str::<Value>(&text) else { return false };
+    let _one = app.restore.one.lock().await;
     run(app, &saved).await
 }
 
-/// "Restore again" (AC-15 failure): the last checkpoint once more, sessions that exist kept.
+/// "Restore again" (AC-15 failure): the last checkpoint once more on every server it names
+/// that answers (terminum's, hosts, the user's own tmux), sessions that exist kept.
 pub async fn again(app: &Shared) -> Result<(), String> {
     let text = std::fs::read_to_string(path(app)).map_err(|e| format!("No layout to restore: {e}"))?;
     let saved: Value = serde_json::from_str(&text).map_err(|e| format!("layout.json cannot be read: {e}"))?;
+    let _one = app.restore.one.lock().await;
     run(app, &saved).await;
+    for s in app.tmux.all().into_iter().filter(|s| !std::ptr::eq(s.as_ref(), app.tmux.local.as_ref())) {
+        crate::restore_srv::again(app, &s, &saved["servers"]).await;
+    }
     Ok(())
 }
 
@@ -209,7 +253,10 @@ pub fn add_report(app: &Shared, text: &str, m: Made) {
         text = format!("{text}{} {lines}", if text.ends_with('.') { "" } else { "." });
     }
     report["text"] = json!(if was.is_empty() { text.clone() } else { format!("{was} {text}") });
-    let _ = crate::config::write_private(&app.cfg.dir.join("restore-report.json"), report.to_string().as_bytes());
+    if let Err(e) = crate::config::write_private(&app.cfg.dir.join("restore-report.json"), report.to_string().as_bytes()) {
+        tracing::warn!(event = "restore.report_failed", error = %e);
+        if let Some(a) = report["errors"].as_array_mut() { a.push(json!(format!("The report could not be kept in the state folder: {e}"))); }
+    }
     tracing::info!(event = "restore", text);
     *r = Some(report.clone());
     drop(r);
@@ -230,7 +277,9 @@ pub fn hello(app: &Shared, page: &crate::page::Page) {
 /// A page closed the report: it is gone from every page and no page that connects gets it.
 pub fn seen(app: &Shared) {
     if app.restore.report.lock().take().is_some() {
-        let _ = std::fs::remove_file(app.cfg.dir.join("restore-report.json"));
+        if let Err(e) = crate::config::remove_if_there(&app.cfg.dir.join("restore-report.json")) {
+            tracing::warn!(event = "restore.report_remove_failed", error = %e);
+        }
         app.pages.tell(&json!({"t": "restore", "report": null}).to_string());
     }
 }
@@ -242,6 +291,26 @@ mod tests {
     #[test]
     fn a_boot_has_an_id() {
         assert!(!boot_id().is_empty());
+    }
+
+    /// AC-15 failure: a server's restore that failed with nothing back is made again by
+    /// itself once its link is another one; one that brought some back, or all, is not.
+    #[test]
+    fn ac15_a_failed_restore_is_retried_on_another_connection_only() {
+        let r = Restore::default();
+        let failed = |made| Made { sessions: made, errors: vec!["main: lost server".into()], ..Made::default() };
+        assert!(r.due("devbox:default@100", 1) && r.waits("devbox:default@100"), "never tried");
+        r.begin("devbox:default@100");
+        assert!(!r.due("devbox:default@100", 1) && r.waits("devbox:default@100"), "being made");
+        r.end("devbox:default@100", &failed(0), 1);
+        assert!(!r.due("devbox:default@100", 1), "not again on the same link");
+        assert!(r.due("devbox:default@100", 2), "again once the link is another one");
+        assert!(r.waits("devbox:default@100"), "its checkpoint is kept for the retry");
+        r.end("devbox:default@100", &failed(1), 2);
+        assert!(!r.due("devbox:default@100", 3) && !r.waits("devbox:default@100"), "some of it back: Restore again only");
+        r.end("devbox:default@100", &Made::default(), 3);
+        assert_eq!(r.attempts.lock().get("devbox:default@100"), Some(&Attempt::Done));
+        assert!(!r.due("devbox:default@100", 4) && !r.waits("devbox:default@100"));
     }
 
     #[test]

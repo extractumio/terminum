@@ -15,10 +15,11 @@ import subprocess
 import sys
 import tempfile
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, results, summary, tmux_on  # noqa: E402
+from e2e_ws import Terminumd, check, results, summary, tmux_on, unix_request  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET, OWN = free_port(), own("tm-test-restore"), own("tm-test-rown")
@@ -142,6 +143,13 @@ def main():
         time.sleep(4)
         left = subprocess.run(["tmux", "-L", OWN, "list-sessions"], capture_output=True, text=True)
         check("AC-15 the user's own tmux ended by its last pane closing is not made again", left.returncode != 0, left.stdout)
+        # "Restore again" covers every server, one at a time: two at once make the user's own session once
+        with ThreadPoolExecutor(2) as pool:
+            answers = list(pool.map(lambda _: unix_request(t.sock, "POST", "/restore", {}), range(2)))
+        again = subprocess.run(["tmux", "-L", OWN, "list-windows", "-t", "work", "-F", "#{window_name}"], capture_output=True, text=True).stdout.split()
+        kept_report = json.load(open(os.path.join(t.app, "restore-report.json")))
+        check("AC-15 Restore again makes the user's own tmux's attached session again, once though asked twice at once",
+              [a[0] for a in answers] == [200, 200] and again == ["logs"] and kept_report["errors"] == [], (answers, again, kept_report))
         down_to_one(tmux, None, "main:docs")
         fresh = []
         for _ in range(30):

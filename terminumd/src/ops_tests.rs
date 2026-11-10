@@ -161,3 +161,31 @@ fn a_new_file_or_folder_on_a_name_a_link_outside_took_is_a_name_taken() {
     fs::remove_dir_all(dir).unwrap();
     fs::remove_dir_all(outside).unwrap();
 }
+
+/// AC-56 (V4): a stop's leftover copies in a folder go at its first save, not a young one or
+/// this process's own.
+#[test]
+fn a_folders_first_save_sweeps_a_stops_leftover_copies() {
+    let (roots, dir) = setup("leftovers");
+    let aged = |name: &str| {
+        let p = dir.join(name);
+        fs::write(&p, "x").unwrap();
+        fs::File::options().write(true).open(&p).unwrap().set_modified(std::time::SystemTime::now() - LEFTOVER * 2).unwrap();
+        p
+    };
+    let (tmp, part) = (aged(".fb-1-0.tmp"), aged(".tm-upload-1-3.part"));
+    let own = aged(&format!(".fb-{}-99.tmp", std::process::id()));
+    let other = aged(".fb-notes.tmp");
+    let young = dir.join(".fb-2-0.tmp");
+    fs::write(&young, "x").unwrap();
+    let file = dir.join("file.txt");
+    fs::write(&file, "a").unwrap();
+    save(&roots, &file, "b", &etag(&fs::metadata(&file).unwrap())).unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while (tmp.exists() || part.exists()) && std::time::Instant::now() < deadline {
+        std::thread::sleep(std::time::Duration::from_millis(20));   // swept on a thread of its own
+    }
+    assert!(!tmp.exists() && !part.exists(), "a stop's leftovers go");
+    assert!(own.exists() && young.exists() && other.exists(), "its own, a young one and the user's file stay");
+    fs::remove_dir_all(dir).unwrap();
+}

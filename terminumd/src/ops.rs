@@ -127,7 +127,7 @@ pub fn save(roots: &Roots, path: &Path, text: &str, if_match: &str) -> Result<St
     // unique per call: two saves in flight must not share a temp file
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let tmp = dir.join(format!(".fb-{}-{seq}.tmp", std::process::id()));
+    let tmp = dir.join(format!("{SAVE_COPY}{}-{seq}.tmp", std::process::id()));
     let result = (|| {
         let mut f = fs::OpenOptions::new().write(true).create_new(true).open(&tmp).map_err(|e| io(e, &tmp))?;
         f.write_all(text.as_bytes()).map_err(|e| io(e, path))?;
@@ -139,13 +139,66 @@ pub fn save(roots: &Roots, path: &Path, text: &str, if_match: &str) -> Result<St
             }
             None => user_owned(&f, false),
         }
+        if meta.is_none() {
+            // made again: a file another program made there meanwhile is not written over
+            return rename_exclusive(&tmp, &real).map_err(|e| if e.kind() == std::io::ErrorKind::AlreadyExists {
+                OpError::Conflict { message: format!("{} was made on disk meanwhile", name_of(path)), etag: None }
+            } else {
+                io(e, path)
+            });
+        }
+        // another program's change while the copy was written is not written over (V4)
+        if if_match != "*" {
+            let now = fs::metadata(&real).map_err(|_| deleted())?;
+            if etag(&now) != if_match {
+                return Err(OpError::Conflict { message: format!("{} changed on disk", name_of(path)), etag: Some(etag(&now)) });
+            }
+        }
         fs::rename(&tmp, &real).map_err(|e| io(e, path))
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
     result?;
+    sweep_leftovers(dir);
     Ok(etag(&fs::metadata(&real).map_err(|e| io(e, path))?))
+}
+
+/// A save's or an upload's copy older than this, of another process, is a stop's leftover.
+const LEFTOVER: std::time::Duration = std::time::Duration::from_secs(3600);
+
+/// How a save's copy (`.fb-<pid>-<n>.tmp`) and an upload's (`.tm-upload-<pid>-<n>.part`) begin.
+const SAVE_COPY: &str = ".fb-";
+const UPLOAD_COPY: &str = ".tm-upload-";
+
+/// The copies a stopped terminumd left in `dir` (of another process, an hour old) go; once a
+/// folder while terminumd runs, after its first save or upload, on a thread of its own: a
+/// folder of 500,000 entries is read once, and no answer waits for it.
+fn sweep_leftovers(dir: &Path) {
+    static SWEPT: parking_lot::Mutex<Option<std::collections::HashSet<PathBuf>>> = parking_lot::Mutex::new(None);
+    if !SWEPT.lock().get_or_insert_with(Default::default).insert(dir.to_path_buf()) {
+        return;
+    }
+    let dir = dir.to_path_buf();
+    std::thread::spawn(move || {
+        use std::os::unix::ffi::OsStrExt;
+        let mine = std::process::id().to_string();
+        for e in fs::read_dir(&dir).into_iter().flatten().flatten() {
+            let raw = e.file_name();
+            let bytes = raw.as_bytes();
+            if !bytes.starts_with(SAVE_COPY.as_bytes()) && !bytes.starts_with(UPLOAD_COPY.as_bytes()) {
+                continue;
+            }
+            let name = raw.to_string_lossy();
+            let pid = name.strip_prefix(SAVE_COPY).and_then(|r| r.strip_suffix(".tmp"))
+                .or_else(|| name.strip_prefix(UPLOAD_COPY).and_then(|r| r.strip_suffix(".part")))
+                .and_then(|r| r.split_once('-')).map(|(pid, _)| pid);
+            let old = || e.metadata().and_then(|m| m.modified()).ok().and_then(|m| m.elapsed().ok()).is_some_and(|age| age > LEFTOVER);
+            if pid.is_some_and(|p| p != mine && p.bytes().all(|b| b.is_ascii_digit())) && e.file_type().is_ok_and(|t| t.is_file()) && old() {
+                let _ = fs::remove_file(e.path());
+            }
+        }
+    });
 }
 
 /// macOS: mode, ACLs and extended attributes (copyfile(3)); mode alone if that fails.
@@ -236,7 +289,7 @@ pub fn upload(roots: &Roots, dir: &Path, name: &str, data: &[u8], both: bool) ->
     check_entry_writable(roots, &first)?;
     static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let part = dir.join(format!(".tm-upload-{}-{seq}.part", std::process::id()));
+    let part = dir.join(format!("{UPLOAD_COPY}{}-{seq}.part", std::process::id()));
     let mut f = fs::OpenOptions::new().write(true).create_new(true).custom_flags(libc::O_NOFOLLOW).open(&part).map_err(|e| io(e, &first))?;
     user_owned(&f, false);
     let result = f.write_all(data).and_then(|()| f.sync_all()).map_err(|e| io(e, &first)).and_then(|()| {
@@ -253,6 +306,9 @@ pub fn upload(roots: &Roots, dir: &Path, name: &str, data: &[u8], both: bool) ->
     });
     if result.is_err() {
         let _ = fs::remove_file(&part);
+    }
+    if result.is_ok() {
+        sweep_leftovers(dir);
     }
     result
 }

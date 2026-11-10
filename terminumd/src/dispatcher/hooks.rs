@@ -113,9 +113,17 @@ pub fn heard(app: &Shared, key: &str, ev: &Value, whose: Whose) {
 async fn one_event(app: Shared, key: String, ev: Value) {
     if ev["event"] == "Tokens" {
         let Some(models) = super::usage::by_model(&ev["tokens"]) else { return };
+        let session = ev["session"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
+        let a = app.clone();
         let done = store(&app, move |tx| {
             let Some(r) = runs::in_pane(tx, &key)? else { return Ok(()) };
-            super::usage::heard(tx, &r.id, &r.agent_id, &models, ops::now())
+            let counted = a.dispatcher.counted_in.lock().get(&r.id).cloned();
+            let same = session.as_ref().zip(counted).map(|(s, c)| *s == c);
+            super::usage::heard(tx, &r.id, &r.agent_id, &models, ops::now(), same)?;
+            if let Some(s) = session {
+                a.dispatcher.counted_in.lock().insert(r.id, s);
+            }
+            Ok(())
         }).await;
         if let Err(e) = done {
             tracing::warn!(event = "dispatcher.usage", error = %e);

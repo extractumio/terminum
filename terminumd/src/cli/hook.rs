@@ -42,9 +42,16 @@ pub fn main(agent: &str) -> i32 {
     if let Some(ev) = event(agent, &input, &tmux, &pane) {
         let sinks = super::sinks::all();
         let answers = super::sinks::post_all(&sinks, "/hook", &ev, BUDGET);
-        if let Some(line) = first_reminder(&ev, &answers) {
+        if let Some((i, line)) = first_reminder(&ev, &answers) {
             // a closed stdout is the agent's choice: never a panic, still 0
-            let _ = writeln!(std::io::stdout().lock(), "{line}");
+            let printed = writeln!(std::io::stdout().lock(), "{line}").is_ok();
+            // Dispatcher's lines in it go once they were printed, else they come again (AC-114)
+            if printed && let Ok((_, Some(answer))) = &answers[i] && let Some(n) = answer["lines"].as_u64() {
+                let mut heard = ev.clone();
+                heard["event"] = json!("Heard");
+                heard["lines"] = json!(n);
+                let _ = super::sinks::post_all(&sinks[i..=i], "/hook", &heard, BUDGET);
+            }
         }
         // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it
         let asked = answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["tokens"] == true));
@@ -58,10 +65,10 @@ pub fn main(agent: &str) -> i32 {
     0
 }
 
-/// The reminder line of the first sink whose answer reminds, if any.
-pub fn first_reminder(ev: &Value, answers: &[super::sinks::Answer]) -> Option<String> {
-    answers.iter().find_map(|a| match a {
-        Ok((200, Some(answer))) => remind_line(ev, answer),
+/// The first sink whose answer reminds, and its reminder line, if any.
+pub fn first_reminder(ev: &Value, answers: &[super::sinks::Answer]) -> Option<(usize, String)> {
+    answers.iter().enumerate().find_map(|(i, a)| match a {
+        Ok((200, Some(answer))) => remind_line(ev, answer).map(|l| (i, l)),
         _ => None,
     })
 }
@@ -255,7 +262,7 @@ mod tests {
         use super::super::sinks::post_all;
         let ev = json!({"agent": "codex", "event": "PostToolUse"});
         let answers = vec![Err(super::super::sockhttp::Down), Ok((200, Some(json!({})))), Ok((200, Some(json!({"remind": "from a Mac"}))))];
-        assert!(first_reminder(&ev, &answers).unwrap().contains("from a Mac"));
+        assert!(first_reminder(&ev, &answers).unwrap().1.contains("from a Mac"));
         assert_eq!(first_reminder(&ev, &answers[..2]), None);
         let none = post_all(&[], "/hook", &ev, BUDGET);
         assert!(none.is_empty() && first_reminder(&ev, &none).is_none(), "no sinks: nothing posted, nothing printed");

@@ -44,6 +44,8 @@ pub enum Event {
     Rescan { host: Option<String> },
     /// A host's files offer changed (AC-83): its panels read it again.
     Host { host: String },
+    /// workspaces.json could not be written (`error`), or can again (none): panels say so
+    Unsaved { error: Option<String> },
 }
 
 impl Event {
@@ -54,6 +56,7 @@ impl Event {
             Event::FsChange { .. } => "fs-change",
             Event::Rescan { .. } => "rescan",
             Event::Host { .. } => "host",
+            Event::Unsaved { .. } => "unsaved",
         }
     }
 

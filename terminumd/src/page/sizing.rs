@@ -39,7 +39,7 @@ fn bounded(cols: u16, rows: u16) -> (u16, u16) {
 #[derive(Default)]
 pub struct Sizes(Mutex<HashMap<(String, String), Win>>);
 
-#[derive(Default, Clone)]
+#[derive(Default, Clone, Debug, PartialEq)]
 struct Win {
     /// the page whose grid the window has
     by: Option<u64>,
@@ -47,6 +47,33 @@ struct Win {
     zoom_by: Option<u64>,
     /// window-size manual was set by terminumd
     manual: bool,
+    /// the claim that wrote this record (`resize`): a refused one is undone only while it is the last
+    claim: u64,
+}
+
+impl Sizes {
+    /// Records `win` for `key` as a new claim: (the record before, the claim).
+    fn record(g: &mut HashMap<(String, String), Win>, key: &(String, String), mut win: Win) -> (Option<Win>, u64) {
+        static CLAIMS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        win.claim = CLAIMS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let claim = win.claim;
+        (g.insert(key.clone(), win), claim)
+    }
+
+    /// tmux refused `claim` on `key`: the record is what it was before, unless a later claim
+    /// replaced it meanwhile; a `window-size manual` tmux applied (`manual`) stays known, so the
+    /// window still gets tmux's own size back (`left`, `release`).
+    fn undo(&self, key: &(String, String), claim: u64, before: Option<Win>, manual: bool) {
+        let mut g = self.0.lock();
+        if g.get(key).map(|w| w.claim) != Some(claim) {
+            return;
+        }
+        let back = before.map(|w| Win { manual: w.manual || manual, ..w }).or_else(|| manual.then(|| Win { manual: true, ..Win::default() }));
+        match back {
+            Some(w) => g.insert(key.clone(), w),
+            None => g.remove(key),
+        };
+    }
 }
 
 /// Why a page claims its pane's window.
@@ -128,39 +155,46 @@ async fn resize(app: &Shared, page: &Arc<Page>, why: Why) -> bool {
         }
         cmds.push(zoom_line(&pane, f.zoomed));
     }
-    let mut win = app.sizes.0.lock().get(&key).cloned().unwrap_or_default();
-    if f.window_size != (cols, rows) || !win.manual {
-        // also at its size already: held by tmux's own policy, another client would take it
-        cmds.push(format!("set-option -w -t {} window-size manual", f.window));
-        cmds.push(format!("resize-window -t {} -x {cols} -y {rows}", f.window));
-        if users_pane(&server, &pane) {
-            // marked: a crash or a dropped link still gives it its size back (`reclaim`)
-            cmds.push(format!("set-option -w -t {} {SIZED} 1", f.window));
-        }
-        win.manual = true;
-    }
-    if (cols, rows) == grid {
-        win.by = Some(page.id);
-    }
-    if !f.whole() {
-        win.zoom_by = Some(page.id);
-    }
-    {
+    let users = users_pane(&server, &pane);
+    // read and written under one lock: a claim of another page meanwhile is never overwritten by a stale copy
+    let (before, claim, manual_at) = {
         let mut g = app.sizes.0.lock();
+        let mut win = g.get(&key).cloned().unwrap_or_default();
+        let mut manual_at = None;
+        if f.window_size != (cols, rows) || !win.manual {
+            // also at its size already: held by tmux's own policy, another client would take it
+            manual_at = Some(cmds.len());
+            cmds.push(format!("set-option -w -t {} window-size manual", f.window));
+            cmds.push(format!("resize-window -t {} -x {cols} -y {rows}", f.window));
+            if users {
+                // marked: a crash or a dropped link still gives it its size back (`reclaim`)
+                cmds.push(format!("set-option -w -t {} {SIZED} 1", f.window));
+            }
+            win.manual = true;
+        }
+        if (cols, rows) == grid {
+            win.by = Some(page.id);
+        }
+        if !f.whole() {
+            win.zoom_by = Some(page.id);
+        }
         if !page.state.lock().active() {
             return false; // hidden meanwhile (pause is set before handover): its handover saw nothing to give
         }
-        g.insert(key, win);
-    }
+        let (before, claim) = Sizes::record(&mut g, &key, win);
+        (before, claim, manual_at)
+    };
     if cmds.is_empty() {
         return false;
     }
     let resized = server.key(&pane);   // the user may show another pane by the time tmux answers
-    for a in server.run_all_on(&pane, cmds).await {
-        if let Err(e) = a {
-            refused(page, &resized, &f, "resize-window", e);
-            return false;
-        }
+    let answers = server.run_all_on(&pane, cmds).await;
+    if let Some(e) = answers.iter().find_map(|a| a.as_ref().err()) {
+        // the claim is undone: the window is not this page's size (AC-13 failure)
+        let manual = manual_at.is_some_and(|i| answers.get(i).is_some_and(Result::is_ok));
+        app.sizes.undo(&key, claim, before, manual);
+        refused(page, &resized, &f, "resize-window", e.clone());
+        return false;
     }
     for p in viewers(app, &server, &f.window) {
         p.send_json(&json!({"t": "sized", "sid": shown_key(&p), "cols": cols, "rows": rows, "mine": p.id == page.id}));
@@ -421,27 +455,5 @@ fn from_message(msg: &Value, sgr: bool) -> Option<Vec<u8>> {
 const WHEEL_MAX: u64 = 100;
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// AC-13: a phone narrower than an iPhone in portrait, a split, or a huge display get the bounds.
-    #[test]
-    fn a_grid_stays_within_its_bounds() {
-        assert_eq!(bounded(80, 24), (80, 24));
-        assert_eq!(bounded(20, 5), MIN);
-        assert_eq!(bounded(400, 120), MAX);
-        assert_eq!(bounded(30, 90), (45, 70));
-    }
-
-    /// AC-13: a window of several panes grows on any claim and shrinks only for typing.
-    #[test]
-    fn a_split_window_shrinks_only_for_typing() {
-        let split = Fields { panes: 2, window_size: (129, 68), ..Fields::default() };
-        assert_eq!(target((46, 32), &split, Why::Open), (129, 68), "a phone that only looks takes nothing from the hidden panes");
-        assert_eq!(target((46, 32), &split, Why::Active), (129, 68));
-        assert_eq!(target((46, 32), &split, Why::Typed), (46, 32));
-        assert_eq!(target((180, 50), &split, Why::View), (180, 68), "each direction on its own");
-        let one = Fields { panes: 1, ..split };
-        assert_eq!(target((46, 32), &one, Why::Open), (46, 32), "a window of one pane has nothing to squeeze");
-    }
-}
+#[path = "sizing_tests.rs"]
+mod tests;

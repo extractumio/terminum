@@ -70,6 +70,19 @@ fn a_pane_is_read_again_only_after_its_window_printed() {
     assert_eq!(seen.due(&[row("%1", 99), row("%2", 101)]).iter().map(|r| r.pane.as_str()).collect::<Vec<_>>(), ["%2"]);
 }
 
+/// AC-96 failure (V1): a pane whose text could not be written is read and written again next
+/// round, though it printed nothing since and its text is the same.
+#[test]
+fn a_text_not_written_is_written_next_round_unchanged() {
+    let mut seen = Seen::default();
+    assert!(seen.read("%1", 100, "hi"));
+    assert!(seen.due(&[row("%1", 90)]).is_empty(), "quiet since: not due");
+    seen.unsaved("%1");
+    assert_eq!(seen.due(&[row("%1", 90)]).len(), 1, "its write failed: due again");
+    assert!(seen.read("%1", 101, "hi"), "and written though the same");
+    assert!(!seen.read("%1", 101, "hi"));
+}
+
 #[test]
 fn a_pane_closes_only_when_absent_from_reads_30_s_apart() {
     let mut seen = Seen::default();

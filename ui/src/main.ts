@@ -93,8 +93,16 @@ function failed(kind: string, text: string) {
   warned.add(kind);
 }
 
-async function saveNow() {
+/** One workspace PUT at a time, each taking the snapshot when it starts: terminumd gets this
+ *  panel's writes in order, and `ambiguous` always belongs to the PUT that is current. */
+let saving: Promise<void> = Promise.resolve();
+function saveNow(): Promise<void> {
   clearTimeout(saveTimer);
+  saving = saving.then(saveOnce, saveOnce);
+  return saving;
+}
+
+async function saveOnce() {
   const snap = snapshot(), k = key;
   if (!snap || !k || content(snap) === content(ws!)) return;
   const previous = ws, run = workspaceRun;
@@ -172,8 +180,17 @@ function renderHeader(s: TermState) {
   $("foot").textContent = s.note ?? "";
 }
 
+/** terminumd could not write the panels' state to disk (AC-71): said in the banner until a
+ *  write works again (it tries again by itself); what was accepted stays while it runs. */
+const UNSAVED = "Panel state not saved to disk";
+function showUnsaved(error: string | null | undefined) {
+  if (error) notice(UNSAVED, ` ${error}. terminum tries again; tabs and folders are kept until it restarts.`);
+  else if ($("notice").textContent?.startsWith(UNSAVED)) notice("", "");
+}
+
 /** terminumd's state (its build, AC-16) from the socket's first frame. */
 function onState(s: TermState) {
+  showUnsaved(s.unsaved);
   upgrade.build(s.build);
   term = { ...term, bridge: true };
   if (!VIEW) renderHeader(term);
@@ -222,6 +239,7 @@ const stream = new Stream({
     "fs-change": onFsChange,
     rescan: ({ host }) => refreshScope(host ?? null, scope, tree, viewer),
     host: ({ host }) => { if (host === PIN_HOST) void refreshHost(); },
+    unsaved: ({ error }) => showUnsaved(error),
   },
   open() {
     notice("", "");
@@ -289,15 +307,25 @@ const terminal = (action: "insert" | "cd", body: object) =>
 
 // ── layout ───────────────────────────────────────────────────────────────────
 
-/** Preferences not yet saved (a failed PUT): the next change or reconnect sends them again. */
-let prefsUnsaved = false, prefsSent = 0;
+/** Preferences not yet saved (a failed PUT): the next change or reconnect sends them again. One
+ *  PUT at a time, as the workspace's (saveNow), so terminumd keeps the newest. */
+let prefsUnsaved = false, prefsSaving: Promise<void> = Promise.resolve();
 const savePrefs = () => {
   prefsUnsaved = true;
-  const sent = ++prefsSent;   // only the newest PUT's answer says whether they are saved
-  void api("PUT", "/api/prefs", { body: prefs }).then(
-    () => { if (sent === prefsSent) prefsUnsaved = false; warned.delete("prefs"); },
-    (e: Error) => failed("prefs", `Preferences not saved: ${e.message}`));
+  prefsSaving = prefsSaving.then(sendPrefs, sendPrefs);
 };
+
+async function sendPrefs() {
+  if (!prefsUnsaved) return;   // an earlier PUT in the queue sent them already
+  const sent = JSON.stringify(prefs);
+  try {
+    await api("PUT", "/api/prefs", { body: prefs });
+    warned.delete("prefs");
+    if (JSON.stringify(prefs) === sent) prefsUnsaved = false;
+  } catch (e) {
+    failed("prefs", `Preferences not saved: ${(e as Error).message}`);
+  }
+}
 
 function setSplit(r: number) {
   prefs.split = Math.min(0.85, Math.max(0.15, r));

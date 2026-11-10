@@ -24,24 +24,25 @@ const TMUX_AGAIN: Duration = Duration::from_secs(10);
 /// Workspaces of panes gone this long are removed at an inventory this often (AC-71).
 const INVENTORY: Duration = Duration::from_secs(300);
 
-/// Starts the local server when none runs, and keeps a control client per session.
+/// Starts the local server when none runs, and keeps a control client per session; what went
+/// wrong is the tmux problem, and any path back clears it (L26).
 async fn ensure_local(app: &Shared) {
+    let problem = local_problem(app).await;
+    set_problem(app, problem);
+}
+
+/// `ensure_local`'s work: the problem, None when the server runs with its clients.
+async fn local_problem(app: &Shared) -> Option<String> {
     let server = &app.tmux.local;
     // through the bulk client while it lives; a process of its own only when none does
     if server.connected()
         && let Ok(list) = server.run("list-sessions -F '#{session_name}'").await
             && !list.is_empty() {
-                if let Err(e) = server.sync_clients(&list) {
-                    set_problem(app, Some(e));
-                }
-                return;
+                return server.sync_clients(&list).err();
             }
     let sessions = match server.local_sessions().await {
         Ok(s) => s,
-        Err(e) => {
-            set_problem(app, Some(e));
-            return;
-        }
+        Err(e) => return Some(e),
     };
     let sessions = match sessions {
         Some(s) if !s.is_empty() => s,
@@ -50,8 +51,7 @@ async fn ensure_local(app: &Shared) {
             if !server.took_closed_by_user() && crate::restore::at_start(app).await {
                 tracing::info!(event = "tmux.restored");
             } else if let Err(e) = server.start_local("main", &crate::config::home().display().to_string()).await {
-                set_problem(app, Some(format!("tmux could not start: {e}")));
-                return;
+                return Some(format!("tmux could not start: {e}"));
             } else {
                 tracing::info!(event = "tmux.started", socket = %server.socket);
             }
@@ -67,16 +67,16 @@ async fn ensure_local(app: &Shared) {
             }
             match server.local_sessions().await {
                 Ok(Some(s)) => s,
-                _ => return,
+                Ok(None) => return Some("tmux ended as it started".into()),
+                Err(e) => return Some(e),
             }
         }
     };
-    set_problem(app, None);
-    if let Err(e) = server.sync_clients(&sessions) {
-        set_problem(app, Some(e));
-    } else {
+    let synced = server.sync_clients(&sessions);
+    if synced.is_ok() {
         *server.status.lock() = Status::Attached;
     }
+    synced.err()
 }
 
 fn set_problem(app: &Shared, problem: Option<String>) {
@@ -403,6 +403,29 @@ mod tests {
         assert!(matches!(linkless(&app, &host), Got::Down(gs) if gs[0]["state"] == "reconnecting" && gs[0]["agents"].is_string()));
         *host.status.lock() = Status::Off;
         assert!(matches!(linkless(&app, &host), Got::Gone(gs) if gs[0]["state"] == "off"));
+        drop(app);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    /// L26 (TERM-50): tmux answering again through the bulk client (the fast path) takes an
+    /// earlier "tmux problem" away, as a fresh start does.
+    #[tokio::test]
+    async fn a_fast_reconnect_clears_an_earlier_tmux_problem() {
+        let Some(tm) = crate::testutil::Tmux::start("problem-clears", (80, 24), "/bin/sh") else { panic!("tmux required") };
+        let tmux = crate::config::find_program("tmux", "TM_TMUX").expect("tmux on PATH");
+        let link = crate::tmux::server::Link::Local { tmux, socket: tm.socket.clone(), conf: "/dev/null".into() };
+        let (root, app) = crate::testutil::app_linked("problem-clears", link);
+        app.tmux.local.sync_clients(&["main".to_string()]).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !app.tmux.local.connected() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(app.tmux.local.connected(), "{:?}", app.tmux.local.last_words());
+        *app.tmux_problem.lock() = Some("tmux stopped answering".into());
+        ensure_local(&app).await;
+        assert_eq!(*app.tmux_problem.lock(), None);
+        app.tmux.local.disconnect();
+        tm.tmux(&["kill-server"]);
         drop(app);
         std::fs::remove_dir_all(root).unwrap();
     }

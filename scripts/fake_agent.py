@@ -15,6 +15,8 @@ import termios
 import tty
 
 RULE = "\x1b[37m" + "─" * 60 + "\x1b[0m"
+# Longer than this, what is in the box shows as a mark, not its text.
+FOLD = 800
 
 
 def main():
@@ -22,7 +24,7 @@ def main():
     cli = args[0]
     opt = lambda name, default: args[args.index(name) + 1] if name in args else default
     kind, start, session = opt("--kind", "claude"), opt("--start", ""), opt("--resume", f"fake-{os.getpid()}")
-    typed = ""
+    typed, pasting = "", False
 
     def hook(event, **more):
         subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
@@ -32,11 +34,13 @@ def main():
         sys.stdout.flush()
 
     def box():
+        # a long paste folds to a mark, as both agents' boxes do (the gate reads "[Pasted")
+        held = typed if len(typed) <= FOLD else (f"[Pasted Content {len(typed)} chars]" if kind == "codex" else f"[Pasted text #1 +{len(typed)} chars]")
         if kind == "codex":
-            shown = f"\x1b[1m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m" if not typed else f"\x1b[1m›\x1b[0m {typed}"
+            shown = f"\x1b[1m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m" if not typed else f"\x1b[1m›\x1b[0m {held}"
             draw(["  OpenAI Codex", "", shown, "", "  ? for shortcuts"])
         else:
-            draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {typed.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, "  ? for shortcuts"])
+            draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {held.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, "  ? for shortcuts"])
 
     def tool(name, arguments):
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
@@ -70,10 +74,13 @@ def main():
             data = os.read(fd, 65536).decode("utf8", "replace")
             if not data:
                 return
-            # what is pasted (between the markers) is text, line ends too; a bare CR is Enter
+            # what is pasted (between the markers) is text, line ends too; a bare CR is Enter; a long
+            # paste comes in several reads, so being inside one carries over to the next read
             ends = False
-            for at, part in enumerate(re.split(r"\x1b\[20[01]~", data)):
-                if at % 2:
+            for part in re.split(r"(\x1b\[20[01]~)", data):
+                if part in ("\x1b[200~", "\x1b[201~"):
+                    pasting = part == "\x1b[200~"
+                elif pasting:
                     typed += part.replace("\r", " ").replace("\n", " ")
                 else:
                     ends = ends or "\r" in part
@@ -111,6 +118,7 @@ def main():
                 with open(path, "w", encoding="utf8") as f:
                     f.write(json.dumps({"type": "assistant", "message": {"id": "m1", "model": "claude-opus-5-5", "usage": {"input_tokens": 1200, "output_tokens": 34, "cache_read_input_tokens": 5}}}) + "\n")
                 hook("Stop", last_assistant_message="done", transcript_path=path)
+                hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt:
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
             elif "FINISHES" in prompt:

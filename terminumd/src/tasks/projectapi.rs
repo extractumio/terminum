@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! A project's routes from the board (AC-110, AC-139): made, renamed, its folder, the letters of its
-//! tasks' IDs (AC-148) and its template for agents' tasks (AC-145).
+//! tasks' IDs (AC-148), its template for agents' tasks (AC-145) and the language its agents write in
+//! (terminum-dispatcher.md AC-166).
 
 use std::collections::HashMap;
 
@@ -24,9 +25,9 @@ pub fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}", patch(edit_project))
 }
 
-/// Each project's letters and its own template (none: the default), by its id.
+/// Each project's letters, its own template and language (none: the default), by its id.
 pub fn settings(tx: &Transaction) -> Result<HashMap<String, Value>, String> {
-    let all = rows(tx, "SELECT id, prefix, task_template FROM projects", [], |r| Ok((r.get::<_, String>(0)?, json!({"prefix": r.get::<_, Option<String>>(1)?, "template": r.get::<_, Option<String>>(2)?}))))?;
+    let all = rows(tx, "SELECT id, prefix, task_template, language FROM projects", [], |r| Ok((r.get::<_, String>(0)?, json!({"prefix": r.get::<_, Option<String>>(1)?, "template": r.get::<_, Option<String>>(2)?, "language": r.get::<_, Option<String>>(3)?}))))?;
     Ok(all.into_iter().collect())
 }
 
@@ -40,13 +41,16 @@ async fn new_project(State(app): State<Shared>, Json(body): Json<Value>) -> Resp
 
 /// A project's name and folder from its window (AC-139); its server stays: its sessions are there.
 async fn edit_project(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
-    let (prefix, template) = (text(&body, "prefix"), text(&body, "template"));
-    if prefix.is_some() || template.is_some() {
+    let (prefix, template, language) = (text(&body, "prefix"), text(&body, "template"), text(&body, "language"));
+    if prefix.is_some() || template.is_some() || language.is_some() {
         let p = id.clone();
         let done = store(&app, move |tx| {
             super::ops::check_project(tx, &p)?;
             if let Some(t) = &template {
                 super::template::set(tx, &p, t)?;
+            }
+            if let Some(l) = &language {
+                super::closeout::set_language(tx, &p, l)?;
             }
             if let Some(x) = &prefix {
                 super::slugs::set_prefix(tx, &p, x)?;

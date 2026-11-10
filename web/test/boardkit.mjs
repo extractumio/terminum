@@ -8,6 +8,12 @@ import { until } from "./check.mjs";
 import { ownTmp } from "./testrun.mjs";
 
 export const nap = (ms) => new Promise((r) => setTimeout(r, ms));
+/** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). */
+export async function pressCard(page, id) {
+  const sel = `.card[data-id="${id}"]`;
+  await page.click(sel);
+  if (await page.$(`${sel}.compact[aria-expanded="true"]`) && !(await page.$("#taskbox[open]"))) await page.click(sel);
+}
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 /** How a client opens `terminum mcp`, before its calls. */
 export const mcpOpening = [rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }), rpc(null, "notifications/initialized")];
