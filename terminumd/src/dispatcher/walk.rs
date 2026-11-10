@@ -284,6 +284,7 @@ async fn walk(app: &Shared) {
             failed,
             active: app.dispatcher.take_active(&key) || busy || job || shells,
             program,
+            watched: app.pages.watched(&key),
             memory,
             subs,
             ..Default::default()

@@ -33,7 +33,7 @@ def holds_terminal(pid):
 
 
 def main():
-    t = Terminumd(PORT, LOCAL_SOCKET, env={"TM_TEST_CLOCK_SCALE": "300"})
+    t = Terminumd(PORT, LOCAL_SOCKET, env={"TM_TEST_CLOCK_SCALE": "300", "TM_TEST_CLOSE_AFTER": "7200"})
     home = os.path.join(t.root, "rh")
     for d in (".local/bin", ".codex", "proj"):
         os.makedirs(os.path.join(home, d))

@@ -126,6 +126,17 @@ fn ac125_a_human_at_the_shell_keeps_it_open() {
 }
 
 #[test]
+fn ac125_a_session_someone_reads_is_not_closed_under_them() {
+    let mut r = run("DONE");
+    r.turn_ended = true;
+    let read = |dt| Facts { watched: true, ..up(dt) };
+    assert!(step(&mut r, &read(9000)).is_empty(), "shown in a page in front: no close, and nothing said");
+    assert_eq!(r.closing_for, 0);
+    assert!(step(&mut r, &up(299)).is_empty(), "the 5 minutes start when they leave");
+    assert!(matches!(&step(&mut r, &up(1))[0], Act::Close { .. }));
+}
+
+#[test]
 fn ac125_an_agent_still_working_is_never_closed() {
     // its start failed by our reading (a Codex with hooks not trusted): it runs on, no turn's end heard
     let mut r = run("FAILED");

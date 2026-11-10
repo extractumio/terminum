@@ -321,7 +321,7 @@ fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_i
 }
 
 #[test]
-fn ac166_finishing_says_the_tasks_its_session_made_as_the_board_holds_them() {
+fn ac166_a_task_s_end_says_what_its_session_made_and_what_its_result_names_in_vain() {
     let (s, dir) = fresh("tt-made");
     let w = who(Some("api"));
     let made_id = |said: String| said.trim_start_matches("Kept as ").split(',').next().unwrap().to_string();
@@ -333,14 +333,15 @@ fn ac166_finishing_says_the_tasks_its_session_made_as_the_board_holds_them() {
     let left = made_id(call(&s, &dir, &w, "create_task", json!({"title": "Bug: left for later", "severity": "P2"})).unwrap());
     let dropped = made_id(call(&s, &dir, &w, "create_task", json!({"title": "Debt: no longer needed", "severity": "P3"})).unwrap());
     s.with(|tx| tx.execute("UPDATE tasks SET archived_at = 2 WHERE slug = ?1", [&dropped]).map(drop).map_err(ops::sql)).unwrap();
-    let line = format!("Tasks made in this session: {left}.");
-    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "New tasks: T-99, which is nowhere"})).unwrap(), format!("{id} is DONE, with your result. {line}"),
-               "one made before the task was started, and one archived since, are not its follow-ups");
-    let history = s.with(|tx| ops::history(tx, &id)).unwrap();
-    assert!(history.as_array().unwrap().iter().any(|e| e["kind"] == "told" && e["text"] == line.as_str()), "terminum's own line, under the result: {history}");
+    let line = format!("Tasks made in its session: {left}.");
+    let said = call(&s, &dir, &w, "finish_task", json!({"id": id, "result": format!("New tasks: {left}, API-99 and API-99 again; UTF-8 and AC-125 are no tasks")})).unwrap();
+    assert_eq!(said, format!("{id} is DONE, with your result. {line} {}", closeout::unknown_words(std::slice::from_ref(&"API-99".to_string()))), "one made before the task was started, and one archived since, are not its follow-ups");
+    let told = |id: &str| s.with(|tx| ops::history(tx, id)).unwrap().as_array().unwrap().iter().filter(|e| e["kind"] == "told").map(|e| e["text"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(told(&id), [line.clone()], "terminum's own line, under the result");
+    // however it ends: a human's or Dispatcher's move says it too
+    s.with(|tx| { ops::move_to(tx, HUMAN, &id, "IN PROGRESS", 1)?; ops::move_to(tx, crate::tasks::store::DISPATCHER, &id, "FAILED", 2) }).unwrap();
+    assert_eq!(told(&id).len(), 2, "FAILED by Dispatcher: {:?}", told(&id));
     let plain = task(&s, "api", None);
-    assert_eq!(call(&s, &dir, &who(Some("api")), "finish_task", json!({"id": plain, "result": "did it"})).unwrap(), format!("{plain} is DONE, with your result. Tasks made in this session: {early}, {left}."), "never IN PROGRESS: all its pane made");
-    let other = Who { key: OTHER.into(), ..who(Some("api")) };
-    let none = task(&s, "api", None);
-    assert_eq!(call(&s, &dir, &other, "finish_task", json!({"id": none, "result": "did it"})).unwrap(), format!("{none} is DONE, with your result."), "a session that made none says nothing");
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": plain, "result": "did it"})).unwrap(), format!("{plain} is DONE, with your result."), "no session, never IN PROGRESS: nothing is claimed");
+    assert!(told(&plain).is_empty());
 }

@@ -5,7 +5,7 @@
 
 use rusqlite::Transaction;
 
-use super::ops::{self, rows};
+use super::ops::{self, rows, Task};
 
 /// The language when a project sets none.
 pub const DEFAULT_LANGUAGE: &str = "English";
@@ -20,7 +20,7 @@ pub const SECTIONS: [(&str, &str); 9] = [
     ("Checked", "how each was verified, on what, with what result; what was not verified, and why"),
     ("Not done", "what of the task is left or dropped, and why; what is left names its task's ID"),
     ("Needs a human", "decisions, access, answers"),
-    ("New tasks", "ID: one sentence on the problem or change, with its context; only tasks on the board: terminum lists under the result the ones this session made"),
+    ("New tasks", "ID: one sentence on the problem or change, with its context; only tasks on the board: terminum says under the result which ones this session made"),
     ("Tasks changed", "ID: renamed, re-prioritized, regrouped or archived, and why"),
     ("Issues and discoveries", "what went into no task, and why"),
     ("Further recommendations", "what to do next; each one a human would plan names its task's ID"),
@@ -31,12 +31,34 @@ pub fn language_of(tx: &Transaction, project: &str) -> Result<String, String> {
     Ok(ops::project_text(tx, project, ops::LANGUAGE_COLUMN)?.unwrap_or_else(|| DEFAULT_LANGUAGE.to_string()))
 }
 
-/// The tasks session `pane` made for task `key` and still on the board: made by its agent since `key` last went to
-/// IN PROGRESS (never: all the pane made), not `key` itself. Their IDs, oldest first: finishing says them (AC-166).
-pub fn made_for(tx: &Transaction, pane: &str, key: &str) -> Result<Vec<String>, String> {
-    rows(tx, "SELECT t.slug FROM tasks t WHERE t.made_in = ?1 AND t.by_agent = 1 AND t.id <> ?2 AND t.archived_at IS NULL AND t.slug IS NOT NULL
-                AND t.created_at >= coalesce((SELECT max(e.at) FROM events e WHERE e.task = ?2 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS'), 0)
-              ORDER BY t.number", (pane, key), |r| r.get(0))
+/// What `task`'s session leaves on the board, said on the task when it goes to DONE or FAILED (AC-166): the tasks its
+/// session's agent made since `task` last went to IN PROGRESS, still there, oldest first. None with no session,
+/// with a task never IN PROGRESS, or with none made.
+pub fn made_line(tx: &Transaction, task: &Task) -> Result<Option<String>, String> {
+    let Some(pane) = &task.session else { return Ok(None) };
+    let made: Vec<String> = rows(tx, "SELECT t.slug FROM tasks t WHERE t.made_in = ?1 AND t.by_agent = 1 AND t.id <> ?2 AND t.archived_at IS NULL AND t.slug IS NOT NULL
+                AND t.created_at >= (SELECT max(e.at) FROM events e WHERE e.task = ?2 AND e.kind = 'move' AND json_extract(e.data, '$.to') = 'IN PROGRESS')
+              ORDER BY t.number", (pane, &task.key), |r| r.get(0))?;
+    Ok((!made.is_empty()).then(|| format!("Tasks made in its session: {}.", made.join(", "))))
+}
+
+/// The task IDs `result` names that the board does not hold: a project's ID letters, a hyphen and a number
+/// that no task has or had (AC-166). In the order named, each once.
+pub fn unknown_ids(tx: &Transaction, result: &str) -> Result<Vec<String>, String> {
+    let prefixes: Vec<String> = rows(tx, "SELECT prefix FROM projects WHERE prefix IS NOT NULL", [], |r| r.get(0))?;
+    let mut unknown: Vec<String> = Vec::new();
+    for word in result.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-')) {
+        let named = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
+        if named && !unknown.iter().any(|u| u == word) && super::slugs::resolve(tx, word)?.is_none() {
+            unknown.push(word.to_string());
+        }
+    }
+    Ok(unknown)
+}
+
+/// What finishing answers on such IDs: the agent's turn goes on, so it can still make them.
+pub fn unknown_words(ids: &[String]) -> String {
+    format!("The result names {}, not on the board: make each with execute_tool(\"create_task\", {{title, severity, text}}) and name its ID in a comment by execute_tool(\"add_comment\", {{id, text}}), or correct it there.", ids.join(", "))
 }
 
 /// A language as kept: a name of letters, spaces, hyphens and brackets; empty means the default (none kept).

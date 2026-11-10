@@ -264,7 +264,12 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
     let rank = top_rank(tx, status, &task.severity)?;
     tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;
     let who = user_name(tx, author)?;
-    log(tx, &task.key, author, "move", &format!("{who} moved it from {} to {status}", task.status), Some(&json!({"from": task.status, "to": status})), at).map(|_| ())
+    log(tx, &task.key, author, "move", &format!("{who} moved it from {} to {status}", task.status), Some(&json!({"from": task.status, "to": status})), at)?;
+    // however it ended, what its session made stays named on it (terminum-dispatcher.md AC-166)
+    if matches!(status, "DONE" | "FAILED") && let Some(line) = super::closeout::made_line(tx, &task)? {
+        log(tx, &task.key, super::store::DISPATCHER, "told", &line, None, at)?;
+    }
+    Ok(())
 }
 
 /// A session in a refusal: its pane; the page says its title elsewhere.

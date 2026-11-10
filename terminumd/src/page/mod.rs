@@ -160,6 +160,11 @@ impl Pages {
         self.all().iter().any(|p| p.state.lock().look != client::Look::Hidden)
     }
 
+    /// Whether a page in sight and in front shows pane `key`: someone reads it.
+    pub fn watched(&self, key: &str) -> bool {
+        self.all().iter().any(|p| { let st = p.state.lock(); st.active() && st.shown.as_ref().is_some_and(|s| s.key == key) })
+    }
+
     /// The same message to every page (encoded once).
     pub fn tell(&self, text: &str) {
         for p in self.all() {

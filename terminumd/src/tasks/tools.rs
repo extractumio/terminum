@@ -10,7 +10,7 @@ use std::path::Path;
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::files;
+use super::{closeout, files};
 use super::ops::{self, NewTask, Task};
 use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
@@ -212,21 +212,20 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             "finish_task" => {
                 let id = arg(args, "id")?;
-                movable(tx, who, id)?;
+                let t = movable(tx, who, id)?;
                 let me = me()?;
-                ops::comment(tx, &me, id, &rules::clean(arg(args, "result")?), at)?;
+                let result = rules::clean(arg(args, "result")?);
+                ops::comment(tx, &me, id, &result, at)?;
                 ops::move_to(tx, &me, id, "DONE", at)?;
-                let key = ops::key_of(tx, id)?;
-                crate::dispatcher::runs::finished(tx, &key)?;
-                // what it leaves behind is on the board, by terminum's word, not the agent's (AC-166)
-                let made = super::closeout::made_for(tx, &who.key, &key)?;
-                let mut said = format!("{id} is DONE, with your result.");
-                if !made.is_empty() {
-                    let line = format!("Tasks made in this session: {}.", made.join(", "));
-                    ops::log(tx, &key, super::store::DISPATCHER, "told", &line, None, at)?;
-                    said = format!("{said} {line}");
+                crate::dispatcher::runs::finished(tx, &t.key)?;
+                // what it leaves is on the board by terminum's word, and what it names and is not there is said (AC-166)
+                let mut said = vec![format!("{id} is DONE, with your result.")];
+                said.extend(closeout::made_line(tx, &t)?);
+                let unknown = closeout::unknown_ids(tx, &result)?;
+                if !unknown.is_empty() {
+                    said.push(closeout::unknown_words(&unknown));
                 }
-                Ok((said, vec![id.to_string()]))
+                Ok((said.join(" "), vec![id.to_string()]))
             }
             "get_file" => {
                 if who.dir.is_none() {

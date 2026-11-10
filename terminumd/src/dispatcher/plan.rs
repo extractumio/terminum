@@ -59,6 +59,8 @@ pub struct Facts {
     pub program: Option<String>,
     /// another of the session's tasks is not DONE or FAILED
     pub others_open: bool,
+    /// a page in front shows the pane: a finished session is not closed under its reader (AC-125)
+    pub watched: bool,
     /// a subagent of it is known to run (AC-127)
     pub subs: bool,
     /// its tree's memory, if `ps` said
@@ -246,6 +248,8 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
                 run.again_said = true;
                 acts.push(Act::Say("The 5 minutes before closing start again: there is activity in the session.".into()));
             }
+            run.closing_for = 0;
+        } else if f.watched {
             run.closing_for = 0;
         } else {
             run.closing_for += f.dt;

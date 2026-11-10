@@ -83,7 +83,7 @@ Open questions:
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, with options and its recommended answers, stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
 | AC-158 | [MUST / P0] | A RUN at its agent's or project's limit waits for room instead of being refused, oldest first, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
-| AC-166 | [SHOULD / P1] | RUN's prompt asks the agent to close its task out: what it noticed goes to tasks, the tasks it made are reviewed, and its result has fixed sections, written in the project's language (English when none is set); finishing says on the task which tasks its session made. |
+| AC-166 | [SHOULD / P1] | RUN's prompt asks the agent to close its task out: what it noticed goes to tasks, the tasks it made are reviewed, and its result has fixed sections, written in the project's language (English when none is set); a task's end says on it which tasks its session made, and finishing says which IDs its result names that the board lacks. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
 
 ## 5. BDD scenarios
@@ -354,6 +354,11 @@ Scenario: AC-125 edge — not idle
 
 Scenario: AC-125 happy path — written always
   Then every start and end of a session of a task is on the task, by Dispatcher, with the program, window, host and how it ended; of a session it did not start it only writes this
+
+Scenario: AC-125 edge — someone reads it
+  When a page in sight and in front shows the session's pane
+  Then it is not closed and nothing is said; the 5 minutes start when the page leaves it, goes behind or closes
+  And such a session is no idle holder (AC-141)
 
 Scenario: AC-125 edge — other tasks
   Given that session also holds API-13 in TODO, IN PROGRESS or WAIT FOR HUMAN
@@ -919,9 +924,15 @@ Scenario: AC-166 happy path — the close-out in RUN's prompt
 Scenario: AC-166 happy path — what a session leaves is on the board
   Given API-12's session made API-31 and API-32 with create_task since API-12 last went to IN PROGRESS, and API-32 is archived
   When its agent calls finish_task {id: "API-12", result}
-  Then terminum writes "Tasks made in this session: API-31." on API-12 under the result, and the tool's answer ends with it
+  Then terminum writes "Tasks made in its session: API-31." on API-12 under the result, and the tool's answer holds it
   And the line is the board's word, not the agent's: a follow-up the result names that the line lacks was not made in this session
-  And a session that made no task gets no line; a task never IN PROGRESS counts all its pane made
+  And every move to DONE or FAILED writes it, whoever moves: Dispatcher's (no activity, the budget, the agent's end) and a human's too
+  And a session that made no task, a task with no session and a task never IN PROGRESS get no line
+
+Scenario: AC-166 failure — the result names a task the board lacks
+  When the result names API-99, a project's ID letters with a number no task has or had
+  Then the result is kept and API-12 is DONE: nothing is refused
+  And the tool's answer says "The result names API-99, not on the board: make each with execute_tool("create_task", {title, severity, text}) and name its ID in a comment by execute_tool("add_comment", {id, text}), or correct it there."
 
 Scenario: AC-166 edge — several tasks, no language
   Given RUN of API-12 and API-13 by number (AC-138), in a project that sets no language
