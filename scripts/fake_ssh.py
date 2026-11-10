@@ -11,8 +11,13 @@ AllowStreamLocalForwarding no would, and a stale file or a missing folder is ref
 `Warning:` line and the command runs, or with `-o ExitOnForwardFailure=yes` its `Error:` line
 and exit 255 (terminum-remote.md AS-84). Other `-o` options (ControlPath=none…) are ignored. SIGTERM drops
 the link (the remote side's processes end with it). Each run writes its pid into FAKE_SSH_PIDS, so a check can drop
-"the link" by killing it. FAKE_SSH_TMUX_SILENT: see `tmux_shim`. Never used outside tests: terminumd takes it through TM_SSH."""
+"the link" by killing it. FAKE_SSH_HOLD names a file: while it exists, a run whose command matches
+the regex on its first line appends its own line to it and waits for the file to go (60 s at most),
+so a check can ask for a second operation while the first one's ssh runs. FAKE_SSH_RUNS names a file
+each run appends "<pid> <start> <end> <whole command on one line>" to as it ends (its command's start, after a hold), so a
+check can tell runs that overlapped. FAKE_SSH_TMUX_SILENT: see `tmux_shim`. Never used outside tests: terminumd takes it through TM_SSH."""
 import os
+import re
 import shutil
 import signal
 import socket
@@ -182,6 +187,29 @@ exec "{real}" -L "{socket_name}" -f /dev/null "$@"
     return d
 
 
+def hold(flag, command):
+    """FAKE_SSH_HOLD: waits while `flag` exists when `command` matches its first line."""
+    try:
+        with open(flag) as f:
+            pattern = f.readline().strip()
+    except (OSError, TypeError):
+        return
+    if not re.search(pattern, command):
+        return
+    with open(flag, "a") as f:
+        f.write(f"{os.getpid()} {' '.join(command[:100].split())}\n")
+    end = time.time() + 60
+    while os.path.exists(flag) and time.time() < end:
+        time.sleep(0.05)
+
+
+def ran(command, start):
+    """FAKE_SSH_RUNS: this run's line, as it ends."""
+    if os.environ.get("FAKE_SSH_RUNS"):
+        with open(os.environ["FAKE_SSH_RUNS"], "a") as f:
+            f.write(f"{os.getpid()} {start:.3f} {time.time():.3f} {' '.join(command.split())}\n")
+
+
 def main():
     if "-G" in sys.argv[1:]:
         # `ssh -G`: the configuration it would use, nothing connected (FAKE_SSH_CONNECT_TIMEOUT: a
@@ -195,6 +223,8 @@ def main():
     if os.environ.get("FAKE_SSH_PIDS"):
         with open(os.environ["FAKE_SSH_PIDS"], "a") as f:
             f.write(f"{os.getpid()} {dest} {' '.join(command[:100].split())}\n")   # one line a run: a script's lines joined
+    hold(os.environ.get("FAKE_SSH_HOLD"), command)
+    start = time.time()
     home = os.environ.get("FAKE_SSH_HOME") or sys.exit("fake ssh: FAKE_SSH_HOME is not set")
     sock = os.environ.get("FAKE_SSH_TMUX_SOCKET") or sys.exit("fake ssh: FAKE_SSH_TMUX_SOCKET is not set")
     listeners = []
@@ -216,6 +246,7 @@ def main():
         except ProcessLookupError:
             pass
         shutil.rmtree(shim, ignore_errors=True)
+        ran(command, start)
         os._exit(255)
     signal.signal(signal.SIGTERM, drop)
     signal.signal(signal.SIGHUP, drop)
@@ -225,6 +256,7 @@ def main():
         p.terminate()
         code = 130
     shutil.rmtree(shim, ignore_errors=True)
+    ran(command, start)
     for srv in remotes:
         srv.close()  # its file stays, as sshd leaves it (AS-84)
     for srv, local in listeners:
