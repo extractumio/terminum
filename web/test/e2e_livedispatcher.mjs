@@ -270,7 +270,7 @@ export async function liveDispatcher(page, opts) {
   await hasStatus(tokens, "IN PROGRESS", 15000);
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(tokens));
-  check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), await page.textContent(card(tokens)));
+  check("AC-129 the card shows the tokens its session used", await until(async () => /1,234 tokens/.test(await page.textContent(`${card(tokens)} .cusage`).catch(() => "")), 8000), `${await page.textContent(card(tokens))} | ${await history(tokens)}`);
   check("AC-143 its agent's week and month count it", (await j("/api/tasks/meta")).agents.some((a) => a.spent?.week >= 1234 && a.spent?.month >= 1234));
   await j(`/api/tasks/${tokens}/give-up`, "POST");
   let spent;
