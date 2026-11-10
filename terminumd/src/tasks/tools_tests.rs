@@ -355,25 +355,30 @@ fn ac166_a_task_s_end_says_what_its_session_made_and_what_its_result_names_in_va
     assert!(told(&plain).is_empty());
 }
 
+fn call_raw(s: &Store, dir: &Path, w: &Who, args: Value) -> String {
+    run(s, dir, w, "finish_task", &args).map(|(t, _)| t).unwrap()
+}
+
 #[test]
 fn ac123_a_result_is_kept_only_in_its_sections() {
     let (s, dir) = fresh("tt-sections");
     let w = who(Some("api"));
     let id = task(&s, "api", Some(KEY));
-    let bare = run(&s, &dir, &w, "finish_task", &json!({"id": id, "result": "Outcome: done\nDone: the fix"})).unwrap_err();
-    assert_eq!(bare, closeout::missing_words(&["Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"]));
+    let bare = call_raw(&s, &dir, &w, json!({"id": id, "result": "Outcome: done\nDone: the fix"}));
+    assert_eq!(bare, closeout::missing_words(&id, "TODO", &["Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"]));
     let (status, comments) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?.as_array().unwrap().iter().filter(|e| e["kind"] == "comment").count()))).unwrap();
-    assert_eq!((status.as_str(), comments), ("TODO", 0), "refused: nothing kept, nothing moved");
+    assert_eq!((status.as_str(), comments), ("TODO", 1), "not a result: its words a comment, the task where it was");
+    assert!(s.with(|tx| Ok(crate::dispatcher::runs::card_marks(tx, &[ops::get(tx, &id)?.key.as_str()])?.is_empty())).unwrap());
     let markdown = closeout::SECTIONS.iter().map(|(name, _)| format!("## {name}\nNone")).collect::<Vec<_>>().join("\n");
-    assert!(run(&s, &dir, &w, "finish_task", &json!({"id": id, "result": markdown})).is_ok(), "Markdown headings count too");
+    assert_eq!(call_raw(&s, &dir, &w, json!({"id": id, "result": markdown})), format!("{id} is DONE, with your result."), "Markdown headings count too");
 }
 
 #[test]
 fn ac123_a_section_is_a_heading_line_and_a_schedule_has_its_own_form() {
-    for (before, after) in [("", ": x"), ("**", ":** x"), ("### ", ""), ("__", "__\nx"), ("- ", " ")] {
+    for (before, after) in [("", ": x"), ("**", ":** x"), ("### ", ""), ("__", "__\nx"), ("- **", ":** x"), ("1. ", ": x"), ("2) ", ""), ("> ", ":"), ("= ", ":")] {
         let r = closeout::SECTIONS.iter().map(|(n, _)| format!("{before}{}{after}", n.to_uppercase())).collect::<Vec<_>>().join("\n");
         let lacks = closeout::missing(&r, &closeout::SECTIONS);
-        assert_eq!(lacks.is_empty(), before != "- ", "{r}: {lacks:?}");
+        assert_eq!(lacks.is_empty(), before != "= ", "{r}: {lacks:?}");
     }
     assert_eq!(closeout::missing("Not done: x\nDone by hand\nThe Outcome: y", &closeout::SECTIONS[..3]), ["Outcome", "Done", "Checked"], "a heading starts its line and ends at its name");
     assert!(closeout::missing("Outcome: ok\nSummary: s\nDetails: d\nFor the human: nothing", &closeout::SCHEDULED).is_empty());

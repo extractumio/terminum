@@ -198,13 +198,17 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
         }
         Act::Nudge => {
             let text = plan::nudge_words(&task);
-            let sent = gate::deliver(app, &l.run, &server, &pane, &text, false).await;
-            went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
-            match sent {
-                Ok(()) => Ok(()),
+            match gate::deliver(app, &l.run, &server, &pane, &text, false).await {
+                Ok(()) => {
+                    went(app, &l.run, |r| r.nudged |= r.idle_for >= plan::NUDGE).await;
+                    Ok(())
+                }
+                // a new turn began between the walk and the gate: asked once it ends
+                Err(why) if why.working() => Ok(()),
+                // no one can ask it: FAILED at once, unless new work came since the walk decided (AC-123)
                 Err(why) => {
-                    let r = l.run.clone();
-                    store(app, move |tx| say(tx, &r, &format!("Not delivered: {why}"))).await
+                    let id = l.run.id.clone();
+                    store(app, move |tx| runs::unasked(tx, &id, &why.to_string())).await
                 }
             }
         }

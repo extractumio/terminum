@@ -74,8 +74,15 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
                 moved = true;
             }
         }
-        "PreToolUse" => r.open_tools += 1,
-        "PostToolUse" | "PostToolUseFailure" => r.open_tools = (r.open_tools - 1).max(0),
+        // its tools are work, in the turn our request started too: an agent gone back to work is not idle (AC-123)
+        "PreToolUse" => {
+            r.open_tools += 1;
+            active = true;
+        }
+        "PostToolUse" | "PostToolUseFailure" => {
+            r.open_tools = (r.open_tools - 1).max(0);
+            active = true;
+        }
         "SessionEnd" => active = false,
         _ => {}
     }
@@ -235,6 +242,20 @@ mod tests {
             assert_eq!((moved, r.turn_ended, r.nudged), (false, false, true), "its clocks go on");
             apply(tx, &mut r, &prompt("and now this"), false)?;
             assert!(!r.nudged, "a human's prompt is new work");
+            Ok(())
+        }).unwrap();
+    }
+
+    #[test]
+    fn ac123_the_turn_the_request_started_is_activity_once_it_uses_tools() {
+        let s = Store::open(crate::testutil::fresh_dir("hooks-nudge").join("kanban.sqlite"));
+        s.with(|tx| {
+            let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: true, nudge_turn: true, ..Default::default() };
+            let ev = |event: &str| serde_json::json!({"agent": "claude", "event": event, "tool": "Bash: make"});
+            let (_, active) = apply(tx, &mut r, &serde_json::json!({"agent": "claude", "event": "UserPromptSubmit", "prompt": "[terminum Dispatcher] T-1"}), true)?;
+            assert!(!active, "the request itself starts no clock anew");
+            assert!(apply(tx, &mut r, &ev("PreToolUse"), false)?.1 && apply(tx, &mut r, &ev("PostToolUse"), false)?.1, "it went back to work");
+            assert!(r.nudged, "still asked once a run");
             Ok(())
         }).unwrap();
     }

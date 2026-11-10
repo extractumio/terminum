@@ -112,7 +112,7 @@ export async function liveDispatcher(page, opts) {
   await run(drafted);
   await hasStatus(drafted, "IN PROGRESS", 15000);
   tmux("send-keys", "-t", await paneOf(drafted), "-l", "my own words");
-  check("AC-123 a draft in the box is not typed over: said", await said(drafted, "Not delivered: its input box holds a draft", 15000), await history(drafted));
+  check("AC-123 a draft in the box is not typed over: the request cannot be made, FAILED at once", await said(drafted, "Dispatcher could not ask the agent for its result: its input box holds a draft.", 15000) && await status(drafted) === "FAILED", await history(drafted));
   check("AC-123 it stands as it was", /my own words/.test(tmux("capture-pane", "-p", "-t", await paneOf(drafted))));
 
   // AC-123 failures and ends
@@ -324,7 +324,7 @@ export async function liveDispatcherReal(page, opts) {
   const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
-  const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result ok", project })).id;
+  const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result in its sections, Outcome: ok", project })).id;
   const ran = await j(`/api/tasks/${t}/run`, "POST", { agent: claude });
   check("AC-121 real Claude Code: RUN starts", !!ran.run, JSON.stringify(ran));
   // a folder it does not know: Dispatcher waits for the human's answer, which leaves that folder's trust entry in ~/.claude.json
@@ -350,7 +350,7 @@ export async function liveDispatcherReal(page, opts) {
   opts.tmux("send-keys", "-t", pane, "Enter");
   check("AC-123 real Claude Code: /exit records its exit code", await until(() => opts.tmux("display", "-p", "-t", pane, "#{@terminum-exit}").trim() === "0", 30000), opts.tmux("display", "-p", "-t", pane, "#{@terminum-exit}"));
   await nap(2000);
-  const again = await j(`/api/tasks/${t}/run`, "POST", { comment: "Reply with the word ok again, then call finish_task with the result ok again" });
+  const again = await j(`/api/tasks/${t}/run`, "POST", { comment: "Reply with the word ok again, then call finish_task with the result in its sections, Outcome: ok again" });
   check("AC-122 real Claude Code: the resume starts in its pane", !!again.run, JSON.stringify(again));
   check("AC-122 real Claude Code: the conversation goes on: the agent took it again", await until(async () => (await history(t)).split("The agent took it.").length === 3, 90000), await history(t));
   check("AC-122 real Claude Code: and it ends", await hasStatus(t, "DONE", 180000), await history(t));

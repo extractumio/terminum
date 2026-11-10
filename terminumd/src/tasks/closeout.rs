@@ -40,18 +40,27 @@ pub fn form_of(tx: &Transaction, task: &str) -> Result<&'static [(&'static str, 
 }
 
 /// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
-/// `#`, `*`, `_` and spaces, with its name in any case, then the line's end, `:`, `*` or `_`.
+/// marks (`#`, `*`, `_`, `-`, `+`, `>`, a number with `.` or `)`) and spaces, with its name in any case, then the
+/// line's end, `:`, `*` or `_`.
 pub fn missing<'a>(result: &str, form: &[(&'a str, &str)]) -> Vec<&'a str> {
-    let heads: Vec<String> = result.lines().map(|l| l.trim_start_matches(['#', '*', '_', ' ', '\t']).trim_end().to_lowercase()).collect();
+    const MARKS: [char; 8] = ['#', '*', '_', '-', '+', '>', ' ', '\t'];
+    let head = |l: &str| {
+        let l = l.trim_start_matches(MARKS);
+        let numbered = l.trim_start_matches(|c: char| c.is_ascii_digit());
+        let l = if numbered.len() < l.len() && numbered.starts_with(['.', ')']) { numbered[1..].trim_start_matches(MARKS) } else { l };
+        l.trim_end().to_lowercase()
+    };
+    let heads: Vec<String> = result.lines().map(head).collect();
     form.iter().map(|(name, _)| *name).filter(|name| {
         let name = name.to_lowercase();
         !heads.iter().any(|h| h.strip_prefix(&name).is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '*', '_'])))
     }).collect()
 }
 
-/// What finishing answers on a result without them: nothing is kept, the agent's turn goes on to write it again.
-pub fn missing_words(names: &[&str]) -> String {
-    format!("Not kept: the result lacks {}. Write each section as a line \"Name:\" or a heading, its name as given (\"None\" when empty), then call it again.", names.join(", "))
+/// What finishing answers on a result without them: its words stay a comment, the task where it was, and the agent's
+/// turn goes on to write it again.
+pub fn missing_words(id: &str, status: &str, names: &[&str]) -> String {
+    format!("Not a result: it lacks {}. Your text is kept as a comment and {id} stays {status}. Write each section as a line \"Name:\" or a heading, its name as given (\"None\" when empty), then call it again.", names.join(", "))
 }
 
 /// The language a project's agents write in on the board.

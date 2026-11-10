@@ -187,14 +187,15 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     }
     // no result: one request once its turn is over, then an hour of nothing is FAILED, never DONE (AC-123)
     if alive && f.waiting.is_none() && run.status == "IN PROGRESS" {
-        // `nudged` is written once it went (acts.rs): a restart before then asks again
-        if run.turn_ended && run.idle_for >= NUDGE && !run.nudged {
-            run.nudge_turn = true;
-            acts.push(Act::Nudge);
-        } else if run.nudged && run.idle_for >= NUDGE + NOTHING {
+        // the hours first, so a request that keeps missing never holds a task open; `nudged` is written once the
+        // request went (acts.rs): a restart before then asks again
+        if run.nudged && run.idle_for >= NUDGE + NOTHING {
             acts.push(Act::Move { to: "FAILED", words: "No result from the agent within an hour of Dispatcher's request.".into() });
         } else if !run.nudged && run.idle_for >= NOTHING {
             acts.push(Act::Move { to: "FAILED", words: "No activity for 60 minutes and no result from the agent.".into() });
+        } else if run.turn_ended && run.idle_for >= NUDGE && !run.nudged {
+            run.nudge_turn = true;
+            acts.push(Act::Nudge);
         }
     }
     // the agent asked a human itself (ask_human, move_task): once its turn is over and quiet, the session

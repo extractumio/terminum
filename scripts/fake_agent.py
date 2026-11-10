@@ -48,7 +48,8 @@ def main():
                  rpc(2, "tools/call", {"name": name, "arguments": arguments})]
         subprocess.run([cli, "mcp"], input="\n".join(lines) + "\n", text=True, capture_output=True, timeout=8)
 
-    # a result is kept only in its sections (AC-123): the close-out's and a schedule's, both there
+    # a result is kept only in its sections (AC-123): the close-out's and a schedule's, both there, as
+    # terminumd/src/tasks/closeout.rs names them (SECTIONS, SCHEDULED)
     SECTIONS = ["Outcome", "Done", "Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries",
                 "Further recommendations", "Summary", "Details", "For the human"]
 

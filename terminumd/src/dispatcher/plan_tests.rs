@@ -379,3 +379,12 @@ fn ac157_working_again_starts_its_quiet_anew() {
     r.status = "WAIT FOR HUMAN".into();
     assert!(!closes(&step(&mut r, &up(30))));
 }
+
+#[test]
+fn ac123_a_request_that_never_goes_holds_no_task_past_the_hour() {
+    let mut r = run("IN PROGRESS");
+    r.turn_ended = true;
+    assert_eq!(step(&mut r, &up(300)), vec![Act::Nudge]);
+    assert_eq!(step(&mut r, &up(3299)), vec![Act::Nudge], "a new turn met it: asked again");
+    assert_eq!(moved(&step(&mut r, &up(1))).unwrap().1, "No activity for 60 minutes and no result from the agent.");
+}
