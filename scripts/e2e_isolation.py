@@ -154,7 +154,7 @@ def main():
     finally:
         if frozen:
             os.kill(frozen, signal.SIGCONT)
-        t.cleanup(REMOTE)
+        t.cleanup()
     return summary()
 
 

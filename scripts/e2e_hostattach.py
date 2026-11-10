@@ -264,7 +264,7 @@ def main():
               held == "96x28 manual 1" and st == 200 and "manual" not in size_of("work:") and "work" in remote("ls"), [held, st, size_of("work:")])
     finally:
         cleanup_fixtures()
-        t.cleanup(REMOTE)
+        t.cleanup()
     return summary()
 
 

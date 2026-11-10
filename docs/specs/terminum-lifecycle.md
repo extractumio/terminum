@@ -368,7 +368,7 @@ Scenario: AC-102 edge — a pane's program that ignores SIGHUP does not outlive 
 Scenario: AC-102 edge — what a fake host still runs ends before its test's folder goes
   Given a private terminumd of scripts/e2e_ws.py whose fake host's program runs on in a session of its own after terminumd dropped its ssh, as a host's claude plugin call does, still writing into the fake home
   When the test's cleanup runs
-  Then it ends the fake host's tmux server it is given, waits up to 15 s for every process whose environment names the test's folder, ends by its pid any still there (SIGTERM, then SIGKILL), naming its command but never its environment, and only then removes the folder
+  Then it ends its fake host's tmux server, waits up to 15 s for every process whose environment names the test's folder, and only then removes the folder; one still there is ended by its pid (SIGTERM, then SIGKILL) and fails the run, its command named but never its environment
 
 Scenario: AC-102 edge — another session's run is no leftover of this one
   Given another session's test run with folders in the temporary folder and sockets of its own

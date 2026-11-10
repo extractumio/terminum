@@ -116,7 +116,7 @@ def host():
         print("Private host state:", unix_request(t.sock, "GET", "/hosts")[1])
         print("Private daemon log:", t.log())
     finally:
-        t.cleanup(remote_socket)
+        t.cleanup()
 
 
 def security():

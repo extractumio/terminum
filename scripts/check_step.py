@@ -20,19 +20,21 @@ LEFT = 3   # the exit status of a check that passed but left something
 KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
 
 
-def own_processes(folder, group):
-    """(pid, command) of each process of `group` or whose environment names `folder`."""
+def listing():
+    """(pid, pgid, command and environment) of each process but zombies and this one; a Mac hides
+    the environment of Apple's own programs. scripts/testrun.py reads processes through it too."""
     # Linux's procps refuses `-ax` mixed with BSD's `e`; a failed ps fails the step, never "nothing left"
     flags = ["-ax", "-E", "-ww"] if sys.platform == "darwin" else ["axeww"]
     listed = subprocess.run(["ps", *flags, "-o", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True).stdout
-    found = []
     for line in listed.splitlines():
         fields = line.split(None, 3)
-        if len(fields) < 4 or not fields[0].isdigit() or fields[2].startswith("Z") or int(fields[0]) == os.getpid():
-            continue
-        if fields[1] == str(group) or f"TMPDIR={folder}" in fields[3]:
-            found.append((int(fields[0]), fields[3].split(" TMPDIR=")[0][:120]))
-    return found
+        if len(fields) == 4 and fields[0].isdigit() and not fields[2].startswith("Z") and int(fields[0]) != os.getpid():
+            yield int(fields[0]), fields[1], fields[3]
+
+
+def own_processes(folder, group):
+    """(pid, command) of each process of `group` or whose environment names `folder`."""
+    return [(pid, text.split(" TMPDIR=")[0][:120]) for pid, pgid, text in listing() if pgid == str(group) or f"TMPDIR={folder}" in text]
 
 
 def send(pid, number):
@@ -46,6 +48,18 @@ def send(pid, number):
 
 def alive(pid):
     return send(pid, 0)
+
+
+def end_pids(pids):
+    """SIGTERM to each, then SIGKILL to those still there KILL_AFTER_S later: an interactive shell
+    ignores SIGTERM; one spinning on a terminal gone, SIGHUP too."""
+    stays = [pid for pid in pids if send(pid, signal.SIGTERM)]
+    end = time.monotonic() + KILL_AFTER_S
+    while stays and time.monotonic() < end:
+        time.sleep(0.1)
+        stays = [pid for pid in stays if alive(pid)]
+    for pid in stays:
+        send(pid, signal.SIGKILL)
 
 
 def files_in(folder):
@@ -82,19 +96,10 @@ def main(command):
         while (files_in(folder) or processes) and time.monotonic() < end:
             time.sleep(1)
             processes = own_processes(folder, group)
-        left = 0
+        left = len(processes)
         for pid, name in processes:
-            left += 1
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
-            send(pid, signal.SIGTERM)
-        # an interactive shell ignores SIGTERM; one spinning on a terminal gone, SIGHUP too
-        stays = [pid for pid, _ in processes]
-        end = time.monotonic() + KILL_AFTER_S
-        while stays and time.monotonic() < end:
-            time.sleep(0.1)
-            stays = [pid for pid in stays if alive(pid)]
-        for pid in stays:
-            send(pid, signal.SIGKILL)
+        end_pids([pid for pid, _ in processes])
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)

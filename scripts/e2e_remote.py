@@ -347,7 +347,7 @@ def main():
     finally:
         if not all(results):
             print(t.log())
-        t.cleanup(REMOTE_SOCKET)
+        t.cleanup()
     summary()
 
 

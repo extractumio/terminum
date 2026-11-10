@@ -125,7 +125,7 @@ def main():
                 os.kill(int(line.split()[0]), signal.SIGTERM)
             except ProcessLookupError:
                 pass
-        t.cleanup(remote_socket)
+        t.cleanup()
     summary()
 
 

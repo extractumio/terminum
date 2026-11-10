@@ -77,7 +77,7 @@ class WithItsFolder(unittest.TestCase):
             self.orphan("import os, sys, time; time.sleep(1.5); os.makedirs(sys.argv[1] + '/remote'); open(sys.argv[1] + '/remote/.claude.json', 'w')", folder)
             self.assertEqual(testrun.end_naming(folder, settle=10), [], "it ended by itself, no signal")
             self.assertEqual(os.listdir(folder), ["remote"], "its write came before end_naming returned")
-            self.assertEqual(testrun.naming(folder), set())
+            self.assertEqual(testrun.naming(folder), [])
 
     def test_one_that_does_not_end_is_ended_by_its_pid(self):
         with tempfile.TemporaryDirectory(prefix="ts", dir=testrun.short_tmp()) as folder:
@@ -85,7 +85,7 @@ class WithItsFolder(unittest.TestCase):
             left = testrun.end_naming(folder, settle=0.3)
             self.assertEqual(len(left), 1, left)
             self.assertNotIn("HOME=", left[0], "its command, never its environment")
-            self.assertEqual(testrun.naming(folder), set(), "SIGKILL ended what ignored SIGTERM")
+            self.assertEqual(testrun.naming(folder), [], "SIGKILL ended what ignored SIGTERM")
 
     def test_a_folder_beside_it_with_the_same_start_is_not_its(self):
         with tempfile.TemporaryDirectory(prefix="ts", dir=testrun.short_tmp()) as folder:

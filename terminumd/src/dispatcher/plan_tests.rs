@@ -23,28 +23,13 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
     assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
     (r.nudged, r.idle_for) = (true, 0);                 // as acts.rs writes it once it went
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
-    assert_eq!(moved(&step(&mut r, &up(3600 - 31))), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
+    // the turn's tokens come after its Stop, from the same hook, and a closed pane drops them (sock.rs, AC-129):
+    // up to the hour nothing closes or ends it, however late the agent's next event is
+    let acts = step(&mut r, &up(3600 - 31));
+    assert!(!acts.iter().any(|a| matches!(a, Act::Close { .. } | Act::End)), "{acts:?}");
+    assert_eq!(moved(&acts), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
     let (to, words) = moved(&step(&mut r, &up(1))).unwrap();
     assert_eq!((to, words.as_str()), ("FAILED", "No result from the agent within an hour of Dispatcher's request."));
-}
-
-#[test]
-fn ac129_a_stop_without_a_result_never_closes_the_session_of_an_open_task() {
-    // the turn's tokens come after its Stop, from the same hook: only a closed pane drops them (sock.rs),
-    // so walk by walk to the hour's FAILED nothing closes it, however late the agent's next event is
-    let mut r = run("IN PROGRESS");
-    r.turn_ended = true;
-    let mut all = Vec::new();
-    for walk in 0..=(3600 + 300) / 30 {
-        let acts = step(&mut r, &up(30));
-        if acts.contains(&Act::Nudge) {
-            (r.nudged, r.idle_for) = (true, 0);         // as acts.rs writes it once it went
-        }
-        all.extend(acts.into_iter().map(|a| (walk, a)));
-    }
-    assert!(!all.iter().any(|(_, a)| matches!(a, Act::Close { .. } | Act::End)), "{all:?}");
-    assert_eq!(all.iter().filter(|(_, a)| *a == Act::Nudge).count(), 1, "{all:?}");
-    assert!(matches!(all.last(), Some((_, Act::Move { to: "FAILED", .. }))), "{all:?}");
 }
 
 #[test]

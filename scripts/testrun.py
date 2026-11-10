@@ -13,6 +13,9 @@ import sys
 import tempfile
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_step  # noqa: E402
+
 _sockets = set()
 
 
@@ -73,35 +76,25 @@ def remove_dead_sockets():
 
 
 def naming(folder):
-    """The pids of the processes but this one whose environment holds a path in `folder` (a private
-    terminumd's TM_HOME, its fake host's HOME): a run's whatever their parent, as a host's `claude
-    plugin …` in a session of its own whose ssh was dropped. A Mac hides the environment of
-    Apple's own programs (check_step.py reads them the same way)."""
-    flags = ["-ax", "-E", "-ww"] if sys.platform == "darwin" else ["axeww"]
-    listed = subprocess.run(["ps", *flags, "-o", "pid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True).stdout
+    """The pids of the processes whose environment holds a path in `folder` (a private terminumd's
+    TM_HOME, its fake host's HOME): a run's whatever their parent, as a host's `claude plugin …`
+    in a session of its own whose ssh was dropped."""
     holds = re.compile(rf"=(\S*:)?{re.escape(folder)}(/|:|\s|$)")
-    return {int(f[0]) for f in (line.split(None, 2) for line in listed.splitlines())
-            if len(f) == 3 and f[0].isdigit() and not f[1].startswith("Z") and int(f[0]) != os.getpid() and holds.search(f[2])}
+    return [pid for pid, _, text in check_step.listing() if holds.search(text)]
 
 
-def end_naming(folder, settle=15):
-    """Waits `settle` seconds at most for the processes `naming` the folder to end by themselves
-    (one may still write into it), then sends SIGTERM, then SIGKILL, by pid, to those left, each
-    read again first; the commands (never their environment) of the ones left at the settle."""
+def end_naming(folder, settle=check_step.SETTLE_S):
+    """Waits `settle` seconds at most for the processes `naming` the folder to end by themselves (one
+    may still write into it), then ends those left by pid as check_step.py does; their commands,
+    never their environment."""
     end = time.monotonic() + settle
     while (left := naming(folder)) and time.monotonic() < end:
-        time.sleep(0.1)
-    said = subprocess.run(["ps", "-o", "pid=,command=", "-p", ",".join(map(str, left))], capture_output=True, text=True).stdout.splitlines() if left else []
-    for number in (signal.SIGTERM, signal.SIGKILL):
-        for pid in naming(folder):
-            try:
-                os.kill(pid, number)
-            except ProcessLookupError:
-                pass
-        end = time.monotonic() + 2
-        while naming(folder) and time.monotonic() < end:
-            time.sleep(0.1)
-    return [line.strip()[:120] for line in said]
+        time.sleep(0.5)
+    if not left:
+        return []
+    said = subprocess.run(["ps", "-o", "command=", "-p", ",".join(map(str, left))], capture_output=True, text=True).stdout
+    check_step.end_pids(left)
+    return [line.strip()[:120] for line in said.splitlines()]
 
 
 def container_name(kind, pid=None):

@@ -66,7 +66,7 @@ def main():
     finally:
         if os.path.exists(flag):
             os.remove(flag)                    # the silent clients end by themselves
-        t.cleanup(REMOTE)
+        t.cleanup()
     return summary()
 
 

@@ -230,15 +230,17 @@ class Terminumd:
             self.proc.terminate()
             self.proc.wait(10)
 
-    def cleanup(self, *hosts_tmux):
-        """Ends it, its tmux server and `hosts_tmux` (its fake hosts' servers), then what else still
-        runs with its folder, before the folder goes: a host's `claude plugin …` whose ssh was
-        dropped writes into the fake home after its parent ended (AC-102)."""
+    def cleanup(self):
+        """Ends it, its tmux server and its fake host's (FAKE_SSH_TMUX_SOCKET), then waits for what
+        else runs with its folder before the folder goes: a host's `claude plugin …` whose ssh was
+        dropped writes into the fake home after its parent ended. One still there after the wait is
+        a leftover: ended by its pid, and a failed check (AC-102)."""
         self.stop()
-        for name in (self.tmux_socket, *hosts_tmux):
+        for name in filter(None, (self.tmux_socket, self.env.get("FAKE_SSH_TMUX_SOCKET"))):
             end_tmux(name)
-        for line in end_naming(self.root):
-            print(f"still running with its folder, ended: {line}", file=sys.stderr)
+        left = end_naming(self.root)
+        if left:
+            check("AC-102 nothing of the test runs on with its folder after its cleanup", False, left)
         shutil.rmtree(self.root, ignore_errors=True)
 
     def log(self):
