@@ -32,7 +32,7 @@ fn fake(meanwhile: Meanwhile, at: &'static str) -> Fake {
     let hosts = json!({"devbox": {"ssh": ["alex@devbox.example"]}, "other": {"ssh": ["alex@other.example"], "files": "enabled"}});
     let f = Fake { hosts: Mutex::new(hosts.as_object().unwrap().clone()), decisions: Decisions::default(), steps: Mutex::new(vec![]),
                    recipe: vec!["alex@devbox.example".into()], meanwhile, at, save_fails: false };
-    assert!(matches!(f.decisions.enable("devbox"), Start::Run(_)), "as consent::enable does before its steps");
+    assert!(matches!(f.decisions.enable("devbox"), Start::Run(..)), "as consent::enable does before its steps");
     f
 }
 
@@ -46,7 +46,7 @@ impl Fake {
                 Meanwhile::Decline => drop(record(&self.decisions, h, "devbox", Some("declined"))),
                 Meanwhile::DeclineThenEnable => {
                     record(&self.decisions, h, "devbox", Some("declined"));
-                    assert!(matches!(self.decisions.enable("devbox"), Start::Run(_)), "after Not now a click runs");
+                    assert!(matches!(self.decisions.enable("devbox"), Start::Run(..)), "after Not now a click runs");
                 }
                 Meanwhile::Remove => drop(record(&self.decisions, h, "devbox", None)),
                 Meanwhile::Moved => h["devbox"]["ssh"] = json!(["alex@devbox2.example"]),
@@ -80,6 +80,9 @@ impl Steps for Fake {
         f(&mut self.hosts.lock());
         Ok(())
     }
+    async fn discard(&self) {
+        self.step("discard");
+    }
     fn recipe(&self) -> &[String] {
         &self.recipe
     }
@@ -108,7 +111,10 @@ fn not_now_during_an_enable_stands_and_no_step_follows_it() {
         let f = fake(Meanwhile::Decline, at);
         assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Err(OVERTAKEN.into()), "after {at}");
         assert_eq!(f.files("devbox"), "declined", "after {at}: the later decision is never written over");
-        assert_eq!(*f.steps.lock(), all[..taken], "after {at}: not copied after a Not now during the probe either");
+        let steps = f.steps.lock();
+        assert_eq!(steps[..taken], all[..taken], "after {at}: not copied after a Not now during the probe either");
+        // a helper copied for nothing is not left on the host with Files off
+        assert_eq!(steps[taken..], if taken > 1 { vec!["discard"] } else { vec![] }, "after {at}");
     }
 }
 
@@ -144,21 +150,22 @@ fn a_failed_save_is_the_enables_failure() {
     f.save_fails = true;
     let err = run(enable_with(&f, &f.decisions, "devbox")).unwrap_err();
     assert!(err.contains("cannot be written"), "{err}");
+    assert_eq!(f.steps.lock().last(), Some(&"discard"), "the helper copied for nothing goes");
 }
 
 #[test]
 fn an_operations_end_takes_only_its_own_decision() {
     let d = Decisions::default();
-    let Start::Run(first) = d.enable("devbox") else { panic!("none runs") };
-    assert_eq!(d.enable("devbox"), Start::Join, "the tick and a click together: one runs");
+    let Start::Run(first, _) = d.enable("devbox") else { panic!("none runs") };
+    assert!(matches!(d.enable("devbox"), Start::Join(_)), "the setup by itself and a click together: one runs");
     d.withdraw("devbox");
-    let Start::Run(again) = d.enable("devbox") else { panic!("after Not now a click runs") };
+    let Start::Run(again, _) = d.enable("devbox") else { panic!("after Not now a click runs") };
     assert!(!d.done("devbox", first), "the first enable's end keeps the click after it");
     assert!(d.is("devbox", Decision::Enable));
     assert!(d.done("devbox", again));
     let removal = d.remove("devbox");
-    assert_eq!(d.enable("devbox"), Start::Refused, "AC-83: Enable waits for the removal to end");
-    assert!(matches!(d.enable("other"), Start::Run(_)), "another host is not held up");
+    assert!(matches!(d.enable("devbox"), Start::Refused), "AC-83: Enable waits for the removal to end");
+    assert!(matches!(d.enable("other"), Start::Run(..)), "another host is not held up");
     d.withdraw("devbox");
     assert!(!d.done("devbox", removal), "Not now during the removal stands: files is not cleared");
 }
@@ -170,13 +177,54 @@ fn a_host_is_enabling_exactly_while_its_enable_runs() {
     let root = run(async {
         let (root, app) = crate::testutil::app("consent-enabling");
         let d = &app.hosts.decisions;
-        let Start::Run(ticket) = d.enable("devbox") else { panic!("none runs") };
+        let Start::Run(ticket, _to) = d.enable("devbox") else { panic!("none runs") };
         assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "enabling");
         assert_eq!(crate::hosts::offer(&app, "devbox")["state"], "enabling");
         d.done("devbox", ticket);
         assert_eq!(crate::hosts::tunnel::state(&app, "devbox"), "down");
-        assert!(matches!(d.enable("devbox"), Start::Run(_)), "Enable can be tried again");
+        assert!(matches!(d.enable("devbox"), Start::Run(..)), "Enable can be tried again");
         root
     });
     let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn an_enable_that_waited_for_its_turn_takes_no_step_after_not_now() {
+    // AC-83 edge: Not now came while another operation at the helper ran
+    let f = fake(Meanwhile::Nothing, "");
+    record(&f.decisions, &mut f.hosts.lock(), "devbox", Some("declined"));
+    assert_eq!(run(enable_with(&f, &f.decisions, "devbox")), Err(OVERTAKEN.into()));
+    assert!(f.steps.lock().is_empty(), "the host is not reached");
+}
+
+#[test]
+fn a_later_enable_gets_the_result_of_the_one_running() {
+    // AC-83 edge: neither Ok at once nor a second copy
+    run(async {
+        for result in [Ok(()), Err("Could not enable devbox: ssh: Connection refused".to_string())] {
+            let d = Decisions::default();
+            let Start::Run(ticket, to) = d.enable("devbox") else { panic!("none runs") };
+            let Start::Join(click) = d.enable("devbox") else { panic!("the second joins") };
+            let Start::Join(cli) = d.enable("devbox") else { panic!("the third joins") };
+            let waiting = tokio::spawn(joined(click));
+            tokio::task::yield_now().await;
+            assert!(!waiting.is_finished(), "no answer before the enable ends");
+            d.done("devbox", ticket);
+            to.send(Some(result.clone())).unwrap();
+            assert_eq!(waiting.await.unwrap(), result);
+            assert_eq!(joined(cli).await, result, "one that asks for it after the end too");
+        }
+    });
+}
+
+#[test]
+fn a_later_enable_hears_that_the_one_running_ended_without_a_result() {
+    // AC-83 failure: no wait without end
+    run(async {
+        let d = Decisions::default();
+        let Start::Run(_, to) = d.enable("devbox") else { panic!("none runs") };
+        let Start::Join(click) = d.enable("devbox") else { panic!("the second joins") };
+        drop(to);
+        assert_eq!(joined(click).await, Err(STOPPED.into()));
+    });
 }
