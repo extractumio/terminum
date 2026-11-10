@@ -9,7 +9,6 @@ body.msg-page { margin: 0; min-height: 100dvh; background: var(--surface-0); col
 .mgrow { flex: 1 1 auto; }
 @media (max-width: 860px) {
   .wide-only { display: none !important; }
-  .msg-page #bar .sections { flex: 1 1 0; min-width: 0; }
 }
 /* the tools under the head: a field, keys and menus in a line that wraps */
 .mtools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--gutter) 0; }

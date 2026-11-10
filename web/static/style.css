@@ -37,25 +37,23 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 /* ---------- navigator ---------- */
 #nav { background: var(--chrome); display: flex; flex-direction: column;
   min-width: 0; padding-top: env(safe-area-inset-top); }
-.nav-head { display: flex; align-items: center; gap: var(--sp-2); height: var(--h-bar); padding: 0 10px; }
+.nav-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: 0 10px; }   /* its height: by width, below and in layout.css */
 .search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 var(--field-px); color: var(--muted); }   /* a field (controls.css) */
 .search input { flex: 1; min-width: 0; font: inherit; font-size: 13px; color: var(--t-fg); background: none; border: 0; outline: 0; padding: 0; }
 .search input::placeholder { color: var(--muted); }
 .search kbd { font: var(--fs-micro) ui-monospace, Menlo, monospace; color: var(--muted); background: var(--surface-4); border-radius: var(--r-xs); padding: 0 5px; }
 /* a computer's list head: the filter is a key (its magnifier) until it is pressed, focused or holds words; then it
    takes the sections' room. The field stays in the page for the keyboard, "/" and a press on the title */
-#nav #drawerclose { display: none; }   /* a phone's sheet has it (layout.css) */
 @media (min-width: 861px) {
-  .nav-head { flex-wrap: wrap; align-content: center; row-gap: var(--sp-1); height: auto; min-height: var(--h-bar); }   /* a list too narrow for one line: its keys under the sections */
+  .narrow-only { display: none !important; }   /* a phone's only, as .wide-only is a computer's (layout.css) */
+  .nav-head { align-content: center; row-gap: var(--sp-1); min-height: var(--h-bar); }   /* a list too narrow for one line: its keys under the sections */
   .nav-head .search { margin-left: auto; }
-  .nav-head .search:not(:focus-within):has(input:placeholder-shown) { flex: none; width: var(--icon-key); height: var(--icon-key); padding: 0; gap: 0; justify-content: center; cursor: pointer;
-    color: var(--icon-ink); background-color: var(--key-fill); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl);
+  .nav-head .search:not(:focus-within):has(input:placeholder-shown) { flex: none; width: var(--icon-key); height: var(--icon-key); padding: 0; gap: 0; justify-content: center; cursor: pointer;   /* its look: an icon key's (controls.css) */
     & input { flex: none; width: 1px; opacity: 0; }
     & kbd { display: none; }
   }
   .nav-head:has(.search:focus-within, #filter:not(:placeholder-shown)) .sections { display: none; }
 }
-@media (min-width: 861px) and (hover: hover) { .nav-head .search:not(:focus-within):has(input:placeholder-shown):hover { color: var(--t-fg); background-color: var(--key-fill-hover); } }
 /* the list fades out at its foot instead of a line above the buttons */
 #sessions { overflow-y: auto; flex: 1; padding: 0 8px 12px; overscroll-behavior: contain; display: flex; flex-direction: column; gap: var(--sp-3);
   -webkit-mask-image: linear-gradient(#000 calc(100% - 14px), transparent); mask-image: linear-gradient(#000 calc(100% - 14px), transparent); }
@@ -249,8 +247,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #asks[hidden] { display: none; }
 /* how many tasks need a human, on Kanban in the page's head (terminum-kanban.md AC-117) */
 .taskneed { margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); font-variant-numeric: tabular-nums; line-height: 16px; color: var(--danger-ink); background: var(--danger-fill); }
-a.icon { position: relative; }
-a.icon .taskneed { position: absolute; top: -4px; right: -4px; margin: 0; }
+.sections a .taskneed { position: absolute; top: -4px; right: -4px; margin: 0; }   /* on its key's corner (the key: controls.css) */
 #asks .ask { display: flex; align-items: center; min-width: 0; color: var(--t-fg);
   background: color-mix(in srgb, var(--waiting) 9%, var(--t-bg)); border-bottom: 1px solid color-mix(in srgb, var(--waiting) 24%, var(--t-bg)); }
 #asks .go { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 4px 4px 16px; text-align: left; font-size: 13px; }   /* #term's 16 px */

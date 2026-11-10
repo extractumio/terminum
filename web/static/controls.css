@@ -48,6 +48,13 @@
   color: var(--t-fg); background-color: var(--key-fill-hover); box-shadow: var(--m-well); }
 :is(.icon, .grp h2 :is(.attach, .import, .new, .hostbtn, .clone), .grp li > .clone, #rename, .mkdel, .mkmake, #asks .x, .banner .x, .stepper button):active:not(:disabled) {
   box-shadow: var(--m-well); }
+/* the session list's filter folded on a computer (style.css): an icon key until it opens */
+@media (min-width: 861px) {
+  .nav-head .search:not(:focus-within):has(input:placeholder-shown) { color: var(--icon-ink); background-color: var(--key-fill); background-image: var(--m-matte); box-shadow: var(--m-edge-ctl);
+    &:active { box-shadow: var(--m-well); }
+    @media (hover: hover) { &:hover { color: var(--t-fg); background-color: var(--key-fill-hover); } }
+  }
+}
 /* a thin bar's small ones (the quick shell's, a name's pencil, a bookmark row's), the session list's (--ik: its size,
    so no selector's weight decides it) */
 :is(#quick .qbar .icon, #rename, .mkdel, .mkmake) { --ik: var(--icon-key-sm); }
@@ -67,11 +74,11 @@
 .sections { flex: none; }
 .sections a { position: relative; flex: none; justify-content: center; padding: 0 var(--sx, 11px); }
 .sections .word { display: var(--word, inline); }
-.sections .taskneed { position: absolute; top: -4px; right: -4px; margin: 0; }
 :is(.nav-head, .msg-page #bar) { container-type: inline-size; }
 .nav-head .sections a:not([aria-current]), #app #bar > .sections a { --word: none; --sx: var(--sp-2); }
 @container (max-width: 349px) { .nav-head .sections a { --word: none; --sx: var(--sp-2); } }
 @container (max-width: 619px) { .msg-page .sections a:not([aria-current]) { --word: none; --sx: var(--sp-2); } }
+@media (max-width: 860px) { .sections { flex: 1 1 0; min-width: 0; } }   /* a phone: across its row (the list's sheet, a page's head) */
 /* in a bar beside a hidden list (a computer's): icons, after ☰ */
 #app #bar > .sections { display: none; }
 @media (min-width: 861px) { #app.nav-hidden #bar > .sections { display: inline-flex; } }

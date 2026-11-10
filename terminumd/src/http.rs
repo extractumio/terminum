@@ -188,7 +188,7 @@ mod page_tests {
         let head = |page: &str| {
             let at = page.find("<!-- the shared head").expect("its head");
             let end = page.find("<!-- /the shared head -->").expect("its end");
-            let h = page[at..end].replace(" aria-current=\"page\"", "");
+            let h = &page[at..end];
             let title = h.find("<h1 class=\"mtitle\">").expect("its title");
             let after = title + h[title..].find("</h1>").expect("its title's end");
             format!("{}{}", &h[..title], &h[after..])

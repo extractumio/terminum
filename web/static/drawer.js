@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The session list's drawer: on a phone it slides over the terminal, on a computer it is a
 // column the user can hide (remembered per browser); "/" opens it and filters. Its head holds the
-// sections' switcher (sections.js), drawn here for both pages that have the list.
-import { mountSections } from "./sections.js";
+// sections' switcher, which draws itself (sections.js).
+import "./sections.js";
 
 const $ = (id) => document.getElementById(id);
 
 /** `hiddenKey`: what this page remembers hiding by: the board's is its own (terminum-kanban.md AC-135). */
 export function sessionDrawer({ narrow, store, drawNav, focusInput = () => {}, hiddenKey = "navHidden" }) {
-  mountSections();
   function openDrawer() {
     if (!narrow.matches) { $("app").classList.remove("nav-hidden"); store.set(hiddenKey, false); return; }
     $("app").classList.add("nav-open");

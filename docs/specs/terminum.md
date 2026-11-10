@@ -923,7 +923,7 @@ Scenario: AC-167 happy path — tasks that wait
 
 Scenario: AC-167 edge — words where they fit
   Then a page's head 620 px wide or more shows each section's icon and word; a narrower one, and a list's head from 350 px, the shown section's word and the others' icons; a narrower list's head icons only
-  And in a list too narrow for one line (under about 270 px) the head's keys stand on a line under the sections; none is cut, none over another
+  And in a list too narrow for one line (under about 270 px) the head's keys stand on a line under the sections; none is cut, none over another; the head is then taller, and the list's first group starts under the terminal's top
 
 Scenario: AC-167 edge — the filter gives its room
   Given a computer
