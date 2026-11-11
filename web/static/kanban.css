@@ -80,15 +80,15 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .whenline .field { color: var(--t-fg); }
 .whenline select.field { width: auto; min-width: 150px; }
 .whenline input.field { width: auto; }
-.whenline input:is([type="time"], [type="date"]).field { box-sizing: border-box; height: calc(2 * var(--sp-2) + 1.3em); }   /* their clock and calendar no taller than a field */
+.whenline input:is([type="time"], [type="date"]).field { box-sizing: border-box; height: var(--field-h); }   /* their clock and calendar no taller than a field */
 .whenpart[hidden] { display: none; }
 #schedminute, #schedday { width: 64px; }
 #schedcron { flex: 1 1 160px; font-family: var(--term-font, monospace); }
 .whendays { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin-top: var(--sp-2); }
-.whensaid { margin: var(--sp-2) 0 0; font-size: var(--fs-small); color: var(--muted); }
+.whensaid { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-2); margin: var(--sp-2) 0 0; font-size: var(--fs-small); color: var(--muted); }
 .fieldrow.checkrow { display: flex; flex-direction: row; align-items: center; gap: var(--sp-2); align-self: end; min-height: var(--key-h); }
-/* a tick beside a field: centred on it (its height: padding and 1.3 lines); a touch screen's taller row reaches under it */
-.fieldgrid > .checkrow { margin-bottom: min(0px, (2 * var(--sp-2) + 1.3em - var(--key-h)) / 2); }
+/* a tick beside a field: centred on it; a touch screen's taller row reaches under it */
+.fieldgrid > .checkrow { margin-bottom: min(0px, (var(--field-h) - var(--key-h)) / 2); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
 /* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled in the agent's color, the percent;
