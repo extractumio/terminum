@@ -88,6 +88,8 @@ Scenario: AC-160 edge — a choice clears what it answered
 
 Scenario: AC-160 happy path — what will go
   Then "What the agent gets", open, shows the prompt of AC-162 as terminumd makes it, and the agent's command line in full (AC-156), before Save
+  And the command stands as RUN's window's "Command" line, the prompt in a field's well, its text as far in as a field's
+  And every label and field of the window, When's and the prompt among them, stands on the form's one edge, When's fields as tall as the others, Paused on its field's middle (`docs/UI-GUIDELINES.md` §2.4)
 
 Scenario: AC-160 happy path — changed at any time
   Given SCH-1 with S_TERM-41 running
@@ -280,7 +282,7 @@ Scenario: AC-164 failure — not read
 ```gherkin
 Scenario: AC-182 happy path
   Given SCH-1 "Nightly deps check", every day at 03:00, its last task DONE and its session closed
-  When the human presses Run now on its card and confirms "Run SCH-1 now, on its agent? Its cadence stays as it is."
+  When the human presses Run now, the play key at the right of its card's head, and confirms "Run SCH-1 now, on its agent? Its cadence stays as it is."
   Then terminumd makes its task as a firing does (AC-162), S_TERM-42 IN PROGRESS, its history saying who ran the schedule now, and starts it on the schedule's agent in its kept slot
   And the firing is written and shows on the Scheduled page (AC-164); the card's next run is still 03:00
   And a toast says "SCH-1 runs now: S_TERM-42"
@@ -383,4 +385,4 @@ Single stage.
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; with long columns every card over them whole)
 - [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
-- [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's button in a browser: not run
+- [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`

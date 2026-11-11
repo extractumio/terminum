@@ -58,15 +58,16 @@ pub fn values(field: &str) -> Option<&'static [&'static str]> {
     }
 }
 
-/// The arguments terminumd gets (only the known fields), or why they are refused.
+/// The arguments terminumd gets (only the known fields), or every reason they are refused.
 pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
-    let out = super::mcp_tasks::fields_of(&TOOLS, tool, args)?;
+    let mut faults = Vec::new();
+    let out = super::mcp_tasks::fields_of(&TOOLS, tool, args, &mut faults);
     for (field, v) in &out {
         if let (Some(allowed), Some(v)) = (values(field), v.as_str()) && !v.is_empty() && !allowed.contains(&v) {
-            return Err(format!("{field}: one of {}", allowed.join(", ")));
+            faults.push(format!("{field}: one of {}", allowed.join(", ")));
         }
     }
-    Ok(Value::Object(out))
+    super::mcp_tasks::unless(out, faults)
 }
 
 pub fn tools() -> Vec<Value> {

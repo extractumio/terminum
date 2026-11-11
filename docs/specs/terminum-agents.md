@@ -343,6 +343,15 @@ Scenario: AC-155 failure — wrong calls
   When any of the three is called outside a terminum pane
   Then it answers AC-97's "This session does not run in a terminum pane; …"
   And a tools/call of a catalog tool by its own name, listed or not, still works (scripts, older clients)
+
+Scenario: AC-155 failure — a call that breaks a tool's rules
+  Given a session that has not read create_task's card with get_tool_info
+  When it calls execute_tool {name: "create_task", arguments: {title: "a gap", text: "it breaks"}}
+  Then one refusal names every fault, one a line: "Give it a severity: P0, P1, P2 or P3.", "Start the title with Bug:, Feat: or Debt:.", the template's sections it lacks (terminum-kanban.md AC-145); update_task's title and text likewise; the argument checks done before terminumd (required, too long, not a string, not one of a field's values) likewise
+  And under it, this once in the session, "How to call it: " and the tool's signature, whole description and example call, the words get_tool_info gives, for any catalog tool's refusal (a manager's too)
+  When the session's next call of create_task is refused, or it had read the card with get_tool_info
+  Then the refusal comes without the card; a call terminum did not answer (AC-97's "not running", not in a pane) shows none and spends no card; a refusal of the task's state ("not found", a human's words) spends it as well
+  And create_task's text is required in its schema as in its checks; get_task's page may be sent as a number
 ```
 
 ### AC-174 — Managers and workers [MUST / P0]
@@ -727,7 +736,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
-- [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`), `web/test/e2e_liveplans.mjs`
+- [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`, `mcp_tasks.rs`), `cargo test tasks::tools` (`ac145_an_agent_s_text_follows_its_project_s_template`), `web/test/e2e_liveplans.mjs`
 - [x] AC-174 — `cargo test roles`, `cargo test cli::mcp` (`mcp_tests.rs`, `mcp_manager.rs`), `scripts/e2e_roles.py`
 - [x] AC-178 — `cargo test roles`, `scripts/e2e_roles.py` (a pane naming the manager's)
 - [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `scripts/e2e_roles.py`

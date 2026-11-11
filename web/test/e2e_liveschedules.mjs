@@ -105,6 +105,22 @@ export async function liveSchedules(page, live) {
   await page.selectOption("#schedkind", "weekly");
   await page.click('#whendays button:has-text("Fri")');
   check("AC-160 weekly days are keys", await until(async () => (await page.textContent("#schedfields")).endsWith("* * 1,5")), await page.textContent("#schedfields"));
+  // its window on one grid, the weekly kind's parts shown: every label and field on the form's edge, the prompt a field (its well, its text where a
+  // field's is), When's fields as tall as the others, the tick on its field's middle
+  const grid = await page.evaluate(() => {
+    const f = document.querySelector("#schedbox form").getBoundingClientRect(), at = (q) => document.querySelector(q).getBoundingClientRect();
+    const css = (q) => getComputedStyle(document.querySelector(q)), textX = (q) => Math.round(at(q).x - f.x + parseFloat(css(q).paddingLeft));
+    const middle = (q) => at(q).y + at(q).height / 2;
+    return { edges: ["#schedtitle", "#schedtext", "#schedproj", "#schedwhen", "#schedkind", "#whendays", "#schedbudget", "#schedwhat", "#schedwhat .runfacts", "#schedprompt"].map((q) => Math.round(at(q).x - f.x)),
+      text: [textX("#schedtitle"), textX("#schedprompt")], sizes: [css("#schedtitle").fontSize, css("#schedprompt").fontSize], well: css("#schedprompt").boxShadow !== "none",
+      heights: ["#schedtitle", "#schedkind", "#schedtime"].map((q) => Math.round(at(q).height)), tick: Math.round(middle("#schedpaused") - middle("#schedbudget")),
+      gaps: [Math.round(at("#schedtext").y - at("#schedbox .edithead").bottom), Math.round(at("#schedproj").y - at("#schedtext").bottom)] };
+  });
+  check("AC-160 the schedule window's parts stand on one edge, the prompt a field with a field's text inset",
+    grid.edges.every((x) => x === 0) && grid.text[0] === grid.text[1] && grid.well && grid.sizes[0] === grid.sizes[1], JSON.stringify(grid));
+  check("AC-160 Text's head stands 4px over its text, as a label; the parts stand apart", grid.gaps[0] === 4 && grid.gaps[1] > grid.gaps[0], JSON.stringify(grid));
+  check("AC-160 When's fields are as tall as the others; Paused stands on its field's middle",
+    grid.heights.every((h) => Math.abs(h - grid.heights[0]) <= 1) && Math.abs(grid.tick) <= 1, JSON.stringify(grid));
   await page.selectOption("#schedkind", "minutes");
   await page.selectOption("#schedevery", "1");
   check("AC-160 runs a minute apart are taken", await until(async () => await page.textContent("#schedfields") === "*/1 * * * *" && /^Every minute\. Next: /.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
@@ -117,6 +133,11 @@ export async function liveSchedules(page, live) {
   check("AC-160 Save keeps it and closes the window", await until(async () => !(await page.isVisible("#schedbox[open]"))));
   check("AC-163 the head counts it", await until(async () => await page.textContent(toggle) === "Scheduled 1"));
   await page.click(toggle);
+  // a press with the pointer leaves no focus ring round the key it pressed: the ring is the keyboard's (docs/UI-GUIDELINES.md "Focus")
+  const ring = (sel) => page.$eval(sel, (b) => ({ lit: getComputedStyle(b).outlineStyle !== "none", focused: document.activeElement === b, visible: b.matches(":focus-visible") }));
+  await page.keyboard.press("Shift+ArrowRight");     // a key after the press: Chrome lights a focused key's ring by it
+  let r = await ring(toggle);
+  check("AC-163 the pressed Scheduled key, then a key typed, draws no focus ring", !r.lit, JSON.stringify(r));
   const sched = "#schedgrid .schedcard";
   check("AC-163 open, its card: key, title, cadence, next run, agent", await until(async () => {
     const t = await page.textContent(sched).catch(() => "");
@@ -124,16 +145,30 @@ export async function liveSchedules(page, live) {
   }), await page.textContent(sched).catch(() => ""));
   check("AC-163 its card has no colored stripe along its side: the agent's dot and name say whose it is", await page.$eval(sched, (c) => !/inset/.test(getComputedStyle(c).boxShadow) && getComputedStyle(c.querySelector(".cagent"), "::before").width === "7px"),
     await page.$eval(sched, (c) => getComputedStyle(c).boxShadow));
-  // AC-182: Run now stands in the card's head, asks first, and a press on it is not the card's
+  // AC-182: Run now, a play key at the right of the card's head, asks first, and a press on it is not the card's
   const run = `${sched} .schedrun`;
-  const fits = await page.$eval(run, (b) => { const [r, c] = [b.getBoundingClientRect(), b.closest(".schedcard").getBoundingClientRect()]; return b.textContent === "Run now" && r.right <= c.right + 1 && r.left >= c.left && r.height > 0; });
-  check("AC-182 a schedule's card has Run now, inside it", fits);
+  const fits = await page.$eval(run, (b) => {
+    const [r, c, sev] = [b.getBoundingClientRect(), b.closest(".schedcard").getBoundingClientRect(), b.parentElement.querySelector(".csev").getBoundingClientRect()];
+    return { icon: !!b.querySelector("svg") && b.textContent.trim() === "" && /^Run SCH-\d+ now$/.test(b.getAttribute("aria-label")), right: c.right - r.right, gap: r.left - sev.right, h: r.height };
+  });
+  check("AC-182 Run now is a play key at the right of the card's head", fits.icon && fits.right >= 0 && fits.right <= 16 && fits.gap > 40 && fits.h > 0, JSON.stringify(fits));
   await page.click(run);
   check("AC-182 it asks before it runs, and the schedule's own window stays shut", await until(() => page.isVisible("#confirmbox[open]")) && /Run SCH-\d+ now, on its agent\?/.test(await page.textContent("#confirmbox")) && !(await page.isVisible("#schedbox[open]")),
     await page.textContent("#confirmbox").catch(() => ""));
   await shot("schedule-run-now");
-  await page.keyboard.press("Escape");
-  check("AC-182 Cancel runs nothing", await until(async () => !(await page.isVisible("#confirmbox[open]"))) && !(await j("/api/schedules")).schedules[0].last);
+  for (const [how, close] of [["Cancel, pressed,", () => page.click("#confirmbox button[value=\"cancel\"]")], ["Esc on its question", () => page.keyboard.press("Escape")]]) {
+    if (!(await page.isVisible("#confirmbox[open]"))) { await page.click(run); await until(() => page.isVisible("#confirmbox[open]")); }
+    await close();
+    const shut = await until(async () => !(await page.isVisible("#confirmbox[open]")));
+    r = await ring(run);
+    check(`AC-182 ${how} leaves no focus ring on the play key`, shut && !r.lit, JSON.stringify(r));
+  }
+  check("AC-182 Cancel runs nothing", !(await j("/api/schedules")).schedules[0].last);
+  await page.focus(toggle);
+  await page.keyboard.press(page.context().browser().browserType().name() === "webkit" ? "Alt+Tab" : "Tab");   // a Mac's WebKit tabs to keys with Option, as Safari
+  r = await ring("#newschedule");
+  check("AC-163 Tab still reaches + Schedule and rings it", r.focused && r.lit, JSON.stringify(r));
+  await page.evaluate(() => document.activeElement?.blur());
   const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
   if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);

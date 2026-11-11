@@ -47,12 +47,15 @@ pub fn tool_names() -> Vec<&'static str> {
 
 /// The agent's environment: TMUX and TMUX_PANE; `known`: whether a sink knows the pane
 /// (None until probed).
+#[derive(Default)]
 pub struct Env {
     pub tmux: Option<String>,
     pub pane: Option<String>,
     pub known: std::cell::Cell<Option<bool>>,
     /// whether terminumd said the pane's session is its project's manager (kept once it says so)
     pub manager: std::cell::Cell<bool>,
+    /// tools whose card this session has read (get_tool_info) or been shown under a refusal
+    pub carded: std::cell::RefCell<std::collections::HashSet<String>>,
 }
 
 /// One POST /agent: (status, answer) or Down.
@@ -65,7 +68,8 @@ pub fn main() -> i32 {
         eprintln!("terminum mcp is the MCP server a coding agent starts; to set it up: terminum hooks install");
         return 2;
     }
-    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default(), manager: Default::default() };
+    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default(), manager: Default::default(),
+                    carded: Default::default() };
     let forward = |body: &Value| {
         // listed at each call: a Mac's link may come up after the agent started
         let sinks = super::sinks::all();
@@ -234,7 +238,10 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
             Err(why) => Err(why),
         },
         "search_tools" => m::search(args, manager),
-        _ => m::describe(args, manager),
+        _ => m::describe(args, manager).map(|(text, described)| {
+            env.carded.borrow_mut().extend(described.into_iter().map(str::to_string));
+            text
+        }),
     };
     match answer {
         Ok(text) => text_result(&text, false),
@@ -242,11 +249,11 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
     }
 }
 
-/// A tools/call's result: refused here, or terminumd's answer.
+/// A tools/call's result: refused here, or terminumd's answer. terminum not reached says so alone.
 pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward: Forward) -> Value {
     let args = match checked(tool, args) {
         Ok(a) => a,
-        Err(why) => return text_result(&why, true),
+        Err(why) => return refusal(tool, &why, env),
     };
     let Some((socket, pane)) = pane_of(env) else { return text_result(NOT_IN_PANE, true) };
     let mut body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": tool, "args": args});
@@ -256,10 +263,18 @@ pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward:
     match forward(&body) {
         Err(Down) => text_result(DOWN, true),
         Ok((200, Some(a))) if a.get("text").is_some_and(Value::is_string) => {
-            text_result(a["text"].as_str().unwrap_or(""), a.get("error").and_then(Value::as_bool).unwrap_or(false))
+            let text = a["text"].as_str().unwrap_or("");
+            if a.get("error").and_then(Value::as_bool).unwrap_or(false) { refusal(tool, text, env) } else { text_result(text, false) }
         }
         Ok((status, a)) => text_result(&format!("terminum refused the call: {}", super::sockhttp::message(a.as_ref(), status)), true),
     }
+}
+
+/// A tool's refusal, with its card under it the first time in this session unless the session read
+/// it (AC-155).
+fn refusal(tool: &str, why: &str, env: &Env) -> Value {
+    let card = env.carded.borrow_mut().insert(tool.to_string()).then(|| super::mcp_meta::card_text(tool)).flatten();
+    text_result(&card.map_or_else(|| why.to_string(), |c| format!("{why}\n\n{c}")), true)
 }
 
 /// `v`'s string field `k`, cleaned (rules::clean), of at most `max` characters (None: absent
