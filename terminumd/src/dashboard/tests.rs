@@ -201,3 +201,75 @@ fn ac172_what_dispatcher_s_sessions_spent() {
     assert_eq!(ask(&s, noon, "costs", Period::Day, Some("p1"))["tiles"]["counted"], 1_100_000);
     assert_eq!(ask(&s, noon, "costs", Period::Day, Some(""))["tiles"]["counted"], 500);
 }
+
+/// What a page counted at unix ms `at`: a row of the interaction log.
+fn counted(at: i64, kind: &'static str, project: Option<&str>, amount: i64) -> crate::interact::Row {
+    crate::interact::Row { at, ended: at, kind, surface: "sessions", target: String::new(), n: 1, amount, pane: None, project: project.map(str::to_string) }
+}
+
+#[test]
+fn ac152_engagement_from_what_the_pages_counted() {
+    let s = store("dashboard-engaged");
+    let noon = noon(&s);
+    let eleven = noon - HOUR;
+    s.with(|tx| {
+        // 10:00: a prompt, before any page counted; the log reaches 40 days back
+        insert(tx, &msg(eleven - HOUR, "k1", Some("p1")))?;
+        input(tx, noon - 40 * DAY, HUMAN, "k1", None, None, None);
+        // 11:00:10 a press in p1's pane, 11:03 a scroll, in front until a key at 11:13; a move at 11:30, a key at 11:37 with the page hardly in front
+        let mut rows = vec![counted(eleven + 10_000, "click", Some("p1"), 0), counted(eleven + 3 * M, "scroll", None, 400), counted(eleven + 13 * M, "key", None, 0),
+            counted(eleven + 30 * M, "move", None, 0), counted(eleven + 37 * M, "key", None, 0)];
+        rows.extend((4..13).map(|m| counted(eleven + m * M, "front", None, 60)));
+        rows.extend((31..37).map(|m| counted(eleven + m * M, "front", None, 10)));
+        crate::interact::insert(tx, &rows, "mac")
+    }).unwrap();
+    let d = ask(&s, noon, "you", Period::TwoWeeks, None);
+    let (tiles, today) = (&d["tiles"], &d["series"][13]);
+    assert_eq!(tiles["active_ms"], 2 * M + 830_000 + 2 * M, "10:00 and its 2 minutes; 11:00:10 to 11:13 and a minute more: a pause of 10 minutes with the page in front joins; the move and the key, 7 minutes apart with no page in front, a minute each");
+    assert_eq!(today["by"], json!({"": 2 * M, "p1": 2 * M + 830_000}), "a count with no pane is its stretch's project's; after a pause over 15 minutes, no project's");
+    assert_eq!(today["engaged"], json!({"active": 16, "acting": 3, "reading": 1}), "the clock minutes from the pages' first count on: 14 of the first stretch and one each of the others; a move engages none");
+    assert_eq!((tiles["engagement"].clone(), tiles["seen_min"].clone(), tiles["acting_min"].clone(), tiles["reading_min"].clone()), (json!(0.25), json!(16), json!(3), json!(1)));
+    assert_eq!((d["series"][12]["engaged"].clone(), d["measured_from"].clone()), (Value::Null, d["buckets"][13]["from"].clone()), "a day before the pages counted has no engagement, not none of it");
+    assert_eq!((d["before"].clone(), d["kept_from"].clone()), (Value::Null, Value::Null), "a span from before the pages counted is not compared, though the log reaches it");
+    let only = ask(&s, noon, "you", Period::TwoWeeks, Some("p1"));
+    assert_eq!(only["tiles"]["acting_min"], 1, "a project's: only what was counted in its panes");
+}
+
+#[test]
+fn ac176_who_does_the_work_on_tasks() {
+    let s = store("dashboard-work");
+    let noon = noon(&s);
+    let at = noon / 1000 - 3600;
+    let ids = s.with(|tx| {
+        tx.execute("INSERT INTO users (id, kind, name, role) VALUES ('agent:x', 'agent', 'X', 'agent')", []).map_err(sql)?;
+        // the human makes a task, moves it, says a word and runs it; an agent says two and ends it; Dispatcher's moves and notes carry that out
+        let mine = ops::create(tx, HUMAN, NewTask { title: "By hand".into(), ..Default::default() }, at)?;
+        ops::move_to(tx, HUMAN, &mine.key, "IN PROGRESS", at + 1)?;
+        ops::comment(tx, HUMAN, &mine.id, "go", at + 2)?;
+        ops::move_to(tx, DISPATCHER, &mine.key, "WAIT FOR HUMAN", at + 3)?;
+        ops::log(tx, &mine.key, DISPATCHER, "why", "Its agent asked.", None, at + 3)?;
+        ops::move_to(tx, DISPATCHER, &mine.key, "IN PROGRESS", at + 4)?;
+        ops::comment(tx, "agent:x", &mine.id, "one", at + 5)?;
+        ops::comment(tx, "agent:x", &mine.id, "two", at + 6)?;
+        ops::move_to(tx, "agent:x", &mine.key, "DONE", at + 7)?;
+        // a task Dispatcher made and Auto-Dispatcher chose
+        let own = ops::create(tx, DISPATCHER, NewTask { title: "By itself".into(), ..Default::default() }, at)?;
+        tx.execute("INSERT INTO auto_starts (task, round, at) VALUES (?1, ?2, ?3)", (&own.key, &mine.key, at + 60)).map_err(sql)?;
+        for (t, slug) in [(at + 10, &mine.id), (at + 90, &own.id)] {
+            tx.execute("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, tasks, version) VALUES (?1, ?1, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, 'k9', 'r', ?2, 'test')", (t * 1000, slug)).map_err(sql)?;
+        }
+        Ok((mine.id, own.id))
+    }).unwrap();
+    let d = ask(&s, noon, "tasks", Period::Day, None);
+    let tiles = &d["tiles"];
+    assert_eq!((tiles["ops"].clone(), tiles["by"].clone(), tiles["share"].clone()), (json!(9), json!({"you": 4, "agents": 3, "dispatcher": 2}), json!(4.0 / 9.0)), "an operation is counted once, for who decided it");
+    assert_eq!((tiles["tasks"].clone(), tiles["made_by_hand"].clone(), tiles["spread"].clone()), (json!(2), json!(1), json!({"none": 1, "less": 0, "more": 1, "all": 0})));
+    assert_eq!(d["tasks"], json!([{"id": ids.0, "title": "By hand", "by": {"you": 4, "agents": 3, "dispatcher": 0}, "n": 7, "share": 4.0 / 7.0},
+        {"id": ids.1, "title": "By itself", "by": {"you": 0, "agents": 0, "dispatcher": 2}, "n": 2, "share": 0.0}]), "each task's split, most operations first");
+    let kind = |k: &str| d["kinds"].as_array().unwrap().iter().find(|x| x["kind"] == k).unwrap()["by"].clone();
+    assert_eq!((kind("start"), kind("move"), kind("comment")), (json!({"you": 1, "agents": 0, "dispatcher": 1}), json!({"you": 1, "agents": 1, "dispatcher": 0}), json!({"you": 1, "agents": 2, "dispatcher": 0})),
+        "a Run is the human's start, an Auto-Dispatcher's choice Dispatcher's; Dispatcher's moves are no operations");
+    assert_eq!((d["series"][22]["by"]["you"].clone(), d["series"][22]["share"].clone(), d["series"][0]["share"].clone()), (json!(4), json!(4.0 / 9.0), Value::Null));
+    assert_eq!(ask(&s, noon, "tasks", Period::Day, Some("p1"))["tiles"]["ops"], 0);
+    assert_eq!(ask(&s, noon, "tasks", Period::Day, Some(""))["tiles"]["ops"], 9, "no project: the default project's tasks");
+}

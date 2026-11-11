@@ -8,6 +8,7 @@ pub mod costs;
 pub mod system;
 #[cfg(test)]
 mod tests;
+pub mod work;
 pub mod you;
 
 use std::collections::HashMap;
@@ -190,7 +191,11 @@ pub fn numbers(tx: &Transaction, now_ms: i64, tab: &str, period: Period, project
     let span = Span::of(period, now);
     let before = span.before(period);
     // what the tab's rows still hold: the input log is trimmed by age and by rows, the reports are not
-    let oldest = if tab == "costs" { "SELECT min(at) * 1000 AS at FROM usage" } else { "SELECT min(at) AS at FROM inputs" };
+    let oldest = match tab {
+        "costs" => "SELECT min(at) * 1000 AS at FROM usage",
+        "tasks" => "SELECT min(at) * 1000 AS at FROM events",
+        _ => "SELECT min(at) AS at FROM inputs",
+    };
     let kept_from: Option<i64> = tx.query_row(&format!("SELECT {} FROM ({oldest}) WHERE at IS NOT NULL", local("at")), [], |r| r.get(0)).ok();
     let before = Some(&before).filter(|b| kept_from.is_some_and(|k| k <= b.lo()));
     // a day more: the zone's offset may have been another then
@@ -198,6 +203,7 @@ pub fn numbers(tx: &Transaction, now_ms: i64, tab: &str, period: Period, project
     let mut v = match tab {
         "system" => system::numbers(tx, &ask, now)?,
         "costs" => costs::numbers(tx, &ask, now_ms / 1000)?,
+        "tasks" => work::numbers(tx, &ask)?,
         _ => you::numbers(tx, &ask)?,
     };
     v["unit"] = json!(span.unit);
