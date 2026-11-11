@@ -29,6 +29,7 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         assert_eq!(put(json!({"severities": [1, "P0"]}), 5).unwrap_err(), "severities: a list of names");
         assert_eq!(put(json!({"wait_minutes": 1441}), 5).unwrap_err(), "Wait: 0 to 1440 minutes");
         assert_eq!(put(json!({"day_most": 0}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
+        assert_eq!(put(json!({"day_most": 1001}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
         assert_eq!(put(json!({"day_most": null}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
         assert_eq!(put(json!({"on": true, "agent": "p", "severities": []}), 5).unwrap_err(), "Tick a severity it takes first: with none it starts nothing.");
         // its agents chosen while off; the switch then sends "on" alone and keeps the rest

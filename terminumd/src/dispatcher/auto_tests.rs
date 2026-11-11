@@ -81,10 +81,10 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         // one a human edits since is judged anew; a comment or a day's end apart, the rest stays passed over
         ops::edit(tx, HUMAN, &low.id, ops::Edit { title: Some("low, reworded".into()), ..Default::default() }, NOW + 60)?;
         assert_eq!(given(NOW + 60)?, (vec![low.id.clone()], 1));
-        assert_eq!(given(NOW + auto::DAY)?, (vec![high.id.clone(), low.id.clone()], 1), "after a day it is judged again");
+        assert_eq!(given(NOW + auto::PASSED)?, (vec![high.id.clone(), low.id.clone()], 1), "after a day it is judged again");
         // off, an ended round still leaves the board and none is made
         tx.execute("UPDATE projects SET auto_on = 0 WHERE id = 'api'", []).map_err(sql)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + auto::DAY)?, Due::Nothing, "off");
+        assert_eq!(decide(tx, "api", &setting(tx), NOW + auto::PASSED)?, Due::Nothing, "off");
         Ok(())
     }).unwrap();
 }

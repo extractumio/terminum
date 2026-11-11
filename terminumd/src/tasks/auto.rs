@@ -46,8 +46,10 @@ pub struct Setting {
 
 /// The most a day's cap may be.
 pub const DAY_MOST: i64 = 1000;
-/// The cap's day, and for how long what a round left is passed over.
+/// The cap's day.
 pub const DAY: i64 = 24 * 3600;
+/// For how long a task a round was given and left is passed over, unless a human changes it.
+pub const PASSED: i64 = DAY;
 
 /// The longest wait, in minutes: a day.
 pub const WAIT_MOST: i64 = 24 * 60;
@@ -96,10 +98,15 @@ impl Setting {
     }
 }
 
-/// How many tasks it started in `project` in the 24 hours before `now`: what its cap counts. A press that started
-/// nothing left no row.
+/// How many tasks it started in each project in the 24 hours before `now`: what its cap counts. A press that started
+/// nothing left no row; a project with none is not listed.
+pub fn started_in_day_all(tx: &Transaction, now: i64) -> Result<std::collections::HashMap<String, i64>, String> {
+    Ok(rows(tx, "SELECT r.project, count(*) FROM auto_starts s JOIN auto_rounds r ON r.task = s.round WHERE s.at > ?1 GROUP BY r.project", [now - DAY / crate::dispatcher::scale()], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+}
+
+/// The same for `project` alone.
 pub fn started_in_day(tx: &Transaction, project: &str, now: i64) -> Result<i64, String> {
-    tx.query_row("SELECT count(*) FROM auto_starts s JOIN auto_rounds r ON r.task = s.round WHERE r.project = ?1 AND s.at > ?2", (project, now - DAY / crate::dispatcher::scale()), |r| r.get(0)).map_err(sql)
+    Ok(started_in_day_all(tx, now)?.remove(project).unwrap_or(0))
 }
 
 /// Every project's setting, by its id.
@@ -290,7 +297,7 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
                  ORDER BY c.severity, c.rank LIMIT ?4",
-        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, (now - DAY / scale + 1).max(s.on_at)),
+        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, (now - PASSED / scale + 1).max(s.on_at)),
         |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)?, changed: r.get(3)? }))?;
     let mut out = Vec::new();
     for c in found {
