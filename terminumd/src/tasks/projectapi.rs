@@ -30,9 +30,11 @@ pub fn routes() -> Router<Shared> {
 pub fn settings(tx: &Transaction) -> Result<HashMap<String, Value>, String> {
     let all = rows(tx, "SELECT id, prefix, task_template, language FROM projects", [], |r| Ok((r.get::<_, String>(0)?, json!({"prefix": r.get::<_, Option<String>>(1)?, "template": r.get::<_, Option<String>>(2)?, "language": r.get::<_, Option<String>>(3)?}))))?;
     let mut all: HashMap<String, Value> = all.into_iter().collect();
+    let started = super::auto::started_in_day_all(tx, super::ops::now())?;
     for (id, auto) in super::auto::all(tx)? {
         if let Some(p) = all.get_mut(&id) {
             p["auto"] = auto.shown();
+            p["auto"]["started_day"] = json!(started.get(&id).copied().unwrap_or(0));
         }
     }
     Ok(all)

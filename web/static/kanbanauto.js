@@ -22,7 +22,8 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
    *  its window when no agent picks yet or it turned itself off, which the window says. Several: off for those on. */
   function next() {
     const all = projects(), on = all.filter((p) => p.auto?.on), one = all.length === 1 ? all[0] : null;
-    if (on.length) return { all, on, act: "off", says: one ? `${agentLabel(getMeta().agents.find((a) => a.id === one.auto.agent))} picks ${one.name}'s TODO tasks for the free slots and starts them. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them` };
+    const full = on.filter((p) => p.auto.started_day >= p.auto.day_most).map((p) => `${p.name}'s ${p.auto.day_most} tasks of 24 hours are started: it waits. `).join("");
+    if (on.length) return { all, on, act: "off", says: full + (one ? `${agentLabel(getMeta().agents.find((a) => a.id === one.auto.agent))} picks ${one.name}'s TODO tasks for the free slots and starts them. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them`) };
     if (one?.auto?.agent && !one.auto.off_why) return { all, on, act: "on", says: `No task of ${one.name} starts by itself. Press to turn Auto-Dispatch on` };
     return { all, on, act: "open", says: one ? `No task of ${one.name} starts by itself. Press for its settings, to turn Auto-Dispatch on` : "No task starts by itself. Press to choose a project and turn it on" };
   }
@@ -46,12 +47,15 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     fillSelect($("autodefault"), [["", "None"], ...agents], auto.default ?? "");
     for (const t of ticks) t.checked = (auto.severities ?? []).includes(t.value);
     $("autowait").value = auto.wait_minutes ?? 0;
+    $("automost").value = auto.day_most ?? "";
+    $("autoday").textContent = `Started in the last 24 hours: ${auto.started_day ?? 0}.`;
     showError($("autowhy"), auto.off_why ? `It turned itself off: ${auto.off_why} Save with On ticked turns it on again.` : "");
     showError($("autoerror"), "");
   }
 
-  /** The window, on the first project shown; `on`: its switch ticked for the human to save. */
-  function open(on = false) {
+  /** The window, on the first project shown, with what terminumd says now; `on`: its switch ticked for the human to save. */
+  async function open(on = false) {
+    await reload();
     const all = projects();
     if (!all.length) return say("Make a project first.");
     fillSelect($("autoproject"), all.map((x) => [x.id, x.name]), all[0].id);
@@ -63,9 +67,10 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
 
   const keep = oneAtATime(box, async () => {
     try {
-      // an empty wait is terminumd's to refuse, never a 0 nobody typed
+      // an empty number is terminumd's to refuse, never a 0 nobody typed
+      const number = (id) => ($(id).value === "" ? null : Number($(id).value));
       await put(shown, { on: $("autoon").checked, agent: $("autoagent").value || null, default: $("autodefault").value || null,
-        severities: ticks.filter((t) => t.checked).map((t) => t.value), wait_minutes: $("autowait").value === "" ? null : Number($("autowait").value) });
+        severities: ticks.filter((t) => t.checked).map((t) => t.value), wait_minutes: number("autowait"), day_most: number("automost") });
       box.close();
       await reload();
     } catch (e) { showError($("autoerror"), e.message); }

@@ -40,17 +40,26 @@ pub struct Setting {
     pub severities: Vec<String>,
     /// the minutes a task stands unchanged in TODO before it is taken
     pub wait: i64,
+    /// the most tasks it starts in 24 hours
+    pub day_most: i64,
 }
+
+/// The most a day's cap may be.
+pub const DAY_MOST: i64 = 1000;
+/// The cap's day.
+pub const DAY: i64 = 24 * 3600;
+/// For how long a task a round was given and left is passed over, unless a human changes it.
+pub const PASSED: i64 = DAY;
 
 /// The longest wait, in minutes: a day.
 pub const WAIT_MOST: i64 = 24 * 60;
 
-const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes FROM projects";
+const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes, auto_day_most FROM projects";
 
 fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<(String, Setting)> {
     let severities: String = r.get(6)?;
     Ok((r.get(4)?, Setting { agent: r.get(0)?, default: r.get(1)?, off_why: r.get(2)?, on_at: r.get(3)?, on: r.get(5)?,
-        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)? }))
+        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)?, day_most: r.get(8)? }))
 }
 
 pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
@@ -60,7 +69,7 @@ pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
 impl Setting {
     /// What the board shows of it: its switch, the picking agent, the default one, what it takes, why it is off.
     pub fn shown(&self) -> Value {
-        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "off_why": self.off_why})
+        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "day_most": self.day_most, "off_why": self.off_why})
     }
 
     /// This setting with what a human's `body` changes: a field it does not hold stays, so the board's switch sends
@@ -82,8 +91,22 @@ impl Setting {
         if let Some(wait) = body.get("wait_minutes") {
             s.wait = wait.as_i64().filter(|m| (0..=WAIT_MOST).contains(m)).ok_or(format!("Wait: 0 to {WAIT_MOST} minutes"))?;
         }
+        if let Some(most) = body.get("day_most") {
+            s.day_most = most.as_i64().filter(|n| (1..=DAY_MOST).contains(n)).ok_or(format!("Tasks a day: 1 to {DAY_MOST}"))?;
+        }
         Ok(s)
     }
+}
+
+/// How many tasks it started in each project in the 24 hours before `now`: what its cap counts. A press that started
+/// nothing left no row; a project with none is not listed.
+pub fn started_in_day_all(tx: &Transaction, now: i64) -> Result<std::collections::HashMap<String, i64>, String> {
+    Ok(rows(tx, "SELECT r.project, count(*) FROM auto_starts s JOIN auto_rounds r ON r.task = s.round WHERE s.at > ?1 GROUP BY r.project", [now - DAY / crate::dispatcher::scale()], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+}
+
+/// The same for `project` alone.
+pub fn started_in_day(tx: &Transaction, project: &str, now: i64) -> Result<i64, String> {
+    Ok(started_in_day_all(tx, now)?.remove(project).unwrap_or(0))
 }
 
 /// Every project's setting, by its id.
@@ -91,10 +114,12 @@ pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
     rows(tx, SETTING, [], setting_of)
 }
 
-/// The projects a walk looks at, in their order: those it is on for, and those with a round still on the board, which
-/// leaves it when it ended though the setting is off.
+/// The projects a walk looks at: those it is on for, and those with a round still on the board, which leaves it when
+/// it ended though the setting is off. The one whose last round is oldest first: projects that share agents take
+/// the free slots in turn.
 pub fn due_for(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL) ORDER BY place"), [], setting_of)
+    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL)
+        ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place"), [], setting_of)
 }
 
 /// An agent of the pool, or none.
@@ -118,13 +143,19 @@ pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<()
     }
     let was = setting(tx, project)?;
     let on_at = if new.on && !was.on { at } else { was.on_at };
-    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7 WHERE id = ?1",
-        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait)).map(drop).map_err(sql)
+    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7, auto_day_most = ?8 WHERE id = ?1",
+        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait, new.day_most)).map(drop).map_err(sql)
 }
 
 /// It turns itself off for `project`, saying why: only a human turns it on again. Its agents stay chosen.
 pub fn turn_off(tx: &Transaction, project: &str, why: &str) -> Result<(), String> {
     tx.execute("UPDATE projects SET auto_on = 0, auto_off_why = ?2 WHERE id = ?1", (project, why)).map(drop).map_err(sql)
+}
+
+/// Whether a round of another project than `project` is open: one round at a time over all projects, so two never
+/// count on the same free slot of an agent they share.
+pub fn open_elsewhere(tx: &Transaction, project: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project <> ?1 AND t.archived_at IS NULL AND t.status NOT IN ('DONE', 'FAILED'))", [project], |r| r.get(0)).map_err(sql)
 }
 
 /// The agent a human chose to run task `key`, while it is in the pool.
@@ -234,14 +265,13 @@ pub struct Candidate {
     pub changed: i64,
 }
 
-/// For how long a task a round was given and left is passed over, unless it changes: a day.
-pub const PASSED: i64 = 24 * 3600;
 
 /// What a round may start in `project` at `now`, by setting `s`: its TODO tasks
 /// - of the severities it takes;
 /// - that stand for its wait: made, moved or edited no later than that ago (a comment, a new place among the cards or
 ///   a subtask does not start the wait anew), so one still being written is not taken;
 /// - that no session, run, wait, schedule or round holds;
+/// - with no subtask still to do: a parent waits for its subtasks, which are candidates themselves;
 /// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
 ///   none, never the default's;
 /// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
@@ -261,7 +291,8 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND t.severity IN (SELECT value FROM json_each(?5))
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
-                   AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id))
+                   AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
+                   AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'))
                  SELECT c.slug, c.id, c.agent, c.changed FROM c WHERE c.changed <= ?6
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
@@ -279,7 +310,7 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
 }
 
 /// A human's setting for a project: any of {"on", "agent": id or null, "default": id or null, "severities": ["P0"…],
-/// "wait_minutes"}, and "off_why": what the page showed. A page that did not show why it turned itself off does not
+/// "wait_minutes", "day_most"}, and "off_why": what the page showed. A page that did not show why it turned itself off does not
 /// turn it on again unseen.
 async fn set_auto(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
     let done = store(&app, move |tx| {
