@@ -65,6 +65,25 @@ export async function webLook(browser, name) {
     check("look: every dialog and foot form has a title and × in its head; its fields look alike; Cancel, then the primary",
       kind.heads.length === 0 && kind.fields.length === 1 && kind.order.length === 0, JSON.stringify(kind));
     check("look: Ask's primary is the Ask button's blue", kind.ask[0] === kind.ask[1], kind.ask.join(" vs "));
+    // a field has no line round it (a border, an outline, a hard ring): soft shadows only, at rest and in focus
+    const lines = await page.evaluate(() => {
+      const d = document.getElementById("convertbox"); d.showModal();
+      const f = document.getElementById("converttitle"), at = (e) => { const c = getComputedStyle(e); return [c.borderTopStyle, c.outlineStyle, c.boxShadow]; };
+      const rest = at(f); f.focus(); const focus = at(f); d.close();
+      return { rest, focus };
+    });
+    const ring = (s) => /(^|,\s*)(rgba?\([^)]*\)\s+)?0px 0px 0px [1-9]/.test(s) || /\s0px 0px 0px [1-9]px/.test(s);
+    check("look: a field is edged by soft shadows only, no line round it at rest or in focus (a glow in focus)",
+      [lines.rest, lines.focus].every(([b, o, s]) => b === "none" && o === "none" && !ring(s)) && lines.focus[2] !== lines.rest[2] && /\b8px\b/.test(lines.focus[2]),
+      JSON.stringify(lines));
+    // a theme's link too dark for its background is lightened until it reads (contrast.js)
+    const link = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const r = document.documentElement.style;
+      const was = ["--t-bg", "--t-fg", "--accent", "--link", "--ring"].map((k) => [k, r.getPropertyValue(k)]), light = document.documentElement.classList.contains("light");
+      pageColors({ bg: "#322925", fg: "#e2ded9", cursor: "#969486", dark: true, link: "#315f78" });
+      const got = r.getPropertyValue("--link");
+      was.forEach(([k, v]) => (v ? r.setProperty(k, v) : r.removeProperty(k))); document.documentElement.classList.toggle("light", light);
+      return [got, contrast("#322925", got)]; });
+    check("look: a link the theme made too dark for a dark background is lightened to read (4.5:1)", link[1] >= 4.5, link.join(" "));
     // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
     const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu)")].map((d) => {
       d.showModal();
