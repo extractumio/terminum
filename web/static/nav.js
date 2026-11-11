@@ -8,6 +8,7 @@
 import { folderHues, folderKey } from "./dircolors.js";
 import { subOf } from "./follow.js";
 import { icon } from "./icons.js";
+import { glide } from "./listmove.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
 import { PROJECT_HUES, el, hueColor, iconButton, plural, projectColor, projectHue } from "./listparts.js";
@@ -444,7 +445,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   }
   if (lastShown !== undefined && current !== lastShown) frag.querySelector(".item.on")?.classList.add("fresh");   // it settles once (motion.css)
   lastShown = current;
-  list.replaceChildren(frag);
+  glide(list, () => list.replaceChildren(frag));   // a project's sessions that changed order glide there (AC-92)
 }
 
 export function findItem(groups, id) {

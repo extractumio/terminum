@@ -307,6 +307,18 @@ impl Projects {
         })
     }
 
+    /// Pane `key` took a message (its agent's prompt, a human's or Dispatcher's): it goes to the top of
+    /// its project, the others keeping their order. True when it moved (then `save`).
+    pub fn to_top(&mut self, key: &str) -> bool {
+        if self.unread() {
+            return false;
+        }
+        let Some(p) = self.list.iter_mut().find(|p| p.members.iter().any(|m| m == key)) else { return false };
+        let at = p.members.iter().position(|m| m == key).unwrap_or(0);
+        p.members[..=at].rotate_right(1);
+        at > 0
+    }
+
     /// The panes of a server whose list was just read (`prefix` its keys' start, `identity` its
     /// `@terminum-id`): its members that are not `live` closed, but those added lately; a server
     /// started anew without a restore (another identity) leaves no member of its old panes; one
@@ -376,7 +388,7 @@ impl Projects {
 
 #[path = "projects_app.rs"]
 mod app;
-pub use app::{handle, hello, restarted, seen, tell, tell_read};
+pub use app::{handle, hello, restarted, seen, tell, tell_read, to_top};
 
 #[cfg(test)]
 #[path = "projects_tests.rs"]

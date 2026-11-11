@@ -691,6 +691,9 @@ Scenario: AC-92 happy path — new sessions, order, names
   Then the window opens as above (the session's own folder when the project's is gone; a project of a host's, in the one session terminumd holds there, terminum-remote.md OQ-81) and joins the project; Clone of a project's session joins it right after that session
   When the user drags a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
   Then its sessions are in that order
+  When a session's coding agent takes a message (its main agent's prompt, from the user or Dispatcher: its hooks' UserPromptSubmit; never its own turns or a subagent's, AC-90)
+  Then the session goes to the top of its project, the others keeping their order, on every page within 2 s; outside a project nothing moves
+  And on the page the project's rows glide to their new places (360 ms, eased out), the risen row passing over the others, never a jump, also when the list is drawn again meanwhile; with reduced motion they stand at once
   When the user picks Rename… in the project's menu (its ⋯, or a right click on its header, as a row's menu) (or double-clicks its name) and types "API" (Enter or Rename)
   Then it is named "API" (1–40 characters; another length is refused)
   And Delete Project… asks and moves its sessions and tasks to Default (terminum-kanban.md AC-110)
@@ -1300,7 +1303,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)
 - [x] AC-88 — web/test/e2e_split.mjs, web/test/e2e_livequick.mjs
-- [x] AC-92 — web/test/e2e_projects.mjs, web/test/listorder.test.mjs, web/test/e2e_listorder.mjs, web/test/e2e_listdrag.mjs, web/test/e2e_livelistplace.mjs, terminumd/src/page/projects_tests.rs
+- [x] AC-92 — web/test/e2e_projects.mjs, web/test/listorder.test.mjs, web/test/e2e_listorder.mjs, web/test/e2e_listdrag.mjs, web/test/e2e_livelistplace.mjs, web/test/e2e_motion.mjs, terminumd/src/page/projects_tests.rs, terminumd/src/sock_hook_tests.rs
 - [x] AC-100 — web/test/diag.test.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-101 — web/test/e2e_tips.mjs
 - [x] AC-147 — `cargo test inputs::`, `cargo test messages::`, `cargo test dispatcher::typed_tests`, `scripts/e2e_inputs.py`, `scripts/e2e_hooks.py`

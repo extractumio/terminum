@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Motion (docs/UI-GUIDELINES.md §2.8) against a fake terminumd (fake.mjs), with motion on: a
 // window (a popover, a dialog) flies out of its button and back, a color changes over a moment; a pressed key sinks, a blob pulses, one under the pointer lifts and nods; the
-// selected row settles once; nothing moves in the terminal; with reduced motion nothing moves.
+// selected row settles once; a project's rows glide to a new order; nothing moves in the terminal; with reduced motion nothing moves.
 // The other checks run with reduced motion, so they measure boxes at their place.
 
 import { check, runningIn, slack } from "./check.mjs";
@@ -123,6 +123,25 @@ export async function webMotion(browser, name) {
   check("motion: the newly selected row settles once (its fill and its bar)", settle.length >= 1, JSON.stringify(settle));
   await pause(page, 400);
 
+  // a project's session that takes a message rises to its top (AC-92): its rows glide there, the risen one over
+  // the others; a redraw in between carries them on; an order that did not change moves nothing
+  const ID = (n) => `tmux:local:terminum:%${n}`;
+  const P = (members) => ({ t: "projects", order: [], items: [{ id: "p1", name: "Group 1", color: 0, host: null, dir: "/Users/alex/api", members }] });
+  f.say(P([ID(1), ID(2), ID(3)]));
+  await pause(page, 400);
+  const glides = () => page.evaluate(() => [...document.querySelectorAll("#sessions ul[data-project] > li")]
+    .map((li) => `${li.firstElementChild.dataset.id.split(":").pop()}${li.classList.contains("rising") ? "^" : ""}:${li.getAnimations().filter((a) => a.playState === "running" && !a.transitionProperty).length}`).join());
+  const steady = await glides();
+  f.say(P([ID(3), ID(1), ID(2)]));
+  await pause(page, 60);
+  const rose = await glides();
+  f.say(P([ID(3), ID(1), ID(2)]));                  // the same order again, mid-glide
+  await pause(page, 60);
+  const carried = await glides();
+  await pause(page, 500);
+  check("motion: a project's session put on top glides there over the others, carried through a redraw; standing still otherwise (AC-92)",
+    steady === "%1:0,%2:0,%3:0" && rose === "%3^:1,%1:1,%2:1" && carried === "%3^:1,%1:1,%2:1" && await glides() === "%3:0,%1:0,%2:0", JSON.stringify({ steady, rose, carried }));
+
   await page.click("#term");
   await page.keyboard.type("ls -la");
   await page.mouse.click(300, 300);
@@ -136,6 +155,8 @@ export async function webMotion(browser, name) {
   await calm.page.keyboard.press("Escape");
   await pressFoot(calm.page, "#newsessbtn");
   await calm.page.click("#newsesscancel");
+  for (const members of [["%1", "%2"], ["%2", "%1"]]) calm.say({ t: "projects", order: [], items: [{ id: "p1", name: "Group 1", color: 0, host: null, dir: "/Users/alex/api", members: members.map((m) => `tmux:local:terminum:${m}`) }] });
+  await pause(calm.page, 60);
   const still = await moving(calm.page, "body");
   check("motion: with reduced motion nothing moves: no fade, no ripple, no settle", !still.length, JSON.stringify(still));
   check("motion: no page errors", !f.errors.length && !calm.errors.length, [...f.errors, ...calm.errors].join(" | "));
