@@ -465,6 +465,9 @@ fn ac153_the_folder_a_session_began_in_is_kept_while_it_moves_and_its_command_li
     h.heard_argv(K, &ev("claude", "Argv", json!({"session": "s2", "argv": ""})));
     assert!(!h.wants_argv(K), "a hook that found none is not asked again");
     assert_eq!(h.started(K).unwrap().launch.opts, None, "an older hook's: its options not known");
+    h.apply(K, &ev("claude", "SessionStart", json!({"session": "s3", "cwd": "/Users/alex/web"})), t);
+    h.heard_argv(K, &ev("claude", "Argv", json!({"session": "s3", "argv": "claude", "opts": ["--append-system-prompt", "a\nb"]})));
+    assert_eq!(h.started(K).unwrap().launch.opts, None, "a host's options with a control character are not known");
     h.apply(K, &ev("codex", "UserPromptSubmit", json!({"session": "c1", "turn": "t1", "cwd": "/srv/x"})), t);
     assert_eq!(h.started(K).map(|s| (s.agent, s.folder, s.folder_is_start)), Some(("codex", "/srv/x".into(), false)),
                "a record made by a prompt (a start not heard, a restart) knows only where it works");

@@ -427,13 +427,11 @@ impl Hooks {
 
     /// The command line of an `Argv` event, taken by the record of its agent and session that asked for one.
     pub fn heard_argv(&self, key: &str, ev: &Value) {
+        // a host's hook is not trusted: options beyond the size, or with a control character, are not known
+        let opts = ev["opts"].as_array().and_then(|o| o.iter().map(|w| w.as_str().map(str::to_string)).collect::<Option<Vec<_>>>())
+            .filter(|o| o.iter().all(|w| !crate::termtext::has_control(w)) && o.join(" ").chars().count() <= OPTS_MOST);
         if let Some(r) = self.recs.lock().get_mut(key).filter(|r| r.launch.is_none() && r.agent == s(ev, "agent") && r.session == s(ev, "session")) {
-            let opts = ev["opts"].as_array().and_then(|o| o.iter().map(|w| w.as_str().map(str::to_string)).collect::<Option<Vec<_>>>())
-                .filter(|o| o.join(" ").chars().count() <= OPTS_MOST);
-            r.launch = Some(Launch {
-                argv: s(ev, "argv").chars().take(ARGV_MOST).collect(),
-                opts,
-            });
+            r.launch = Some(Launch { argv: s(ev, "argv").chars().take(ARGV_MOST).collect(), opts });
         }
     }
 

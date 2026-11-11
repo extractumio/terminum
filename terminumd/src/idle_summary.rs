@@ -70,21 +70,13 @@ impl Summary {
         if let Some((done, total)) = self.plan {
             out.push(format!("Plan:       {done} of {total} done"));
         }
-        // the options it started with, each one word of the pane's shell, none with a control character
-        let opts = launch.opts.as_ref().and_then(|o| o.iter()
-            .map(|w| Some(w).filter(|w| !crate::termtext::has_control(w)).and_then(|w| crate::termtext::quote_word(shell, w)))
-            .collect::<Option<Vec<_>>>());
+        // the options it started with (its hook's, none with a control character), each one word of the pane's shell
+        let opts = launch.opts.as_ref().and_then(|o| o.iter().map(|w| crate::termtext::quote_word(shell, w)).collect::<Option<Vec<_>>>());
         let with: String = opts.iter().flatten().map(|o| format!(" {o}")).collect();
-        let words = crate::dispatcher::resume_words(&self.kind, "");
-        let id_word = if id.is_empty() { String::new() } else { format!(" {id}") };
-        // Codex's id right after its subcommand, so that no option before it takes it as a value
-        let resume = if self.kind == "codex" { format!("codex {words}{id_word}{with}") } else { format!("{}{with} {words}{id_word}", self.kind) };
-        let pick = match (id.is_empty(), opts.is_none() && !launch.argv.is_empty()) {
-            (true, true) => "   (pick it from the list; add its options from Started as)",
-            (true, false) => "   (pick it from the list)",
-            (false, true) => "   (add its options from Started as)",
-            (false, false) => "",
-        };
+        let resume = format!("{}{with} {}", self.kind, crate::dispatcher::resume_words(&self.kind, id));
+        let notes: Vec<&str> = [(id.is_empty(), "pick it from the list"), (opts.is_none() && !launch.argv.is_empty(), "add its options from Started as")]
+            .into_iter().filter_map(|(on, note)| on.then_some(note)).collect();
+        let pick = if notes.is_empty() { String::new() } else { format!("   ({})", notes.join("; ")) };
         // a folder the shell cannot take as one word, or one with a control character, is only shown above
         // nu has no `&&`
         let cd = Some(folder).filter(|f| !f.is_empty() && !crate::termtext::has_control(f) && crate::termtext::shell_name(shell) != "nu")

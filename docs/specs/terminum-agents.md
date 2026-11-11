@@ -383,7 +383,7 @@ Scenario: AC-153 happy path — the pane says what ended and how to resume it
   Given Claude Code ran in %3 as `claude --dangerously-skip-permissions`, its session began in /Users/alex/api, its title "✳ Fix the login", its plan 7 of 9 done
   When the idle exit ended it and its shell is in front again
   Then %3 shows, after its shell's prompt, a block of plain lines: "terminum ended this idle agent: not opened for 3 days" and the time; "Agent: Claude Code, session <id>"; its title; "Started as:" its command line; "Folder:" the folder its session began in; "Plan: 7 of 9 done"; "Resume: cd /Users/alex/api && claude --dangerously-skip-permissions --resume <id>"
-  And for Codex the same, its Resume `codex resume <id>` and its options after the ID, so that none takes the ID as its value
+  And for Codex the same, its Resume `codex <options> resume <id>`, as Dispatcher resumes a task's session
   And the lines are the pane's output, never its input: nothing is typed, the shell's line stays empty, tmux's history and the pane's kept last lines (terminum-lifecycle.md AC-96) hold them
   And `idleexit.ended` logs the same: key, kind, session, folder, command line, title
 

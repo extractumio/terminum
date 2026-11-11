@@ -6,20 +6,16 @@
 //! where that cannot be told (an option this table does not know or one whose value is optional,
 //! followed by a bare word), none is taken and the summary points at the command line shown.
 
-/// Claude Code's options and Codex's, by what follows them and whether a resume takes them again.
+/// Claude Code's options and Codex's, by the words after them, and those a resume leaves out.
 struct Table {
-    /// kept, with one word after them
+    /// with one word after them
     value: &'static [&'static str],
-    /// kept, with every bare word up to the next option
+    /// with every bare word up to the next option
     many: &'static [&'static str],
-    /// kept, alone
+    /// alone
     flag: &'static [&'static str],
-    /// left out (they pick, start or end a session), alone
-    gone: &'static [&'static str],
-    /// left out, with the bare word after them (a session's id or name, optional)
-    gone_value: &'static [&'static str],
-    /// left out, with every bare word after them (the first prompt's images)
-    gone_many: &'static [&'static str],
+    /// left out of a resume, with their words: they pick, start or end a session, or go with the first prompt
+    left_out: &'static [&'static str],
 }
 
 const CLAUDE: Table = Table {
@@ -27,27 +23,28 @@ const CLAUDE: Table = Table {
              "--autocompact", "--debug-file", "--effort", "--environment", "--fallback-model", "--input-format", "--json-schema",
              "--max-budget-usd", "--max-turns", "--model", "-n", "--name", "--output-format", "--permission-mode", "--permission-prompts",
              "--permission-prompt-tool", "--plugin-dir", "--plugin-url", "--remote-control-session-name-prefix", "--setting-sources",
-             "--settings", "--system-prompt-snapshot"],
+             "--settings", "--system-prompt-snapshot",
+             // optional values: the bare word after them, an id or the prompt, goes with them
+             "-r", "--resume", "--from-pr", "--teleport", "--cloud", "-w", "--worktree", "--session-id"],
     many: &["--add-dir", "--allowedTools", "--allowed-tools", "--disallowedTools", "--disallowed-tools", "--betas", "--file",
             "--mcp-config", "--tools"],
     flag: &["--dangerously-skip-permissions", "--allow-dangerously-skip-permissions", "--verbose", "--ide", "--chrome", "--no-chrome",
             "--brief", "--bare", "--strict-mcp-config", "--disable-slash-commands", "--ax-screen-reader", "--safe-mode", "--restricted",
             "--exclude-dynamic-system-prompt-sections", "--no-session-persistence", "--forward-subagent-text", "--include-hook-events",
-            "--include-partial-messages", "--replay-user-messages"],
-    gone: &["-c", "--continue", "-p", "--print", "--fork-session", "--tmux", "--bg", "--background", "--desktop"],
-    gone_value: &["-r", "--resume", "--from-pr", "--teleport", "--cloud", "-w", "--worktree", "--session-id"],
-    gone_many: &[],
+            "--include-partial-messages", "--replay-user-messages",
+            "-c", "--continue", "-p", "--print", "--fork-session", "--tmux", "--bg", "--background", "--desktop"],
+    left_out: &["-c", "--continue", "-p", "--print", "--fork-session", "--tmux", "--bg", "--background", "--desktop",
+                "-r", "--resume", "--from-pr", "--teleport", "--cloud", "-w", "--worktree", "--session-id"],
 };
 
 const CODEX: Table = Table {
     value: &["-c", "--config", "--enable", "--disable", "--remote", "--remote-auth-token-env", "-m", "--model", "--local-provider",
              "-p", "--profile", "-s", "--sandbox", "-a", "--ask-for-approval", "-C", "--cd", "--add-dir"],
-    many: &[],
+    many: &["-i", "--image"],
     flag: &["--strict-config", "--oss", "--approve-for-me", "--dangerously-bypass-approvals-and-sandbox", "--yolo",
-            "--dangerously-bypass-hook-trust", "--search", "--no-alt-screen", "--no-daemon", "--full-auto"],
-    gone: &["--last", "--all", "--include-non-interactive", "--worktree"],
-    gone_value: &[],
-    gone_many: &["-i", "--image"],
+            "--dangerously-bypass-hook-trust", "--search", "--no-alt-screen", "--no-daemon", "--full-auto",
+            "--last", "--all", "--include-non-interactive", "--worktree"],
+    left_out: &["--last", "--all", "--include-non-interactive", "--worktree", "-i", "--image"],
 };
 
 /// `words` (after the program) as `agent`'s options for its resume, None where that cannot be told
@@ -75,15 +72,14 @@ pub fn resumed(agent: &str, words: &[String]) -> Option<Vec<String>> {
             _ => (w.as_str(), false),
         };
         let is = |list: &[&str]| list.contains(&opt);
-        let left_out = is(table.gone) || is(table.gone_value) || is(table.gone_many);
         let takes = if inline { 0 }
-            else if is(table.value) || is(table.gone_value) { 1 }
-            else if is(table.many) || is(table.gone_many) { usize::MAX }
-            else if is(table.flag) || is(table.gone) { 0 }
+            else if is(table.value) { 1 }
+            else if is(table.many) { usize::MAX }
+            else if is(table.flag) { 0 }
             else if words.get(i).is_some_and(bare) { return None } // an option not known, then a bare word: its value or the prompt
             else { 0 };
         let end = (i..words.len()).take_while(|j| bare(&words[*j])).take(takes).last().map_or(i, |j| j + 1);
-        if !left_out {
+        if !is(table.left_out) {
             out.extend(words[i - 1..end].iter().cloned());
         }
         i = end;

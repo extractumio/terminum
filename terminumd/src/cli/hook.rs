@@ -61,8 +61,8 @@ pub fn main(agent: &str) -> i32 {
         if answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
             let mut said = ev.clone();
             said["event"] = json!("Argv");
-            if let (Some(said), Value::Object(fields)) = (said.as_object_mut(), super::hookargv::started_as(agent)) {
-                said.extend(fields);
+            if let Some(said) = said.as_object_mut() {
+                said.extend(super::hookargv::started_as(agent));
             }
             let _ = super::sinks::post_all(&sinks, "/hook", &said, BUDGET);
         }

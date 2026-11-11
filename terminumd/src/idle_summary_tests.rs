@@ -7,9 +7,11 @@ use crate::tmux::hookstate::Launch;
 
 const ID: &str = "3f2a9c1e-0b7d-4e55-9a1c-2d6f8e4b7a10";
 
-/// Its hooks' word, its options its command line's words after the program.
+/// Its hooks' word, its options its command line's words after the program, none with a control
+/// character, as `Hooks::heard_argv` keeps them.
 fn hooks(agent: &'static str, folder: &str, start: bool, argv: &str) -> Started {
-    let opts = Some(argv.split(' ').skip(1).filter(|w| !w.is_empty()).map(str::to_string).collect());
+    let opts = Some(argv.split(' ').skip(1).filter(|w| !w.is_empty()).map(str::to_string).collect::<Vec<_>>())
+        .filter(|o| o.iter().all(|w| !crate::termtext::has_control(w)));
     Started { agent, session: ID.into(), folder: folder.into(), folder_is_start: start, launch: Launch { argv: argv.into(), opts } }
 }
 
@@ -42,7 +44,7 @@ fn ac153_codex_resumes_by_its_subcommand_and_a_fish_shell_gets_its_own_quoting()
     let s = Summary { kind: "codex".into(), started: hooks("codex", "/Users/alex/it's", true, "codex --yolo"), ..Summary::default() };
     let l = s.lines("fish", 0);
     assert_eq!(line(&l, "Agent:"), Some(format!("Codex, session {ID}").as_str()));
-    assert_eq!(line(&l, "Resume:"), Some(format!(r"cd '/Users/alex/it\'s' && codex resume {ID} --yolo").as_str()));
+    assert_eq!(line(&l, "Resume:"), Some(format!(r"cd '/Users/alex/it\'s' && codex --yolo resume {ID}").as_str()));
     assert_eq!(line(&l, "Plan:"), None);
     assert_eq!(line(&l, "Title:"), None, "no title, no line");
     assert!(l[1].contains("for 0 days"), "{}", l[1]);
@@ -99,9 +101,9 @@ fn ac153_the_resume_line_takes_the_options_it_started_with() {
                "its options, never its prompt");
     let s = Summary { kind: "codex".into(), started: launched("codex", "codex --yolo -c 'model=\"o3\"'",
                                                                 Some(&["--yolo", "-c", "model=\"o3\""])), ..Summary::default() };
-    assert_eq!(line(&s.lines("bash", 0), "Resume:"), Some(format!(r#"cd /Users/alex/api && codex resume {ID} --yolo -c 'model="o3"'"#).as_str()),
-               "Codex's id first, so no option takes it; each option one word of the shell");
-    assert_eq!(line(&s.lines("fish", 0), "Resume:"), Some(format!(r#"cd /Users/alex/api && codex resume {ID} --yolo -c 'model="o3"'"#).as_str()));
+    assert_eq!(line(&s.lines("bash", 0), "Resume:"), Some(format!(r#"cd /Users/alex/api && codex --yolo -c 'model="o3"' resume {ID}"#).as_str()),
+               "Codex's options before its subcommand, as Dispatcher resumes it; each one word of the shell");
+    assert_eq!(line(&s.lines("fish", 0), "Resume:"), Some(format!(r#"cd /Users/alex/api && codex --yolo -c 'model="o3"' resume {ID}"#).as_str()));
 }
 
 #[test]
@@ -109,11 +111,6 @@ fn ac153_options_not_known_or_not_safe_leave_the_plain_resume_and_point_at_the_c
     let not_known = Summary { kind: "claude".into(), started: launched("claude", "claude --new-thing fix", None), ..Summary::default() };
     assert_eq!(line(&not_known.lines("zsh", 0), "Resume:"),
                Some(format!("cd /Users/alex/api && claude --resume {ID}   (add its options from Started as)").as_str()));
-    let odd = Summary { kind: "claude".into(), started: launched("claude", "x", Some(&["--append-system-prompt", "a\nb"])), ..Summary::default() };
-    let l = odd.lines("zsh", 0);
-    assert!(l.iter().all(|x| !crate::termtext::has_control(x)), "{l:?}");
-    assert_eq!(line(&l, "Resume:"), Some(format!("cd /Users/alex/api && claude --resume {ID}   (add its options from Started as)").as_str()),
-               "a word with a control character is never on it");
     let mut no_id = launched("claude", "claude --verbose", Some(&["--verbose"]));
     no_id.session.clear();
     let none = Summary { kind: "claude".into(), started: no_id, ..Summary::default() };
