@@ -969,7 +969,7 @@ Scenario: AC-173 happy path — a message typed into RUN over a task's window
   Given a computer's window of 1400 × 900 and a task's window open (920 × 720: 80% of the window, its prose 920 px wide at most)
   When the user presses Run again
   Then RUN's window is 80% of the task's window across and down (736 × 576), and its message field takes all the height its other parts leave, 6 lines at least; the field has no handle: the window keeps its size while the user types
-  And a dialog's parent is read as it opens: the dialog open under it, else for Ask, a bookmark's note and Paste the terminal (they are made from it), else the browser's window
+  And a dialog's parent is read as it opens: the dialog window open under it (the bookmarks' list at the window's side is none), else for Ask, a bookmark's note and Paste the terminal (they are made from it), else the browser's window
 Scenario: AC-173 happy path — each kind its own size
   Then each dialog takes its parent's 80% within its kind's floor and ceiling, never more than the window less 16 px a side:
     | Kind | Dialogs | Width | Height |

@@ -243,7 +243,7 @@ Scenario: AC-33 happy path — a session's own
   When its session closes
   Then terminumd orphans it: it is only in the list below the sessions (Bookmarks | Reminders), said "orphaned", until deleted there (for good); a bookmark is deleted from a session's list or bar too
   And that list shows every session's, on purpose: the one place to reach the others' and those of closed sessions
-  And "Open all" in that list shows its bookmarks or reminders as one document, full screen
+  And "Open all" in that list shows its bookmarks or reminders as one document in a document's window (terminum.md AC-173: 80% of the window across and down, 960 px wide at most)
   And a web-bookmarks.json before version 3 (bookmarks of a folder) has each bookmark take the project its session is in at terminumd's start, else that session, once
 Scenario: AC-33 edge — the lines are gone, a rename, a server restart
   Then a bookmark whose text is no longer in the history says "These lines are no longer in this session's history." with its text and note; it stays until deleted
