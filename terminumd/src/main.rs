@@ -30,6 +30,7 @@ mod idle_exit;
 mod idle_summary;
 mod dashboard;
 mod inputs;
+mod interact;
 mod listing;
 mod lists;
 mod messages;

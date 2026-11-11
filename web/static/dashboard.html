@@ -29,7 +29,7 @@
   <!-- /the shared head -->
   <div id="dtools" class="mtools">
     <div id="dtabs" class="seg" role="tablist" aria-label="What to show">
-      <button type="button" role="tab" data-tab="you" aria-controls="cards">You</button><button type="button" role="tab" data-tab="system" aria-controls="cards">System</button><button type="button" role="tab" data-tab="costs" aria-controls="cards">Costs</button>
+      <button type="button" role="tab" data-tab="you" aria-controls="cards">You</button><button type="button" role="tab" data-tab="tasks" aria-controls="cards">Tasks</button><button type="button" role="tab" data-tab="system" aria-controls="cards">System</button><button type="button" role="tab" data-tab="costs" aria-controls="cards">Costs</button>
     </div>
     <div id="dperiod" class="seg" role="group" aria-label="Period">
       <button type="button" data-period="day" title="The last 24 hours, by the hour">Day</button><button type="button" data-period="2w" title="The last 14 days">2 weeks</button><button type="button" data-period="month" title="The last 30 days">Month</button><button type="button" data-period="quarter" title="The last 13 weeks, by the week">Quarter</button><button type="button" data-period="year" title="The last 12 months, by the month">Year</button>
@@ -43,6 +43,7 @@
   <div id="cards" role="tabpanel"></div>
 </main>
 <script type="module" src="grain.js"></script>
+<script type="module" src="interact.js"></script>
 <script type="module" src="dashboard.js"></script>
 </body>
 </html>

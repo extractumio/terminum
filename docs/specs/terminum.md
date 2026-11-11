@@ -99,12 +99,14 @@ Open questions:
 | AC-89 | [SHOULD / P1] | The user attaches a session of their own tmux on this Mac or on a host by its name ("Attach tmux sessions", offered after Add host): it is listed and used like terminum's own sessions, is never started or closed by terminum, is sized as any pane while a page in sight shows it and gets tmux's own size back after, and shows while it does not run as a group that says so. |
 | AC-147 | [SHOULD / P1] | Everything terminum writes into a pane is a row of the input log in the tasks' store, for later analysis: what the user types, pastes or the Files panel types, from which page, browser and address, and what Dispatcher pastes and launches, with its run, tasks and agent; each row with its time, machine, session, window, program, folder and project; a secret typed at a password prompt is not kept. Beside it, each message sent (a shell's command at Enter, a coding agent's prompt) is kept with its sender, pane, folder and project, its words indexed.
 | AC-151 | [SHOULD / P1] | The Message history at `/history/`, Messages among the sections (AC-167): every message kept, the user's and Dispatcher's (marked), found by its words, the best matches first (BM25) or newest first by day, narrowed by days (a strip of a column a day), project, sender and agent or shell, all in the address; a message opens its session there, shows what was sent around it, copies. |
-| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` has three tabs, You, System (AC-171) and Costs (AC-172), over one period (a day, 2 weeks, a month, a quarter, a year) and one project or all. You shows how much the user works here and how loaded, never counting Dispatcher: active time, active days, the longest stretch, switches between sessions, board actions, how long tasks waited for them, off hours, the phone's share, each against the span before; active time by project, the working day, the week's hours, the projects, the sessions at once, the board actions. |
+| AC-152 | [SHOULD / P1] | The Dashboard at `/dashboard/` has four tabs, You, Tasks (AC-176), System (AC-171) and Costs (AC-172), over one period (a day, 2 weeks, a month, a quarter, a year) and one project or all. You shows how much the user works here, how engaged and how loaded, never counting Dispatcher: active time, active days, engagement (the share of active minutes they acted or read in, from the interaction log, AC-175), the longest stretch, switches between sessions, board actions, how long tasks waited for them, off hours, the phone's share, each against the span before; active time by project, the working day, the week's hours, the projects, the sessions at once, the board actions. |
 | AC-165 | [MUST / P0] | One question at a time: a dialog asked while another is open (the page's, the Files panel's) waits for that one's answer, so one Enter, Esc or press answers one question; a window that keeps something sends it once, Enter again and Esc waiting until terminumd answered. |
 | AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
 | AC-171 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 | AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling. |
+| AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
+| AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
 
 ## 5. BDD scenarios
 
@@ -872,25 +874,44 @@ Scenario: AC-151 failure — the store cannot be read
 ```gherkin
 Scenario: AC-152 happy path — tabs, period, project
   When the user opens the Dashboard (`/dashboard/`; Dashboard among the sections, AC-167)
-  Then its tools hold three tabs, You (shown first), System (AC-171) and Costs (AC-172); the period: Day (the last 24 hours, a column an hour), 2 weeks and Month (the last 14 and 30 days, a column a day; Month first), Quarter (the last 13 weeks, a column a week), Year (the last 12 calendar months, a column a month); and the project: All projects or one of the session list's, or none
+  Then its tools hold four tabs, You (shown first), Tasks (AC-176), System (AC-171) and Costs (AC-172); the period: Day (the last 24 hours, a column an hour), 2 weeks and Month (the last 14 and 30 days, a column a day; Month first), Quarter (the last 13 weeks, a column a week), Year (the last 12 calendar months, a column a month); and the project: All projects or one of the session list's, or none
   And the tab, the period and the project are in the address (`?tab=&period=&project=`), Back returns to the one before, and a period or a project chosen stays when the tab changes
   And every figure and chart of every tab is of that period and that project, in this Mac's local time, the last column up to now
   And the page scrolls as a document to its last card, at every width
 
 Scenario: AC-152 happy path — the figures of You
-  Given messages kept, the input log (AC-147) and the tasks' events
+  Given messages kept, the input log (AC-147), the interaction log (AC-175) and the tasks' events
   Then You counts the human's rows only, never Dispatcher's
-  And it shows: Active time (and per active day); Active days ("26 of 30"; a Day: Active hours "6 of 24"); Longest stretch (with no pause over 15 minutes); Switches an active hour (a send into another session than the send before it, within a stretch; with their count and the most sessions written to in one hour); Board actions (tasks the human made, moved, commented, edited, archived); Waited for you (tasks moved to WAIT FOR HUMAN, the median time until each was moved on, those that still wait); Off hours (the share of active time on weekends or from 22:00 to 06:00); From the phone (of what the pages sent, an Enter or a paste: those from an iPhone's or an Android's browser)
+  And it shows: Active time (and per active day); Active days ("26 of 30"; a Day: Active hours "6 of 24"); Engagement ("62%", with "acting or reading in 310 of 500 active minutes"; "—" while no active time was measured by the interaction log); Longest stretch (with no long pause); Switches an active hour (a send into another session than the send before it, within a stretch; with their count and the most sessions written to in one hour); Board actions (tasks the human made, moved, commented, edited, archived); Waited for you (tasks moved to WAIT FOR HUMAN, the median time until each was moved on, those that still wait); Off hours (the share of active time on weekends or from 22:00 to 06:00); From the phone (of what the pages sent, an Enter or a paste: those from an iPhone's or an Android's browser)
   And each stands against the same span before up to the same time ("▲ 12% vs the 30 days before"; a small earlier number as a difference), no color for better or worse; a sparkline of the columns under the counts
-  And no composite score is shown: each measure of load stands by itself
+  And no weighted score is shown: each measure stands by itself, and Engagement is one ratio of two measured counts
+
+Scenario: AC-152 happy path — engagement
+  Given active time from the interaction log's first row on (AC-175)
+  Then an active minute is a clock minute any active time falls in; the human acted in it when it holds a key, a press, a drag, something sent, typed or done on the board; read in it when it holds a scroll of theirs and no act; else watched
+  And Engagement is the minutes acted or read in of the active minutes; the pointer's move and a page in front are presence, never engagement
+  And "Engagement" draws a column of active minutes stacked by acting, reading and watching, its line saying a column's share and minutes; a column from before the interaction log's first row says "not measured", never 0%
+  And it stands against the span before with no color for better or worse: fewer minutes hands on can mean the agents work alone
 
 Scenario: AC-152 happy path — the charts of You
-  Then "Active time" draws a column of active time stacked by project (its six with the most, their session list colors, a project no longer there a hue by its rank, the rest as Other), weekends shaded, the last column faint; "Working day", when a column is a day, a column a day from the first to the last event, the active stretches solid on it, midnight on top; "When you work", but for a Day, the active minutes of each hour of an average week (Monday first; two hours a cell on a phone); "Projects" ranked bars of active time with share; "Sessions at once" columns of the sessions written to, the most in one hour as a dot; "On the board" columns of the human's board actions stacked by kind
+  Then "Active time" draws a column of active time stacked by project (its six with the most, their session list colors, a project no longer there a hue by its rank, the rest as Other), weekends shaded, the last column faint; "Engagement" as its scenario says; "Working day", when a column is a day, a column a day from the first to the last event, the active stretches solid on it, midnight on top; "When you work", but for a Day, the active minutes of each hour of an average week (Monday first; two hours a cell on a phone); "Projects" ranked bars of active time with share; "Sessions at once" columns of the sessions written to, the most in one hour as a dot; "On the board" columns of the human's board actions stacked by kind
   And hover, a tap or the keys (← → Home End) say a column's values in a line over its chart; Enter or a click on a column of "Active time" opens the Message history of its days, the human's (`?from=&to=&sender=human`); a project's chip narrows the Dashboard to it, a project's row opens its messages of the period
 
 Scenario: AC-152 happy path — active time
   Then active time is the human's sends, input rows' first and last keys and board actions in time order, a pause over 15 minutes ending a stretch, each stretch from its first event to its last and 2 minutes more (reading the answer), split at hours and midnights
   And the time after an event, up to the next one of its stretch, is its project's; a task of the default project is no project's
+
+Scenario: AC-152 happy path — active time from what the pages count
+  Given the interaction log has rows (AC-175)
+  Then from its first row on, the events are also each counted minute's first and last press, key, scroll, drag and move of the pointer, so reading and looking count
+  And a pause of up to 5 minutes joins its stretch, and one of up to 15 minutes when a page was in front (30 seconds of the minute or more) in every minute of it; any other ends the stretch, which lasts 1 minute past its last event
+  And a count of a page that shows no pane is the project's of the event before it in its stretch; with one project chosen, only what was counted in that project's panes
+
+Scenario: AC-152 edge — the span before was measured another way
+  When the span before begins earlier than the interaction log's first row
+  Then no figure of You is compared ("no earlier data"): active time counted from less is never set against active time counted from more
+  When the period itself begins earlier than that row
+  Then the page says from which day presses, keys and scrolling are counted
 
 Scenario: AC-152 edge — what is kept does not reach the span before
   Given the input log keeps 180 days and a number of rows (AC-147)
@@ -1028,6 +1049,61 @@ Scenario: AC-172 failure — the numbers cannot be read
   Then as AC-152
 ```
 
+### AC-175 — The interaction log [SHOULD / P1]
+
+```gherkin
+Scenario: AC-175 happy path — a page counts what the user does
+  Given a page of terminum (Sessions with its Files, View and quick shell frames, Kanban, Dashboard, Messages, Scheduled) and a signed-in user
+  When the user presses, types, turns the wheel or drags a finger, drags, moves the pointer, or keeps the page in front
+  Then the page counts each by the clock minute: `click`, `key` (a held key once), `scroll` (with the pixels), `drag` (a press that moved 8 pixels or more, with its length), `move` (once a second at most, only in a window in front), `front` (the seconds the page was visible and focused)
+  And only the user's own events count: a screen an agent's output scrolls, a page's own scroll or a script's event is none
+  And a minute that is over, and what is counted when the page goes, is sent (`POST /api/interactions`) and kept as rows of `user_interaction`: the minute's first and last time of that kind, the page or frame, how many, for a press or a drag on the page itself the id of the control (its own or its nearest ancestor's, digits as N), the pane shown and its project, the device (`mac`, `web`, `phone`)
+  And never which key, what text, what a control says, or where on the screen; a control in a frame is not named: a viewed document's headings have ids made of their words
+
+Scenario: AC-175 edge — a page in a frame
+  When the quick shell or a file's view takes the press
+  Then the page that holds the frame counts it once, as that frame's, with no control's id
+
+Scenario: AC-175 edge — another device's clock
+  When a phone's clock is not this Mac's
+  Then its rows are kept at this Mac's time: the page says its own time with them
+
+Scenario: AC-175 failure — what is not a count is not kept
+  When a row names a kind or a place no page counts, a time before the last day or after now, a span over a minute, or a count of none
+  Then it is dropped and the others are kept; an id that is not a plain name of 40 characters at most is kept as none
+  And 300 rows a request and 600 a minute are taken at most, the rest dropped: a page that loops never pushes the history out
+
+Scenario: AC-175 failure — terminumd is away or refuses
+  When terminumd does not answer
+  Then the page keeps its last 600 rows and sends them with the next minute's; rows it refused are not sent again
+  And nothing the user does waits for the log
+
+Scenario: AC-175 edge — what is kept
+  Then rows older than 180 days go, then the oldest beyond 1,000,000
+```
+
+### AC-176 — The Dashboard's Tasks tab [SHOULD / P1]
+
+```gherkin
+Scenario: AC-176 happy path — who decided an operation
+  Given the tasks' events and the sessions' launch rows of the input log (AC-147), of the period and the project of AC-152
+  Then an operation is a decision about a task, counted once, for who decided it: a task made, edited, moved, commented on, put under another or archived is its event's author's (the human's, an agent's); a task started is the human's when they pressed Run, Dispatcher's when Auto-Dispatcher chose the task (`terminum-dispatcher.md` AC-170) or when a schedule or a round made the task
+  And what Dispatcher does to carry a decision out is no operation: its moves, a budget it sets, its notes, a session's link; of its own it only makes tasks and starts them
+
+Scenario: AC-176 happy path — the figures and charts
+  When the user opens the Tasks tab
+  Then it shows: By hand (the human's share of the operations, "12 of 40 operations were yours"); Your operations; Automatic (the agents' and Dispatcher's); Tasks worked on (with those the human made); Without you (tasks no operation of theirs touched); All by hand; each against the span before as AC-152
+  And "Operations on tasks" draws a column a bucket stacked by you, agents and Dispatcher; "By operation" a row an operation, its bar split the same way, with the human's share; "Tasks by your share" the tasks whose operations were all, half or more, under half or none the human's; "Tasks" every task worked on (the 200 with most operations), its bar split the same way, with the human's share and its count, a press opening the task
+
+Scenario: AC-176 edge — nothing, and what is kept
+  When no task was worked on in the period
+  Then the figures say 0 and "—" and each list says so
+  And a start whose launch row the input log no longer keeps is not counted, and the page says from when starts are counted, as AC-171
+
+Scenario: AC-176 failure — the numbers cannot be read
+  Then as AC-152
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -1102,7 +1178,8 @@ stateDiagram-v2
 | AC-20 | "Open a pane, p95 < 1 s" has no measurement: `e2e_term.mjs` checks what history pages draw and times nothing. | `web/test/e2e_term.mjs:114` |
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
-| AC-152 | The time the page is open and read without typing is not active time: nothing logs a page's presence. | `terminumd/src/dashboard/you.rs` (`read`) |
+| AC-152 | A page watched without a touch for over 5 minutes while another window has the focus (a second display) is not active time: a page is in front only when focused. | `web/static/interact.js` (`inFront`) |
+| AC-176 | Who pressed Run is not kept: a start is told by what made or chose its task, so a human's Run of a task a schedule made counts as Dispatcher's. | `terminumd/src/dashboard/work.rs` (`read`) |
 | AC-171 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
 | AC-172 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |
 
@@ -1135,7 +1212,8 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `GET /history/`, `/dashboard/` | the Message history and the Dashboard | AC-151, AC-152 |
 | `GET /api/messages?q=&sort=best\|new&from=&to=&project=&sender=&kind=&cursor=` | a page of 50 messages: `{items, next, capped}`, the first with `total` and `days`; `project` ids comma-separated, `-` for none | AC-151 |
 | `GET /api/messages/meta`, `/api/messages/{id}/context` | the filters' projects, first day, hosts, the theme; a message's neighbours in its pane | AC-151 |
-| `GET /api/dashboard?tab=you\|system\|costs&period=day\|2w\|month\|quarter\|year&project=` | that tab's numbers of the period: `tiles`, `series` (one a bucket), `buckets` (`from`, `to`, an hour's `hour`), `unit` (hour, day, week, month), `before` (the span before's tiles, null when what is kept does not reach it), `kept_from`; `project` as above | AC-152, AC-171, AC-172 |
+| `GET /api/dashboard?tab=you\|tasks\|system\|costs&period=day\|2w\|month\|quarter\|year&project=` | that tab's numbers of the period: `tiles`, `series` (one a bucket), `buckets` (`from`, `to`, an hour's `hour`), `unit` (hour, day, week, month), `before` (the span before's tiles, null when what is kept does not reach it), `kept_from`; `project` as above | AC-152, AC-171, AC-172, AC-176 |
+| `POST /api/interactions {now, rows: [{at, ended, kind, surface, target, n, amount, pane}]}` | what a page counted, by the minute: `{kept}`; 64 KiB and 300 rows at most | AC-175 |
 | `GET /auth/check`, `POST /auth/login`, `POST /auth/logout` | 204 when signed in, else 401 with `login` `password` or `none`; the sign-in; this browser's sign-out | AC-09 |
 | `GET /health`, `POST /password`, `POST /signout` on `terminumd.sock` | the CLI | terminum-lifecycle.md AC-08, AC-09 |
 | `POST /folders?wait=<s>` on `terminumd.sock`: opens each protected folder (one run at a time, joined by a second request), answers within `wait` s `{service, done, folders: [{name, path, state: allowed\|refused\|absent\|error\|asking\|pending, error}], tmux_started_by}` | `terminum install`, `terminum folders` | terminum-lifecycle.md AC-08 |
@@ -1216,6 +1294,8 @@ Settings `~/.terminum/settings.json` (every key optional):
 Layout checkpoint and last lines: `terminum-lifecycle.md` §9 Data formats.
 
 The input log (AC-147): table `inputs` of `kanban.sqlite`, a row per write into a pane: `at` and `ended` (unix ms), `sender` (`users.id`: `human`, `dispatcher`), `component` (`page`, `panel`, `dispatcher.gate`, `dispatcher.start`), `kind` (`typed`, `paste`, `path`, `prompt`, `launch`), `text`, `bytes` (all that was sent), `pane` (its key), `machine`, `session`, `window`, `program`, `cwd`, `project`, `project_name`, `run`, `tasks` (IDs, comma-separated), `agent` (its ID), `page`, `device` (`mac`, `web`), `ip`, `browser`, `tailnet_user`, `version`, `error` (tmux's refusal, else NULL). Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, kind, text FROM inputs ORDER BY id DESC LIMIT 20"`.
+
+The interaction log (AC-175): table `user_interaction` of `kanban.sqlite`, a row per clock minute, kind, place, control and pane: `at` and `ended` (unix ms, the first and the last of them), `kind` (`click`, `key`, `scroll`, `drag`, `move`, `front`), `surface` (`sessions`, `kanban`, `history`, `dashboard`, `scheduled`, `files`, `view`, `quick`), `target` (the id of a control of the page pressed or dragged, else empty), `n` (how many), `amount` (pixels scrolled or dragged, seconds in front), `pane` and `project` (the pane shown and its project, `''` in none; NULL where the page shows no pane), `device` (`mac`, `web`, `phone`). The request's handler writes it in one transaction off the async workers; the input log's writer drops its old rows each hour.
 
 The message history (AC-147, AC-151; the Dashboard reads it, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender`, `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
 
@@ -1338,3 +1418,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-173 — `web/test/e2e_dlgsize.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`
+- [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
+- [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`

@@ -8,6 +8,7 @@ pub mod costs;
 pub mod system;
 #[cfg(test)]
 mod tests;
+pub mod work;
 pub mod you;
 
 use std::collections::HashMap;
@@ -25,6 +26,7 @@ use crate::tasks::ops::{rows, sql};
 
 pub const DAY: i64 = 86_400_000;
 pub const HOUR: i64 = 3_600_000;
+pub const MINUTE: i64 = 60_000;
 /// Projects with their own color in a stacked chart; the rest are Other.
 pub const STACKED: usize = 6;
 
@@ -198,6 +200,7 @@ pub fn numbers(tx: &Transaction, now_ms: i64, tab: &str, period: Period, project
     let mut v = match tab {
         "system" => system::numbers(tx, &ask, now)?,
         "costs" => costs::numbers(tx, &ask, now_ms / 1000)?,
+        "tasks" => work::numbers(tx, &ask)?,
         _ => you::numbers(tx, &ask)?,
     };
     v["unit"] = json!(span.unit);
