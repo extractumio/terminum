@@ -107,7 +107,7 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-115 live: an agent's new task stands in TODO", !madeA.error && !!t1, madeA.text);
     const asked = await task(t1);
     check("AC-115 live: marked by agent, with no session, in its project, redacted", asked.by_agent === true && asked.session === null && asked.status === "TODO" && asked.owner_kind === "agent" && asked.text.includes("[redacted]") && !asked.text.includes("abc123"), JSON.stringify(asked).slice(0, 300));
-    const again = await b.tool("create_task", { title: "Bug: gap in the  PARSER.", severity: "P1" });
+    const again = await b.tool("create_task", { title: "Bug: gap in the  PARSER.", text: SECTIONS, severity: "P1" });
     check("AC-115 live: the project's repeat is not kept", again.error && again.text.includes(t1), again.text);
     const elsewhere = await lone.tool("create_task", { title: "Bug: Gap in the parser", text: SECTIONS, severity: "P1" });
     check("AC-115 live: nor is it a repeat outside the project", !elsewhere.error, elsewhere.text);
