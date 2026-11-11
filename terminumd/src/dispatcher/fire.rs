@@ -101,9 +101,9 @@ fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why
 /// and started as a firing's, its cadence untouched; refused while a task of it is in progress or its last
 /// session is busy. `who`: who asked, for the task's history. The task's ID.
 pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
-    let mut closed = false;
+    let (mut closed, mut stays) = (false, String::new());
     let (s, task, fire) = loop {
-        let (wanted, by) = (id.to_string(), who.to_string());
+        let (wanted, by, why) = (id.to_string(), who.to_string(), stays.clone());
         let next = store(app, move |tx| {
             let s = schedules::by_id(tx, &wanted)?;
             if let Some(running) = schedules::running_task(tx, &s)? {
@@ -113,7 +113,7 @@ pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
                 if !closed && pool::closable(tx, &r)? {
                     return Ok(Err((r.id, s.key)));
                 }
-                return Err(format!("Not run: {}'s session is still busy.", last.id));
+                return Err(format!("Not run: {}'s session is still busy.{why}", last.id));
             }
             let now = ops::now();
             let (task, fire) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), now)?;
@@ -124,7 +124,9 @@ pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
             // its last run's idle session holds its slot: closed first, as a due firing does
             Err((run, key)) => {
                 closed = true;
-                let _ = super::api::close_idle(app, &run, &key).await;
+                if let Err(why) = super::api::close_idle(app, &run, &key).await {
+                    stays = format!(" {why}");
+                }
             }
         }
     };
