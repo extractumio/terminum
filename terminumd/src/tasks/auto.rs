@@ -24,45 +24,80 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// A project's setting.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Setting {
-    /// the agent that picks; none: off
+    /// whether it starts tasks: the board's switch
+    pub on: bool,
+    /// the agent that picks, kept while it is off; on needs one
     pub agent: Option<String>,
     /// the agent that runs a task naming none
     pub default: Option<String>,
-    /// what its last round saw: not started again for the same
-    pub seen: Option<String>,
     /// why it turned itself off, until a human turns it on again
     pub off_why: Option<String>,
     /// since when it is on: what it started before does not count against it
     pub on_at: i64,
+    /// the severities it takes
+    pub severities: Vec<String>,
+    /// the minutes a task stands unchanged in TODO before it is taken
+    pub wait: i64,
 }
 
-const SETTING: &str = "SELECT auto_agent, auto_default, auto_seen, auto_off_why, auto_on_at, id FROM projects";
+/// The longest wait, in minutes: a day.
+pub const WAIT_MOST: i64 = 24 * 60;
+
+impl Default for Setting {
+    /// As a project is made: off, the two highest severities, ten minutes.
+    fn default() -> Self {
+        Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10 }
+    }
+}
+
+const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes FROM projects";
 
 fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<(String, Setting)> {
-    Ok((r.get(5)?, Setting { agent: r.get(0)?, default: r.get(1)?, seen: r.get(2)?, off_why: r.get(3)?, on_at: r.get(4)? }))
+    let severities: String = r.get(6)?;
+    Ok((r.get(4)?, Setting { agent: r.get(0)?, default: r.get(1)?, off_why: r.get(2)?, on_at: r.get(3)?, on: r.get(5)?,
+        severities: severities.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect(), wait: r.get(7)? }))
 }
 
 pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
     tx.query_row(&format!("{SETTING} WHERE id = ?1"), [project], setting_of).map(|(_, s)| s).map_err(sql)
 }
 
-/// The projects it is on for.
-pub fn on(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, &format!("{SETTING} WHERE auto_agent IS NOT NULL ORDER BY place"), [], setting_of)
-}
-
 impl Setting {
-    /// What the board shows of it: the picking agent, the default one, why it is off.
+    /// What the board shows of it: its switch, the picking agent, the default one, what it takes, why it is off.
     pub fn shown(&self) -> Value {
-        json!({"agent": self.agent, "default": self.default, "off_why": self.off_why})
+        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "off_why": self.off_why})
+    }
+
+    /// This setting with what a human's `body` changes: a field it does not hold stays, so the board's switch sends
+    /// {"on"} alone. "agent" and "default": an agent's id, or null for none.
+    pub fn with(&self, body: &Value) -> Result<Setting, String> {
+        let agent = |name: &str, was: &Option<String>| match body.get(name) {
+            None => was.clone(),
+            Some(v) => v.as_str().filter(|a| !a.is_empty()).map(str::to_string),
+        };
+        let mut s = Setting { agent: agent("agent", &self.agent), default: agent("default", &self.default), ..self.clone() };
+        if let Some(on) = body.get("on") {
+            s.on = on.as_bool().ok_or("on: true or false")?;
+        }
+        if let Some(list) = body.get("severities") {
+            let named: Vec<&str> = list.as_array().ok_or("severities: a list")?.iter().filter_map(Value::as_str).collect();
+            if let Some(bad) = named.iter().find(|n| !ops::SEVERITIES.contains(n)) {
+                return Err(format!("Severity {bad}: one of {}", ops::SEVERITIES.join(", ")));
+            }
+            s.severities = ops::SEVERITIES.iter().filter(|p| named.contains(p)).map(|p| p.to_string()).collect();
+        }
+        if let Some(wait) = body.get("wait_minutes") {
+            s.wait = wait.as_i64().filter(|m| (0..=WAIT_MOST).contains(m)).ok_or(format!("Wait: 0 to {WAIT_MOST} minutes"))?;
+        }
+        Ok(s)
     }
 }
 
-/// Every project's setting, by its id.
+/// Every project's setting, by its id, in the projects' order.
 pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, SETTING, [], setting_of)
+    rows(tx, &format!("{SETTING} ORDER BY place"), [], setting_of)
 }
 
 /// An agent of the pool, or none.
@@ -73,25 +108,26 @@ fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent
     }
 }
 
-/// A human's setting: `agent` picks (none: off), `default` runs a task naming no agent. Turned on, it starts anew:
-/// why it was off and what it saw are forgotten.
-pub fn set(tx: &Transaction, project: &str, agent: Option<&str>, default: Option<&str>, at: i64) -> Result<(), String> {
+/// A human's setting, kept as `new` says: on needs an agent that picks and a severity to take. Turned on, it starts
+/// anew: why it was off is forgotten, and what it started before does not count against it.
+pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<(), String> {
     ops::check_project(tx, project)?;
-    let (agent, default) = (in_pool(tx, agent)?.map(|a| a.id), in_pool(tx, default)?.map(|a| a.id));
+    let (agent, default) = (in_pool(tx, new.agent.as_deref())?.map(|a| a.id), in_pool(tx, new.default.as_deref())?.map(|a| a.id));
+    if new.on && agent.is_none() {
+        return Err("Choose the agent that picks first: its settings.".to_string());
+    }
+    if new.on && new.severities.is_empty() {
+        return Err("Tick a severity it takes first: with none it starts nothing.".to_string());
+    }
     let was = setting(tx, project)?;
-    let on_at = if agent.is_some() && was.agent.is_none() { at } else { was.on_at };
-    // what the last round saw stands while the same agents pick and run: a Save that changes nothing makes no round
-    let seen = was.seen.filter(|_| was.agent == agent && was.default == default);
-    tx.execute("UPDATE projects SET auto_agent = ?2, auto_default = ?3, auto_seen = ?5, auto_off_why = NULL, auto_on_at = ?4 WHERE id = ?1", (project, agent, default, on_at, seen)).map(drop).map_err(sql)
+    let on_at = if new.on && !was.on { at } else { was.on_at };
+    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = NULL, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7 WHERE id = ?1",
+        (project, new.on, agent, default, on_at, new.severities.join(","), new.wait)).map(drop).map_err(sql)
 }
 
-/// It turns itself off for `project`, saying why: only a human turns it on again.
+/// It turns itself off for `project`, saying why: only a human turns it on again. Its agents stay chosen.
 pub fn turn_off(tx: &Transaction, project: &str, why: &str) -> Result<(), String> {
-    tx.execute("UPDATE projects SET auto_agent = NULL, auto_off_why = ?2 WHERE id = ?1", (project, why)).map(drop).map_err(sql)
-}
-
-pub fn saw(tx: &Transaction, project: &str, seen: &str) -> Result<(), String> {
-    tx.execute("UPDATE projects SET auto_seen = ?2 WHERE id = ?1", (project, seen)).map(drop).map_err(sql)
+    tx.execute("UPDATE projects SET auto_on = 0, auto_off_why = ?2 WHERE id = ?1", (project, why)).map(drop).map_err(sql)
 }
 
 /// The agent a human chose to run task `key`, while it is in the pool.
@@ -155,17 +191,6 @@ pub fn not_started(tx: &Transaction, task: &str, round: &str) -> Result<(), Stri
     tx.execute("DELETE FROM auto_starts WHERE task = ?1 AND round = ?2", (task, round)).map(drop).map_err(sql)
 }
 
-/// The last round of `project` since `on_at`, when it started nothing: when it was made and what it was given. After
-/// such a round the next waits (dispatcher/auto.rs), so tasks its agent leaves do not bring it back at every change.
-pub fn fruitless(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<(i64, Vec<String>)>, String> {
-    let last: Option<(String, i64, String)> = tx.query_row("SELECT task, at, candidates FROM auto_rounds WHERE project = ?1 AND at >= ?2 ORDER BY at DESC, rowid DESC LIMIT 1", (project, on_at),
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
-    Ok(match last {
-        Some((key, at, ids)) if started_by(tx, &key)? == 0 => Some((at, serde_json::from_str(&ids).unwrap_or_default())),
-        _ => None,
-    })
-}
-
 /// How many tasks round `round` started.
 pub fn started_by(tx: &Transaction, round: &str) -> Result<i64, String> {
     tx.query_row("SELECT count(*) FROM auto_starts WHERE round = ?1", [round], |r| r.get(0)).map_err(sql)
@@ -192,21 +217,41 @@ pub fn tripped(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<Str
 pub struct Candidate {
     pub id: String,
     pub key: String,
-    pub updated_at: i64,
     /// the agent it runs on: the task's own, else the setting's default
     pub agent: String,
 }
 
-/// What a round may start in `project`: its TODO tasks no session, run, wait, schedule or round holds, whose agent
-/// (the task's own, else `default`) is in the pool: one naming an agent deleted since is none, never the default's;
+/// For how long a task a round was given and left is passed over, unless it changes: a day.
+pub const PASSED: i64 = 24 * 3600;
+
+/// What a round may start in `project` at `now`, by setting `s`: its TODO tasks
+/// - of the severities it takes;
+/// - that stand for its wait: made, moved or edited no later than that ago (a comment, a new place among the cards or
+///   a subtask does not start the wait anew), so one still being written is not taken;
+/// - that no session, run, wait, schedule or round holds;
+/// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
+///   none, never the default's;
+/// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
+/// - that no round which ended DONE was given in the last day, since it is on, unless it changed since: what a round
+///   judged and left does not hold up the tasks below it;
 /// in the board's order, CANDIDATES_MOST at most. `only`: that task alone, by its ID.
-pub fn candidates(tx: &Transaction, project: &str, default: Option<&str>, only: Option<&str>) -> Result<Vec<Candidate>, String> {
-    let found: Vec<Candidate> = rows(tx, "SELECT t.slug, t.id, t.updated_at, a.id FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
+pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>) -> Result<Vec<Candidate>, String> {
+    let scale = crate::dispatcher::scale();
+    let found: Vec<Candidate> = rows(tx, "WITH c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
+                   (SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind IN ('made', 'move', 'edit')) AS changed
+                 FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
+                   AND t.severity IN (SELECT value FROM json_each(?5))
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
-                   AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
-                 ORDER BY t.severity, t.rank LIMIT ?4", (project, default, only, (CANDIDATES_MOST * 2) as i64),
-        |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, updated_at: r.get(2)?, agent: r.get(3)? }))?;
+                   AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id))
+                 SELECT c.slug, c.id, c.agent FROM c WHERE COALESCE(c.changed, 0) <= ?6
+                   AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id
+                     AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = c.id AND e.author = ?7 AND e.kind IN ('move', 'edit') AND e.at >= s.at))
+                   AND NOT EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
+                     WHERE r.project = ?1 AND rt.status = 'DONE' AND r.at > ?8 AND r.at >= ?9 AND r.at >= COALESCE(c.changed, 0) AND g.value = c.slug)
+                 ORDER BY c.severity, c.rank LIMIT ?4",
+        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, HUMAN, now - PASSED / scale, s.on_at),
+        |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)? }))?;
     let mut out = Vec::new();
     for c in found {
         // a run still holding it (its agent in a turn after it went back to TODO) is no free task
@@ -217,15 +262,17 @@ pub fn candidates(tx: &Transaction, project: &str, default: Option<&str>, only: 
     Ok(out)
 }
 
-/// A human's setting for a project: {"agent": id or null, "default": id or null, "off_why": what its window showed}.
-/// A window that did not show why it turned itself off does not turn it on again unseen.
+/// A human's setting for a project: any of {"on", "agent": id or null, "default": id or null, "severities": ["P0"…],
+/// "wait_minutes"}, and "off_why": what the page showed. A page that did not show why it turned itself off does not
+/// turn it on again unseen.
 async fn set_auto(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
     let done = store(&app, move |tx| {
         ops::check_project(tx, &project)?;
         if let Some(why) = setting(tx, &project)?.off_why.filter(|why| body["off_why"].as_str() != Some(why)) {
-            return Err(format!("It turned itself off meanwhile: {why} Open its window again."));
+            return Err(format!("It turned itself off meanwhile: {why} Read why, then turn it on again."));
         }
-        set(tx, &project, body["agent"].as_str(), body["default"].as_str(), ops::now()).map(|()| json!({"ok": true}))
+        let new = setting(tx, &project)?.with(&body)?;
+        set(tx, &project, &new, ops::now()).map(|()| json!({"ok": true}))
     }).await;
     if done.is_ok() {
         app.dispatcher.soon();

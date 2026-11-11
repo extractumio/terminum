@@ -8,7 +8,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::press::{budget_words, ASK, FINISH};
 use super::{pool, runs, store, DISPATCHER};
@@ -22,9 +22,8 @@ use crate::tasks::closeout;
 pub const SLOTS_MOST: i64 = 5;
 /// A round's time budget, in minutes.
 const ROUND_MINUTES: i64 = 10;
-/// After a round that started nothing, no round for this long, unless a task it was not given stands in TODO: what
-/// its agent leaves does not bring it back at every change of the board.
-const QUIET: i64 = 30 * 60;
+/// The candidates a round is given for each slot it may fill: enough to choose from, few enough to read.
+const FOR_A_SLOT: i64 = 3;
 /// The most of a round's reason kept on the task it started.
 const WHY_MOST: usize = 500;
 const DISPATCH: &str = "execute_tool(\"dispatch_task\", {id, why})";
@@ -86,13 +85,13 @@ pub(super) enum Due {
     Round(String),
 }
 
-/// The candidates a round would be given and the slots it may fill: those whose agent can start one now, and the
-/// least of the project's free slots, those agents' and SLOTS_MOST.
+/// The candidates a round would be given and the slots it may fill: the least of the project's free slots, the
+/// candidates' agents' and SLOTS_MOST; and the first of those whose agent can start one now, FOR_A_SLOT for each slot.
 fn offer(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<(Vec<Candidate>, i64), String> {
     let (slots, spent) = (pool::Slots::read(tx)?, super::usage::of_agents(tx, now)?);
     let mut room: BTreeMap<String, i64> = BTreeMap::new();
     let mut free = Vec::new();
-    for c in auto::candidates(tx, project, s.default.as_deref(), None)? {
+    for c in auto::candidates(tx, project, s, now, None)? {
         if !room.contains_key(&c.agent) {
             let a = agents::by_id(tx, &c.agent)?.ok_or("its agent is gone")?;
             room.insert(c.agent.clone(), if over_limit(&spent, &a).is_some() { 0 } else { slots.free_of(&a) });
@@ -102,11 +101,13 @@ fn offer(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Re
         }
     }
     let n = room.values().sum::<i64>().min(slots.free_in(tx, project)?.unwrap_or(i64::MAX)).min(SLOTS_MOST).min(free.len() as i64);
+    free.truncate((n * FOR_A_SLOT) as usize);
     Ok((free, n))
 }
 
-/// Decides one project's setting, in one transaction: its ended rounds leave the board, its breaker is read, and a
-/// round is made when there is room, something to start and the last round did not see the same.
+/// Decides one project's setting, in one transaction: its ended rounds leave the board (off too); on, its breaker is
+/// read, and a round is made when there is room and something to start. What a round was given and left is no
+/// candidate for a day (tasks/auto.rs), so the next round is given the tasks below: it goes down the board.
 pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<Due, String> {
     let mut open = false;
     for (key, id, status) in auto::rounds_shown(tx, project)? {
@@ -121,7 +122,7 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
             ops::archive(tx, DISPATCHER, &id, true, now)?;
         }
     }
-    if open {
+    if open || !s.on {
         return Ok(Due::Nothing);
     }
     let off = |tx: &rusqlite::Transaction, why: String| auto::turn_off(tx, project, &why).map(|()| Due::Off(why));
@@ -139,28 +140,19 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     if n == 0 {
         return Ok(Due::Nothing);
     }
-    if let Some((at, given)) = auto::fruitless(tx, project, s.on_at)? && now - at < QUIET / super::scale() && free.iter().all(|c| given.contains(&c.id)) {
-        return Ok(Due::Nothing);
-    }
-    // the same candidates, unchanged, with no more room than the last round had: it has judged them
-    let sig = crate::auth::crypto::sha256_hex(json!(free.iter().map(|c| (&c.key, c.updated_at, &c.agent)).collect::<Vec<_>>()).to_string().as_bytes());
-    if let Some((was, had)) = s.seen.as_deref().and_then(|seen| seen.split_once(':')) && was == sig && had.parse::<i64>().is_ok_and(|had| n <= had) {
-        return Ok(Due::Nothing);
-    }
     let ids: Vec<String> = free.into_iter().map(|c| c.id).collect();
     let text = format!("Auto-Dispatcher's round: its agent weighs these TODO tasks by RICE and starts {n} at most, one for each free slot.\n\nCandidates: {}", ids.join(", "));
     let t = ops::create(tx, DISPATCHER, NewTask { title: format!("Auto-dispatch: {n} free, {} candidates", ids.len()), text, project: Some(project.to_string()), severity: Some("P3".into()), owner: Some(DISPATCHER.to_string()), ..Default::default() }, now)?;
     ops::set_budget(tx, DISPATCHER, &t.id, Some(ROUND_MINUTES), now)?;
     ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", now)?;
     auto::add_round(tx, &Round { task: t.key.clone(), project: project.to_string(), slots: n, candidates: ids }, now)?;
-    auto::saw(tx, project, &format!("{sig}:{n}"))?;
     Ok(Due::Round(t.id))
 }
 
-/// Each project it is on for, one at a time (AC-170). Called by the walk.
+/// Each project, one at a time, in the projects' order (AC-170). Called by the walk.
 pub async fn due(app: &Shared) {
-    let Ok(on) = store(app, auto::on).await else { return };
-    for (project, s) in on {
+    let Ok(all) = store(app, auto::all).await else { return };
+    for (project, s) in all {
         let (p, picker) = (project.clone(), s.agent.clone().unwrap_or_default());
         match store(app, move |tx| Ok((decide(tx, &p, &s, ops::now())?, ops::project_place(tx, &p)?.0))).await {
             Ok((Due::Nothing, _)) => {}
@@ -202,9 +194,12 @@ fn chosen(tx: &rusqlite::Transaction, pane: &str, id: &str, now: i64) -> Result<
         return Err(format!("This round's {} free slots are filled: start no more, and finish {}.", round.slots, own.id));
     }
     let s = auto::setting(tx, &round.project)?;
-    // what it may start is read anew: a human, an agent or a schedule may have taken it since the round began
-    let task = auto::candidates(tx, &round.project, s.default.as_deref(), Some(id))?.pop()
-        .ok_or_else(|| format!("{id} is no longer free to start: it left TODO, a session or a run holds it, or no agent is named for it."))?;
+    if !s.on {
+        return Err(format!("Auto-Dispatch was turned off for this project meanwhile: start no more, and finish {}.", own.id));
+    }
+    // what it may start is read anew: a human, an agent or a schedule may have taken or changed it since the round began
+    let task = auto::candidates(tx, &round.project, &s, now, Some(id))?.pop()
+        .ok_or_else(|| format!("{id} is no longer free to start: it left TODO, it was changed just now, a session or a run holds it, its severity is not taken, or no agent is named for it."))?;
     let agent = agents::by_id(tx, &task.agent)?.ok_or("That agent is gone.")?;
     if let Some(why) = over_limit(&super::usage::of_agents(tx, now)?, &agent) {
         return Err(format!("{why} Auto-Dispatcher starts nothing on it."));
