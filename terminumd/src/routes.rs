@@ -77,6 +77,7 @@ pub fn pages(app: Shared) -> Router {
         .merge(crate::tasks::api::routes())
         .merge(crate::messages::api::routes())
         .merge(crate::dashboard::routes())
+        .merge(crate::interact::routes())
         .fallback(static_file)
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)

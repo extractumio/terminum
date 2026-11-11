@@ -2,7 +2,7 @@
 //! The input log's one writer (terminum.md AC-147): rows come over a bounded channel and go into
 //! the tasks' store in a transaction a batch, on a thread of its own, never on the async workers
 //! or the typing path; it also drops rows older than KEEP_DAYS and beyond KEEP_ROWS, of the message
-//! history too.
+//! history too, and the interaction log's old rows.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
@@ -71,10 +71,11 @@ pub fn insert(tx: &Transaction, rows: &[Row]) -> Result<(), String> {
     Ok(())
 }
 
-/// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go; messages too.
+/// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go; messages too, and interactions by their own count.
 pub fn trim(tx: &Transaction, now_ms: i64, rows: i64) -> Result<(), String> {
     tx.execute("DELETE FROM inputs WHERE at < ?1", [now_ms - KEEP_DAYS * 86_400_000]).map_err(sql)?;
     tx.execute("DELETE FROM inputs WHERE id <= (SELECT id FROM inputs ORDER BY id DESC LIMIT 1 OFFSET ?1)", [rows]).map_err(sql)?;
+    crate::interact::trim(tx, now_ms, crate::interact::KEEP_ROWS)?;
     crate::messages::trim(tx, now_ms, KEEP_DAYS, rows)
 }
 
