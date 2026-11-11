@@ -134,8 +134,8 @@ export async function liveAuto(page, live) {
   // several projects shown: how many it is on for; a press turns those off, and turning on is a project's own, in the window
   const offWhy = (await setting()).off_why;
   check("AC-170 a page that showed why turns it on again", (await put({ on: true, off_why: offWhy })).ok === true && (await setting()).on === true && (await setting()).off_why === null);
-  await open("");
-  const count = (await j("/api/tasks/meta")).projects.length;
+  const every = (await j("/api/tasks/meta")).projects.map((p) => p.id), count = every.length;
+  await open(`?project=${every.join(",")}`);                    // named: this browser remembers the project it showed last (AC-135)
   check("AC-170 with several projects its switch says for how many it is on", count > 1 && await until(async () => (await state()) === `true 1 of ${count}`) && /On for Autos\. Press to turn it off for them/.test(await page.getAttribute("#autoswitch", "title")), await state());
   await page.click("#autoswitch");
   check("AC-170 a press turns it off for those it is on for", await until(async () => (await state()) === `false 0 of ${count}`) && (await setting()).on === false, await state());
