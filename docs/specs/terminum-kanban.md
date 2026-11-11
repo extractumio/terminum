@@ -159,7 +159,7 @@ Scenario: AC-106 happy path — the window
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
-  And the text's edge says it takes files at rest and lights under a drag; the text of an open task takes them the same way, its editor opening as they drop
+  And the text says it takes files in its placeholder, no frame round it, and lights under a drag (a dashed edge only then); the text of an open task takes them the same way, its editor opening as they drop
 
 Scenario: AC-106 happy path — Run
   Given Billing has a free agent, the one Run last started in it picked in the window's Agent field
