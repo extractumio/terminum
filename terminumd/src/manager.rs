@@ -236,6 +236,7 @@ pub async fn publish(app: &Shared, server: &Arc<Server>, fresh: bool) {
     layout::once_each(&mut groups, &ids);
     crate::page::unread::mark(app, &mut groups, complete);
     crate::page::plans::mark(app, &mut groups);                      // plans on the rows (AC-97)
+    crate::roles::mark(app, &mut groups);                            // which sessions are managers (AC-174)
     let ended = {
         let mut last = app.layout.write();
         if last.as_array() != Some(&groups) {

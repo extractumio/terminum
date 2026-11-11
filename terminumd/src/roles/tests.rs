@@ -210,3 +210,19 @@ async fn ac179_a_session_outside_its_project_is_not_a_manager_s() {
     }
     assert_eq!(call(&app, BOSS, "list_sessions", json!({})).await.unwrap(), format!("{DATA}\n[]"));
 }
+
+#[tokio::test]
+async fn ac174_the_list_s_rows_say_which_sessions_are_managers() {
+    let (app, _) = app("roles-rows");
+    let rows = || {
+        app.tasks.with(|tx| app.dispatcher.read_runs(tx).map(drop)).unwrap();
+        let mut groups = vec![json!({"items": [{"id": BOSS}, {"id": WORKER}, {"id": PLAIN, "manager": true}]})];
+        mark(&app, &mut groups);
+        groups[0]["items"].clone()
+    };
+    assert_eq!(rows(), json!([{"id": BOSS, "manager": true}, {"id": WORKER}, {"id": PLAIN}]), "only a + Session's session, and a row that was one says so no more");
+    assert!(app.dispatcher.managers_changed() && !app.dispatcher.managers_changed(), "the list is read again once");
+    app.tasks.with(|tx| { let r = runs::in_pane(tx, BOSS)?.unwrap(); runs::let_go(tx, &r.id).map(drop) }).unwrap();
+    assert_eq!(rows(), json!([{"id": BOSS}, {"id": WORKER}, {"id": PLAIN}]), "let go, its row has no mark");
+    assert!(app.dispatcher.managers_changed());
+}

@@ -81,6 +81,10 @@ def main():
         other_key = said["key"]
         other = other_key.rsplit(":", 1)[1]
 
+        marked = lambda gs: all(it.get("manager") for g in gs for it in g["items"] if it["id"] in (boss_key, other_key)) and any(it["id"] == other_key for g in gs for it in g["items"])  # noqa: E731
+        rows = {it["id"]: it for g in wait_layout(ws, marked, 10) for it in g["items"]}
+        check("AC-174 the list's rows say which sessions are managers", rows[boss_key].get("manager") is True and rows[other_key].get("manager") is True and "manager" not in rows[plain_key], [(k, v.get("manager")) for k, v in rows.items()])
+
         # who is who
         out, rc = typed(boss, f"{shlex.quote(BIN)} tools")
         check("AC-174 a + Session's session calls as a manager and is shown the manager's tools", rc == "0" and "You call as a manager." in out and "run_task" in out and "create_agent" in out, out)

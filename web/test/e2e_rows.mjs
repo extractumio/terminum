@@ -14,7 +14,7 @@ import { drawn, group, item, openPage, SIZES } from "./fake.mjs";
 const ID = (n) => `tmux:local:terminum:%${n}`, OWN = (n) => `tmux:local:default:%${n}`;
 const DIR = "/Users/alex/work/api";
 const LAYOUT = [group("local", [
-  item(ID(1), "api", { index: "0", agent: "claude", shell: false, sub: ["2.1", "~/work/api"], dir: DIR, state: "done", background: true }),
+  item(ID(1), "api", { index: "0", agent: "claude", shell: false, sub: ["2.1", "~/work/api"], dir: DIR, state: "done", background: true, manager: true }),
   item(ID(2), "web", { index: "2", agent: "codex", shell: false, sub: ["node", "~/work/web"], dir: "/Users/alex/work/web", state: "done" }),
   item(ID(5), "quick", { index: "4", sub: ["quick shell", "bash", "~/work/web"], quickOf: ID(2), dir: "/Users/alex/work/web" }),
   item(ID(6), "slicer", { index: "11", agent: "claude", shell: false, sub: ["2.1", "~/work/slicer"], dir: "/Users/alex/work/slicer", state: "working", subagents: 3, background: true }),
@@ -60,6 +60,16 @@ export async function webRows(browser, name) {
     check("AC-39 a working agent has no hourglass: its bar pulses", !got.hourglass && got.busy, JSON.stringify(got));
     const subs = await page.evaluate(() => { const n = document.querySelector('#sessions .item[data-id$="%6"] .st .subs'); return n && { text: n.textContent, title: n.title, bot: !!n.querySelector("svg.lu"), width: Math.round(n.querySelector("svg")?.getBoundingClientRect().width ?? 0) }; });
     check("AC-39 a row's subagents: the number beside a bot icon, said on hover", subs?.text === "3" && subs.bot && subs.width === 11 && subs.title === "3 subagents", JSON.stringify(subs));
+    const crown = await page.evaluate(() => {
+      const row = document.querySelector('#sessions .item[data-id$="%1"]'), c = row?.querySelector(".st .mgr"), svg = c?.querySelector("svg.lu");
+      if (!svg) return null;
+      const [r, b] = [svg.getBoundingClientRect(), row.getBoundingClientRect()];
+      return { title: c.title, label: c.getAttribute("aria-label"), size: Math.round(r.width), right: b.right - r.right, inside: r.left >= b.left + b.width / 2 && r.right <= b.right,
+               gray: getComputedStyle(c).color === getComputedStyle(row.querySelector(".subline, .sub, .idx") ?? c).color, others: document.querySelectorAll("#sessions .item .st .mgr").length };
+    });
+    if (process.env.TM_TEST_SHOTS) await page.screenshot({ path: `${process.env.TM_TEST_SHOTS}/rows-${page.viewportSize().width}.png` });
+    check("AC-174 a manager's row has a small crown at its right, said on hover; no other row has one",
+      crown && crown.size === 12 && crown.inside && crown.right < 80 && crown.others === 1 && crown.label === "Manager" && crown.title.startsWith("Manager: it runs its project"), JSON.stringify(crown));
     const m = got.marks, said = "Done; a shell, a monitor or a task it started still runs";
     check("AC-39 done with a shell of its still running: a quiet terminal mark in the state's place, in the row and the header; none when only done or while working",
       m.row?.title === said && m.head?.title === said && m.row.svg === 14 && m.head.svg === 14 && m.others === 1, JSON.stringify(m));

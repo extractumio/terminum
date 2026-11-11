@@ -61,6 +61,18 @@ pub fn boss_of_token(tx: &Transaction, t: &tokens::Token) -> Result<Boss, String
     Ok(Boss { key: t.key(), user: agent_named(tx, format!("manager:token:{}", t.id), &name)?, project: t.project.clone(), name })
 }
 
+/// The list's rows of managers' sessions say so (AC-174): a page shows a crown there.
+pub fn mark(app: &Shared, groups: &mut [Value]) {
+    for it in groups.iter_mut().flat_map(|g| g["items"].as_array_mut().into_iter().flatten()) {
+        let manager = it["id"].as_str().is_some_and(|key| app.dispatcher.manages(key));
+        match it.as_object_mut() {
+            Some(o) if manager => { o.insert("manager".into(), Value::Bool(true)); }
+            Some(o) => { o.remove("manager"); }
+            None => {}
+        }
+    }
+}
+
 /// A role's name, as a probe says it.
 pub fn name(manager: bool) -> &'static str {
     if manager { "manager" } else { "worker" }

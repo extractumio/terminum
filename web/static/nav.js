@@ -179,6 +179,14 @@ export function row(item, current, onPick, movable, child = false, marked = new 
   const said = item.why || item.tool;              // what its agent's hooks say it waits for or runs (AC-39)
   if (mark && said) { mark.title = `${mark.title}: ${said}`; mark.setAttribute("aria-label", mark.title); }
   if (mark) st.append(mark);
+  if (item.manager) {                              // its project's manager, terminumd's word (terminum-agents.md AC-174)
+    const crown = el("span", "mgr");
+    crown.append(icon("crown", 12));
+    crown.title = "Manager: it runs its project by terminum's tools";
+    crown.setAttribute("role", "img");
+    crown.setAttribute("aria-label", "Manager");
+    st.append(crown);
+  }
   if (item.subagents) {
     const n = el("span", "subs");
     n.append(icon("bot", 11), String(item.subagents));
