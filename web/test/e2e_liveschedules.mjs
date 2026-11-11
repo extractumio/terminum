@@ -124,6 +124,16 @@ export async function liveSchedules(page, live) {
   }), await page.textContent(sched).catch(() => ""));
   check("AC-163 its card has no colored stripe along its side: the agent's dot and name say whose it is", await page.$eval(sched, (c) => !/inset/.test(getComputedStyle(c).boxShadow) && getComputedStyle(c.querySelector(".cagent"), "::before").width === "7px"),
     await page.$eval(sched, (c) => getComputedStyle(c).boxShadow));
+  // AC-182: Run now stands in the card's head, asks first, and a press on it is not the card's
+  const run = `${sched} .schedrun`;
+  const fits = await page.$eval(run, (b) => { const [r, c] = [b.getBoundingClientRect(), b.closest(".schedcard").getBoundingClientRect()]; return b.textContent === "Run now" && r.right <= c.right + 1 && r.left >= c.left && r.height > 0; });
+  check("AC-182 a schedule's card has Run now, inside it", fits);
+  await page.click(run);
+  check("AC-182 it asks before it runs, and the schedule's own window stays shut", await until(() => page.isVisible("#confirmbox[open]")) && /Run SCH-\d+ now, on its agent\?/.test(await page.textContent("#confirmbox")) && !(await page.isVisible("#schedbox[open]")),
+    await page.textContent("#confirmbox").catch(() => ""));
+  await shot("schedule-run-now");
+  await page.keyboard.press("Escape");
+  check("AC-182 Cancel runs nothing", await until(async () => !(await page.isVisible("#confirmbox[open]"))) && !(await j("/api/schedules")).schedules[0].last);
   const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
   const w = await page.evaluate((s) => Math.round(document.querySelector(s).getBoundingClientRect().width), sched);
   if (page.viewportSize().width >= 860) check("AC-163 a card a column wide", Math.abs(w - cols[0]) <= 1, `${w} ${cols}`);

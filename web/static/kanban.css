@@ -70,7 +70,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .schedcard:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .schedcard .ctitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .schednext.paused, .schedfailed { color: var(--danger-text); }
-.schedrun { margin-left: auto; }
 .schedlast { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-meta); color: var(--muted); }
 .schedwaits { color: var(--accent); }
 /* its window's When: a line of the kind's parts, the days as keys, terminumd's words under it */
