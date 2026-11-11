@@ -2,14 +2,14 @@
 // A task's window and RUN's, one markup for the board and the session page (terminum-kanban.md AC-150): kanbanwin.js
 // and kanbanrun.js put them in once, before they look for them.
 const MARKUP = `
-<dialog id="taskbox" class="box dlg" aria-labelledby="tasktitle">
+<dialog id="taskbox" data-size="read" class="box dlg" aria-labelledby="tasktitle">
   <form method="dialog">
     <div class="dhead"><h2 id="tasktitle"></h2><button id="taskclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="taskbody"></div>
   </form>
 </dialog>
 
-<dialog id="runbox" class="box dlg" aria-labelledby="runhead">
+<dialog id="runbox" data-size="write" class="box dlg" aria-labelledby="runhead">
   <form method="dialog" id="runform">
     <div class="dhead"><h2 id="runhead">Run</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="runnone" hidden></p>

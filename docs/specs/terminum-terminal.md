@@ -197,7 +197,7 @@ Scenario: AC-33 happy path — a selection becomes a bookmark
   When the user selects text in the history, the screen or a widget's rendered text
   Then a gray Copy and an orange [+] under it stand in the floating buttons' column (in one line with find and the sent history), Copy level with the selection's first line (kept inside the terminal, following the view), the column's other buttons hidden meanwhile, while the selection lasts (and 600 ms after); Copy, [+] and Ask one gap apart (--sp-3), the same gap between the terminal's top or end and the first or the last; on a phone or a narrow window they stand instead at the terminal's top right, Copy first, in place of the folded floating buttons (terminum.md AC-18); not for a selection in an agent's input box or status lines
   When the user presses [+], types a note and saves (Save, or ⌘Enter or Ctrl+Enter in the dialog; a plain Enter is a new line of the note)
-  Then the dialog, 80% of the terminal's width (480 px at least, the window's less 32 px at most), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" on the Mac, seen by every signed-in client at once
+  Then the dialog, sized from the terminal (AC-173), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" on the Mac, seen by every signed-in client at once
 
 Scenario: AC-33 happy path — marks, the way back, the lists
   Given the shown pane has bookmarks
@@ -377,7 +377,7 @@ Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
   Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (AC-33; a split's embedded page draws no other floating button and no Ask: its Copy and [+] at the same right column); it is hidden otherwise
   When the user presses Ask
-  Then its dialog opens centered on the window, across and down, as every dialog, and stays there as the window or its field is resized, the dialog scrolling when it is taller than the window, a quarter larger than other dialogs: 600 px wide, the quote up to 37.5% of the window's height, a 4-line question
+  Then its dialog opens centered on the window, across and down, as every dialog, and stays there as the window or its field is resized, the dialog scrolling when it is taller than the window, sized from the terminal (AC-173), the quote up to 37.5% of the window's height, the question taking the rest
   When the user types a question and presses Add to Chat
   Then terminumd gives the pane's next question number (one more than the highest "Quote #N" the pane sent (terminum.md AC-147) or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts), and the page puts at the input's cursor, no Enter, a Markdown quote, a blank line after it and after the question (none before), compact:
     "> Quote #0007\n> <the selected text's first line>\n> <its next line>\n\n<the question>\n\n"

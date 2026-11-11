@@ -1,0 +1,57 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* Every dialog's size, by what it is for (terminum.md AC-173; docs/UI-GUIDELINES.md "Dialog size"); after the
+   features' sheets, before sheets.css (a phone's). A dialog takes 80% of its parent's width and,
+   when it has room to fill, its height: the parent is the dialog under it (RUN over a task's
+   window), else its data-parent (the terminal, for what is made from it), else the window
+   (dlgsize.js sets --pw, --ph). Each kind holds that between a floor, below which its fields
+   no longer fit, and a ceiling, past which lines grow too long to read or a short text floats
+   in empty space; never past the window less 16 px on each side.
+     ask    a question or a name: as tall as its words, 360–480 px wide
+     form   fields to set: as tall as its fields, 480–640 px wide (a project's 720, with its agents 960)
+     write  a text to type: 80% high, 520–960 px wide, 480–880 px high; the text field takes the rest
+            (a schedule's many fields 640 px high at least; Ask's question and a bookmark's note,
+            short, 560 px at most; Paste keeps 880: what is pasted is long)
+     list   a list to pick from: 80% high, 480–720 px wide, 360–760 px high; the list takes the rest
+     read   a document: 80% high, 560–1040 px wide (a task's prose 920, a bookmark's 960, terminal
+            lines 1280), 420 px high at least
+   A dialog that fills its height keeps its buttons at its foot, in sight when it scrolls. On a phone
+   it takes all the height in sight above the keyboard. */
+
+dialog.dlg { --pw: 100vw; --ph: 100dvh; --w-min: 360px; --w-max: 480px; }
+dialog.dlg[data-size] { width: min(calc(100vw - 32px), clamp(var(--w-min), calc(var(--pw) * .8), var(--w-max))); box-sizing: border-box; }
+dialog.dlg[data-size="form"] { --w-min: 480px; --w-max: 640px; max-height: calc(100dvh - 32px); overflow: auto; }
+dialog.dlg[data-size="write"] { --w-min: 520px; --w-max: 960px; --h-min: 480px; --h-max: 880px; }
+dialog.dlg[data-size="list"] { --w-min: 480px; --w-max: 720px; --h-min: 360px; --h-max: 760px; }
+dialog.dlg[data-size="read"] { --w-min: 560px; --w-max: 1040px; --h-min: 420px; --h-max: 100dvh; }
+dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
+  height: min(calc(100dvh - 32px), clamp(var(--h-min), calc(var(--ph) * .8), var(--h-max))); max-height: none; overflow: auto; }
+#projectbox { --w-max: 720px; }                  /* short fields: not stretched across */
+#projectbox:has(#projectagents:not([hidden])) { --w-max: 960px; }   /* its agents' list, a row each */
+#schedbox { --h-min: 640px; }                    /* a schedule's fields: the text keeps room among them */
+:is(#askbox, #markbox) { --h-max: 560px; }       /* a question, a note: short */
+#taskbox { --w-max: 920px; }                     /* its prose: about 110 characters a line */
+#markdoc { --w-max: 960px; }                     /* prose: about 100 characters a line */
+#lastlines { --w-max: 1280px; }                  /* a terminal's lines, as wide as it drew them */
+
+/* a dialog that fills its height: its form a column down to its foot, one part taking what is left */
+dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) > form { min-height: 100%; box-sizing: border-box; }
+/* its buttons at its foot however little is above them (an empty list), in sight when it scrolls */
+dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) > form > .actions {
+  margin-top: auto; position: sticky; bottom: calc(-1 * var(--sp-4)); padding: var(--sp-3) 0 var(--sp-4); margin-bottom: calc(-1 * var(--sp-4)); background: var(--fill); }
+:is(#runmessage, #askq, #marknote, #pastetext, #newtext, #newshown, #schedtext, #schedshown, #taskbody, #archivedlist, #folderlist) {
+  flex: 1 1 0; min-height: 0; }
+:is(#runmessage, #askq, #marknote, #pastetext, #newtext, #schedtext) { min-height: 6em; resize: none; }
+#runform > label:has(#runmessage) { flex: 1 1 0; min-height: 0; }   /* its label holds it: the label is the column's part */
+#runprompt { max-height: 30vh; }                 /* what will be sent, opened: the message keeps its room */
+#taskbody { max-height: none; }
+#archivedlist { max-height: none; }
+#folderlist { height: auto; min-height: 8em; }
+#archivednone { flex: 1 1 0; }
+#schedtext, #schedshown { min-height: 8em; }     /* among the schedule's many fields: the window scrolls before it shrinks */
+:is(#newshown, #schedshown) { overflow: auto; }
+
+/* a phone or a narrow window: a sheet (sheets.css) as wide as the screen; one that fills its height
+   takes all that is in sight above the keyboard (a small screen has no room to spare) */
+@media (hover: none), (max-width: 860px) {
+  dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) { height: calc(var(--app-h, 100dvh) - 32px) !important; }
+}

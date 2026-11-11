@@ -22,6 +22,7 @@
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
+<link rel="stylesheet" href="dialogsize.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="grain.css">
@@ -136,7 +137,7 @@
 </div>
 <p id="toast" class="box" role="status" popover="manual" hidden></p>
 
-<dialog id="lastlines" class="box dlg docdlg" aria-labelledby="lastlinestitle">
+<dialog id="lastlines" data-size="read" class="box dlg docdlg" aria-labelledby="lastlinestitle">
   <div class="dhead"><h2 id="lastlinestitle">Last lines</h2>
     <div id="lastlinesseg" class="seg" role="tablist" aria-label="Which lines" hidden><button type="button" role="tab" data-which="before" aria-selected="true" title="The lines kept before its tmux restarted">Before restart</button><button type="button" role="tab" data-which="latest" aria-selected="false" title="The lines kept since">Now</button></div>
     <button id="lastlinescopy" class="icon" type="button" title="Copy the lines shown" aria-label="Copy the lines" disabled><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
@@ -145,7 +146,7 @@
   <p id="lastlinesnone" class="docmeta" hidden>Nothing kept yet: a session's last lines are kept within 5 s of its output.</p>
   <pre id="lastlinestext" hidden></pre>
 </dialog>
-<dialog id="agentsbox" class="box dlg" aria-labelledby="agentstitle">
+<dialog id="agentsbox" data-size="ask" class="box dlg" aria-labelledby="agentstitle">
   <form method="dialog">
     <div class="dhead"><h2 id="agentstitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="agentstext"></p>
@@ -157,7 +158,7 @@
   </form>
 </dialog>
 
-<dialog id="newbox" class="box dlg" aria-labelledby="newhead">
+<dialog id="newbox" data-size="write" class="box dlg" aria-labelledby="newhead">
   <form method="dialog">
     <div class="dhead"><h2 id="newhead">New task</h2><button id="newclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="newtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
@@ -192,7 +193,7 @@
   </form>
 </dialog>
 
-<dialog id="schedbox" class="box dlg" aria-labelledby="schedhead">
+<dialog id="schedbox" data-size="write" class="box dlg" aria-labelledby="schedhead">
   <form method="dialog">
     <div class="dhead"><h2 id="schedhead">New schedule</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="schedtitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
@@ -240,7 +241,7 @@
   </form>
 </dialog>
 
-<dialog id="agentbox" class="box dlg" aria-labelledby="agenthead">
+<dialog id="agentbox" data-size="form" class="box dlg" aria-labelledby="agenthead">
   <form method="dialog">
     <div class="dhead"><h2 id="agenthead">Add agent</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="agentview" hidden></div>
@@ -264,7 +265,7 @@
   </form>
 </dialog>
 
-<dialog id="projectbox" class="box dlg" aria-labelledby="projecthead">
+<dialog id="projectbox" data-size="form" class="box dlg" aria-labelledby="projecthead">
   <form method="dialog" id="projectform">
     <div class="dhead"><h2 id="projecthead">New project</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="projectfields">
@@ -300,7 +301,7 @@
   </form>
 </dialog>
 
-<dialog id="folderbox" class="box dlg" aria-labelledby="folderhead">
+<dialog id="folderbox" data-size="list" class="box dlg" aria-labelledby="folderhead">
   <form method="dialog">
     <div class="dhead"><h2 id="folderhead">A folder</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="folderpath"></p>
@@ -313,7 +314,7 @@
   </form>
 </dialog>
 
-<dialog id="archivedbox" class="box dlg" aria-labelledby="archivedhead">
+<dialog id="archivedbox" data-size="list" class="box dlg" aria-labelledby="archivedhead">
   <form method="dialog">
     <div class="dhead"><h2 id="archivedhead">Archived</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <input id="archivedfind" class="field" type="search" placeholder="Find" aria-label="Find archived tasks" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -326,7 +327,7 @@
   </form>
 </dialog>
 
-<dialog id="autobox" class="box dlg" aria-labelledby="autohead">
+<dialog id="autobox" data-size="form" class="box dlg" aria-labelledby="autohead">
   <form method="dialog">
     <div class="dhead"><h2 id="autohead">Auto-Dispatcher</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="autotext">While it is on, tasks of this project start with no one pressing Run. When agents have free slots and TODO holds tasks nobody runs, Dispatcher starts one more session of the agent chosen here, which takes no slot: it reads those tasks, scores them by RICE (reach, impact, confidence, effort) and starts the best, one for each free slot, at most 5 a round. A task runs on the agent named in its window, else on the default one; it is told only its ID and reads its text as its assignment, a text an agent wrote too. An agent past its week's or month's limit starts nothing here: give the agents limits, or only their slots bound what this spends. Its round failing, or two tasks it started failing in a row, turns it off.</p>
@@ -344,7 +345,7 @@
   </form>
 </dialog>
 
-<dialog id="limitsbox" class="box dlg" aria-labelledby="limitshead">
+<dialog id="limitsbox" data-size="form" class="box dlg" aria-labelledby="limitshead">
   <form method="dialog">
     <div class="dhead"><h2 id="limitshead">Memory limits</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="limitstext">terminum adds up the memory of the agent's processes every 30 s. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended. Nothing stops a process between readings: this is a watch, not a limit the system holds.</p>
@@ -362,7 +363,7 @@
   </form>
 </dialog>
 
-<dialog id="confirmbox" class="box dlg" aria-labelledby="confirmtitle">
+<dialog id="confirmbox" data-size="ask" class="box dlg" aria-labelledby="confirmtitle">
   <form method="dialog">
     <div class="dhead"><h2 id="confirmtitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="confirmtext"></p>
@@ -373,7 +374,7 @@
   </form>
 </dialog>
 
-<dialog id="namebox" class="box dlg" aria-labelledby="nametext">
+<dialog id="namebox" data-size="ask" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -385,6 +386,7 @@
   </form>
 </dialog>
 <script type="module" src="grain.js"></script>
+<script type="module" src="dlgsize.js"></script>
 <script type="module" src="kanban.js"></script>
 </body>
 </html>

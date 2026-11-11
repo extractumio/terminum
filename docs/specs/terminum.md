@@ -104,6 +104,7 @@ Open questions:
 | AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
 | AC-171 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
+| AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling. |
 
 ## 5. BDD scenarios
 
@@ -579,7 +580,7 @@ Scenario: AC-18 happy path — the panel
   And while a finger scrolls the terminal, from its first move until it lifted and the terminal stopped scrolling, every floating button ("To the bottom" too) is out of sight (the text under them can be read) and takes no tap; back 1 s after
   And while the user scrolls the terminal by wheel, key or scroll bar (wide or phone), the floating buttons' column fades and takes no tap, back 1 s after the scroll stops or at once with the pointer near it or the focus on it; the page's own scroll (output followed) and a scroll while a pane it opened is open (find's field, the sent history, bookmarks, reminders) leave it
   And on a computer the header's settings button is a cog and its menu opens right under it, inside the window, scrolling when taller than the room under the button
-  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside), modal: the page shaded behind it, a press outside or Esc closes it
+  And every dialog, pane and menu (the settings menu, a row's and a host's menu, the list's forms, the sent history, the reminders, the bookmarks, the input's menu, Ask, a bookmark's note, Paste, a confirmation) opens centered on the visible screen (above the on-screen keyboard), as wide as the screen less 16 px a side, as tall as its content and at most the visible height less 32 px (scrolling inside; one to type in, to pick from or to read: that height, AC-173), modal: the page shaded behind it, a press outside or Esc closes it
   And a press on ⟨…⟩ or a button of its column first puts the on-screen keyboard and the hot keys panel away
   And a coding agent's input box is a tint of the terminal's colors with no frame
   And Files and View, shown in the terminal's place, fill the whole space under the tabs
@@ -961,6 +962,28 @@ Scenario: AC-167 edge — a phone
   And the shown section keeps its word and takes the row's rest; every key is at least 44 px wide and 40 px high
 ```
 
+### AC-173 — Dialogs sized by their use [SHOULD / P1]
+
+```gherkin
+Scenario: AC-173 happy path — a message typed into RUN over a task's window
+  Given a computer's window of 1400 × 900 and a task's window open (920 × 720: 80% of the window, its prose 920 px wide at most)
+  When the user presses Run again
+  Then RUN's window is 80% of the task's window across and down (736 × 576), and its message field takes all the height its other parts leave, 6 lines at least; the field has no handle: the window keeps its size while the user types
+  And a dialog's parent is read as it opens: the dialog open under it, else for Ask, a bookmark's note and Paste the terminal (they are made from it), else the browser's window
+Scenario: AC-173 happy path — each kind its own size
+  Then each dialog takes its parent's 80% within its kind's floor and ceiling, never more than the window less 16 px a side:
+    | Kind | Dialogs | Width | Height |
+    | a question | a confirmation, a name, enabling agents' hooks on a host | 360–480 px | as its words |
+    | fields to set | Convert to task, an agent, a project (720 px; 960 with its agents' list), Auto-Dispatcher, memory limits | 480–640 px | as its fields, scrolling past the window less 32 px |
+    | a text to type | RUN, New task, a schedule (640 px high at least), Ask and a bookmark's note (560 px high at most), Paste | 520–960 px | 80%, 480–880 px; the text field takes the rest |
+    | a list to pick from | a folder, the archived tasks | 480–720 px | 80%, 360–760 px; the list takes the rest |
+    | a document | a task, the bookmarks (960 px wide at most), a session's last lines (1280) | 560–920 px for a task | 80%, 420 px at least |
+  And a dialog that takes 80% of the height keeps its buttons at its foot, also when what is above them is short or empty, and in sight when it scrolls
+Scenario: AC-173 edge — a phone or a narrow window
+  Given a phone, or a window 860 px wide or narrower
+  Then every dialog is a sheet as wide as the screen less 16 px a side (AC-18); one to type in, to pick from or to read is as tall as what is in sight above the on-screen keyboard less 16 px a side, its buttons in sight; a question or a form stays as tall as its content
+```
+
 ### AC-171 — The Dashboard's System tab [SHOULD / P1]
 
 ```gherkin
@@ -1314,3 +1337,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
+- [x] AC-173 — `web/test/e2e_dlgsize.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`

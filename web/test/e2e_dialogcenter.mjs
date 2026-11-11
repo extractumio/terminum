@@ -35,15 +35,21 @@ export async function webDialogCenter(browser, name = "") {
     check(`${at} ${id} is in the window's middle at each size, resized while open`, !bad.length, JSON.stringify(bad));
     await page.evaluate((i) => document.getElementById(i).close(), id);
   }
-  // a field drawn taller by its handle: the dialog grows both ways; taller than the window it scrolls
+  // Ask's field takes the room its dialog keeps for it, no handle (AC-173); a dialog as tall as its
+  // fields that grows (an error said, a part opened) grows both ways; taller than the window it scrolls
   await page.setViewportSize(SIZES[0]);
   await page.evaluate(() => document.getElementById("askbox").showModal());
-  const before = await off(page, "askbox");
-  await page.evaluate(() => { document.getElementById("askq").style.height = "400px"; });
-  const taller = await off(page, "askbox");
-  check(`${at} Ask with its field drawn taller stays in the middle, growing up and down`, centered(taller) && taller.top < before.top && taller.bottom > before.bottom, JSON.stringify({ before, taller }));
-  await page.evaluate(() => { document.getElementById("askq").style.height = "2000px"; });
-  const huge = await off(page, "askbox");
+  const ask = await page.evaluate(() => getComputedStyle(document.getElementById("askq")).resize);
+  await page.evaluate(() => document.getElementById("askbox").close());
+  check(`${at} Ask's field fills its dialog, with no handle to draw it`, ask === "none", ask);
+  await page.evaluate(() => document.getElementById("convertbox").showModal());
+  const before = await off(page, "convertbox");
+  const grow = (px) => page.evaluate((px) => { const e = document.getElementById("converterror"); e.hidden = false; e.style.height = `${px}px`; }, px);
+  await grow(300);
+  const taller = await off(page, "convertbox");
+  check(`${at} a dialog that grows stays in the middle, growing up and down`, centered(taller) && taller.top < before.top && taller.bottom > before.bottom, JSON.stringify({ before, taller }));
+  await grow(2000);
+  const huge = await off(page, "convertbox");
   check(`${at} taller than the window: in the middle, inside the window`, centered(huge), JSON.stringify(huge));
   check(`${at} no page errors`, !errors.length, errors.join(" | "));
   await page.close();

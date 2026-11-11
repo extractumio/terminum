@@ -62,8 +62,8 @@ export async function webMarks(browser, name = "") {
   await page.waitForSelector("#markbox[open]");
   check(`${at} [+] opens the dialog with the selected text`, (await page.textContent("#marktext")).includes("out 2500 lorem ipsum"));
   const wide = await page.evaluate(() => ({ dlg: Math.round(document.getElementById("markbox").getBoundingClientRect().width),
-    want: Math.round(Math.min(Math.max(480, document.getElementById("term").clientWidth * 0.8), innerWidth - 32)) }));
-  check(`${at} the dialog is 80% of the terminal's width (480 px at least, the window's less 32 px at most)`, Math.abs(wide.dlg - wide.want) <= 1, JSON.stringify(wide));
+    want: Math.round(Math.min(Math.max(520, Math.min(960, document.getElementById("term").offsetWidth * 0.8)), innerWidth - 32)) }));
+  check(`${at} the dialog is 80% of the terminal's width (520–960 px, the window's less 32 px at most: AC-173)`, Math.abs(wide.dlg - wide.want) <= 1, JSON.stringify(wide));
   await page.fill("#marknote", "look again");
   await page.press("#marknote", "Meta+Enter");                   // as Save
   await page.waitForFunction(() => !document.getElementById("markbox").open, null, { timeout: 5000 }).catch(() => {});

@@ -12,7 +12,6 @@
 #runmessage { width: 100%; box-sizing: border-box; }
 #runform { gap: var(--sp-3); }
 #runhow .runfacts { margin-top: var(--sp-2); }
-#runbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 
 /* its windows: the page's own type; what is typed for a machine stays in the terminal's */
 #taskbox, #runbox, .board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
@@ -23,8 +22,7 @@
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* its windows */
-#taskbox, #newbox { width: min(760px, calc(100vw - var(--sp-6) * 2)); max-height: calc(100dvh - var(--sp-6) * 2); }
-#taskbody { display: flex; flex-direction: column; gap: var(--sp-3); max-height: calc(100dvh - 130px); overflow-y: auto; }
+#taskbody { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; }
 #taskbody > * { min-width: 0; }
 dialog .markdown pre { max-width: 100%; overflow-x: auto; }
 .fieldrow { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; font-size: var(--fs-label); color: var(--muted); }
@@ -109,7 +107,6 @@ button.stbox { cursor: pointer; border: 0; }
 .tpitem { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-height: var(--icon-key-list); padding: var(--sp-1) var(--sp-2); border-radius: var(--r-sm); text-align: left; color: var(--t-fg); }
 @media (hover: hover) { .tpitem:hover { background: var(--surface-2); } }
 .tptitle { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#convertbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
 #convertbox form { display: flex; flex-direction: column; gap: var(--sp-3); }
 .sublist .subname { color: var(--t-fg); text-decoration: none; font-size: var(--fs-body); }
 @media (hover: hover) { .sublist .subname:hover { text-decoration: underline; } }
