@@ -4,6 +4,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { until } from "./check.mjs";
 import { ownTmp } from "./testrun.mjs";
 
@@ -15,6 +16,16 @@ export const intoStore = (app, sql) => execFileSync("python3", ["-I", "-c", `imp
 store = sqlite3.connect(sys.argv[1], timeout=15)
 store.executescript("PRAGMA trusted_schema = ON; " + sys.argv[2])
 store.close()`, path.join(app, "kanban.sqlite"), sql]);
+/** Who started the newest run of task `slug` (of no task: + Session's) and how, as the private store keeps them
+ *  (terminum-dispatcher.md AC-183): "user way". */
+export function startOf(app, slug = null) {
+  const store = new DatabaseSync(path.join(app, "kanban.sqlite"), { readOnly: true });
+  try {
+    const r = store.prepare(`SELECT r.started_by || ' ' || r.started_how AS said FROM runs r
+      WHERE CASE WHEN ?1 IS NULL THEN r.task IS NULL ELSE r.id IN (SELECT m.run FROM run_tasks m JOIN tasks t ON t.id = m.task WHERE t.slug = ?1) END ORDER BY r.rowid DESC LIMIT 1`).get(slug);
+    return r?.said ?? null;
+  } finally { store.close(); }
+}
 /** A press that opens a task's window: a folded card's first press shows it whole (terminum-kanban.md AC-159). What a
  *  press did is read from the page: its window's address, or the card shown whole, pressed once more; a press on a
  *  card the board drew anew meanwhile (its task left TODO) did neither and is made again; any other is an error. */

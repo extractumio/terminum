@@ -3,7 +3,7 @@
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
 import { check, until } from "./check.mjs";
-import { boardKit, intoStore, nap } from "./boardkit.mjs";
+import { boardKit, intoStore, nap, startOf } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
   const { j, card, open } = boardKit(page, live);
@@ -162,6 +162,7 @@ export async function liveSchedules(page, live) {
   intoStore(live.app, `UPDATE schedules SET last_due = last_due - 3600 WHERE id = '${s.id}'`);
   let task;
   check("AC-162 due, it makes a task and runs it on its agent", await until(async () => (task = (await j("/api/schedules")).schedules.find((x) => x.id === s.id)?.last?.task), 15000), JSON.stringify(s));
+  check("AC-183 a firing's run keeps Dispatcher and the schedule", await until(() => startOf(live.app, task) === "dispatcher schedule", 15000), startOf(live.app, task));
   intoStore(live.app, `UPDATE schedules SET cron = '0 0 1 1 *' WHERE id = '${s.id}'`);   // no second firing a minute on, under the checks below
   check("AC-162 its task says a schedule made it, and was never in TODO", /^S_[A-Z][A-Z0-9]*-\d+$/.test(task) && !(await j(`/api/tasks/${task}`)).history.some((e) => /TODO/.test(e.text ?? "")), task);
   check("AC-162 the agent gives its result: DONE", await until(async () => (await j(`/api/tasks/${task}`)).status === "DONE", 20000), JSON.stringify((await j(`/api/tasks/${task}`)).history?.map((e) => e.text)));

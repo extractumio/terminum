@@ -12,7 +12,7 @@ import { taskBoxes } from "./taskboxes.js";
 export function runWindow({ addAgent, noFolder, done }) {
   taskBoxes();
   const box = $("runbox");
-  let tasks = [], offer = null, attached = [], fresh = false, dropped = null, answer = () => {};
+  let tasks = [], offer = null, attached = [], fresh = false, dropped = null, way = "run", answer = () => {};
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
@@ -71,10 +71,12 @@ export function runWindow({ addAgent, noFolder, done }) {
   };
 
   /** Opens it for `list`, on `agent` if chosen: true when a run started, else false; a refusal throws terminumd's
-   *  words. `words`, `files`: the comment that goes with it; `why`: what a press already found wrong. */
-  async function open(list, { words = "", files = [], agent = null, why = "" } = {}) {
+   *  words. `words`, `files`: the comment that goes with it; `why`: what a press already found wrong; `how`: the
+   *  way it was asked for, kept with its run (terminum-dispatcher.md AC-183): a card dropped on an agent unless said. */
+  async function open(list, { words = "", files = [], agent = null, why = "", how = agent ? "drop" : "run" } = {}) {
     tasks = list;
     dropped = agent;
+    way = how;
     attached = files;
     $("runmessage").value = words;
     await read();
@@ -99,7 +101,7 @@ export function runWindow({ addAgent, noFolder, done }) {
       const first = fresh || offer.first, full = limit();
       const queue = toQueue || Boolean(full && !full.close);
       // going on, it is its session's agent, or the one it was dropped on (AC-138)
-      const started = await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev } });
+      const started = await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev, how: way } });
       if (started?.full) {
         offered = started.full;
         showAgent();

@@ -2,8 +2,7 @@
 //! The Dashboard's Tasks tab (terminum.md AC-176): who does the work on tasks, the human or automation. An
 //! operation is a decision about a task, counted once, for who decided: a task made, edited, moved, commented
 //! on, put under another, archived (the board's events, by their author) or started (a session's launch row
-//! in the input log: Dispatcher's own when Auto-Dispatcher chose the task or a schedule or a round made it,
-//! else the human's Run). What Dispatcher does to carry a decision out (the move that follows a start or an
+//! in the input log, for who its run says asked for it: terminum-dispatcher.md AC-183). What Dispatcher does to carry a decision out (the move that follows a start or an
 //! end, a budget set, its notes `told` and `why`, a session's link) is no operation: of its own it only
 //! makes tasks and starts them.
 
@@ -60,24 +59,32 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
     for (t, kind, by, slug, title) in done {
         let Some(kind) = KINDS.iter().position(|k| *k == kind) else { continue };
-        let who = match by.as_str() { "human" => YOU, "agent" => AGENTS, _ => DISPATCHER };
-        ops.push(Op { t, kind, who, task: row_of(slug, title) });
+        ops.push(Op { t, kind, who: who_of(&by), task: row_of(slug, title) });
     }
-    // a start: Dispatcher's own when the task was a round's choice just before, or a schedule's or a round's own task
-    let starts: Vec<(i64, i64, String)> = rows(tx, &format!("SELECT {}, at / 1000, tasks FROM inputs
-        WHERE at >= ?1 AND component = 'dispatcher.start' AND kind = 'launch' AND tasks IS NOT NULL", local("at")), [ask.since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-    let mut task = tx.prepare_cached(&format!("SELECT t.title, EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id) OR EXISTS (SELECT 1 FROM auto_rounds a WHERE a.task = t.id)
-        OR EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = t.id AND s.at BETWEEN ?3 - {CHOSEN_WITHIN} AND ?3)
+    // a start is whose its run says (terminum-dispatcher.md AC-183); a run older than that record says nothing:
+    // Dispatcher's own when the task was a round's choice just before, or a schedule's or a round's own task
+    let starts: Vec<(i64, i64, String, Option<String>)> = rows(tx, &format!("SELECT {}, i.at / 1000, i.tasks, u.kind FROM inputs i
+        LEFT JOIN runs r ON r.id = i.run LEFT JOIN users u ON u.id = r.started_by
+        WHERE i.at >= ?1 AND i.component = 'dispatcher.start' AND i.kind = 'launch' AND i.tasks IS NOT NULL", local("i.at")), [ask.since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+    // the three looks of the older rule only for a run that does not say
+    let mut task = tx.prepare_cached(&format!("SELECT t.title, CASE WHEN ?4 THEN 0 ELSE EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id) OR EXISTS (SELECT 1 FROM auto_rounds a WHERE a.task = t.id)
+        OR EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = t.id AND s.at BETWEEN ?3 - {CHOSEN_WITHIN} AND ?3) END
         FROM tasks t WHERE t.slug = ?1 AND {mine}")).map_err(crate::tasks::ops::sql)?;
-    for (t, at, slugs) in starts {
+    for (t, at, slugs, by) in starts {
         for slug in slugs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            let found: Option<(String, bool)> = task.query_row((slug, ask.task_project(), at), |r| Ok((r.get(0)?, r.get(1)?))).ok();
+            let found: Option<(String, bool)> = task.query_row((slug, ask.task_project(), at, by.is_some()), |r| Ok((r.get(0)?, r.get(1)?))).ok();
             if let Some((title, own)) = found {
-                ops.push(Op { t, kind: START, who: if own { DISPATCHER } else { YOU }, task: row_of(slug.to_string(), title) });
+                let who = by.as_deref().map_or(if own { DISPATCHER } else { YOU }, who_of);
+                ops.push(Op { t, kind: START, who, task: row_of(slug.to_string(), title) });
             }
         }
     }
     Ok(Read { ops, tasks })
+}
+
+/// Which of WHO a user's kind is.
+fn who_of(kind: &str) -> usize {
+    match kind { "human" => YOU, "agent" => AGENTS, _ => DISPATCHER }
 }
 
 /// The human's share of `by` (WHO's counts); none of nothing.
