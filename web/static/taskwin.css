@@ -30,7 +30,6 @@ dialog .markdown pre { max-width: 100%; overflow-x: auto; }
 .edithead { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-label); color: var(--muted); }
 #newadd, .evenleft { margin-right: auto; }
 /* a text that takes files: its edge says so at rest and lights under a drag (AC-106) */
-textarea.droparea { outline: 1px dashed var(--line); outline-offset: -1px; }
 section.droparea { border-radius: var(--r-sm); }
 .droparea.dropping { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, var(--field-fill)); }
 #taskbody textarea.field, #newtext { width: 100%; box-sizing: border-box; }
