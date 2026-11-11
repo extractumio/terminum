@@ -397,17 +397,20 @@ async function phone(browser, name) {
     return;
   }
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 8000 });
-  const before = tmux("display", "-p", "#{window_width}");
+  // the pane the phone shows, by its id: tmux's current window may be another session's (Dispatcher's)
+  const shown = (await page.evaluate(() => document.querySelector("#sessions .item.on")?.dataset.id ?? "")).split(":").pop();
+  const width = () => tmux("display", "-p", "-t", shown, "#{window_width}");
+  const before = width();
   await page.evaluate(() => { const k = document.getElementById("kbd"); k.focus(); });
   await page.keyboard.type("echo phone");
   await page.keyboard.press("Enter");
   await within("AC-13 a phone that types sizes the pane to its narrow view", async () => {
     for (let i = 0; i < 50; i++) {
-      const w = Number(tmux("display", "-p", "#{window_width}"));
+      const w = Number(width());
       if (w > 0 && w < 60) return;
       await new Promise((r) => setTimeout(r, 100));
     }
-    throw new Error(`width ${tmux("display", "-p", "#{window_width}")} (was ${before})`);
+    throw new Error(`width of ${shown} ${width()} (was ${before})`);
   });
   await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
   await ctx.close();
