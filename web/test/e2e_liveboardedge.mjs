@@ -238,12 +238,16 @@ ${"z".repeat(400)}
       await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(500);
       const m = await page.evaluate(() => {
         const body = document.querySelector("#taskbody"), edge = body.getBoundingClientRect().left + body.clientLeft + body.clientWidth;
-        // what sticks out past the body's inner edge, said when it fails (a scroller's own content excepted)
-        const out = [...body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > edge + 0.5 && !e.parentElement.closest("pre"))
-          .slice(0, 6).map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}:${Math.round(e.getBoundingClientRect().right - edge)}`);
+        // what sticks out past the body's inner edge, said when it fails (a scroller's or a clipped box's own content excepted): a box,
+        // or a box's content spilling out of it (WebKit lets a plain select's text run past it)
+        const name = (e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}`;
+        const boxes = [...body.querySelectorAll("*")].filter((e) => !e.parentElement.closest("pre"));
+        const out = [...boxes.flatMap((e) => { const past = Math.round(e.getBoundingClientRect().right - edge); return past > 0 ? [`${name(e)}:${past}`] : []; }),
+          ...boxes.filter((e) => e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX === "visible")
+            .map((e) => `${name(e)} "${e.firstChild?.textContent.trim().slice(0, 16)}" spills ${e.scrollWidth - e.clientWidth}`)].slice(0, 8);
         return { page: document.documentElement.scrollWidth - innerWidth, box: document.querySelector("#taskbox").scrollWidth - document.querySelector("#taskbox").clientWidth, body: body.scrollWidth - body.clientWidth, h: document.querySelector("#taskbox").getBoundingClientRect().bottom - innerHeight, out };
       });
-      check("long words stay inside a phone's window, sideways nothing", m.page <= 0 && m.box <= 1 && m.body <= 1 && m.h <= 0, JSON.stringify(m));
+      check("long words stay inside a phone's window, sideways nothing", m.page <= 0 && m.box <= 1 && m.body <= 1 && m.h <= 0 && !m.out.length, JSON.stringify(m));
       await page.setViewportSize({ width: 1400, height: 900 }); await page.click("#taskclose"); await nap(200);
     },
     async human_moves_while_agent_finishes() {
