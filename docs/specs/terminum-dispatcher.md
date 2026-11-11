@@ -1100,7 +1100,7 @@ Scenario: AC-170 edge — how many, and when again
   Then a round's slots are the least of: the project's free slots, the free slots of the agents its candidates run on, 5, the candidates, and what the project's cap of 24 hours leaves
   And the cap counts the tasks it started in the project in the last 24 hours, a press that started nothing not among them; reached, no round is made and the switch's title says "api's 10 tasks of 24 hours are started: it waits."; a round's dispatch_task past it is refused: "This project's 10 tasks a day are started: start no more, and finish API-20."
   And an agent past its week's or month's limit (AC-143) counts no free slot and its tasks are no candidates; a human's RUN on it is never refused
-  And with the picking agent past its own limit no round is made; an agent with no limit set is bounded by its slots alone
+  And with the picking agent past its own limit no round is made; an agent with no limit set is bounded by its slots and the project's cap of 24 hours
   When a task becomes a candidate (made and stood its wait, changed, a slot freed), at the next walk
   Then a round is made; with no candidate or no free slot none is: it waits
   But for 30 minutes after a round that started nothing, only a task made, moved or edited since makes one: a long list its agent leaves is not read through at once
