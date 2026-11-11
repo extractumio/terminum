@@ -20,7 +20,7 @@ const MARKUP = `
     </details>
     <details id="runwhat" class="more"><summary>What will be sent</summary>
       <p id="runmarked" class="runmarked" hidden>An agent wrote some of this text.</p>
-      <pre id="runprompt" class="runprompt" tabindex="0" aria-label="What will be sent"></pre>
+      <pre id="runprompt" class="runprompt field" tabindex="0" aria-label="What will be sent"></pre>
     </details>
     <p id="runerror" role="alert" hidden></p>
     <div class="actions">

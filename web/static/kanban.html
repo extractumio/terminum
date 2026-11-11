@@ -227,8 +227,8 @@
       <label class="fieldrow checkrow"><input id="schedpaused" type="checkbox"> Paused</label>
     </div>
     <details id="schedwhat" class="more" open><summary>What the agent gets</summary>
-      <p class="colempty">Its command: <code id="schedline"></code></p>
-      <pre id="schedprompt" class="schedprompt"></pre>
+      <dl class="runfacts"><dt>Command</dt><dd id="schedline"></dd></dl>
+      <pre id="schedprompt" class="runprompt field" tabindex="0" aria-label="What the agent gets"></pre>
     </details>
     <p id="schedby" class="colempty" hidden></p>
     <p id="schederror" role="alert" hidden></p>

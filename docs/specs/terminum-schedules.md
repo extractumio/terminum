@@ -87,6 +87,8 @@ Scenario: AC-160 edge — a choice clears what it answered
 
 Scenario: AC-160 happy path — what will go
   Then "What the agent gets", open, shows the prompt of AC-162 as terminumd makes it, and the agent's command line in full (AC-156), before Save
+  And the command stands as RUN's window's "Command" line, the prompt in a field's well, its text as far in as a field's
+  And every label and field of the window, When's and the prompt among them, stands on the form's one edge, When's fields as tall as the others, Paused on its field's middle (`docs/UI-GUIDELINES.md` §2.4)
 
 Scenario: AC-160 happy path — changed at any time
   Given SCH-1 with S_TERM-41 running
