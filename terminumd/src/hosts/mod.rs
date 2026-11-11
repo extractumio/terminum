@@ -17,7 +17,7 @@ mod silent;
 pub mod tunnel;
 pub mod turns;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -53,6 +53,8 @@ pub struct Hosts {
     /// hosts whose agents' setup by itself ended since terminumd started, and why it failed
     /// (none: turned on, or no coding agent there); agents.rs `auto`
     agents_auto: Mutex<HashMap<String, Option<String>>>,
+    /// hosts whose agents' entries were refreshed since terminumd started; agents.rs `refresh`
+    agents_refreshed: Mutex<HashSet<String>>,
 }
 
 /// A recipe tried and, once in, its answer.
@@ -303,6 +305,7 @@ pub async fn action(app: &Shared, name: &str, action: &str) -> Result<(), String
         "remove" => {
             app.hosts.decisions.withdraw(name);
             app.hosts.agents_auto.lock().remove(name);
+            app.hosts.agents_refreshed.lock().remove(name);
             agents::removed(app, name);
             tunnel::stop(app, name);
             save(app, |h| {

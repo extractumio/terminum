@@ -182,10 +182,17 @@ pub fn auto_failed(app: &Shared, host: &str) -> Option<String> {
     app.hosts.agents_auto.lock().get(host).cloned().flatten().filter(|_| undecided(app, host))
 }
 
-/// After AC-84 updated the helper: the host's agents' entries rewritten where they differ, in
-/// the host's turn after any on or off running (agents still on then).
+/// After AC-84 updated the helper: the refresh is due again, at the link's next up (at once,
+/// with the updated helper).
 pub fn after_update(app: &Shared, host: &str) {
-    if !super::link::wanted(app, host) {
+    app.hosts.agents_refreshed.lock().remove(host);
+}
+
+/// The link is up with a current helper: the host's agents' entries rewritten where they differ
+/// and put into an agent installed after they were turned on (AC-99), once per terminumd run and
+/// helper update, in the host's turn after any on or off running (agents still on then).
+pub fn link_up(app: &Shared, host: &str) {
+    if !super::link::wanted(app, host) || !app.hosts.agents_refreshed.lock().insert(host.to_string()) {
         return;
     }
     let (app, host) = (app.clone(), host.to_string());

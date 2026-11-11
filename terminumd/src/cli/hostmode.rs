@@ -6,7 +6,7 @@
 //! One line per agent after the Mac's random marker, `<m> <agent> <result>`, so a login file
 //! printing to stdout never confuses the Mac; every other line is only said.
 //!
-//! Results: installed, removed, off (a refresh of an agent without terminum's), not-found,
+//! Results: installed, removed, off (status, or remove, of an agent without terminum's), not-found,
 //! needs-trust (Codex runs a changed hook once trusted in /hooks), skipped-own (the host runs its
 //! own terminum with hooks: "uses <host>'s own terminum"), refused: why (an entry named terminum
 //! with another command; nothing changed), failed: why.
@@ -152,10 +152,10 @@ fn one(ctx: &Ctx, args: &HostArgs, agent: &str) -> String {
     }
     let res = match (args.action.as_str(), agent) {
         ("status", a) => return if installed(ctx, a) { "installed".into() } else { "off".into() },
-        ("install", _) if args.refresh && !installed(ctx, agent) => return "off".into(),
-        ("install", "claude") if args.refresh && plugin_current(ctx) => Ok("installed"),
-        ("install", "claude") if args.refresh => super::agentrefresh::update_claude(ctx).map(|_| "installed"),
+        // a refresh also installs an agent found without terminum's (installed after the host's
+        // agents were turned on): the host's agents are on or off as a whole (AC-99)
         ("install", "claude") if installed(ctx, "claude") && plugin_current(ctx) => Ok("installed"),
+        ("install", "claude") if args.refresh && installed(ctx, "claude") => super::agentrefresh::update_claude(ctx).map(|_| "installed"),
         ("install", "claude") => agentsetup::install_claude(ctx, agentsetup::ASKED).map(|_| "installed"),
         ("install", _) => {
             let path = codex_home(ctx).join("hooks.json");

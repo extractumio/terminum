@@ -106,13 +106,18 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   }
 
   let drawn = "";
-  /** Anew only when what it shows changed, and not under a drag: a press spanning a read keeps its key. */
+  // a card under a press is not drawn anew: a read between the press and its release would take the card from under
+  // the pointer, and the click with it (its window, its session); what came meanwhile is drawn once it lets go
+  let pressed = false;
+  list.addEventListener("pointerdown", () => { pressed = true; });
+  for (const end of ["pointerup", "pointercancel"]) window.addEventListener(end, () => { if (pressed) { pressed = false; setTimeout(draw); } });
+  /** Anew only when what it shows changed, and not under a press or a drag. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
     // the minute: a window's reset and a reading's age show without news
     const now = JSON.stringify([agents, chosen(), counted().full, counted().full_projects, counted().kept, counted().queue, agents.map((a) => slots(a).map((s) => [s, doing(s)])), tasks?.length, readings(), Math.floor(Date.now() / 60000)]);
     if (dialog.open && editing) queue.show(editing, queueOf(editing));   // its window follows what other pages did
-    if (dragging() || now === drawn) return;
+    if (pressed || dragging() || now === drawn) return;
     drawn = now;
     list.replaceChildren(...agents.map(target));
     if (!agents.length) list.append(el("p", "colempty", "No agents yet: add one to run tasks."));

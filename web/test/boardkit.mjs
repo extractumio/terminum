@@ -59,7 +59,17 @@ export const mcpOpening = [rpc(1, "initialize", { protocolVersion: "2025-06-18",
 export function boardKit(page, { base, tmux, work, bin, home, app }) {
   const cli = path.join(ownTmp("tmb-"), "terminum");
   fs.symlinkSync(bin, cli);
-  const j = (p, method = "GET", body) => page.evaluate(async ([p, method, body]) => { const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) }); return { code: r.status, ...(await r.json().catch(() => ({}))) }; }, [p, method, body]);
+  /** A request by the page's own fetch, which signs in (signin.js): right after a navigation the browser's may
+   *  still stand, and its request goes out signed out (seen once in WebKit). A 401 throws terminumd's words. */
+  const j = async (p, method = "GET", body) => {
+    const r = await page.evaluate(async ([p, method, body]) => {
+      for (let i = 0; i < 100 && /\[native code\]/.test(String(window.fetch)); i++) await new Promise((ok) => setTimeout(ok, 100));
+      const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
+      return { code: r.status, ...(await r.json().catch(() => ({}))) };
+    }, [p, method, body]);
+    if (r.code === 401) throw new Error(`${method} ${p} refused as signed out: ${r.message ?? r.error}`);
+    return r;
+  };
   const panes = [];
   const newPane = (name) => {
     const pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", name).trim();

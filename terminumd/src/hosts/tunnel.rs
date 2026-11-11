@@ -334,6 +334,7 @@ async fn keep(app: Shared, host: String) {
             }
             Ok(mut run) => {
                 set(&app, &host, "up", "");
+                super::agents::link_up(&app, &host);
                 backoff = 1;
                 let retry = {
                     let g = app.tunnels.0.lock();

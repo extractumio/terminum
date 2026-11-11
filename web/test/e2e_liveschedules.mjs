@@ -144,7 +144,11 @@ export async function liveSchedules(page, live) {
   const bars = async () => {
     await page.reload();
     await page.waitForSelector(sched);
-    return page.evaluate(() => ["#agentbar", "#schedbar"].map((bar) => Math.round(document.querySelector(bar).getBoundingClientRect().height)));
+    // read once they hold still: a card drawn after the load (a session's dot, a reading) changes a bar's height
+    const read = () => page.evaluate(() => ["#agentbar", "#schedbar"].map((bar) => Math.round(document.querySelector(bar).getBoundingClientRect().height)));
+    let last = await read();
+    await until(async () => { const now = await read(), same = now.join() === last.join(); last = now; return same; });
+    return last;
   };
   const over = await bars(), many = [];
   for (let i = 0; i < 40; i++) many.push((await j("/api/tasks", "POST", { title: `Long column ${i}`, project })).id);
