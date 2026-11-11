@@ -65,7 +65,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .schedtoggle[aria-expanded="true"]::after { transform: rotate(45deg) translate(-1px, -1px); }
 .schedtracks { margin-top: var(--sp-2); }
 .schedtracks[hidden] { display: none; }
-.schedcard { display: flex; flex-direction: column; gap: var(--sp-1); padding: var(--sp-2); cursor: pointer; }
+.schedcard { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-1); padding: var(--sp-2); cursor: pointer; }   /* stretch: .item (style.css) starts its rows */
 @media (hover: hover) { .schedcard:hover { background: var(--surface-2); } }
 .schedcard:focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; }
 .schedcard .ctitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
