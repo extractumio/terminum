@@ -282,7 +282,7 @@ Scenario: AC-164 failure — not read
 ```gherkin
 Scenario: AC-182 happy path
   Given SCH-1 "Nightly deps check", every day at 03:00, its last task DONE and its session closed
-  When the human presses Run now on its card and confirms "Run SCH-1 now, on its agent? Its cadence stays as it is."
+  When the human presses Run now, the play key at the right of its card's head, and confirms "Run SCH-1 now, on its agent? Its cadence stays as it is."
   Then terminumd makes its task as a firing does (AC-162), S_TERM-42 IN PROGRESS, its history saying who ran the schedule now, and starts it on the schedule's agent in its kept slot
   And the firing is written and shows on the Scheduled page (AC-164); the card's next run is still 03:00
   And a toast says "SCH-1 runs now: S_TERM-42"
@@ -385,4 +385,4 @@ Single stage.
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; with long columns every card over them whole)
 - [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
-- [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's button in a browser: not run
+- [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`
