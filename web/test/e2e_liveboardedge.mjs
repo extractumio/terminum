@@ -238,12 +238,23 @@ ${"z".repeat(400)}
       await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(500);
       const m = await page.evaluate(() => {
         const body = document.querySelector("#taskbody"), edge = body.getBoundingClientRect().left + body.clientLeft + body.clientWidth;
-        // what sticks out past the body's inner edge, said when it fails (a scroller's own content excepted)
-        const out = [...body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > edge + 0.5 && !e.parentElement.closest("pre"))
-          .slice(0, 6).map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}:${Math.round(e.getBoundingClientRect().right - edge)}`);
+        // what sticks out past the body's inner edge, said when it fails (a scroller's own content excepted): a box,
+        // a box's content spilling out of it, a run of text
+        const name = (e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}`, past = (r) => Math.round(r.right - edge);
+        const inPre = (n) => n.parentElement.closest("pre");
+        const boxes = [...body.querySelectorAll("*")].filter((e) => !inPre(e));
+        const out = boxes.filter((e) => e.getBoundingClientRect().right > edge + 0.5).map((e) => `${name(e)}:${past(e.getBoundingClientRect())}`);
+        const spills = boxes.filter((e) => e.clientWidth > 0 && e.scrollWidth > e.clientWidth + 1 && getComputedStyle(e).overflowX === "visible")
+          .map((e) => `${name(e)} "${e.firstChild?.textContent?.trim().slice(0, 16)}" spills ${e.scrollWidth - e.clientWidth}`);
+        const texts = [], walk = document.createTreeWalker(body, NodeFilter.SHOW_TEXT), range = document.createRange();
+        for (let n = walk.nextNode(); n; n = walk.nextNode()) {
+          range.selectNodeContents(n); const r = range.getBoundingClientRect();
+          if (!inPre(n) && r.width && r.right > edge + 0.5) texts.push(`text in ${name(n.parentElement)}:${past(r)} "${n.data.trim().slice(0, 20)}"`);
+        }
+        out.push(...spills, ...texts); out.length = Math.min(out.length, 8);
         return { page: document.documentElement.scrollWidth - innerWidth, box: document.querySelector("#taskbox").scrollWidth - document.querySelector("#taskbox").clientWidth, body: body.scrollWidth - body.clientWidth, h: document.querySelector("#taskbox").getBoundingClientRect().bottom - innerHeight, out };
       });
-      check("long words stay inside a phone's window, sideways nothing", m.page <= 0 && m.box <= 1 && m.body <= 1 && m.h <= 0, JSON.stringify(m));
+      check("long words stay inside a phone's window, sideways nothing", m.page <= 0 && m.box <= 1 && m.body <= 1 && m.h <= 0 && !m.out.length, JSON.stringify(m));
       await page.setViewportSize({ width: 1400, height: 900 }); await page.click("#taskclose"); await nap(200);
     },
     async human_moves_while_agent_finishes() {

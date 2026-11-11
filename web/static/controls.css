@@ -111,8 +111,10 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 :is(dialog.dlg, .footform) .field:not(.lead) { padding: var(--sp-2) var(--field-px); }
 :is(dialog.dlg, .footform) textarea.field { resize: vertical; }
 :is(dialog.dlg, .footform) label .field { color: var(--t-fg); }   /* its label's muted stays on the label */
-/* a choice: a field like the others on every engine, its chevron the theme's */
+/* a choice: a field like the others on every engine, its chevron the theme's; a choice longer than the field ends
+   in an ellipsis (WebKit lets a plain select's text run past it and widen what holds it: terminum-kanban.md AC-133) */
 :is(dialog.dlg, .footform) select.field { -webkit-appearance: none; appearance: none; padding-right: 28px; background-repeat: no-repeat; background-size: 5px 5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   background-position: calc(100% - 17px) center, calc(100% - 12px) center;
   background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); }
 :is(dialog.dlg, .footform) [role="alert"] { margin: 0; color: var(--danger-text); font-size: var(--fs-label); }
