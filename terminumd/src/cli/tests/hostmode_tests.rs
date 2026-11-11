@@ -103,10 +103,40 @@ fn refresh_rewrites_only_when_the_content_differs() {
     assert_eq!(c.matches("plugin uninstall").count(), 1, "only the first install's: {c}");
     assert_eq!(json(&plugin.join("hooks/hooks.json"))["hooks"]["Stop"][0]["hooks"][0]["command"],
                format!("{} hook claude", h.home.path(".terminum/bin/terminum-host").display()));
-    // an agent without terminum's is not added by a refresh
-    let h2 = host();
-    assert_eq!(go(&h2, "install", true), vec![format!("{M} claude off"), format!("{M} codex off")]);
-    assert!(!h2.codex.join("hooks.json").exists() && calls(&h2).is_empty());
+}
+
+/// AC-99 edge: an agent installed on the host after its agents were turned on gets terminum's
+/// at the next refresh, as an install would; a second refresh changes nothing.
+#[test]
+fn a_refresh_installs_an_agent_found_without_terminums() {
+    let h = host();
+    assert_eq!(go(&h, "install", true), vec![format!("{M} claude installed"), format!("{M} codex needs-trust")]);
+    let c = calls(&h);
+    assert!(c.contains("plugin marketplace add") && c.contains("plugin install terminum@terminum-local --scope user"), "{c}");
+    assert!(agentsetup::installed(&h.home.ctx(&[]), "claude"));
+    let mcp = json(&h.home.path(".terminum/hooks/claude/plugins/terminum/.mcp.json"));
+    assert_eq!(mcp["mcpServers"]["terminum"]["command"], h.home.path(".terminum/bin/terminum-host").display().to_string());
+    assert!(std::fs::read_to_string(h.codex.join("config.toml")).unwrap().contains("[mcp_servers.terminum]"));
+    let n = calls(&h).lines().count();
+    let hooks = std::fs::read_to_string(h.codex.join("hooks.json")).unwrap();
+    assert_eq!(go(&h, "install", true), vec![format!("{M} claude installed"), format!("{M} codex installed")]);
+    assert_eq!(calls(&h).lines().count(), n, "nothing to do: {}", calls(&h));
+    assert_eq!(std::fs::read_to_string(h.codex.join("hooks.json")).unwrap(), hooks);
+}
+
+/// Taken out by `remove` (agents turned off), status and remove still say off; a refresh after
+/// the plugin's files were left behind installs anew rather than trusting them.
+#[test]
+fn off_is_said_by_status_and_remove_only() {
+    let h = host();
+    assert_eq!(go(&h, "status", false), vec![format!("{M} claude off"), format!("{M} codex off")]);
+    assert_eq!(go(&h, "remove", false), vec![format!("{M} claude off"), format!("{M} codex removed")]);
+    go(&h, "install", false);
+    go(&h, "remove", false);
+    assert!(h.home.path(".terminum/hooks/claude/plugins/terminum/.mcp.json").exists(), "the plugin's files stay after a remove");
+    let before = calls(&h).matches("plugin install").count();
+    assert_eq!(go(&h, "install", true)[0], format!("{M} claude installed"));
+    assert_eq!(calls(&h).matches("plugin install").count(), before + 1, "{}", calls(&h));
 }
 
 #[test]

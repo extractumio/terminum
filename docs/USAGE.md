@@ -527,7 +527,9 @@ Once a host attaches, terminum sets it up by itself, with no question: its helpe
 Both follow this Mac's terminum at each upgrade. `hosts files-remove devbox` (Files' menu: "Remove
 Helper from devbox…", or Not now) and `hosts agents devbox off` turn one off for that host; what
 you turned off stays off until you turn it on. A host with no coding agent is looked at again
-when terminum next starts.
+when terminum next starts; a coding agent installed on a host after its agents were turned on gets
+terminum's hooks and MCP server when terminum next starts or upgrades (or at once with `hosts
+agents devbox on`).
 
 `hosts agents devbox on` (or the host menu's "Coding agents' progress on devbox…") puts terminum's
 hooks and MCP server into Claude Code and Codex on devbox (`~/.claude`, `~/.codex`) and prints one

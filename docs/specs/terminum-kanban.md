@@ -587,6 +587,10 @@ Scenario: AC-117 edge — closed and seen
 
 Scenario: AC-117 edge — a filter
   Then the count is of every project, whatever the board's filter
+
+Scenario: AC-117 edge — many lines
+  Given more lines than a third of the window holds
+  Then they scroll in that third, and the terminal keeps the rest of the page
 ```
 
 ### AC-118 — Archive [SHOULD / P1]
