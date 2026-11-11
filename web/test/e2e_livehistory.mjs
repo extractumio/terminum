@@ -131,7 +131,7 @@ export async function liveHistory(page, opts) {
     await page.click(`#dperiod [data-period="${period}"]`);
     check(`AC-152 a ${period} is drawn in ${n} columns`, await until(async () => (await page.$$("#active rect.hit")).length === n, 6000));
   }
-  check("AC-152 what is kept does not reach the year before: no comparison, and the page says from when it counts", /no earlier data/.test(await page.textContent("#tiles .tile .tsub")) && /typing counted from Today/.test(await page.textContent("#dnote")), await page.textContent("#dnote"));
+  check("AC-152 what is kept does not reach the year before: no comparison, and the page says from when it counts", /no earlier data/.test(await page.textContent("#tiles .tile .tsub")) && /typing counted from (Today|Yesterday)\./.test(await page.textContent("#dnote")), await page.textContent("#dnote"));
   // the other tabs: a session of Dispatcher's, a failed write and a report in the store (e2e_livedispatcher.mjs runs real sessions)
   // what other suites of this run left is counted too: the figures are told by what this adds
   const dash = `dash${Date.now()}`, sys0 = await numbers("tab=system&period=year"), cost0 = await numbers("tab=costs&period=year");
