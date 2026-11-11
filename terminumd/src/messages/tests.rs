@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The message history in the store (AC-90, AC-147), its search (AC-151) and the Dashboard's numbers (AC-152).
-
-use std::collections::HashMap;
+//! The message history in the store (AC-90, AC-147), its search (AC-151).
 
 use super::search::{fts_query, page, Filter};
 use super::*;
@@ -129,43 +127,6 @@ fn ac151_days_in_local_time_and_a_message_s_neighbours() {
     let side = |k: &str| c[k].as_array().unwrap().iter().map(|i| i["text"].as_str().unwrap().to_string()).collect::<Vec<_>>();
     assert_eq!((side("before"), side("after")), (vec!["monday one".to_string()], vec!["tuesday".to_string()]), "its own pane only");
     assert!(s.with(|tx| search::context(tx, 999, 3, 3)).unwrap().is_none());
-}
-
-#[test]
-fn ac152_stretches_of_active_time() {
-    let m = 60_000;
-    assert_eq!(stats::stretches(&[0, 5 * m, 20 * m]), [(0, 22 * m)], "a pause of 15 minutes still goes on");
-    assert_eq!(stats::stretches(&[0, 16 * m]), [(0, 2 * m), (16 * m, 18 * m)]);
-    assert!(stats::stretches(&[]).is_empty());
-    assert_eq!((stats::civil(0), stats::civil(20_400), stats::civil(-1)), ("1970-01-01".into(), "2025-11-08".into(), "1969-12-31".into()));
-}
-
-#[test]
-fn ac152_the_human_s_numbers_only() {
-    let s = store("messages-dashboard");
-    let noon: i64 = s.with(|tx| tx.query_row("SELECT CAST(strftime('%s', date('now', 'localtime'), '+12 hours', 'utc') AS INTEGER) * 1000", [], |r| r.get(0)).map_err(sql)).unwrap();
-    let m = 60_000;
-    let mut ms = vec![msg(noon, "k1", "one"), msg(noon + 5 * m, "k2", "two"), msg(noon + 6 * m, "k2", "three")];
-    ms[0].agent = Some("claude".into());
-    ms[0].project = Some("p1".into());
-    let mut robot = msg(noon + 7 * m, "k3", "T-0412: the task");
-    robot.sender = DISPATCHER.into();
-    ms.push(robot);
-    ms.push(msg(noon - 86_400_000, "k1", "yesterday"));
-    put(&s, &ms);
-    let colors = HashMap::from([("p1".to_string(), 3usize)]);
-    let d = s.with(|tx| stats::dashboard(tx, noon + 10 * m, 1, None, &colors)).unwrap();
-    let now = &d["now"];
-    assert_eq!(now["tiles"]["messages"], 3, "Dispatcher's not counted");
-    assert_eq!(now["tiles"]["active_ms"], 8 * m, "noon to 12:06, and 2 minutes more");
-    assert_eq!(now["series"][0]["sessions"], 2);
-    assert_eq!(now["series"][0]["spans"], serde_json::json!([[720, 728]]));
-    assert_eq!(now["kinds"], serde_json::json!({"claude": 1, "shell": 2}));
-    assert_eq!(now["projects"][0]["n"], 2, "no project first, most first");
-    assert_eq!(now["projects"][1], serde_json::json!({"id": "p1", "name": "", "n": 1, "color": 3}));
-    assert_eq!(d["before"]["messages"], 1, "yesterday up to the same time");
-    let only = s.with(|tx| stats::dashboard(tx, noon + 10 * m, 1, Some("p1"), &colors)).unwrap();
-    assert_eq!(only["now"]["tiles"]["messages"], 1);
 }
 
 #[test]

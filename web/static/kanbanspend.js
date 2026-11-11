@@ -2,11 +2,11 @@
 // What a card says its session uses and spent (terminum-dispatcher.md AC-127 to AC-129): terminumd's numbers,
 // in words; nothing is added up here.
 import { el } from "./listparts.js";
-import { countOf } from "./kanbanutil.js";
+import { countOf, dollars } from "./kanbanutil.js";
 
 /** What a finished task's sessions spent (terminum-dispatcher.md AC-129): tokens that count, dollars where known. */
 export function spentLine(s) {
-  const line = el("span", "cspent", [countOf(s.counted), s.usd != null ? `≈$${s.usd.toFixed(2)}` : null].filter(Boolean).join(" · "));
+  const line = el("span", "cspent", [countOf(s.counted), s.usd != null ? dollars(s.usd) : null].filter(Boolean).join(" · "));
   line.title = [`${s.input.toLocaleString("en")} in, ${s.output.toLocaleString("en")} out, ${s.cache_write.toLocaleString("en")} written to the cache, ${s.cache_read.toLocaleString("en")} read from it`,
     s.usd != null ? "an estimate at list prices" : "no price known for its model", s.with.length ? `for this and ${s.with.join(", ")} together` : null].filter(Boolean).join("; ");
   return line;

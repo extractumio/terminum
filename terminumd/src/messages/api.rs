@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The Message history's and the Dashboard's routes (terminum.md AC-151, AC-152), behind the
+//! The Message history's routes (terminum.md AC-151), behind the
 //! page's sign-in; reads only, off the async workers.
 //!
 //! `GET /api/messages?q=&sort=best|new&from=&to=&project=a,b&sender=&kind=&pane=&cursor=` (project `-`:
@@ -7,7 +7,7 @@
 //! (search::page), each item with `live` (its pane is in the session list), the first page with
 //! the day strip's `days`; `GET /api/messages/meta`: the filters' projects, first day, the page's
 //! theme;
-//! `GET /api/messages/{id}/context?before=&after=`; `GET /api/dashboard?days=&project=`.
+//! `GET /api/messages/{id}/context?before=&after=`.
 
 use std::collections::HashMap;
 
@@ -26,7 +26,6 @@ pub fn routes() -> Router<Shared> {
         .route("/api/messages", get(list))
         .route("/api/messages/meta", get(meta))
         .route("/api/messages/{id}/context", get(context))
-        .route("/api/dashboard", get(dashboard))
 }
 
 type Params = Query<HashMap<String, String>>;
@@ -104,14 +103,6 @@ async fn context(State(app): State<Shared>, Path(id): Path<i64>, Query(q): Param
 }
 
 /// The session list's color of each project.
-fn colors(app: &Shared) -> HashMap<String, usize> {
+pub fn colors(app: &Shared) -> HashMap<String, usize> {
     app.projects.lock().list().iter().map(|p| (p.id.clone(), p.color)).collect()
-}
-
-async fn dashboard(State(app): State<Shared>, Query(q): Params) -> Response {
-    let days = q.get("days").and_then(|d| d.parse::<i64>().ok()).unwrap_or(30);
-    // as the list's filter: absent or empty, every project; NONE, no project
-    let project = q.get("project").filter(|p| !p.is_empty()).map(|p| if p == search::NONE { String::new() } else { p.clone() });
-    let colors = colors(&app);
-    answer(store(&app, move |tx| super::stats::dashboard(tx, crate::inputs::now_ms(), days, project.as_deref(), &colors)).await)
 }

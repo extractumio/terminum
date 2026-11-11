@@ -2,12 +2,11 @@
 //! The message history (terminum.md AC-147, terminum-terminal.md AC-90): each message sent in a pane,
 //! a shell's command at Enter or a coding agent's prompt, a row of the tasks' store's `messages`
 //! table beside the input log, its words in `messages_fts` (FTS5) for the Message history's
-//! search (AC-151) and its counts for the Dashboard (AC-152). What is kept out and how a text is
+//! search (AC-151) and its rows for the Dashboard (AC-152, `crate::dashboard`). What is kept out and how a text is
 //! redacted: `crate::sent`. Called off the async workers, in the store's transactions.
 
 pub mod api;
 pub mod search;
-pub mod stats;
 #[cfg(test)]
 mod tests;
 
