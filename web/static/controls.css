@@ -107,10 +107,13 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 .dhead { display: flex; align-items: center; margin: -4px -4px 0 0; }   /* × in the corner, the title at the text's edge */
 .dhead h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-title); font-weight: 600; line-height: var(--lh-ui); overflow-wrap: anywhere; }
 :is(dialog.dlg, .footform) label:not(.tick, .lead) { font-size: var(--fs-label); color: var(--muted); }
-:is(dialog.dlg, .footform) .field { font: inherit; line-height: 1.3; min-width: 0; }
+:is(dialog.dlg, .footform) { --field-lh: 1.3; --field-h: calc(2 * var(--sp-2) + var(--field-lh) * 1em); }   /* a one-line field's height, in the em where it is used */
+:is(dialog.dlg, .footform) .field { font: inherit; line-height: var(--field-lh); min-width: 0; }
 :is(dialog.dlg, .footform) .field:not(.lead) { padding: var(--sp-2) var(--field-px); }
 :is(dialog.dlg, .footform) textarea.field { resize: vertical; }
-:is(dialog.dlg, .footform) label .field { color: var(--t-fg); }   /* its label's muted stays on the label */
+:is(dialog.dlg, .footform) :is(label, fieldset) .field { color: var(--t-fg); }   /* its label's muted stays on the label */
+:is(dialog.dlg, .footform) input:is([type="date"], [type="time"]).field { box-sizing: border-box; height: var(--field-h); }   /* their calendar and clock no taller than a field */
+:is(dialog.dlg, .footform) pre.field { font-size: var(--fs-label); }   /* a read-only text (a prompt): a field's size with no label round it */
 /* a choice: a field like the others on every engine, its chevron the theme's; a choice longer than the field ends
    in an ellipsis (WebKit lets a plain select's text run past it and widen what holds it: terminum-kanban.md AC-133) */
 :is(dialog.dlg, .footform) select.field { -webkit-appearance: none; appearance: none; padding-right: 28px; background-repeat: no-repeat; background-size: 5px 5px;

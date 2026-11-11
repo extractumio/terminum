@@ -6,12 +6,14 @@
 .runfacts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: var(--sp-1) var(--sp-3); margin: 0; font-size: var(--fs-label); }
 .runfacts dt { color: var(--muted); }
 .runfacts dd { margin: 0; overflow-wrap: anywhere; font-family: var(--term-font); }
-.runprompt { margin: 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); font-size: var(--fs-label); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* what goes to the agent (RUN's, a schedule's): a read-only field, its look the fields' (controls.css) */
+.runprompt { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
 #runadd, #runfresh { margin-right: auto; }
 #runmessage { width: 100%; box-sizing: border-box; }
-#runform { gap: var(--sp-3); }
-#runhow .runfacts { margin-top: var(--sp-2); }
+/* a task's windows (New task, Run, a schedule): their parts 12px apart; Text's head 4px over its text, as a label */
+:is(#newbox, #runbox, #schedbox) > form { gap: var(--sp-3); }
+:is(#newbox, #schedbox) .edithead { margin-bottom: calc(var(--sp-1) - var(--sp-3)); }
 
 /* its windows: the page's own type; what is typed for a machine stays in the terminal's */
 #taskbox, #runbox, .board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
@@ -19,6 +21,7 @@
 :is(#taskbox, #runbox, .board-page dialog.dlg) :is(#agentcommand, #projectdir, .runprompt, textarea.droparea, #newtext) { font-family: var(--term-font); }
 .more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
 .more[open] summary { margin-bottom: var(--sp-2); }
+details.more > :not(summary, [hidden]) ~ :not([hidden]) { margin-top: var(--sp-2); }   /* its lines 8px apart */
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* its windows */
