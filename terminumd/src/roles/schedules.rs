@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A manager's hand on its project's schedules (`terminum-agents.md` AC-176, `terminum-schedules.md` AC-178): made,
+//! A manager's hand on its project's schedules (`terminum-agents.md` AC-180, `terminum-schedules.md` AC-182): made,
 //! changed, deleted by the board's own rules (tasks/schedules.rs), its author shown on the card; and run now.
 
 use rusqlite::Transaction;

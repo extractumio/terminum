@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Tokens for callers outside a pane (`terminum-agents.md` AC-177): `terminum tokens add` prints one once, and
+//! Tokens for callers outside a pane (`terminum-agents.md` AC-181): `terminum tokens add` prints one once, and
 //! terminumd keeps its SHA-256 alone. A token says which role and project a program's `terminum tool` calls have
 //! and names it in what it writes; it is no secret from a process of the same user, which can make one.
 
@@ -90,7 +90,7 @@ pub fn of(tx: &Transaction, token: &str, now: i64) -> Result<Token, String> {
 }
 
 /// `terminum tokens` on the private socket: the list, a new one, one removed. A token is made and removed from
-/// outside every pane of terminum (AC-177): a session there, a worker or a manager, gives itself no other role.
+/// outside every pane of terminum (AC-181): a session there, a worker or a manager, gives itself no other role.
 pub async fn route(State(app): State<Shared>, seen: axum::http::Extensions, Json(body): Json<Value>) -> Response {
     let peer = seen.get::<ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
     let action = body["action"].as_str().unwrap_or("").to_string();

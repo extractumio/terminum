@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Letting go of what Dispatcher holds (`terminum-dispatcher.md` AC-138, AC-142): a human's, or the project's
-//! manager's by its stop_task (`terminum-agents.md` AC-175); and a budget changed on a running task (AC-126).
+//! manager's by its stop_task (`terminum-agents.md` AC-179); and a budget changed on a running task (AC-126).
 
 use axum::extract::{Path, State};
 use axum::response::Response;

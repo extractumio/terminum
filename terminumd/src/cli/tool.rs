@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! `terminum tool`, `terminum tools`, `terminum tokens` (terminum-agents.md AC-177): the tools `terminum mcp`
+//! `terminum tool`, `terminum tools`, `terminum tokens` (terminum-agents.md AC-181): the tools `terminum mcp`
 //! offers, from a shell. The caller is the pane the command runs in, as for `terminum mcp`, or outside a pane the
 //! token in TERMINUM_TOKEN; terminumd decides what that caller may run. A token is never an argument: a command
 //! line is read by every process of the machine.
@@ -157,4 +157,40 @@ pub fn tokens(ctx: &Ctx, rest: &[String]) -> Result<i32, String> {
         _ => return Err(TOKENS_USAGE.into()),
     }
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::cli::{parse, Cmd};
+
+    fn args(a: &[&str]) -> Vec<String> {
+        a.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn ac181_the_commands_parse() {
+        assert_eq!(parse(&args(&["tool", "list_tasks"])), Ok(Cmd::Tool("list_tasks".into(), None)));
+        assert_eq!(parse(&args(&["tool", "get_task", r#"{"id":"T-1"}"#])), Ok(Cmd::Tool("get_task".into(), Some(r#"{"id":"T-1"}"#.into()))));
+        assert!(parse(&args(&["tool"])).unwrap_err().starts_with(TOOL_USAGE));
+        assert!(parse(&args(&["tool", "a", "b", "c"])).is_err());
+        assert_eq!(parse(&args(&["tools", "search", "run", "a", "task"])), Ok(Cmd::Tools(args(&["search", "run", "a", "task"]))));
+        assert_eq!(parse(&args(&["tokens"])), Ok(Cmd::Tokens(vec![])));
+        assert!(crate::cli::wanted(&args(&["terminumd", "tool"])) && crate::cli::wanted(&args(&["terminumd", "tokens"])));
+    }
+
+    #[test]
+    fn ac181_outside_a_pane_and_with_no_token_nothing_is_called() {
+        let home = crate::testutil::fresh_dir("tool-nobody");
+        let ctx = Ctx::new(HashMap::from([("HOME".to_string(), home.display().to_string())]), home.clone()).unwrap();
+        assert_eq!(tool(&ctx, "list_tasks", None).unwrap_err(), NOT_A_CALLER);
+        assert_eq!(tools(&ctx, &[]).unwrap_err(), NOT_A_CALLER);
+        assert!(tool(&ctx, "list_tasks", Some("{not json")).unwrap_err().starts_with("The arguments are not JSON"));
+        // a token is never an argument: add wants its flags, and nothing else
+        for bad in [&["add", "ci"][..], &["add", "ci", "--role", "manager"], &["add", "ci", "--token", "x"], &["remove"], &["rotate", "ci"]] {
+            assert_eq!(tokens(&ctx, &args(bad)).unwrap_err(), TOKENS_USAGE, "{bad:?}");
+        }
+    }
 }

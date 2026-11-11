@@ -343,3 +343,66 @@ fn the_tools_stay_compact() {
     assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 3200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
 }
+
+/// A forward that answers a probe with `role` and any call with its tool's name.
+fn as_role(role: &'static str) -> impl Fn(&Value) -> Result<(u16, Option<Value>), Down> {
+    move |body: &Value| Ok((200, Some(if body["tool"] == "probe" { json!({"text": "terminum knows this pane.", "error": false, "role": role}) } else { json!({"text": format!("ran {}", body["tool"].as_str().unwrap()), "error": false}) })))
+}
+
+fn asked(e: &Env, forward: Forward, method: &str, params: Value) -> Value {
+    serde_json::from_str(&answer(&json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string(), e, forward).unwrap()).unwrap()
+}
+
+fn tool_text(e: &Env, forward: Forward, name: &str, args: Value) -> (String, bool) {
+    let r = asked(e, forward, "tools/call", json!({"name": name, "arguments": args}));
+    (r["result"]["content"][0]["text"].as_str().unwrap_or_default().to_string(), r["result"]["isError"] == true)
+}
+
+#[test]
+fn ac174_a_worker_s_session_neither_finds_nor_runs_a_manager_s_tool() {
+    let (e, forward) = (env(Some(TMUX), Some("%3"), None), as_role("worker"));
+    let init = asked(&e, &forward, "initialize", json!({}));
+    assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "a worker is told nothing of a manager");
+    let listed = asked(&e, &forward, "tools/list", json!({}))["result"]["tools"].to_string();
+    assert!(!listed.contains("run_task") && !listed.contains("sessions (") && !listed.contains("agents ("), "its search names no manager's area");
+    let (found, _) = tool_text(&e, &forward, "search_tools", json!({"query": "run a task on an agent", "limit": 10}));
+    for theirs in crate::roles::MANAGER_TOOLS {
+        assert!(!found.contains(&format!("{theirs}(")), "{theirs} in {found}");
+        let (said, refused) = tool_text(&e, &forward, "execute_tool", json!({"name": theirs, "arguments": {}}));
+        assert!(refused && said.starts_with(&format!("No tool is named {theirs:?}")), "{said}");
+        let (said, refused) = tool_text(&e, &forward, "get_tool_info", json!({"names": [theirs]}));
+        assert!(refused && said.starts_with(&format!("No tool is named {theirs:?}")), "{said}");
+        assert!(asked(&e, &forward, "tools/call", json!({"name": theirs, "arguments": {}}))["error"]["message"].as_str().unwrap().starts_with("Unknown tool"));
+    }
+    let (empty, _) = tool_text(&e, &forward, "search_tools", json!({"query": "zzz qqq"}));
+    assert!(!empty.contains("run_task"), "the areas listed are a worker's: {empty}");
+}
+
+#[test]
+fn ac174_a_manager_s_session_finds_and_runs_its_tools() {
+    let (e, forward) = (env(Some(TMUX), Some("%3"), None), as_role("manager"));
+    let init = asked(&e, &forward, "initialize", json!({}));
+    assert_eq!(init["result"]["instructions"], format!("{INSTRUCTIONS}{MANAGER_INSTRUCTIONS}"));
+    assert!(asked(&e, &forward, "tools/list", json!({}))["result"]["tools"].to_string().contains("sessions (the project's sessions"));
+    for (query, tool) in [("start a task on an agent", "run_task"), ("add a new agent to the pool", "create_agent"), ("run a schedule now", "run_schedule"),
+                          ("type text into a session", "send_to_session"), ("close a session", "close_session"), ("what is running", "list_runs"), ("costs statistics", "get_dashboard")] {
+        let (found, _) = tool_text(&e, &forward, "search_tools", json!({"query": query}));
+        assert!(found.contains(&format!("{tool}(")), "{query}: {found}");
+    }
+    assert_eq!(tool_text(&e, &forward, "execute_tool", json!({"name": "run_task", "arguments": {"id": "TERM-1", "agent": "Opus"}})), ("ran run_task".to_string(), false));
+    // a call's shape is checked before it goes
+    let (said, refused) = tool_text(&e, &forward, "execute_tool", json!({"name": "run_task", "arguments": {}}));
+    assert!(refused && said == "id is required", "{said}");
+    // a worker's tools stay its own too
+    assert!(tool_text(&e, &forward, "search_tools", json!({"query": "create a task"})).0.contains("create_task("));
+}
+
+#[test]
+fn ac174_a_session_that_becomes_known_as_manager_later_finds_its_tools_then() {
+    let role = std::cell::Cell::new("worker");
+    let forward = |body: &Value| as_role(role.get())(body);
+    let e = env(Some(TMUX), Some("%3"), None);
+    assert!(!tool_text(&e, &forward, "search_tools", json!({"query": "start a task on an agent"})).0.contains("run_task("));
+    role.set("manager");
+    assert!(tool_text(&e, &forward, "search_tools", json!({"query": "start a task on an agent"})).0.contains("run_task("));
+}

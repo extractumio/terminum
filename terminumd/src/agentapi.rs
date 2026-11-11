@@ -38,7 +38,7 @@ pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must n
 
 pub async fn agent(State(app): State<Shared>, seen: axum::http::Extensions, Json(body): Json<Value>) -> Json<Value> {
     let peer = seen.get::<axum::extract::ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
-    // a program outside a pane names itself by a token (AC-177): on this Mac's socket alone, never a host's link
+    // a program outside a pane names itself by a token (AC-181): on this Mac's socket alone, never a host's link
     if body["token"].is_string() {
         return said(roles::by_token(&app, &body).await);
     }
@@ -53,7 +53,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let Some(server) = server.filter(|s| s.session_of(pane).is_some()) else { return answer(NOT_IN_PANE, true) };
     let key = server.key(pane);
     if body["tool"] == "probe" {
-        // `terminum mcp` asks at initialize whether to offer its tools here, and which (AC-173)
+        // `terminum mcp` asks at initialize whether to offer its tools here, and which (AC-174)
         let manager = crate::tasks::api::store(&app, move |tx| Ok(roles::manages(tx, &key)?.is_some())).await.unwrap_or(false);
         return Json(json!({"text": "terminum knows this pane.", "error": false, "role": roles::name(manager)}));
     }
@@ -65,7 +65,7 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let caller = Caller { agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
     if roles::MANAGER_TOOLS.contains(&tool.as_str()) {
-        // a manager's tool (AC-173, AC-174): its pane's own record decides, and the call comes from under that pane
+        // a manager's tool (AC-174, AC-178): its pane's own record decides, and the call comes from under that pane
         let from_pane = match local {
             Some(peer) => roles::peer::in_pane(peer, &server, pane).await,
             None => true,

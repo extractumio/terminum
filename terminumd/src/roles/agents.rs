@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A manager's hand on the pool of agents (`terminum-agents.md` AC-176): the pool is every project's, and the
+//! A manager's hand on the pool of agents (`terminum-agents.md` AC-180): the pool is every project's, and the
 //! rules are the board's own (tasks/agents.rs): a name once, a command of one line, slots its schedules keep.
 
 use serde_json::{json, Value};

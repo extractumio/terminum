@@ -27,7 +27,7 @@ minutes. Only the main agent calls update_session_plan; subagents report to it. 
 arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before you stop. Left to \
 do: execute_tool(\"create_task\", {title, severity, text}). A tool says you are not in terminum: stop calling.";
 
-/// What a manager's session is told besides (AC-173): its tools are the way it acts on its project.
+/// What a manager's session is told besides (AC-174): its tools are the way it acts on its project.
 pub const MANAGER_INSTRUCTIONS: &str = " You are this project's manager: search_tools also finds the tools to run its tasks on \
 agents (run_task), follow and answer them (list_runs, get_task), and manage the pool's agents, the project's schedules \
 and sessions. Act on the project through these tools alone, never by typing into tmux or changing terminum's files.";
@@ -178,7 +178,7 @@ fn knows(env: &Env, forward: Forward) -> bool {
     k
 }
 
-/// Whether the pane's session is its project's manager (AC-173): terminumd's word at the probe, asked again while
+/// Whether the pane's session is its project's manager (AC-174): terminumd's word at the probe, asked again while
 /// it says no, so a session whose run terminumd wrote a moment after its start still finds its tools. What it
 /// may run terminumd decides at each call; this only chooses what search shows.
 pub fn manager(env: &Env, forward: Forward) -> bool {

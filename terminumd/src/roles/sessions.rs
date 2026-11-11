@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A manager's hand on its project's sessions (`terminum-agents.md` AC-175): it lists and reads them, types into
+//! A manager's hand on its project's sessions (`terminum-agents.md` AC-179): it lists and reads them, types into
 //! another one as a paste, and closes one. Only the project's own panes, never the manager's own; text reaches tmux
 //! as a buffer, never on its command line, and holds no control characters.
 

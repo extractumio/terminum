@@ -97,7 +97,7 @@ fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why
     Ok((t.id, fire))
 }
 
-/// Runs schedule `id` now, whatever its cadence and paused or not (terminum-schedules.md AC-176): its task is made
+/// Runs schedule `id` now, whatever its cadence and paused or not (terminum-schedules.md AC-180): its task is made
 /// and started as a firing's, its cadence untouched; refused while a task of it is in progress or its last
 /// session is busy. `who`: who asked, for the task's history. The task's ID.
 pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {

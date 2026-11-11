@@ -110,7 +110,7 @@ pub enum Cmd {
     HostHooks(hostmode::HostArgs),
     /// `mcp`: the MCP server a coding agent starts, on stdin and stdout (AC-97, AC-98)
     Mcp,
-    /// `tool <name> [json | -]`: one of its tools, from a shell (AC-177)
+    /// `tool <name> [json | -]`: one of its tools, from a shell (AC-181)
     Tool(String, Option<String>),
     /// `tools [search … | info …]`
     Tools(Vec<String>),

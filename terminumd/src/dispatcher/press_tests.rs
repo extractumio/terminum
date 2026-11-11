@@ -257,3 +257,21 @@ fn ac156_going_on_starts_the_agent_s_command_as_the_pool_has_it_now() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac179_a_manager_s_press_says_whose_words_they_are() {
+    store_of("api-manager").with(|tx| {
+        let a = made(tx, "Fix it", "the text");
+        let mut goes = facts(tx, std::slice::from_ref(&a))?;
+        goes.manager = true;
+        let prompt = goes.prompt(Some("be brief"));
+        assert!(prompt.starts_with(&format!("The project's manager ran task {}: Fix it\n\nThe project's manager's message: be brief\n\nthe text", a.id)), "{prompt}");
+        assert!(!prompt.contains("The human ran") && !prompt.contains("The human's message"), "an agent's words never stand as a human's");
+        // going on: its answers and its bare press are the manager's too
+        let said = ["use v2".to_string()];
+        assert!(again_words(&a.id, "Opus · manager", None, Some(&said), true).starts_with(&format!("{}: the project's manager answered your questions", a.id)));
+        assert!(again_words(&a.id, "Opus · manager", None, None, true).ends_with("the project's manager ran it again: go on with the task."));
+        assert!(again_words(&a.id, "Opus · manager", Some("and v3"), None, true).contains("a new comment by Opus · manager follows"));
+        Ok(())
+    }).unwrap();
+}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! `terminum mcp`'s manager tools (terminum-agents.md AC-173, AC-175): what they ask and how they are described.
+//! `terminum mcp`'s manager tools (terminum-agents.md AC-174, AC-179): what they ask and how they are described.
 //! Only a manager's session finds and runs them; terminumd decides (roles/mod.rs), here only a call's shape.
 
 use serde_json::Value;
@@ -112,7 +112,7 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn ac173_every_manager_tool_terminumd_knows_is_described_once() {
+    fn ac174_every_manager_tool_terminumd_knows_is_described_once() {
         let offered: Vec<&str> = TOOLS.iter().map(|t| t.name).collect();
         assert_eq!(offered, crate::roles::MANAGER_TOOLS);
         assert_eq!(CARDS.iter().map(|c| c.name).collect::<Vec<_>>(), offered);
@@ -124,8 +124,8 @@ mod tests {
     }
 
     #[test]
-    fn ac173_a_call_s_shape_is_checked() {
-        assert_eq!(checked("run_task", &json!({"id": "T-1", "fresh": "maybe"})).unwrap_err(), "fresh: one of yes, no");
+    fn ac174_a_call_s_shape_is_checked() {
+        assert_eq!(checked("run_task", &json!({"id": "T-1", "fresh": "nah"})).unwrap_err(), "fresh: one of yes, no");
         assert_eq!(checked("create_agent", &json!({"name": "A", "kind": "gpt"})).unwrap_err(), "kind: one of claude, codex");
         assert_eq!(checked("send_to_session", &json!({"session": "s"})).unwrap_err(), "text is required");
         assert_eq!(checked("get_dashboard", &json!({"tab": "costs", "x": 1})).unwrap(), json!({"tab": "costs"}));

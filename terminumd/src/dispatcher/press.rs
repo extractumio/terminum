@@ -31,7 +31,7 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
 }
 
 /// Who a run's words name as the one who pressed: the human, or the project's manager by its run_task
-/// (terminum-agents.md AC-175), so an agent's words never stand as a human's.
+/// (terminum-agents.md AC-179), so an agent's words never stand as a human's.
 fn boss(manager: bool) -> &'static str {
     if manager { "the project's manager" } else { "the human" }
 }

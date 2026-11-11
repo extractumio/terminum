@@ -87,7 +87,7 @@ struct Press {
     /// Auto-Dispatcher's press, no human's (AC-170): never read from a request
     #[serde(skip)]
     auto: bool,
-    /// the project's manager pressed, by its tool (terminum-agents.md AC-175): the user it writes as. Kept with a
+    /// the project's manager pressed, by its tool (terminum-agents.md AC-179): the user it writes as. Kept with a
     /// wait so its start says the same; never taken from a page's request
     #[serde(default)]
     manager: Option<String>,
@@ -190,7 +190,7 @@ async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body)
     answer(pressed(&app, &id, body).await)
 }
 
-/// The manager's press, by its run_task (terminum-agents.md AC-175): as a human's, its words said to be the manager's.
+/// The manager's press, by its run_task (terminum-agents.md AC-179): as a human's, its words said to be the manager's.
 pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: Option<String>, comment: Option<String>, (fresh, queue): (bool, bool)) -> Result<Value, String> {
     pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), ..Default::default() }).await
 }
@@ -214,7 +214,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             by.keep(tx, &wanted, c, &attached)?;
         }
         // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
-        // own message (terminum-agents.md AC-175), never another agent's comment
+        // own message (terminum-agents.md AC-179), never another agent's comment
         let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
         let mut answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
         if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {

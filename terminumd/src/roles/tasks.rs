@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! A manager's runs (`terminum-agents.md` AC-175): it starts its project's tasks on the pool's agents as a human's
+//! A manager's runs (`terminum-agents.md` AC-179): it starts its project's tasks on the pool's agents as a human's
 //! RUN does, through Dispatcher, answers and goes on, stops; and reads what runs and the project's numbers.
 
 use serde_json::{json, Value};

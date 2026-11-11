@@ -24,6 +24,7 @@ pub fn routes() -> Router<Shared> {
         .route("/api/schedules", get(list).post(make))
         .route("/api/schedules/preview", post(preview))
         .route("/api/schedules/{id}", patch(change).delete(drop_one))
+        .route("/api/schedules/{id}/run", post(run_now))
         .route("/api/schedule-fires", get(fires))
 }
 
@@ -72,6 +73,12 @@ async fn drop_one(State(app): State<Shared>, Path(id): Path<String>) -> Response
     }).await;
     crate::tasks::api::told(&app, "");
     told(&app, done)
+}
+
+/// Run now on a schedule's card (AC-182): its task made and started whatever its cadence.
+async fn run_now(State(app): State<Shared>, Path(id): Path<String>) -> Response {
+    let who = store(&app, |tx| ops::user_name(tx, HUMAN)).await.unwrap_or_else(|_| "A human".into());
+    answer(crate::dispatcher::fire::now(&app, &id, &who).await.map(|task| json!({"task": task})))
 }
 
 /// What a schedule's window shows as it is typed (AC-160): its next three runs, the prompt and the agent's line,

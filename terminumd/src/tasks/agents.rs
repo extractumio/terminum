@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The pool of agents (`terminum-dispatcher.md` AC-137): what RUN can start, none a project's. Where it
 //! starts is the project's (AC-140). A signed-in page changes them, and a project's manager by its tools
-//! (terminum-agents.md AC-176), never a worker; a command is kept as written.
+//! (terminum-agents.md AC-180), never a worker; a command is kept as written.
 
 use axum::extract::{Path, State};
 use axum::response::Response;

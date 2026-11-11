@@ -57,7 +57,7 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8: a small fix many sessions hit"}"# },
 ];
 
-/// The cards a role finds: a worker the catalog's own, a manager those and its own (AC-173).
+/// The cards a role finds: a worker the catalog's own, a manager those and its own (AC-174).
 pub fn cards(manager: bool) -> impl Iterator<Item = &'static Card> {
     CARDS.iter().chain(super::mcp_manager::CARDS.iter().filter(move |_| manager))
 }

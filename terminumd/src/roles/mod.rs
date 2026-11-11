@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Who a caller of terminum's tools is (`terminum-agents.md` AC-173 to AC-177). A worker: any session, with its
+//! Who a caller of terminum's tools is (`terminum-agents.md` AC-174 to AC-181). A worker: any session, with its
 //! project's tasks (tasks/tools.rs). A manager: the session a human's + Session started for a project, or a
 //! manager's token: it runs its project as the human would, through the tools here alone. terminumd decides the
 //! role from its own records at every call, never from the caller's word; a guard against an agent that errs, no
@@ -41,7 +41,7 @@ pub struct Boss {
     pub name: String,
 }
 
-/// The project pane `key`'s session manages: the one of its + Session's run, while Dispatcher holds it (AC-173).
+/// The project pane `key`'s session manages: the one of its + Session's run, while Dispatcher holds it (AC-174).
 /// A run with a task makes a worker, whoever started it, and so does a pane with no run.
 pub fn manages(tx: &Transaction, key: &str) -> Result<Option<runs::Run>, String> {
     Ok(runs::in_pane(tx, key)?.filter(|r| r.ad_hoc() && r.holds_slot()))
@@ -56,11 +56,12 @@ fn user(tx: &Transaction, id: &str, name: &str) -> Result<String, String> {
 /// Pane `key`'s manager, if its session is one.
 pub fn boss(tx: &Transaction, key: &str) -> Result<Option<Boss>, String> {
     let Some(r) = manages(tx, key)? else { return Ok(None) };
+    user(tx, crate::inputs::MANAGER, "Manager")?;           // whom the input log names for what a manager typed
     let name = format!("{} · manager", r.agent_name);
     Ok(Some(Boss { key: key.to_string(), user: user(tx, &format!("manager:{}:{}", r.project, r.agent_id), &name)?, project: r.project, name }))
 }
 
-/// A manager token's caller (AC-177).
+/// A manager token's caller (AC-181).
 pub fn boss_of_token(tx: &Transaction, t: &tokens::Token) -> Result<Boss, String> {
     let name = format!("{} · token", t.name);
     Ok(Boss { key: t.key(), user: user(tx, &format!("manager:token:{}", t.id), &name)?, project: t.project.clone(), name })
@@ -76,7 +77,7 @@ fn reads(tool: &str) -> bool {
     tool.starts_with("list_") || tool.starts_with("get_")
 }
 
-/// A manager's tool called from pane `key` (AC-173, AC-174): run only when the pane's session is its project's
+/// A manager's tool called from pane `key` (AC-174, AC-178): run only when the pane's session is its project's
 /// manager, the call came from under that pane (`from_pane`), and what writes comes from its main agent
 /// (`other`: another session's, a subagent's).
 pub async fn in_pane(app: &Shared, key: &str, from_pane: bool, other: bool, tool: &str, args: &Value) -> Result<String, String> {
@@ -95,7 +96,7 @@ pub async fn in_pane(app: &Shared, key: &str, from_pane: bool, other: bool, tool
 /// What a token cannot call: tools of a session's own.
 const NEEDS_A_SESSION: [&str; 3] = ["take_task", "ask_human", "dispatch_task"];
 
-/// A call by a token (AC-177): a probe says its role; a task tool runs in its project; a manager's tool when its
+/// A call by a token (AC-181): a probe says its role; a task tool runs in its project; a manager's tool when its
 /// role is manager. The plan and what is a session's own are refused.
 pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
     let (token, tool, args) = (body["token"].as_str().unwrap_or("").to_string(), body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Which process calls on the private socket (`terminum-agents.md` AC-174): the system's word for the peer's pid,
+//! Which process calls on the private socket (`terminum-agents.md` AC-178): the system's word for the peer's pid,
 //! and its ancestors by `ps`. A manager's call must come from under the pane it names; minting a token must come
 //! from outside every pane. A tripwire for an agent that names another pane, no boundary: a process of the same
 //! user can leave its ancestry, or reach what the tools reach without them.
