@@ -218,11 +218,15 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   its queue: Add to queue, and the task starts by itself when a slot frees; the agent's card shows a pale dot for
   each queued task, and its "queued" key opens the queue, where you drag tasks (on a phone: rest a finger on one
   first) or use the arrows to change their order and the cross to take one out; Stop waiting in the task's window
-  does the same; Auto-Dispatcher, a key in the board's bar with one project shown (off by default), starts that
-  project's TODO tasks by itself: choose the agent that picks and a default agent to run them; when slots are free it
-  starts one more session of the picking agent, which scores the free TODO tasks by RICE and starts the best, each
-  on the agent named in the task's window (Agent), else the default; a failed round or two failed tasks turn it off,
-  and its key says why;
+  does the same; Auto-Dispatch, a switch and a cog in the board's bar (off by default), starts a
+  project's TODO tasks by itself: the cog's window holds the agent that picks, a default agent to run them, the
+  severities it takes (as made: P0 and P1) and the minutes a task stands in TODO before it is taken (10); the switch
+  then turns it on or off in one press (with several projects shown a press turns it off for them, and turning on is
+  each project's own in the window); when slots are free it starts one more session of the picking agent, which
+  scores the first such tasks by RICE and starts the best, each on the agent named in the task's window (Agent),
+  else the default; what a round leaves is passed over for a day and the next takes the tasks below; a task it
+  started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its
+  switch says why;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task

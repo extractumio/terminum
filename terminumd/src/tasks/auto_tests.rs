@@ -18,23 +18,36 @@ fn store(name: &str) -> Store {
 #[test]
 fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
     store("auto-setting").with(|tx| {
-        assert_eq!(setting(tx, "api")?, Setting::default());
-        assert!(on(tx)?.is_empty());
-        assert_eq!(set(tx, "api", Some("gone"), None, 5).unwrap_err(), "That agent is gone.");
-        assert_eq!(set(tx, "api", Some("p"), Some("gone"), 5).unwrap_err(), "That agent is gone.");
-        set(tx, "api", Some("p"), Some("a"), 5)?;
-        assert_eq!(setting(tx, "api")?, Setting { agent: Some("p".into()), default: Some("a".into()), on_at: 5, ..Default::default() });
-        saw(tx, "api", "x:1")?;
-        set(tx, "api", Some("p"), Some("a"), 7)?;
-        assert_eq!(setting(tx, "api")?.seen.as_deref(), Some("x:1"), "a Save that changes nothing makes no round");
-        // its default changed while on: the round is judged anew, it stays on since then
-        set(tx, "api", Some("p"), None, 9)?;
-        assert_eq!(setting(tx, "api")?, Setting { agent: Some("p".into()), on_at: 5, ..Default::default() });
+        let made = setting(tx, "api")?;
+        assert_eq!(made, Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10 }, "as a project is made");
+        assert!(due_for(tx)?.is_empty());
+        let put = |body: Value, at: i64| setting(tx, "api")?.with(&body).and_then(|new| set(tx, "api", &new, at));
+        assert_eq!(put(json!({"on": true}), 5).unwrap_err(), "Choose the agent that picks first: its settings.");
+        assert_eq!(put(json!({"agent": "gone"}), 5).unwrap_err(), "That agent is gone.");
+        assert_eq!(put(json!({"agent": "p", "default": "gone"}), 5).unwrap_err(), "That agent is gone.");
+        assert_eq!(put(json!({"severities": ["P9"]}), 5).unwrap_err(), "Severity: one of P0, P1, P2, P3");
+        assert_eq!(put(json!({"severities": [1, "P0"]}), 5).unwrap_err(), "severities: a list of names");
+        assert_eq!(put(json!({"wait_minutes": 1441}), 5).unwrap_err(), "Wait: 0 to 1440 minutes");
+        assert_eq!(put(json!({"on": true, "agent": "p", "severities": []}), 5).unwrap_err(), "Tick a severity it takes first: with none it starts nothing.");
+        // its agents chosen while off; the switch then sends "on" alone and keeps the rest
+        put(json!({"agent": "p", "default": "a", "severities": ["P2", "P0"], "wait_minutes": 0}), 5)?;
+        let chosen = Setting { agent: Some("p".into()), default: Some("a".into()), severities: vec!["P0".into(), "P2".into()], wait: 0, ..made };
+        assert_eq!(setting(tx, "api")?, chosen);
+        put(json!({"on": true}), 7)?;
+        assert_eq!(setting(tx, "api")?, Setting { on: true, on_at: 7, ..chosen.clone() });
+        put(json!({"default": null}), 9)?;
+        assert_eq!(setting(tx, "api")?, Setting { on: true, on_at: 7, default: None, ..chosen.clone() }, "changed while on: on since then");
+        // it turns itself off: its agent stays chosen, and on again counts anew
         turn_off(tx, "api", "its round API-3 failed.")?;
-        assert_eq!(setting(tx, "api")?, Setting { off_why: Some("its round API-3 failed.".into()), on_at: 5, ..Default::default() });
-        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"agent": null, "default": null, "off_why": "its round API-3 failed."}));
-        set(tx, "api", None, Some("a"), 12)?;
-        assert_eq!(setting(tx, "api")?, Setting { default: Some("a".into()), on_at: 5, ..Default::default() }, "off by a human: no why");
+        assert_eq!(setting(tx, "api")?, Setting { off_why: Some("its round API-3 failed.".into()), on_at: 7, default: None, ..chosen.clone() });
+        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"on": false, "agent": "p", "default": null, "severities": ["P0", "P2"], "wait_minutes": 0, "off_why": "its round API-3 failed."}));
+        put(json!({"wait_minutes": 0}), 11)?;
+        assert_eq!(setting(tx, "api")?.off_why.as_deref(), Some("its round API-3 failed."), "saved while off, why stays");
+        put(json!({"on": true}), 12)?;
+        assert_eq!(due_for(tx)?.len(), 1);
+        assert_eq!(setting(tx, "api")?, Setting { on: true, on_at: 12, default: None, ..chosen.clone() }, "on again: no why");
+        put(json!({"on": false}), 13)?;
+        assert_eq!(setting(tx, "api")?, Setting { on_at: 12, default: None, ..chosen }, "off by a human: no why");
         Ok(())
     }).unwrap();
 }

@@ -74,7 +74,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .schedwaits { color: var(--accent); }
 /* its window's When: a line of the kind's parts, the days as keys, terminumd's words under it */
 .whenbox { margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); border: 0; border-radius: var(--key-r); box-shadow: var(--field-edge); }
-.whenbox legend { padding: 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
+.whenbox legend, .autoticks legend { padding: 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
 .whenline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
 .whenline select.field { width: auto; min-width: 150px; }
 .whenline input.field { width: auto; }
@@ -125,9 +125,24 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agkept { border: 1.5px dashed var(--ag); }
 /* Auto-Dispatcher's round (AC-170): a session that takes no slot: its dot a square */
 .agdot.round { border-radius: 2px; }
-/* its key in the bar: on in the accent, having turned itself off in the danger color */
-#autokey.on { color: var(--accent); }
-#autokey.stopped { color: var(--danger-text); }
+/* Auto-Dispatch in the bar: a switch (its track and knob drawn; on in the accent, having turned itself off its state
+   in the danger color) and the cog of its settings; in its window the severities' ticks in a row, its rules a list */
+#autokeys { display: inline-flex; align-items: center; gap: var(--sp-1); }
+#autoswitch { gap: var(--sp-2); }
+#autostate { color: var(--muted); font-variant-numeric: tabular-nums; }
+#autoswitch.stopped #autostate { color: var(--danger-text); }
+#autoswitch .track { position: relative; flex: none; width: 26px; height: 14px; border-radius: 7px; background: var(--field-fill); box-shadow: var(--m-well); transition: background var(--dur-hover); }
+#autoswitch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform var(--dur-hover); }
+#autoswitch[aria-checked="true"] .track { background: var(--accent); }
+#autoswitch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--surface-0); }
+.autoticks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); min-width: 0; margin: 0; padding: 0; border: 0; }
+#autobox .checkrow { align-self: start; }
+.autoticks legend { padding: 0 0 var(--sp-1); }
+.autoticks label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); }
+#autorules { margin: 0; font-size: var(--fs-small); }
+#autorules dt { margin-top: var(--sp-2); color: var(--muted); }
+#autorules dd { margin: 0; }
+@media (prefers-reduced-motion: reduce) { #autoswitch .track, #autoswitch .track::after { transition: none; } }
 .agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
 .agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
 .agqueue { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 20px; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); }
@@ -258,6 +273,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   .colhead { display: none; }
   .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
   #fproject summary { max-width: 104px; }
+  #autoswitch .word { display: none; }
   .cards { padding: 0 var(--gutter) var(--gutter); }
   .card { padding: var(--sp-3); }
   .chead { min-height: var(--icon-key-list); }
