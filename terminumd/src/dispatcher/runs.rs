@@ -60,6 +60,50 @@ impl serde::Serialize for Phase {
     }
 }
 
+/// How a run was asked for (AC-183): the words the store keeps.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum How {
+    /// the Run key of RUN's window
+    #[default]
+    Run,
+    /// a card dropped on an agent, then RUN's window
+    Drop,
+    /// Run in the new-task window
+    New,
+    /// + Session
+    Session,
+    /// a schedule's firing
+    Schedule,
+    /// Auto-Dispatcher's round, or the task a round chose
+    Auto,
+}
+
+impl How {
+    pub fn word(self) -> &'static str {
+        match self { How::Run => "run", How::Drop => "drop", How::New => "new", How::Session => "session", How::Schedule => "schedule", How::Auto => "auto" }
+    }
+
+    /// Dispatcher's own start, no user's: nothing a page's request may say.
+    pub fn automatic(self) -> bool {
+        matches!(self, How::Schedule | How::Auto)
+    }
+}
+
+/// Who asked for a run, a user's ID, and how (AC-183).
+#[derive(Clone, Copy)]
+pub struct Started<'a> {
+    pub by: &'a str,
+    pub how: How,
+}
+
+impl Started<'static> {
+    /// The human's, by `how`; an automatic way is Dispatcher's whoever is named.
+    pub fn by_human(how: How) -> Self {
+        Started { by: if how.automatic() { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN }, how }
+    }
+}
+
 /// One RUN: its tasks, what they stand at together, and their project (AC-138).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Run {
@@ -258,12 +302,12 @@ pub fn change(tx: &Transaction, id: &str, f: impl FnOnce(&mut Run)) -> Result<Ru
 }
 
 /// A new run of `tasks` (keys, the first the one it starts from; none: + Session's), starting, as `like` says: its fields
-/// but its id and clocks. Its id.
-pub fn add(tx: &Transaction, like: &Run, tasks: &[String], at: i64) -> Result<String, String> {
+/// but its id and clocks; `started`: who asked for it and how, kept with it (AC-183). Its id.
+pub fn add(tx: &Transaction, like: &Run, tasks: &[String], started: Started, at: i64) -> Result<String, String> {
     let id = crate::auth::crypto::random_hex::<8>();
-    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13)",
-               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at]).map_err(sql)?;
+    tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk, started_by, started_how)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13, ?14, ?15)",
+               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how.word()]).map_err(sql)?;
     for task in tasks {
         tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, task)).map_err(sql)?;
     }

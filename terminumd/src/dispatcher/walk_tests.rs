@@ -12,7 +12,7 @@ fn ac123_an_open_tool_is_forgotten_only_when_no_hook_says_it_works() {
     let key = "tmux:local:t:%7";
     let id = store.with(|tx| {
         let t = ops::create(tx, HUMAN, ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
-        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), ..Default::default() }, &[t.key], 1)?;
+        let id = runs::add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), ..Default::default() }, &[t.key], crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), 1)?;
         runs::change(tx, &id, |r| { r.state = runs::Phase::Working; r.pane_key = Some(key.into()); r.open_tools = 1; }).map(|_| id)
     }).unwrap();
     let hooks = Hooks::default();

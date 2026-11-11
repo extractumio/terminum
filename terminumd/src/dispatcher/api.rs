@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
-use super::runs::{self, Phase, Run};
+use super::runs::{self, How, Phase, Run, Started};
 use super::press::{again_words, also_of, budget_told, facts, way, ways, Asked, Way};
 use super::pool;
 use super::screen::Screen;
@@ -87,6 +87,9 @@ struct Press {
     /// Auto-Dispatcher's press, no human's (AC-170): never read from a request
     #[serde(skip)]
     auto: bool,
+    /// how it was pressed, kept with its run and with a wait (AC-183); a page's request says only a human's way
+    #[serde(default)]
+    how: How,
 }
 
 /// What a press that would start a process comes to: its run, a wait for a slot (AC-158), or the queue offered,
@@ -162,11 +165,15 @@ pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<V
 /// room it answers `full` and nothing waits.
 pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Value, String> {
     // always a session of its own: a conversation a human's RUN left is never gone on in by its words
-    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, fresh: true, ..Default::default() }).await
+    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, fresh: true, how: How::Auto, ..Default::default() }).await
 }
 
 /// The press on RUN: a comment is kept whatever follows (AC-122).
-async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Press>) -> Response {
+async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body): Json<Press>) -> Response {
+    // a page presses for the human alone: it never starts a run as Dispatcher's own (AC-183)
+    if body.how.automatic() || body.how == How::Session {
+        body.how = How::Run;
+    }
     answer(pressed(&app, &id, body).await)
 }
 
@@ -374,7 +381,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) 
         }
         bring_back(tx, &id)?;
         super::waits::remove(tx, &key)?;
-        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], ops::now())?);
+        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], Started::by_human(kept.how), ops::now())?);
         super::usage::carry(tx, &from, &id)?;
         Ok(Next::Run(id))
     }).await
@@ -438,7 +445,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             }
         }
         super::waits::remove(tx, &keys[0])?;
-        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, ops::now()).map(Next::Run)
+        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, Started::by_human(kept.how), ops::now()).map(Next::Run)
     }).await?;
     let run = match next {
         Next::Run(run) => run,

@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use super::system::class;
 use super::*;
-use crate::dispatcher::runs::{self, Phase, Run};
+use crate::dispatcher::runs::{self, How, Phase, Run, Started};
 use crate::dispatcher::usage::{self, Totals};
 use crate::messages::{insert, Message};
 use crate::tasks::ops::{self, NewTask};
@@ -127,7 +127,7 @@ fn ac152_the_human_s_time_and_load_only() {
 fn run(tx: &rusqlite::Transaction, agent: &str, project: &str, at: i64, minutes: Option<i64>) -> (String, String) {
     let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, at / 1000).unwrap();
     let id = runs::add(tx, &Run { agent_id: agent.into(), agent_name: agent.to_uppercase(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: project.into(), ..Default::default() },
-        std::slice::from_ref(&task.key), at / 1000).unwrap();
+        std::slice::from_ref(&task.key), Started::by_human(How::Run), at / 1000).unwrap();
     input(tx, at, DISPATCHER, "k9", None, Some(&id), None);
     if let Some(m) = minutes {
         runs::change(tx, &id, |r| { r.state = Phase::Closed; r.last_walk = at / 1000 + m * 60; }).unwrap();
@@ -258,21 +258,32 @@ fn ac176_who_does_the_work_on_tasks() {
         // a task Dispatcher made and Auto-Dispatcher chose
         let own = ops::create(tx, DISPATCHER, NewTask { title: "By itself".into(), ..Default::default() }, at)?;
         tx.execute("INSERT INTO auto_starts (task, round, at) VALUES (?1, ?2, ?3)", (&own.key, &mine.key, at + 60)).map_err(sql)?;
-        for (t, slug) in [(at + 10, &mine.id), (at + 90, &own.id)] {
-            tx.execute("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, tasks, version) VALUES (?1, ?1, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, 'k9', 'r', ?2, 'test')", (t * 1000, slug)).map_err(sql)?;
+        let launch = |t: i64, slug: &str, run: &str| tx.execute("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, tasks, version) VALUES (?1, ?1, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, 'k9', ?3, ?2, 'test')", (t * 1000, slug, run)).map(drop).map_err(sql);
+        // runs older than the record of who started them: told by what made or chose the task
+        launch(at + 10, &mine.id, "r")?;
+        launch(at + 90, &own.id, "r")?;
+        // a schedule's task: its firing is Dispatcher's start, the human's Run of it after is the human's, an agent's its own
+        let fired = ops::create(tx, DISPATCHER, NewTask { title: "Fired".into(), ..Default::default() }, at)?;
+        tx.execute("INSERT INTO schedules (id, number, project, title, body, severity, agent_id, cron, budget_seconds, last_due, author, created_at, updated_at) VALUES ('s1', 1, 'default', 'Fired', '', 'P2', 'a', '* * * * *', 60, 1, ?1, 1, 1)", [HUMAN]).map_err(sql)?;
+        tx.execute("INSERT INTO schedule_fires (schedule, due_at, at, task, state) VALUES ('s1', ?2, ?2, ?1, 'made')", (&fired.key, at)).map_err(sql)?;
+        let like = Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
+        for (k, started) in [Started::by_human(How::Schedule), Started::by_human(How::Run), Started { by: "agent:x", how: How::Run }].into_iter().enumerate() {
+            let run = runs::add(tx, &like, std::slice::from_ref(&fired.key), started, at + 100)?;
+            launch(at + 100 + k as i64, &fired.id, &run)?;
         }
-        Ok((mine.id, own.id))
+        Ok((mine.id, own.id, fired.id))
     }).unwrap();
     let d = ask(&s, noon, "tasks", Period::Day, None);
     let tiles = &d["tiles"];
-    assert_eq!((tiles["ops"].clone(), tiles["by"].clone(), tiles["share"].clone()), (json!(9), json!({"you": 4, "agents": 3, "dispatcher": 2}), json!(4.0 / 9.0)), "an operation is counted once, for who decided it");
-    assert_eq!((tiles["tasks"].clone(), tiles["made_by_hand"].clone(), tiles["spread"].clone()), (json!(2), json!(1), json!({"none": 1, "less": 0, "more": 1, "all": 0})));
+    assert_eq!((tiles["ops"].clone(), tiles["by"].clone(), tiles["share"].clone()), (json!(13), json!({"you": 5, "agents": 4, "dispatcher": 4}), json!(5.0 / 13.0)), "an operation is counted once, for who decided it");
+    assert_eq!((tiles["tasks"].clone(), tiles["made_by_hand"].clone(), tiles["spread"].clone()), (json!(3), json!(1), json!({"none": 1, "less": 1, "more": 1, "all": 0})));
     assert_eq!(d["tasks"], json!([{"id": ids.0, "title": "By hand", "by": {"you": 4, "agents": 3, "dispatcher": 0}, "n": 7, "share": 4.0 / 7.0},
+        {"id": ids.2, "title": "Fired", "by": {"you": 1, "agents": 1, "dispatcher": 2}, "n": 4, "share": 0.25},
         {"id": ids.1, "title": "By itself", "by": {"you": 0, "agents": 0, "dispatcher": 2}, "n": 2, "share": 0.0}]), "each task's split, most operations first");
     let kind = |k: &str| d["kinds"].as_array().unwrap().iter().find(|x| x["kind"] == k).unwrap()["by"].clone();
-    assert_eq!((kind("start"), kind("move"), kind("comment")), (json!({"you": 1, "agents": 0, "dispatcher": 1}), json!({"you": 1, "agents": 1, "dispatcher": 0}), json!({"you": 1, "agents": 2, "dispatcher": 0})),
-        "a Run is the human's start, an Auto-Dispatcher's choice Dispatcher's; Dispatcher's moves are no operations");
-    assert_eq!((d["series"][22]["by"].clone(), d["series"][0]["by"]["you"].clone()), (json!({"you": 4, "agents": 3, "dispatcher": 2}), json!(0)));
+    assert_eq!((kind("start"), kind("move"), kind("comment")), (json!({"you": 2, "agents": 1, "dispatcher": 2}), json!({"you": 1, "agents": 1, "dispatcher": 0}), json!({"you": 1, "agents": 2, "dispatcher": 0})),
+        "a start is whose its run says: the human's Run of a schedule's task is the human's; Dispatcher's moves are no operations");
+    assert_eq!((d["series"][22]["by"].clone(), d["series"][0]["by"]["you"].clone()), (json!({"you": 5, "agents": 4, "dispatcher": 4}), json!(0)));
     assert_eq!(ask(&s, noon, "tasks", Period::Day, Some("p1"))["tiles"]["ops"], 0);
-    assert_eq!(ask(&s, noon, "tasks", Period::Day, Some(""))["tiles"]["ops"], 9, "no project: the default project's tasks");
+    assert_eq!(ask(&s, noon, "tasks", Period::Day, Some(""))["tiles"]["ops"], 13, "no project: the default project's tasks");
 }

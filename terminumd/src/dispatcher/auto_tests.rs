@@ -33,7 +33,7 @@ fn task(tx: &Transaction, title: &str, severity: &str) -> Task {
 
 /// A run of `agent` on `t`, working in a pane.
 fn running(tx: &Transaction, agent: &str, t: &Task) -> String {
-    let id = runs::add(tx, &Run { agent_id: agent.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&t.key), NOW).unwrap();
+    let id = runs::add(tx, &Run { agent_id: agent.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, std::slice::from_ref(&t.key), crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), NOW).unwrap();
     runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
     id
 }
