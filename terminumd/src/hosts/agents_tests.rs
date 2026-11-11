@@ -123,15 +123,24 @@ fn on_saves_nothing_when_the_record_changed_while_it_ran() {
     assert!(!f.hosts.lock().contains_key("devbox"));
 }
 
-/// AC-99 edge: the refresh at the link's first up runs once per host per run, never with agents
-/// not on; an update's runs again; another host has its own.
-#[test]
-fn a_refresh_at_the_link_up_runs_once_per_run() {
-    let mut done = HashSet::new();
-    assert!(!claim(&mut done, "devbox", false, false), "agents off or undecided: none");
-    assert!(!claim(&mut done, "devbox", false, true));
-    assert!(claim(&mut done, "devbox", true, false), "the first up");
-    assert!(!claim(&mut done, "devbox", true, false), "the link back after a drop");
-    assert!(claim(&mut done, "devbox", true, true), "the helper updated");
-    assert!(claim(&mut done, "other", true, false));
+
+/// AC-99 edge: the link's up claims the host's refresh once per run, never with agents not on;
+/// a helper update makes it due again. No server for the host, so the refresh never reaches ssh.
+#[tokio::test]
+async fn ac99_the_links_up_refreshes_once_per_run_and_after_an_update() {
+    let (root, app) = crate::testutil::app("refresh-once");
+    let due = || !app.hosts.agents_refreshed.lock().contains("devbox");
+    app.looks.settings.write().hosts.insert("devbox".into(), json!({"ssh": ["alex@devbox.example"], "agents": "off"}));
+    link_up(&app, "devbox");
+    assert!(due(), "agents off: none");
+    app.looks.settings.write().hosts["devbox"]["agents"] = "enabled".into();
+    link_up(&app, "devbox");
+    assert!(!due(), "the first up runs it");
+    after_update(&app, "devbox");
+    assert!(due(), "an update makes it due again");
+    link_up(&app, "devbox");
+    assert!(!due());
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
 }

@@ -7,8 +7,6 @@
 //! when Files does not use it. Each runs in the host's turn at its helper (turns.rs), so Files'
 //! enable or removal never runs beside it. The ssh steps are behind [`Ops`] so the decisions are tested.
 
-use std::collections::HashSet;
-
 use serde_json::{Map, Value};
 
 use crate::app::Shared;
@@ -109,10 +107,6 @@ impl Ops for Live<'_> {
         super::save(self.app, f)
     }
     fn changed(&self) {
-        // just installed: the link coming up for it needs no refresh this run
-        if super::link::wanted(self.app, self.host) {
-            self.app.hosts.agents_refreshed.lock().insert(self.host.to_string());
-        }
         super::link::changed(self.app, self.host);
     }
     fn recipe(&self) -> &[String] {
@@ -188,26 +182,17 @@ pub fn auto_failed(app: &Shared, host: &str) -> Option<String> {
     app.hosts.agents_auto.lock().get(host).cloned().flatten().filter(|_| undecided(app, host))
 }
 
-/// After AC-84 updated the helper: the host's agents' entries rewritten where they differ, and
-/// put into an agent installed after they were turned on (AC-99).
+/// After AC-84 updated the helper: the refresh is due again, at the link's next up (at once,
+/// with the updated helper).
 pub fn after_update(app: &Shared, host: &str) {
-    refresh(app, host, true);
+    app.hosts.agents_refreshed.lock().remove(host);
 }
 
-/// The link is up with a current helper: the same refresh once per terminumd run, so an agent
-/// installed on the host since does not wait for an upgrade; after an update, none again.
+/// The link is up with a current helper: the host's agents' entries rewritten where they differ
+/// and put into an agent installed after they were turned on (AC-99), once per terminumd run and
+/// helper update, in the host's turn after any on or off running (agents still on then).
 pub fn link_up(app: &Shared, host: &str) {
-    refresh(app, host, false);
-}
-
-/// Whether a refresh runs: agents on, and `always` (an update) or the host's first this run.
-fn claim(done: &mut HashSet<String>, host: &str, wanted: bool, always: bool) -> bool {
-    wanted && (done.insert(host.to_string()) || always)
-}
-
-/// In the host's turn after any on or off running (agents still on then).
-fn refresh(app: &Shared, host: &str, always: bool) {
-    if !claim(&mut app.hosts.agents_refreshed.lock(), host, super::link::wanted(app, host), always) {
+    if !super::link::wanted(app, host) || !app.hosts.agents_refreshed.lock().insert(host.to_string()) {
         return;
     }
     let (app, host) = (app.clone(), host.to_string());

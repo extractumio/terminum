@@ -347,13 +347,13 @@ Scenario: AC-99 edge — link loss
 
 Scenario: AC-99 edge — upgrade
   When AC-84 updates devbox's helper
-  Then "terminum-host hooks install --host-mode --refresh" runs there and refreshes by content; a current install changes nothing
+  Then "terminum-host hooks install --host-mode --refresh" runs there, through the updated helper, and refreshes by content; a current install changes nothing
 
 Scenario: AC-99 edge — a coding agent installed after the agents were turned on
   Given devbox's agents are enabled, and Claude Code was not found there when they were turned on
-  When Claude Code is installed on devbox and terminumd's link to devbox first comes up with a current helper since terminumd started, or AC-84 updates the helper
+  When Claude Code is installed on devbox and terminumd's link to devbox next comes up after terminumd starts or AC-84 updates the helper
   Then the refresh installs terminum's hooks and MCP server in Claude Code as an install does, and its next sessions there have terminum's tools; Codex likewise ("installed; trust terminum's hooks in Codex's /hooks once")
-  And one refresh runs per host per terminumd run at most, plus one after each helper update; a link that drops and comes back runs none
+  And the refresh runs at the link's first up since terminumd started or since the helper's update, with the current helper; a link that drops and comes back runs none
   And terminum's entries taken out of an agent by hand come back at the next refresh: "terminum hosts agents devbox off" is the way to keep them out
 
 Scenario: AC-99 edge — disable or remove the host
