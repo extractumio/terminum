@@ -146,12 +146,19 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   your schedules, newest first: when, the schedule, its task (a press opens it on the board), its
   agent and status, when it went IN PROGRESS and ended; a row opens to the prompt that went in and
   the result that came out, or says why nothing ran (skipped, missed, did not start). Schedule picks one.
-- **Dashboard** (`/dashboard/`): three tabs over one period (Day, 2 weeks, Month, Quarter, Year) and
-  one project or all. **You**: how much you work here and how loaded, never counting Dispatcher:
-  active time (your sends, typing and board actions; a pause over 15 minutes ends a stretch), active
-  days, your longest stretch, switches between sessions an hour, board actions, how long tasks waited
-  for you, off hours, the phone's share, each against the span before; active time by project, your
-  working day, the week's busy hours, sessions at once. **System**: the sessions Dispatcher started
+- **Dashboard** (`/dashboard/`): four tabs over one period (Day, 2 weeks, Month, Quarter, Year) and
+  one project or all. **You**: how much you work here, how engaged and how loaded, never counting
+  Dispatcher: active time (what you send, type, press, scroll and do on the board; a pause over
+  5 minutes ends a stretch, or over 15 with a page in front through it), active days, engagement
+  (the share of active minutes you acted or read in; the rest you watched), your longest stretch,
+  switches between sessions an hour, board actions, how long tasks waited for you, off hours, the
+  phone's share, each against the span before; active time by project, your working day, the
+  week's busy hours, sessions at once. The pages count what you do by the minute (how many presses,
+  keys and scrolls and where, never which key or what text) into the table `user_interaction` of
+  `~/.terminum/state/kanban.sqlite`, kept 180 days; engagement starts on the day they first did.
+  **Tasks**: who does the work on tasks: the operations you decided (a task made, edited, moved,
+  commented on, run, archived) beside the agents' and Dispatcher's, over time, by operation, and
+  each task's split. **System**: the sessions Dispatcher started
   and how their tasks ended, failures by reason, the agents' load, schedules' firings. **Costs**:
   dollars at API list prices and tokens of Dispatcher's sessions by agent, project and model, and
   each agent's use against its limits. A column of Active time opens its messages in the history.

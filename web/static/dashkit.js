@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// What the Dashboard's tabs share (terminum.md AC-152, AC-171, AC-172): a tile, a card with its plot and the line
+// What the Dashboard's tabs share (terminum.md AC-152, AC-171, AC-172, AC-176): a tile, a card with its plot and the line
 // that says a column's values, a card of columns stacked by kind, a bucket's words by the period's unit, a legend,
 // rows ranked.
 import { el, projectColor } from "./listparts.js";
@@ -140,7 +140,8 @@ export function legend(box, items) {
   }));
 }
 
-/** Rows ranked: [{name, n, color, num?, share?, open?, title?}], the widest bar the largest `n`; beside it its share
+/** Rows ranked: [{name, n, color, num?, share?, parts?, open?, title?}], the widest bar the largest `n` (split by
+ *  `parts` [{n, color}] when given); beside it its share
  *  of them all (or `share`) and `num` (or `fmt(n)`); the first `most`, the rest as Other. */
 export function ranked(box, rows, { most = 8, empty = "Nothing in this period.", fmt = count } = {}) {
   const shown = rows.slice(0, most), rest = rows.slice(most);
@@ -153,6 +154,12 @@ export function ranked(box, rows, { most = 8, empty = "Nothing in this period.",
     const bar = el("span", "rbar");
     bar.style.setProperty("--w", `${(r.n / max) * 100}%`);
     bar.style.setProperty("--proj", r.color);
+    if (r.parts) {
+      // a bar split by its parts, each as wide as its count
+      let at = 0;
+      const stops = r.parts.map((p) => { const from = at; at += (p.n / max) * 100; return `${p.color} ${from}% ${at}%`; });
+      bar.style.background = `linear-gradient(90deg, ${stops.join(", ")}, transparent ${at}%)`;
+    }
     b.append(dotOf(r.color), el("span", "rname", r.name), bar, el("span", "rnum", r.share ?? `${Math.round((r.n / total) * 100)}%`), el("span", "rnum", r.num ?? fmt(r.n)));
     return b;
   };
