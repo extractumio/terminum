@@ -20,6 +20,7 @@ import { agentsSection } from "./kanbanagents.js";
 import { foldedCards } from "./kanbanfold.js";
 import { scheduledSection } from "./kanbansched.js";
 import { projectWindow } from "./kanbanproject.js";
+import { autoDispatcher } from "./kanbanauto.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
@@ -358,9 +359,7 @@ async function loadMeta() {
     const gone = filters().project.filter((p) => !meta.projects.some((x) => x.id === p));
     if (gone.length) { say(`A filter named a project that is gone: ${gone.join(", ")}`); bar.setFilters({ project: filters().project.filter((p) => !gone.includes(p)) }); }
     bar.draw();
-    agents.draw();
-    scheduled.draw();
-    project.refresh();
+    drawPool();
   } catch (e) {
     failed.meta = e.message;
     metaWait = setTimeout(loadMeta, 2000);         // its projects and filters: read again by themselves, as the columns are
@@ -375,8 +374,11 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); agents.draw(); scheduled.draw(); project.refresh(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
-const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }), shownProjects: () => filters().project });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); drawPool(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
+const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
+/** What goes by the pool and the projects shown. */
+const drawPool = () => { agents.draw(); scheduled.draw(); project.refresh(); auto.draw(); };
+const auto = autoDispatcher({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
 const needs = taskLines($("asks"), (id) => openTask(id));
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }), openSchedule: (key) => scheduled.openKey(key) });
 const address = taskAddress({ windowed, needs });

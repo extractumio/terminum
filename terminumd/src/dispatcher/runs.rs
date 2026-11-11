@@ -322,6 +322,9 @@ pub fn card_agents(tx: &Transaction, keys: &[&str]) -> Result<HashMap<String, se
 }
 
 /// The human gives up on `task`'s run (AC-138): its open tasks fail, Dispatcher lets go of the window, which stays.
+/// What a task says when the human gave up on its run: no failure of its agent (tasks/auto.rs).
+pub const GAVE_UP: &str = "The human gave up on it.";
+
 pub fn give_up(tx: &Transaction, task: &str) -> Result<Run, String> {
     let run = last_of(tx, task)?.filter(|r| !r.is_over()).ok_or("It has no run to give up.")?;
     let_go(tx, &run.id)
@@ -333,7 +336,7 @@ pub fn let_go(tx: &Transaction, id: &str) -> Result<Run, String> {
     if run.is_over() {
         return Err("Dispatcher holds that session no more.".into());
     }
-    super::move_task(tx, &run, "FAILED", "The human gave up on it.")?;
+    super::move_task(tx, &run, "FAILED", GAVE_UP)?;
     change(tx, &run.id, |r| r.state = Phase::Left)
 }
 

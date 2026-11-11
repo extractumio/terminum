@@ -198,6 +198,7 @@ pub fn started_by(tx: &Transaction, round: &str) -> Result<i64, String> {
 
 /// Why it must stop for `project`, if it must (its circuit breaker): its last round failed having started nothing, or
 /// the last two tasks it started since `on_at` both failed. A broken picker or executor fails no more of the board.
+/// A task a human moved or gave up on since is none of its agent's failures: it does not count.
 pub fn tripped(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<String>, String> {
     let last: Option<(String, String, String)> = tx.query_row("SELECT t.slug, t.status, t.id FROM auto_rounds a JOIN tasks t ON t.id = a.task WHERE a.project = ?1 AND a.at >= ?2 ORDER BY a.at DESC, a.rowid DESC LIMIT 1",
         (project, on_at), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
@@ -205,7 +206,9 @@ pub fn tripped(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<Str
         return Ok(Some(format!("its round {id} failed: see it in Archived.")));
     }
     let ended: Vec<(String, String)> = rows(tx, "SELECT t.slug, t.status FROM auto_starts s JOIN tasks t ON t.id = s.task JOIN auto_rounds a ON a.task = s.round
-                 WHERE a.project = ?1 AND s.at >= ?2 AND t.status NOT IN ('IN PROGRESS', 'WAIT FOR HUMAN') ORDER BY s.at DESC, s.rowid DESC LIMIT 2", (project, on_at), |r| Ok((r.get(0)?, r.get(1)?)))?;
+                 WHERE a.project = ?1 AND s.at >= ?2 AND t.status NOT IN ('IN PROGRESS', 'WAIT FOR HUMAN')
+                   AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = t.id AND e.at >= s.at AND ((e.kind = 'move' AND e.author = ?3) OR (e.kind = 'why' AND e.text = ?4)))
+                 ORDER BY s.at DESC, s.rowid DESC LIMIT 2", (project, on_at, HUMAN, crate::dispatcher::runs::GAVE_UP), |r| Ok((r.get(0)?, r.get(1)?)))?;
     if ended.len() == 2 && ended.iter().all(|(_, status)| status == "FAILED") {
         return Ok(Some(format!("the last two tasks it started failed: {}, {}.", ended[1].0, ended[0].0)));
     }
@@ -232,8 +235,9 @@ pub const PASSED: i64 = 24 * 3600;
 /// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
 ///   none, never the default's;
 /// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
-/// - that no round which ended DONE was given in the last day, since it is on, unless it changed since: what a round
-///   judged and left does not hold up the tasks below it;
+/// - that no round which ended DONE with a slot unfilled was given in the last day, since it is on, unless it changed
+///   since: what a round judged and left does not hold up the tasks below it; one that filled its slots left the rest
+///   for want of room, and they are offered again;
 /// in the board's order, CANDIDATES_MOST at most. `only`: that task alone, by its ID.
 pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>) -> Result<Vec<Candidate>, String> {
     let scale = crate::dispatcher::scale();
@@ -248,7 +252,8 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id
                      AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = c.id AND e.author = ?7 AND e.kind IN ('move', 'edit') AND e.at >= s.at))
                    AND NOT EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
-                     WHERE r.project = ?1 AND rt.status = 'DONE' AND r.at > ?8 AND r.at >= ?9 AND r.at >= COALESCE(c.changed, 0) AND g.value = c.slug)
+                     WHERE r.project = ?1 AND rt.status = 'DONE' AND r.at > ?8 AND r.at >= ?9 AND r.at >= COALESCE(c.changed, 0) AND g.value = c.slug
+                       AND (SELECT count(*) FROM auto_starts f WHERE f.round = r.task) < r.slots)
                  ORDER BY c.severity, c.rank LIMIT ?4",
         (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, HUMAN, now - PASSED / scale, s.on_at),
         |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)? }))?;

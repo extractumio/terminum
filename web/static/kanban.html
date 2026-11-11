@@ -121,11 +121,10 @@
       <details id="fowner" class="pick" name="picks"><summary class="textkey">Owner</summary><div class="box menurows" role="group" aria-label="Owner"></div></details>
       <button id="fsubtasks" class="textkey" type="button" aria-pressed="false" title="Subtasks as cards of their own; off, they show in their parent's window">Show subtasks</button>
       <button id="farchived" class="textkey" type="button" aria-pressed="false" title="The archived tasks instead of the board's">Archived</button>
-      <button id="autokey" class="textkey" type="button" aria-haspopup="dialog" hidden>Auto-Dispatcher: OFF</button>
       <button id="clearfilters" class="textkey" type="button" hidden>Clear filters</button>
     </div>
   </div>
-  <div id="boardacts"><button id="adhocsession" class="textkey" type="button" title="A session of an agent in this project, no task" aria-label="New session" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Session</span></button><button id="newtask" class="textkey" type="button" title="A new task, in TODO" aria-label="New task"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Task</span></button></div>
+  <div id="boardacts"><span id="autokeys" role="group" aria-label="Auto-Dispatch"><button id="autoswitch" class="textkey" type="button" role="switch" aria-checked="false"><span class="word">Auto-Dispatch</span><span id="autostate">OFF</span><span class="track" aria-hidden="true"></span></button><button id="autocog" class="icon" type="button" title="Auto-Dispatch: its settings" aria-label="Auto-Dispatch: its settings" aria-haspopup="dialog"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></button></span><button id="adhocsession" class="textkey" type="button" title="A session of an agent in this project, no task" aria-label="New session" hidden><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Session</span></button><button id="newtask" class="textkey" type="button" title="A new task, in TODO" aria-label="New task"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:14px"><path d="M5 12h14"/><path d="M12 5v14"/></svg><span>Task</span></button></div>
 </header>
 <div id="boardbanner" class="banner" role="status" hidden></div>
 <div id="asks" aria-live="polite" hidden></div>
@@ -289,7 +288,7 @@
     </div>
     <label class="fieldrow">Agents at once <input id="projectatonce" class="field" type="number" min="1" max="100" step="1" placeholder="No limit"></label>
     <section id="projectagents" aria-label="Agents" hidden>
-      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectauto" class="textkey" type="button">Auto-Dispatcher…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
+      <div class="edithead"><span>Agents</span><span class="agentkeys"><button id="projectarchived" class="textkey" type="button">Archived…</button><button id="projectlimits" class="textkey" type="button">Memory limits…</button><button id="projectaddagent" class="textkey" type="button">Add agent</button></span></div>
       <div id="projectagentlist" class="agentlist"></div>
     </section>
     <p id="projecterror" role="alert" hidden></p>
@@ -329,14 +328,23 @@
 
 <dialog id="autobox" data-size="form" class="box dlg" aria-labelledby="autohead">
   <form method="dialog">
-    <div class="dhead"><h2 id="autohead">Auto-Dispatcher</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <p id="autotext">While it is on, tasks of this project start with no one pressing Run. When agents have free slots and TODO holds tasks nobody runs, Dispatcher starts one more session of the agent chosen here, which takes no slot: it reads those tasks, scores them by RICE (reach, impact, confidence, effort) and starts the best, one for each free slot, at most 5 a round. A task runs on the agent named in its window, else on the default one; it is told only its ID and reads its text as its assignment, a text an agent wrote too. An agent past its week's or month's limit starts nothing here: give the agents limits, or only their slots bound what this spends. Its round failing, or two tasks it started failing in a row, turns it off.</p>
-    <p id="autofor" class="colempty"></p>
+    <div class="dhead"><h2 id="autohead">Auto-Dispatch</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+    <p id="autotext">While it is on, tasks of this project start with no one pressing Run, a text an agent wrote too.</p>
+    <label id="autoprojectrow" class="fieldrow">Project <select id="autoproject" class="field"></select></label>
     <p id="autowhy" role="status" hidden></p>
+    <label class="fieldrow checkrow"><input id="autoon" type="checkbox"> On: it starts this project's tasks</label>
     <div class="fieldgrid">
-      <label class="fieldrow">Auto-Dispatcher: the agent that picks <select id="autoagent" class="field"></select></label>
-      <label class="fieldrow">Default agent: runs a task that names none <select id="autodefault" class="field"></select></label>
+      <label class="fieldrow">The agent that picks: it scores the tasks by RICE <select id="autoagent" class="field"></select></label>
+      <label class="fieldrow">Default agent: runs a task that names none; with None such tasks stay <select id="autodefault" class="field"></select></label>
     </div>
+    <fieldset id="autoseverities" class="autoticks"><legend>It takes tasks of severity</legend></fieldset>
+    <label class="fieldrow">Minutes a task stands in TODO before it is taken <input id="autowait" class="field" type="number" min="0" max="1440" step="1" inputmode="numeric"></label>
+    <dl id="autorules">
+      <dt>What it takes</dt><dd>TODO tasks of the severities ticked that nobody runs, made, moved or edited no later than the wait ago: one still being written is left; a comment does not start the wait anew. A task it started once it starts again only after you move or edit it.</dd>
+      <dt>In what order</dt><dd>Down the board: P0 first, then the cards' order. A round, one more session of the picking agent that takes no slot, is given 3 tasks for each free slot, 5 slots at most; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best. What it leaves with a slot still free is passed over for a day, unless it changes, and the next round gets the tasks below. A task runs on the agent named in its window, else on the default one.</dd>
+      <dt>When it waits</dt><dd>No free slot, or no task to take; an agent past its week's or month's limit starts nothing. Give the agents limits: else only their slots bound what this spends.</dd>
+      <dt>When it stops</dt><dd>You turn it off: what runs goes on, nothing more starts. It turns itself off, saying why here and in the bar, when its round fails or two tasks it started fail in a row.</dd>
+    </dl>
     <p id="autoerror" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>

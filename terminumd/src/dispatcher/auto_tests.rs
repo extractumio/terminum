@@ -72,9 +72,14 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "what a round was given and left is passed over");
         assert!(ops::get(tx, &id)?.archived_at.is_some(), "a round that ended is archived");
+        let given = |at: i64| offer(tx, "api", &setting(tx), at).map(|(free, n)| (free.into_iter().map(|c| c.id).collect::<Vec<_>>(), n));
+        // a round that filled its slots left the rest for want of room: they are offered again
+        auto::started(tx, &high.key, &r.task, NOW)?;
+        assert_eq!(given(NOW)?, (vec![low.id.clone()], 1));
+        auto::not_started(tx, &high.key, &r.task)?;
+        assert_eq!(given(NOW)?.1, 0);
         // one a human edits since is judged anew; a comment or a day's end apart, the rest stays passed over
         ops::edit(tx, HUMAN, &low.id, ops::Edit { title: Some("low, reworded".into()), ..Default::default() }, NOW + 60)?;
-        let given = |at: i64| offer(tx, "api", &setting(tx), at).map(|(free, n)| (free.into_iter().map(|c| c.id).collect::<Vec<_>>(), n));
         assert_eq!(given(NOW + 60)?, (vec![low.id.clone()], 1));
         assert_eq!(given(NOW + auto::PASSED)?, (vec![high.id.clone(), low.id.clone()], 1), "after a day it is judged again");
         // off, an ended round still leaves the board and none is made
@@ -218,9 +223,11 @@ fn ac170_it_turns_itself_off_when_its_round_or_two_of_its_tasks_fail() {
         assert_eq!(setting(tx).off_why, None);
         assert_eq!(auto::tripped(tx, "api", NOW + 10)?, None);
         // two tasks it started, both failed
-        for t in [&one, &two] {
+        let own = task(tx, "a human ends it", "P2");
+        for t in [&one, &two, &own] {
             auto::started(tx, &t.key, &r.task, NOW + 20)?;
         }
+        ops::move_to(tx, HUMAN, &own.id, "FAILED", NOW + 20)?;   // a human's own move, or giving up on its run, is no failure of its agent
         tx.execute("UPDATE auto_rounds SET at = ?1", [NOW + 20]).map_err(sql)?;
         ops::move_to(tx, DISPATCHER, &one.id, "FAILED", NOW + 20)?;
         assert_eq!(auto::tripped(tx, "api", NOW + 10)?, None, "one failed, one not ended");
