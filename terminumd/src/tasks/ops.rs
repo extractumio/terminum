@@ -26,7 +26,7 @@ pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: imp
     tx.prepare_cached(query).map_err(sql)?.query_map(params, f).map_err(sql)?.collect::<Result<_, _>>().map_err(sql)
 }
 
-pub use super::users::{agent_user, pool_user, pool_user_id};
+pub use super::users::{agent_named, agent_user, pool_user, pool_user_id};
 pub use super::comments::{answers, change_comment, comment, history, keep_human_comment, questions};
 pub(crate) use super::users::user_name;
 
@@ -179,7 +179,7 @@ pub(super) struct ProjectText(&'static str);
 pub(super) const TEMPLATE_COLUMN: ProjectText = ProjectText("task_template");
 pub(super) const LANGUAGE_COLUMN: ProjectText = ProjectText("language");
 
-pub(super) fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
+pub(crate) fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
     let found: Option<i64> = tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [project], |r| r.get(0)).optional().map_err(sql)?;
     found.map(|_| ()).ok_or_else(|| "That project is gone.".to_string())
 }

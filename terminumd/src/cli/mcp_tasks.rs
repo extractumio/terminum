@@ -7,12 +7,12 @@ use serde_json::{json, Map, Value};
 use crate::tasks::ops::{COLUMNS, COMMENT_MOST, SEVERITIES, TEXT_MOST};
 use crate::tasks::tools::TEXT_FILE_MOST;
 
-struct Tool {
-    name: &'static str,
-    description: &'static str,
-    read_only: bool,
+pub(super) struct Tool {
+    pub name: &'static str,
+    pub description: &'static str,
+    pub read_only: bool,
     /// its string fields: name, required, most bytes
-    fields: &'static [(&'static str, bool, usize)],
+    pub fields: &'static [(&'static str, bool, usize)],
 }
 
 const ID: (&str, bool, usize) = ("id", true, 24);
@@ -38,10 +38,10 @@ const TOOLS: [Tool; 12] = [
     Tool { name: "dispatch_task", read_only: false, description: "Auto-Dispatcher's round only: starts one of the round's candidate tasks on its agent. why: its RICE score and reason, one line.", fields: &[ID, ("why", false, 600)] },
 ];
 
-/// The arguments terminumd gets (only the known fields), or why they are refused.
-pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
+/// `tool`'s known string fields of `args`, each within its limit, or why they are refused.
+pub(super) fn fields_of(tools: &[Tool], tool: &str, args: &Value) -> Result<Map<String, Value>, String> {
     let mut out = Map::new();
-    let fields = TOOLS.iter().find(|t| t.name == tool).map_or(&[][..], |t| t.fields);
+    let fields = tools.iter().find(|t| t.name == tool).map_or(&[][..], |t| t.fields);
     for (field, required, most) in fields {
         match args.get(*field) {
             None | Some(Value::Null) if *required => return Err(format!("{field} is required")),
@@ -52,6 +52,12 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
             Some(_) => return Err(format!("{field} must be a string")),
         }
     }
+    Ok(out)
+}
+
+/// The arguments terminumd gets (only the known fields), or why they are refused.
+pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
+    let out = fields_of(&TOOLS, tool, args)?;
     let severity = out.get("severity").and_then(Value::as_str);
     if severity.is_some_and(|s| !SEVERITIES.contains(&s)) {
         return Err(format!("severity: one of {}", SEVERITIES.join(", ")));
@@ -71,14 +77,22 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
 
 /// tools/list's entries.
 pub fn tools() -> Vec<Value> {
-    TOOLS.iter().map(|tool| {
+    listed(&TOOLS)
+}
+
+/// `tools` as definitions: every field a string, a few with their values.
+pub(super) fn listed(tools: &[Tool]) -> Vec<Value> {
+    tools.iter().map(|tool| {
         let mut properties = Map::new();
         for (field, _, _) in tool.fields {
             properties.insert((*field).to_string(), match *field {
                 "status" | "to" => json!({"type": "string", "enum": COLUMNS}),
                 "severity" => json!({"type": "string", "enum": SEVERITIES}),
                 "archive" => json!({"type": "string", "enum": ARCHIVE}),
-                _ => json!({"type": "string"}),
+                f => match super::mcp_manager::values(f) {
+                    Some(values) => json!({"type": "string", "enum": values}),
+                    None => json!({"type": "string"}),
+                },
             });
         }
         let required: Vec<&str> = tool.fields.iter().filter(|(_, required, _)| *required).map(|(field, _, _)| *field).collect();

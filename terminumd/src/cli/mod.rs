@@ -22,6 +22,7 @@ mod install;
 mod launch;
 mod mcp;
 mod mcp_catalog;
+mod mcp_manager;
 mod mcp_meta;
 mod mcp_search;
 mod mcp_tasks;
@@ -29,6 +30,7 @@ mod sinks;
 mod sockhttp;
 mod systemd;
 mod term;
+mod tool;
 mod upgrade;
 
 #[cfg(test)]
@@ -66,14 +68,21 @@ usage: terminum [command]
                           the coding agents found and terminum's hooks in them: exact
                           states, prompts and reminders (no agent named: every one found)
   mcp                     the MCP server a coding agent starts (plans, notes: hooks install)
+  tools [search <words> | info <name>…]
+                          the tools `terminum mcp` offers, for the role you call as
+  tool <name> ['<json>' | -]
+                          run one, as the session of this pane, or outside terminum with
+                          a token in TERMINUM_TOKEN
+  tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]
+                          tokens for programs outside terminum (made outside its panes)
   statusline [command…]   Claude Code's status line: its subscription's use for the board's
                           agents, then your own status line command, if any, as it was
   import                  workspaces, bookmarks and hosts of iterm-enhancer
   logs [-n N] [-f]        terminumd's log
   install                 install the package this terminumd came in";
 
-const COMMANDS: [&str; 19] = [
-    "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "mcp", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
+const COMMANDS: [&str; 22] = [
+    "tool", "tools", "tokens", "status", "folders", "open", "password", "signout", "hosts", "tmux", "hooks", "mcp", "upgrade", "rollback", "restart", "uninstall", "import", "logs", "install", "help", "-h", "--help",
 ];
 
 /// Is this run the command rather than the server?
@@ -102,6 +111,12 @@ pub enum Cmd {
     HostHooks(hostmode::HostArgs),
     /// `mcp`: the MCP server a coding agent starts, on stdin and stdout (AC-97, AC-98)
     Mcp,
+    /// `tool <name> [json | -]`: one of its tools, from a shell (AC-181)
+    Tool(String, Option<String>),
+    /// `tools [search … | info …]`
+    Tools(Vec<String>),
+    /// `tokens [add … | remove <name>]`
+    Tokens(Vec<String>),
     Upgrade(Option<String>),
     Rollback,
     Restart,
@@ -132,6 +147,13 @@ pub fn parse(args: &[String]) -> Result<Cmd, String> {
         "import" => none(Cmd::Import),
         "install" => none(Cmd::Install),
         "mcp" => none(Cmd::Mcp),
+        "tool" => match rest {
+            [name] => Ok(Cmd::Tool(name.clone(), None)),
+            [name, args] => Ok(Cmd::Tool(name.clone(), Some(args.clone()))),
+            _ => Err(usage(tool::TOOL_USAGE)),
+        },
+        "tools" => Ok(Cmd::Tools(rest.to_vec())),
+        "tokens" => Ok(Cmd::Tokens(rest.to_vec())),
         "help" | "-h" | "--help" => Ok(Cmd::Help),
         "--version" => Ok(Cmd::Version),
         "open" => match rest {
@@ -212,6 +234,9 @@ pub fn run(ctx: &Ctx, cmd: Cmd) -> Result<i32, String> {
     match cmd {
         Cmd::Help => ctx.say(USAGE),
         Cmd::Mcp => return Ok(mcp::main()),
+        Cmd::Tool(name, args) => return tool::tool(ctx, &name, args.as_deref()),
+        Cmd::Tools(rest) => return tool::tools(ctx, &rest),
+        Cmd::Tokens(rest) => return tool::tokens(ctx, &rest),
         Cmd::Version => ctx.say(crate::config::build_id()),
         Cmd::Status => { commands::status(ctx); hooks_tip(ctx); }
         Cmd::Folders => folders::command(ctx)?,

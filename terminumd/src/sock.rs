@@ -102,6 +102,7 @@ pub fn routes(app: Shared) -> Router {
         .route("/restore", post(restore))
         .route("/hook", post(hook))
         .route("/agent", post(crate::agentapi::agent))
+        .route("/tokens", post(crate::roles::tokens::route))
         .route("/folders", post(folders))
         .with_state(app)
 }

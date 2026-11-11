@@ -63,11 +63,19 @@ fn some(s: &str) -> Option<String> {
     (!s.is_empty()).then(|| s.to_string())
 }
 
+/// The input log's sender for what a project's manager typed; its user is made with the first manager (roles/mod.rs).
+pub const MANAGER: &str = "manager";
+
 impl Who {
     /// The user, from `component` (`page`, `panel`) of a browser `c`.
     pub fn user(component: &'static str, page: Option<u64>, c: &Client) -> Who {
         Who { sender: crate::tasks::store::HUMAN, component, page, device: Some(if c.web { "web" } else { "mac" }), ip: some(&c.ip),
               browser: some(&c.browser), tailnet_user: c.tailnet_user.clone(), ..Default::default() }
+    }
+
+    /// A project's manager, by its tool (terminum-agents.md AC-179): `name` is the user it writes as.
+    pub fn manager(component: &'static str, name: &str) -> Who {
+        Who { sender: MANAGER, component, agent: some(name), ..Default::default() }
     }
 
     /// Dispatcher, from `component`, for run `run` of `tasks` and its agent.

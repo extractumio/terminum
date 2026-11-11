@@ -318,7 +318,7 @@ async fn move_window(app: &Shared, id: &str, to: &str) -> Result<(), String> {
 }
 
 /// "Close pane" (the page asked first): the program in it ends.
-async fn kill(app: &Shared, id: &str) -> Result<(), String> {
+pub(crate) async fn kill(app: &Shared, id: &str) -> Result<(), String> {
     let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
     server.run(format!("kill-pane -t {pane}")).await.map_err(|e| format!("Not closed: {}", said(&e)))?;
     Ok(())

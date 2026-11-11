@@ -57,26 +57,45 @@ pub const CARDS: &[Card] = &[
         example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8: a small fix many sessions hit"}"# },
 ];
 
-pub fn card(name: &str) -> Option<&'static Card> {
-    CARDS.iter().find(|c| c.name == name)
+/// The cards a role finds: a worker the catalog's own, a manager those and its own (AC-174).
+pub fn cards(manager: bool) -> impl Iterator<Item = &'static Card> {
+    CARDS.iter().chain(super::mcp_manager::CARDS.iter().filter(move |_| manager))
 }
 
-/// Every tool's definition, built once.
+/// The areas a role is told of.
+pub fn areas(manager: bool) -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+    AREAS.iter().chain(super::mcp_manager::AREAS.iter().filter(move |_| manager))
+}
+
+pub fn card(name: &str) -> Option<&'static Card> {
+    cards(true).find(|c| c.name == name)
+}
+
+/// Whether `name` is a manager's tool: a worker neither finds nor runs it.
+pub fn manager_only(name: &str) -> bool {
+    super::mcp_manager::CARDS.iter().any(|c| c.name == name)
+}
+
+/// Every tool's definition, a manager's too, built once.
 pub fn definitions() -> &'static [Value] {
     static DEFS: OnceLock<Vec<Value>> = OnceLock::new();
-    DEFS.get_or_init(super::mcp::catalog)
+    DEFS.get_or_init(|| {
+        let mut all = super::mcp::catalog();
+        all.extend(super::mcp_manager::tools());
+        all
+    })
 }
 
 pub fn definition(name: &str) -> Option<&'static Value> {
     definitions().iter().find(|d| d["name"] == name)
 }
 
-/// The search index: a tool's name, its keywords, its area and text, its arguments' names.
-pub fn index() -> &'static Index {
-    static INDEX: OnceLock<Index> = OnceLock::new();
-    INDEX.get_or_init(|| {
-        let docs: Vec<(String, String, &Card)> = definitions().iter().filter_map(|d| {
-            let c = card(d["name"].as_str()?)?;
+/// A role's search index: a tool's name, its keywords, its area and text, its arguments' names.
+pub fn index(manager: bool) -> &'static Index {
+    static INDEXES: [OnceLock<Index>; 2] = [OnceLock::new(), OnceLock::new()];
+    INDEXES[manager as usize].get_or_init(|| {
+        let docs: Vec<(String, String, &Card)> = cards(manager).filter_map(|c| {
+            let d = definition(c.name)?;
             let args: Vec<&str> = d["inputSchema"]["properties"].as_object().map(|p| p.keys().map(String::as_str).collect()).unwrap_or_default();
             Some((format!("{} {}", d["title"].as_str().unwrap_or(""), d["description"].as_str().unwrap_or("")), args.join(" "), c))
         }).collect();
