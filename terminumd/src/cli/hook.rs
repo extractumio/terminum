@@ -57,6 +57,13 @@ pub fn main(agent: &str) -> i32 {
         if agent == "codex" && ev["event"] == "Stop" && let Some(windows) = super::hooktokens::codex_windows(&input) {
             let _ = super::sinks::post_all(&sinks, "/hook", &limits_event(&ev, &windows), BUDGET);
         }
+        // the agent's command line, once a session: when a terminumd asks, after the event has gone (AC-153)
+        if answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
+            let mut said = ev.clone();
+            said["event"] = json!("Argv");
+            said["argv"] = json!(super::hookargv::started_as(agent).unwrap_or_default());
+            let _ = super::sinks::post_all(&sinks, "/hook", &said, BUDGET);
+        }
         // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it
         let asked = answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["tokens"] == true));
         if asked && let Some(tokens) = super::hooktokens::of_event(agent, &input) {

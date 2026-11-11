@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! What a hook's event does through `hook_on` (sock.rs).
+//! The socket's /hook: whose an event is, what it changes, what its answer asks of the hook.
 
 use super::*;
 
@@ -29,6 +29,35 @@ fn hook_dispatch_waits_before_accepting_identity_or_mutating_plans() {
     worker.join().unwrap();
     assert!(blocked && untouched, "hook acceptance and side effects bypassed dispatch serialization");
     assert_eq!(app.plans.details(&key, false, 2).unwrap().items[0].text, "current");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}
+
+/// AC-153: the hook is asked for the agent's command line at a start or a prompt until one came, then never.
+#[tokio::test]
+async fn ac153_the_command_line_is_asked_for_once_a_session() {
+    let (root, app) = crate::testutil::app("hook-argv");
+    let server = app.tmux.local.clone();
+    server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string())]));
+    let key = server.key("%1");
+    let post = |v: serde_json::Value| hook_on(app.clone(), Some(server.clone()), v);
+    let asked = |r: Response| async move {
+        let body = axum::body::to_bytes(r.into_body(), 1 << 16).await.unwrap();
+        serde_json::from_slice::<serde_json::Value>(&body).ok().is_some_and(|v| v["argv"] == true)
+    };
+    let ev = |event: &str, extra: serde_json::Value| {
+        let mut v = json!({"agent": "claude", "event": event, "pane": "%1", "session": "s1", "cwd": "/Users/alex/api"});
+        v.as_object_mut().unwrap().extend(extra.as_object().cloned().unwrap_or_default());
+        v
+    };
+    assert!(asked(post(ev("SessionStart", json!({}))).await).await, "a start asks");
+    assert!(!asked(post(ev("PreToolUse", json!({"tool": "Bash"}))).await).await, "a tool's event never does");
+    assert!(!asked(post(ev("UserPromptSubmit", json!({"sub": "a1", "prompt": "x"}))).await).await, "nor a subagent's prompt");
+    assert_eq!(post(ev("Argv", json!({"session": "other", "argv": "claude --theirs"}))).await.status(), StatusCode::NO_CONTENT);
+    assert!(asked(post(ev("UserPromptSubmit", json!({"prompt": "go"}))).await).await, "another session's line is not its: asked again");
+    post(ev("Argv", json!({"argv": "claude --model opus"}))).await;
+    assert!(!asked(post(ev("UserPromptSubmit", json!({"prompt": "on"}))).await).await, "once it came, never again");
+    assert_eq!(app.hooks.started(&key).unwrap().argv, "claude --model opus");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }

@@ -158,6 +158,11 @@ pub fn words(text: &str) -> String {
     said.unwrap_or_else(|| format!("Cron {}", f.join(" ")))
 }
 
+/// `at` (unix s) as the Mac's clock reads it: "2026-11-11 10:49".
+pub fn stamp(at: i64) -> String {
+    local(at).map_or_else(String::new, |l| format!("{:04}-{:02}-{:02} {:02}:{:02}", l.year, l.month, l.day, l.hour, l.minute))
+}
+
 fn local(at: i64) -> Option<Local> {
     let t: libc::time_t = at;
     // SAFETY: localtime_r writes only the tm given, from a time_t it reads

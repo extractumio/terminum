@@ -32,6 +32,8 @@ const MOST: usize = 500;
 pub const GHOST_AFTER: Duration = Duration::from_secs(5);
 /// How often the screen is asked again while such a subagent seems to run, with no page in sight.
 const GHOST_EVERY: Duration = Duration::from_secs(10);
+/// The most characters of a command line kept.
+pub const ARGV_MOST: usize = 300;
 /// Ended sessions remembered (their late events make no record).
 const ENDED_MOST: usize = 500;
 
@@ -60,6 +62,22 @@ struct Rec {
     waits: bool,
     /// when its Stop came with subagents counted: the screen says from GHOST_AFTER on if they run
     stopped_at: Option<Instant>,
+    /// the folder of its session's first event: where it is resumed (AC-153)
+    start_cwd: String,
+    /// the command line it started with, as its hook read it when asked (AC-153): None until then,
+    /// "" when its hook found none
+    argv: Option<String>,
+}
+
+/// What resumes pane `key`'s agent (AC-153), as its hooks said.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Started {
+    pub agent: &'static str,
+    pub session: String,
+    /// the folder its session began in, else the one it last worked in
+    pub folder: String,
+    pub folder_is_start: bool,
+    pub argv: String,
 }
 
 /// What the list shows of a pane's hooks.
@@ -175,8 +193,10 @@ impl Hooks {
         if recs.len() >= MOST && !recs.contains_key(key) {
             return None;
         }
+        // a start of the same session (a compaction, a resume) keeps where it began and how it started (AC-153)
+        let mut began = None;
         if recs.get(key).is_some_and(fresh) || name == "SessionStart" {
-            recs.remove(key);
+            began = recs.remove(key).filter(|r| !session.is_empty() && r.agent == agent && r.session == session).map(|r| (r.start_cwd, r.argv));
         }
         // a start or a prompt makes a record, and any event of a session not seen to end (its record went
         // with a host's link that dropped, or with a restart): a late event of an ended session makes none
@@ -184,7 +204,11 @@ impl Hooks {
             return Some(false);
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
-            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, counted: false, asked: false, waits: false, stopped_at: None, cwd: String::new() });
+            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, counted: false, asked: false, waits: false, stopped_at: None, cwd: String::new(),
+            start_cwd: String::new(), argv: None });
+        if let Some((start_cwd, argv)) = began {
+            (r.start_cwd, r.argv) = (start_cwd, argv);
+        }
         let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
         if *whose == Whose::Main && of_turn(&name) && !turn.is_empty() {
             if r.turn.is_empty() && r.stopped.is_none() {
@@ -200,7 +224,11 @@ impl Hooks {
             return Some(false);
         }
         let cwd = s(ev, "cwd");
-        let moved = cwd.starts_with('/') && s(ev, "sub").is_empty() && r.cwd != cwd;
+        let main_cwd = cwd.starts_with('/') && s(ev, "sub").is_empty();
+        if main_cwd && name == "SessionStart" && r.start_cwd.is_empty() {
+            r.start_cwd.clone_from(&cwd);                 // a record made again mid-session knows no start
+        }
+        let moved = main_cwd && r.cwd != cwd;
         if moved {
             r.cwd = cwd;                                  // the list shows it (its folder, AC-51)
         }
@@ -371,6 +399,27 @@ impl Hooks {
     /// Pane `key`'s agent and its session, as its hooks last said.
     pub fn session(&self, key: &str) -> Option<(&'static str, String)> {
         self.recs.lock().get(key).map(|r| (r.agent, r.session.clone()))
+    }
+
+    /// What resumes pane `key`'s agent; None when no hooks spoke.
+    pub fn started(&self, key: &str) -> Option<Started> {
+        self.recs.lock().get(key).map(|r| {
+            let folder_is_start = !r.start_cwd.is_empty();
+            let folder = if folder_is_start { r.start_cwd.clone() } else { r.cwd.clone() };
+            Started { agent: r.agent, session: r.session.clone(), folder, folder_is_start, argv: r.argv.clone().unwrap_or_default() }
+        })
+    }
+
+    /// Whether pane `key`'s record has asked for its agent's command line in no answer yet: the hook reads it once a session.
+    pub fn wants_argv(&self, key: &str) -> bool {
+        self.recs.lock().get(key).is_some_and(|r| r.argv.is_none())
+    }
+
+    /// The command line of an `Argv` event, taken by the record of its agent and session that asked for one.
+    pub fn heard_argv(&self, key: &str, ev: &Value) {
+        if let Some(r) = self.recs.lock().get_mut(key).filter(|r| r.argv.is_none() && r.agent == s(ev, "agent") && r.session == s(ev, "session")) {
+            r.argv = Some(s(ev, "argv").chars().take(ARGV_MOST).collect());
+        }
     }
 
     /// Forgets the panes of a server (`prefix`, "tmux:<host>:<socket>:") that are gone.

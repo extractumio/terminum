@@ -66,7 +66,7 @@ Open questions: none.
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
 | AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and update_session_plan; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool, as terminum's own words write each call. |
-| AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay. |
+| AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay, and the pane says which agent ended and how to resume it. |
 
 ## 5. BDD scenarios
 
@@ -378,6 +378,31 @@ Scenario: AC-153 edge — what is never ended, and when nothing ends
   Then that pane is skipped: its exit would close the pane, or the run is Dispatcher's
   And an agent the pane's shell started with `exec` cannot be told apart from tmux: its exit closes the pane
   And what the agent ran in the background (a dev server, a shell it started) ends with it; its conversation can be resumed (`claude --resume`, `codex resume`)
+
+Scenario: AC-153 happy path — the pane says what ended and how to resume it
+  Given Claude Code ran in %3 as `claude --dangerously-skip-permissions`, its session began in /Users/alex/api, its title "✳ Fix the login", its plan 7 of 9 done
+  When the idle exit ended it and its shell is in front again
+  Then %3 shows, after its shell's prompt, a block of plain lines: "terminum ended this idle agent: not opened for 3 days" and the time; "Agent: Claude Code, session <id>"; its title; "Started as:" its command line; "Folder:" the folder its session began in; "Plan: 7 of 9 done"; "Resume: cd /Users/alex/api && claude --resume <id>"
+  And for Codex the same, its Resume `codex resume <id>`
+  And the lines are the pane's output, never its input: nothing is typed, the shell's line stays empty, tmux's history and the pane's kept last lines (terminum-lifecycle.md AC-96) hold them
+  And `idleexit.ended` logs the same: key, kind, session, folder, command line, title
+
+Scenario: AC-153 edge — what the summary does not know
+  Given the agent's hooks never spoke (not installed, or the pane started before them)
+  Then its session is "not known", "Started as: not known", the folder the pane's own, said so, and Resume lists the conversations to pick from (`claude --resume`, `codex resume`), never `--continue` or `--last`: another pane's later session in that folder would be taken
+  Given its hooks spoke but no start of its session was heard (a record made again after a restart or a host's dropped link)
+  Then the folder is where it last worked, said so
+  Given a host's older `terminum`, or a hook that found no agent among its ancestors
+  Then "Started as: not known"
+  Given its session started again (a compaction, a resume: Claude Code's SessionStart of the same session)
+  Then the folder it began in and its command line stay
+  And the command line is read once a session: terminumd's answer to its start or a prompt asks the hook for it while it has none, and the hook sends it after that event
+  Given the command line held a secret's value (`--api-key …`)
+  Then it is left out, as in sent history (terminum-terminal.md AC-90)
+  Given a folder, title or command line holds a control or invisible character, a `'`, `#(…)`, `$HOME` or `%s`
+  Then each shows as it is, a control character as a visible escape (`\n`, `\u{202e}`), nothing of it runs; a folder with a control character, or one the pane's shell cannot take as one word, is not on the Resume line ("(in its folder)")
+  And the Resume line's ID is the hooks' session only in the shape of an ID (letters, digits, `-`), else the list to pick from
+  And the original options are not added to Resume (a prompt among them would be sent again): "Started as" shows them
 ```
 
 ## 6. Flow and sequence diagrams
@@ -506,6 +531,7 @@ Limits a scenario states are not repeated.
 - execute_tool runs only a tool of the catalog, through the same checks and terminumd's own rules as a direct call; an agent's client that allows execute_tool without asking allows every tool behind it (AC-155).
 - Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
 - The idle exit (AC-153) types only Ctrl+C, `/exit` and Enter, fixed by terminumd, and only as that scenario allows; it is off until the user sets the days.
+- Its summary is written to `#{pane_tty}` by `run-shell` on the tmux server's host, through its `/bin/sh`: output, never input; a fixed `printf '%s\n'`, each line one POSIX-quoted argument (never the format) with `#` doubled for run-shell's format, control and invisible characters shown as escapes; `terminum hook` reads the agent's command line with `ps` from its own ancestors, redacted, and terminumd keeps at most 300 characters of it.
 
 ### Compatibility
 
@@ -513,7 +539,7 @@ An older Codex SessionEnd entry: AC-39.
 
 ### Logging and observability
 
-`hook.turn_end {key, by}`, `idleexit.ended {key, kind, days}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
+`hook.turn_end {key, by}`, `idleexit.ended {key, kind, days, session, folder, argv, title}`, `idleexit.unsaid {pane, error}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
 
 ## 10. Delivery stages
 
@@ -526,4 +552,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
 - [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`), `web/test/e2e_liveplans.mjs`
-- [x] AC-153 — `cargo test idle_exit` (keys on a private tmux with a stand-in agent), `cargo test settings`, `web/test/e2e_header.mjs`
+- [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

@@ -271,10 +271,14 @@ async fn watching(app: &Shared, id: &str) {
 /// The resume of §9: the run's own command, then the kind's words; its ID's shape checked.
 pub fn resume_command(run: &Run) -> Result<String, String> {
     let id = run.agent_session.as_deref().filter(|id| hooks::good_id(id)).ok_or("no conversation is known")?;
-    Ok(match run.kind.as_str() {
-        "codex" => format!("{} resume {id}", run.command),
-        _ => format!("{} --resume {id}", run.command),
-    })
+    Ok(format!("{} {}", run.command, resume_words(&run.kind, id)))
+}
+
+/// The words after an agent's command that resume conversation `id` (Codex's subcommand, Claude Code's
+/// option); `id` "" lists the conversations to pick one.
+pub fn resume_words(kind: &str, id: &str) -> String {
+    let words = if kind == "codex" { "resume" } else { "--resume" };
+    if id.is_empty() { words.to_string() } else { format!("{words} {id}") }
 }
 
 /// The agent starts anew in a pane where only its shell remains (AC-122): the old run's mark checked,

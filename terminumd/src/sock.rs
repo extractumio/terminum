@@ -135,6 +135,10 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         app.dispatcher.heard_tokens(&key, &ev);   // terminum-dispatcher.md AC-129: asked for below
         return StatusCode::NO_CONTENT.into_response();
     }
+    if ev["event"] == "Argv" {
+        app.hooks.heard_argv(&key, &ev);         // the command line asked for below (terminum-agents.md AC-153)
+        return StatusCode::NO_CONTENT.into_response();
+    }
     if ev["event"] == "Heard" {
         if let Some(n) = ev["lines"].as_u64() {
             crate::tasks::tell::heard(&app, &key, n);   // the lines it printed (AC-114)
@@ -183,10 +187,16 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     let (context, lines) = if crate::plans::carries_context(&ev, whose) { crate::tasks::tell::with_lines(&app, &key, remind) } else { (remind, None) };
     // a task's session: its hook sums the tokens, after this turn's end has gone (AC-129)
     let tokens = matches!(ev["event"].as_str(), Some("Stop" | "SessionEnd")) && (app.dispatcher.has_run(&key) || app.task_marks.has_session(&key));
-    match (context, tokens) {
-        (None, false) => StatusCode::NO_CONTENT.into_response(),
-        (text, _) => {
+    // the agent's command line, read by its hook once a session, at its start or a prompt (AC-153)
+    let argv = matches!(ev["event"].as_str(), Some("SessionStart" | "UserPromptSubmit")) && whose == crate::tmux::hookstate::Whose::Main
+        && app.hooks.wants_argv(&key);
+    match (context, tokens, argv) {
+        (None, false, false) => StatusCode::NO_CONTENT.into_response(),
+        (text, _, _) => {
             let mut answer = json!({"tokens": tokens});
+            if argv {
+                answer["argv"] = json!(true);
+            }
             if let Some(text) = text {
                 answer["remind"] = json!(text);
             }

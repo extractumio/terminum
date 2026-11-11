@@ -2,8 +2,23 @@
 //! What fbd types into a terminal (AC-12): words quoted for the pane's own shell, never a
 //! control or invisible character, never a word a command could take for an option, and
 //! never Enter: the user runs the line. Also terminumd's one rule of those characters
-//! (`control`, `hides`, `stray`, `clean`): names, labels, titles, plans, links and a program's
+//! (`control`, `hides`, `stray`, `clean`, `escaped`): names, labels, titles, plans, links and a program's
 //! copies use it.
+
+/// `s` with each `control` character as a visible escape (`\n`, `\u{202e}`): text shown as it is,
+/// a path as the path that exists, and nothing of it reaches a terminal or a command line as a key.
+pub fn escaped(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        match c {
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push_str("\\t"),
+            c if control(c) => out.push_str(&format!("\\u{{{:x}}}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
 
 /// Whether `s` holds a character that acts as a keystroke or hides what is typed (`control`).
 pub fn has_control(s: &str) -> bool {

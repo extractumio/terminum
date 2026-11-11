@@ -5,6 +5,7 @@
 //! (`@terminum-seen`, unix seconds by terminumd's clock), so it outlives terminumd. Every key goes
 //! only while the agent is idle with its box shown empty, read again before each one: no draft, no
 //! question, no answer to a permission is ever typed over; what is sent is in the input log (AC-147).
+//! Once it has ended, the pane says which agent it was and how to resume it (idle_summary.rs).
 
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,6 +13,7 @@ use std::time::{Duration, Instant};
 use crate::app::Shared;
 use crate::auth::store::unix_now as now;
 use crate::dispatcher::screen::Screen;
+use crate::idle_summary::Summary;
 use crate::page::marks::{find_item, layout_rows};
 use crate::tmux::titles::is_shell;
 use crate::tmux::Server;
@@ -26,10 +28,12 @@ const GRACE: Duration = Duration::from_secs(3600);
 const ENDS_WITHIN: Duration = Duration::from_secs(10);
 #[cfg(test)]
 const ENDS_WITHIN: Duration = Duration::from_secs(3);
-const DAY: u64 = 86_400;
-const FIELDS: &str = "#{@terminum-seen}\t#{@terminum-run}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_start_command}";
+pub(crate) const DAY: u64 = 86_400;
+const FIELDS: &str = "#{@terminum-seen}\t#{@terminum-run}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_start_command}\t#{pane_current_path}";
 /// Between the two Ctrl+C: inside the agents' window for a second press (Claude Code's is under a second).
 const PRESS_GAP: Duration = Duration::from_millis(300);
+/// How long after the agent ended its summary is written: its shell's prompt comes first.
+const PROMPT_FIRST: Duration = Duration::from_millis(300);
 /// How long the look waits for a tmux answer: a host that does not answer delays only its own panes.
 const WAIT: Duration = Duration::from_secs(5);
 
@@ -41,13 +45,14 @@ struct Pane {
     in_mode: bool,
     command: String,
     start: String,
+    path: String,
 }
 
 impl Pane {
     fn parse(line: &str) -> Pane {
         let f: Vec<&str> = line.split('\t').collect();
         let at = |i: usize| f.get(i).copied().unwrap_or("").to_string();
-        Pane { seen: at(0).trim().parse().ok(), run: at(1), in_mode: at(2) != "0", command: at(3), start: at(4) }
+        Pane { seen: at(0).trim().parse().ok(), run: at(1), in_mode: at(2) != "0", command: at(3), start: at(4), path: at(5) }
     }
 }
 
@@ -117,9 +122,11 @@ fn idle_agent(it: &serde_json::Value) -> Option<&str> {
     it["agent"].as_str().filter(|a| matches!(*a, "claude" | "codex") && !crate::page::turns::busy(it))
 }
 
-/// The list's idle coding agents: (key, claude or codex).
-fn idle_agents(app: &Shared) -> Vec<(String, String)> {
-    layout_rows(&app.layout.read()).filter_map(|it| Some((it["id"].as_str()?.to_string(), idle_agent(it)?.to_string()))).collect()
+/// The list's idle coding agents: (key, claude or codex, its row's title).
+fn idle_agents(app: &Shared) -> Vec<(String, String, String)> {
+    layout_rows(&app.layout.read()).filter_map(|it| {
+        Some((it["id"].as_str()?.to_string(), idle_agent(it)?.to_string(), it["title"].as_str().unwrap_or("").to_string()))
+    }).collect()
 }
 
 fn busy(app: &Shared, key: &str) -> bool {
@@ -200,10 +207,19 @@ async fn end(app: &Shared, server: &Arc<Server>, pane: &str, key: &str, kind: &s
     (steps.len(), Err(format!("{} still runs after Ctrl+C twice and /exit", first.command)))
 }
 
+/// The summary of the agent that ended, written into its pane once its shell is back (none where the pane went).
+async fn leave(server: &Server, pane: &str, summary: &Summary) {
+    tokio::time::sleep(PROMPT_FIRST).await;
+    let Some(p) = read(server, pane).await else { return };
+    if let Err(e) = ask(server, crate::idle_summary::command(pane, &summary.lines(&p.command, now()))).await {
+        tracing::warn!(event = "idleexit.unsaid", pane, error = %e);
+    }
+}
+
 /// One look at every listed agent: those due are asked to exit, one after another.
 async fn look(app: &Shared, days: u32, may_end: bool) {
     let at = now();
-    for (key, kind) in idle_agents(app) {
+    for (key, kind, title) in idle_agents(app) {
         let Some((server, pane)) = app.tmux.resolve(&key) else { continue };
         let read_at = Instant::now();
         let Some(p) = read(&server, &pane).await else { continue };
@@ -212,9 +228,16 @@ async fn look(app: &Shared, days: u32, may_end: bool) {
             Due::Wait => {}
             Due::Skip(why) => tracing::debug!(event = "idleexit.skipped", key = %key, why),
             Due::Go if may_end => {
+                let summary = Summary::of(app, &key, &kind, &p.path, &title, at.saturating_sub(p.seen.unwrap_or(at)), at);
                 let (keys, got) = end(app, &server, &pane, &key, &kind, &p, read_at).await;
                 match got {
-                    Ok(()) => tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days, keys),
+                    Ok(()) => {
+                        let st = &summary.started;
+                        tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days, keys, session = %st.session,
+                                       folder = %st.folder, argv = %st.argv, title = %summary.title);
+                        let (server, pane) = (server.clone(), pane.clone());
+                        tokio::spawn(async move { leave(&server, &pane, &summary).await });   // the next agent waits for none of it
+                    }
                     Err(why) => tracing::warn!(event = "idleexit.stayed", key = %key, kind = %kind, why = %why, keys),
                 }
                 if keys > 0 {

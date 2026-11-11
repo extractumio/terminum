@@ -435,3 +435,35 @@ fn ac39_working_holds_only_while_its_lease_does() {
     h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "tool": "Bash"})), Instant::now());
     assert!(h.working(K));
 }
+
+#[test]
+fn ac153_the_folder_a_session_began_in_is_kept_while_it_moves_and_its_command_line_is_asked_once() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    assert_eq!(h.started(K), None, "no hooks spoke");
+    h.apply(K, &ev("claude", "SessionStart", json!({"cwd": "/Users/alex/api"})), t);
+    assert!(h.wants_argv(K), "its hook is asked for the command line");
+    h.heard_argv(K, &ev("claude", "Argv", json!({"session": "other", "argv": "claude --theirs"})));
+    h.heard_argv(K, &ev("codex", "Argv", json!({"argv": "codex"})));
+    assert!(h.wants_argv(K), "another session's or agent's is not its");
+    h.heard_argv(K, &ev("claude", "Argv", json!({"argv": "claude --model opus"})));
+    h.heard_argv(K, &ev("claude", "Argv", json!({"argv": "claude --later"})));
+    assert!(!h.wants_argv(K), "asked once a session");
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1", "cwd": "/Users/alex/api/web"})), t);
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "cwd": "/tmp/x", "sub": "worker", "tool": "Bash"})), t);
+    assert_eq!(h.cwd(K).as_deref(), Some("/Users/alex/api/web"), "the list shows where it works");
+    assert_eq!(h.started(K), Some(Started { agent: "claude", session: "s1".into(), folder: "/Users/alex/api".into(), folder_is_start: true,
+                                            argv: "claude --model opus".into() }), "it resumes where it began");
+    h.apply(K, &ev("claude", "SessionStart", json!({"cwd": "/Users/alex/api/web"})), t);
+    assert_eq!(h.started(K).map(|s| (s.folder, s.argv)), Some(("/Users/alex/api".into(), "claude --model opus".into())),
+               "a start of the same session (a compaction) keeps where it began");
+    assert!(!h.wants_argv(K));
+    h.apply(K, &ev("claude", "SessionStart", json!({"session": "s2", "cwd": "/Users/alex/web"})), t);
+    let s = h.started(K).unwrap();
+    assert_eq!((s.session.as_str(), s.folder.as_str(), s.argv.as_str()), ("s2", "/Users/alex/web", ""), "a new session (/clear) starts anew");
+    assert!(h.wants_argv(K));
+    h.heard_argv(K, &ev("claude", "Argv", json!({"session": "s2", "argv": ""})));
+    assert!(!h.wants_argv(K), "a hook that found none is not asked again");
+    h.apply(K, &ev("codex", "UserPromptSubmit", json!({"session": "c1", "turn": "t1", "cwd": "/srv/x"})), t);
+    assert_eq!(h.started(K).map(|s| (s.agent, s.folder, s.folder_is_start)), Some(("codex", "/srv/x".into(), false)),
+               "a record made by a prompt (a start not heard, a restart) knows only where it works");
+}
