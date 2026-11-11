@@ -89,7 +89,7 @@ pub(super) enum Due {
 }
 
 /// The candidates a round would be given and the slots it may fill: the least of the project's free slots, the
-/// candidates' agents' and SLOTS_MOST; and the first of those whose agent can start one now, FOR_A_SLOT for each slot.
+/// candidates' agents', SLOTS_MOST and what its day's cap leaves; and the first of those whose agent can start one now, FOR_A_SLOT for each slot.
 fn offer(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<(Vec<Candidate>, i64), String> {
     let (slots, spent) = (pool::Slots::read(tx)?, super::usage::of_agents(tx, now)?);
     let mut room: BTreeMap<String, i64> = BTreeMap::new();
@@ -103,7 +103,8 @@ fn offer(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Re
             free.push(c);
         }
     }
-    let n = room.values().sum::<i64>().min(slots.free_in(tx, project)?.unwrap_or(i64::MAX)).min(SLOTS_MOST).min(free.len() as i64);
+    let left = (s.day_most - auto::started_in_day(tx, project, now)?).max(0);
+    let n = room.values().sum::<i64>().min(slots.free_in(tx, project)?.unwrap_or(i64::MAX)).min(SLOTS_MOST).min(left).min(free.len() as i64);
     free.truncate((n * FOR_A_SLOT) as usize);
     Ok((free, n))
 }
@@ -196,13 +197,16 @@ fn chosen(tx: &rusqlite::Transaction, pane: &str, id: &str, now: i64) -> Result<
     if !round.candidates.iter().any(|c| c == id) {
         return Err(format!("{id} is not among this round's candidates: {}.", round.candidates.join(", ")));
     }
-    let done = auto::started_by(tx, &round.task)?;
-    if done >= round.slots {
-        return Err(format!("This round's {} free slots are filled: start no more, and finish {}.", round.slots, own.id));
-    }
     let s = auto::setting(tx, &round.project)?;
     if !s.on {
         return Err(format!("Auto-Dispatch was turned off for this project meanwhile: start no more, and finish {}.", own.id));
+    }
+    if auto::started_in_day(tx, &round.project, now)? >= s.day_most {
+        return Err(format!("This project's {} tasks a day are started: start no more, and finish {}.", s.day_most, own.id));
+    }
+    let done = auto::started_by(tx, &round.task)?;
+    if done >= round.slots {
+        return Err(format!("This round's {} free slots are filled: start no more, and finish {}.", round.slots, own.id));
     }
     // what it may start is read anew: a human, an agent or a schedule may have taken or changed it since the round began
     let task = auto::candidates(tx, &round.project, &s, now, Some(id))?.pop()

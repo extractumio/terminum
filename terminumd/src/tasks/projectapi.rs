@@ -33,6 +33,7 @@ pub fn settings(tx: &Transaction) -> Result<HashMap<String, Value>, String> {
     for (id, auto) in super::auto::all(tx)? {
         if let Some(p) = all.get_mut(&id) {
             p["auto"] = auto.shown();
+            p["auto"]["started_day"] = json!(super::auto::started_in_day(tx, &id, super::ops::now())?);
         }
     }
     Ok(all)

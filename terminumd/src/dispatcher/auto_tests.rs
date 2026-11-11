@@ -81,10 +81,30 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         // one a human edits since is judged anew; a comment or a day's end apart, the rest stays passed over
         ops::edit(tx, HUMAN, &low.id, ops::Edit { title: Some("low, reworded".into()), ..Default::default() }, NOW + 60)?;
         assert_eq!(given(NOW + 60)?, (vec![low.id.clone()], 1));
-        assert_eq!(given(NOW + auto::PASSED)?, (vec![high.id.clone(), low.id.clone()], 1), "after a day it is judged again");
+        assert_eq!(given(NOW + auto::DAY)?, (vec![high.id.clone(), low.id.clone()], 1), "after a day it is judged again");
         // off, an ended round still leaves the board and none is made
         tx.execute("UPDATE projects SET auto_on = 0 WHERE id = 'api'", []).map_err(sql)?;
-        assert_eq!(decide(tx, "api", &setting(tx), NOW + auto::PASSED)?, Due::Nothing, "off");
+        assert_eq!(decide(tx, "api", &setting(tx), NOW + auto::DAY)?, Due::Nothing, "off");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac170_it_starts_no_more_than_its_days_cap() {
+    store("auto-cap").with(|tx| {
+        auto::set(tx, "api", &Setting { day_most: 2, ..setting(tx) }, NOW)?;
+        let (one, two, three) = (task(tx, "one", "P1"), task(tx, "two", "P1"), task(tx, "three", "P1"));
+        auto::set_agent(tx, &three.id, Some("b"), NOW)?;
+        let (id, r) = round(tx);
+        assert_eq!(r.slots, 2, "Smith's 2 and Jones's 1 are free: the cap leaves 2");
+        let pane = format!("tmux:local:t:%{}", running(tx, "p", &ops::get(tx, &id)?));
+        auto::started(tx, &one.key, &r.task, NOW)?;
+        assert_eq!((auto::started_in_day(tx, "api", NOW)?, offer(tx, "api", &setting(tx), NOW)?.1), (1, 1));
+        auto::started(tx, &two.key, &r.task, NOW)?;
+        assert_eq!(offer(tx, "api", &setting(tx), NOW)?.1, 0, "the day's cap is reached: no round");
+        assert!(chosen(tx, &pane, &three.id, NOW).err().unwrap().starts_with("This project's 2 tasks a day are started"));
+        // 24 hours on, it starts again
+        assert_eq!(offer(tx, "api", &setting(tx), NOW + auto::DAY)?.1, 1);
         Ok(())
     }).unwrap();
 }
