@@ -41,11 +41,16 @@ def main():
         line = f"TM_HOME={shlex.quote(t.home)} TM_APP_DIR={shlex.quote(t.app)} {command} > {out}.txt 2>&1; echo $? > {out}.rc"
         tmux("send-keys", "-t", pane, "-l", line)
         tmux("send-keys", "-t", pane, "Enter")
-        wait_for(lambda: os.path.exists(out + ".rc"), bool, seconds, 0.2)
+        def status():
+            try:
+                return open(out + ".rc").read().strip()     # the shell makes the file, then writes it
+            except OSError:
+                return ""
+        rc = wait_for(status, bool, seconds, 0.2, last=True) or "no answer"
         try:
-            return open(out + ".txt").read(), open(out + ".rc").read().strip()
+            return open(out + ".txt").read(), rc
         except OSError:
-            return "", "no answer"
+            return "", rc
 
     def cli(*args, token=None):
         """`terminum …` run outside every pane, by this script."""
