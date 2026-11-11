@@ -3,11 +3,15 @@
 // head by default and remembered by this browser; open, its cards stand on the columns' tracks, four to a row.
 // terminumd owns the schedules and says their next runs and words; every page hears of a change.
 import { askConfirm } from "./dialogs.js";
-import { el, read, write } from "./listparts.js";
+import { el, iconButton, read, write } from "./listparts.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
 import { agentColor, api, button, say, statusBox } from "./kanbanutil.js";
 
 const OPEN_KEY = "tm.board.schedules";
+
+/** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring;
+ *  Tab still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"). */
+const pointerKey = (b) => { b.addEventListener("mousedown", (e) => e.preventDefault()); return b; };
 
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {
@@ -20,7 +24,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   const add = button("textkey", "+ Schedule", () => win.open());
   add.id = "newschedule";
   add.title = "A task that runs on a cadence on one agent";
-  head.append(toggle, add);                        // + Schedule stands with the head: the section may be folded
+  head.append(pointerKey(toggle), pointerKey(add));   // + Schedule stands with the head: the section may be folded
   grid.append(list);
   box.append(head, grid);
   let schedules = [], drawn = "", opened = read(OPEN_KEY) === true;
@@ -56,10 +60,10 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     return c;
   }
 
-  /** Run now (AC-182): the schedule's task made and started at once, whatever its cadence; terminumd says why not. */
+  /** Run now (AC-182), a play key at the head's right: the schedule's task made and started at once, whatever its
+   *  cadence; terminumd says why not. */
   function runNow(s) {
-    const b = button("textkey schedrun", "Run now", async (e) => {
-      e.stopPropagation();                         // the card's own press opens its window
+    const b = iconButton("icon crun schedrun", "play", `Run ${s.key} now`, "Run now: make its task and start it", async () => {
       if (!await askConfirm(`Run ${s.key} now, on its agent? Its cadence stays as it is.`, "Run now")) return;
       b.disabled = true;
       try {
@@ -69,9 +73,8 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
       } catch (err) { say(`${s.key} did not run: ${err.message}`); }
       b.disabled = false;
     });
-    b.title = "Make its task and start it now";
     b.addEventListener("keydown", (e) => e.stopPropagation());
-    return b;
+    return pointerKey(b);
   }
 
   /** Anew only when what it shows changed. */
