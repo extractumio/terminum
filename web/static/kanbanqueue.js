@@ -73,13 +73,18 @@ export function queueList(box, { projectName, say }) {
   }
 
   const drag = bindReorder(list, (_kind, _parent, moved) => order(moved));
+  // a row under a press is not drawn anew: a board's read between the press and its first move would take the row
+  // from under the pointer, and the drag or the key's click with it; what came meanwhile is drawn once it lets go
+  let pressed = false;
+  list.addEventListener("pointerdown", () => { pressed = true; });
+  for (const end of ["pointerup", "pointercancel"]) window.addEventListener(end, () => { pressed = false; if (agent) show(agent, last); });
 
   function show(a, queue) {
     agent = a;
     last = queue;
     box.hidden = !a;
     const now = JSON.stringify([a?.id, queue]);
-    if (!a || now === drawn || drag.dragging()) return;
+    if (!a || now === drawn || pressed || drag.dragging()) return;
     drawn = now;
     list.replaceChildren(...queue.map(row));
     none.textContent = queue.length ? (queue.length > 1 ? "The first starts when a slot frees. Drag a task, or use its arrows, to change the order." : "It starts when a slot frees.")

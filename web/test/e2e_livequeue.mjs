@@ -92,8 +92,8 @@ export async function liveQueue(page, live) {
     await page.mouse.move(from.x, from.y);
     await page.mouse.down();
     await page.mouse.move(from.x, from.y - 12, { steps: 3 });
-    check("AC-169 a dragged row leaves its dashed slot, its copy under the pointer", await page.locator("#agentqueue .agqueued.dragging").count() === 1 && await page.locator("#agentqueue .dragghost").count() === 1);
-    const ghost = await page.$eval("#agentqueue .dragghost", (g) => { const r = g.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width }; });
+    check("AC-169 a dragged row leaves its dashed slot, its copy under the pointer", await until(async () => await page.locator("#agentqueue .agqueued.dragging").count() === 1 && await page.locator("#agentqueue .dragghost").count() === 1, 3000));
+    const ghost = await page.$eval("#agentqueue .dragghost", (g) => { const r = g.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width }; }).catch(() => ({ x: 0, y: -1000, w: 0 }));
     check("AC-169 the copy stands where the pointer is", Math.abs(ghost.y + from.h / 2 - (from.y - 12)) < from.h, JSON.stringify({ ghost, from }));
     await page.keyboard.press("Escape");
     check("AC-169 Esc puts the dragged row back, the window stays", await page.locator("#agentqueue .dragghost").count() === 0 && await page.isVisible("#agentbox[open]") && (await rows()).join() === [a, c, b].join(), JSON.stringify(await rows()));

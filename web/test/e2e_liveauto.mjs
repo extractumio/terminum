@@ -71,7 +71,7 @@ export async function liveAuto(page, live) {
   check("AC-170 an agent's tools do not set it: only a human's route", /That agent is gone/.test((await j(`/api/tasks/${c}/agent`, "PUT", { agent: "nobody" })).error ?? ""));
   await page.goto(`${live.base}/kanban/${c}?project=${project}`);
   await page.waitForSelector("#taskbox[open]");
-  const field = page.locator("#taskbox label.fieldrow", { hasText: "Agent" }).locator("select");
+  const field = page.locator("#taskbox label.fieldrow", { hasText: /^Agent/ }).locator("select");   // its own label: a session's title may say Agent too
   await field.selectOption(broken);
   check("AC-170 its window's Agent names the one that runs it", await until(async () => (await task(c)).runs_on === broken) && (await task(c)).history.some((h) => /Its agent: Auto broken/.test(h.text ?? "")));
   await page.keyboard.press("Escape");
