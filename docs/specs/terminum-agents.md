@@ -363,6 +363,7 @@ Scenario: AC-174 happy path — who is a manager
   Then that session is Billing's manager while Dispatcher holds its run: `terminum mcp` there is told so at its start, its instructions end with "You are this project's manager: search_tools also finds the tools to run its tasks on agents (run_task), follow and answer them (list_runs, get_task), and manage the pool's agents, the project's schedules and sessions. Act on the project through these tools alone, never by typing into tmux or changing terminum's files."
   And search_tools' areas add runs, agents, schedules, sessions and stats, and it finds run_task for "start a task on an agent"
   And on a host's project the same holds for the session + Session started there
+  And its row in the session list, and its card's row on the board, shows a small grey crown at its right, "Manager: it runs its project by terminum's tools" on hover; a worker's row shows none, and a manager's let go loses it within a walk
 
 Scenario: AC-174 happy path — who is a worker
   Given a session Dispatcher started for a task (a human's RUN, a schedule's firing, the queue, Auto-Dispatcher, a manager's run_task)

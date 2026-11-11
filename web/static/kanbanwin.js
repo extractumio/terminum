@@ -4,7 +4,7 @@
 // CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
 import { askConfirm, choose } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, upload } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -71,26 +71,34 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return line;
   }
 
+  /** Where it stands, read only: its status in its color, the agent on it, what it waits for. */
+  function standing(t) {
+    const line = el("div", "fieldrow", "Status");
+    const value = el("span", "fieldvalue");
+    value.append(statusTag(t));
+    if (t.agent) value.append(agentChip(t.agent));
+    if (t.waits) value.append(el("span", "cstate waiting", `waits for ${t.waits}`));
+    else if (t.session?.closed) value.append(el("span", "cstate closed", "session closed"));
+    // the conversation RUN resumes, by its ID (terminum-dispatcher.md AC-157)
+    if (t.agent?.conversation) value.append(el("span", "cconv", `conversation ${t.agent.conversation}`));
+    line.append(value);
+    return line;
+  }
+
+  /** What is set on it, in the new-task window's order: three to a line, two on a phone. */
   function fields(t) {
-    const meta = getMeta(), grid = el("div", "fieldgrid");
+    const meta = getMeta(), grid = el("div", "fieldgrid three");
     const key = t.session?.key ?? "";
     const sessions = sessionOptions(meta);
     if (key && !sessions.some(([k]) => k === key)) sessions.push([key, "Closed session"]);
     const owners = meta.users.map((u) => [u.id, u.name]);
     if (!owners.some(([u]) => u === t.owner)) owners.push([t.owner, t.owner_name]);
-    const stands = el("div", "fieldrow", "Status");
-    const value = el("span", "fieldvalue", t.archived_at ? "Archived" : t.status);
-    if (t.agent) value.append(agentChip(t.agent));
-    // the conversation RUN resumes, by its ID (terminum-dispatcher.md AC-157)
-    if (t.agent?.conversation) value.append(el("span", "cconv", `conversation ${t.agent.conversation}`));
-    stands.append(value);
     grid.append(
-      stands,
+      select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
-      select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       // the agent that runs it when Auto-Dispatcher starts it (terminum-dispatcher.md AC-170); none: its project's default
       select("Agent", [["", "Auto-Dispatcher's default"], ...meta.agents.map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => refresh(), (e) => say(e.message))),
-      select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
+      select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
       budgetField(t));
     return grid;
@@ -124,8 +132,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
 
   function text(t) {
     const wrap = el("section", "tasktext");
-    const shownText = el("div", "markdown");
-    renderInto(shownText, t.text);
+    const head = el("div", "edithead"), keys = el("span", "seckeys");
+    head.append(el("span", null, "Text"), keys);
+    const shownText = t.text ? el("div", "markdown") : el("p", "tasknone", "No text");
+    if (t.text) renderInto(shownText, t.text);
     /** Its editor, with files already dropped on the text shown. */
     let editing = false;
     const startEdit = (files = []) => {
@@ -137,22 +147,25 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       const dropped = [], kept = (file) => dropped.push(file.id);
       takesFiles(area, kept);
       const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(true); });
-      wrap.replaceChildren(area, row(button(null, "Cancel", () => refresh(true)), save));
+      keys.remove();
+      wrap.replaceChildren(head, area, row(button(null, "Cancel", () => refresh(true)), save));
       area.focus();
       addFiles(files, area, kept);
     };
-    const edit = button(null, "Edit", () => startEdit());
+    const edit = button("textkey", "Edit", () => startEdit());
     wrap.classList.add("droparea");
     onFiles(wrap, wrap, (list) => { if (!editing) startEdit(list); }, (on) => wrap.classList.toggle("dropping", on && !editing));
-    const purge = button(null, "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
+    const purge = button("textkey", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
       () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
-    wrap.append(shownText, row(edit, t.text ? purge : null));
+    keys.append(edit);
+    if (t.text) keys.append(purge);
+    wrap.append(head, shownText);
     return wrap;
   }
 
   function filesOf(t) {
     if (!t.files.length) return null;
-    const list = el("ul", "filelist");
+    const wrap = el("div", "fieldrow", "Files"), list = el("ul", "filelist");
     list.append(...t.files.map((f) => {
       const li = el("li");
       const open = button("linklike", f.name, () => download(f.id, f.name).catch((e) => say(e.message)));
@@ -160,7 +173,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       li.append(open, el("small", null, `${Math.ceil(f.bytes / 1024)} KB`), del);
       return li;
     }));
-    return list;
+    wrap.append(list);
+    return wrap;
   }
 
   function commentForm(t) {
@@ -218,11 +232,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const wrap = el("section", "tasksec taskown");
     const stamps = el("p", "taskstamps", `${t.uid} · ${madeChanged(t)}`);
     stamps.title = `${t.id} is also found by ${t.uid}, whatever its ID becomes`;
-    const closed = t.waits ? el("p", "cstate waiting", `waits for ${t.waits}`) : t.session?.closed ? el("p", "cstate closed", "session closed") : null;
     // made by a schedule: its name, a press opening its window (terminum-schedules.md AC-163)
     const from = t.schedule ? el("p", "taskfrom") : null;
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
-    wrap.append(...[stamps, from, fields(t), closed, text(t), filesOf(t)].filter(Boolean));
+    const when = el("div", "taskwhen");
+    when.append(...[stamps, from].filter(Boolean));
+    wrap.append(...[when, standing(t), fields(t), text(t), filesOf(t)].filter(Boolean));
     return wrap;
   }
 

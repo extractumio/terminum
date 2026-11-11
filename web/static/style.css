@@ -133,6 +133,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 .s .ag-codex { color: color-mix(in srgb, #c9b8ff 60%, var(--t-fg)); }      /* pale violet */
 .s .ag-opencode { color: color-mix(in srgb, #a9c4ff 60%, var(--t-fg)); }   /* pale blue */
 .item .st { display: grid; place-items: center; padding-top: 2px; }
+.item .st .mgr { display: inline-flex; color: var(--muted); }   /* its project's manager (terminum-agents.md AC-174) */
 .item .st .subs { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-micro); line-height: 1; color: var(--muted); font-variant-numeric: tabular-nums; }   /* its subagents (AC-39) */
 /* a tab's other panes (a coding agent's subagents) under its first, shifted in as children */
 #sessions .kids { margin: 0 0 2px 22px; padding: 0 0 0 6px; list-style: none; border-left: 1px solid var(--line); }

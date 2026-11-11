@@ -54,6 +54,10 @@ pub struct Dispatcher {
     /// panes with a live run: the others' hook events cost nothing here; changed only with the store's lock
     /// held, so a walk's read and a window's opening each see the other whole
     panes: Mutex<HashSet<String>>,
+    /// those of them a + Session's run holds: their sessions are their projects' managers, which the list's rows
+    /// say (terminum-agents.md AC-174); and whether they changed since the list was last asked to be read again
+    managers: Mutex<HashSet<String>>,
+    managers_changed: std::sync::atomic::AtomicBool,
     /// hooks' events, in the order they came (AC-131)
     events: hooks::Events,
     /// what terminum typed, by pane
@@ -141,17 +145,37 @@ impl Dispatcher {
         self.panes.lock().contains(key)
     }
 
+    /// Whether pane `key`'s session is its project's manager, as the last read of the runs says: for what a
+    /// page shows. What a caller may run is read from the store at its call (roles/mod.rs).
+    pub fn manages(&self, key: &str) -> bool {
+        self.managers.lock().contains(key)
+    }
+
+    /// Whether the managers' panes changed since this was last asked: the list is read again then.
+    pub fn managers_changed(&self) -> bool {
+        self.managers_changed.swap(false, std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Pane `key` holds `run` from now on, in the transaction that says so (AC-131).
     fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<runs::Run, String> {
         let r = runs::change(tx, run, |r| r.pane_key = Some(key.to_string()))?;
         self.panes.lock().insert(key.to_string());
+        if r.ad_hoc() && self.managers.lock().insert(key.to_string()) {
+            self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         Ok(r)
     }
 
     /// The runs a walk goes by, and the panes they hold, in one transaction (AC-131).
-    fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
+    pub(crate) fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
         let all = runs::live(tx)?;
         *self.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
+        let managers: HashSet<String> = all.iter().filter(|r| r.ad_hoc() && r.holds_slot()).filter_map(|r| r.pane_key.clone()).collect();
+        let mut held = self.managers.lock();
+        if *held != managers {
+            *held = managers;
+            self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
         Ok(all)
     }
 

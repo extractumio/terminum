@@ -954,9 +954,10 @@ Scenario: AC-148 failure — a name of nothing
 ```gherkin
 Scenario: AC-149 happy path — three parts
   When the user opens API-12's window
-  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", Status (read only, with the agent on it), Severity, Owner, Project, Session, Budget, its text and files
+  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID, unbroken where it fits), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget), then Text with its keys Edit and Purge text beside the word, then Files
+  And its groups (when, status, fields, text, files) stand on one left edge, 12 px apart, each label 4 px over what it names; its fields are alike in width and height, three to a line, two on a phone; the three parts and the comment field stand a section break (24 px) apart
   And under it SUBTASKS with its keys (AC-112), then COMMENTS · HISTORY with its own heading, the comment field and the window's keys last
-  And a comment is a card marked at its left edge, with its author, when it was written and "edited <when>" once changed (AC-108); a line of history is muted
+  And a comment is a card marked at its left edge, with its author, when it was written and "edited <when>" once changed (AC-108); a line of history is muted, a screen quoted in it (between ``` lines) shown as the terminal drew it, scrolling in a box of its own
 
 Scenario: AC-149 happy path — the order
   Then comments and history come newest first
@@ -1147,7 +1148,7 @@ Depends on: nothing more.
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
-- [x] AC-149 — `web/test/e2e_liveboardids.mjs`
+- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs`
 - [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`
 - [x] AC-145 — `cargo test tasks::tools` (refused with what to do, the template), `cargo test tasks::template`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`

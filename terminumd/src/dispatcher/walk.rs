@@ -224,6 +224,9 @@ async fn walk(app: &Shared) {
         ops::rows(tx, "SELECT slug, session_key FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL", [], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?,
         crate::tasks::limits::limits(tx)?,
     ))).await else { return };
+    if app.dispatcher.managers_changed() {
+        app.dirty.notify_one();                    // the rows say which sessions are managers (terminum-agents.md AC-174)
+    }
     if all.is_empty() && linked.is_empty() {
         return;
     }

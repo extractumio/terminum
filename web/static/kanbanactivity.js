@@ -5,6 +5,7 @@
 import { el, iconButton, read, write } from "./listparts.js";
 import { api, button, renderInto, row, say, stamp } from "./kanbanutil.js";
 
+const OPENS = "\n\n```\n", CLOSES = "\n```";   // round a screen quoted in a line of history
 const ORDER = "tm.activity.oldest";                 // this browser's choice: oldest first
 
 /** A field for Markdown. */
@@ -53,7 +54,15 @@ export function activity(t, { refresh, confirmed }) {
     } else if (e.kind === "deleted") {
       li.append(el("em", null, "Comment deleted"));
     } else {
-      li.append(el("span", "evtext", e.text ?? ""));
+      // its words, and the screen Dispatcher quotes after them between ``` lines (dispatcher/start.rs), as it stood
+      const text = e.text ?? "", at = text.indexOf(OPENS), end = text.length - CLOSES.length;
+      const quoted = at >= 0 && text.endsWith(CLOSES) && end >= at + OPENS.length;
+      li.append(el("span", "evtext", quoted ? text.slice(0, at) : text));
+      if (quoted) {
+        const screen = el("pre", "evscreen", text.slice(at + OPENS.length, end));
+        screen.tabIndex = 0;                         // scrolled by the keyboard too
+        li.append(screen);
+      }
     }
     return li;
   }
