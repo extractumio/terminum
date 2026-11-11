@@ -40,6 +40,11 @@ pub async fn agent(State(app): State<Shared>, seen: axum::http::Extensions, Json
     let peer = seen.get::<axum::extract::ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
     // a program outside a pane names itself by a token (AC-181): on this Mac's socket alone, never a host's link
     if body["token"].is_string() {
+        // a session of terminum is its pane's session, whatever token its environment holds
+        if roles::peer::in_any_pane(&app, peer).await {
+            tracing::warn!(event = "tokens.used_in_pane");
+            return answer(roles::tokens::IN_PANE, true);
+        }
         return said(roles::by_token(&app, &body).await);
     }
     let server = crate::links::resolve(&app, crate::links::Via::Local, &body).await;
@@ -100,31 +105,27 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
     };
-    task_tool_of(app, who, host, caller.other, tool, args).await
+    said(task_tool_of(app, who, host, caller.other, tool, args).await)
 }
 
 /// A task tool for `who`: a pane's session, or a token's caller (`host`: the pane's, when it is on one).
-pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Option<String>, other: bool, tool: String, args: Value) -> Json<Value> {
+pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Option<String>, other: bool, tool: String, args: Value) -> Result<String, String> {
     if tool == "dispatch_task" && other {
-        return answer(OTHER_SESSION_DISPATCH, true);
+        return Err(OTHER_SESSION_DISPATCH.into());
     }
     if tool == "dispatch_task" {
         // Auto-Dispatcher's round starts a task (terminum-dispatcher.md AC-170): a press, not a store's write
-        return match crate::dispatcher::auto::dispatch(app, &who.key, &args).await { Ok(text) => answer(&text, false), Err(e) => answer(&e, true) };
+        return crate::dispatcher::auto::dispatch(app, &who.key, &args).await;
     }
     if tool == "get_file" && let Some(host) = host {
-        return match host_file(app, &host, who, args).await { Ok(text) => answer(&text, false), Err(e) => answer(&e, true) };
+        return host_file(app, &host, who, args).await;
     }
     let a = app.clone();
-    match crate::http::off(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await {
-        Ok((text, changed)) => {
-            for task in &changed {
-                crate::tasks::api::told(app, task);
-            }
-            answer(&text, false)
-        }
-        Err(e) => answer(&e, true),
+    let (text, changed) = crate::http::off(move || crate::tasks::tools::run(&a.tasks, &a.cfg.dir, &who, &tool, &args)).await?;
+    for task in &changed {
+        crate::tasks::api::told(app, task);
     }
+    Ok(text)
 }
 
 /// A task's file for an agent on `host`: put in its ~/.terminum/tmp as a paste's file is, its path said

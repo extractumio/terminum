@@ -4,7 +4,7 @@
 
 use axum::extract::{Path, State};
 use axum::response::Response;
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::press::budget_told;
 use super::runs::{self, Run};
@@ -16,23 +16,23 @@ use crate::tasks::ops::{self, Task};
 
 /// The human lets go of a session Dispatcher holds: its open tasks fail, its slot frees, its window stays (AC-142).
 pub(super) async fn let_go(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    answer(store(&app, move |tx| runs::let_go(tx, &id)).await.map(|r| let_go_of(&app, r)))
+    answer(store(&app, move |tx| runs::let_go(tx, &id)).await.map(|r| json!({"ok": true, "ids": let_go_of(&app, r)})))
 }
 
-/// What a run let go of says, and every page hears of its tasks.
-fn let_go_of(app: &Shared, r: Run) -> Value {
+/// Every page hears of the tasks of a run let go of: their IDs.
+fn let_go_of(app: &Shared, r: Run) -> Vec<String> {
     super::told_all(app, &r);
-    json!({"ok": true, "ids": r.ids})
+    r.ids
 }
 
 /// The human gives up on a run they cannot reach or no longer want (AC-138).
 pub(super) async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    answer(gave_up(&app, &id, "The human").await)
+    answer(gave_up(&app, &id, "The human").await.map(|ids| json!({"ok": true, "ids": ids})))
 }
 
 /// `who` gives up on task `id`: a wait is called off, the task where it stood (AC-158); else its run is given up.
 /// The tasks it concerned.
-pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result<Value, String> {
+pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result<Vec<String>, String> {
     let wanted = id.to_string();
     let done = store(app, move |tx| {
         let key = ops::key_of(tx, &wanted)?;
@@ -40,13 +40,13 @@ pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result
         let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
         super::waits::call_off(tx, &key, &format!("{who} called off its wait for {name}.")).map(|()| None)
     }).await?;
-    match done {
+    Ok(match done {
         None => {
             told(app, id);
-            Ok(json!({"ok": true, "ids": [id]}))
+            vec![id.to_string()]
         }
-        Some(r) => Ok(let_go_of(app, r)),
-    }
+        Some(r) => let_go_of(app, r),
+    })
 }
 
 /// A human changed the budget on a running task: it holds at once, and the agent is told as the last

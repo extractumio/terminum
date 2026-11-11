@@ -24,6 +24,8 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
     let boss = boss(manager);
     match (answers, comment) {
         (Some([]), _) => format!("{id}: {boss} ran it again with no answer: decide with what you have, or ask again by {ASK_HUMAN}."),
+        // a manager's press brings the humans' answers and its own message: neither is said to be the other's
+        (Some(said), _) if manager => format!("{id}: answers to your questions follow, the humans' comments and the project's manager's message. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
         (Some(said), _) => format!("{id}: {boss} answered your questions in the comments below. Go on with the task, taking them into account.\n\n{}", said.join("\n\n---\n\n")),
         (None, Some(c)) => format!("{id}: a new comment by {who} follows. Go on with the task, taking it into account.\n\n{c}"),
         (None, None) => format!("{id}: {boss} ran it again: go on with the task."),

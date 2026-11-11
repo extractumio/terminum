@@ -269,7 +269,7 @@ fn ac179_a_manager_s_press_says_whose_words_they_are() {
         assert!(!prompt.contains("The human ran") && !prompt.contains("The human's message"), "an agent's words never stand as a human's");
         // going on: its answers and its bare press are the manager's too
         let said = ["use v2".to_string()];
-        assert!(again_words(&a.id, "Opus · manager", None, Some(&said), true).starts_with(&format!("{}: the project's manager answered your questions", a.id)));
+        assert!(again_words(&a.id, "Opus · manager", None, Some(&said), true).starts_with(&format!("{}: answers to your questions follow, the humans' comments and the project's manager's message.", a.id)));
         assert!(again_words(&a.id, "Opus · manager", None, None, true).ends_with("the project's manager ran it again: go on with the task."));
         assert!(again_words(&a.id, "Opus · manager", Some("and v3"), None, true).contains("a new comment by Opus · manager follows"));
         Ok(())

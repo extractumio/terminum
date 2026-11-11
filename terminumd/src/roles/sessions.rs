@@ -44,11 +44,10 @@ fn of_project(app: &Shared, boss: &Boss, args: &Value) -> Result<(String, (Arc<S
 }
 
 pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
-    let keys = members(app, boss);
     let held = store(app, move |tx| Ok(runs::live(tx)?.into_iter().filter(|r| r.holds_slot()).filter_map(|r| r.pane_key.clone().map(|k| (k, r))).collect::<std::collections::HashMap<_, _>>())).await?;
     let now = crate::auth::store::unix_now();
-    let layout = app.layout.read().clone();
-    let sessions: Vec<Value> = members(app, boss).iter().filter(|k| keys.contains(k) && app.tmux.resolve(k).is_some()).map(|key| {
+    let layout = app.layout.read();
+    let sessions: Vec<Value> = members(app, boss).iter().filter(|k| app.tmux.resolve(k).is_some()).map(|key| {
         let working = app.hooks.working(key);
         let plan = app.plans.details(key, working, now);
         let run = held.get(key);
@@ -70,13 +69,9 @@ pub async fn get(app: &Shared, boss: &Boss, args: &Value) -> Result<String, Stri
     let (key, (server, pane)) = of_project(app, boss, args)?;
     let lines = number(args, "lines", 1..=LINES_MOST)?.unwrap_or(LINES) as usize;
     let screen = server.run(format!("capture-pane -p -J -t {pane} -S -{lines}")).await.map_err(|e| format!("tmux does not answer: {e}"))?;
-    let mut shown: Vec<String> = screen.iter().map(|l| crate::termtext::clean(l.trim_end(), false)).collect();
-    while shown.last().is_some_and(String::is_empty) {
-        shown.pop();
-    }
-    let from = shown.len().saturating_sub(lines);
+    let shown = crate::lastlines::tail(&[screen.iter().map(|l| crate::termtext::clean(l, false)).collect()], lines);
     let plan = crate::agentapi::plan_text(&app.plans, &key, app.hooks.working(&key), crate::auth::store::unix_now());
-    Ok(format!("{DATA}\nIts plan:\n{plan}\n\nIts screen's last lines:\n{}", shown[from..].join("\n")))
+    Ok(format!("{DATA}\nIts plan:\n{plan}\n\nIts screen's last lines:\n{shown}"))
 }
 
 pub async fn send(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
@@ -84,6 +79,10 @@ pub async fn send(app: &Shared, boss: &Boss, args: &Value) -> Result<String, Str
     let text = args["text"].as_str().unwrap_or("").trim_end_matches(['\n', '\r']);
     if text.trim().is_empty() {
         return Err("text is required".into());
+    }
+    // what a pane shows of it is what runs: as a RUN's message (dispatcher/api.rs)
+    if text.split(['\n', '\t']).any(crate::termtext::has_control) {
+        return Err("Not typed: the text has control or invisible characters.".into());
     }
     let enter = args["enter"] != "no";
     let done = typed(app, &server, &pane, text, enter).await;
@@ -102,8 +101,7 @@ async fn typed(app: &Shared, server: &Arc<Server>, pane: &str, text: &str, enter
         return Err("Not typed: the pane is in a tmux mode.".into());
     }
     let client = server.client(pane).ok_or("tmux does not answer")?;
-    let buffer = crate::page::typing::load_buffer(app, &client, server, text).await?;
-    client.run(format!("paste-buffer -p -d -b {buffer} -t {pane}")).await.map_err(|e| format!("tmux did not take the paste: {e}"))?;
+    crate::page::typing::paste_buffer(app, &client, server, pane, text).await?;
     if enter {
         tokio::time::sleep(BEFORE_ENTER).await;
         client.run(format!("send-keys -t {pane} Enter")).await.map_err(|e| format!("tmux did not take Enter: {e}"))?;
@@ -112,8 +110,8 @@ async fn typed(app: &Shared, server: &Arc<Server>, pane: &str, text: &str, enter
 }
 
 pub async fn close(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
-    let (key, server, pane) = other(app, boss, args, "close")?;
-    server.run(format!("kill-pane -t {pane}")).await.map_err(|e| format!("Not closed: {e}"))?;
+    let (key, ..) = other(app, boss, args, "close")?;
+    crate::page::sessions::kill(app, &key).await?;
     tracing::info!(event = "manager.closed", key = %key, by = %boss.name);
     Ok(format!("{key} is closed: its program ended. A task its agent ran is no longer held by a session: list_runs and get_task say where it stands."))
 }

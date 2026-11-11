@@ -20,49 +20,54 @@ const NOT_A_CALLER: &str = "terminum tool runs in a session of terminum, or with
 pub const TOOL_USAGE: &str = "usage: terminum tool <name> ['<json arguments>' | -]    (- reads them from stdin; terminum tools lists them)";
 pub const TOKENS_USAGE: &str = "usage: terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]";
 
-/// Who calls: a token's holder, else the pane of the environment.
+/// Who calls: the pane of the environment, else outside one a token's holder.
 enum Caller {
     Token(String),
     Pane(Env),
 }
 
+/// In a pane the pane's session calls, whatever token its environment holds: a token is for outside.
 fn caller(ctx: &Ctx) -> Result<Caller, String> {
-    if let Some(token) = ctx.var(TOKEN).map(str::trim).filter(|t| !t.is_empty()) {
-        return Ok(Caller::Token(token.to_string()));
-    }
     let env = Env { tmux: ctx.var("TMUX").map(str::to_string), pane: ctx.var("TMUX_PANE").map(str::to_string), known: Default::default(), manager: Default::default() };
-    if mcp::pane_of(&env).is_none() {
-        return Err(NOT_A_CALLER.into());
+    if mcp::pane_of(&env).is_some() {
+        return Ok(Caller::Pane(env));
     }
-    Ok(Caller::Pane(env))
+    ctx.var(TOKEN).map(str::trim).filter(|t| !t.is_empty()).map(|token| Caller::Token(token.to_string())).ok_or_else(|| NOT_A_CALLER.to_string())
 }
 
 /// One call to terminumd as `who`: (the answer's text, whether it is a refusal).
-fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(Value, bool), String> {
+fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bool), String> {
+    let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
     match who {
         Caller::Token(token) => {
             let body = json!({"token": token, "tool": tool, "args": args});
             match super::sockhttp::call(&ctx.sock(), "POST", "/agent", Some(&body), BUDGET) {
                 Err(Down) => Err(mcp::DOWN.into()),
-                Ok((200, Some(a))) => Ok((a["text"].clone(), a["error"] == true)),
+                Ok((200, Some(a))) => Ok((text(&a["text"]), a["error"] == true)),
                 Ok((status, a)) => Err(format!("terminum refused the call: {}", super::sockhttp::message(a.as_ref(), status))),
             }
         }
         Caller::Pane(env) => {
-            let forward = |body: &Value| super::sinks::first_knowing(&super::sinks::all(), |p| super::sockhttp::call(p, "POST", "/agent", Some(body), BUDGET));
-            let said = if tool == "probe" { json!({"content": [{"text": if mcp::manager(env, &forward) { "manager" } else { "worker" }}], "isError": false}) } else { mcp::call(tool, args, None, env, &forward) };
-            Ok((said["content"][0]["text"].clone(), said["isError"] == true))
+            let said = mcp::call(tool, args, None, env, &|body| forward(body));
+            Ok((text(&said["content"][0]["text"]), said["isError"] == true))
         }
     }
 }
 
+/// A pane's call to the first sink that knows it.
+fn forward(body: &Value) -> Result<(u16, Option<Value>), Down> {
+    super::sinks::first_knowing(&super::sinks::all(), |p| super::sockhttp::call(p, "POST", "/agent", Some(body), BUDGET))
+}
+
 /// Whether the caller is a manager: what `terminum tools` shows follows it.
 fn manager(ctx: &Ctx, who: &Caller) -> Result<bool, String> {
-    let (role, refused) = call(ctx, who, "probe", &json!({}))?;
-    if refused {
-        return Err(role.as_str().unwrap_or_default().to_string());
+    match who {
+        Caller::Pane(env) => Ok(mcp::manager(env, &|body| forward(body))),
+        Caller::Token(_) => match call(ctx, who, "probe", &json!({}))? {
+            (why, true) => Err(why),
+            (role, false) => Ok(role == crate::roles::name(true)),
+        },
     }
-    Ok(role == "manager")
 }
 
 /// `terminum tool <name> [json | -]`: the tool's answer on stdout; a refusal on stderr, status 1.
@@ -78,14 +83,14 @@ pub fn tool(ctx: &Ctx, name: &str, given: Option<&str>) -> Result<i32, String> {
     };
     let args: Value = serde_json::from_str(&raw).map_err(|e| format!("The arguments are not JSON: {e}\n{TOOL_USAGE}"))?;
     let who = caller(ctx)?;
-    if !super::mcp_catalog::card(name).is_some_and(|c| !super::mcp_catalog::manager_only(c.name) || manager(ctx, &who).unwrap_or(false)) {
+    // whether this caller may run it is terminumd's to say
+    if super::mcp_catalog::card(name).is_none() {
         return Err(format!("No tool is named {name:?}: terminum tools lists them."));
     }
     let args = mcp::checked(name, &args)?;
     let (text, refused) = call(ctx, &who, name, &args)?;
-    let text = text.as_str().unwrap_or_default();
     if refused {
-        return Err(text.to_string());
+        return Err(text);
     }
     ctx.say(text);
     Ok(0)
@@ -101,7 +106,7 @@ pub fn tools(ctx: &Ctx, rest: &[String]) -> Result<i32, String> {
                 let names: Vec<&str> = super::mcp_catalog::cards(manager).filter(|c| c.area == *area).map(|c| c.name).collect();
                 format!("{area} ({what}):\n  {}", names.join(", "))
             }).collect();
-            Ok(format!("You call as a {}.\n{}\nterminum tools search <words> finds one; terminum tools info <name> describes it; terminum tool <name> '<json>' runs it.", if manager { "manager" } else { "worker" }, areas.join("\n")))
+            Ok(format!("You call as a {}.\n{}\nterminum tools search <words> finds one; terminum tools info <name> describes it; terminum tool <name> '<json>' runs it.", crate::roles::name(manager), areas.join("\n")))
         }
         [s, words @ ..] if s == "search" && !words.is_empty() => super::mcp_meta::search(&json!({"query": words.join(" "), "limit": 10}), manager),
         [i, names @ ..] if i == "info" && !names.is_empty() => super::mcp_meta::describe(&json!({"names": names}), manager),

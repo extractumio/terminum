@@ -13,7 +13,7 @@ use tokio::net::UnixListener;
 use crate::app::Shared;
 
 /// The ancestors looked at: a tool's call sits a few programs under its pane's first.
-const UP: usize = 24;
+const UP: usize = 32;
 
 /// The process at the other end of a connection on the socket; none where the system does not say.
 #[derive(Clone, Copy, Debug, Default)]
@@ -25,23 +25,27 @@ impl Connected<IncomingStream<'_, UnixListener>> for Peer {
     }
 }
 
-/// `pid` and its ancestors, nearest first, up to the first process (off the async workers: one `ps` each).
-fn ancestry(pid: u32) -> Vec<u32> {
-    let mut chain = vec![pid];
+/// Whether `pid` or an ancestor of it is one of `roots`, by one `ps` of every process's parent (off the async workers).
+fn descends(pid: u32, roots: &[u32]) -> bool {
+    let Ok(out) = Command::new("ps").args(["-A", "-o", "pid=,ppid="]).output() else { return false };
+    let parents: std::collections::HashMap<u32, u32> = String::from_utf8_lossy(&out.stdout).lines()
+        .filter_map(|l| { let mut f = l.split_whitespace(); Some((f.next()?.parse().ok()?, f.next()?.parse().ok()?)) }).collect();
     let mut at = pid;
     for _ in 0..UP {
-        let Ok(out) = Command::new("ps").args(["-o", "ppid=", "-p", &at.to_string()]).output() else { break };
-        let Some(parent) = String::from_utf8_lossy(&out.stdout).trim().parse::<u32>().ok().filter(|p| *p > 1) else { break };
-        chain.push(parent);
-        at = parent;
+        if roots.contains(&at) {
+            return true;
+        }
+        match parents.get(&at) {
+            Some(parent) if *parent > 1 => at = *parent,
+            _ => return false,
+        }
     }
-    chain
+    false
 }
 
-/// Whether `peer` runs under a process of `roots`. An unknown peer is not judged: the socket is the user's own.
-async fn under(peer: Peer, roots: Vec<u32>) -> bool {
-    let Some(pid) = peer.0 else { return true };
-    tokio::task::spawn_blocking(move || ancestry(pid).iter().any(|p| roots.contains(p))).await.unwrap_or(false)
+/// Whether process `pid` runs under a process of `roots`.
+async fn under(pid: u32, roots: Vec<u32>) -> bool {
+    tokio::task::spawn_blocking(move || descends(pid, &roots)).await.unwrap_or(false)
 }
 
 /// The first processes of `server`'s panes: all of them, or the one of `pane`.
@@ -53,17 +57,24 @@ async fn pane_pids(server: &crate::tmux::Server, pane: Option<&str>) -> Vec<u32>
     server.run(line).await.unwrap_or_default().iter().filter_map(|l| l.trim().parse().ok()).collect()
 }
 
-/// Whether the call comes from under `pane` of `server`, as it says.
+/// Whether the call comes from under `pane` of `server`, as it says. An unknown peer is not judged: the socket
+/// is the user's own.
 pub async fn in_pane(peer: Peer, server: &crate::tmux::Server, pane: &str) -> bool {
-    peer.0.is_none() || under(peer, pane_pids(server, Some(pane)).await).await
+    match peer.0 {
+        Some(pid) => under(pid, pane_pids(server, Some(pane)).await).await,
+        None => {
+            tracing::warn!(event = "manager.peer_unknown", pane);
+            true
+        }
+    }
 }
 
 /// Whether the call comes from under any pane of this Mac's tmux servers terminum shows.
 pub async fn in_any_pane(app: &Shared, peer: Peer) -> bool {
-    let Some(_) = peer.0 else { return false };
+    let Some(pid) = peer.0 else { return false };
     let mut roots = Vec::new();
     for server in app.tmux.all().into_iter().filter(|s| s.is_local()) {
         roots.extend(pane_pids(&server, None).await);
     }
-    under(peer, roots).await
+    under(pid, roots).await
 }

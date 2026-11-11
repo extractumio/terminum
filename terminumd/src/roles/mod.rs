@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::app::Shared;
 use crate::dispatcher::runs;
-use crate::tasks::ops::sql;
+use crate::tasks::ops::agent_named;
 
 mod agents;
 pub mod peer;
@@ -47,24 +47,18 @@ pub fn manages(tx: &Transaction, key: &str) -> Result<Option<runs::Run>, String>
     Ok(runs::in_pane(tx, key)?.filter(|r| r.ad_hoc() && r.holds_slot()))
 }
 
-/// The user a manager writes as, made the first time: its agent's name, said to be the manager.
-fn user(tx: &Transaction, id: &str, name: &str) -> Result<String, String> {
-    tx.execute("INSERT OR IGNORE INTO users (id, kind, name, role) VALUES (?1, 'agent', ?2, 'agent')", (id, name)).map_err(sql)?;
-    Ok(id.to_string())
-}
-
 /// Pane `key`'s manager, if its session is one.
 pub fn boss(tx: &Transaction, key: &str) -> Result<Option<Boss>, String> {
     let Some(r) = manages(tx, key)? else { return Ok(None) };
-    user(tx, crate::inputs::MANAGER, "Manager")?;           // whom the input log names for what a manager typed
+    agent_named(tx, crate::inputs::MANAGER.into(), "Manager")?;           // whom the input log names for what a manager typed
     let name = format!("{} · manager", r.agent_name);
-    Ok(Some(Boss { key: key.to_string(), user: user(tx, &format!("manager:{}:{}", r.project, r.agent_id), &name)?, project: r.project, name }))
+    Ok(Some(Boss { key: key.to_string(), user: agent_named(tx, format!("manager:{}:{}", r.project, r.agent_id), &name)?, project: r.project, name }))
 }
 
 /// A manager token's caller (AC-181).
 pub fn boss_of_token(tx: &Transaction, t: &tokens::Token) -> Result<Boss, String> {
     let name = format!("{} · token", t.name);
-    Ok(Boss { key: t.key(), user: user(tx, &format!("manager:token:{}", t.id), &name)?, project: t.project.clone(), name })
+    Ok(Boss { key: t.key(), user: agent_named(tx, format!("manager:token:{}", t.id), &name)?, project: t.project.clone(), name })
 }
 
 /// A role's name, as a probe says it.
@@ -119,9 +113,7 @@ pub async fn by_token(app: &Shared, body: &Value) -> Result<String, String> {
     let dir = app.projects.lock().by_id(&t.project).filter(|p| p.host.is_none()).map(|p| p.dir.clone());
     let project = Some(t.project.clone()).filter(|p| p != crate::tasks::store::DEFAULT_PROJECT);
     let who = crate::tasks::tools::Who { key: t.key(), agent: "token".into(), title: t.name.clone(), project, dir };
-    let said = crate::agentapi::task_tool_of(app, who, None, false, tool, args).await.0;
-    let text = said["text"].as_str().unwrap_or_default().to_string();
-    if said["error"] == true { Err(text) } else { Ok(text) }
+    crate::agentapi::task_tool_of(app, who, None, false, tool, args).await
 }
 
 /// A task of the manager's project, or why not.
@@ -130,13 +122,23 @@ fn in_project(tx: &Transaction, boss: &Boss, id: &str) -> Result<crate::tasks::o
     if t.project == boss.project { Ok(t) } else { Err(format!("{id} is outside your project.")) }
 }
 
-pub(crate) fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
-    args[key].as_str().map(str::trim).filter(|s| !s.is_empty()).ok_or_else(|| format!("{key} is required"))
+/// An argument's text, trimmed; none when it is absent or empty.
+fn opt<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
+    args[key].as_str().map(str::trim).filter(|s| !s.is_empty())
+}
+
+fn arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, String> {
+    opt(args, key).ok_or_else(|| format!("{key} is required"))
+}
+
+/// An argument's text as given, else what the record `was`.
+fn text(args: &Value, key: &str, was: Option<&str>) -> Option<String> {
+    args[key].as_str().or(was).map(str::to_string)
 }
 
 /// A whole number an argument holds as text, within `range`.
 fn number(args: &Value, key: &str, range: std::ops::RangeInclusive<i64>) -> Result<Option<i64>, String> {
-    match args[key].as_str().map(str::trim).filter(|s| !s.is_empty()) {
+    match opt(args, key) {
         None => Ok(None),
         Some(s) => s.parse().ok().filter(|n| range.contains(n)).map(Some).ok_or_else(|| format!("{key}: a whole number from {} to {}", range.start(), range.end())),
     }

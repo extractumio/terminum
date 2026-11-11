@@ -18,6 +18,8 @@ use crate::tasks::ops::{rows, sql};
 
 /// What every token begins with, so a scan knows one.
 pub const PREFIX: &str = "tmt_";
+/// What a token's call from inside a pane of terminum is told.
+pub const IN_PANE: &str = "A token is for a program outside terminum: in a pane, the pane's own session calls.";
 const NAME_MOST: usize = 40;
 const MOST: i64 = 50;
 const DAYS_MOST: i64 = 3650;

@@ -4,7 +4,7 @@
 
 use serde_json::{json, Value};
 
-use super::{arg, in_project, yes, Boss, DATA};
+use super::{arg, in_project, opt, yes, Boss, DATA};
 use crate::app::Shared;
 use crate::dispatcher::runs;
 use crate::tasks::api::store;
@@ -33,7 +33,7 @@ pub fn agent_named(tx: &rusqlite::Transaction, named: &str) -> Result<agents::Ag
 
 pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
     let id = arg(args, "id")?.to_string();
-    let (b, wanted, named) = (boss.clone(), id.clone(), args["agent"].as_str().map(str::trim).filter(|a| !a.is_empty()).map(str::to_string));
+    let (b, wanted, named) = (boss.clone(), id.clone(), opt(args, "agent").map(str::to_string));
     let agent = store(app, move |tx| {
         in_project(tx, &b, &wanted)?;
         named.map(|n| agent_named(tx, &n)).transpose()
@@ -55,15 +55,15 @@ pub async fn stop_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String
     let id = arg(args, "id")?.to_string();
     let (b, wanted) = (boss.clone(), id.clone());
     store(app, move |tx| in_project(tx, &b, &wanted).map(drop)).await?;
-    let done = crate::dispatcher::letgo::gave_up(app, &id, "The project's manager").await?;
-    let (b, ids) = (boss.clone(), done["ids"].clone());
+    let stopped = crate::dispatcher::letgo::gave_up(app, &id, "The project's manager").await?;
+    let (b, ids) = (boss.clone(), stopped.clone());
     store(app, move |tx| {
-        for id in ids.as_array().into_iter().flatten().filter_map(Value::as_str) {
+        for id in &ids {
             ops::log(tx, &ops::key_of(tx, id)?, &b.user, "why", &format!("{} stopped it.", b.name), None, ops::now())?;
         }
         Ok(())
     }).await?;
-    Ok(format!("Stopped: {}. Its window stays; its slot is free.", done["ids"].as_array().into_iter().flatten().filter_map(Value::as_str).collect::<Vec<_>>().join(", ")))
+    Ok(format!("Stopped: {}. Its window stays; its slot is free.", stopped.join(", ")))
 }
 
 pub async fn dashboard(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {

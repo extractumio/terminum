@@ -389,6 +389,7 @@ Scenario: AC-178 failure — a subagent writes
   When a call with another session ID than the pane's main agent's (a subagent's) runs a manager's tool that writes
   Then it answers "Not done: only the manager's main agent acts on the project, not a subagent. Report to it instead."
   And its list_ and get_ tools answer
+  And a call that names no session of its own counts as the main agent's: `terminum tool` names none, and an agent whose client gives its subagents the main session's ID is not told apart
 
 Scenario: AC-178 edge — where it cannot be read
   Given a host's manager, whose call comes over the Mac's link
@@ -407,7 +408,7 @@ Scenario: AC-179 happy path — a task started, followed, answered
   And the answer says "BILL-12 runs on Opus reviewer: a worker's session has it. list_runs shows its state; get_task its result or its questions, which run_task answers with comment."
   When the worker asks a human (ask_human) and its session closes (terminum-dispatcher.md AC-157)
   And the manager calls run_task {id: "BILL-12", comment: "Use v2."}
-  Then the conversation goes on with "BILL-12: the project's manager answered your questions in the comments below. …", the humans' comments since the questions and the manager's message, never another agent's comment
+  Then the conversation goes on with "BILL-12: answers to your questions follow, the humans' comments and the project's manager's message. …", then the humans' comments since the questions and the manager's message, never another agent's comment
   When the agent has no room
   Then run_task answers "Not started: … Nothing waits: call run_task again with queue "yes" to wait for a slot, or choose another agent."; with queue "yes" it waits (terminum-dispatcher.md AC-158)
 
@@ -434,7 +435,7 @@ Scenario: AC-179 failure — outside its reach
   Then it answers "BILL-12 is outside your project." or "Your project has no session …: list_sessions shows them."
   When send_to_session or close_session names the manager's own session
   Then it answers "That is your own session: type into another one." (or "close another one.")
-  When the text holds a control character other than a tab or a line end, or the pane is in a tmux mode
+  When the text holds a control or invisible character other than a tab or a line end, or the pane is in a tmux mode
   Then nothing is typed and the answer says why
   And a manager starts no session but a task's: it has no tool that makes a manager
 ```
@@ -493,6 +494,8 @@ Scenario: AC-181 failure
   Then it answers "… is a session's own: a token has no session."
   When `terminum tokens add` or `remove` runs in any pane of terminum, a manager's too
   Then terminumd refuses: "Tokens are made and removed in a terminal outside terminum: a session in terminum cannot."
+  When `terminum tool` runs in a pane with TERMINUM_TOKEN set
+  Then the pane's session calls and the token is not sent; a call with a token that reaches terminumd from under a pane is refused: "A token is for a program outside terminum: in a pane, the pane's own session calls."
   And a token is never an argument of a command, and no route over TCP takes one
 ```
 

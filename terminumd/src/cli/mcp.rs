@@ -225,7 +225,9 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
     if pane_of(env).is_none() {
         return text_result(NOT_IN_PANE, true);
     }
-    let manager = manager(env, forward);
+    // the role chooses what search and describe show; running a tool every session has asks nothing
+    let asks = name != "execute_tool" || args.get("name").and_then(Value::as_str).is_some_and(super::mcp_catalog::manager_only);
+    let manager = asks && manager(env, forward);
     let answer = match name {
         "execute_tool" => match m::target(args, manager) {
             Ok((tool, arguments)) => return call(tool, &arguments, session, env, forward),

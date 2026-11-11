@@ -5,7 +5,7 @@ use serde_json::json;
 
 use super::*;
 use crate::dispatcher::runs::{Phase, Run};
-use crate::tasks::ops::{self, NewTask};
+use crate::tasks::ops::{self, sql, NewTask};
 use crate::tasks::store::HUMAN;
 
 const BOSS: &str = "tmux:local:t:%1";
@@ -109,7 +109,7 @@ async fn ac180_a_manager_keeps_the_pool_by_the_board_s_rules() {
     }
     // a change keeps what it does not name; an empty limit clears it
     call(&app, BOSS, "update_agent", json!({"agent": "Sonnet", "at_once": "4", "week_limit": ""})).await.unwrap();
-    let a = app.tasks.with(|tx| crate::tasks::agents::list(tx)).unwrap().into_iter().find(|a| a.name == "Sonnet").unwrap();
+    let a = app.tasks.with(crate::tasks::agents::list).unwrap().into_iter().find(|a| a.name == "Sonnet").unwrap();
     assert_eq!((a.command.as_str(), a.at_once, a.week_limit), ("claude --model sonnet", 4, None));
     assert_eq!(call(&app, BOSS, "delete_agent", json!({"agent": "Sonnet"})).await.unwrap(), "Sonnet is out of the pool.");
     // the agent its own session runs on is held
@@ -121,10 +121,10 @@ async fn ac180_a_manager_keeps_its_project_s_schedules_and_no_other_s() {
     let (app, _) = app("roles-sched");
     let made = call(&app, BOSS, "create_schedule", json!({"title": "Nightly", "text": "check the deps", "agent": "Opus", "cron": "0 3 * * *", "budget_minutes": "30"})).await.unwrap();
     assert!(made.starts_with("SCH-1 is made: Every day at 03:00."), "{made}");
-    let s = app.tasks.with(|tx| crate::tasks::schedules::all(tx)).unwrap().pop().unwrap();
+    let s = app.tasks.with(crate::tasks::schedules::all).unwrap().pop().unwrap();
     assert_eq!((s.project.as_str(), s.author_name.as_str(), s.paused), ("api", "Opus · manager", false), "in its project, under its name, active");
     call(&app, BOSS, "update_schedule", json!({"schedule": "SCH-1", "paused": "yes"})).await.unwrap();
-    let s = app.tasks.with(|tx| crate::tasks::schedules::all(tx)).unwrap().pop().unwrap();
+    let s = app.tasks.with(crate::tasks::schedules::all).unwrap().pop().unwrap();
     assert_eq!((s.paused, s.title.as_str(), s.cron.as_deref(), s.budget_seconds), (true, "Nightly", Some("0 3 * * *"), 1800), "what it did not name stays");
     assert!(call(&app, BOSS, "create_schedule", json!({"title": "No budget", "text": "x", "agent": "Opus", "cron": "0 3 * * *"})).await.unwrap_err().starts_with("A scheduled run needs a time budget"));
     // another project's schedule is not its own
@@ -147,7 +147,7 @@ async fn ac181_a_token_is_kept_as_its_hash_and_names_its_role_and_project() {
     assert!(worker.starts_with(tokens::PREFIX) && worker.len() == tokens::PREFIX.len() + 48);
     let kept: Vec<String> = app.tasks.with(|tx| ops::rows(tx, "SELECT hash FROM tokens", [], |r| r.get(0))).unwrap();
     assert!(kept.iter().all(|h| !worker.contains(h.as_str()) && h.len() == 64), "only hashes are kept");
-    let listed = app.tasks.with(|tx| tokens::list(tx)).unwrap();
+    let listed = app.tasks.with(tokens::list).unwrap();
     assert!(!json!(listed).to_string().contains(&worker[tokens::PREFIX.len()..]), "the list never shows one");
     for (name, role, project, days, why) in [("ci", "worker", "api", None, "A token named ci exists: remove it first."), ("x", "admin", "api", None, "A token's role is manager or worker."),
                                              ("", "worker", "api", None, "A token's name is 1 to 40 characters on one line."), ("x", "worker", "api", Some(0), "A token lasts 1 to 3650 days, or until removed.")] {
@@ -181,7 +181,7 @@ async fn ac181_a_token_is_kept_as_its_hash_and_names_its_role_and_project() {
 async fn ac182_a_schedule_runs_now_whatever_its_cadence() {
     let (app, _) = app("roles-now");
     call(&app, BOSS, "create_schedule", json!({"title": "Nightly", "text": "check the deps", "agent": "Opus", "cron": "0 3 * * *", "budget_minutes": "30", "paused": "yes"})).await.unwrap();
-    let before = app.tasks.with(|tx| crate::tasks::schedules::all(tx)).unwrap().pop().unwrap();
+    let before = app.tasks.with(crate::tasks::schedules::all).unwrap().pop().unwrap();
     // no tmux here: its task is made as a firing's and its start refused, which the answer says
     let said = call(&app, BOSS, "run_schedule", json!({"schedule": "SCH-1"})).await.unwrap();
     assert!(said.starts_with("SCH-1 ran now: its task S_API-") && said.contains(" is FAILED."), "{said}");
@@ -190,6 +190,23 @@ async fn ac182_a_schedule_runs_now_whatever_its_cadence() {
     assert_eq!((made.title.as_str(), made.project.as_str()), ("Nightly", "api"));
     let history = app.tasks.with(|tx| ops::history(tx, &made.id)).unwrap().to_string();
     assert!(history.contains("Opus · manager ran schedule SCH-1 now."), "{history}");
+    // while a task of it is in progress nothing is made
+    app.tasks.with(|tx| {
+        let t = ops::create(tx, crate::tasks::store::DISPATCHER, NewTask { title: "Nightly".into(), project: Some("api".into()), scheduled: true, ..Default::default() }, 5)?;
+        crate::tasks::schedules::fired(tx, &after, (5, 0), Some(&t.key), "made", None, 5).map(drop)
+    }).unwrap();
+    let busy = call(&app, BOSS, "run_schedule", json!({"schedule": "SCH-1"})).await.unwrap_err();
+    assert!(busy.starts_with("Not run: S_API-") && busy.ends_with(" is still in progress."), "{busy}");
     let fires: i64 = app.tasks.with(|tx| tx.query_row("SELECT count(*) FROM schedule_fires WHERE schedule = ?1 AND task IS NOT NULL", [&after.id], |r| r.get(0)).map_err(sql)).unwrap();
-    assert_eq!(fires, 1, "written as a firing, on the Scheduled page");
+    assert_eq!(fires, 2, "the run now and the one in progress, each a firing on the Scheduled page; the refused one wrote none");
+}
+
+#[tokio::test]
+async fn ac179_a_session_outside_its_project_is_not_a_manager_s() {
+    let (app, _) = app("roles-sessions");
+    for tool in ["get_session", "send_to_session", "close_session"] {
+        let said = call(&app, BOSS, tool, json!({"session": WORKER, "text": "x"})).await.unwrap_err();
+        assert_eq!(said, format!("Your project has no session {WORKER:?}: list_sessions shows them."), "{tool}: only what the session list holds for its project");
+    }
+    assert_eq!(call(&app, BOSS, "list_sessions", json!({})).await.unwrap(), format!("{DATA}\n[]"));
 }

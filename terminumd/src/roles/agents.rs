@@ -5,7 +5,7 @@
 use serde_json::{json, Value};
 
 use super::tasks::agent_named;
-use super::{arg, number, DATA};
+use super::{arg, number, text, DATA};
 use crate::app::Shared;
 use crate::tasks::agents::{self, MOST_AT_ONCE};
 use crate::tasks::api::store;
@@ -27,10 +27,9 @@ fn limit(args: &Value, key: &str, was: Option<f64>) -> Result<Value, String> {
 
 /// The body the board's own rules judge: `args` over what the agent `was`.
 fn body(args: &Value, was: Option<&agents::Agent>) -> Result<Value, String> {
-    let text = |key: &str, was: Option<&str>| args[key].as_str().map(str::to_string).or_else(|| was.map(str::to_string)).unwrap_or_default();
     Ok(json!({
-        "name": text("name", was.map(|a| a.name.as_str())), "kind": text("kind", was.map(|a| a.kind.as_str())),
-        "command": text("command", was.map(|a| a.command.as_str())), "effort": text("effort", was.map(|a| a.effort.as_str())),
+        "name": text(args, "name", was.map(|a| a.name.as_str())), "kind": text(args, "kind", was.map(|a| a.kind.as_str())),
+        "command": text(args, "command", was.map(|a| a.command.as_str())), "effort": text(args, "effort", was.map(|a| a.effort.as_str())),
         "at_once": number(args, "at_once", 1..=MOST_AT_ONCE)?.or(was.map(|a| a.at_once)),
         "week_limit": limit(args, "week_limit", was.and_then(|a| a.week_limit))?, "month_limit": limit(args, "month_limit", was.and_then(|a| a.month_limit))?,
     }))
