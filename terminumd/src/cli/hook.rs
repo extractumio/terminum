@@ -61,7 +61,9 @@ pub fn main(agent: &str) -> i32 {
         if answers.iter().any(|a| matches!(a, Ok((200, Some(answer))) if answer["argv"] == true)) {
             let mut said = ev.clone();
             said["event"] = json!("Argv");
-            said["argv"] = json!(super::hookargv::started_as(agent).unwrap_or_default());
+            if let Some(said) = said.as_object_mut() {
+                said.extend(super::hookargv::started_as(agent));
+            }
             let _ = super::sinks::post_all(&sinks, "/hook", &said, BUDGET);
         }
         // a task's session: the transcript is read after its turn's end has gone, so nothing waits on it

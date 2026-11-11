@@ -234,7 +234,7 @@ async fn look(app: &Shared, days: u32, may_end: bool) {
                     Ok(()) => {
                         let st = &summary.started;
                         tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days, keys, session = %st.session,
-                                       folder = %st.folder, argv = %st.argv, title = %summary.title);
+                                       folder = %st.folder, argv = %st.launch.argv, title = %summary.title);
                         let (server, pane) = (server.clone(), pane.clone());
                         tokio::spawn(async move { leave(&server, &pane, &summary).await });   // the next agent waits for none of it
                     }

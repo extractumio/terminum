@@ -56,8 +56,9 @@ impl Summary {
         if !self.title.trim().is_empty() {
             out.push(format!("Title:      {}", escaped(self.title.trim())));
         }
-        out.push(if st.argv.is_empty() { "Started as: not known (its hooks did not say: `terminum hooks install`, or an older terminum there)".into() }
-                 else { format!("Started as: {}", escaped(&st.argv)) });
+        let launch = &st.launch;
+        out.push(if launch.argv.is_empty() { "Started as: not known (its hooks did not say: `terminum hooks install`, or an older terminum there)".into() }
+                 else { format!("Started as: {}", escaped(&launch.argv)) });
         let (folder, whose) = match (st.folder.as_str(), st.folder_is_start) {
             ("", _) => (self.pane_path.as_str(), " (the pane's; the agent's own is not known)"),
             (f, true) => (f, ""),
@@ -69,8 +70,13 @@ impl Summary {
         if let Some((done, total)) = self.plan {
             out.push(format!("Plan:       {done} of {total} done"));
         }
-        let resume = format!("{} {}", self.kind, crate::dispatcher::resume_words(&self.kind, id));
-        let pick = if id.is_empty() { "   (pick it from the list)" } else { "" };
+        // the options it started with (its hook's, none with a control character), each one word of the pane's shell
+        let opts = launch.opts.as_ref().and_then(|o| o.iter().map(|w| crate::termtext::quote_word(shell, w)).collect::<Option<Vec<_>>>());
+        let with: String = opts.iter().flatten().map(|o| format!(" {o}")).collect();
+        let resume = format!("{}{with} {}", self.kind, crate::dispatcher::resume_words(&self.kind, id));
+        let notes: Vec<&str> = [(id.is_empty(), "pick it from the list"), (opts.is_none() && !launch.argv.is_empty(), "add its options from Started as")]
+            .into_iter().filter_map(|(on, note)| on.then_some(note)).collect();
+        let pick = if notes.is_empty() { String::new() } else { format!("   ({})", notes.join("; ")) };
         // a folder the shell cannot take as one word, or one with a control character, is only shown above
         // nu has no `&&`
         let cd = Some(folder).filter(|f| !f.is_empty() && !crate::termtext::has_control(f) && crate::termtext::shell_name(shell) != "nu")

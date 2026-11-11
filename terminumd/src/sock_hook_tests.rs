@@ -57,7 +57,7 @@ async fn ac153_the_command_line_is_asked_for_once_a_session() {
     assert!(asked(post(ev("UserPromptSubmit", json!({"prompt": "go"}))).await).await, "another session's line is not its: asked again");
     post(ev("Argv", json!({"argv": "claude --model opus"}))).await;
     assert!(!asked(post(ev("UserPromptSubmit", json!({"prompt": "on"}))).await).await, "once it came, never again");
-    assert_eq!(app.hooks.started(&key).unwrap().argv, "claude --model opus");
+    assert_eq!(app.hooks.started(&key).unwrap().launch.argv, "claude --model opus");
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }

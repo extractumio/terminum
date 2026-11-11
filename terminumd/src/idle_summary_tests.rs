@@ -3,11 +3,21 @@
 //! them (a real private tmux: idle_exit_tests.rs).
 
 use super::*;
+use crate::tmux::hookstate::Launch;
 
 const ID: &str = "3f2a9c1e-0b7d-4e55-9a1c-2d6f8e4b7a10";
 
+/// Its hooks' word, its options its command line's words after the program, none with a control
+/// character, as `Hooks::heard_argv` keeps them.
 fn hooks(agent: &'static str, folder: &str, start: bool, argv: &str) -> Started {
-    Started { agent, session: ID.into(), folder: folder.into(), folder_is_start: start, argv: argv.into() }
+    let opts = Some(argv.split(' ').skip(1).filter(|w| !w.is_empty()).map(str::to_string).collect::<Vec<_>>())
+        .filter(|o| o.iter().all(|w| !crate::termtext::has_control(w)));
+    Started { agent, session: ID.into(), folder: folder.into(), folder_is_start: start, launch: Launch { argv: argv.into(), opts } }
+}
+
+fn launched(agent: &'static str, argv: &str, opts: Option<&[&str]>) -> Started {
+    let launch = Launch { argv: argv.into(), opts: opts.map(|o| o.iter().map(|w| w.to_string()).collect()) };
+    Started { launch, ..hooks(agent, "/Users/alex/api", true, "") }
 }
 
 fn line<'a>(lines: &'a [String], label: &str) -> Option<&'a str> {
@@ -26,7 +36,7 @@ fn ac153_claude_codes_summary_names_it_and_resumes_it_in_the_folder_it_started_i
     assert_eq!(line(&l, "Started as:"), Some("claude --dangerously-skip-permissions"));
     assert_eq!(line(&l, "Folder:"), Some("/Users/alex/my api"));
     assert_eq!(line(&l, "Plan:"), Some("7 of 9 done"));
-    assert_eq!(line(&l, "Resume:"), Some(format!("cd '/Users/alex/my api' && claude --resume {ID}").as_str()));
+    assert_eq!(line(&l, "Resume:"), Some(format!("cd '/Users/alex/my api' && claude --dangerously-skip-permissions --resume {ID}").as_str()));
 }
 
 #[test]
@@ -34,7 +44,7 @@ fn ac153_codex_resumes_by_its_subcommand_and_a_fish_shell_gets_its_own_quoting()
     let s = Summary { kind: "codex".into(), started: hooks("codex", "/Users/alex/it's", true, "codex --yolo"), ..Summary::default() };
     let l = s.lines("fish", 0);
     assert_eq!(line(&l, "Agent:"), Some(format!("Codex, session {ID}").as_str()));
-    assert_eq!(line(&l, "Resume:"), Some(format!(r"cd '/Users/alex/it\'s' && codex resume {ID}").as_str()));
+    assert_eq!(line(&l, "Resume:"), Some(format!(r"cd '/Users/alex/it\'s' && codex --yolo resume {ID}").as_str()));
     assert_eq!(line(&l, "Plan:"), None);
     assert_eq!(line(&l, "Title:"), None, "no title, no line");
     assert!(l[1].contains("for 0 days"), "{}", l[1]);
@@ -68,7 +78,8 @@ fn ac153_control_and_invisible_characters_are_shown_escaped_and_such_a_folder_is
     assert_eq!(line(&l, "Folder:"), Some(r"/Users/alex/a\nb\u{202e}c\u{1b}[31m"));
     assert_eq!(line(&l, "Started as:"), Some(r"claude \u{7}x"));
     assert_eq!(line(&l, "Title:"), Some(r"t\u{200b}i"));
-    assert_eq!(line(&l, "Resume:"), Some(format!("claude --resume {ID}   (in its folder)").as_str()));
+    assert_eq!(line(&l, "Resume:"), Some(format!("claude --resume {ID}   (add its options from Started as)   (in its folder)").as_str()),
+               "an option with a control character is never on it");
 }
 
 #[test]
@@ -78,4 +89,30 @@ fn ac153_the_command_writes_the_lines_to_the_panes_tty_as_printf_arguments_with_
     assert!(!crate::termtext::has_control(&c), "{c}");
     assert!(c.contains("##(id)"), "run-shell's format runs nothing of a line: {c}");
     assert!(c.contains("#{pane_tty}"), "tmux names the tty when it runs: {c}");
+}
+
+#[test]
+fn ac153_the_resume_line_takes_the_options_it_started_with() {
+    let s = Summary { kind: "claude".into(), started: launched("claude", "claude --dangerously-skip-permissions 'fix it'",
+                                                                 Some(&["--dangerously-skip-permissions"])), ..Summary::default() };
+    let l = s.lines("zsh", 0);
+    assert_eq!(line(&l, "Started as:"), Some("claude --dangerously-skip-permissions 'fix it'"));
+    assert_eq!(line(&l, "Resume:"), Some(format!("cd /Users/alex/api && claude --dangerously-skip-permissions --resume {ID}").as_str()),
+               "its options, never its prompt");
+    let s = Summary { kind: "codex".into(), started: launched("codex", "codex --yolo -c 'model=\"o3\"'",
+                                                                Some(&["--yolo", "-c", "model=\"o3\""])), ..Summary::default() };
+    assert_eq!(line(&s.lines("bash", 0), "Resume:"), Some(format!(r#"cd /Users/alex/api && codex --yolo -c 'model="o3"' resume {ID}"#).as_str()),
+               "Codex's options before its subcommand, as Dispatcher resumes it; each one word of the shell");
+    assert_eq!(line(&s.lines("fish", 0), "Resume:"), Some(format!(r#"cd /Users/alex/api && codex --yolo -c 'model="o3"' resume {ID}"#).as_str()));
+}
+
+#[test]
+fn ac153_options_not_known_or_not_safe_leave_the_plain_resume_and_point_at_the_command_line() {
+    let not_known = Summary { kind: "claude".into(), started: launched("claude", "claude --new-thing fix", None), ..Summary::default() };
+    assert_eq!(line(&not_known.lines("zsh", 0), "Resume:"),
+               Some(format!("cd /Users/alex/api && claude --resume {ID}   (add its options from Started as)").as_str()));
+    let mut no_id = launched("claude", "claude --verbose", Some(&["--verbose"]));
+    no_id.session.clear();
+    let none = Summary { kind: "claude".into(), started: no_id, ..Summary::default() };
+    assert_eq!(line(&none.lines("zsh", 0), "Resume:"), Some("cd /Users/alex/api && claude --verbose --resume   (pick it from the list)"));
 }
