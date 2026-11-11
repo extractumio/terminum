@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::family;
 use super::ops::{self, Edit, Task};
-use super::tools::{arg, author, not_run_elsewhere, text_of, title_of, visible, Who};
+use super::tools::{arg, author, not_run_elsewhere, visible, words_of, Who};
 use crate::plans::rules;
 
 /// What `parent` says to take a task out of its parent.
@@ -46,11 +46,14 @@ pub(super) fn update(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Resu
     if !t.by_agent && reason.is_none() {
         return Err(format!("{id} is a human's: give the reason for the change."));
     }
-    let title = title.map(title_of).transpose()?;
     if title.is_some() || text.is_some() {
         agents(tx, who, &t)?;
     }
-    let text = text.map(|s| text_of(tx, &t.project, s)).transpose()?;
+    let mut faults = Vec::new();
+    let (title, text) = words_of(tx, &t.project, title, text, &mut faults);
+    if !faults.is_empty() {
+        return Err(faults.join("\n"));
+    }
     let me = author(tx, who)?;
     ops::edit(tx, &me, &t.id, Edit { title, text, severity: severity.map(str::to_string), owner: None }, at)?;
     let mut cards = vec![t.id.clone()];

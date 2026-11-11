@@ -164,13 +164,13 @@ fn ac155_search_answers_signatures_or_the_areas() {
 
 #[test]
 fn ac155_get_tool_info_gives_schema_hints_and_an_example() {
-    let out: Value = serde_json::from_str(&describe(&json!({"names": ["update_task", "list_tasks"]}), false).unwrap()).unwrap();
+    let out: Value = serde_json::from_str(&describe(&json!({"names": ["update_task", "list_tasks"]}), false).unwrap().0).unwrap();
     assert_eq!(out[0]["name"], "update_task");
     assert_eq!(out[0]["inputSchema"]["properties"]["severity"]["enum"], json!(["P0", "P1", "P2", "P3"]));
     assert_eq!(out[0]["example"]["name"], "execute_tool");
     assert_eq!(out[0]["example"]["arguments"]["name"], "update_task");
     assert_eq!(out[1]["annotations"]["readOnlyHint"], true);
-    assert_eq!(serde_json::from_str::<Value>(&describe(&json!({"names": "get_file"}), false).unwrap()).unwrap()[0]["name"], "get_file", "a bare name is a list of one");
+    assert_eq!(serde_json::from_str::<Value>(&describe(&json!({"names": "get_file"}), false).unwrap().0).unwrap()[0]["name"], "get_file", "a bare name is a list of one");
     assert!(describe(&json!({"names": ["update_tasks"]}), false).unwrap_err().contains("Nearest: update_task"));
     assert!(describe(&json!({"names": []}), false).is_err());
     assert!(describe(&json!({"names": ["a", "b", "c", "d", "e", "f"]}), false).is_err());

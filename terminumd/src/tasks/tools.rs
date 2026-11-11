@@ -124,6 +124,14 @@ pub(super) fn title_of(raw: &str) -> Result<String, String> {
     if LEFT_TO_DO.iter().any(|w| title.starts_with(w)) { Ok(title) } else { Err("Start the title with Bug:, Feat: or Debt:.".into()) }
 }
 
+/// An agent's title and text, each checked when given; every fault of both goes to `faults`, so
+/// one refusal says them all (AC-145, AC-155).
+pub(super) fn words_of(tx: &Transaction, project: &str, title: Option<&str>, text: Option<&str>, faults: &mut Vec<String>) -> (Option<String>, Option<String>) {
+    let title = title.and_then(|t| title_of(t).map_err(|e| faults.push(e)).ok());
+    let text = text.and_then(|t| text_of(tx, project, t).map_err(|e| faults.push(e)).ok());
+    (title, text)
+}
+
 /// An agent's text: cleaned, in its project's template's sections (AC-145).
 pub(super) fn text_of(tx: &Transaction, project: &str, raw: &str) -> Result<String, String> {
     let text = rules::clean(raw);
@@ -149,18 +157,12 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
         match tool {
             "create_task" => {
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
-                // every fault of the call in one refusal, so one retry can fix them all
-                let title = title_of(arg(args, "title")?);
-                let severity = match args["severity"].as_str().is_none_or(str::is_empty) {
-                    true => Err("Give it a severity: P0, P1, P2 or P3.".to_string()),
-                    false => Ok(()),
-                };
-                let text = text_of(tx, &project, args["text"].as_str().unwrap_or_default());
-                let faults: Vec<&str> = [title.as_ref().err(), severity.as_ref().err(), text.as_ref().err()].into_iter().flatten().map(String::as_str).collect();
-                if !faults.is_empty() {
-                    return Err(faults.join("\n"));
+                let mut faults = Vec::new();
+                if args["severity"].as_str().is_none_or(str::is_empty) {
+                    faults.push("Give it a severity: P0, P1, P2 or P3.".to_string());
                 }
-                let (title, text) = (title?, text?);
+                let words = words_of(tx, &project, Some(arg(args, "title")?), Some(args["text"].as_str().unwrap_or_default()), &mut faults);
+                let ((Some(title), Some(text)), true) = (words, faults.is_empty()) else { return Err(faults.join("\n")) };
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));
                 }

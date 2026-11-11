@@ -347,10 +347,10 @@ Scenario: AC-155 failure — wrong calls
 Scenario: AC-155 failure — a call that breaks a tool's rules
   Given a session that has not read create_task's card with get_tool_info
   When it calls execute_tool {name: "create_task", arguments: {title: "a gap", text: "it breaks"}}
-  Then one refusal names every fault, one a line: "Start the title with Bug:, Feat: or Debt:.", "Give it a severity: P0, P1, P2 or P3.", the template's sections it lacks (terminum-kanban.md AC-145); the argument checks done before terminumd (required, too long, not a string, not one of a field's values) likewise
+  Then one refusal names every fault, one a line: "Give it a severity: P0, P1, P2 or P3.", "Start the title with Bug:, Feat: or Debt:.", the template's sections it lacks (terminum-kanban.md AC-145); update_task's title and text likewise; the argument checks done before terminumd (required, too long, not a string, not one of a field's values) likewise
   And under it, this once in the session, "How to call it: " and the tool's signature, whole description and example call, the words get_tool_info gives, for any catalog tool's refusal (a manager's too)
   When the session's next call of create_task is refused, or it had read the card with get_tool_info
-  Then the refusal comes without the card; a call terminum did not answer (AC-97's "not running", not in a pane) shows none and spends no card
+  Then the refusal comes without the card; a call terminum did not answer (AC-97's "not running", not in a pane) shows none and spends no card; a refusal of the task's state ("not found", a human's words) spends it as well
   And create_task's text is required in its schema as in its checks; get_task's page may be sent as a number
 ```
 

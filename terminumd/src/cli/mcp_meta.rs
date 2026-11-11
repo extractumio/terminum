@@ -92,9 +92,12 @@ fn signature(d: &Value) -> String {
 /// can follow them without another round.
 pub fn card_text(name: &str) -> Option<String> {
     let (d, c) = (catalog::definition(name)?, catalog::card(name)?);
-    let example = serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null);
-    Some(format!("How to call it: {}: {}\nExample: execute_tool({})", signature(d), d["description"].as_str().unwrap_or(""),
-                 json!({"name": name, "arguments": example})))
+    Some(format!("How to call it: {}: {}\nExample: execute_tool({})", signature(d), d["description"].as_str().unwrap_or(""), example_call(c)))
+}
+
+/// A card's example as execute_tool's arguments.
+fn example_call(c: &catalog::Card) -> Value {
+    json!({"name": c.name, "arguments": serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null)})
 }
 
 /// get_tool_info's answer for one tool: its definition, area and an example call.
@@ -102,7 +105,7 @@ fn info(d: &Value) -> Value {
     let mut out = d.clone();
     if let Some(c) = d["name"].as_str().and_then(catalog::card) {
         out["area"] = json!(c.area);
-        out["example"] = json!({"name": "execute_tool", "arguments": {"name": c.name, "arguments": serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null)}});
+        out["example"] = json!({"name": "execute_tool", "arguments": example_call(c)});
     }
     out
 }
@@ -137,27 +140,25 @@ e.g. \"create a task\". The tools by area: {}.", areas(true, manager)));
     Ok(format!("Tools for {query:?}, best first (? optional):\n{}\nRun one: execute_tool {{name, arguments}}; get_tool_info {{names}} gives its whole description, schema and an example.", lines.join("\n")))
 }
 
-/// get_tool_info: Ok(text) or Err(why).
-pub fn describe(args: &Value, manager: bool) -> Result<String, String> {
-    let names = names(args).ok_or_else(|| format!("names is required: 1–{NAMES_MOST} tool names from search_tools"))?;
-    let mut out = Vec::new();
+/// get_tool_info: its text and the tools it described, or why not.
+pub fn describe(args: &Value, manager: bool) -> Result<(String, Vec<&'static str>), String> {
+    let names: Vec<&str> = match args.get("names") {
+        Some(Value::String(n)) => vec![n.as_str()],
+        Some(Value::Array(a)) if !a.is_empty() && a.len() <= NAMES_MOST && a.iter().all(Value::is_string) => a.iter().filter_map(Value::as_str).collect(),
+        _ => return Err(format!("names is required: 1–{NAMES_MOST} tool names from search_tools")),
+    };
+    let (mut out, mut described) = (Vec::new(), Vec::new());
     for n in names {
         match catalog::definition(n).filter(|_| manager || !catalog::manager_only(n)) {
-            Some(d) => out.push(info(d)),
+            Some(d) => {
+                out.push(info(d));
+                described.extend(catalog::card(n).map(|c| c.name));
+            }
             None if META.contains(&n) => return Err(format!("{n} is listed by tools/list already.")),
             None => return Err(unknown(n, manager)),
         }
     }
-    Ok(Value::Array(out).to_string())
-}
-
-/// get_tool_info's names: one, or a list of 1 to NAMES_MOST.
-pub fn names(args: &Value) -> Option<Vec<&str>> {
-    match args.get("names") {
-        Some(Value::String(n)) => Some(vec![n.as_str()]),
-        Some(Value::Array(a)) if !a.is_empty() && a.len() <= NAMES_MOST && a.iter().all(Value::is_string) => Some(a.iter().filter_map(Value::as_str).collect()),
-        _ => None,
-    }
+    Ok((Value::Array(out).to_string(), described))
 }
 
 /// execute_tool: the catalog tool to run and its arguments, or why not.

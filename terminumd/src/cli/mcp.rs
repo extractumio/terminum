@@ -238,7 +238,10 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
             Err(why) => Err(why),
         },
         "search_tools" => m::search(args, manager),
-        _ => m::describe(args, manager).inspect(|_| env.carded.borrow_mut().extend(m::names(args).into_iter().flatten().map(str::to_string))),
+        _ => m::describe(args, manager).map(|(text, described)| {
+            env.carded.borrow_mut().extend(described.into_iter().map(str::to_string));
+            text
+        }),
     };
     match answer {
         Ok(text) => text_result(&text, false),
@@ -246,37 +249,32 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
     }
 }
 
-/// A tools/call's result: refused here, or terminumd's answer. A tool's refusal carries its card
-/// once a session, unless the session read it (AC-155); terminum not reached carries none.
+/// A tools/call's result: refused here, or terminumd's answer. terminum not reached says so alone.
 pub fn call(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward: Forward) -> Value {
-    let (text, refused) = match answered(tool, args, session, env, forward) {
-        Ok((text, error)) => (text, error),
-        Err(why) => return text_result(&why, true),
-    };
-    if refused && env.carded.borrow_mut().insert(tool.to_string()) && let Some(card) = super::mcp_meta::card_text(tool) {
-        return text_result(&format!("{text}\n\n{card}"), true);
-    }
-    text_result(&text, refused)
-}
-
-/// The tool's answer and whether it refused; Err: terminum not reached or the pane not its.
-fn answered(tool: &str, args: &Value, session: Option<&str>, env: &Env, forward: Forward) -> Result<(String, bool), String> {
     let args = match checked(tool, args) {
         Ok(a) => a,
-        Err(why) => return Ok((why, true)),
+        Err(why) => return refusal(tool, &why, env),
     };
-    let Some((socket, pane)) = pane_of(env) else { return Err(NOT_IN_PANE.into()) };
+    let Some((socket, pane)) = pane_of(env) else { return text_result(NOT_IN_PANE, true) };
     let mut body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": tool, "args": args});
     if let Some(s) = session.map(|s| crate::termtext::clean(s, false).chars().take(100).collect::<String>()).filter(|s| !s.is_empty()) {
         body["session"] = json!(s);
     }
     match forward(&body) {
-        Err(Down) => Err(DOWN.into()),
+        Err(Down) => text_result(DOWN, true),
         Ok((200, Some(a))) if a.get("text").is_some_and(Value::is_string) => {
-            Ok((a["text"].as_str().unwrap_or("").to_string(), a.get("error").and_then(Value::as_bool).unwrap_or(false)))
+            let text = a["text"].as_str().unwrap_or("");
+            if a.get("error").and_then(Value::as_bool).unwrap_or(false) { refusal(tool, text, env) } else { text_result(text, false) }
         }
-        Ok((status, a)) => Err(format!("terminum refused the call: {}", super::sockhttp::message(a.as_ref(), status))),
+        Ok((status, a)) => text_result(&format!("terminum refused the call: {}", super::sockhttp::message(a.as_ref(), status)), true),
     }
+}
+
+/// A tool's refusal, with its card under it the first time in this session unless the session read
+/// it (AC-155).
+fn refusal(tool: &str, why: &str, env: &Env) -> Value {
+    let card = env.carded.borrow_mut().insert(tool.to_string()).then(|| super::mcp_meta::card_text(tool)).flatten();
+    text_result(&card.map_or_else(|| why.to_string(), |c| format!("{why}\n\n{c}")), true)
 }
 
 /// `v`'s string field `k`, cleaned (rules::clean), of at most `max` characters (None: absent
