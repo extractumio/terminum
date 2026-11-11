@@ -267,7 +267,7 @@ fn ac183_a_run_keeps_who_asked_for_it_and_how() {
         assert_eq!(kept(&id)?.0, "agent:m", "another user's start is its own");
         // a run older than the record says neither
         tx.execute("INSERT INTO runs (id, agent_id, kind, command, folder, state, project) VALUES ('old', 'a', 'claude', 'claude', '/w', 'closed', 'default')", []).map_err(sql)?;
-        assert_eq!(tx.query_row("SELECT started_by IS NULL AND started_how IS NULL FROM runs WHERE id = 'old'", [], |r| r.get::<_, bool>(0)).map_err(sql)?, true);
+        assert!(tx.query_row("SELECT started_by IS NULL AND started_how IS NULL FROM runs WHERE id = 'old'", [], |r| r.get::<_, bool>(0)).map_err(sql)?);
         Ok(())
     }).unwrap();
 }
