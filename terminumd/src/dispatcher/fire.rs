@@ -81,14 +81,56 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     if let Some((old, _)) = schedules::never_started(tx, s)? {
         ops::archive(tx, DISPATCHER, &old, true, now)?;
     }
-    let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), scheduled: true, ..Default::default() }, now)?;
-    ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
-    ops::log(tx, &t.key, DISPATCHER, "why", &format!("Dispatcher made it from schedule {}, due {}.", s.key, cron::when_words(due)), None, now)?;
-    let fire = schedules::fired(tx, s, (due, missed), Some(&t.key), "made", None, now)?;
+    let (task, fire) = made(tx, s, (due, missed), &format!("Dispatcher made it from schedule {}, due {}.", s.key, cron::when_words(due)), now)?;
     if s.once_at.is_some() {
         schedules::pause(tx, &s.id, "ran once", now)?;
     }
-    Ok(Next::Run(t.id, fire))
+    Ok(Next::Run(task, fire))
+}
+
+/// A firing's task, made from the schedule as it is now, `why` in its history: its ID and its firing.
+fn made(tx: &rusqlite::Transaction, s: &Schedule, (due, missed): (i64, i64), why: &str, now: i64) -> Result<(String, i64), String> {
+    let t = ops::create(tx, DISPATCHER, NewTask { title: s.title.clone(), text: s.body.clone(), project: Some(s.project.clone()), severity: Some(s.severity.clone()), scheduled: true, ..Default::default() }, now)?;
+    ops::set_budget(tx, DISPATCHER, &t.id, Some(s.budget_seconds / 60), now)?;
+    ops::log(tx, &t.key, DISPATCHER, "why", why, None, now)?;
+    let fire = schedules::fired(tx, s, (due, missed), Some(&t.key), "made", None, now)?;
+    Ok((t.id, fire))
+}
+
+/// Runs schedule `id` now, whatever its cadence and paused or not (terminum-schedules.md AC-176): its task is made
+/// and started as a firing's, its cadence untouched; refused while a task of it is in progress or its last
+/// session is busy. `who`: who asked, for the task's history. The task's ID.
+pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
+    let mut closed = false;
+    let (s, task, fire) = loop {
+        let (wanted, by) = (id.to_string(), who.to_string());
+        let next = store(app, move |tx| {
+            let s = schedules::by_id(tx, &wanted)?;
+            if let Some(running) = schedules::running_task(tx, &s)? {
+                return Err(format!("Not run: {running} is still in progress."));
+            }
+            if let Some(last) = schedules::last_task(tx, &s)? && let Some(r) = runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot) {
+                if !closed && pool::closable(tx, &r)? {
+                    return Ok(Err((r.id, s.key)));
+                }
+                return Err(format!("Not run: {}'s session is still busy.", last.id));
+            }
+            let now = ops::now();
+            let (task, fire) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), now)?;
+            Ok(Ok((s, task, fire)))
+        }).await?;
+        match next {
+            Ok(made) => break made,
+            // its last run's idle session holds its slot: closed first, as a due firing does
+            Err((run, key)) => {
+                closed = true;
+                let _ = super::api::close_idle(app, &run, &key).await;
+            }
+        }
+    };
+    start(app, &s, &task, fire).await;
+    crate::tasks::schedulesapi::heard(app);
+    Ok(task)
 }
 
 /// A firing's task did not start, `why`: FAILED unless it ended meanwhile, the firing saying the same words.

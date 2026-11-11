@@ -50,6 +50,7 @@ mod links;
 mod restore;
 mod restore_srv;
 mod restore_lines;
+mod roles;
 mod routes;
 mod runlink;
 mod screen;
@@ -259,7 +260,7 @@ async fn serve() {
     agentmarks::import_notes(&mut app.bookmarks.lock(), &dir);   // 0.23's notes are agents' bookmarks now (AC-98)
     page::bookmarks::adopt(&app);   // a file before version 3: its bookmarks take their projects
     tracing::info!(event = "start", port = env.port, pid = std::process::id(), build = config::build_id(), socket = %env.tmux_socket);
-    tokio::spawn(axum::serve(cli, sock::routes(app.clone())).into_future());
+    tokio::spawn(axum::serve(cli, sock::routes(app.clone()).into_make_service_with_connect_info::<roles::peer::Peer>()).into_future());
     let checked = app.clone();
     tokio::task::spawn_blocking(move || {
         checked.tasks.quick_check();

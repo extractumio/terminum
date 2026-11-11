@@ -11,7 +11,7 @@ fn in_pane() -> Env {
 }
 
 fn env(tmux: Option<&str>, pane: Option<&str>, known: Option<bool>) -> Env {
-    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known) }
+    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known), manager: Default::default() }
 }
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
@@ -124,7 +124,7 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     let r = ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"progressToken":1}}}"#);
     let tools = r["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, mcp_meta::listed().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>());
+    assert_eq!(names, mcp_meta::listed(false).iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>());
     let catalog = catalog();
     assert_eq!(catalog.iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), tool_names());
     for t in &catalog {
@@ -257,7 +257,7 @@ fn outside_tmux_initialize_has_no_instructions_and_no_tools() {
         assert_eq!(say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"], json!({"tools": []}));
     }
     assert_eq!(ask(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#)["result"]["instructions"], INSTRUCTIONS, "in a pane: kept");
-    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed().len());
+    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed(false).len());
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn nothing_up_at_the_start_still_offers_the_tools_and_asks_again() {
     let init = say(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#);
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "nothing up: offered");
     let list = say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed().len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed(false).len());
     assert_eq!(probes.get(), 2, "a probe that reached nobody is not kept");
     let call = say(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#);
     assert_eq!(call["result"]["content"][0]["text"], DOWN, "{call}");
@@ -329,7 +329,7 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
     let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS);
     let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed().len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed(false).len());
 }
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner
@@ -337,7 +337,7 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
 /// description within 500, all the listed tools' JSON within 3,200: what the catalog adds behind search_tools costs nothing here (AC-155).
 #[test]
 fn the_tools_stay_compact() {
-    let t = Value::Array(mcp_meta::listed());
+    let t = Value::Array(mcp_meta::listed(false));
     let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 3200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());

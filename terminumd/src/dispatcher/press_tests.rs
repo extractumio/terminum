@@ -192,11 +192,11 @@ fn ac157_after_its_questions_only_the_humans_answers_go_back() {
         assert_eq!(ops::answers(tx, &b.id)?, None, "no questions: no answers, the press's comment goes as ever");
         let said = ops::answers(tx, &a.id)?.unwrap();
         assert_eq!(said, ["v2", "and keep v1 a month"], "the humans' since the questions, an agent's never");
-        let words = again_words(&a.id, "alex", Some("and keep v1 a month"), Some(&said));
+        let words = again_words(&a.id, "alex", Some("and keep v1 a month"), Some(&said), false);
         assert!(words.starts_with(&format!("{}: the human answered your questions", a.id)) && words.contains("v2\n\n---\n\nand keep v1 a month"), "{words}");
         assert!(!words.contains("SYSTEM") && !words.contains("get_task"));
-        assert!(again_words(&a.id, "alex", None, Some(&[])).contains(&format!("with no answer: decide with what you have, or ask again by {ASK_HUMAN}")));
-        assert!(again_words(&a.id, "alex", Some("use v2"), None).contains("a new comment by alex follows. Go on with the task"));
+        assert!(again_words(&a.id, "alex", None, Some(&[]), false).contains(&format!("with no answer: decide with what you have, or ask again by {ASK_HUMAN}")));
+        assert!(again_words(&a.id, "alex", Some("use v2"), None, false).contains("a new comment by alex follows. Go on with the task"));
         Ok(())
     }).unwrap();
 }

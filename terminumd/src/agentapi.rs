@@ -12,6 +12,7 @@ use crate::app::Shared;
 use crate::plans::{Plans, Update};
 
 use crate::plans::rules::{self, NOT_IN_PANE, STATUSES};
+use crate::roles::{self, peer::Peer};
 
 /// The caller: its pane key, agent and session; whether terminumd has a hook
 /// event of the pane, and whether the call's own session (Codex's _meta.sessionId) is another
@@ -35,20 +36,27 @@ pub const OTHER_SESSION_DISPATCH: &str = "Not started: only the round's main age
 /// The answer to a note tool of an agent started before the upgrade (AC-98).
 pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it.";
 
-pub async fn agent(State(app): State<Shared>, Json(body): Json<Value>) -> Json<Value> {
+pub async fn agent(State(app): State<Shared>, seen: axum::http::Extensions, Json(body): Json<Value>) -> Json<Value> {
+    let peer = seen.get::<axum::extract::ConnectInfo<Peer>>().map_or(Peer(None), |c| c.0);
+    // a program outside a pane names itself by a token (AC-177): on this Mac's socket alone, never a host's link
+    if body["token"].is_string() {
+        return said(roles::by_token(&app, &body).await);
+    }
     let server = crate::links::resolve(&app, crate::links::Via::Local, &body).await;
-    agent_on(app, server, body).await
+    agent_on(app, server, body, Some(peer)).await
 }
 
-/// A tool call for the server it was resolved to (None: no server of the call's).
-pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::server::Server>>, body: Value) -> Json<Value> {
+/// A tool call for the server it was resolved to (None: no server of the call's). `local`: the calling process,
+/// when it came on this Mac's socket (a host's link names none).
+pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::server::Server>>, body: Value, local: Option<Peer>) -> Json<Value> {
     let pane = body["pane"].as_str().unwrap_or("");
     let Some(server) = server.filter(|s| s.session_of(pane).is_some()) else { return answer(NOT_IN_PANE, true) };
-    if body["tool"] == "probe" {
-        // `terminum mcp` asks at initialize whether to offer its tools here
-        return answer("terminum knows this pane.", false);
-    }
     let key = server.key(pane);
+    if body["tool"] == "probe" {
+        // `terminum mcp` asks at initialize whether to offer its tools here, and which (AC-173)
+        let manager = crate::tasks::api::store(&app, move |tx| Ok(roles::manages(tx, &key)?.is_some())).await.unwrap_or(false);
+        return Json(json!({"text": "terminum knows this pane.", "error": false, "role": roles::name(manager)}));
+    }
     let hooked = app.hooks.session(&key);
     let asked: Option<String> = body["session"].as_str().map(|s| crate::termtext::clean(s, false).chars().take(100).collect());
     let main = hooked.as_ref().map(|(_, s)| s.clone()).filter(|s| !s.is_empty());
@@ -56,6 +64,14 @@ pub async fn agent_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::se
     let (hooks, session) = (hooked.is_some(), main.or(asked));
     let caller = Caller { agent: hooked.map_or(crate::plans::UNKNOWN, |(a, _)| a).to_string(), session, key, hooks, other };
     let (tool, args) = (body["tool"].as_str().unwrap_or("").to_string(), body["args"].clone());
+    if roles::MANAGER_TOOLS.contains(&tool.as_str()) {
+        // a manager's tool (AC-173, AC-174): its pane's own record decides, and the call comes from under that pane
+        let from_pane = match local {
+            Some(peer) => roles::peer::in_pane(peer, &server, pane).await,
+            None => true,
+        };
+        return said(roles::in_pane(&app, &caller.key, from_pane, caller.other, &tool, &args).await);
+    }
     if crate::tasks::tools::NAMES.contains(&tool.as_str()) {
         return task_tool(&app, &caller, tool, args).await;
     }
@@ -84,7 +100,12 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
     };
-    if tool == "dispatch_task" && caller.other {
+    task_tool_of(app, who, host, caller.other, tool, args).await
+}
+
+/// A task tool for `who`: a pane's session, or a token's caller (`host`: the pane's, when it is on one).
+pub async fn task_tool_of(app: &Shared, who: crate::tasks::tools::Who, host: Option<String>, other: bool, tool: String, args: Value) -> Json<Value> {
+    if tool == "dispatch_task" && other {
         return answer(OTHER_SESSION_DISPATCH, true);
     }
     if tool == "dispatch_task" {
@@ -124,6 +145,14 @@ async fn host_file(app: &Shared, host: &str, who: crate::tasks::tools::Who, args
 
 fn answer(text: &str, error: bool) -> Json<Value> {
     Json(json!({"text": text, "error": error}))
+}
+
+/// A tool's answer, or why it was refused.
+fn said(done: Result<String, String>) -> Json<Value> {
+    match done {
+        Ok(text) => answer(&text, false),
+        Err(why) => answer(&why, true),
+    }
 }
 
 /// One tool call: (answer, is an error, whether the plan changed: the list is read again, the plans saved).

@@ -70,6 +70,11 @@ impl Who {
               browser: some(&c.browser), tailnet_user: c.tailnet_user.clone(), ..Default::default() }
     }
 
+    /// A project's manager, by its tool (terminum-agents.md AC-175): `name` is the user it writes as.
+    pub fn manager(component: &'static str, name: &str) -> Who {
+        Who { sender: "manager", component, agent: some(name), ..Default::default() }
+    }
+
     /// Dispatcher, from `component`, for run `run` of `tasks` and its agent.
     pub fn dispatcher(component: &'static str, run: &str, tasks: &[String], agent: &str) -> Who {
         Who { sender: crate::tasks::store::DISPATCHER, component, run: some(run), tasks: some(&tasks.join(",")), agent: some(agent), ..Default::default() }

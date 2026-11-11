@@ -179,7 +179,7 @@ pub(super) struct ProjectText(&'static str);
 pub(super) const TEMPLATE_COLUMN: ProjectText = ProjectText("task_template");
 pub(super) const LANGUAGE_COLUMN: ProjectText = ProjectText("language");
 
-pub(super) fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
+pub(crate) fn check_project(tx: &Transaction, project: &str) -> Result<(), String> {
     let found: Option<i64> = tx.query_row("SELECT 1 FROM projects WHERE id = ?1", [project], |r| r.get(0)).optional().map_err(sql)?;
     found.map(|_| ()).ok_or_else(|| "That project is gone.".to_string())
 }
