@@ -70,14 +70,13 @@ dialog .markdown img { max-width: 100%; }
 /* the task: a framed part; its groups (when, status, fields, text, files) 12px apart as a task's other windows' parts,
    each a label 4px over what it names, the fields three to a line on one grid (two on a phone) */
 .taskown { gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-sm); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--line); }
-.taskstamps, .taskfrom, .tasknone { margin: 0; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
-.taskfrom { margin-top: calc(var(--sp-1) - var(--sp-3)); }   /* a second line of the same: 4px under the first */
-.tasknone { font-size: var(--fs-small); }
+.taskwhen { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }   /* when it was made and changed, the schedule it came from */
+.taskstamps, .taskfrom { margin: 0; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tasknone { margin: 0; font-size: var(--fs-small); color: var(--muted); }
 /* its status, read only: the status in its color, the agent on it, what it waits for, its conversation; what does not fit takes a line of its own, whole */
 .fieldvalue { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-height: var(--key-h); font-size: var(--fs-body); color: var(--t-fg); }
-.fieldvalue .stbox { font-size: var(--fs-meta); padding: 0 var(--sp-2); }
 .tasktext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
-.tasktext .edithead { align-items: flex-end; min-height: var(--key-h); }   /* Text 4px over its text, its keys beside it */
+.tasktext .edithead { align-items: flex-end; }   /* Text 4px over its text, its keys beside it */
 .sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--line); }
 .sechead h3 { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .sechead h3 .linklike { text-transform: none; letter-spacing: 0; }
@@ -98,6 +97,7 @@ dialog .markdown img { max-width: 100%; }
 .stbox.st-wait-for-human { color: #1f1300; background: var(--waiting); }
 .stbox.st-failed { color: var(--danger-ink); background: var(--danger-fill); }
 .stbox.st-done { color: #ffffff; background: var(--ok-fill); }
+.stbox.word { font-size: var(--fs-meta); padding: 0 var(--sp-2); }   /* a status in words, not an ID */
 button.stbox { cursor: pointer; border: 0; }
 @media (hover: hover) { button.stbox:hover { filter: brightness(1.12); } }
 

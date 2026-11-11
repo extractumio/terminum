@@ -67,7 +67,10 @@ export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dat
 export const madeChanged = (t) => `made ${stamp(t.created_at)}${t.updated_at > t.created_at ? ` · changed ${stamp(t.updated_at)}` : ""}`;
 
 /** A box in a status's color (AC-112). */
-export const statusClass = (status) => `stbox st-${status.toLowerCase().replaceAll(" ", "-")}`;
+const statusClass = (status) => `stbox st-${status.toLowerCase().replaceAll(" ", "-")}`;
+
+/** A task's status in words on its color; an archived task says so, in no status's color. */
+export const statusTag = (t) => (t.archived_at ? el("span", "stbox word", "Archived") : el("span", `${statusClass(t.status)} word`, t.status));
 
 /** A task as a small box: its ID on its status's color, the status in words too (AC-112). */
 export function statusBox(t, open) {

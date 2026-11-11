@@ -171,7 +171,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agqueuelist .dragging { background: none; border-radius: var(--r-sm); }
 @media (max-width: 860px), (pointer: coarse) { .agqueue { min-height: var(--h-touch); min-width: var(--h-touch); } }
 .cfrom { font-size: var(--fs-small); color: var(--muted); }
-.taskfrom { margin: 0; font-size: var(--fs-small); color: var(--muted); }
 .agcount { font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .agedit { position: absolute; top: var(--sp-1); right: var(--sp-1); display: grid; place-items: center; width: 22px; height: 22px; border-radius: var(--r-xs); color: var(--muted); }
 .agedit:hover { color: var(--t-fg); background: var(--surface-3); }

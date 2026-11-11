@@ -4,7 +4,7 @@
 // CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
 import { askConfirm, choose } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusClass, upload } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -75,7 +75,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   function standing(t) {
     const line = el("div", "fieldrow", "Status");
     const value = el("span", "fieldvalue");
-    value.append(t.archived_at ? el("span", "stbox", "Archived") : el("span", statusClass(t.status), t.status));
+    value.append(statusTag(t));
     if (t.agent) value.append(agentChip(t.agent));
     if (t.waits) value.append(el("span", "cstate waiting", `waits for ${t.waits}`));
     else if (t.session?.closed) value.append(el("span", "cstate closed", "session closed"));
@@ -157,7 +157,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     onFiles(wrap, wrap, (list) => { if (!editing) startEdit(list); }, (on) => wrap.classList.toggle("dropping", on && !editing));
     const purge = button("textkey", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
       () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
-    keys.append(...[edit, t.text ? purge : null].filter(Boolean));
+    keys.append(edit);
+    if (t.text) keys.append(purge);
     wrap.append(head, shownText);
     return wrap;
   }
@@ -234,7 +235,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // made by a schedule: its name, a press opening its window (terminum-schedules.md AC-163)
     const from = t.schedule ? el("p", "taskfrom") : null;
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
-    wrap.append(...[stamps, from, standing(t), fields(t), text(t), filesOf(t)].filter(Boolean));
+    const when = el("div", "taskwhen");
+    when.append(...[stamps, from].filter(Boolean));
+    wrap.append(...[when, standing(t), fields(t), text(t), filesOf(t)].filter(Boolean));
     return wrap;
   }
 

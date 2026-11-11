@@ -954,8 +954,8 @@ Scenario: AC-148 failure — a name of nothing
 ```gherkin
 Scenario: AC-149 happy path — three parts
   When the user opens API-12's window
-  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget), then Text with its keys Edit and Purge text beside the word, then Files
-  And its lines stand on one left edge, 12 px apart, each label 4 px over what it names; its fields are alike in width and height, three to a line, two on a phone; the three parts and the comment field stand a section break (24 px) apart
+  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID, unbroken where it fits), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget), then Text with its keys Edit and Purge text beside the word, then Files
+  And its groups (when, status, fields, text, files) stand on one left edge, 12 px apart, each label 4 px over what it names; its fields are alike in width and height, three to a line, two on a phone; the three parts and the comment field stand a section break (24 px) apart
   And under it SUBTASKS with its keys (AC-112), then COMMENTS · HISTORY with its own heading, the comment field and the window's keys last
   And a comment is a card marked at its left edge, with its author, when it was written and "edited <when>" once changed (AC-108); a line of history is muted, a screen quoted in it (between ``` lines) shown as the terminal drew it, scrolling in a box of its own
 
