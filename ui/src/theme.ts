@@ -3,7 +3,7 @@
 // raw profile values; everything else (hover, borders, dim text) is derived in CSS.
 
 import type { Theme } from "./api";
-import { linkColor } from "../../web/static/contrast.js";
+import { themeLink } from "../../web/static/contrast.js";
 
 let current = "";
 
@@ -20,8 +20,7 @@ export function applyTheme(t?: Theme): boolean {
   set("--t-sel", t.sel ?? t.fg);
   set("--t-selfg", t.selfg ?? t.fg);
   set("--t-cursor", t.cursor ?? t.fg);
-  const link = t.link ?? t.ansi?.[12];
-  set("--t-link", link && linkColor(t.bg, link));   // one that reads on bg (contrast.js)
+  set("--t-link", themeLink(t));   // one that reads on bg (contrast.js)
   (t.ansi ?? []).forEach((c, i) => set(`--t-a${i}`, c));
   set("--t-size", String(t.size ?? 13));
   let ff = document.getElementById("termfont") as HTMLStyleElement | null;

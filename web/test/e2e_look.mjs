@@ -72,16 +72,16 @@ export async function webLook(browser, name) {
       const rest = at(f); f.focus(); const focus = at(f); d.close();
       return { rest, focus };
     });
-    const ring = (s) => /(^|,\s*)(rgba?\([^)]*\)\s+)?0px 0px 0px [1-9]/.test(s) || /\s0px 0px 0px [1-9]px/.test(s);
+    const ring = (s) => /\b0px 0px 0px [1-9]/.test(s);   // a spread with no blur: a line
     check("look: a field is edged by soft shadows only, no line round it at rest or in focus (a glow in focus)",
       [lines.rest, lines.focus].every(([b, o, s]) => b === "none" && o === "none" && !ring(s)) && lines.focus[2] !== lines.rest[2] && /\b8px\b/.test(lines.focus[2]),
       JSON.stringify(lines));
     // a theme's link too dark for its background is lightened until it reads (contrast.js)
-    const link = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const r = document.documentElement.style;
-      const was = ["--t-bg", "--t-fg", "--accent", "--link", "--ring"].map((k) => [k, r.getPropertyValue(k)]), light = document.documentElement.classList.contains("light");
+    const link = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const root = document.documentElement;
+      const css = root.style.cssText, cls = root.className, meta = document.querySelector('meta[name="theme-color"]').content;
       pageColors({ bg: "#322925", fg: "#e2ded9", cursor: "#969486", dark: true, link: "#315f78" });
-      const got = r.getPropertyValue("--link");
-      was.forEach(([k, v]) => (v ? r.setProperty(k, v) : r.removeProperty(k))); document.documentElement.classList.toggle("light", light);
+      const got = root.style.getPropertyValue("--link");
+      root.style.cssText = css; root.className = cls; document.querySelector('meta[name="theme-color"]').content = meta;
       return [got, contrast("#322925", got)]; });
     check("look: a link the theme made too dark for a dark background is lightened to read (4.5:1)", link[1] >= 4.5, link.join(" "));
     // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
