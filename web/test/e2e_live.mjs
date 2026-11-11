@@ -14,7 +14,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, playwright, ranToItsEnd, results, runningIn, until, within } from "./check.mjs";
+import { check, playwright, ranToItsEnd, results, runningIn, shownPane, until, within } from "./check.mjs";
 import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
@@ -342,7 +342,7 @@ async function wide(browser, name) {
   await page.click("#menubtn");
   await page.click('#schemes .swatch[data-scheme="Nord"]');
   await page.keyboard.press("Escape");
-  const shownPane = await page.evaluate(() => document.querySelector("#sessions .item.on").dataset.id.split(":").pop());
+  const shown = await shownPane(page, { tmux, work: WORK });
   await stop();
   await page.waitForFunction(() => { const s = document.getElementById("status"); return !s.hidden && s.innerText.includes("not running"); }, null, { timeout: 8000 });
   await page.click("#menubtn");
@@ -352,8 +352,8 @@ async function wide(browser, name) {
     `${await page.locator("#toast").innerText()} ${await bg(page)} ${kept()}`);
   await page.keyboard.press("Escape");
   // written while terminumd is down, so only the new one can bring it: the rows left on the page prove nothing
-  tmux("send-keys", "-t", shownPane, "-l", "printf 'back-%s\\n' after-restart");
-  tmux("send-keys", "-t", shownPane, "Enter");
+  tmux("send-keys", "-t", shown, "-l", "printf 'back-%s\\n' after-restart");
+  tmux("send-keys", "-t", shown, "Enter");
   await start();
   await within("AC-14 the page reconnects after terminumd restarts and shows the pane", () => page.waitForFunction(() => document.getElementById("screen").innerText.includes("back-after-restart") && document.getElementById("status").hidden, null, { timeout: 8000 }));
   const still = await unreadRow();
@@ -397,17 +397,20 @@ async function phone(browser, name) {
     return;
   }
   await page.waitForFunction(() => document.querySelectorAll("#screen .ln").length > 3, null, { timeout: 8000 });
-  const before = tmux("display", "-p", "#{window_width}");
+  // the pane the phone shows, by its id: tmux's current window may be another session's (Dispatcher's)
+  const shown = await shownPane(page, { tmux, work: WORK });
+  const width = () => tmux("display", "-p", "-t", shown, "#{window_width}");
+  const before = width();
   await page.evaluate(() => { const k = document.getElementById("kbd"); k.focus(); });
   await page.keyboard.type("echo phone");
   await page.keyboard.press("Enter");
   await within("AC-13 a phone that types sizes the pane to its narrow view", async () => {
     for (let i = 0; i < 50; i++) {
-      const w = Number(tmux("display", "-p", "#{window_width}"));
+      const w = Number(width());
       if (w > 0 && w < 60) return;
       await new Promise((r) => setTimeout(r, 100));
     }
-    throw new Error(`width ${tmux("display", "-p", "#{window_width}")} (was ${before})`);
+    throw new Error(`width of ${shown} ${width()} (was ${before})`);
   });
   await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
   await ctx.close();
