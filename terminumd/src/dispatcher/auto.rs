@@ -22,6 +22,9 @@ use crate::tasks::closeout;
 pub const SLOTS_MOST: i64 = 5;
 /// A round's time budget, in minutes.
 const ROUND_MINUTES: i64 = 10;
+/// After a round that started nothing, no round for this long, unless a task was made, moved or edited since: a long
+/// list its agent leaves is not read through at once.
+const QUIET: i64 = 30 * 60;
 /// The candidates a round is given for each slot it may fill: enough to choose from, few enough to read.
 const FOR_A_SLOT: i64 = 3;
 /// The most of a round's reason kept on the task it started.
@@ -140,6 +143,9 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     if n == 0 {
         return Ok(Due::Nothing);
     }
+    if let Some(at) = auto::fruitless(tx, project, s.on_at)? && now - at < QUIET / super::scale() && free.iter().all(|c| c.changed <= at) {
+        return Ok(Due::Nothing);
+    }
     let ids: Vec<String> = free.into_iter().map(|c| c.id).collect();
     let text = format!("Auto-Dispatcher's round: its agent weighs these TODO tasks by RICE and starts {n} at most, one for each free slot.\n\nCandidates: {}", ids.join(", "));
     let t = ops::create(tx, DISPATCHER, NewTask { title: format!("Auto-dispatch: {n} free, {} candidates", ids.len()), text, project: Some(project.to_string()), severity: Some("P3".into()), owner: Some(DISPATCHER.to_string()), ..Default::default() }, now)?;
@@ -149,9 +155,10 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     Ok(Due::Round(t.id))
 }
 
-/// Each project, one at a time, in the projects' order (AC-170). Called by the walk.
+/// Each project it is on for, or with a round to take off the board, one at a time, in the projects' order (AC-170).
+/// Called by the walk.
 pub async fn due(app: &Shared) {
-    let Ok(all) = store(app, auto::all).await else { return };
+    let Ok(all) = store(app, auto::due_for).await else { return };
     for (project, s) in all {
         let (p, picker) = (project.clone(), s.agent.clone().unwrap_or_default());
         match store(app, move |tx| Ok((decide(tx, &p, &s, ops::now())?, ops::project_place(tx, &p)?.0))).await {

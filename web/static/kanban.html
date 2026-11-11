@@ -337,11 +337,11 @@
       <label class="fieldrow">The agent that picks: it scores the tasks by RICE <select id="autoagent" class="field"></select></label>
       <label class="fieldrow">Default agent: runs a task that names none; with None such tasks stay <select id="autodefault" class="field"></select></label>
     </div>
-    <fieldset id="autoseverities" class="autoticks"><legend>It takes tasks of severity</legend></fieldset>
-    <label class="fieldrow">Minutes a task stands in TODO before it is taken <input id="autowait" class="field" type="number" min="0" max="1440" step="1" inputmode="numeric"></label>
+    <fieldset id="autoseverities" class="autoticks"><legend>It takes tasks of severity</legend><label><input type="checkbox" value="P0"> P0</label><label><input type="checkbox" value="P1"> P1</label><label><input type="checkbox" value="P2"> P2</label><label><input type="checkbox" value="P3"> P3</label></fieldset>
+    <label class="fieldrow">Minutes a task stands in TODO before it is taken <input id="autowait" class="field" type="number" min="0" step="1" inputmode="numeric"></label>
     <dl id="autorules">
       <dt>What it takes</dt><dd>TODO tasks of the severities ticked that nobody runs, made, moved or edited no later than the wait ago: one still being written is left; a comment does not start the wait anew. A task it started once it starts again only after you move or edit it.</dd>
-      <dt>In what order</dt><dd>Down the board: P0 first, then the cards' order. A round, one more session of the picking agent that takes no slot, is given 3 tasks for each free slot, 5 slots at most; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best. What it leaves with a slot still free is passed over for a day, unless it changes, and the next round gets the tasks below. A task runs on the agent named in its window, else on the default one.</dd>
+      <dt>In what order</dt><dd>Down the board: P0 first, then the cards' order. A round, one more session of the picking agent that takes no slot, is given the first few tasks for each free slot; it reads them, scores them by RICE (reach, impact, confidence, effort) and starts the best. What it leaves with a slot still free is passed over for a day, unless you move or edit it, and the next round gets the tasks below; after a round that started nothing it rests half an hour, unless a task is made or changed. A task runs on the agent named in its window, else on the default one.</dd>
       <dt>When it waits</dt><dd>No free slot, or no task to take; an agent past its week's or month's limit starts nothing. Give the agents limits: else only their slots bound what this spends.</dd>
       <dt>When it stops</dt><dd>You turn it off: what runs goes on, nothing more starts. It turns itself off, saying why here and in the bar, when its round fails or two tasks it started fail in a row.</dd>
     </dl>

@@ -1040,8 +1040,8 @@ Scenario: AC-170 happy path — the switch and its settings
   Then its bar holds "Auto-Dispatch", a switch with its state, and a cog; a phone's bar too, without the words; the project's window holds no key of it
   When project api is shown alone, an agent that picks chosen for it, and the user presses the switch
   Then it is on for api, "ON", on every page; a press again turns it off, "OFF", its agents and filters kept
-  When no agent picks for api yet and the user presses the switch
-  Then its window opens with On ticked: nothing is on until Save
+  When no agent picks for api yet, or it turned itself off, and the user presses the switch
+  Then its window opens with On ticked, saying why it turned itself off: nothing is on until Save
   When the user presses the cog
   Then the window holds, for the project: On; the agent that picks; the default agent; the severities it takes, a tick each; the minutes a task stands in TODO before it is taken, 0 to 1440
   And it says in fixed words what it takes, in what order, when it waits and when it stops; tasks start with no one pressing Run, an agent's text too
@@ -1062,7 +1062,7 @@ Scenario: AC-170 happy path — what it takes
   Then a candidate is a TODO task of api, P0 or P1, that no session, run, wait, schedule or round holds
   And made, moved or edited at least 10 minutes ago: one still being written is left; a comment, a new place among the cards or a subtask does not start the wait anew
   And a task it started before is no candidate until a human moves or edits it: one its agent put back in TODO is not run again
-  And a task a round was given and left, having ended DONE with a slot unfilled, is no candidate for a day, unless it changes or it is turned on anew: the next round is given the tasks below
+  And a task a round was given and left, having ended DONE with a slot unfilled, is no candidate for a day, unless a human moves or edits it or it is turned on anew: the next round is given the tasks below, and an agent's own edit does not bring it back
   And a round that filled its slots left the rest for want of room: they are candidates again
 
 Scenario: AC-170 happy path — a round
@@ -1102,6 +1102,8 @@ Scenario: AC-170 edge — how many, and when again
   And with the picking agent past its own limit no round is made; an agent with no limit set is bounded by its slots alone
   When a task becomes a candidate (made and stood its wait, changed, a slot freed), at the next walk
   Then a round is made; with no candidate or no free slot none is: it waits
+  But for 30 minutes after a round that started nothing, only a task made, moved or edited since makes one: a long list its agent leaves is not read through at once
+  And a setting saved while it is off keeps why it turned itself off; an empty wait is refused: "Wait: 0 to 1440 minutes"
 
 Scenario: AC-170 edge — what a round may do
   When a session that is no round's calls dispatch_task, or a round's subagent does
@@ -1336,7 +1338,7 @@ CREATE TABLE run_waits (task TEXT PRIMARY KEY REFERENCES tasks, agent_id TEXT NO
 ALTER TABLE projects ADD COLUMN auto_on INTEGER NOT NULL DEFAULT 0;              -- the switch
 ALTER TABLE projects ADD COLUMN auto_agent TEXT;                                  -- the agent that picks, kept while off
 ALTER TABLE projects ADD COLUMN auto_default TEXT;                                -- runs a task naming none
-ALTER TABLE projects ADD COLUMN auto_severities TEXT NOT NULL DEFAULT 'P0,P1';    -- what it takes
+ALTER TABLE projects ADD COLUMN auto_severities TEXT NOT NULL DEFAULT '["P0","P1"]';  -- what it takes
 ALTER TABLE projects ADD COLUMN auto_wait_minutes INTEGER NOT NULL DEFAULT 10;    -- a task stands this long first
 ALTER TABLE projects ADD COLUMN auto_off_why TEXT;   -- why it turned itself off
 ALTER TABLE projects ADD COLUMN auto_on_at INTEGER NOT NULL DEFAULT 0;
@@ -1439,7 +1441,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
 **Security** (`SECURITY.md` carries these with the code).
-- Auto-Dispatcher (AC-170) starts tasks no human looked at, an agent's own too, while a human keeps it on for the project: what it types is terminum's words and task IDs; a task's text reaches its agent as the assignment it reads by get_task. An agent that writes tasks can so have them run, and those write more: bounded by the slots, by the severities and the wait a human set, by the week and month limits of the agents that have them (the picking one too), which stop its starts, by no task being started twice unless a human moved or edited it, and by its breaker; with no limit set, by the slots alone. The setting and a task's agent are written by a signed-in page only, never by `terminum mcp`; a round is known by the pane its call names, as any tool's caller: a guard, no boundary against a process of the user's.
+- Auto-Dispatcher (AC-170) starts tasks no human looked at, an agent's own too, while a human keeps it on for the project: what it types is terminum's words and task IDs; a task's text reaches its agent as the assignment it reads by get_task. An agent that writes tasks can so have them run, and those write more: bounded by the slots, by the severities and the wait a human set, by the week and month limits of the agents that have them (the picking one too), which stop its starts, by no task being started twice unless a human moved or edited it, by the pause after a round that started nothing, and by its breaker; with no limit set, by the slots alone. The setting and a task's agent are written by a signed-in page only, never by `terminum mcp`; a round is known by the pane its call names, as any tool's caller: a guard, no boundary against a process of the user's.
 - A task's text reaches an agent as a typed prompt only through a human's RUN, whose dialog shows the text and marks what an agent or host wrote. A task's text in get_task is assignment for its run alone; comments and other tasks stay data.
 - Dispatcher types only as the gate allows; signals by (pid, start time) read just before; never by name or pattern; the pane's shell is spared. `terminum-remote.md` §9 lists these among what terminumd ends on a host.
 - A hook's fields are data: only a shape-checked session ID reaches a shell.

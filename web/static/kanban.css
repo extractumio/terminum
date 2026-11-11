@@ -74,7 +74,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .schedwaits { color: var(--accent); }
 /* its window's When: a line of the kind's parts, the days as keys, terminumd's words under it */
 .whenbox { margin: 0; padding: var(--sp-2) var(--sp-3) var(--sp-3); border: 0; border-radius: var(--key-r); box-shadow: var(--field-edge); }
-.whenbox legend { padding: 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
+.whenbox legend, .autoticks legend { padding: 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
 .whenline { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); font-size: var(--fs-body); }
 .whenline select.field { width: auto; min-width: 150px; }
 .whenline input.field { width: auto; }
@@ -137,7 +137,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #autoswitch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--surface-0); }
 .autoticks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); min-width: 0; margin: 0; padding: 0; border: 0; }
 #autobox .checkrow { align-self: start; }
-.autoticks legend { padding: 0 0 var(--sp-1); font-size: var(--fs-label); color: var(--muted); }
+.autoticks legend { padding: 0 0 var(--sp-1); }
 .autoticks label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); }
 #autorules { margin: 0; font-size: var(--fs-small); }
 #autorules dt { margin-top: var(--sp-2); color: var(--muted); }

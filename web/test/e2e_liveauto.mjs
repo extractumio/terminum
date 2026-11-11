@@ -121,9 +121,12 @@ export async function liveAuto(page, live) {
     && /turned itself off for Autos: the last two tasks/.test(await page.getAttribute("#autoswitch", "title"))), await page.getAttribute("#autoswitch", "title"));
   const unseen = await put({ on: true, off_why: null });
   check("AC-170 a page that did not show why it stopped does not turn it on again", /It turned itself off meanwhile: the last two tasks/.test(unseen.error ?? "") && (await setting()).on === false, JSON.stringify(unseen));
-  await page.click("#autocog");
+  await page.click("#autoswitch");
   await page.waitForSelector("#autobox[open]");
-  check("AC-170 its cog opens the window, which says why, its agent kept", /It turned itself off: the last two tasks it started failed/.test(await page.textContent("#autowhy")) && await page.inputValue("#autoagent") === picker && !(await page.isChecked("#autoon")));
+  check("AC-170 a press of the switch then opens the window, which says why: it is not on again unread", /It turned itself off: the last two tasks it started failed/.test(await page.textContent("#autowhy")) && await page.inputValue("#autoagent") === picker && await page.isChecked("#autoon") && (await setting()).on === false);
+  await page.fill("#autowait", "");
+  await page.click("#autook");
+  check("AC-170 an empty wait is refused, never taken as none", await until(async () => /Wait: 0 to 1440 minutes/.test(await page.textContent("#autoerror"))) && (await setting()).on === false);
   await shot("auto-stopped");
   await page.click('#autobox button[value="cancel"]');
   await j(`/api/tasks/${left}/archive`, "POST", {});                // nothing left for it to start

@@ -45,19 +45,12 @@ pub struct Setting {
 /// The longest wait, in minutes: a day.
 pub const WAIT_MOST: i64 = 24 * 60;
 
-impl Default for Setting {
-    /// As a project is made: off, the two highest severities, ten minutes.
-    fn default() -> Self {
-        Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10 }
-    }
-}
-
 const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes FROM projects";
 
 fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<(String, Setting)> {
     let severities: String = r.get(6)?;
     Ok((r.get(4)?, Setting { agent: r.get(0)?, default: r.get(1)?, off_why: r.get(2)?, on_at: r.get(3)?, on: r.get(5)?,
-        severities: severities.split(',').filter(|s| !s.is_empty()).map(str::to_string).collect(), wait: r.get(7)? }))
+        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)? }))
 }
 
 pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
@@ -82,10 +75,8 @@ impl Setting {
             s.on = on.as_bool().ok_or("on: true or false")?;
         }
         if let Some(list) = body.get("severities") {
-            let named: Vec<&str> = list.as_array().ok_or("severities: a list")?.iter().filter_map(Value::as_str).collect();
-            if let Some(bad) = named.iter().find(|n| !ops::SEVERITIES.contains(n)) {
-                return Err(format!("Severity {bad}: one of {}", ops::SEVERITIES.join(", ")));
-            }
+            let named = list.as_array().ok_or("severities: a list")?.iter().map(|v| v.as_str().ok_or("severities: a list of names")).collect::<Result<Vec<_>, _>>()?;
+            named.iter().try_for_each(|n| ops::check_severity(n))?;
             s.severities = ops::SEVERITIES.iter().filter(|p| named.contains(p)).map(|p| p.to_string()).collect();
         }
         if let Some(wait) = body.get("wait_minutes") {
@@ -95,9 +86,15 @@ impl Setting {
     }
 }
 
-/// Every project's setting, by its id, in the projects' order.
+/// Every project's setting, by its id.
 pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, &format!("{SETTING} ORDER BY place"), [], setting_of)
+    rows(tx, SETTING, [], setting_of)
+}
+
+/// The projects a walk looks at, in their order: those it is on for, and those with a round still on the board, which
+/// leaves it when it ended though the setting is off.
+pub fn due_for(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
+    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL) ORDER BY place"), [], setting_of)
 }
 
 /// An agent of the pool, or none.
@@ -109,7 +106,7 @@ fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent
 }
 
 /// A human's setting, kept as `new` says: on needs an agent that picks and a severity to take. Turned on, it starts
-/// anew: why it was off is forgotten, and what it started before does not count against it.
+/// anew: why it was off is forgotten, and what it started before does not count against it; kept off, why stays.
 pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<(), String> {
     ops::check_project(tx, project)?;
     let (agent, default) = (in_pool(tx, new.agent.as_deref())?.map(|a| a.id), in_pool(tx, new.default.as_deref())?.map(|a| a.id));
@@ -121,8 +118,8 @@ pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<()
     }
     let was = setting(tx, project)?;
     let on_at = if new.on && !was.on { at } else { was.on_at };
-    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = NULL, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7 WHERE id = ?1",
-        (project, new.on, agent, default, on_at, new.severities.join(","), new.wait)).map(drop).map_err(sql)
+    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7 WHERE id = ?1",
+        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait)).map(drop).map_err(sql)
 }
 
 /// It turns itself off for `project`, saying why: only a human turns it on again. Its agents stay chosen.
@@ -191,6 +188,16 @@ pub fn not_started(tx: &Transaction, task: &str, round: &str) -> Result<(), Stri
     tx.execute("DELETE FROM auto_starts WHERE task = ?1 AND round = ?2", (task, round)).map(drop).map_err(sql)
 }
 
+/// When the last round of `project` since `on_at` was made, if it started nothing: the next rests a while
+/// (dispatcher/auto.rs), so a long list its agent leaves is not read through at once.
+pub fn fruitless(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<i64>, String> {
+    let last: Option<(String, i64)> = tx.query_row("SELECT task, at FROM auto_rounds WHERE project = ?1 AND at >= ?2 ORDER BY at DESC, rowid DESC LIMIT 1", (project, on_at), |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
+    Ok(match last {
+        Some((key, at)) if started_by(tx, &key)? == 0 => Some(at),
+        _ => None,
+    })
+}
+
 /// How many tasks round `round` started.
 pub fn started_by(tx: &Transaction, round: &str) -> Result<i64, String> {
     tx.query_row("SELECT count(*) FROM auto_starts WHERE round = ?1", [round], |r| r.get(0)).map_err(sql)
@@ -207,8 +214,9 @@ pub fn tripped(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<Str
     }
     let ended: Vec<(String, String)> = rows(tx, "SELECT t.slug, t.status FROM auto_starts s JOIN tasks t ON t.id = s.task JOIN auto_rounds a ON a.task = s.round
                  WHERE a.project = ?1 AND s.at >= ?2 AND t.status NOT IN ('IN PROGRESS', 'WAIT FOR HUMAN')
-                   AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = t.id AND e.at >= s.at AND ((e.kind = 'move' AND e.author = ?3) OR (e.kind = 'why' AND e.text = ?4)))
-                 ORDER BY s.at DESC, s.rowid DESC LIMIT 2", (project, on_at, HUMAN, crate::dispatcher::runs::GAVE_UP), |r| Ok((r.get(0)?, r.get(1)?)))?;
+                   AND NOT EXISTS (SELECT 1 FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND e.at >= s.at
+                     AND ((e.kind = 'move' AND u.kind = 'human') OR (e.kind = 'why' AND e.text = ?3)))
+                 ORDER BY s.at DESC, s.rowid DESC LIMIT 2", (project, on_at, crate::dispatcher::runs::GAVE_UP), |r| Ok((r.get(0)?, r.get(1)?)))?;
     if ended.len() == 2 && ended.iter().all(|(_, status)| status == "FAILED") {
         return Ok(Some(format!("the last two tasks it started failed: {}, {}.", ended[1].0, ended[0].0)));
     }
@@ -222,6 +230,8 @@ pub struct Candidate {
     pub key: String,
     /// the agent it runs on: the task's own, else the setting's default
     pub agent: String,
+    /// when it was last made, moved or edited
+    pub changed: i64,
 }
 
 /// For how long a task a round was given and left is passed over, unless it changes: a day.
@@ -235,28 +245,29 @@ pub const PASSED: i64 = 24 * 3600;
 /// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
 ///   none, never the default's;
 /// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
-/// - that no round which ended DONE with a slot unfilled was given in the last day, since it is on, unless it changed
-///   since: what a round judged and left does not hold up the tasks below it; one that filled its slots left the rest
-///   for want of room, and they are offered again;
-/// in the board's order, CANDIDATES_MOST at most. `only`: that task alone, by its ID.
+/// - that no round which ended DONE with a slot unfilled was given in the last day, since it is on, unless a human
+///   moved or edited it since: what a round judged and left does not hold up the tasks below it, and an agent's own
+///   edit does not bring it back; one that filled its slots left the rest for want of room, and they are offered again.
+///
+/// In the board's order; CANDIDATES_MOST at most are looked at for an agent with room. `only`: that task alone, by its ID.
 pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>) -> Result<Vec<Candidate>, String> {
     let scale = crate::dispatcher::scale();
-    let found: Vec<Candidate> = rows(tx, "WITH c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
-                   (SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind IN ('made', 'move', 'edit')) AS changed
+    let found: Vec<Candidate> = rows(tx, "WITH passed AS MATERIALIZED (SELECT g.value AS slug, max(r.at) AS at FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
+                   WHERE r.project = ?1 AND r.at >= ?7 AND rt.status = 'DONE' AND (SELECT count(*) FROM auto_starts f WHERE f.round = r.task) < r.slots GROUP BY g.value),
+                 c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
+                   COALESCE((SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind IN ('made', 'move', 'edit')), 0) AS changed,
+                   COALESCE((SELECT max(e.at) FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND u.kind = 'human' AND e.kind IN ('move', 'edit')), 0) AS by_human
                  FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND t.severity IN (SELECT value FROM json_each(?5))
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id))
-                 SELECT c.slug, c.id, c.agent FROM c WHERE COALESCE(c.changed, 0) <= ?6
-                   AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id
-                     AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = c.id AND e.author = ?7 AND e.kind IN ('move', 'edit') AND e.at >= s.at))
-                   AND NOT EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
-                     WHERE r.project = ?1 AND rt.status = 'DONE' AND r.at > ?8 AND r.at >= ?9 AND r.at >= COALESCE(c.changed, 0) AND g.value = c.slug
-                       AND (SELECT count(*) FROM auto_starts f WHERE f.round = r.task) < r.slots)
+                 SELECT c.slug, c.id, c.agent, c.changed FROM c WHERE c.changed <= ?6
+                   AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
+                   AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
                  ORDER BY c.severity, c.rank LIMIT ?4",
-        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, HUMAN, now - PASSED / scale, s.on_at),
-        |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)? }))?;
+        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, (now - PASSED / scale + 1).max(s.on_at)),
+        |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)?, changed: r.get(3)? }))?;
     let mut out = Vec::new();
     for c in found {
         // a run still holding it (its agent in a turn after it went back to TODO) is no free task
@@ -273,11 +284,11 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
 async fn set_auto(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
     let done = store(&app, move |tx| {
         ops::check_project(tx, &project)?;
-        if let Some(why) = setting(tx, &project)?.off_why.filter(|why| body["off_why"].as_str() != Some(why)) {
+        let was = setting(tx, &project)?;
+        if let Some(why) = was.off_why.as_ref().filter(|why| body["off_why"].as_str() != Some(why)) {
             return Err(format!("It turned itself off meanwhile: {why} Read why, then turn it on again."));
         }
-        let new = setting(tx, &project)?.with(&body)?;
-        set(tx, &project, &new, ops::now()).map(|()| json!({"ok": true}))
+        set(tx, &project, &was.with(&body)?, ops::now()).map(|()| json!({"ok": true}))
     }).await;
     if done.is_ok() {
         app.dispatcher.soon();

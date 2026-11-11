@@ -12,7 +12,7 @@ const NOW: i64 = 1_000_000;
 /// Its setting on: P picks, `default` runs a task naming none, every severity taken, no wait.
 fn turn_on(tx: &Transaction, default: Option<&str>, at: i64) -> Result<(), String> {
     let all = crate::tasks::ops::SEVERITIES.iter().map(|p| p.to_string()).collect();
-    auto::set(tx, "api", &Setting { on: true, agent: Some("p".into()), default: default.map(str::to_string), severities: all, wait: 0, ..Default::default() }, at)
+    auto::set(tx, "api", &Setting { on: true, agent: Some("p".into()), default: default.map(str::to_string), severities: all, wait: 0, ..auto::setting(tx, "api")? }, at)
 }
 
 /// Project api with the picker P (3 at once) and the executors A (2 at once) and B (1 at once); on, A its default.
@@ -90,19 +90,47 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
 }
 
 #[test]
+fn ac170_after_a_round_that_started_nothing_it_rests_unless_a_task_changed() {
+    store("auto-rests").with(|tx| {
+        tx.execute("UPDATE agents SET at_once = 1 WHERE id = 'a'", []).map_err(sql)?;
+        let all = [task(tx, "one", "P1"), task(tx, "two", "P1"), task(tx, "three", "P1"), task(tx, "four", "P1")];
+        let (id, r) = round(tx);
+        assert_eq!((r.slots, r.candidates.len()), (1, 3), "three candidates a slot");
+        let below = all.iter().find(|t| !r.candidates.contains(&t.id)).unwrap();
+        let run = running(tx, "p", &ops::get(tx, &id)?);
+        runs::change(tx, &run, |r| r.state = Phase::Closed)?;
+        ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
+        assert_eq!(offer(tx, "api", &setting(tx), NOW + 1)?.0.into_iter().map(|c| c.id).collect::<Vec<_>>(), std::slice::from_ref(&below.id), "the task below is next");
+        assert_eq!(decide(tx, "api", &setting(tx), NOW + 1)?, Due::Nothing, "it rests: a long list is not read through at once");
+        // an agent's edit of one it left does not bring that one back; a task made since is news: a round at once
+        ops::edit(tx, DISPATCHER, &r.candidates[0], ops::Edit { title: Some("reworded by an agent".into()), ..Default::default() }, NOW + 2)?;
+        assert_eq!(offer(tx, "api", &setting(tx), NOW + 3)?.0.len(), 1, "what a round left stays passed over");
+        assert_eq!(decide(tx, "api", &setting(tx), NOW + 3)?, Due::Nothing, "still resting");
+        let fresh = ops::create(tx, HUMAN, NewTask { title: "fresh".into(), project: Some("api".into()), severity: Some("P1".into()), ..Default::default() }, NOW + 3)?;
+        let Due::Round(next) = decide(tx, "api", &setting(tx), NOW + 3)? else { panic!("a new task makes a round at once") };
+        let mut given = auto::round_of(tx, &ops::key_of(tx, &next)?)?.unwrap().candidates;
+        given.sort();
+        let mut wanted = vec![below.id.clone(), fresh.id];
+        wanted.sort();
+        assert_eq!(given, wanted);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac170_it_takes_the_severities_chosen_after_the_wait_and_none_twice() {
     store("auto-takes").with(|tx| {
         auto::set(tx, "api", &Setting { severities: vec!["P0".into(), "P1".into()], wait: 10, ..setting(tx) }, NOW)?;
         let (one, low, round) = (task(tx, "one", "P1"), task(tx, "low", "P2"), task(tx, "stands for a round", "P3"));
         let ids = |at: i64| auto::candidates(tx, "api", &setting(tx), at, None).map(|l| l.into_iter().map(|c| c.id).collect::<Vec<_>>());
         assert!(ids(NOW + 599)?.is_empty(), "made less than the wait ago");
-        assert_eq!(ids(NOW + 600)?, [one.id.clone()], "P2 is not taken");
+        assert_eq!(ids(NOW + 600)?, std::slice::from_ref(&one.id), "P2 is not taken");
         assert!(auto::candidates(tx, "api", &setting(tx), NOW + 600, Some(&low.id))?.is_empty(), "nor by its ID: a round in flight cannot start it");
         // an edit starts the wait anew; a comment does not
         ops::edit(tx, HUMAN, &one.id, ops::Edit { title: Some("one, reworded".into()), ..Default::default() }, NOW + 590)?;
         assert!(ids(NOW + 600)?.is_empty());
         crate::tasks::comments::comment(tx, HUMAN, &one.id, "a word", NOW + 1100)?;
-        assert_eq!(ids(NOW + 1190)?, [one.id.clone()]);
+        assert_eq!(ids(NOW + 1190)?, std::slice::from_ref(&one.id));
         // started by it once and put back by an agent: not run again; a human's move makes it a candidate anew
         auto::started(tx, &one.key, &round.key, NOW + 1200)?;
         ops::move_to(tx, DISPATCHER, &one.id, "IN PROGRESS", NOW + 1200)?;
@@ -110,7 +138,7 @@ fn ac170_it_takes_the_severities_chosen_after_the_wait_and_none_twice() {
         assert!(ids(NOW + 9000)?.is_empty(), "no loop over a task its agent gives back");
         ops::move_to(tx, HUMAN, &one.id, "FAILED", NOW + 9000)?;
         ops::move_to(tx, HUMAN, &one.id, "TODO", NOW + 9001)?;
-        assert_eq!(ids(NOW + 9601)?, [one.id.clone()]);
+        assert_eq!(ids(NOW + 9601)?, std::slice::from_ref(&one.id));
         Ok(())
     }).unwrap();
 }
