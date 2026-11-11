@@ -147,7 +147,7 @@ fn not_started(tx: &rusqlite::Transaction, task: &str, fire: i64, why: &str) -> 
 /// Runs a schedule's task on its agent as RUN's route would; a refusal fails the task, and the schedule goes on:
 /// its next firing tries again.
 async fn start(app: &Shared, s: &Schedule, task: &str, fire: i64) {
-    let started = super::api::press_again(app, task, json!({"agent": s.agent})).await;
+    let started = super::api::press_again(app, task, json!({"agent": s.agent, "how": super::runs::How::Schedule})).await;
     let (id, s_now) = (task.to_string(), s.clone());
     let _ = store(app, move |tx| match started {
         Ok(_) => {

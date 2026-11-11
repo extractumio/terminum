@@ -16,7 +16,7 @@ const PLAIN: &str = "tmux:local:t:%3";
 fn run_in(tx: &Transaction, key: &str, project: &str, task: Option<&str>) -> String {
     let like = Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), project: project.into(), ..Default::default() };
     let keys: Vec<String> = task.map(|t| ops::key_of(tx, t).unwrap()).into_iter().collect();
-    let id = runs::add(tx, &like, &keys, 2).unwrap();
+    let id = runs::add(tx, &like, &keys, Default::default(), 2).unwrap();
     runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(key.into()); }).unwrap();
     id
 }

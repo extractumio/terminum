@@ -240,7 +240,7 @@ mod tests {
     }
 
     fn run_of(tx: &Transaction, agent: &str, tasks: &[String]) -> String {
-        runs::add(tx, &Run { agent_id: agent.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() }, tasks, 1).unwrap()
+        runs::add(tx, &Run { agent_id: agent.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() }, tasks, Default::default(), 1).unwrap()
     }
 
     #[test]

@@ -71,7 +71,7 @@ fn ac138_what_is_done_of_a_run_still_working_runs_again_only_when_it_ends() {
     store_of("api-way").with(|tx| {
         let (a, b) = (made(tx, "one", ""), made(tx, "two", ""));
         let pane = "tmux:local:t:%1".to_string();
-        let id = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, &[a.key.clone(), b.key.clone()], 2)?;
+        let id = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, &[a.key.clone(), b.key.clone()], Default::default(), 2)?;
         ops::link(tx, HUMAN, &a.id, Some(&pane), 2)?;
         ops::link(tx, HUMAN, &b.id, Some(&pane), 2)?;
         runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(pane.clone()); })?;
@@ -98,7 +98,7 @@ fn ac126_run_waits_while_its_agent_is_being_ended() {
     store_of("api-ending").with(|tx| {
         let a = made(tx, "one", "");
         let pane = "tmux:local:t:%1".to_string();
-        let id = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, std::slice::from_ref(&a.key), 2)?;
+        let id = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, std::slice::from_ref(&a.key), Default::default(), 2)?;
         ops::link(tx, HUMAN, &a.id, Some(&pane), 2)?;
         runs::change(tx, &id, |r| { r.state = Phase::Ending; r.pane_key = Some(pane.clone()); })?;
         ops::move_to(tx, HUMAN, &a.id, "FAILED", 3)?;
@@ -206,7 +206,7 @@ fn ac138_dropped_on_another_agent_of_its_kind_its_ended_conversation_goes_on_the
     store_of("api-moved").with(|tx| {
         tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('b', 'Jones', 'claude', 'claude --model sonnet', 1, 1), ('x', 'Codex', 'codex', 'codex', 2, 1)", []).map_err(ops::sql)?;
         let t = made(tx, "Fix it", "the text");
-        let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), 1)?;
+        let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         let r = runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;
         let moved = moved_to(tx, std::slice::from_ref(&t), Some(&r), Some("b"), false)?.expect("same kind, conversation known, its agent ended");
         assert_eq!((moved.agent_name.as_str(), moved.command.as_str(), moved.folder.as_str(), moved.agent_session.as_deref()), ("Jones", "claude --model sonnet", "/srv/api", Some("c0ffee")), "its folder and conversation, the new agent's line");
@@ -246,7 +246,7 @@ fn ac156_going_on_starts_the_agent_s_command_as_the_pool_has_it_now() {
     store_of("api-current").with(|tx| {
         tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once) VALUES ('a', 'Smith', 'claude', 'myclaude', 'high', 0, 1)", []).map_err(ops::sql)?;
         let t = made(tx, "Fix it", "the text");
-        let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), 1)?;
+        let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;
         let (_, w, from) = ways(tx, &t.id, &[], None, false)?;
         assert!(matches!(&w, Ok(Way::Resume(r)) if r.command == "myclaude --effort high" && r.agent_session.as_deref() == Some("c0ffee")), "the operator changed claude to myclaude: the resume starts that");
