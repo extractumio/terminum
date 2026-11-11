@@ -1,17 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Dashboard at /dashboard/ (terminum.md AC-152, AC-171, AC-172): three tabs over one period and one
-// project: You (how much the user works here and how loaded), System (Dispatcher's sessions, failures, the
-// agents' load), Costs (tokens and dollars). The tab, the period and the project are the address's; terminumd
-// counts, a tab draws (dashyou.js, dashsystem.js, dashcosts.js).
+// The Dashboard at /dashboard/ (terminum.md AC-152, AC-171, AC-172, AC-176): four tabs over one period and one
+// project: You (how much the user works here, how engaged and how loaded), Tasks (who does the work on tasks),
+// System (Dispatcher's sessions, failures, the agents' load), Costs (tokens and dollars). The tab, the period and the project are the address's; terminumd
+// counts, a tab draws (dashyou.js, dashtasks.js, dashsystem.js, dashcosts.js).
 import { bucketWords } from "./dashkit.js";
 import { costs } from "./dashcosts.js";
 import { system } from "./dashsystem.js";
+import { tasks } from "./dashtasks.js";
 import { you } from "./dashyou.js";
 import { showError } from "./kanbanutil.js";
 import { $, NONE, api, dayLabel, inkOf, loadMeta, menu, projectLabel, queryUrl, readQuery, writeQuery } from "./msgpage.js";
 
 const KEYS = ["tab", "period", "project"];
-const TABS = { you, system, costs }, PERIODS = ["day", "2w", "month", "quarter", "year"];
+const TABS = { you, tasks, system, costs }, PERIODS = ["day", "2w", "month", "quarter", "year"];
 /** What the address leaves unsaid. */
 const FIRST = { tab: "you", period: "month" };
 let state = readQuery(KEYS), meta = { projects: [] }, data = null, shown = [], loading = 0;

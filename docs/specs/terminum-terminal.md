@@ -197,7 +197,7 @@ Scenario: AC-33 happy path — a selection becomes a bookmark
   When the user selects text in the history, the screen or a widget's rendered text
   Then a gray Copy and an orange [+] under it stand in the floating buttons' column (in one line with find and the sent history), Copy level with the selection's first line (kept inside the terminal, following the view), the column's other buttons hidden meanwhile, while the selection lasts (and 600 ms after); Copy, [+] and Ask one gap apart (--sp-3), the same gap between the terminal's top or end and the first or the last; on a phone or a narrow window they stand instead at the terminal's top right, Copy first, in place of the folded floating buttons (terminum.md AC-18); not for a selection in an agent's input box or status lines
   When the user presses [+], types a note and saves (Save, or ⌘Enter or Ctrl+Enter in the dialog; a plain Enter is a new line of the note)
-  Then the dialog, 80% of the terminal's width (480 px at least, the window's less 32 px at most), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" on the Mac, seen by every signed-in client at once
+  Then the dialog, sized from the terminal (AC-173), shows the text it keeps (a longer one: its first 2000 characters, never half an emoji, then "… (the first 2,000 characters are kept)") and the bookmark holds that text, the note (up to 1000), its line, and, stamped by terminumd, the pane's key (OQ-31), title, host and time, in "web-bookmarks.json" on the Mac, seen by every signed-in client at once
 
 Scenario: AC-33 happy path — marks, the way back, the lists
   Given the shown pane has bookmarks
@@ -243,7 +243,7 @@ Scenario: AC-33 happy path — a session's own
   When its session closes
   Then terminumd orphans it: it is only in the list below the sessions (Bookmarks | Reminders), said "orphaned", until deleted there (for good); a bookmark is deleted from a session's list or bar too
   And that list shows every session's, on purpose: the one place to reach the others' and those of closed sessions
-  And "Open all" in that list shows its bookmarks or reminders as one document, full screen
+  And "Open all" in that list shows its bookmarks or reminders as one document in a document's window (terminum.md AC-173: 80% of the window across and down, 960 px wide at most)
   And a web-bookmarks.json before version 3 (bookmarks of a folder) has each bookmark take the project its session is in at terminumd's start, else that session, once
 Scenario: AC-33 edge — the lines are gone, a rename, a server restart
   Then a bookmark whose text is no longer in the history says "These lines are no longer in this session's history." with its text and note; it stays until deleted
@@ -322,7 +322,7 @@ Scenario: AC-36 happy path — paste an image
 
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
-  Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together, one per line in a coding agent's box (with bracketed paste on), else separated by spaces (in a shell each line would run as a command of its own at Enter); the terminal is outlined while files are held over it; a folder is refused; a drop never makes the browser open the file
+  Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together, one per line in a coding agent's box (with bracketed paste on), else separated by spaces (in a shell each line would run as a command of its own at Enter); the terminal is outlined while files are held over it, and the outline goes within 1 s of the drag leaving the page or ending without a drop there (Esc, a drop in the Files panel, the pointer leaving through it), never staying on the next session shown; a folder is refused; a drop never makes the browser open the file
 
 Scenario: AC-36 happy path — files dropped from Finder on a pane of this Mac
   Given the page is open in this Mac's browser (http://127.0.0.1:48080, not through tailscale serve: terminumd says so in its `build` message, the page never guesses it from its address) and the shown pane's shell runs on this Mac
@@ -377,7 +377,7 @@ Scenario: AC-37 happy path — Ask about a selection
   When the user selects text in the terminal
   Then an Ask button (a speech bubble with a question mark, no label, on a pastel cornflower blue fill) shows while the selection lasts, just under the selection's [+] on every screen (AC-33; a split's embedded page draws no other floating button and no Ask: its Copy and [+] at the same right column); it is hidden otherwise
   When the user presses Ask
-  Then its dialog opens centered on the window, across and down, as every dialog, and stays there as the window or its field is resized, the dialog scrolling when it is taller than the window, a quarter larger than other dialogs: 600 px wide, the quote up to 37.5% of the window's height, a 4-line question
+  Then its dialog opens centered on the window, across and down, as every dialog, and stays there as the window or its field is resized, the dialog scrolling when it is taller than the window, sized from the terminal (AC-173), the quote up to 37.5% of the window's height, the question taking the rest
   When the user types a question and presses Add to Chat
   Then terminumd gives the pane's next question number (one more than the highest "Quote #N" the pane sent (terminum.md AC-147) or the last it gave, kept per pane in the project's quotes.json, so it counts up across devices, reloads and terminumd's restarts), and the page puts at the input's cursor, no Enter, a Markdown quote, a blank line after it and after the question (none before), compact:
     "> Quote #0007\n> <the selected text's first line>\n> <its next line>\n\n<the question>\n\n"

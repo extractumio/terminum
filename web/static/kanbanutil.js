@@ -5,6 +5,7 @@ import { PROJECT_HUES, el, hueColor, iconButton } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
+import { dropLit } from "./droplit.js";
 
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
@@ -125,8 +126,9 @@ export const showError = (box, text) => { box.textContent = text ?? ""; box.hidd
 /** Whether what is dragged is files. */
 export const hasFiles = (e) => e.dataTransfer?.types.includes("Files");
 
-/** Files pasted into `area` or dropped on `zone` go to `add`; `lit(on)` says one is over it. */
-export function onFiles(area, zone, add, lit = () => {}) {
+/** Files pasted into `area` or dropped on `zone` go to `add`; `show(on)` says one is over it. */
+export function onFiles(area, zone, add, show = () => {}) {
+  const lit = dropLit(show);
   area.addEventListener("paste", (e) => { const list = [...(e.clipboardData?.files ?? [])]; if (list.length) { e.preventDefault(); add(list); } });
   zone.addEventListener("dragover", (e) => { if (hasFiles(e)) { e.preventDefault(); lit(true); } });
   zone.addEventListener("dragleave", (e) => { if (!zone.contains(e.relatedTarget)) lit(false); });

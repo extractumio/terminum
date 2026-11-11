@@ -12,6 +12,8 @@
 .grp.project h2 .label { color: var(--name); }
 .grp.project .item.on { background: color-mix(in srgb, var(--proj) 16%, transparent); }   /* the shown session: its project's tint, deeper */
 .grp.project .pbar { opacity: .75; }
+/* a session gliding up to its project's top (listmove.js) passes over the rows it leaves, its own fill opaque */
+.grp.project li.rising { z-index: 2; border-radius: var(--r-sm); background: color-mix(in srgb, var(--proj) 6%, var(--chrome)); box-shadow: var(--shadow-near); }
 .grp.project .pbar.on { opacity: 1; }
 .grp h2 .rename { flex: 1; min-width: 0; height: 26px; padding: 0 6px; border-radius: var(--r-sm); font: inherit; }
 

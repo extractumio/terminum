@@ -216,7 +216,7 @@ export async function webSent(browser, name) {
       await page.click("#marklist .mkall");
       await page.waitForFunction(() => document.getElementById("markdoc").open && document.querySelector("#markdocbody h3"), null, { timeout: 5000 }).catch(() => {});
       const docOpen = await page.evaluate(() => ({ open: document.getElementById("markdoc").open, h: [...document.querySelectorAll("#markdocbody h3")].map((h) => h.textContent),
-        full: document.getElementById("markdoc").getBoundingClientRect().height > innerHeight * 0.8 }));
+        full: document.getElementById("markdoc").getBoundingClientRect().height >= Math.round(innerHeight * 0.8) - 1 }));
       await page.keyboard.press("Escape");                            // the document, then the list's window
       await page.keyboard.press("Escape");
       check("projects: a session shows only its own, none of another session of its project, of another project or outside it",
@@ -224,7 +224,7 @@ export async function webSent(browser, name) {
       check("projects: the list below the sessions holds them all, each with its project, out of reach or orphaned said; Reminders lists the open reminders",
         list.join() === "of this session,from the tests session,from a closed session:out of reach,docs only,of the docs project,host one:out of reach,orphan one:orphaned"
           && where.startsWith("Work · ") && rem.join() === "orphan reminder", JSON.stringify({ list, where, rem }));
-      check("projects: Open all shows them as one document, full screen", docOpen.open && docOpen.h.join() === "orphan reminder" && docOpen.full, JSON.stringify(docOpen));
+      check("projects: Open all shows them as one document, in a document's window: 80% of the window high (AC-173)", docOpen.open && docOpen.h.join() === "orphan reminder" && docOpen.full, JSON.stringify(docOpen));
       // the bell's pane is the shown session's: another session shown, it closes (it stayed, over the other session, at the window's corner)
       f.say({ t: "marks", items: [REMINDER] });
       await pause(page, 300);

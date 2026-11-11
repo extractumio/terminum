@@ -29,6 +29,7 @@
 <link rel="stylesheet" href="controls.css">
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
+<link rel="stylesheet" href="dialogsize.css">
 <link rel="stylesheet" href="panewin.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
@@ -327,11 +328,11 @@
   <button type="submit">Sign in</button>
 </form>
 
-<dialog id="pastebox" class="box dlg" aria-labelledby="pastetitle">
+<dialog id="pastebox" data-size="write" data-parent="term" class="box dlg" aria-labelledby="pastetitle">
   <form method="dialog">
     <div class="dhead"><h2 id="pastetitle">Paste</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label for="pastetext">Paste here, then send it to the terminal</label>
-    <textarea id="pastetext" class="field" rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <textarea id="pastetext" class="field" data-grow rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
     <div class="actions">
       <button value="cancel" type="submit">Cancel</button>
       <button value="send" type="submit" class="primary" title="Send it to the terminal (⌘Enter)">Send</button>
@@ -339,12 +340,12 @@
   </form>
 </dialog>
 
-<dialog id="markdoc" class="box dlg docdlg" aria-labelledby="markdoctitle">
+<dialog id="markdoc" data-size="read" class="box dlg docdlg" aria-labelledby="markdoctitle">
   <div class="dhead"><h2 id="markdoctitle">Bookmarks</h2><button id="markdocclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div id="markdocbody" class="markdown scrolls"></div>
 </dialog>
 <!-- A session's last lines, kept to read after its tmux restarted (AC-96): plain text, as large as the bookmarks' document. -->
-<dialog id="lastlines" class="box dlg docdlg" aria-labelledby="lastlinestitle">
+<dialog id="lastlines" data-size="read" class="box dlg docdlg" aria-labelledby="lastlinestitle">
   <div class="dhead"><h2 id="lastlinestitle">Last lines</h2>
     <div id="lastlinesseg" class="seg" role="tablist" aria-label="Which lines" hidden><button type="button" role="tab" data-which="before" aria-selected="true" title="The lines kept before its tmux restarted">Before restart</button><button type="button" role="tab" data-which="latest" aria-selected="false" title="The lines kept since">Now</button></div>
     <button id="lastlinescopy" class="icon" type="button" title="Copy the lines shown" aria-label="Copy the lines" disabled><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button>
@@ -358,11 +359,11 @@
   <div class="dhead"><h2 id="marksdlgtitle">Bookmarks / Reminders</h2><button id="marksdlgclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
   <div id="marklist" class="scrolls"></div>
 </dialog>
-<dialog id="askbox" class="box dlg" aria-labelledby="asktitle">
+<dialog id="askbox" data-size="write" data-parent="term" class="box dlg" aria-labelledby="asktitle">
   <form method="dialog">
     <div class="dhead"><h2 id="asktitle">Ask about the selection</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="asktext"></div>
-    <textarea id="askq" class="field" rows="4" maxlength="4000" autocapitalize="sentences" placeholder="Your comment or task about it" aria-label="Your comment or task about the selection"></textarea>
+    <textarea id="askq" class="field" data-grow rows="4" maxlength="4000" autocapitalize="sentences" placeholder="Your comment or task about it" aria-label="Your comment or task about the selection"></textarea>
     <p id="askerr" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -371,7 +372,7 @@
     </div>
   </form>
 </dialog>
-<dialog id="markbox" class="box dlg" aria-labelledby="marktitle">
+<dialog id="markbox" data-size="write" data-parent="term" class="box dlg" aria-labelledby="marktitle">
   <form method="dialog">
     <div class="dhead"><h2 id="marktitle">Bookmark</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div class="seg" id="markkind" role="group" aria-label="Kind">
@@ -380,7 +381,7 @@
     </div>
     <div id="marktext"></div>
     <label for="marknote">Note</label>
-    <textarea id="marknote" class="field" rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
+    <textarea id="marknote" class="field" data-grow rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
     <p id="markerr" role="alert" hidden></p>
     <div class="actions">
       <button id="marktask" type="button" title="Open the board's new-task window with this text">New task from selection</button>
@@ -390,7 +391,7 @@
   </form>
 </dialog>
 
-<dialog id="confirmbox" class="box dlg" aria-labelledby="confirmtitle">
+<dialog id="confirmbox" data-size="ask" class="box dlg" aria-labelledby="confirmtitle">
   <form method="dialog">
     <div class="dhead"><h2 id="confirmtitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="confirmtext"></p>
@@ -401,7 +402,7 @@
   </form>
 </dialog>
 
-<dialog id="agentsbox" class="box dlg" aria-labelledby="agentstitle">
+<dialog id="agentsbox" data-size="ask" class="box dlg" aria-labelledby="agentstitle">
   <form method="dialog">
     <div class="dhead"><h2 id="agentstitle"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="agentstext"></p>
@@ -413,7 +414,7 @@
   </form>
 </dialog>
 
-<dialog id="namebox" class="box dlg" aria-labelledby="nametext">
+<dialog id="namebox" data-size="ask" class="box dlg" aria-labelledby="nametext">
   <form method="dialog">
     <div class="dhead"><h2 id="nametext"></h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <input id="namefield" class="field" type="text" aria-labelledby="nametext" maxlength="40" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
@@ -426,7 +427,7 @@
 </dialog>
 
 <!-- Convert to task (terminum-kanban.md AC-116): a bookmark or reminder made a TODO task, the board not opened. -->
-<dialog id="convertbox" class="box dlg" aria-labelledby="converthead">
+<dialog id="convertbox" data-size="form" class="box dlg" aria-labelledby="converthead">
   <form method="dialog">
     <div class="dhead"><h2 id="converthead">Convert to task</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label class="fieldrow">Title <input id="converttitle" class="field" type="text" maxlength="200" autocomplete="off"></label>
@@ -447,5 +448,7 @@
 <textarea id="kbd" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false" aria-label="Terminal input"></textarea>
 <script type="module" src="app.js"></script>
 <script type="module" src="grain.js"></script>
+<script type="module" src="interact.js"></script>
+<script type="module" src="dlgsize.js"></script>
 </body>
 </html>

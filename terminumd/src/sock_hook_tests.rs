@@ -108,3 +108,26 @@ async fn ac90_an_agents_own_turns_and_a_subagents_prompts_are_no_ones_messages()
     drop(app);
     std::fs::remove_dir_all(root).unwrap();
 }
+
+#[tokio::test]
+async fn ac92_a_session_that_takes_a_message_goes_to_its_projects_top() {
+    let (root, app) = crate::testutil::app("hook-to-top");
+    let server = app.tmux.local.clone();
+    server.set_panes(std::collections::HashMap::from([("%1".to_string(), "main".to_string()), ("%2".to_string(), "main".to_string())]));
+    let (a, b) = (server.key("%1"), server.key("%2"));
+    let p1 = app.projects.lock().add_new(&a, None, None, "/Users/alex/api".into()).unwrap();
+    app.projects.lock().add_to(&b, &p1, None).unwrap();
+    let prompt = |pane: &str, p: &str| json!({"agent": "claude", "event": "UserPromptSubmit", "pane": pane, "session": "s1", "prompt": p});
+    let members = || app.projects.lock().of(&a).unwrap().members.clone();
+    hook_on(app.clone(), Some(server.clone()), prompt("%2", "<task-notification>\n<task-id>b1</task-id>")).await;
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(members(), [a.clone(), b.clone()], "the agent's own turn is no message: nothing moves");
+    hook_on(app.clone(), Some(server.clone()), prompt("%2", "fix the tests")).await;
+    for _ in 0..300 {
+        if members()[0] == b { break }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    assert_eq!(members(), [b, a], "a message raises its session");
+    drop(app);
+    std::fs::remove_dir_all(root).unwrap();
+}

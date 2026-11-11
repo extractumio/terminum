@@ -107,8 +107,8 @@ export async function liveHistory(page, opts) {
   const tileOf = (label) => page.evaluate((label) => [...document.querySelectorAll("#tiles .tile")].find((t) => t.querySelector(".tlabel").textContent === label)?.querySelector(".tvalue").textContent, label);
   const labels = () => page.$$eval("#tiles .tlabel", (l) => l.map((x) => x.textContent).join());
   check("AC-152 the first tab is You, its figures the human's time and load", await page.getAttribute('#dtabs [data-tab="you"]', "aria-selected") === "true" && await tileOf("Active time") !== "0 min"
-    && await labels() === "Active time,Active days,Longest stretch,Switches an active hour,Board actions,Waited for you,Off hours,From the phone", await page.textContent("#tiles"));
-  check("AC-152 every card of You draws: a month by the day", (await page.$$("#active rect.hit")).length === 30 && (await page.$$("#days rect.hit")).length === 30 && (await page.$$("#heat rect.cell")).length === 7 * 24
+    && await labels() === "Active time,Active days,Engagement,Longest stretch,Switches an active hour,Board actions,Waited for you,Off hours,From the phone", await page.textContent("#tiles"));
+  check("AC-152 every card of You draws: a month by the day", (await page.$$("#active rect.hit")).length === 30 && (await page.$$("#engaged rect.hit")).length === 30 && (await page.$$("#days rect.hit")).length === 30 && (await page.$$("#heat rect.cell")).length === 7 * 24
     && await page.isVisible("#projects .rrow") && (await page.$$("#juggling rect.hit")).length === 30 && (await page.$$("#board rect.hit")).length === 30);
   // the document scrolls: the cards under the window's end are reached
   const size = page.viewportSize();
@@ -157,7 +157,33 @@ export async function liveHistory(page, opts) {
   check("AC-172 the charts measure tokens by a key, which stays pressed", await until(async () => (await rowOf("agents", dash)).endsWith("1.1M")) && await page.getAttribute('#cspent [data-mode="tokens"]', "aria-pressed") === "true", await rowOf("agents", dash));
   await page.goBack();
   check("AC-171 Back returns to the tab before", await until(async () => await page.getAttribute('#dtabs [data-tab="system"]', "aria-selected") === "true" && !!(await page.$("#failures")), 6000));
-  if (shots) for (const t of ["system", "costs"]) { await page.goto(`${base}/dashboard/?tab=${t}`); await page.waitForSelector("#tiles .tile"); await nap(400); await page.screenshot({ path: path.join(shots, `dashboard-${t}.png`), fullPage: true }); }
+  // the Tasks tab: a task the human makes from this page, a comment an agent left on it
+  const work0 = await numbers("tab=tasks&period=year");
+  const made = await page.evaluate(async (title) => (await (await fetch("/api/tasks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) })).json()).id, `Split ${dash}`);
+  intoStore(app, `INSERT INTO users (id, kind, name, role) VALUES ('agent:${dash}', 'agent', 'Agent ${dash}', 'agent');
+    INSERT INTO events (id, task, at, author, kind, text) VALUES ('ev${dash}', (SELECT id FROM tasks WHERE slug = '${made}'), CAST(strftime('%s','now') AS INTEGER), 'agent:${dash}', 'comment', 'done')`);
+  await page.click('#dtabs [data-tab="tasks"]');
+  const work1 = await numbers("tab=tasks&period=year");
+  check("AC-176 Tasks: the operations by who decided them, and each task's split", work1.tiles.by.you === work0.tiles.by.you + 1 && work1.tiles.by.agents === work0.tiles.by.agents + 1
+    && await until(async () => await tileOf("Your operations") === String(work1.tiles.by.you), 6000) && /tab=tasks/.test(page.url()) && (await rowOf("tasks", made)).endsWith("50%2")
+    && (await page.$$("#ops rect.hit")).length === 12 && /Made/.test(await page.textContent("#kinds")) && await page.isVisible("#spread .rrow"), `${made} | ${await page.textContent("#tiles")} | ${await rowOf("tasks", made)}`);
+  await page.evaluate((id) => [...document.querySelectorAll("#tasks .rrow")].find((r) => r.textContent.includes(id)).click(), made);
+  check("AC-176 a task's row opens the task", await until(() => page.url().includes(`/kanban/${made}`), 6000), page.url());
+  // what the user does in a page is counted by the minute and sent when the page goes
+  await page.goto(`${base}/dashboard/`);
+  await page.waitForSelector("#tiles .tile");
+  await page.keyboard.press("Tab");
+  await page.mouse.move(300, 300);
+  await page.mouse.wheel(0, 200);
+  await page.click("#dnote");
+  await page.goto(`${base}/dashboard/?period=day`);
+  const counts = () => numbers("tab=you&period=day");
+  check("AC-175 a page counts the user's presses, keys and scrolls and sends them as it goes: engagement is counted from them", await until(async () => (await counts()).tiles.engaged?.acting >= 1, 8000)
+    && !!(await counts()).measured_from && await page.reload().then(() => page.waitForSelector("#tiles .tile")).then(() => tileOf("Engagement")).then((v) => /^\d+%$/.test(v))
+    && (await page.$$("#engaged rect.hit")).length === 24, `${JSON.stringify((await counts()).tiles)} | ${await page.textContent("#dnote")}`);
+  const refused = await page.evaluate(async () => (await fetch("/api/interactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ now: Date.now(), rows: [{ at: Date.now(), ended: Date.now(), kind: "typed", surface: "sessions", n: 1 }] }) })).json());
+  check("AC-175 a count of a kind no page counts is not kept", refused.kept === 0, JSON.stringify(refused));
+  if (shots) for (const t of ["tasks", "system", "costs"]) { await page.goto(`${base}/dashboard/?tab=${t}`); await page.waitForSelector("#tiles .tile"); await nap(400); await page.screenshot({ path: path.join(shots, `dashboard-${t}.png`), fullPage: true }); }
   if (shots) {
     // a month of made-up work to look at: three projects, days of different length, a weekend off
     const seed = [];

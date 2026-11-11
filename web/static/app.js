@@ -377,7 +377,7 @@ const showCurrent = pageHeader({ narrow, copy: (text) => input.copySelection(tex
 function select(id, force = false) {
   if (id) tasks.address(id);
   if (id === st.sid && !force && view.screen.length) return;
-  st.sid = id; store.set("sid", id); place.note(); seeWaits(st.groups, id);
+  st.sid = id; document.body.dataset.sid = id ?? ""; store.set("sid", id); place.note(); seeWaits(st.groups, id);
   recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane

@@ -307,6 +307,13 @@ impl Projects {
         })
     }
 
+    /// Pane `key` took a message (its agent's prompt, a human's or Dispatcher's): it goes to the top of
+    /// its project, the others keeping their order, kept as `members` keeps it. True when it moved.
+    pub fn raise(&mut self, key: &str) -> Result<bool, String> {
+        let Some(id) = self.list.iter().find(|p| p.members.iter().skip(1).any(|m| m == key)).map(|p| p.id.clone()) else { return Ok(false) };
+        self.members(&id, &[key.to_string()]).map(|()| true)
+    }
+
     /// The panes of a server whose list was just read (`prefix` its keys' start, `identity` its
     /// `@terminum-id`): its members that are not `live` closed, but those added lately; a server
     /// started anew without a restore (another identity) leaves no member of its old panes; one
@@ -376,7 +383,7 @@ impl Projects {
 
 #[path = "projects_app.rs"]
 mod app;
-pub use app::{handle, hello, restarted, seen, tell, tell_read};
+pub use app::{handle, hello, restarted, seen, raise, tell, tell_read};
 
 #[cfg(test)]
 #[path = "projects_tests.rs"]

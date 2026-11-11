@@ -167,8 +167,13 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // prompts are no one's: neither that nor a message (AC-90)
     let prompt = ev["prompt"].as_str().filter(|p| ev["event"] == "UserPromptSubmit" && whose == crate::tmux::hookstate::Whose::Main && !crate::messages::injected(p));
     let typed = prompt.is_some_and(|p| app.dispatcher.typed_it(&key, p));
-    if prompt.is_some() && !typed {
-        app.inputs.human(&key);
+    if prompt.is_some() {
+        if !typed {
+            app.inputs.human(&key);
+        }
+        // the session that took a message goes to its project's top (AC-92)
+        let (app, key) = (app.clone(), key.clone());
+        tokio::spawn(async move { crate::page::projects::raise(&app, &key).await });
     }
     if let (Some(prompt), Some(cwd)) = (prompt, ev["cwd"].as_str()) {
         let sender = if typed { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };

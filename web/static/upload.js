@@ -7,6 +7,7 @@
 // the limit is not sent: the page says to give its path instead (a browser never gives a page a
 // file's path). A drop on a pane of this Mac in this Mac's browser puts the files' own paths
 // instead, nothing uploaded at any size: terminumd finds them on macOS's drag pasteboard (dragged.rs).
+import { dropLit } from "./droplit.js";
 import { NOT_PASTED, shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
@@ -129,18 +130,19 @@ export function uploads({ sid, host = () => null, atMac = () => false, paste, li
      *  put their paths (AC-36). */
     bindDrop(target) {
       const kind = (e) => { const t = [...(e.dataTransfer?.types ?? [])]; return t.includes(PATHS) ? "paths" : t.includes("Files") ? "files" : null; };
+      const lit = dropLit((on) => target.classList.toggle("dropping", on));
       document.addEventListener("dragover", (e) => {
         if (!kind(e)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
-        target.classList.add("dropping");
+        lit(true);
       });
-      document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) target.classList.remove("dropping"); });
+      document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) lit(false); });
       document.addEventListener("drop", (e) => {
         const k = kind(e);
         if (!k) return;
         e.preventDefault();
-        target.classList.remove("dropping");
+        lit(false);
         if (k === "paths") return putPaths(draggedPaths(e.dataTransfer.getData(PATHS)));
         // read now: the drop's items are gone once the event is over
         const got = [...e.dataTransfer.items].filter((it) => it.kind === "file")

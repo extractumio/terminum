@@ -51,6 +51,7 @@ import { webDock } from "./e2e_dock.mjs";
 import { webFoot } from "./e2e_foot.mjs";
 import { webMarksScope } from "./e2e_marksscope.mjs";
 import { webListOrder } from "./e2e_listorder.mjs";
+import { webDialogSize } from "./e2e_dlgsize.mjs";
 import { webPlans } from "./e2e_plans.mjs";
 import { webLastLines } from "./e2e_lastlines.mjs";
 import { webPlansFind } from "./e2e_plansfind.mjs";
@@ -65,7 +66,7 @@ import { webListPlace } from "./e2e_listplace.mjs";
 import { webSections } from "./e2e_sections.mjs";
 
 const CHECKS = { webTerm, webApp, webMove, webTrace, webCtxTrace, webClip, webWidgets, webWidgetFolds, webWidgetTables, webWidgetPng, webWidgetSteady, webTableForms, webDialogCenter, webMarks, webProgCopy, webTouch, webEdit, webBoxNav,
-  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections };
+  webSignin, webTmux, webScreen, webLook, webMotion, webCodex, webSplit, webSent, webIdeKeys, webScreenFolds, webProjects, webListDrag, webPhoneRow, webRows, webResize, webOpenEnd, webSwitch, webDock, webSheets, webFold, webHeader, webNotes, webFoot, webMarksScope, webListOrder, webPlans, webLastLines, webPlansFind, webPathFold, webMarkNav, webPaneWin, webReview, webTips, webHold, webListPlace, webIsolation, webSections, webDialogSize };
 const BROWSERS = ["chromium", "webkit"], KNOWN = [...BROWSERS, "firefox"];
 // Checks a user saw fail in Firefox and that need no touch screen (Firefox has no isMobile).
 const FIREFOX_TOO = ["webProgCopy"];

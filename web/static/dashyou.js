@@ -1,15 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The Dashboard's You tab (terminum.md AC-152): how much the user works here and how loaded: active time by
-// project, the working day, the week's hours, the sessions juggled and the switches between them, what they
-// did on the board, how long tasks waited for them. terminumd's numbers; nothing is added up here.
+// The Dashboard's You tab (terminum.md AC-152): how much the user works here, how engaged and how loaded:
+// active time by project, the minutes of it they acted or read in, the working day, the week's hours, the
+// sessions juggled and the switches between them, what they did on the board, how long tasks waited for them. terminumd's numbers; nothing is added up here.
 import { columns } from "./charts.js";
 import { heatMap, workingDays } from "./dashcharts.js";
-import { bands, card, delta, kindWords, legend, rankHue, ranked, shareTile, stackCard, tile, words } from "./dashkit.js";
+import { bands, card, delta, kindWords, legend, percent, rankHue, ranked, shareOf, shareTile, stackCard, tile, was, words } from "./dashkit.js";
 import { plural } from "./listparts.js";
-import { NONE, WEEK, clock, count, hours, inkOf, projectLabel } from "./msgpage.js";
+import { NONE, WEEK, clock, count, dayLabel, hours, inkOf, projectLabel } from "./msgpage.js";
 
 /** What the human does on the board: the events' kinds, their words and colors, in the stack's order. */
 const BOARD = [["made", "made", rankHue(1)], ["move", "moved", rankHue(4)], ["comment", "commented", rankHue(0)], ["edit", "edited", rankHue(2)], ["archive", "archived", "var(--faint)"]];
+
+/** An active minute by what the user did in it, in the stack's order: the numbers' key, its word, its color. */
+const MINUTES = [["acting", "acting", rankHue(2)], ["reading", "reading", rankHue(1)], ["watching", "watching", "var(--faint)"]];
+const PAUSE = "A pause ends a stretch when over 5 minutes, or over 15 with a page in front through it; before the pages counted, over 15";
 
 /** A project's color: the session list's; one no longer there takes a hue by its rank, so the stack's
  *  parts stay apart; Other is faint, no project muted. */
@@ -28,7 +32,10 @@ function tiles({ data, period }) {
   return [
     tile("Active time", hours(a.active_ms), words(a.active_units ? `${hours(a.active_per_unit_ms)} an active ${unit}` : "", d(a.active_ms, b?.active_ms, time)), s.map((x) => x.active_ms)),
     tile(`Active ${unit}s`, `${a.active_units} of ${a.units}`, d(a.active_units, b?.active_units, few)),
-    tile("Longest stretch", a.longest_ms ? hours(a.longest_ms) : "—", words("no pause over 15 minutes", b ? d(a.longest_ms, b.longest_ms, time) : "")),
+    tile("Engagement", shareOf(a.engaged?.share),
+      a.engaged ? words(`acting or reading in ${count(a.engaged.acting + a.engaged.reading)} of ${count(a.engaged.active)} active minutes`, was(b?.engaged?.share)) : "no active time since the pages count",
+      s.map((x) => x.engaged?.share ?? 0)),
+    tile("Longest stretch", a.longest_ms ? hours(a.longest_ms) : "—", words("no long pause", b ? d(a.longest_ms, b.longest_ms, time) : "")),
     tile("Switches an active hour", a.active_ms ? a.switches_per_hour.toFixed(1) : "—",
       words(`${count(a.switches)} between sessions`, a.peak ? `most sessions in one hour: ${a.peak}` : "", b ? d(Math.round(a.switches_per_hour * 10), Math.round(b.switches_per_hour * 10), { small: 1e9, fmt: (x) => (x / 10).toFixed(1) }) : ""),
       s.map((x) => x.switches)),
@@ -63,9 +70,25 @@ function activeCard(ctx) {
   return c;
 }
 
+function engagedCard({ data, w }) {
+  const s = data.series, t = data.tiles;
+  const c = card("engaged", "Engagement", { hint: "active minutes by what you did", legend: true,
+    hintTitle: "Acting: a minute with a key, a press, a drag or something sent. Reading: one you only scrolled in. Watching: active time with neither" });
+  const say = (i) => {
+    const m = i < 0 ? t.engaged : s[i].engaged;
+    c.say.textContent = words(i < 0 ? "" : w.long(i), ...(m ? [`${percent(m.share)} engaged`, ...MINUTES.map(([k, word]) => `${word} ${count(m[k])} min`)] : ["not measured"]));
+  };
+  legend(c.legend, MINUTES.map(([k, word, color]) => ({ color, name: word, num: `${count(t.engaged?.[k] ?? 0)} min` })));
+  c.draw = () => {
+    columns(c.plot, bands(s, w, (d) => MINUTES.map(([k, , color]) => ({ value: d.engaged?.[k] ?? 0, color }))), { height: 150, fmt: (v) => `${v} min`, xlabels: w.short, select: say });
+    say(-1);
+  };
+  return c;
+}
+
 function daysCard({ data, w }) {
   const s = data.series, t = data.tiles;
-  const c = card("days", "Working day", { hint: "first to last, active solid", hintTitle: "From the first to the last thing sent, typed or done on the board; solid: active stretches (a pause over 15 minutes ends one)" });
+  const c = card("days", "Working day", { hint: "first to last, active solid", hintTitle: `From the first to the last thing done; solid: active stretches. ${PAUSE}` });
   const say = (i) => {
     const d = s[i];
     c.say.textContent = i < 0 ? (t.starts === null ? "No active day in this period" : `Usually ${clock(t.starts)} to ${clock(t.ends)}`)
@@ -112,6 +135,9 @@ function projectsCard(ctx) {
 export function you(ctx) {
   const { data } = ctx, t = data.tiles;
   const board = stackCard("board", "On the board", ctx, { kinds: BOARD, of: (d) => d.board, totals: t.board_by, sum: plural(t.board, "action"), hint: "what you did to tasks" });
-  return { tiles: tiles(ctx), cards: [activeCard(ctx), data.unit === "day" ? daysCard(ctx) : null, data.unit === "hour" ? null : heatCard(ctx), projectsCard(ctx), jugglingCard(ctx), board].filter(Boolean),
-    note: "You only: Dispatcher's messages are not counted. This Mac's time.", kept: "typing counted from" };
+  // what the pages count begins inside the period: the figures before that day are measured from less
+  const from = data.measured_from;
+  const measured = !from ? " Engagement shows once a page has counted what you do." : from > data.buckets[0].from ? ` Presses, keys and scrolling are counted from ${dayLabel(from)}: engagement starts there, and nothing is compared across it.` : "";
+  return { tiles: tiles(ctx), cards: [activeCard(ctx), engagedCard(ctx), data.unit === "day" ? daysCard(ctx) : null, data.unit === "hour" ? null : heatCard(ctx), projectsCard(ctx), jugglingCard(ctx), board].filter(Boolean),
+    note: `You only: what Dispatcher and the agents do is not counted. This Mac's time.${measured}`, kept: "typing counted from" };
 }

@@ -8,7 +8,7 @@
 //! counted and logged.
 
 pub mod text;
-mod writer;
+pub mod writer;
 #[cfg(test)]
 mod tests;
 

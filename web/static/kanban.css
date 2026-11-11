@@ -85,7 +85,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .whensaid { margin: var(--sp-2) 0 0; font-size: var(--fs-small); color: var(--muted); }
 .fieldrow.checkrow { display: flex; flex-direction: row; align-items: center; gap: var(--sp-2); align-self: end; min-height: var(--key-h); }
 .schedprompt { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-small); }
-#schedbox { width: min(720px, calc(100vw - var(--sp-6) * 2)); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
 /* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled in the agent's color, the percent;
@@ -129,7 +128,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* its key in the bar: on in the accent, having turned itself off in the danger color */
 #autokey.on { color: var(--accent); }
 #autokey.stopped { color: var(--danger-text); }
-#autobox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 .agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
 .agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
 .agqueue { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 20px; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); }
@@ -219,13 +217,11 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 
 /* a project's window */
 /* a folder of 200 characters reads whole, on its own lines (terminum-kanban.md AC-139) */
-#projectbox { width: min(960px, calc(100vw - var(--sp-6) * 2)); }
 .dirline { display: flex; gap: var(--sp-2); align-items: flex-start; }
 .dirline #projectdir { flex: 1; min-width: 0; resize: none; overflow-wrap: anywhere; }
 .dirline .textkey { flex: none; }
-#folderbox { width: min(640px, calc(100vw - var(--sp-6) * 2)); }
 #folderpath { margin: 0; font-family: var(--term-font, monospace); font-size: var(--fs-label); overflow-wrap: anywhere; }
-#folderlist { margin: 0; padding: 0; list-style: none; height: min(50vh, 420px); overflow: auto; border-radius: var(--key-r); box-shadow: var(--field-edge); }
+#folderlist { margin: 0; padding: 0; list-style: none; overflow: auto; border-radius: var(--key-r); box-shadow: var(--field-edge); }
 .folderrow .lu { color: var(--accent); flex: none; }
 .folderrow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #projectform, #projectfields { display: flex; flex-direction: column; gap: var(--sp-3); }
@@ -235,8 +231,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #projectdelete { margin-right: auto; color: var(--danger-text); }
 
 
-#agentbox { width: min(560px, calc(100vw - var(--sp-6) * 2)); }
-#archivedlist { max-height: min(60dvh, 480px); overflow-y: auto; }
+#archivedlist { overflow-y: auto; }
 #archivedlist li { align-items: center; }
 #archivedlist .linklike { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 

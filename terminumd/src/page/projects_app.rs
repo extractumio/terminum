@@ -119,6 +119,17 @@ async fn save(app: &Shared) {
     }
 }
 
+/// Pane `key`'s agent took a message: the session goes to its project's top, every page told (AC-92).
+pub async fn raise(app: &Shared, key: &str) {
+    ready(app).await;
+    let (a, key) = (app.clone(), key.to_string());
+    match crate::http::off(move || a.projects.lock().raise(&key)).await {
+        Ok(true) => tell(app),
+        Ok(false) => {}
+        Err(e) => tracing::warn!(event = "projects.unsaved", error = %e),
+    }
+}
+
 /// `project {action, …}` from the page's session list (AC-92).
 pub async fn handle(app: &Shared, page: &Page, msg: &Value) {
     let s = |k: &str| msg[k].as_str().map(str::to_string);
