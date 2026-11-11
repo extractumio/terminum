@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, pressCard, pressRun } from "./boardkit.mjs";
+import { boardKit, pressCard, pressRun, startOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { subscriptionStripes } from "./e2e_liveboardsubs.mjs";
 
@@ -192,6 +192,7 @@ async function agentPool(page, opts) {
   await page.press("#runmessage", "Meta+Enter");
   check("AC-138 ⌘Enter in the message runs", await until(async () => !(await page.$("#runbox[open]"))));
   check("AC-138 both go IN PROGRESS", await hasStatus(a, "IN PROGRESS") && await hasStatus(b, "IN PROGRESS"), `${await status(a)} ${await status(b)}: ${(await j(`/api/tasks/${a}`)).history?.at(-1)?.text}`);
+  check("AC-183 a run asked for by a card dropped on an agent keeps the human and the drop", startOf(opts.app, a) === "human drop", startOf(opts.app, a));
   const key = (await j(`/api/tasks/${a}`)).session?.key;
   check("AC-138 in one session", !!key && (await j(`/api/tasks/${b}`)).session?.key === key, key);
   check("AC-138 what was chosen is let go", await until(async () => await page.locator(".card.picked").count() === 0));
@@ -273,6 +274,7 @@ async function agentPool(page, opts) {
   await until(async () => (made = (await j(`/api/tasks?q=${encodeURIComponent("made and run")}`)).tasks?.[0]?.id));
   check("AC-138 Run creates it and starts it at once on that agent", !!made && await hasStatus(made, "DONE") && await until(async () => await page.textContent(`${card(made)} .cagent`).catch(() => "") === "Fast fixer"), made);
   check("AC-138 no window on the way", !(await page.$("#runbox[open]")));
+  check("AC-183 the new-task window's Run keeps the human and its way", startOf(opts.app, made) === "human new", startOf(opts.app, made));
   tmux("kill-pane", "-t", await paneOf(made));
   await dotted((d) => d.length === 0);
   await page.click("#newtask");
@@ -350,6 +352,7 @@ async function agentPool(page, opts) {
   let adhoc;
   check("AC-142 its agent shows a dot for it, the pool's slot taken", await until(async () => (adhoc = (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks)), 15000), JSON.stringify(adhoc));
   check("AC-142 nothing is typed: it stands working, the human's", await until(async () => (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks)?.state === "working", 15000));
+  check("AC-183 + Session's run keeps the human and its way", startOf(opts.app) === "human session", startOf(opts.app));
   const adPane = adhoc?.key?.split(":").pop();
   check("AC-140 it opened in the project's folder", adPane && tmux("display", "-p", "-t", adPane, "#{pane_current_path}").trim().endsWith(path.basename(work)), adPane);
   await shown();
@@ -386,7 +389,8 @@ async function agentPool(page, opts) {
   check("AC-141 a project's limit counts every agent", /Pool runs 2 agents at once, its limit/.test(limited.waits), JSON.stringify(limited));
   await j(`/api/tasks/${three}/give-up`, "POST");
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: null });
-  check("AC-141 no limit: another agent starts", !!(await j(`/api/tasks/${three}/run`, "POST", { agent: other })).run);
+  check("AC-141 no limit: another agent starts", !!(await j(`/api/tasks/${three}/run`, "POST", { agent: other, how: "auto" })).run);
+  check("AC-183 a page's press is the human's Run, whatever way it names", startOf(opts.app, three) === "human run" && startOf(opts.app, one) === "human run", startOf(opts.app, three));
   await hasStatus(three, "IN PROGRESS");
   for (const id of [one, two, three]) tmux("kill-pane", "-t", await paneOf(id));
   check("AC-141 and their slots free", await dotted((d) => d.length === 0), JSON.stringify(await dots()));

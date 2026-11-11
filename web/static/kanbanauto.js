@@ -23,8 +23,9 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
   function next() {
     const all = projects(), on = all.filter((p) => p.auto?.on), one = all.length === 1 ? all[0] : null;
     const full = on.filter((p) => p.auto.started_day >= p.auto.day_most).map((p) => `${p.name}'s ${p.auto.day_most} tasks of 24 hours are started: it waits. `).join("");
-    if (on.length) return { all, on, act: "off", says: full + (one ? `${agentLabel(getMeta().agents.find((a) => a.id === one.auto.agent))} picks ${one.name}'s TODO tasks for the free slots and starts them. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them`) };
-    if (one?.auto?.agent && !one.auto.off_why) return { all, on, act: "on", says: `No task of ${one.name} starts by itself. Press to turn Auto-Dispatch on` };
+    const how = (p) => (p.auto.mode === "order" ? `${p.name}'s TODO tasks start by the board's order on the free slots` : `${agentLabel(getMeta().agents.find((a) => a.id === p.auto.agent))} picks ${p.name}'s TODO tasks for the free slots and starts them`);
+    if (on.length) return { all, on, act: "off", says: full + (one ? `${how(one)}. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them`) };
+    if ((one?.auto?.agent || one?.auto?.mode === "order") && !one.auto.off_why) return { all, on, act: "on", says: `No task of ${one.name} starts by itself. Press to turn Auto-Dispatch on` };
     return { all, on, act: "open", says: one ? `No task of ${one.name} starts by itself. Press for its settings, to turn Auto-Dispatch on` : "No task starts by itself. Press to choose a project and turn it on" };
   }
 
@@ -37,6 +38,10 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     key.title = [...stopped.map((p) => `It turned itself off for ${p.name}: ${p.auto.off_why}`), says].join(" ");
   }
 
+  /** The way of picking the window shows: by the board's order no agent picks, and its words say so. */
+  const modes = [...$("automode").querySelectorAll("button")];
+  const setMode = (mode) => { box.dataset.mode = mode; for (const m of modes) m.setAttribute("aria-pressed", String(m.value === mode)); };
+
   /** The window's fields as project `p` has them. */
   function fill(p) {
     shown = p;
@@ -46,6 +51,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     fillSelect($("autoagent"), [["", "Choose one"], ...agents], auto.agent ?? "");
     fillSelect($("autodefault"), [["", "None"], ...agents], auto.default ?? "");
     for (const t of ticks) t.checked = (auto.severities ?? []).includes(t.value);
+    setMode(auto.mode ?? "agent");
     $("autowait").value = auto.wait_minutes ?? 0;
     $("automost").value = auto.day_most ?? "";
     $("autoday").textContent = `Started in the last 24 hours: ${auto.started_day ?? 0}.`;
@@ -69,7 +75,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     try {
       // an empty number is terminumd's to refuse, never a 0 nobody typed
       const number = (id) => ($(id).value === "" ? null : Number($(id).value));
-      await put(shown, { on: $("autoon").checked, agent: $("autoagent").value || null, default: $("autodefault").value || null,
+      await put(shown, { on: $("autoon").checked, mode: box.dataset.mode, agent: $("autoagent").value || null, default: $("autodefault").value || null,
         severities: ticks.filter((t) => t.checked).map((t) => t.value), wait_minutes: number("autowait"), day_most: number("automost") });
       box.close();
       await reload();
@@ -88,6 +94,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
   $("autook").addEventListener("click", keep);
   $("autoproject").addEventListener("change", () => fill(getMeta().projects.find((p) => p.id === $("autoproject").value)));
   $("autocog").addEventListener("click", () => open());
+  for (const m of modes) m.addEventListener("click", () => setMode(m.value));
   key.addEventListener("click", oneAtATime(key, press));
   return { draw };
 }

@@ -389,8 +389,8 @@ async function runMade(t, agent) {
   madeHidden(t);
   if (!agent) return runThem([t]);
   try {
-    const started = await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent } });
-    if (started?.full) return void runs.open([t], { agent }).catch((no) => say(no.message));   // no room: RUN's window offers its queue (AC-169)
+    const started = await api(`/api/tasks/${t.id}/run`, { method: "POST", body: { agent, how: "new" } });
+    if (started?.full) return void runs.open([t], { agent, how: "new" }).catch((no) => say(no.message));   // no room: RUN's window offers its queue (AC-169)
     (meta.last_agents ??= {})[t.project] = agent;
     readSoon();
   } catch (e) {

@@ -101,7 +101,7 @@ pub(super) async fn session(app: &Shared, project: &str, agent: String) -> Resul
         if let Some(full) = pool::check(tx, Some(&ag), &p, None)? {
             return Err(full.words);
         }
-        runs::add(tx, &Run::of(&ag, host, f, p, None), &[], ops::now())
+        runs::add(tx, &Run::of(&ag, host, f, p, None), &[], runs::Started::of(runs::How::Session), ops::now())
     }).await?;
     let key = launch(app, &run, &server, project, &dir, &a, &[]).await?;
     Ok(json!({"run": run, "key": key}))

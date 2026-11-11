@@ -6,7 +6,7 @@
 // works by the real hooks and tools: `node web/test/e2e_live.mjs auto chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, startOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -63,6 +63,7 @@ export async function liveAuto(page, live) {
   const started = async (id) => (await said(id, /^Auto-Dispatcher's round \S+ started it on /))?.text;
   check("AC-170 its round starts the TODO tasks for the free slots", await until(async () => (await task(a)).status === "IN PROGRESS" && (await task(b)).status === "IN PROGRESS", 30000), `${(await task(a)).status} ${(await task(b)).status}: ${JSON.stringify(await setting())}`);
   const line = await started(a), why = await said(a, /^Why the round chose it: RICE 3×2×1÷1 = 6/);
+  check("AC-183 a task Auto-Dispatcher started keeps Dispatcher and its way", startOf(live.app, a) === "dispatcher auto", startOf(live.app, a));
   check("AC-170 a started task says which round and on which agent, in Dispatcher's words", /started it on Auto runner\.$/.test(line ?? ""), line);
   check("AC-170 and the round's reason, as its agent's words", why?.author_name === "Auto picker", JSON.stringify(why));
   check("AC-170 it runs on the default agent, its card saying so", await until(async () => (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Auto runner"));
@@ -111,6 +112,26 @@ export async function liveAuto(page, live) {
   check("AC-170 the cap raised, it goes on", await until(async () => (await task(capped)).status === "IN PROGRESS", 30000), (await task(capped)).status);
   await j(`/api/tasks/${capped}/give-up`, "POST");
   await put({ severities: ["P0", "P1", "P2", "P3"], wait_minutes: 0, off_why: null });
+
+  // the other way of picking: by the board's order, terminumd itself, no agent and no round
+  await page.click("#autocog");
+  await page.waitForSelector("#autobox[open]");
+  check("AC-170 its window offers the two ways of picking, an agent's first", (await page.$$eval("#automode button", (l) => l.map((b) => `${b.value}:${b.getAttribute("aria-pressed")}`))).join() === "agent:true,order:false" && await page.locator("#autoagentrow").isVisible());
+  await page.click('#automode button[value="order"]');
+  check("AC-170 by the board's order no agent is chosen, and its words say what that means", await page.locator("#autoagentrow").isHidden() && await page.locator("#autorules .byorder").isVisible() && await page.locator("#autorules .byagent").isHidden()
+    && /No agent reads the tasks/.test(await page.textContent("#autorules .byorder")));
+  await shot("auto-order");
+  await page.click("#autook");
+  check("AC-170 the way of picking is kept, said on the switch", await until(async () => (await setting()).mode === "order" && /Autos's TODO tasks start by the board's order/.test(await page.getAttribute("#autoswitch", "title"))), await page.getAttribute("#autoswitch", "title"));
+  check("AC-170 another way is refused", /mode: agent or order/.test((await put({ mode: "dice", off_why: null })).error ?? ""));
+  const [later, sooner] = [await made("Auto later: P1, by order", { severity: "P1", agent: spare }), await made("Auto sooner: P0, by order", { severity: "P0", agent: spare })];
+  check("AC-170 by the board's order the P0 starts first on its agent's one slot", await until(async () => (await task(sooner)).status === "IN PROGRESS", 30000) && (await task(later)).status === "TODO", `${(await task(sooner)).status} ${(await task(later)).status}`);
+  const byOrder = (await task(sooner)).history.map((h) => h.text ?? "");
+  check("AC-170 it says so in Dispatcher's words, and no round was made for it", byOrder.some((t) => /^Auto-Dispatcher started it on Auto spare, by the board's order\.$/.test(t)) && !byOrder.some((t) => /round/.test(t)), JSON.stringify(byOrder));
+  await j(`/api/tasks/${sooner}/give-up`, "POST");
+  check("AC-170 its slot free again, the next in order starts", await until(async () => (await task(later)).status === "IN PROGRESS", 30000), (await task(later)).status);
+  await j(`/api/tasks/${later}/give-up`, "POST");
+  check("AC-170 back to an agent's picking", (await put({ mode: "agent", off_why: null })).ok === true && (await setting()).mode === "agent");
 
   // a task's own agent: chosen by a human in its window
   const c = await made("Auto third: names its agent");

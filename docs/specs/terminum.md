@@ -1087,7 +1087,7 @@ Scenario: AC-175 edge — what is kept
 ```gherkin
 Scenario: AC-176 happy path — who decided an operation
   Given the tasks' events and the sessions' launch rows of the input log (AC-147), of the period and the project of AC-152
-  Then an operation is a decision about a task, counted once, for who decided it: a task made, edited, moved, commented on, put under another or archived is its event's author's (the human's, an agent's); a task started is the human's when they pressed Run, Dispatcher's when Auto-Dispatcher chose the task (`terminum-dispatcher.md` AC-170) or when a schedule or a round made the task
+  Then an operation is a decision about a task, counted once, for who decided it: a task made, edited, moved, commented on, put under another or archived is its event's author's (the human's, an agent's); a task started is whose its run says asked for it (`terminum-dispatcher.md` AC-183): the human's Run, Dispatcher's for a schedule's firing or Auto-Dispatcher's start, whatever made the task
   And what Dispatcher does to carry a decision out is no operation: its moves, a budget it sets, its notes, a session's link; of its own it only makes tasks and starts them
 
 Scenario: AC-176 happy path — the figures and charts
@@ -1098,6 +1098,7 @@ Scenario: AC-176 happy path — the figures and charts
 Scenario: AC-176 edge — nothing, and what is kept
   When no task was worked on in the period
   Then the figures say 0 and "—" and each list says so
+  And a start of a run older than AC-183's record is told by its task: Dispatcher's when Auto-Dispatcher chose the task just before (AC-170) or a schedule or a round made it, else the human's
   And a start whose launch row the input log no longer keeps is not counted, and the page says from when starts are counted, as AC-171
 
 Scenario: AC-176 failure — the numbers cannot be read
@@ -1179,7 +1180,7 @@ stateDiagram-v2
 | AC-20 | "Page heap under 150 MB" is read by hand from `?trace=2`'s state, and only where the browser has `performance.memory`. | `web/static/tracebuf.js:280` |
 | AC-20 | The budgets run by hand: `Makefile` has no bench target, and `make test` tests the bench scripts, not the budgets. | `scripts/bench_load.py:7` |
 | AC-152 | A page watched without a touch for over 5 minutes while another window has the focus (a second display) is not active time: a page is in front only when focused. | `web/static/interact.js` (`inFront`) |
-| AC-176 | Who pressed Run is not kept: a start is told by what made or chose its task, so a human's Run of a task a schedule made counts as Dispatcher's. | `terminumd/src/dashboard/work.rs` (`read`) |
+| AC-176 | A Run that goes on in a live session starts no run and is no start: it counts as the human's message alone. | `terminumd/src/dashboard/work.rs` (`read`) |
 | AC-171 | A session's start is its launch row of the input log, kept 180 days: a year's System counts the sessions of the days kept. `runs` has no start or end of its own. | `terminumd/src/dashboard/system.rs` (`read`) |
 | AC-172 | A session the user starts themselves reports no tokens: Costs holds Dispatcher's sessions only. A subscription's fee and its windows' use over time are not kept, so Costs shows list-price dollars and the agents' token limits, not what a subscription cost. | `terminumd/src/dashboard/costs.rs`, `terminumd/src/dispatcher/usage.rs` |
 

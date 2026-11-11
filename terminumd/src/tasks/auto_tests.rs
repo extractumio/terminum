@@ -19,7 +19,7 @@ fn store(name: &str) -> Store {
 fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
     store("auto-setting").with(|tx| {
         let made = setting(tx, "api")?;
-        assert_eq!(made, Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10, day_most: 10 }, "as a project is made");
+        assert_eq!(made, Setting { on: false, agent: None, default: None, off_why: None, on_at: 0, severities: vec!["P0".into(), "P1".into()], wait: 10, day_most: 10, mode: AGENT.into() }, "as a project is made");
         assert!(due_for(tx)?.is_empty());
         let put = |body: Value, at: i64| setting(tx, "api")?.with(&body).and_then(|new| set(tx, "api", &new, at));
         assert_eq!(put(json!({"on": true}), 5).unwrap_err(), "Choose the agent that picks first: its settings.");
@@ -28,6 +28,7 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         assert_eq!(put(json!({"severities": ["P9"]}), 5).unwrap_err(), "Severity: one of P0, P1, P2, P3");
         assert_eq!(put(json!({"severities": [1, "P0"]}), 5).unwrap_err(), "severities: a list of names");
         assert_eq!(put(json!({"wait_minutes": 1441}), 5).unwrap_err(), "Wait: 0 to 1440 minutes");
+        assert_eq!(put(json!({"mode": "magic"}), 5).unwrap_err(), "mode: agent or order");
         assert_eq!(put(json!({"day_most": 0}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
         assert_eq!(put(json!({"day_most": 1001}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
         assert_eq!(put(json!({"day_most": null}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
@@ -43,14 +44,20 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         // it turns itself off: its agent stays chosen, and on again counts anew
         turn_off(tx, "api", "its round API-3 failed.")?;
         assert_eq!(setting(tx, "api")?, Setting { off_why: Some("its round API-3 failed.".into()), on_at: 7, default: None, ..chosen.clone() });
-        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"on": false, "agent": "p", "default": null, "severities": ["P0", "P2"], "wait_minutes": 0, "day_most": 3, "started_day": 0, "off_why": "its round API-3 failed."}));
+        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"on": false, "agent": "p", "default": null, "severities": ["P0", "P2"], "wait_minutes": 0, "day_most": 3, "mode": "agent", "started_day": 0, "off_why": "its round API-3 failed."}));
         put(json!({"wait_minutes": 0}), 11)?;
         assert_eq!(setting(tx, "api")?.off_why.as_deref(), Some("its round API-3 failed."), "saved while off, why stays");
         put(json!({"on": true}), 12)?;
         assert_eq!(due_for(tx)?.len(), 1);
         assert_eq!(setting(tx, "api")?, Setting { on: true, on_at: 12, default: None, ..chosen.clone() }, "on again: no why");
+        // by the board's order no agent picks: on needs none
+        put(json!({"on": false, "agent": null}), 13)?;
+        assert_eq!(put(json!({"on": true}), 13).unwrap_err(), "Choose the agent that picks first: its settings.");
+        put(json!({"on": true, "mode": "order"}), 13)?;
+        assert!(setting(tx, "api")?.by_order() && setting(tx, "api")?.on);
+        put(json!({"mode": "agent", "agent": "p", "on": true}), 13)?;
         put(json!({"on": false}), 13)?;
-        assert_eq!(setting(tx, "api")?, Setting { on_at: 12, default: None, ..chosen }, "off by a human: no why");
+        assert_eq!(setting(tx, "api")?, Setting { on_at: 13, default: None, ..chosen }, "off by a human: no why");
         Ok(())
     }).unwrap();
 }
