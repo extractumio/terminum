@@ -236,7 +236,13 @@ ${"z".repeat(400)}
 \`\`\`` });
       await page.setViewportSize({ width: 390, height: 844 });
       await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(500);
-      const m = await page.evaluate(() => ({ page: document.documentElement.scrollWidth - innerWidth, box: document.querySelector("#taskbox").scrollWidth - document.querySelector("#taskbox").clientWidth, body: document.querySelector("#taskbody").scrollWidth - document.querySelector("#taskbody").clientWidth, h: document.querySelector("#taskbox").getBoundingClientRect().bottom - innerHeight }));
+      const m = await page.evaluate(() => {
+        const body = document.querySelector("#taskbody"), edge = body.getBoundingClientRect().left + body.clientLeft + body.clientWidth;
+        // what sticks out past the body's inner edge, said when it fails (a scroller's own content excepted)
+        const out = [...body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > edge + 0.5 && !e.parentElement.closest("pre, .markdown pre"))
+          .slice(0, 6).map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}:${Math.round(e.getBoundingClientRect().right - edge)}`);
+        return { page: document.documentElement.scrollWidth - innerWidth, box: document.querySelector("#taskbox").scrollWidth - document.querySelector("#taskbox").clientWidth, body: body.scrollWidth - body.clientWidth, h: document.querySelector("#taskbox").getBoundingClientRect().bottom - innerHeight, out };
+      });
       check("long words stay inside a phone's window, sideways nothing", m.page <= 0 && m.box <= 1 && m.body <= 1 && m.h <= 0, JSON.stringify(m));
       await page.setViewportSize({ width: 1400, height: 900 }); await page.click("#taskclose"); await nap(200);
     },
@@ -291,7 +297,8 @@ ${"z".repeat(400)}
       await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = ""; }); await page.fill("#newtitle", ""); await page.click("#newclose").catch(() => {});
     },
     async pickers() {
-      await open(); await page.click("#fproject summary"); await page.click("#fseverity summary"); await nap(100);
+      // the second by its own click event: where the bar wraps (WebKit's wider letters), the open menu lies over it
+      await open(); await page.click("#fproject summary"); await page.dispatchEvent("#fseverity summary", "click"); await nap(100);
       check("one picker is open at a time", await page.evaluate(() => document.querySelectorAll(".pick[open]").length) === 1, String(await page.evaluate(() => document.querySelectorAll(".pick[open]").length)));
       await page.mouse.click(700, 600); await nap(100);
       check("a press elsewhere closes it", await page.evaluate(() => document.querySelectorAll(".pick[open]").length) === 0);
