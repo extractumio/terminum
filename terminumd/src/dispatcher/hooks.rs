@@ -272,7 +272,7 @@ mod tests {
         let (run, task) = app.tasks.with(|tx| {
             let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
             let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
-            let id = runs::add(tx, &like, std::slice::from_ref(&t.key), 1)?;
+            let id = runs::add(tx, &like, std::slice::from_ref(&t.key), Default::default(), 1)?;
             app.dispatcher.pane_opened(tx, &id, &key)?;
             runs::change(tx, &id, |r| r.state = Phase::Working)?;
             Ok((id, t.key))
@@ -326,7 +326,7 @@ mod tests {
         let run = store.with(|tx| {
             let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
             let like = runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
-            runs::add(tx, &like, std::slice::from_ref(&t.key), 1)
+            runs::add(tx, &like, std::slice::from_ref(&t.key), Default::default(), 1)
         }).unwrap();
         store.with(|tx| d.read_runs(tx)).unwrap();
         assert!(!d.has_run("%7"), "no pane yet");

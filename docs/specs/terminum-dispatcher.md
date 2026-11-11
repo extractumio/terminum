@@ -86,6 +86,7 @@ Open questions:
 | AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169) waits for room, in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-170 | [SHOULD / P1] | Auto-Dispatcher, off until a human turns it on for a project with the switch in the board's bar: it takes TODO tasks of the severities chosen that stand for the wait set; with free slots and such tasks Dispatcher starts a round, one more session of the chosen agent that takes no slot; that agent scores the candidates by RICE and starts the best, one a free slot, each on the agent named in the task or the setting's default, told only its ID; or, set to the board's order, terminumd starts them itself top down with no agent; a failing round or two failing tasks turn it off, said on the board. |
+| AC-183 | [MUST / P0] | A run keeps who asked for it and how: the user's ID for a human's Run (the Run key, a card dropped on an agent, the new-task window's Run, + Session), Dispatcher for a schedule's firing and Auto-Dispatcher's start; a page never starts a run as Dispatcher's. |
 | AC-166 | [SHOULD / P1] | RUN's prompt asks the agent to close its task out: what it noticed goes to tasks, the tasks it made are reviewed, and its result has fixed sections, written in the project's language (English when none is set); a task's end says on it which tasks its session made, and finishing says which IDs its result names that the board lacks. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
 
@@ -1245,6 +1246,33 @@ Scenario: AC-131 failure — the store is down
   Then Dispatcher does nothing that it could not write, and the board's banner says why
 ```
 
+### AC-183 — Who started a run [MUST / P0]
+
+```gherkin
+Scenario: AC-183 happy path — a human's start
+  Given a signed-in page
+  When the human presses Run in RUN's window, or drops a card on an agent and presses Run there, or presses Run in the new-task window, or + Session
+  Then the run added keeps the human's user ID as who started it, and the way: `run`, `drop`, `new` or `session`
+  And a press that waited for room (AC-158, AC-169) keeps the same with the run it starts later
+
+Scenario: AC-183 happy path — Dispatcher's own start
+  When a schedule's firing starts its task (`terminum-schedules.md` AC-162), or Auto-Dispatcher starts a round or the task a round chose (AC-170)
+  Then the run keeps Dispatcher's ID and the way: `schedule` or `auto`
+  And a human's later Run of that same task is a run of its own, the human's
+
+Scenario: AC-183 edge — what a page may say
+  When a page's request names the way `schedule`, `auto` or `session` for a task's Run
+  Then the run is kept as the human's `run`: only terminumd says a start was Dispatcher's
+  And a way no one knows is refused, nothing started
+
+Scenario: AC-183 edge — older runs, and going on
+  Then a run made before this record keeps neither; nothing is filled in for it
+  And a Run that goes on in its live session adds no run: its message is typed there (AC-122)
+
+Scenario: AC-183 failure — the store is down
+  Then as AC-131: no run is added, so none stands without who started it
+```
+
 ## 6. Flow and sequence diagrams
 
 ```mermaid
@@ -1317,6 +1345,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
 | AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last. Readings are kept in memory: after a restart Codex's is not known until a turn ends. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-183 | A press that was waiting for room when this record began says `run`, the human's, a schedule's too. | `terminumd/src/dispatcher/api.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -1404,7 +1433,7 @@ GET /api/tasks/meta → {"agents": [{"id": "a81f", "name": "Opus reviewer", "kin
 | `start::resume_command(run)` | RUN | the same conversation, the run's own settings, in the run's own folder | "use Run from scratch." |
 | `usage::add`, `of_task`, `of_agent` | a hook's report, a card, the pool | what grew, counted once, in the store | "Tokens not known" |
 
-**What a run keeps.** `runs` gains `project` (no foreign key: a deleted project's runs move to Default with its tasks), and `task` may be empty: a run of + Session, for all its life. `folder`, `host`, `command`, `kind` and `agent_session` stay on it: they are what a resume needs when the project or the agent has changed or gone.
+**What a run keeps.** `runs` gains `project` (no foreign key: a deleted project's runs move to Default with its tasks), and `task` may be empty: a run of + Session, for all its life. `folder`, `host`, `command`, `kind` and `agent_session` stay on it: they are what a resume needs when the project or the agent has changed or gone. `started_by` (a user's ID) and `started_how` (`run`, `drop`, `new`, `session`, `schedule`, `auto`) say who asked for it and how (AC-183), written in the transaction that adds it; the Dashboard's Tasks tab counts a start from them (terminum.md AC-176).
 
 **Usage.** One row per report that grew:
 
@@ -1522,5 +1551,6 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
+- [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

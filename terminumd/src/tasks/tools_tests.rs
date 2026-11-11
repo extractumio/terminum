@@ -64,7 +64,7 @@ pub(crate) fn running(s: &Store, id: &str, pane: &str) {
     use crate::dispatcher::runs::{self, Phase, Run};
     s.with(|tx| {
         let like = Run { agent_id: "a1".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
-        let run = runs::add(tx, &like, &[ops::key_of(tx, id)?], 1)?;
+        let run = runs::add(tx, &like, &[ops::key_of(tx, id)?], Default::default(), 1)?;
         runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(pane.into()); }).map(drop)
     }).unwrap();
 }
@@ -114,7 +114,7 @@ fn ac115_what_a_humans_run_runs_in_another_session_is_that_runs() {
     assert_eq!(status(&s, &id), "TODO");
     // from its start, with no pane yet, until Dispatcher closes it: a turn's end between does not free it
     let starting = task(&s, "api", None);
-    s.with(|tx| crate::dispatcher::runs::add(tx, &crate::dispatcher::runs::Run { agent_id: "a2".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, &[ops::key_of(tx, &starting)?], 1).map(drop)).unwrap();
+    s.with(|tx| crate::dispatcher::runs::add(tx, &crate::dispatcher::runs::Run { agent_id: "a2".into(), agent_name: "Opus".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, &[ops::key_of(tx, &starting)?], Default::default(), 1).map(drop)).unwrap();
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": starting, "result": "x"})).unwrap_err(), format!("{starting} is starting at a human's RUN. You can read it and comment."));
     s.with(|tx| { let run = crate::dispatcher::runs::last_of(tx, &ops::key_of(tx, &id)?)?.unwrap(); crate::dispatcher::runs::change(tx, &run.id, |r| r.turn_ended = true).map(drop) }).unwrap();
     assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "DONE"})).unwrap_err(), refused, "its turn ended, the run not closed");
@@ -259,7 +259,7 @@ fn ac142_a_session_with_no_task_takes_one_and_writes_as_its_agent_of_the_pool() 
     let free = task(&s, "api", None);
     s.with(|tx| {
         let like = crate::dispatcher::runs::Run { agent_id: "a1".into(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() };
-        let id = crate::dispatcher::runs::add(tx, &like, &[], 1)?;
+        let id = crate::dispatcher::runs::add(tx, &like, &[], Default::default(), 1)?;
         crate::dispatcher::runs::change(tx, &id, |r| { r.state = crate::dispatcher::runs::Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
     }).unwrap();
     assert!(call(&s, &dir, &w, "take_task", json!({"id": free})).is_ok(), "+ Session's agent may take a task: it was given none");
@@ -393,7 +393,7 @@ fn ac170_a_rounds_pane_makes_takes_and_moves_nothing() {
     s.with(|tx| {
         let key = ops::key_of(tx, &round)?;
         crate::tasks::auto::add_round(tx, &crate::tasks::auto::Round { task: key.clone(), project: "api".into(), slots: 1, candidates: vec![other.clone()] }, 1)?;
-        let run = runs::add(tx, &Run { agent_id: "p".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, &[key], 1)?;
+        let run = runs::add(tx, &Run { agent_id: "p".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "api".into(), ..Default::default() }, &[key], Default::default(), 1)?;
         runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); }).map(drop)
     }).unwrap();
     let w = who(Some("api"));
