@@ -168,7 +168,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
         }
         // the session that took a message goes to its project's top (AC-92)
         let (app, key) = (app.clone(), key.clone());
-        tokio::spawn(async move { crate::page::projects::to_top(&app, &key).await });
+        tokio::spawn(async move { crate::page::projects::raise(&app, &key).await });
     }
     if let (Some(prompt), Some(cwd)) = (prompt, ev["cwd"].as_str()) {
         let sender = if typed { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN };

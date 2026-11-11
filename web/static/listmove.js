@@ -7,7 +7,6 @@
 // where they are. A redraw that moves nothing reads no layout. Nothing moves under
 // prefers-reduced-motion.
 
-const still = matchMedia("(prefers-reduced-motion: reduce)");
 let gliding = 0;                                 // glides running, so a redraw carries them on
 let motion = null;                               // [ms, easing]: tokens.css's, read once
 
@@ -36,7 +35,7 @@ function places(list, pids) {
 
 /** Puts `frag` in `list` for its old rows; a project whose rows changed order glides there. */
 export function glide(list, frag) {
-  if (still.matches || !list.isConnected) return list.replaceChildren(frag);
+  if (!list.isConnected || matchMedia("(prefers-reduced-motion: reduce)").matches) return list.replaceChildren(frag);
   const was = orders(list), now = orders(frag);
   const moved = new Set([...now].filter(([pid, ids]) => was.has(pid) && !sameOrder(was.get(pid), ids)).map(([pid]) => pid));
   if (!moved.size && !gliding) return list.replaceChildren(frag);

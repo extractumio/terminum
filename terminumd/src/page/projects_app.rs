@@ -120,10 +120,10 @@ async fn save(app: &Shared) {
 }
 
 /// Pane `key`'s agent took a message: the session goes to its project's top, every page told (AC-92).
-pub async fn to_top(app: &Shared, key: &str) {
+pub async fn raise(app: &Shared, key: &str) {
     ready(app).await;
     let (a, key) = (app.clone(), key.to_string());
-    match crate::http::off(move || a.projects.lock().to_top(&key)).await {
+    match crate::http::off(move || a.projects.lock().raise(&key)).await {
         Ok(true) => tell(app),
         Ok(false) => {}
         Err(e) => tracing::warn!(event = "projects.unsaved", error = %e),
