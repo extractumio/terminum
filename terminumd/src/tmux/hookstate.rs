@@ -60,6 +60,21 @@ struct Rec {
     waits: bool,
     /// when its Stop came with subagents counted: the screen says from GHOST_AFTER on if they run
     stopped_at: Option<Instant>,
+    /// the folder of its session's first event: where it is resumed (AC-153)
+    start_cwd: String,
+    /// the command line it started with, as its hook read it (AC-153)
+    argv: String,
+}
+
+/// What resumes pane `key`'s agent (AC-153), as its hooks said.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Started {
+    pub agent: &'static str,
+    pub session: String,
+    /// the folder its session began in, else the one it last worked in
+    pub folder: String,
+    pub folder_is_start: bool,
+    pub argv: String,
 }
 
 /// What the list shows of a pane's hooks.
@@ -184,7 +199,8 @@ impl Hooks {
             return Some(false);
         }
         let r = recs.entry(key.to_string()).or_insert_with(|| Rec { agent, session: session.clone(), state: None, tool: String::new(),
-            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, counted: false, asked: false, waits: false, stopped_at: None, cwd: String::new() });
+            why: String::new(), subs: BTreeSet::new(), at: now, turn: String::new(), stopped: None, command: None, ended: false, counted: false, asked: false, waits: false, stopped_at: None, cwd: String::new(),
+            start_cwd: String::new(), argv: String::new() });
         let stopped = !turn.is_empty() && r.stopped.as_deref() == Some(turn.as_str());
         if *whose == Whose::Main && of_turn(&name) && !turn.is_empty() {
             if r.turn.is_empty() && r.stopped.is_none() {
@@ -201,8 +217,16 @@ impl Hooks {
         }
         let cwd = s(ev, "cwd");
         let moved = cwd.starts_with('/') && s(ev, "sub").is_empty() && r.cwd != cwd;
+        let main = s(ev, "sub").is_empty();
+        if main && cwd.starts_with('/') && r.start_cwd.is_empty() {
+            r.start_cwd.clone_from(&cwd);
+        }
         if moved {
             r.cwd = cwd;                                  // the list shows it (its folder, AC-51)
+        }
+        let argv = s(ev, "argv");
+        if main && r.argv.is_empty() && !argv.is_empty() {
+            r.argv = argv;
         }
         let before = (r.state, r.tool.clone(), r.why.clone(), r.subs.len());
         let working = |r: &mut Rec| { r.state = Some(State::Working); r.why.clear(); };
@@ -371,6 +395,15 @@ impl Hooks {
     /// Pane `key`'s agent and its session, as its hooks last said.
     pub fn session(&self, key: &str) -> Option<(&'static str, String)> {
         self.recs.lock().get(key).map(|r| (r.agent, r.session.clone()))
+    }
+
+    /// What resumes pane `key`'s agent; None when no hooks spoke.
+    pub fn started(&self, key: &str) -> Option<Started> {
+        self.recs.lock().get(key).map(|r| {
+            let folder_is_start = !r.start_cwd.is_empty();
+            let folder = if folder_is_start { r.start_cwd.clone() } else { r.cwd.clone() };
+            Started { agent: r.agent, session: r.session.clone(), folder, folder_is_start, argv: r.argv.clone() }
+        })
     }
 
     /// Forgets the panes of a server (`prefix`, "tmux:<host>:<socket>:") that are gone.

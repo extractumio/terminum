@@ -8,6 +8,7 @@ pub(crate) mod agentrefresh;
 pub mod agentsetup;
 mod commands;
 pub mod hook;
+mod hookargv;
 pub mod statusline;
 mod hookplan;
 mod hooktokens;

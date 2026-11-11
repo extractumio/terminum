@@ -435,3 +435,21 @@ fn ac39_working_holds_only_while_its_lease_does() {
     h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "tool": "Bash"})), Instant::now());
     assert!(h.working(K));
 }
+
+#[test]
+fn ac153_the_folder_a_session_began_in_and_its_first_command_line_are_kept_while_it_moves() {
+    let (h, t) = (Hooks::default(), Instant::now());
+    assert_eq!(h.started(K), None, "no hooks spoke");
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p1", "cwd": "/Users/alex/api", "argv": "claude --model opus"})), t);
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "cwd": "/Users/alex/api/web", "tool": "Bash"})), t);
+    h.apply(K, &ev("claude", "PreToolUse", json!({"turn": "p1", "cwd": "/tmp/x", "sub": "worker", "argv": "claude --sub"})), t);
+    h.apply(K, &ev("claude", "UserPromptSubmit", json!({"turn": "p2", "cwd": "/Users/alex/api/web", "argv": "claude --other"})), t);
+    assert_eq!(h.cwd(K).as_deref(), Some("/Users/alex/api/web"), "the list shows where it works");
+    assert_eq!(h.started(K), Some(Started { agent: "claude", session: "s1".into(), folder: "/Users/alex/api".into(), folder_is_start: true,
+                                            argv: "claude --model opus".into() }), "it resumes where it began; a subagent's words are not its");
+    h.apply(K, &ev("claude", "SessionStart", json!({"session": "s2", "cwd": "/Users/alex/web"})), t);
+    let s = h.started(K).unwrap();
+    assert_eq!((s.session.as_str(), s.folder.as_str(), s.argv.as_str()), ("s2", "/Users/alex/web", ""), "a new session (/clear) starts anew");
+    h.apply(K, &ev("codex", "UserPromptSubmit", json!({"session": "c1", "turn": "t1"})), t);
+    assert_eq!(h.started(K).map(|s| (s.agent, s.folder, s.folder_is_start)), Some(("codex", String::new(), false)), "no folder said");
+}

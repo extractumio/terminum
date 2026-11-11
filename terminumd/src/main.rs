@@ -27,6 +27,7 @@ mod hosts;
 mod hotkeys;
 mod http;
 mod idle_exit;
+mod idle_summary;
 mod dashboard;
 mod inputs;
 mod listing;

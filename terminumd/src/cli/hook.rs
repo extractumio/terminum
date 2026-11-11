@@ -177,6 +177,11 @@ pub fn event(agent: &str, input: &Value, tmux: &str, pane: &str) -> Option<Value
     if let Some(p) = super::hookplan::plan(input) {
         out.insert("plan".into(), p);
     }
+    // the main agent's command line, at its start and each prompt (a start's event may not come: AC-153)
+    if matches!(name.as_str(), "SessionStart" | "UserPromptSubmit") && input.get("agent_id").is_none()
+        && let Some(argv) = super::hookargv::started_as(agent) {
+            out.insert("argv".into(), json!(argv));
+        }
     if name == "UserPromptSubmit"
         && let Some(p) = input.get("prompt").and_then(Value::as_str) {
             out.insert("prompt".into(), json!(p.chars().take(crate::sent::TEXT).collect::<String>()));

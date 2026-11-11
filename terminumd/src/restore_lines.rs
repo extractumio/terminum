@@ -80,7 +80,7 @@ fn kept(dir: &Path, old: &str, id: &str) -> Option<String> {
 }
 
 /// `s` as one word of a POSIX shell.
-fn quoted(s: &str) -> String {
+pub(crate) fn quoted(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\\''"))
 }
 

@@ -35,7 +35,8 @@ use crate::tasks::api::store;
 use crate::tasks::ops;
 use crate::tasks::store::DISPATCHER;
 
-pub use hooks::{heard, hearing};
+pub use hooks::{good_id, heard, hearing};
+pub use start::resume_words;
 pub use gate::read as read_screen;
 pub use walk::run as walking;
 
