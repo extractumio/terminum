@@ -35,7 +35,7 @@ impl Stage {
         s.run = s.app.tasks.with(|tx| {
             let t = ops::create(tx, HUMAN, ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
             let like = Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
-            let id = runs::add(tx, &like, std::slice::from_ref(&t.key), crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), 1)?;
+            let id = runs::add(tx, &like, std::slice::from_ref(&t.key), Default::default(), 1)?;
             super::super::move_one(tx, &t.key, &st, "set up")?;
             runs::change(tx, &id, |r| { r.state = phase; r.pane_key = Some(key); r.closing_for = plan::CLOSE; r.turn_ended = true; })
         }).unwrap();

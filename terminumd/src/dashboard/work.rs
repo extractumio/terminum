@@ -66,12 +66,13 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
     let starts: Vec<(i64, i64, String, Option<String>)> = rows(tx, &format!("SELECT {}, i.at / 1000, i.tasks, u.kind FROM inputs i
         LEFT JOIN runs r ON r.id = i.run LEFT JOIN users u ON u.id = r.started_by
         WHERE i.at >= ?1 AND i.component = 'dispatcher.start' AND i.kind = 'launch' AND i.tasks IS NOT NULL", local("i.at")), [ask.since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
-    let mut task = tx.prepare_cached(&format!("SELECT t.title, EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id) OR EXISTS (SELECT 1 FROM auto_rounds a WHERE a.task = t.id)
-        OR EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = t.id AND s.at BETWEEN ?3 - {CHOSEN_WITHIN} AND ?3)
+    // the three looks of the older rule only for a run that does not say
+    let mut task = tx.prepare_cached(&format!("SELECT t.title, CASE WHEN ?4 THEN 0 ELSE EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id) OR EXISTS (SELECT 1 FROM auto_rounds a WHERE a.task = t.id)
+        OR EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = t.id AND s.at BETWEEN ?3 - {CHOSEN_WITHIN} AND ?3) END
         FROM tasks t WHERE t.slug = ?1 AND {mine}")).map_err(crate::tasks::ops::sql)?;
     for (t, at, slugs, by) in starts {
         for slug in slugs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
-            let found: Option<(String, bool)> = task.query_row((slug, ask.task_project(), at), |r| Ok((r.get(0)?, r.get(1)?))).ok();
+            let found: Option<(String, bool)> = task.query_row((slug, ask.task_project(), at, by.is_some()), |r| Ok((r.get(0)?, r.get(1)?))).ok();
             if let Some((title, own)) = found {
                 let who = by.as_deref().map_or(if own { DISPATCHER } else { YOU }, who_of);
                 ops.push(Op { t, kind: START, who, task: row_of(slug.to_string(), title) });

@@ -23,7 +23,7 @@ fn task(tx: &Transaction, project: &str) -> Task {
 /// A run of agent `a` in `project` holding its slot.
 fn holding(tx: &Transaction, a: &str, project: &str) -> String {
     let t = task(tx, project);
-    let id = runs::add(tx, &Run { agent_id: a.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: project.into(), ..Default::default() }, std::slice::from_ref(&t.key), crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), 1).unwrap();
+    let id = runs::add(tx, &Run { agent_id: a.into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: project.into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1).unwrap();
     runs::change(tx, &id, |r| { r.state = Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
     id
 }

@@ -6,7 +6,7 @@
 // works by the real hooks and tools: `node web/test/e2e_live.mjs auto chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit } from "./boardkit.mjs";
+import { boardKit, startOf } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -63,6 +63,7 @@ export async function liveAuto(page, live) {
   const started = async (id) => (await said(id, /^Auto-Dispatcher's round \S+ started it on /))?.text;
   check("AC-170 its round starts the TODO tasks for the free slots", await until(async () => (await task(a)).status === "IN PROGRESS" && (await task(b)).status === "IN PROGRESS", 30000), `${(await task(a)).status} ${(await task(b)).status}: ${JSON.stringify(await setting())}`);
   const line = await started(a), why = await said(a, /^Why the round chose it: RICE 3×2×1÷1 = 6/);
+  check("AC-183 a task Auto-Dispatcher started keeps Dispatcher and its way", startOf(live.app, a) === "dispatcher auto", startOf(live.app, a));
   check("AC-170 a started task says which round and on which agent, in Dispatcher's words", /started it on Auto runner\.$/.test(line ?? ""), line);
   check("AC-170 and the round's reason, as its agent's words", why?.author_name === "Auto picker", JSON.stringify(why));
   check("AC-170 it runs on the default agent, its card saying so", await until(async () => (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Auto runner"));

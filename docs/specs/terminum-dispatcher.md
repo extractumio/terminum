@@ -1321,10 +1321,10 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-127 | No subagent is tied to a process or pane yet (AS-126): at 20 minutes every one fails its task as one inside the agent does. | `terminumd/src/dispatcher/walk.rs` |
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
-| AC-183 | A press that was waiting for room when this record began says `run`, the human's, a schedule's too. | `terminumd/src/dispatcher/api.rs` |
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
 | AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last. Readings are kept in memory: after a restart Codex's is not known until a turn ends. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
+| AC-183 | A press that was waiting for room when this record began says `run`, the human's, a schedule's too. | `terminumd/src/dispatcher/api.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -1529,6 +1529,6 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
 - [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a new place among the cards leaving the wait as it was, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
-- [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing); no test of its own: Auto-Dispatcher's start, a wait's press
+- [x] AC-183 — `cargo test dispatcher::runs`, `cargo test dashboard::`, `web/test/e2e_liveboardagents.mjs` (a drop, a page's press, the new-task window, + Session), `web/test/e2e_liveschedules.mjs` (a firing), `web/test/e2e_liveauto.mjs` (Auto-Dispatcher's start); no test of its own: a wait's press started later
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

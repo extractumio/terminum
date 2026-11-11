@@ -17,7 +17,7 @@ fn task(tx: &Transaction, title: &str) -> ops::Task {
 fn working(tx: &Transaction, a: &str, titles: &[&str]) -> (Run, Vec<ops::Task>) {
     let tasks: Vec<ops::Task> = titles.iter().map(|t| task(tx, t)).collect();
     let keys: Vec<String> = tasks.iter().map(|t| t.key.clone()).collect();
-    let id = add(tx, &Run { agent_id: a.into(), agent_name: a.to_uppercase(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &keys, Started::by_human(How::Run), 2).unwrap();
+    let id = add(tx, &Run { agent_id: a.into(), agent_name: a.to_uppercase(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &keys, Default::default(), 2).unwrap();
     for t in &tasks {
         ops::link(tx, HUMAN, &t.id, Some(&format!("tmux:local:t:%{a}")), 2).unwrap();
     }
@@ -197,7 +197,7 @@ fn ac113_a_session_s_other_task_is_refused_unless_one_run_gave_both() {
 fn ac142_a_run_with_no_task_stands_in_its_project_and_can_be_let_go() {
     store("runs-ad-hoc").with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv/api', 0)", []).map_err(ops::sql)?;
-        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "api".into(), ..Default::default() }, &[], Started::by_human(How::Run), 1)?;
+        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "api".into(), ..Default::default() }, &[], Started::of(How::Run), 1)?;
         let r = by_id(tx, &id)?;
         assert!(r.ad_hoc() && r.ids.is_empty() && r.status.is_empty(), "{r:?}");
         assert_eq!(r.project, "api");
@@ -217,7 +217,7 @@ async fn ac121_a_walk_during_the_opening_of_its_window_does_not_fail_the_run() {
     std::sync::Arc::get_mut(&mut app).unwrap().tasks = std::sync::Arc::new(store("runs-opening-store"));
     let id = app.tasks.with(|tx| {
         let t = task(tx, "one");
-        add(tx, &Run { agent_id: "a".into(), agent_name: "A".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], Started::by_human(How::Run), 2)
+        add(tx, &Run { agent_id: "a".into(), agent_name: "A".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], Default::default(), 2)
     }).unwrap();
     crate::dispatcher::start::watch(&app, &id);
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -239,7 +239,7 @@ fn ac131_a_runs_phase_is_one_it_knows() {
     let s = store("runs-phase");
     s.with(|tx| {
         let t = task(tx, "one");
-        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], Started::by_human(How::Run), 1)?;
+        let id = add(tx, &Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/w".into(), ..Default::default() }, &[t.key], Started::of(How::Run), 1)?;
         assert_eq!(by_id(tx, &id)?.state, Phase::Starting);
         tx.execute("UPDATE runs SET state = 'dancing' WHERE id = ?1", [&id]).map_err(ops::sql)?;
         assert!(by_id(tx, &id).is_err_and(|e| e.contains("not known")), "an unknown label");
@@ -256,11 +256,12 @@ fn ac183_a_run_keeps_who_asked_for_it_and_how() {
         let kept = |id: &str| tx.query_row("SELECT started_by, started_how FROM runs WHERE id = ?1", [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(sql);
         // a human's ways are the human's; a schedule's firing and Auto-Dispatcher's choice are Dispatcher's, whoever asks
         for (how, by, word) in [(How::Run, HUMAN, "run"), (How::Drop, HUMAN, "drop"), (How::New, HUMAN, "new"), (How::Session, HUMAN, "session"), (How::Schedule, DISPATCHER, "schedule"), (How::Auto, DISPATCHER, "auto")] {
-            let id = add(tx, &like, std::slice::from_ref(&t.key), Started::by_human(how), 2)?;
+            let id = add(tx, &like, std::slice::from_ref(&t.key), Started::of(how), 2)?;
             assert_eq!(kept(&id)?, (by.to_string(), word.to_string()));
             // a wait keeps its press's way in its words, and reads it back
             assert_eq!(serde_json::from_value::<How>(serde_json::json!(how)).unwrap(), how);
             assert_eq!(serde_json::json!(how), word);
+            assert_eq!(how.of_page(), if matches!(how, How::Run | How::Drop | How::New) { how } else { How::Run }, "a page names only a human's way of a task's Run");
         }
         let id = add(tx, &like, std::slice::from_ref(&t.key), Started { by: "agent:m", how: How::Run }, 2)?;
         assert_eq!(kept(&id)?.0, "agent:m", "another user's start is its own");

@@ -171,9 +171,7 @@ pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Va
 /// The press on RUN: a comment is kept whatever follows (AC-122).
 async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body): Json<Press>) -> Response {
     // a page presses for the human alone: it never starts a run as Dispatcher's own (AC-183)
-    if body.how.automatic() || body.how == How::Session {
-        body.how = How::Run;
-    }
+    body.how = body.how.of_page();
     answer(pressed(&app, &id, body).await)
 }
 
@@ -313,7 +311,7 @@ async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, aga
         Next::Kept(kept) => return Ok(kept.answer(app, t)),
     };
     let done = start::respawn(app, server, pane, &r.id, &new, &r.folder, &line).await;
-    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, &r.ids, &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
+    crate::inputs::wrote(app, crate::inputs::Who::dispatcher("dispatcher.start", &new, std::slice::from_ref(&t.id), &r.agent_id), "launch", server, pane, &line, done.as_ref().err().cloned(), None);
     done?;
     let (a, key, n) = (app.clone(), server.key(pane), new.clone());
     app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
@@ -381,7 +379,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) 
         }
         bring_back(tx, &id)?;
         super::waits::remove(tx, &key)?;
-        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], Started::by_human(kept.how), ops::now())?);
+        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], Started::of(kept.how), ops::now())?);
         super::usage::carry(tx, &from, &id)?;
         Ok(Next::Run(id))
     }).await
@@ -445,7 +443,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             }
         }
         super::waits::remove(tx, &keys[0])?;
-        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, Started::by_human(kept.how), ops::now()).map(Next::Run)
+        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, Started::of(kept.how), ops::now()).map(Next::Run)
     }).await?;
     let run = match next {
         Next::Run(run) => run,

@@ -127,7 +127,7 @@ fn ac152_the_human_s_time_and_load_only() {
 fn run(tx: &rusqlite::Transaction, agent: &str, project: &str, at: i64, minutes: Option<i64>) -> (String, String) {
     let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, at / 1000).unwrap();
     let id = runs::add(tx, &Run { agent_id: agent.into(), agent_name: agent.to_uppercase(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: project.into(), ..Default::default() },
-        std::slice::from_ref(&task.key), Started::by_human(How::Run), at / 1000).unwrap();
+        std::slice::from_ref(&task.key), Default::default(), at / 1000).unwrap();
     input(tx, at, DISPATCHER, "k9", None, Some(&id), None);
     if let Some(m) = minutes {
         runs::change(tx, &id, |r| { r.state = Phase::Closed; r.last_walk = at / 1000 + m * 60; }).unwrap();
@@ -267,7 +267,7 @@ fn ac176_who_does_the_work_on_tasks() {
         tx.execute("INSERT INTO schedules (id, number, project, title, body, severity, agent_id, cron, budget_seconds, last_due, author, created_at, updated_at) VALUES ('s1', 1, 'default', 'Fired', '', 'P2', 'a', '* * * * *', 60, 1, ?1, 1, 1)", [HUMAN]).map_err(sql)?;
         tx.execute("INSERT INTO schedule_fires (schedule, due_at, at, task, state) VALUES ('s1', ?2, ?2, ?1, 'made')", (&fired.key, at)).map_err(sql)?;
         let like = Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: "default".into(), ..Default::default() };
-        for (k, started) in [Started::by_human(How::Schedule), Started::by_human(How::Run), Started { by: "agent:x", how: How::Run }].into_iter().enumerate() {
+        for (k, started) in [Started::of(How::Schedule), Started::of(How::Run), Started { by: "agent:x", how: How::Run }].into_iter().enumerate() {
             let run = runs::add(tx, &like, std::slice::from_ref(&fired.key), started, at + 100)?;
             launch(at + 100 + k as i64, &fired.id, &run)?;
         }

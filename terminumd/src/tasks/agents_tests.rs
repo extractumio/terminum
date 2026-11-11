@@ -125,7 +125,7 @@ fn ac138_a_busy_agent_is_not_deleted() {
         let id = add(tx, &opus())?;
         let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "one".into(), ..Default::default() }, 1)?;
         let like = crate::dispatcher::runs::Run { agent_id: id.clone(), agent_name: "Opus reviewer".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), ..Default::default() };
-        let run = crate::dispatcher::runs::add(tx, &like, std::slice::from_ref(&t.key), crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), 1)?;
+        let run = crate::dispatcher::runs::add(tx, &like, std::slice::from_ref(&t.key), Default::default(), 1)?;
         let refused = remove(tx, &id).unwrap_err();
         assert!(refused.contains("Opus reviewer has a session open:") && refused.contains(&t.id), "{refused}");
         crate::dispatcher::runs::change(tx, &run, |r| r.state = crate::dispatcher::runs::Phase::Closed)?;
@@ -171,7 +171,7 @@ fn ac144_a_project_or_an_agent_deleted_leaves_the_rest_standing() {
         let other = add(tx, &Given { name: "Fast fixer".into(), ..opus() })?;
         let t = crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "t".into(), project: Some("api".into()), ..Default::default() }, 1)?;
         let mine = list(tx)?.into_iter().find(|x| x.id == a).unwrap();
-        let run = runs::add(tx, &Run::of(&mine, None, "/srv/api".into(), "api".into(), None), std::slice::from_ref(&t.key), crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), 1)?;
+        let run = runs::add(tx, &Run::of(&mine, None, "/srv/api".into(), "api".into(), None), std::slice::from_ref(&t.key), Default::default(), 1)?;
         // a project deleted: its tasks and runs stand in Default, the pool as it was
         crate::tasks::projects::move_tasks_to_default(tx, "api", "api", 2)?;
         tx.execute("DELETE FROM projects WHERE id = 'api'", []).map_err(sql)?;

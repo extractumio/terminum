@@ -216,7 +216,7 @@ fn ac161_its_task_takes_the_kept_slot_and_others_have_the_rest() {
 
 /// A run of `task` on agent `a`, working.
 fn working(tx: &rusqlite::Transaction, task: &ops::Task) -> String {
-    let id = runs::add(tx, &runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: task.project.clone(), ..Default::default() }, std::slice::from_ref(&task.key), crate::dispatcher::runs::Started::by_human(crate::dispatcher::runs::How::Run), NOW).unwrap();
+    let id = runs::add(tx, &runs::Run { agent_id: "a".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv".into(), project: task.project.clone(), ..Default::default() }, std::slice::from_ref(&task.key), Default::default(), NOW).unwrap();
     runs::change(tx, &id, |r| { r.state = runs::Phase::Working; r.pane_key = Some(format!("tmux:local:t:%{id}")); }).unwrap();
     id
 }

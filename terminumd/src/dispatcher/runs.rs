@@ -61,8 +61,7 @@ impl serde::Serialize for Phase {
 }
 
 /// How a run was asked for (AC-183): the words the store keeps.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
-#[serde(rename_all = "lowercase")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum How {
     /// the Run key of RUN's window
     #[default]
@@ -79,14 +78,40 @@ pub enum How {
     Auto,
 }
 
+const HOWS: [(How, &str); 6] = [(How::Run, "run"), (How::Drop, "drop"), (How::New, "new"), (How::Session, "session"), (How::Schedule, "schedule"), (How::Auto, "auto")];
+
 impl How {
     pub fn word(self) -> &'static str {
-        match self { How::Run => "run", How::Drop => "drop", How::New => "new", How::Session => "session", How::Schedule => "schedule", How::Auto => "auto" }
+        HOWS.iter().find(|(h, _)| *h == self).map_or("", |(_, w)| w)
     }
 
-    /// Dispatcher's own start, no user's: nothing a page's request may say.
+    /// Dispatcher's own start, no user's.
     pub fn automatic(self) -> bool {
         matches!(self, How::Schedule | How::Auto)
+    }
+
+    /// The way a page's press may name, else the Run key's: only terminumd says another.
+    pub fn of_page(self) -> How {
+        if matches!(self, How::Run | How::Drop | How::New) { self } else { How::Run }
+    }
+}
+
+impl rusqlite::ToSql for How {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        Ok(self.word().into())
+    }
+}
+
+impl serde::Serialize for How {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(self.word())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for How {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<How, D::Error> {
+        let word = String::deserialize(d)?;
+        HOWS.iter().find(|(_, w)| *w == word).map(|(h, _)| *h).ok_or_else(|| serde::de::Error::custom(format!("a run's way is not known: {word:?}")))
     }
 }
 
@@ -97,9 +122,16 @@ pub struct Started<'a> {
     pub how: How,
 }
 
+impl Default for Started<'static> {
+    /// The human's Run key.
+    fn default() -> Self {
+        Started::of(How::Run)
+    }
+}
+
 impl Started<'static> {
-    /// The human's, by `how`; an automatic way is Dispatcher's whoever is named.
-    pub fn by_human(how: How) -> Self {
+    /// By `how` alone: the human's way is the human's, an automatic one Dispatcher's.
+    pub fn of(how: How) -> Self {
         Started { by: if how.automatic() { crate::tasks::store::DISPATCHER } else { crate::tasks::store::HUMAN }, how }
     }
 }
@@ -307,7 +339,7 @@ pub fn add(tx: &Transaction, like: &Run, tasks: &[String], started: Started, at:
     let id = crate::auth::crypto::random_hex::<8>();
     tx.execute("INSERT INTO runs (id, task, project, agent_id, agent_name, agent_color, kind, command, host, folder, agent_session, state, prompt, last_walk, started_by, started_how)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'starting', ?12, ?13, ?14, ?15)",
-               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how.word()]).map_err(sql)?;
+               rusqlite::params![id, tasks.first(), like.project, like.agent_id, like.agent_name, like.agent_color, like.kind, like.command, like.host, like.folder, like.agent_session, like.prompt, at, started.by, started.how]).map_err(sql)?;
     for task in tasks {
         tx.execute("INSERT INTO run_tasks (run, task) VALUES (?1, ?2)", (&id, task)).map_err(sql)?;
     }
