@@ -129,17 +129,29 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         assert_eq!(rest, wanted, "then P1, each while its agent has a free slot: Smith's 2, Jones's 1; P2 waits for room");
         assert_eq!(auto::started_in_day(tx, "api", NOW)?, 3, "each took its slot of the day");
         assert!(auto::rounds_shown(tx, "api")?.is_empty(), "no round: no agent picks");
-        // a press that found no room gives its slot back, and a later walk takes it again; what it started is not started twice
+        // a press that found no room gives its slot back, and a later walk takes it again; what it started and its agent
+        // put back is not started twice
         auto::not_started(tx, &mid.key, None)?;
+        for t in [&high, &other] {
+            ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", NOW)?;
+            ops::move_to(tx, DISPATCHER, &t.id, "TODO", NOW)?;
+        }
         let mut again = ids(decide(tx, "api", &setting(tx), NOW)?);
         again.sort();
         let mut wanted = vec![(mid.id.clone(), "a".to_string()), (low.id.clone(), "a".to_string())];
         wanted.sort();
         assert_eq!(again, wanted, "high and other stand in TODO still, started once: not again");
+        // terminumd stopped between taking a slot and its press: the start is given back at the next walk
+        let lost = task(tx, "lost", "P3");
+        auto::started(tx, &lost.key, None, "api", NOW)?;
+        assert_eq!(auto::started_in_day(tx, "api", NOW)?, 5);
+        tx.execute("UPDATE projects SET auto_day_most = 9 WHERE id = 'api'", []).map_err(sql)?;
+        tx.execute("UPDATE agents SET at_once = 0 WHERE id IN ('a', 'b')", []).map_err(sql)?;
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "no room");
+        assert_eq!(auto::started_in_day(tx, "api", NOW)?, 2, "the three never pressed are free again; the two that ran are kept");
+        tx.execute("UPDATE agents SET at_once = 2 WHERE id IN ('a', 'b')", []).map_err(sql)?;
         // its day's cap holds here too
-        task(tx, "more", "P0");
-        assert_eq!(auto::started_in_day(tx, "api", NOW)?, 4);
-        tx.execute("UPDATE projects SET auto_day_most = 4 WHERE id = 'api'", []).map_err(sql)?;
+        tx.execute("UPDATE projects SET auto_day_most = 2 WHERE id = 'api'", []).map_err(sql)?;
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "the cap of 24 hours is reached");
         // a round left from the other way of picking starts no more
         tx.execute("UPDATE projects SET auto_day_most = 9, auto_mode = 'agent', auto_agent = 'p' WHERE id = 'api'", []).map_err(sql)?;

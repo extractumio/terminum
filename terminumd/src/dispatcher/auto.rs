@@ -156,6 +156,7 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     if open || !s.on {
         return Ok(Due::Nothing);
     }
+    auto::give_back_unpressed(tx, project)?;
     let off = |tx: &rusqlite::Transaction, why: String| auto::turn_off(tx, project, &why).map(|()| Due::Off(why));
     if let Some(why) = auto::tripped(tx, project, s.on_at)? {
         return off(tx, why);

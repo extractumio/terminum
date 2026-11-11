@@ -236,6 +236,14 @@ pub fn not_started(tx: &Transaction, task: &str, round: Option<&str>) -> Result<
     tx.execute("DELETE FROM auto_starts WHERE rowid = (SELECT max(rowid) FROM auto_starts WHERE task = ?1 AND round IS ?2)", (task, round)).map(drop).map_err(sql)
 }
 
+/// Gives back the starts of `project` whose press never came: terminumd stopped between taking the slot and pressing.
+/// Such a task stands in TODO with no move since; left, it would count against the day and never start again. Called
+/// when no round is open and no press of this walk is under way.
+pub fn give_back_unpressed(tx: &Transaction, project: &str) -> Result<(), String> {
+    tx.execute("DELETE FROM auto_starts WHERE project = ?1 AND task IN (SELECT id FROM tasks WHERE status = 'TODO')
+                  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = auto_starts.task AND e.kind = 'move' AND e.at >= auto_starts.at)", [project]).map(drop).map_err(sql)
+}
+
 /// When the last round of `project` since `on_at` was made, if it started nothing: the next rests a while
 /// (dispatcher/auto.rs), so a long list its agent leaves is not read through at once.
 pub fn fruitless(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<i64>, String> {
