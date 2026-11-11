@@ -125,7 +125,7 @@ fn in_order(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
     let (free, n, mut room) = room_for(tx, project, s, now)?;
     let mut picked = Vec::new();
     for c in free {
-        let left = room.get_mut(&c.agent).ok_or("its agent is gone")?;
+        let Some(left) = room.get_mut(&c.agent) else { continue };
         if (picked.len() as i64) < n && *left > 0 {
             *left -= 1;
             auto::started(tx, &c.key, None, project, now)?;
@@ -212,11 +212,16 @@ pub async fn due(app: &Shared) {
                 crate::tasks::api::told(app, &id);
             }
             Ok((Due::Start(tasks), name)) => {
+                let mut stopped = false;
                 for c in tasks {
-                    if let Some(why) = start_in_order(app, &project, &c).await {
+                    if stopped {
+                        // turned off under them: their slots of the day are free again
+                        let key = c.key.clone();
+                        let _ = store(app, move |tx| auto::not_started(tx, &key, None)).await;
+                    } else if let Some(why) = start_in_order(app, &project, &c).await {
                         super::acts::note(app, format!("Auto-Dispatcher turned itself off for {name}: {why}"));
                         crate::page::projects::tell(app);
-                        break;
+                        stopped = true;
                     }
                 }
             }

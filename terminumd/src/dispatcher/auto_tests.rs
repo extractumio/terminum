@@ -133,8 +133,9 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         // put back is not started twice
         auto::not_started(tx, &mid.key, None)?;
         for t in [&high, &other] {
-            ops::move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", NOW)?;
-            ops::move_to(tx, DISPATCHER, &t.id, "TODO", NOW)?;
+            // its session opened and its agent never took the prompt: the task never left TODO, its run ended
+            let run = running(tx, "a", t);
+            runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         }
         let mut again = ids(decide(tx, "api", &setting(tx), NOW)?);
         again.sort();
@@ -153,6 +154,12 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         // its day's cap holds here too
         tx.execute("UPDATE projects SET auto_day_most = 2 WHERE id = 'api'", []).map_err(sql)?;
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "the cap of 24 hours is reached");
+        // a human moves one that failed back to TODO: a candidate anew
+        tx.execute("UPDATE projects SET auto_day_most = 9 WHERE id = 'api'", []).map_err(sql)?;
+        ops::move_to(tx, HUMAN, &high.id, "FAILED", NOW + 1)?;
+        assert!(auto::candidates(tx, "api", &setting(tx), NOW + 1, None)?.iter().all(|c| c.id != high.id), "FAILED is never taken");
+        ops::move_to(tx, HUMAN, &high.id, "TODO", NOW + 2)?;
+        assert_eq!(auto::candidates(tx, "api", &setting(tx), NOW + 2, None)?[0].id, high.id);
         // a round left from the other way of picking starts no more
         tx.execute("UPDATE projects SET auto_day_most = 9, auto_mode = 'agent', auto_agent = 'p' WHERE id = 'api'", []).map_err(sql)?;
         let (id, r) = round(tx);

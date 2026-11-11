@@ -237,11 +237,12 @@ pub fn not_started(tx: &Transaction, task: &str, round: Option<&str>) -> Result<
 }
 
 /// Gives back the starts of `project` whose press never came: terminumd stopped between taking the slot and pressing.
-/// Such a task stands in TODO with no move since; left, it would count against the day and never start again. Called
-/// when no round is open and no press of this walk is under way.
+/// Such a task stands in TODO with no run made since (a run is walked from its making on); left, it would count
+/// against the day and never start again. One whose run was made keeps its start, whatever its agent did: it is not
+/// started twice. Called when no round is open and no press of this walk is under way.
 pub fn give_back_unpressed(tx: &Transaction, project: &str) -> Result<(), String> {
     tx.execute("DELETE FROM auto_starts WHERE project = ?1 AND task IN (SELECT id FROM tasks WHERE status = 'TODO')
-                  AND NOT EXISTS (SELECT 1 FROM events e WHERE e.task = auto_starts.task AND e.kind = 'move' AND e.at >= auto_starts.at)", [project]).map(drop).map_err(sql)
+                  AND NOT EXISTS (SELECT 1 FROM run_tasks m JOIN runs r ON r.id = m.run WHERE m.task = auto_starts.task AND r.last_walk >= auto_starts.at)", [project]).map(drop).map_err(sql)
 }
 
 /// When the last round of `project` since `on_at` was made, if it started nothing: the next rests a while
