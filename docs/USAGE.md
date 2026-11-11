@@ -220,7 +220,8 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   first) or use the arrows to change their order and the cross to take one out; Stop waiting in the task's window
   does the same; Auto-Dispatch, a switch and a cog in the board's bar (off by default), starts a
   project's TODO tasks by itself: the cog's window holds the agent that picks, a default agent to run them, the
-  severities it takes (as made: P0 and P1) and the minutes a task stands in TODO before it is taken (10); the switch
+  severities it takes (as made: P0 and P1), the minutes a task stands in TODO before it is taken (10) and the
+  tasks it starts in 24 hours at most (10); the switch
   then turns it on or off in one press (with several projects shown a press turns it off for them, and turning on is
   each project's own in the window); when slots are free it starts one more session of the picking agent, which
   scores the first such tasks by RICE and starts the best, each on the agent named in the task's window (Agent),

@@ -44,6 +44,7 @@ export async function liveAuto(page, live) {
   const rules = await page.textContent("#autorules");
   check("AC-170 its window says what it takes, in what order and when it stops, and offers the pool", /with no one pressing Run/.test(await page.textContent("#autotext")) && /What it takes/.test(rules) && /Down the board/.test(rules) && /It turns itself off/.test(rules)
     && (await page.$$eval("#autoagent option", (o) => o.map((x) => x.textContent))).join().startsWith("Choose one,") && await page.inputValue("#autoagent") === "" && await page.isChecked("#autoon") && await page.locator("#autoprojectrow").isHidden());
+  check("AC-170 its window shows the tasks of 24 hours and how many are started", await page.inputValue("#automost") === "10" && /Started in the last 24 hours: 0\./.test(await page.textContent("#autoday")));
   check("AC-170 its window shows the severities ticked and the wait", (await page.$$eval("#autoseverities input", (l) => l.map((t) => `${t.value}${t.checked ? "+" : "-"}`))).join() === "P0+,P1+,P2-,P3-" && await page.inputValue("#autowait") === "10");
   await page.click("#autook");
   check("AC-170 a Save with On and no agent is refused in the window", await until(async () => /Choose the agent that picks first/.test(await page.textContent("#autoerror"))));
@@ -88,6 +89,8 @@ export async function liveAuto(page, live) {
   await j(`/api/tasks/${idle}/give-up`, "POST");
   // what it takes: the severities ticked, after the wait (10 minutes: 2 s at this clock)
   check("AC-170 the severities and the wait are kept", (await put({ severities: ["P0"], wait_minutes: 10, off_why: null })).ok === true && (await setting()).severities.join() === "P0" && (await setting()).wait_minutes === 10);
+  check("AC-170 the tasks of 24 hours are kept, 1 to 1000", made0.day_most === 10 && /Tasks a day: 1 to 1000/.test((await put({ day_most: 0, off_why: null })).error ?? "") && (await put({ day_most: 500, off_why: null })).ok === true && (await setting()).day_most === 500);
+  check("AC-170 the setting says how many it started in 24 hours", (await setting()).started_day >= 3, JSON.stringify(await setting()));
   check("AC-170 a wait past a day is refused", /Wait: 0 to 1440 minutes/.test((await put({ wait_minutes: 5000, off_why: null })).error ?? ""));
   const [low, high] = [await made("Auto low: not taken", { severity: "P1", agent: spare }), await made("Auto high: taken after the wait", { severity: "P0", agent: spare })];
   check("AC-170 a task of a severity ticked starts", await until(async () => (await task(high)).status === "IN PROGRESS", 30000), (await task(high)).status);
@@ -96,6 +99,17 @@ export async function liveAuto(page, live) {
   check("AC-170 one of a severity not ticked stays in TODO", (await task(low)).status === "TODO");
   await j(`/api/tasks/${high}/give-up`, "POST");
   await j(`/api/tasks/${low}/archive`, "POST", {});
+  // the tasks of its 24 hours started: it waits, said on its switch, and goes on when the cap is raised
+  const startedDay = (await setting()).started_day;
+  await put({ day_most: startedDay, off_why: null });
+  const capped = await made("Auto capped: waits for the day's cap", { severity: "P0", agent: spare });
+  await new Promise((r) => setTimeout(r, 6000));                // its wait (2 s at this clock) and several walks
+  check("AC-170 at the cap of its 24 hours nothing more starts", (await task(capped)).status === "TODO" && (await setting()).started_day === startedDay, `${(await task(capped)).status} ${JSON.stringify(await setting())}`);
+  await open(`?project=${project}`);
+  check("AC-170 its switch says it waits for the cap", /tasks of 24 hours are started: it waits/.test(await page.getAttribute("#autoswitch", "title")), await page.getAttribute("#autoswitch", "title"));
+  await put({ day_most: 500, off_why: null });
+  check("AC-170 the cap raised, it goes on", await until(async () => (await task(capped)).status === "IN PROGRESS", 30000), (await task(capped)).status);
+  await j(`/api/tasks/${capped}/give-up`, "POST");
   await put({ severities: ["P0", "P1", "P2", "P3"], wait_minutes: 0, off_why: null });
 
   // a task's own agent: chosen by a human in its window
