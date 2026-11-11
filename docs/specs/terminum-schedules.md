@@ -26,7 +26,7 @@ In scope:
 - Schedules: their window, cadence, kept slot, firing, the tasks they make, the board's section, the Scheduled page.
 
 Out of scope (explicit):
-- An agent making or changing a schedule: only a signed-in page does; `terminum mcp` has no tool for them (§9 Security).
+- A worker's agent making or changing a schedule: a signed-in page does, and its project's manager by its tools (terminum-agents.md AC-180); a worker has no tool for them (§9 Security).
 - Files on a schedule, subtasks of one, a schedule per host's own clock: no user need yet.
 - Runs closer than a minute apart: cron's fields name minutes.
 - A second run of a schedule while a task of it is IN PROGRESS: the firing is skipped and says so (AC-162).
@@ -60,6 +60,7 @@ Open questions: none.
 | AC-162 | [MUST / P0] | When a schedule is due, terminumd makes a task from it as it is then, IN PROGRESS and named S_<its project's next ID>, and runs it on its agent in the project's folder, the agent told it is a scheduled run and how to give its result; such a task never stands in TODO; a firing while a task of it is IN PROGRESS is skipped; a firing over 2 minutes late is missed, never run later; a start that fails fails its task and the next firing tries again; each firing is written. |
 | AC-163 | [MUST / P0] | The board's Scheduled section stands between the pool and the columns, folded to its head by default, a press away; its cards stand four to a row on the columns' tracks, each with its cadence, next run, agent, last task and why that one did not start, every card whole; a schedule's tasks carry its name. |
 | AC-164 | [SHOULD / P1] | The Message history's Scheduled page lists every firing, newest first: when, the schedule, its task and agent, status, when it went IN PROGRESS and ended, what went in and what came out, or why nothing ran. |
+| AC-182 | [SHOULD / P1] | Run now on a schedule's card, and a manager's run_schedule, make the schedule's task and start it at once, whatever its cadence and paused or not; the cadence stays as it is. |
 
 ## 5. BDD scenarios
 
@@ -274,6 +275,32 @@ Scenario: AC-164 failure — not read
   Then the page says "The firings could not be read: <terminumd's message>" and keeps what it showed
 ```
 
+### AC-182 — Run now [SHOULD / P1]
+
+```gherkin
+Scenario: AC-182 happy path
+  Given SCH-1 "Nightly deps check", every day at 03:00, its last task DONE and its session closed
+  When the human presses Run now on its card and confirms "Run SCH-1 now, on its agent? Its cadence stays as it is."
+  Then terminumd makes its task as a firing does (AC-162), S_TERM-42 IN PROGRESS, its history saying who ran the schedule now, and starts it on the schedule's agent in its kept slot
+  And the firing is written and shows on the Scheduled page (AC-164); the card's next run is still 03:00
+  And a toast says "SCH-1 runs now: S_TERM-42"
+  When the project's manager calls run_schedule {schedule: "SCH-1"} (terminum-agents.md AC-180)
+  Then the same happens, and it is answered the task's ID and status
+
+Scenario: AC-182 edge — paused, once
+  Given a paused schedule, or one that ran once
+  When it is run now
+  Then it runs, and stays paused
+
+Scenario: AC-182 failure
+  When a task of it is IN PROGRESS, running or waiting for room
+  Then nothing is made: "Not run: S_TERM-41 is still in progress."
+  When its last task's session still holds its slot and is not idle a minute (terminum-dispatcher.md AC-141)
+  Then nothing is made: "Not run: S_TERM-41's session is still busy."; an idle one is closed for the slot first
+  When its start fails (no folder, agent gone)
+  Then its task is FAILED saying why, as a firing's (AC-162)
+```
+
 ## 6. Flow and sequence diagrams
 
 ```mermaid
@@ -335,12 +362,13 @@ GET    /api/schedules → {"schedules": [{"id", "key": "SCH-1", "project", "titl
 POST   /api/schedules {title, body, project, severity, agent, cron | once_at, budget_seconds, paused} → {"id", "key"}
 PATCH  /api/schedules/{id} {same}        DELETE /api/schedules/{id}
 POST   /api/schedules/preview {same} → {"next": [s…3], "next_words": ["Tue 10 Nov 03:00", …], "prompt": "…", "line": "claude --effort high …"} or 400 with the field's words
+POST   /api/schedules/{id}/run → {"task": "S_TERM-42"} or 400 with why not (AC-182)
 GET    /api/schedule-fires?schedule=SCH-1&before=<id> → {"fires": [{"id", "schedule": "SCH-1", "title", "due_at", "at", "task", "status", "agent", "started_at", "ended_at", "state", "missed", "why", "prompt", "result"}], "more": true}
 ```
 
 Every page hears `{"t": "schedules"}` when one changes or fires.
 
-**Security.** A schedule is a standing RUN by the human who saved it: only a signed-in page writes one (the same checks as a task's), `terminum mcp` has no tool for them, and its window shows the prompt and the agent's command before Save. Only its own text reaches the prompt. A process of the user's can write the store (SECURITY.md); a schedule makes such a write worth more, a recurring run with every tool, so the board shows each schedule's author and last change.
+**Security.** A schedule is a standing RUN by whoever saved it: a signed-in page writes one (the same checks as a task's), its window showing the prompt and the agent's command before Save, and its project's manager does by its tools, with no window (terminum-agents.md AC-180); a worker has no tool for them. Only its own text reaches the prompt. A process of the user's can write the store (SECURITY.md); a schedule makes such a write worth more, a recurring run with every tool, so the board shows each schedule's author and last change.
 
 **Limits.** 200 schedules; firings kept with their tasks, none purged; the Scheduled page reads 100 rows a page by index.
 
@@ -355,3 +383,4 @@ Single stage.
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; with long columns every card over them whole)
 - [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
+- [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's button in a browser: not run

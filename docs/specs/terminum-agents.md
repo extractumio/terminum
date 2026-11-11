@@ -66,6 +66,11 @@ Open questions: none.
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
 | AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and update_session_plan; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool, as terminum's own words write each call. |
+| AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started is its project's manager; every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
+| AC-178 | [SHOULD / P1] | A manager's call is run only when it comes from under the pane it names, and what writes only from that pane's main agent. |
+| AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions; its words reach an agent as the manager's, never as a human's. |
+| AC-180 | [MUST / P0] | A manager adds, changes and removes the pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
+| AC-181 | [MUST / P0] | Every tool of `terminum mcp` runs from a shell by `terminum tool`, as the session of the pane it runs in or, outside a pane, as a token's role and project; a token is made and removed only outside terminum's panes and kept as its hash. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay, and the pane says which agent ended and how to resume it. |
 
 ## 5. BDD scenarios
@@ -340,6 +345,157 @@ Scenario: AC-155 failure — wrong calls
   And a tools/call of a catalog tool by its own name, listed or not, still works (scripts, older clients)
 ```
 
+### AC-174 — Managers and workers [MUST / P0]
+
+```gherkin
+Scenario: AC-174 happy path — who is a manager
+  Given project Billing and the pool's agent Opus
+  When the human presses + Session for Billing on Opus (terminum-dispatcher.md AC-142)
+  Then that session is Billing's manager while Dispatcher holds its run: `terminum mcp` there is told so at its start, its instructions end with "You are this project's manager: search_tools also finds the tools to run its tasks on agents (run_task), follow and answer them (list_runs, get_task), and manage the pool's agents, the project's schedules and sessions. Act on the project through these tools alone, never by typing into tmux or changing terminum's files."
+  And search_tools' areas add runs, agents, schedules, sessions and stats, and it finds run_task for "start a task on an agent"
+  And on a host's project the same holds for the session + Session started there
+
+Scenario: AC-174 happy path — who is a worker
+  Given a session Dispatcher started for a task (a human's RUN, a schedule's firing, the queue, Auto-Dispatcher, a manager's run_task)
+  Or a session opened by hand, a pane a tmux command made, a + Session's session the human let go
+  Then it is a worker: its tools, instructions and search are those of AC-155 and terminum-kanban.md AC-115, and name no manager's tool or area
+  And it stays a worker when its task ends
+
+Scenario: AC-174 failure — a worker calls a manager's tool
+  When a worker calls search_tools for "start a task on an agent", get_tool_info or execute_tool with run_task, or a tools/call of run_task
+  Then search finds none, and each of the others answers as for a name that is no tool ("No tool is named "run_task" …", "Unknown tool …")
+  When the call reaches terminumd all the same (an older `terminum mcp`, a script on the socket)
+  Then terminumd answers "No tool is named "run_task" for this session: it is a worker's. A project's manager, the session a human started with + Session, has it." and does nothing
+
+Scenario: AC-174 edge — a role is terminumd's word
+  Then the caller never states its role: terminumd reads the pane's run at each call, and a probe answers `role`
+  And a session whose run terminumd wrote a moment after its start finds its tools at its next search
+  And each manager's call is a line of the log, `manager.tool {tool, by, project, ok}`, with no argument's text
+```
+
+### AC-178 — A manager's call comes from its pane [SHOULD / P1]
+
+```gherkin
+Scenario: AC-178 happy path
+  Given the manager's session in pane %5
+  When `terminum mcp` or `terminum tool` there calls a manager's tool
+  Then terminumd reads the calling process from its socket and finds the pane's first process among its ancestors: the call runs
+
+Scenario: AC-178 failure — another pane names the manager's
+  When a process in pane %7 calls a manager's tool with TMUX_PANE=%5
+  Then terminumd answers "Not done: this call does not come from the manager's own pane. Call it from the manager's session.", does nothing and logs `manager.not_from_pane`
+
+Scenario: AC-178 failure — a subagent writes
+  When a call with another session ID than the pane's main agent's (a subagent's) runs a manager's tool that writes
+  Then it answers "Not done: only the manager's main agent acts on the project, not a subagent. Report to it instead."
+  And its list_ and get_ tools answer
+
+Scenario: AC-178 edge — where it cannot be read
+  Given a host's manager, whose call comes over the Mac's link
+  Then no process is read: the pane the call names decides
+```
+
+### AC-179 — A manager runs its project [MUST / P0]
+
+```gherkin
+Scenario: AC-179 happy path — a task started, followed, answered
+  Given Billing's manager and task BILL-12 in TODO
+  When it calls run_task {id: "BILL-12", agent: "Opus reviewer", comment: "Keep v1 for a month."}
+  Then Dispatcher starts it as a human's RUN does (terminum-dispatcher.md AC-121): a window in Billing's folder, slots and limits holding, a worker's session
+  And its prompt begins "The project's manager ran task BILL-12: …", then "The project's manager's message: Keep v1 for a month.", nowhere "The human"
+  And the comment is on the task under the manager's name, "Opus · manager"
+  And the answer says "BILL-12 runs on Opus reviewer: a worker's session has it. list_runs shows its state; get_task its result or its questions, which run_task answers with comment."
+  When the worker asks a human (ask_human) and its session closes (terminum-dispatcher.md AC-157)
+  And the manager calls run_task {id: "BILL-12", comment: "Use v2."}
+  Then the conversation goes on with "BILL-12: the project's manager answered your questions in the comments below. …", the humans' comments since the questions and the manager's message, never another agent's comment
+  When the agent has no room
+  Then run_task answers "Not started: … Nothing waits: call run_task again with queue "yes" to wait for a slot, or choose another agent."; with queue "yes" it waits (terminum-dispatcher.md AC-158)
+
+Scenario: AC-179 happy path — stopped, read
+  When the manager calls stop_task {id: "BILL-12"}
+  Then its run is given up as a human's Give up (terminum-dispatcher.md AC-138), or its wait called off, and the task's history says "Opus · manager stopped it."
+  When it calls list_runs
+  Then it reads its project's runs (tasks, agent, state, session, whether its agent asked a human) and the tasks waiting for a slot
+  When it calls get_dashboard {tab: "costs", period: "month"}
+  Then it reads the Dashboard's numbers for its project
+
+Scenario: AC-179 happy path — the project's sessions
+  When the manager calls list_sessions
+  Then it reads its project's sessions: each one's name, title, agent, whether it works, its role, its run's tasks, its plan's step, its own marked "you"
+  When it calls get_session {session, lines: "80"}
+  Then it reads that session's plan and the last 80 lines of its screen (1–500, default 60), said to be data
+  When it calls send_to_session {session, text: "Go on with the second step."}
+  Then the text is pasted into that pane from a tmux buffer, behind the pane's own typing, then Enter (enter "no": none); the input log holds it, sender `manager`, component `manager.send`
+  When it calls close_session {session}
+  Then that pane and its program end
+
+Scenario: AC-179 failure — outside its reach
+  When the task, schedule or session named is another project's
+  Then it answers "BILL-12 is outside your project." or "Your project has no session …: list_sessions shows them."
+  When send_to_session or close_session names the manager's own session
+  Then it answers "That is your own session: type into another one." (or "close another one.")
+  When the text holds a control character other than a tab or a line end, or the pane is in a tmux mode
+  Then nothing is typed and the answer says why
+  And a manager starts no session but a task's: it has no tool that makes a manager
+```
+
+### AC-180 — The pool and the schedules by a manager [MUST / P0]
+
+```gherkin
+Scenario: AC-180 happy path — agents
+  When the manager calls create_agent {name: "Sonnet worker", kind: "claude", command: "claude --model sonnet", at_once: "2"}
+  Then the pool has it at once, for every project, as the board's window would make it (terminum-dispatcher.md AC-137)
+  When it calls update_agent {agent: "Sonnet worker", at_once: "3", week_limit: ""}
+  Then only what it named changes; an empty effort or limit clears it
+  When it calls delete_agent {agent: "Sonnet worker"}
+  Then it leaves the pool, unless it runs schedules or has a session open
+
+Scenario: AC-180 happy path — schedules
+  When the manager calls create_schedule {title, text, agent, cron: "0 3 * * *", budget_minutes: "30"}
+  Then SCH-n is made in its project, active, its card saying "set by Opus · manager" (terminum-schedules.md AC-160, AC-163)
+  When it calls update_schedule {schedule: "SCH-1", paused: "yes"}
+  Then only what it named changes: a new cron or once_at takes the old cadence's place
+  When it calls delete_schedule {schedule: "SCH-1"}
+  Then it is deleted, its tasks and firings staying
+
+Scenario: AC-180 failure — the board's own refusals
+  When a name is taken, a command holds a control character, at_once is not 1–100, a schedule has no time budget or its agent no slot to keep
+  Then the answer is the board's own words and nothing is kept
+  When a schedule named is another project's
+  Then it answers "Your project has no schedule "SCH-2": list_schedules shows them."
+```
+
+### AC-181 — The tools from a shell, and tokens [MUST / P0]
+
+```gherkin
+Scenario: AC-181 happy path — in a pane
+  When `terminum tools` runs in a pane of terminum
+  Then it says "You call as a manager." or "… worker." and that role's tools by area; `tools search <words>` and `tools info <name>…` answer as search_tools and get_tool_info
+  When `terminum tool list_tasks '{"status":"TODO"}'` runs there (`-`: the JSON from stdin)
+  Then the tool runs as that pane's session, by AC-174 and AC-178, its answer on stdout, status 0
+  And a refusal is on stderr, status 1
+
+Scenario: AC-181 happy path — a token
+  Given a terminal outside terminum
+  When the user runs `terminum tokens add ops --role manager --project Billing` (`--days N`: it ends then)
+  Then the token (`tmt_` and 48 hex digits) is printed once; terminumd keeps its SHA-256, name, role, project, and when it was made, ends and was last used
+  When a program runs `terminum tool run_task '{"id":"BILL-12","agent":"Opus"}'` with TERMINUM_TOKEN set
+  Then the tool runs with that token's role in its project, and what it writes carries the token's name ("ops · token", "token · ci")
+  And a worker's token runs the task tools of its project, by terminum-kanban.md AC-115
+  And `terminum tokens` lists them, never a token; `terminum tokens remove ops` ends it
+
+Scenario: AC-181 failure
+  When `terminum tool` runs outside a pane with no token
+  Then it says "terminum tool runs in a session of terminum, or with a token in TERMINUM_TOKEN (terminum tokens add)." and calls nothing
+  When the token is unknown, ended or removed, or its project is gone
+  Then the call is refused: "terminum does not know this token: …"
+  When a token's call names take_task, ask_human, dispatch_task or a plan tool
+  Then it answers "… is a session's own: a token has no session."
+  When `terminum tokens add` or `remove` runs in any pane of terminum, a manager's too
+  Then terminumd refuses: "Tokens are made and removed in a terminal outside terminum: a session in terminum cannot."
+  And a token is never an argument of a command, and no route over TCP takes one
+```
+
 ### AC-153 — Idle agents exit [SHOULD / P1]
 
 ```gherkin
@@ -446,6 +602,8 @@ sequenceDiagram
 | AC-39 | A changed wording of Claude Code or Codex shows no state. | `terminumd/src/tmux/agentstate.rs:25` |
 | AC-39 | Codex's startup prompts (trust, update) show no state; nor does a `node` Codex with a typed draft and no other mark, until it is sent; nor does a custom `[tui].terminal_title` mark a question. | `terminumd/src/tmux/agentstate.rs:37`, `terminumd/src/tmux/agentstate.rs:62` |
 | AC-39 | An error still in the last 25 rows after a later finished turn reads as failed. | `terminumd/src/tmux/agentstate.rs:325` |
+| AC-178 | A host's manager is known by the pane its call names alone: the Mac reads no process behind a link. | `terminumd/src/agentapi.rs`, `terminumd/src/roles/peer.rs` |
+| AC-174 | Whether a real Claude Code or Codex in a manager's session takes up its tools from the instructions was not run. | `scripts/e2e_roles.py` (a shell stands in) |
 
 ## 8. Recommendation and ownership
 
@@ -491,6 +649,10 @@ MCP tools:
 
 The catalog (every tool above but the first three, with the task tools of `terminum-kanban.md` §9) and each tool's card: `terminumd/src/cli/mcp_catalog.rs`; the index: `mcp_search.rs`.
 
+A manager's tools (AC-174), every argument a string: `list_runs`; `run_task` `id`, `agent`, `comment`, `fresh` yes|no, `queue` yes|no; `stop_task` `id`; `list_agents`; `create_agent` `name`, `kind` claude|codex, `command`, `effort`, `at_once`, `week_limit`, `month_limit`; `update_agent` `agent` and the same; `delete_agent` `agent`; `list_schedules`; `create_schedule` `title`, `text`, `agent`, `cron` or `once_at` (unix seconds), `budget_minutes`, `severity`, `paused` yes|no; `update_schedule` `schedule` and the same; `delete_schedule`, `run_schedule` `schedule`; `list_sessions`; `get_session` `session`, `lines`; `send_to_session` `session`, `text` (≤ 20,000 bytes), `enter` yes|no; `close_session` `session`; `get_dashboard` `tab` you|system|costs, `period` day|2w|month|quarter|year. Definitions and cards: `terminumd/src/cli/mcp_manager.rs`; what each does: `terminumd/src/roles/`.
+
+Commands (AC-181): `terminum tools [search <words> | info <name>…]`, `terminum tool <name> ['<json>' | -]`, `terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]`. The private socket: `POST /agent` takes `{token, tool, args}` in place of a pane; `POST /tokens {action: list|add|remove, name, role, project, days}`. A probe answers `role`. Store: table `tokens` (`tasks/schema19.sql`).
+
 ### Files
 
 | File | Holds |
@@ -529,6 +691,8 @@ Limits a scenario states are not repeated.
 - Hooks: `terminum hook` sends only to terminumd's private socket (0600 in a 0700 folder: only the user's own processes reach it), or a Mac's link on a host. What a made-up event can do: `SECURITY.md`.
 - The installer writes only terminum's plugin folder, Codex's `hooks.json` and `config.toml` and its own marker.
 - execute_tool runs only a tool of the catalog, through the same checks and terminumd's own rules as a direct call; an agent's client that allows execute_tool without asking allows every tool behind it (AC-155).
+- Roles (AC-174, AC-178, AC-181) are terminumd's own word and a guard against an agent that errs, no boundary against a process of the same user: `SECURITY.md` has what a manager can do and what is left.
+- A manager's text reaches tmux only as a buffer's paste, never on a command line, with no control character but a tab and line ends; a session, schedule and agent it names are found among its project's own, never put into a tmux command (AC-179).
 - Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
 - The idle exit (AC-153) types only Ctrl+C, `/exit` and Enter, fixed by terminumd, and only as that scenario allows; it is off until the user sets the days.
 - Its summary is written to `#{pane_tty}` by `run-shell` on the tmux server's host, through its `/bin/sh`: output, never input; a fixed `printf '%s\n'`, each line one POSIX-quoted argument (never the format) with `#` doubled for run-shell's format, control and invisible characters shown as escapes; `terminum hook` reads the agent's command line with `ps` from its own ancestors, redacted, and terminumd keeps at most 300 characters of it.
@@ -539,7 +703,7 @@ An older Codex SessionEnd entry: AC-39.
 
 ### Logging and observability
 
-`hook.turn_end {key, by}`, `idleexit.ended {key, kind, days, session, folder, argv, title}`, `idleexit.unsaid {pane, error}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
+`hook.turn_end {key, by}`, `manager.tool {tool, by, project, ok}`, `manager.not_from_pane {tool, key}`, `manager.closed {key, by}`, `tokens.from_pane {action}`, `idleexit.ended {key, kind, days, session, folder, argv, title}`, `idleexit.unsaid {pane, error}`, `idleexit.stayed {key, kind, why}`, `plans.unsaved`, `unread.unsaved`, `bookmark.deleted_by_agent`, `bookmark.changed_by_agent`, `record.closed_by_other_session {id, pane, of}`, `notes.import`.
 
 ## 10. Delivery stages
 
@@ -552,4 +716,9 @@ All cases are shipped; nothing is staged.
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
 - [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`), `web/test/e2e_liveplans.mjs`
+- [x] AC-174 — `cargo test roles`, `cargo test cli::mcp` (`mcp_tests.rs`, `mcp_manager.rs`), `scripts/e2e_roles.py`
+- [x] AC-178 — `cargo test roles`, `scripts/e2e_roles.py` (a pane naming the manager's)
+- [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `scripts/e2e_roles.py`
+- [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`
+- [x] AC-181 — `cargo test roles`, `cargo test cli::tool`, `scripts/e2e_roles.py`
 - [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`
