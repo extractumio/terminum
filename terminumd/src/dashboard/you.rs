@@ -12,23 +12,36 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use rusqlite::Transaction;
 use serde_json::{json, Value};
 
-use super::{civil, local, median, stack_key, stacked, Ask, Span, DAY, HOUR};
+use super::{civil, local, median, stack_key, stacked, Ask, Span, DAY, HOUR, MINUTE};
 use crate::tasks::ops::rows;
 
 pub const GAP: i64 = 15 * 60_000;
 pub const TAIL: i64 = 2 * 60_000;
 pub const NEAR: i64 = 5 * 60_000;
 pub const TAIL_SEEN: i64 = 60_000;
-const MINUTE: i64 = 60_000;
 /// A minute with a page in front this many seconds was in front.
 const IN_FRONT: i64 = 30;
 /// The project of what a page with no pane counted: the one of what was done before it.
 const UNKNOWN: u32 = u32::MAX;
 /// How an event engages: the pointer moved (presence only), the human scrolled (reading), or acted (a key, a
 /// press, a drag, something sent, typed or done on the board).
-const HERE: u8 = 0;
-const READ: u8 = 1;
-const ACT: u8 = 2;
+#[derive(Clone, Copy, PartialEq)]
+enum How { Here, Read, Act }
+
+/// The active clock minutes from the pages' first count on, by what the human did in them.
+#[derive(Clone, Copy, Default)]
+struct Minutes { active: i64, acting: i64, reading: i64 }
+
+impl Minutes {
+    /// For the page, with the minutes only watched and the share engaged; none where nothing was measured.
+    fn json(&self) -> Value {
+        if self.active == 0 {
+            return Value::Null;
+        }
+        json!({"active": self.active, "acting": self.acting, "reading": self.reading, "watching": self.active - self.acting - self.reading,
+               "share": (self.acting + self.reading) as f64 / self.active as f64})
+    }
+}
 /// What the human does on the board, as the events' kinds say it.
 const BOARD: [&str; 5] = ["made", "move", "comment", "edit", "archive"];
 /// The pane of what is done on the board: none.
@@ -38,7 +51,7 @@ const NO_PANE: u32 = 0;
 /// is a million of these), whether it sent (a message, an Enter, a paste), whether a page on a phone sent it
 /// (None: no page did), how it engages.
 #[derive(Clone, Copy)]
-struct Event { t: i64, project: u32, pane: u32, sent: bool, phone: Option<bool>, how: u8 }
+struct Event { t: i64, project: u32, pane: u32, sent: bool, phone: Option<bool>, how: How }
 
 /// Each text met, by its number; `""` is 0.
 struct Names { ids: HashMap<String, u32>, list: Vec<String> }
@@ -93,7 +106,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
         WHERE sender = 'human' AND at >= ?1 {only}", local("at")), (ask.since, ask.project), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     for (t, project, name, pane) in msgs {
         if !name.is_empty() && !names.contains_key(&project) { names.insert(project.clone(), name); }
-        events.push(Event { t, project: projects.id(project), pane: panes.id(pane), sent: true, phone: None, how: ACT });
+        events.push(Event { t, project: projects.id(project), pane: panes.id(pane), sent: true, phone: None, how: How::Act });
     }
     // a row is its first and its last key; the first one says whether it sent and from where
     let sent = "component = 'page' AND (kind = 'paste' OR (kind = 'typed' AND text LIKE '%<Enter>'))";
@@ -106,19 +119,19 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
         let get = |e: rusqlite::Error| crate::tasks::ops::sql(e);
         let (t, ended, sent): (i64, i64, bool) = (r.get(0).map_err(get)?, r.get(1).map_err(get)?, r.get(4).map_err(get)?);
         let (project, pane) = (projects.id(r.get(2).map_err(get)?), panes.id(r.get(3).map_err(get)?));
-        if ended > t { events.push(Event { t: ended, project, pane, sent: false, phone: None, how: ACT }); }
-        events.push(Event { t, project, pane, sent, phone: if sent { Some(r.get(5).map_err(get)?) } else { None }, how: ACT });
+        if ended > t { events.push(Event { t: ended, project, pane, sent: false, phone: None, how: How::Act }); }
+        events.push(Event { t, project, pane, sent, phone: if sent { Some(r.get(5).map_err(get)?) } else { None }, how: How::Act });
     }
-    // what a page counted in a minute: its first and its last; the minutes in front are no events
+    // what a page counted in a minute: its first and its last; the minutes in front are no events, and no project's
     let counted: Vec<(i64, i64, String, Option<String>)> = rows(tx, &format!("SELECT {}, {}, kind, project FROM user_interaction
-        WHERE at >= ?1 AND (?2 IS NULL OR project = ?2) AND (kind != 'front' OR amount >= {IN_FRONT})", local("at"), local("ended")), (ask.since, ask.project), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+        WHERE at >= ?1 AND ((?2 IS NULL OR project = ?2) AND kind != 'front' OR kind = 'front' AND amount >= {IN_FRONT})", local("at"), local("ended")), (ask.since, ask.project), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
     let mut front = Vec::new();
     for (t, ended, kind, project) in counted {
         if kind == "front" {
             front.push(t.div_euclid(MINUTE));
             continue;
         }
-        let how = match kind.as_str() { "move" => HERE, "scroll" => READ, _ => ACT };
+        let how = match kind.as_str() { "move" => How::Here, "scroll" => How::Read, _ => How::Act };
         let project = project.map_or(UNKNOWN, |p| projects.id(p));
         for t in [t, ended].into_iter().take(if ended > t { 2 } else { 1 }) {
             events.push(Event { t, project, pane: NO_PANE, sent: false, phone: None, how });
@@ -132,7 +145,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
     let board: Vec<(i64, String, String)> = rows(tx, &format!("SELECT {at}, e.kind, CASE WHEN p.is_default THEN '' ELSE p.id END FROM events e JOIN tasks t ON t.id = e.task JOIN projects p ON p.id = t.project
         WHERE e.author = 'human' AND e.at >= ?1 / 1000 AND {mine}"), (ask.since, ask.task_project()), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let board: Vec<(i64, String)> = board.into_iter().map(|(t, kind, project)| {
-        events.push(Event { t, project: projects.id(project), pane: NO_PANE, sent: false, phone: None, how: ACT });
+        events.push(Event { t, project: projects.id(project), pane: NO_PANE, sent: false, phone: None, how: How::Act });
         (t, kind)
     }).collect();
     // a wait: a move to WAIT FOR HUMAN, until the task's next move
@@ -167,19 +180,29 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
     let mut heat = [[0i64; 24]; 7];
     let (mut off, mut longest, mut began) = (0i64, 0i64, None);
     let mut active_units: HashSet<i64> = HashSet::new();
-    // from the pages' first count on: the clock minutes active, acted in, scrolled in
-    let seen = |t: i64| read.measured.is_some_and(|m| t >= m);
+    // from the pages' first count on, the clock minutes: the last one counted active; the one going on with
+    // its bucket and whether the human acted in it (else they scrolled)
+    let mut minutes = vec![Minutes::default(); n];
+    let mut last_active = i64::MIN;
+    let mut going: Option<(i64, usize, bool)> = None;
+    let engaged = |minutes: &mut [Minutes], going: Option<(i64, usize, bool)>| {
+        if let Some((_, k, acted)) = going { if acted { minutes[k].acting += 1 } else { minutes[k].reading += 1 } }
+    };
     let in_front = |a: i64, b: i64| {
         let (lo, hi) = (a.div_euclid(MINUTE) + 1, b.div_euclid(MINUTE));
         (read.front.partition_point(|m| *m < hi) - read.front.partition_point(|m| *m < lo)) as i64 >= hi - lo
     };
-    let mut minutes: Vec<[HashSet<i64>; 3]> = vec![Default::default(); n];
     for (i, e) in evs.iter().enumerate() {
         // the time after an event, up to the next one of its stretch, is its project's
-        let next = evs.get(i + 1).map(|x| x.t).filter(|x| if seen(e.t) { x - e.t <= NEAR || (x - e.t <= GAP && in_front(e.t, *x)) } else { x - e.t <= GAP });
-        let end = next.unwrap_or(e.t + if seen(e.t) { TAIL_SEEN } else { TAIL });
-        if seen(e.t) && e.how != HERE && let Some(k) = span.index(e.t) {
-            minutes[k][e.how as usize].insert(e.t.div_euclid(MINUTE));
+        let seen = read.measured.is_some_and(|m| e.t >= m);
+        let next = evs.get(i + 1).map(|x| x.t).filter(|x| if seen { x - e.t <= NEAR || (x - e.t <= GAP && in_front(e.t, *x)) } else { x - e.t <= GAP });
+        let end = next.unwrap_or(e.t + if seen { TAIL_SEEN } else { TAIL });
+        if seen && e.how != How::Here && let Some(k) = span.index(e.t) {
+            let m = e.t.div_euclid(MINUTE);
+            if going.is_none_or(|g| g.0 != m) {
+                engaged(&mut minutes, going.replace((m, k, false)));
+            }
+            if let Some(g) = going.as_mut() { g.2 |= e.how == How::Act; }
         }
         let start = *began.get_or_insert(e.t);
         if next.is_none() {
@@ -192,7 +215,11 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
             if let Some(k) = span.index(t) {
                 let (d, len) = (t.div_euclid(DAY), to - t);
                 active[k] += len;
-                if seen(e.t) { minutes[k][0].extend(t.div_euclid(MINUTE)..=(to - 1).div_euclid(MINUTE)); }
+                let (lo, hi) = (t.div_euclid(MINUTE).max(last_active + 1), (to - 1).div_euclid(MINUTE));
+                if seen && hi >= lo {
+                    minutes[k].active += hi - lo + 1;
+                    last_active = hi;
+                }
                 *by[k].entry(e.project).or_default() += len;
                 *per_project.entry(e.project).or_default() += len;
                 let (wd, hour) = ((d + 4).rem_euclid(7) as usize, (t.rem_euclid(DAY) / HOUR) as usize);   // 1970-01-01 was a Thursday; 0: Sunday
@@ -261,15 +288,14 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
         p["n"] = json!(ms);
         p
     }).collect();
-    // a bucket's minutes: active, acted in, only scrolled in; none where the pages did not count yet
-    let engaged: Vec<Option<[i64; 3]>> = minutes.iter().map(|[all, read, act]| (!all.is_empty()).then(|| [all.len() as i64, act.len() as i64, read.difference(act).count() as i64])).collect();
-    let [seen_min, acting, reading] = engaged.iter().flatten().fold([0i64; 3], |mut sum, m| { for (s, v) in sum.iter_mut().zip(m) { *s += v; } sum });
+    engaged(&mut minutes, going);
+    let all = minutes.iter().fold(Minutes::default(), |a, m| Minutes { active: a.active + m.active, acting: a.acting + m.acting, reading: a.reading + m.reading });
     let series: Vec<Value> = (0..n).map(|k| {
         let mut parts: BTreeMap<String, i64> = BTreeMap::new();
         for (p, ms) in &by[k] { *parts.entry(stack_key(&stack, id(p))).or_default() += ms; }
         json!({"active_ms": active[k], "by": parts, "sessions": panes[k].len(), "peak": peak[k], "switches": switches[k], "sent": sent[k],
                "board": board[k], "board_n": board[k].values().sum::<i64>(), "spans": span.by_day().then(|| &spans[k]),
-               "engaged": engaged[k].map(|[all, act, read]| json!({"active": all, "acting": act, "reading": read}))})
+               "engaged": minutes[k].json()})
     }).collect();
     let total: i64 = active.iter().sum();
     let worked: Vec<&Vec<[i64; 2]>> = spans.iter().filter(|s| !s.is_empty()).collect();
@@ -278,7 +304,7 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
         "active_ms": total, "active_units": active_units.len(), "units": if span.by_hour() { n as i64 } else { span.days() },
         "active_per_unit_ms": if active_units.is_empty() { 0 } else { total / active_units.len() as i64 },
         "longest_ms": longest,
-        "engagement": (seen_min > 0).then(|| (acting + reading) as f64 / seen_min as f64), "seen_min": seen_min, "acting_min": acting, "reading_min": reading,
+        "engaged": all.json(),
         "sessions": median(day_panes.values().map(|s| s.len() as i64).collect()), "peak": peak.iter().max().copied().unwrap_or(0),
         "switches": all_switches, "switches_per_hour": if total > 0 { all_switches as f64 / (total as f64 / HOUR as f64) } else { 0.0 },
         "board": board_by.values().sum::<i64>(), "board_by": board_by,

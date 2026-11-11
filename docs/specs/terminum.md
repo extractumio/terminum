@@ -105,7 +105,7 @@ Open questions:
 | AC-171 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 | AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling. |
-| AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, a pressed control's id), never which key, what text or what position. |
+| AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
 | AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
 
 ## 5. BDD scenarios
@@ -1057,12 +1057,12 @@ Scenario: AC-175 happy path — a page counts what the user does
   When the user presses, types, turns the wheel or drags a finger, drags, moves the pointer, or keeps the page in front
   Then the page counts each by the clock minute: `click`, `key` (a held key once), `scroll` (with the pixels), `drag` (a press that moved 8 pixels or more, with its length), `move` (once a second at most, only in a window in front), `front` (the seconds the page was visible and focused)
   And only the user's own events count: a screen an agent's output scrolls, a page's own scroll or a script's event is none
-  And a minute that is over, and what is counted when the page goes, is sent (`POST /api/interactions`) and kept as rows of `user_interaction`: the minute's first and last time of that kind, the page or frame, how many, for a press or a drag the id of the control (its own or its nearest ancestor's, digits as N), the pane shown and its project, the device (`mac`, `web`, `phone`)
-  And never which key, what text, what a control says, or where on the screen
+  And a minute that is over, and what is counted when the page goes, is sent (`POST /api/interactions`) and kept as rows of `user_interaction`: the minute's first and last time of that kind, the page or frame, how many, for a press or a drag on the page itself the id of the control (its own or its nearest ancestor's, digits as N), the pane shown and its project, the device (`mac`, `web`, `phone`)
+  And never which key, what text, what a control says, or where on the screen; a control in a frame is not named: a viewed document's headings have ids made of their words
 
 Scenario: AC-175 edge — a page in a frame
   When the quick shell or a file's view takes the press
-  Then the page that holds the frame counts it once, as that frame's
+  Then the page that holds the frame counts it once, as that frame's, with no control's id
 
 Scenario: AC-175 edge — another device's clock
   When a phone's clock is not this Mac's
@@ -1098,7 +1098,7 @@ Scenario: AC-176 happy path — the figures and charts
 Scenario: AC-176 edge — nothing, and what is kept
   When no task was worked on in the period
   Then the figures say 0 and "—" and each list says so
-  And a start whose launch row the input log no longer keeps is not counted, as AC-171
+  And a start whose launch row the input log no longer keeps is not counted, and the page says from when starts are counted, as AC-171
 
 Scenario: AC-176 failure — the numbers cannot be read
   Then as AC-152
@@ -1295,7 +1295,7 @@ Layout checkpoint and last lines: `terminum-lifecycle.md` §9 Data formats.
 
 The input log (AC-147): table `inputs` of `kanban.sqlite`, a row per write into a pane: `at` and `ended` (unix ms), `sender` (`users.id`: `human`, `dispatcher`), `component` (`page`, `panel`, `dispatcher.gate`, `dispatcher.start`), `kind` (`typed`, `paste`, `path`, `prompt`, `launch`), `text`, `bytes` (all that was sent), `pane` (its key), `machine`, `session`, `window`, `program`, `cwd`, `project`, `project_name`, `run`, `tasks` (IDs, comma-separated), `agent` (its ID), `page`, `device` (`mac`, `web`), `ip`, `browser`, `tailnet_user`, `version`, `error` (tmux's refusal, else NULL). Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, kind, text FROM inputs ORDER BY id DESC LIMIT 20"`.
 
-The interaction log (AC-175): table `user_interaction` of `kanban.sqlite`, a row per clock minute, kind, place, control and pane: `at` and `ended` (unix ms, the first and the last of them), `kind` (`click`, `key`, `scroll`, `drag`, `move`, `front`), `surface` (`sessions`, `kanban`, `history`, `dashboard`, `scheduled`, `files`, `view`, `quick`), `target` (a pressed or dragged control's id, else empty), `n` (how many), `amount` (pixels scrolled or dragged, seconds in front), `pane` and `project` (the pane shown and its project, `''` in none; NULL where the page shows no pane), `device` (`mac`, `web`, `phone`). The request's handler writes it in one transaction off the async workers; the input log's writer drops its old rows each hour.
+The interaction log (AC-175): table `user_interaction` of `kanban.sqlite`, a row per clock minute, kind, place, control and pane: `at` and `ended` (unix ms, the first and the last of them), `kind` (`click`, `key`, `scroll`, `drag`, `move`, `front`), `surface` (`sessions`, `kanban`, `history`, `dashboard`, `scheduled`, `files`, `view`, `quick`), `target` (the id of a control of the page pressed or dragged, else empty), `n` (how many), `amount` (pixels scrolled or dragged, seconds in front), `pane` and `project` (the pane shown and its project, `''` in none; NULL where the page shows no pane), `device` (`mac`, `web`, `phone`). The request's handler writes it in one transaction off the async workers; the input log's writer drops its old rows each hour.
 
 The message history (AC-147, AC-151; the Dashboard reads it, AC-152): table `messages` of `kanban.sqlite`: `id`, `at` (unix ms), `sender`, `via` (`hook`, `page`), `agent` (`claude`, `codex`; NULL a shell), `pane`, `line`, `host` (the pane's server, `local` for this Mac), `cwd`, `title`, `project`, `project_name`, `text`; `messages_fts` (FTS5, external content, `unicode61 remove_diacritics 2`) kept by triggers. Read with `sqlite3 ~/.terminum/state/kanban.sqlite "SELECT datetime(at/1000,'unixepoch','localtime'), sender, text FROM messages ORDER BY at DESC LIMIT 20"`.
 

@@ -26,6 +26,7 @@ use crate::tasks::ops::{rows, sql};
 
 pub const DAY: i64 = 86_400_000;
 pub const HOUR: i64 = 3_600_000;
+pub const MINUTE: i64 = 60_000;
 /// Projects with their own color in a stacked chart; the rest are Other.
 pub const STACKED: usize = 6;
 
@@ -191,11 +192,7 @@ pub fn numbers(tx: &Transaction, now_ms: i64, tab: &str, period: Period, project
     let span = Span::of(period, now);
     let before = span.before(period);
     // what the tab's rows still hold: the input log is trimmed by age and by rows, the reports are not
-    let oldest = match tab {
-        "costs" => "SELECT min(at) * 1000 AS at FROM usage",
-        "tasks" => "SELECT min(at) * 1000 AS at FROM events",
-        _ => "SELECT min(at) AS at FROM inputs",
-    };
+    let oldest = if tab == "costs" { "SELECT min(at) * 1000 AS at FROM usage" } else { "SELECT min(at) AS at FROM inputs" };
     let kept_from: Option<i64> = tx.query_row(&format!("SELECT {} FROM ({oldest}) WHERE at IS NOT NULL", local("at")), [], |r| r.get(0)).ok();
     let before = Some(&before).filter(|b| kept_from.is_some_and(|k| k <= b.lo()));
     // a day more: the zone's offset may have been another then

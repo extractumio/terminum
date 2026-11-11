@@ -28,12 +28,14 @@ export function tile(label, value, sub, line) {
 }
 
 export const percent = (x) => `${Math.round(x * 100)}%`;
+/** A share of 0…1 in percent, a dash for none. */
+export const shareOf = (x) => (x === null || x === undefined ? "—" : percent(x));
 /** Parts that are something, joined by a middle dot. */
 export const words = (...parts) => parts.filter(Boolean).join(" · ");
 /** "<x> before" of the span before's figure `x`, when it has one. */
 export const was = (x, fmt = percent) => (x === null || x === undefined ? "" : `${fmt(x)} before`);
 /** A share's tile: `x` of 0…1 or null (said by `none`), `what` it is a share of, the span before's beside it. */
-export const shareTile = (label, x, before, none, what) => tile(label, x === null ? "—" : percent(x), x === null ? none : words(what, was(before)));
+export const shareTile = (label, x, before, none, what) => tile(label, shareOf(x), x === null ? none : words(what, was(before)));
 /** The `kinds` ([key, word, color]) `counts` holds, each with its count: "made 2", "moved 1". */
 export const kindWords = (kinds, counts) => kinds.filter(([k]) => counts[k]).map(([k, word]) => `${word} ${counts[k]}`);
 

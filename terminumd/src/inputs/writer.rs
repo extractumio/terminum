@@ -46,6 +46,7 @@ pub fn run(store: Arc<Store>, rx: Receiver<Row>, dropped: Arc<AtomicU64>) {
             insert(tx, &batch)?;
             if due {
                 trim(tx, super::now_ms(), KEEP_ROWS)?;
+                crate::interact::trim(tx, super::now_ms(), crate::interact::KEEP_ROWS)?;
             }
             Ok(())
         }) {
@@ -71,11 +72,15 @@ pub fn insert(tx: &Transaction, rows: &[Row]) -> Result<(), String> {
     Ok(())
 }
 
-/// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go; messages too, and interactions by their own count.
+/// Rows of `table` older than `days`, then the oldest beyond `rows`, go.
+pub fn trim_rows(tx: &Transaction, table: &'static str, now_ms: i64, days: i64, rows: i64) -> Result<(), String> {
+    tx.execute(&format!("DELETE FROM {table} WHERE at < ?1"), [now_ms - days * 86_400_000]).map_err(sql)?;
+    tx.execute(&format!("DELETE FROM {table} WHERE id <= (SELECT id FROM {table} ORDER BY id DESC LIMIT 1 OFFSET ?1)"), [rows]).map_err(sql).map(drop)
+}
+
+/// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go; messages too.
 pub fn trim(tx: &Transaction, now_ms: i64, rows: i64) -> Result<(), String> {
-    tx.execute("DELETE FROM inputs WHERE at < ?1", [now_ms - KEEP_DAYS * 86_400_000]).map_err(sql)?;
-    tx.execute("DELETE FROM inputs WHERE id <= (SELECT id FROM inputs ORDER BY id DESC LIMIT 1 OFFSET ?1)", [rows]).map_err(sql)?;
-    crate::interact::trim(tx, now_ms, crate::interact::KEEP_ROWS)?;
+    trim_rows(tx, "inputs", now_ms, KEEP_DAYS, rows)?;
     crate::messages::trim(tx, now_ms, KEEP_DAYS, rows)
 }
 

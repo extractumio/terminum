@@ -227,12 +227,15 @@ fn ac152_engagement_from_what_the_pages_counted() {
     let (tiles, today) = (&d["tiles"], &d["series"][13]);
     assert_eq!(tiles["active_ms"], 2 * M + 830_000 + 2 * M, "10:00 and its 2 minutes; 11:00:10 to 11:13 and a minute more: a pause of 10 minutes with the page in front joins; the move and the key, 7 minutes apart with no page in front, a minute each");
     assert_eq!(today["by"], json!({"": 2 * M, "p1": 2 * M + 830_000}), "a count with no pane is its stretch's project's; after a pause over 15 minutes, no project's");
-    assert_eq!(today["engaged"], json!({"active": 16, "acting": 3, "reading": 1}), "the clock minutes from the pages' first count on: 14 of the first stretch and one each of the others; a move engages none");
-    assert_eq!((tiles["engagement"].clone(), tiles["seen_min"].clone(), tiles["acting_min"].clone(), tiles["reading_min"].clone()), (json!(0.25), json!(16), json!(3), json!(1)));
+    assert_eq!(today["engaged"], json!({"active": 16, "acting": 3, "reading": 1, "watching": 12, "share": 0.25}), "the clock minutes from the pages' first count on: 14 of the first stretch and one each of the others; a move engages none");
+    assert_eq!(tiles["engaged"], today["engaged"], "the period's: the same shape");
     assert_eq!((d["series"][12]["engaged"].clone(), d["measured_from"].clone()), (Value::Null, d["buckets"][13]["from"].clone()), "a day before the pages counted has no engagement, not none of it");
     assert_eq!((d["before"].clone(), d["kept_from"].clone()), (Value::Null, Value::Null), "a span from before the pages counted is not compared, though the log reaches it");
     let only = ask(&s, noon, "you", Period::TwoWeeks, Some("p1"));
-    assert_eq!(only["tiles"]["acting_min"], 1, "a project's: only what was counted in its panes");
+    assert_eq!((only["tiles"]["engaged"]["acting"].clone(), only["tiles"]["active_ms"].clone()), (json!(1), json!(2 * M + M)), "a project's: only what was counted in its panes, each a minute; the minutes in front are no project's");
+    // two more counts in the project's pane, 10 minutes apart with the page in front between: one stretch for the project too
+    s.with(|tx| crate::interact::insert(tx, &[counted(eleven + 3 * M + 30_000, "key", Some("p1"), 0), counted(eleven + 13 * M + 30_000, "key", Some("p1"), 0)], "mac")).unwrap();
+    assert_eq!(ask(&s, noon, "you", Period::TwoWeeks, Some("p1"))["tiles"]["active_ms"], 2 * M + 860_000, "11:00:10 to 11:13:30 and a minute more");
 }
 
 #[test]
@@ -269,7 +272,7 @@ fn ac176_who_does_the_work_on_tasks() {
     let kind = |k: &str| d["kinds"].as_array().unwrap().iter().find(|x| x["kind"] == k).unwrap()["by"].clone();
     assert_eq!((kind("start"), kind("move"), kind("comment")), (json!({"you": 1, "agents": 0, "dispatcher": 1}), json!({"you": 1, "agents": 1, "dispatcher": 0}), json!({"you": 1, "agents": 2, "dispatcher": 0})),
         "a Run is the human's start, an Auto-Dispatcher's choice Dispatcher's; Dispatcher's moves are no operations");
-    assert_eq!((d["series"][22]["by"]["you"].clone(), d["series"][22]["share"].clone(), d["series"][0]["share"].clone()), (json!(4), json!(4.0 / 9.0), Value::Null));
+    assert_eq!((d["series"][22]["by"].clone(), d["series"][0]["by"]["you"].clone()), (json!({"you": 4, "agents": 3, "dispatcher": 2}), json!(0)));
     assert_eq!(ask(&s, noon, "tasks", Period::Day, Some("p1"))["tiles"]["ops"], 0);
     assert_eq!(ask(&s, noon, "tasks", Period::Day, Some(""))["tiles"]["ops"], 9, "no project: the default project's tasks");
 }

@@ -16,3 +16,5 @@ CREATE TABLE user_interaction (
   device TEXT NOT NULL
 );
 CREATE INDEX user_interaction_at ON user_interaction (at);
+-- Whether Auto-Dispatcher chose a task (the Dashboard's Tasks tab, AC-176).
+CREATE INDEX auto_starts_task ON auto_starts (task, at);

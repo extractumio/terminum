@@ -178,7 +178,7 @@ export async function liveHistory(page, opts) {
   await page.click("#dnote");
   await page.goto(`${base}/dashboard/?period=day`);
   const counts = () => numbers("tab=you&period=day");
-  check("AC-175 a page counts the user's presses, keys and scrolls and sends them as it goes: engagement is counted from them", await until(async () => (await counts()).tiles.acting_min >= 1, 8000)
+  check("AC-175 a page counts the user's presses, keys and scrolls and sends them as it goes: engagement is counted from them", await until(async () => (await counts()).tiles.engaged?.acting >= 1, 8000)
     && !!(await counts()).measured_from && await page.reload().then(() => page.waitForSelector("#tiles .tile")).then(() => tileOf("Engagement")).then((v) => /^\d+%$/.test(v))
     && (await page.$$("#engaged rect.hit")).length === 24, `${JSON.stringify((await counts()).tiles)} | ${await page.textContent("#dnote")}`);
   const refused = await page.evaluate(async () => (await fetch("/api/interactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ now: Date.now(), rows: [{ at: Date.now(), ended: Date.now(), kind: "typed", surface: "sessions", n: 1 }] }) })).json());

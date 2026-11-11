@@ -4,7 +4,7 @@
 // sessions juggled and the switches between them, what they did on the board, how long tasks waited for them. terminumd's numbers; nothing is added up here.
 import { columns } from "./charts.js";
 import { heatMap, workingDays } from "./dashcharts.js";
-import { bands, card, delta, kindWords, legend, percent, rankHue, ranked, shareTile, stackCard, tile, was, words } from "./dashkit.js";
+import { bands, card, delta, kindWords, legend, percent, rankHue, ranked, shareOf, shareTile, stackCard, tile, was, words } from "./dashkit.js";
 import { plural } from "./listparts.js";
 import { NONE, WEEK, clock, count, dayLabel, hours, inkOf, projectLabel } from "./msgpage.js";
 
@@ -13,8 +13,6 @@ const BOARD = [["made", "made", rankHue(1)], ["move", "moved", rankHue(4)], ["co
 
 /** An active minute by what the user did in it, in the stack's order: the numbers' key, its word, its color. */
 const MINUTES = [["acting", "acting", rankHue(2)], ["reading", "reading", rankHue(1)], ["watching", "watching", "var(--faint)"]];
-/** A bucket's or the period's active minutes by MINUTES' keys. */
-const minutesOf = (active, acting, reading) => ({ acting, reading, watching: active - acting - reading });
 const PAUSE = "A pause ends a stretch when over 5 minutes, or over 15 with a page in front through it; before the pages counted, over 15";
 
 /** A project's color: the session list's; one no longer there takes a hue by its rank, so the stack's
@@ -34,9 +32,9 @@ function tiles({ data, period }) {
   return [
     tile("Active time", hours(a.active_ms), words(a.active_units ? `${hours(a.active_per_unit_ms)} an active ${unit}` : "", d(a.active_ms, b?.active_ms, time)), s.map((x) => x.active_ms)),
     tile(`Active ${unit}s`, `${a.active_units} of ${a.units}`, d(a.active_units, b?.active_units, few)),
-    tile("Engagement", a.engagement === null ? "—" : percent(a.engagement),
-      a.engagement === null ? "no active time since the pages count" : words(`acting or reading in ${count(a.acting_min + a.reading_min)} of ${count(a.seen_min)} active minutes`, was(b?.engagement)),
-      s.map((x) => (x.engaged ? (x.engaged.acting + x.engaged.reading) / x.engaged.active : 0))),
+    tile("Engagement", shareOf(a.engaged?.share),
+      a.engaged ? words(`acting or reading in ${count(a.engaged.acting + a.engaged.reading)} of ${count(a.engaged.active)} active minutes`, was(b?.engaged?.share)) : "no active time since the pages count",
+      s.map((x) => x.engaged?.share ?? 0)),
     tile("Longest stretch", a.longest_ms ? hours(a.longest_ms) : "—", words("no long pause", b ? d(a.longest_ms, b.longest_ms, time) : "")),
     tile("Switches an active hour", a.active_ms ? a.switches_per_hour.toFixed(1) : "—",
       words(`${count(a.switches)} between sessions`, a.peak ? `most sessions in one hour: ${a.peak}` : "", b ? d(Math.round(a.switches_per_hour * 10), Math.round(b.switches_per_hour * 10), { small: 1e9, fmt: (x) => (x / 10).toFixed(1) }) : ""),
@@ -76,15 +74,13 @@ function engagedCard({ data, w }) {
   const s = data.series, t = data.tiles;
   const c = card("engaged", "Engagement", { hint: "active minutes by what you did", legend: true,
     hintTitle: "Acting: a minute with a key, a press, a drag or something sent. Reading: one you only scrolled in. Watching: active time with neither" });
-  const of = (d) => (d.engaged ? minutesOf(d.engaged.active, d.engaged.acting, d.engaged.reading) : null);
-  const all = minutesOf(t.seen_min, t.acting_min, t.reading_min);
   const say = (i) => {
-    const m = i < 0 ? all : of(s[i]), active = i < 0 ? t.seen_min : s[i].engaged?.active;
-    c.say.textContent = words(i < 0 ? "" : w.long(i), !m || !active ? "not measured" : `${percent((m.acting + m.reading) / active)} engaged`, ...(m && active ? MINUTES.map(([k, word]) => `${word} ${count(m[k])} min`) : []));
+    const m = i < 0 ? t.engaged : s[i].engaged;
+    c.say.textContent = words(i < 0 ? "" : w.long(i), ...(m ? [`${percent(m.share)} engaged`, ...MINUTES.map(([k, word]) => `${word} ${count(m[k])} min`)] : ["not measured"]));
   };
-  legend(c.legend, MINUTES.map(([k, word, color]) => ({ color, name: word, num: `${count(all[k])} min` })));
+  legend(c.legend, MINUTES.map(([k, word, color]) => ({ color, name: word, num: `${count(t.engaged?.[k] ?? 0)} min` })));
   c.draw = () => {
-    columns(c.plot, bands(s, w, (d) => MINUTES.map(([k, , color]) => ({ value: of(d)?.[k] ?? 0, color }))), { height: 150, fmt: (v) => `${v} min`, xlabels: w.short, select: say });
+    columns(c.plot, bands(s, w, (d) => MINUTES.map(([k, , color]) => ({ value: d.engaged?.[k] ?? 0, color }))), { height: 150, fmt: (v) => `${v} min`, xlabels: w.short, select: say });
     say(-1);
   };
   return c;

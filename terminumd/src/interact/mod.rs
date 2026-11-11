@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The interaction log (terminum.md AC-175): what the human did in a page, as the page counted it by the
-//! clock minute: a kind, a place, a control's id and how many times; never a key, a text or a position.
+//! clock minute: a kind, a place, a page's own control's id and how many times; never a key, a text or a
+//! position, nor an id from a frame, where a document's headings have ids.
 //! `POST /api/interactions {now, rows}` appends them to the tasks' store's `user_interaction`; the Dashboard
 //! reads presence and engagement from it. The log never holds up a page: what is not taken is dropped.
 
@@ -29,6 +30,8 @@ use crate::tasks::ops::sql;
 pub const KINDS: [&str; 6] = ["click", "key", "scroll", "drag", "move", "front"];
 /// Where: a page, or a frame of the sessions' page.
 pub const SURFACES: [&str; 8] = ["sessions", "kanban", "history", "dashboard", "scheduled", "files", "view", "quick"];
+/// Those of them that are pages: a press or a drag there names its control.
+const PAGES: usize = 5;
 /// Rows kept: those of the last KEEP_DAYS, at most KEEP_ROWS.
 pub const KEEP_DAYS: i64 = 180;
 pub const KEEP_ROWS: i64 = 1_000_000;
@@ -92,13 +95,14 @@ pub fn target(id: &str) -> String {
 /// place, a time outside the last day, counts that no page counts.
 fn row(sent: Sent, shift: i64, now: i64) -> Option<Row> {
     let kind = *KINDS.iter().find(|k| **k == sent.kind)?;
-    let surface = *SURFACES.iter().find(|s| **s == sent.surface)?;
-    let (at, ended) = (sent.at + shift, sent.ended + shift);
+    let place = SURFACES.iter().position(|s| *s == sent.surface)?;
+    let surface = SURFACES[place];
+    let (at, ended) = (sent.at.checked_add(shift)?, sent.ended.checked_add(shift)?);
     let whole = at >= now - OLDEST && ended <= now + MINUTE && at <= ended && ended - at < MINUTE;
     if !whole || !(1..=100_000).contains(&sent.n) || !(0..=100_000_000).contains(&sent.amount) {
         return None;
     }
-    let named = matches!(kind, "click" | "drag");
+    let named = matches!(kind, "click" | "drag") && place < PAGES;
     let pane = sent.pane.filter(|p| !p.is_empty() && p.len() <= PANE && !p.chars().any(char::is_control));
     Some(Row { at, ended, kind, surface, target: if named { target(&sent.target) } else { String::new() }, n: sent.n, amount: sent.amount, pane, project: None })
 }
@@ -113,8 +117,7 @@ pub fn insert(tx: &Transaction, rows: &[Row], device: &str) -> Result<(), String
 
 /// Rows older than KEEP_DAYS, then the oldest beyond `rows`, go (the input log's writer, each hour).
 pub fn trim(tx: &Transaction, now_ms: i64, rows: i64) -> Result<(), String> {
-    tx.execute("DELETE FROM user_interaction WHERE at < ?1", [now_ms - KEEP_DAYS * 86_400_000]).map_err(sql)?;
-    tx.execute("DELETE FROM user_interaction WHERE id <= (SELECT id FROM user_interaction ORDER BY id DESC LIMIT 1 OFFSET ?1)", [rows]).map_err(sql).map(drop)
+    crate::inputs::writer::trim_rows(tx, "user_interaction", now_ms, KEEP_DAYS, rows)
 }
 
 /// How many of `wanted` rows this minute still takes: a page that loops never pushes the history out.
@@ -144,7 +147,9 @@ async fn take(State(app): State<Shared>, ConnectInfo(peer): ConnectInfo<SocketAd
     let now = crate::inputs::now_ms();
     let device = device(&headers, peer, from.is_some_and(|f| f.0.0));
     let sent = body.rows.len();
-    let mut rows: Vec<Row> = body.rows.into_iter().take(ROWS).filter_map(|s| row(s, now - body.now, now)).collect();
+    // a clock no shift brings to this Mac's is no page's
+    let shift = now.checked_sub(body.now);
+    let mut rows: Vec<Row> = body.rows.into_iter().take(ROWS).filter_map(|s| row(s, shift?, now)).collect();
     rows.truncate(room(&TAKEN, now, rows.len()));
     let kept = rows.len();
     if kept < sent {

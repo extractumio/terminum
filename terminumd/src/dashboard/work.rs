@@ -7,7 +7,7 @@
 //! end, a budget set, its notes `told` and `why`, a session's link) is no operation: of its own it only
 //! makes tasks and starts them.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 
 use rusqlite::Transaction;
 use serde_json::{json, Value};
@@ -16,11 +16,15 @@ use super::{local, Ask, Span};
 use crate::tasks::ops::rows;
 
 /// Who did it, as the page's keys: the human, an agent, Dispatcher.
-pub const WHO: [&str; 3] = ["you", "agents", "dispatcher"];
+const WHO: [&str; 3] = ["you", "agents", "dispatcher"];
+const YOU: usize = 0;
+const AGENTS: usize = 1;
+const DISPATCHER: usize = 2;
 /// The operations, in the page's order.
-pub const KINDS: [&str; 7] = ["made", "edit", "move", "comment", "parent", "start", "archive"];
+const KINDS: [&str; 7] = ["made", "edit", "move", "comment", "parent", "start", "archive"];
+const MADE: usize = 0;
 const START: usize = 5;
-/// The tasks listed: those with most operations.
+/// The tasks listed at most: those with most operations.
 const LISTED: usize = 200;
 /// An Auto-Dispatcher's choice starts its task within this of being written, seconds.
 const CHOSEN_WITHIN: i64 = 600;
@@ -56,7 +60,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?;
     for (t, kind, by, slug, title) in done {
         let Some(kind) = KINDS.iter().position(|k| *k == kind) else { continue };
-        let who = match by.as_str() { "human" => 0, "agent" => 1, _ => 2 };
+        let who = match by.as_str() { "human" => YOU, "agent" => AGENTS, _ => DISPATCHER };
         ops.push(Op { t, kind, who, task: row_of(slug, title) });
     }
     // a start: Dispatcher's own when the task was a round's choice just before, or a schedule's or a round's own task
@@ -69,7 +73,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
         for slug in slugs.split(',').map(str::trim).filter(|s| !s.is_empty()) {
             let found: Option<(String, bool)> = task.query_row((slug, ask.task_project(), at), |r| Ok((r.get(0)?, r.get(1)?))).ok();
             if let Some((title, own)) = found {
-                ops.push(Op { t, kind: START, who: if own { 2 } else { 0 }, task: row_of(slug.to_string(), title) });
+                ops.push(Op { t, kind: START, who: if own { DISPATCHER } else { YOU }, task: row_of(slug.to_string(), title) });
             }
         }
     }
@@ -79,7 +83,7 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
 /// The human's share of `by` (WHO's counts); none of nothing.
 fn share(by: &[i64; 3]) -> Option<f64> {
     let all: i64 = by.iter().sum();
-    (all > 0).then(|| by[0] as f64 / all as f64)
+    (all > 0).then(|| by[YOU] as f64 / all as f64)
 }
 
 fn counts(by: &[i64; 3]) -> BTreeMap<&'static str, i64> {
@@ -90,34 +94,34 @@ fn summarize(read: &Read, span: &Span) -> Value {
     let n = span.len();
     let mut series = vec![[0i64; 3]; n];
     let mut kinds = [[0i64; 3]; KINDS.len()];
-    let mut per_task: HashMap<usize, [i64; 3]> = HashMap::new();
-    let mut made_by_hand: HashSet<usize> = HashSet::new();
+    let mut per_task = vec![[0i64; 3]; read.tasks.len()];
+    let mut made_by_hand = vec![false; read.tasks.len()];
     for op in &read.ops {
         let Some(k) = span.index(op.t) else { continue };
         series[k][op.who] += 1;
         kinds[op.kind][op.who] += 1;
-        per_task.entry(op.task).or_default()[op.who] += 1;
-        if op.kind == 0 && op.who == 0 { made_by_hand.insert(op.task); }
+        per_task[op.task][op.who] += 1;
+        made_by_hand[op.task] |= op.kind == MADE && op.who == YOU;
     }
     let mut total = [0i64; 3];
     for s in &series { for (t, v) in total.iter_mut().zip(s) { *t += v; } }
-    let mut spread = [0i64; 4];
-    for by in per_task.values() {
-        let all: i64 = by.iter().sum();
-        spread[if by[0] == 0 { 0 } else if by[0] == all { 3 } else if by[0] * 2 < all { 1 } else { 2 }] += 1;
+    // the tasks worked on: operations, the task's row; most first
+    let mut ranked: Vec<(i64, usize)> = per_task.iter().enumerate().map(|(i, by)| (by.iter().sum(), i)).filter(|t| t.0 > 0).collect();
+    ranked.sort_by(|a, b| b.0.cmp(&a.0).then(read.tasks[a.1].0.cmp(&read.tasks[b.1].0)));
+    let mut spread: BTreeMap<&str, i64> = SPREAD.iter().map(|s| (*s, 0)).collect();
+    for (all, i) in &ranked {
+        let mine = per_task[*i][YOU];
+        *spread.entry(if mine == 0 { "none" } else if mine == *all { "all" } else if mine * 2 < *all { "less" } else { "more" }).or_default() += 1;
     }
-    let mut ranked: Vec<(&usize, &[i64; 3])> = per_task.iter().collect();
-    ranked.sort_by(|a, b| b.1.iter().sum::<i64>().cmp(&a.1.iter().sum()).then(read.tasks[*a.0].0.cmp(&read.tasks[*b.0].0)));
-    let tasks: Vec<Value> = ranked.iter().take(LISTED).map(|(i, by)| json!({"id": read.tasks[**i].0, "title": read.tasks[**i].1, "by": counts(by), "n": by.iter().sum::<i64>(), "share": share(by)})).collect();
+    let tasks: Vec<Value> = ranked.iter().take(LISTED).map(|(all, i)| json!({"id": read.tasks[*i].0, "title": read.tasks[*i].1, "by": counts(&per_task[*i]), "n": all, "share": share(&per_task[*i])})).collect();
     let tiles = json!({
         "ops": total.iter().sum::<i64>(), "by": counts(&total), "share": share(&total),
-        "tasks": per_task.len(), "made_by_hand": made_by_hand.len(),
-        "spread": SPREAD.iter().copied().zip(spread).collect::<BTreeMap<_, _>>(),
+        "tasks": ranked.len(), "made_by_hand": made_by_hand.iter().filter(|m| **m).count(), "spread": spread,
     });
     json!({
         "tiles": tiles,
-        "series": series.iter().map(|s| json!({"by": counts(s), "share": share(s)})).collect::<Vec<_>>(),
+        "series": series.iter().map(|s| json!({"by": counts(s)})).collect::<Vec<_>>(),
         "kinds": KINDS.iter().zip(&kinds).map(|(k, by)| json!({"kind": k, "by": counts(by), "share": share(by)})).collect::<Vec<_>>(),
-        "tasks": tasks, "more": per_task.len().saturating_sub(LISTED),
+        "tasks": tasks, "more": ranked.len().saturating_sub(LISTED),
     })
 }

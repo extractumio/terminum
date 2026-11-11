@@ -23,6 +23,8 @@ fn ac175_only_known_counts_at_this_mac_s_time() {
     let r = row(sent(now + 80_000, "click", "run7"), -90_000, now).unwrap();
     assert_eq!((r.at, r.ended, r.kind, r.target.as_str(), r.n), (now - 10_000, now - 5_000, "click", "runN", 3));
     assert_eq!(row(sent(now - 10_000, "scroll", "sessions"), 0, now).unwrap().target, "", "only a press and a drag name their control");
+    assert_eq!(row(Sent { surface: "view".into(), ..sent(now - 10_000, "click", "our-plan") }, 0, now).unwrap().target, "", "a frame's control is not named: its id can be a document's heading");
+    assert!(row(sent(now - 10_000, "key", ""), i64::MAX, now).is_none(), "a clock beyond any shift");
     assert!(row(sent(now - 10_000, "typed", ""), 0, now).is_none(), "an unknown kind");
     assert!(row(Sent { surface: "elsewhere".into(), ..sent(now - 10_000, "key", "") }, 0, now).is_none(), "an unknown place");
     assert!(row(sent(now - 2 * OLDEST, "key", ""), 0, now).is_none(), "older than a day");
