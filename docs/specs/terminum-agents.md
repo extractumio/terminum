@@ -382,8 +382,8 @@ Scenario: AC-153 edge — what is never ended, and when nothing ends
 Scenario: AC-153 happy path — the pane says what ended and how to resume it
   Given Claude Code ran in %3 as `claude --dangerously-skip-permissions`, its session began in /Users/alex/api, its title "✳ Fix the login", its plan 7 of 9 done
   When the idle exit ended it and its shell is in front again
-  Then %3 shows, after its shell's prompt, a block of plain lines: "terminum ended this idle agent: not opened for 3 days" and the time; "Agent: Claude Code, session <id>"; its title; "Started as:" its command line; "Folder:" the folder its session began in; "Plan: 7 of 9 done"; "Resume: cd /Users/alex/api && claude --resume <id>"
-  And for Codex the same, its Resume `codex resume <id>`
+  Then %3 shows, after its shell's prompt, a block of plain lines: "terminum ended this idle agent: not opened for 3 days" and the time; "Agent: Claude Code, session <id>"; its title; "Started as:" its command line; "Folder:" the folder its session began in; "Plan: 7 of 9 done"; "Resume: cd /Users/alex/api && claude --dangerously-skip-permissions --resume <id>"
+  And for Codex the same, its Resume `codex resume <id>` and its options after the ID, so that none takes the ID as its value
   And the lines are the pane's output, never its input: nothing is typed, the shell's line stays empty, tmux's history and the pane's kept last lines (terminum-lifecycle.md AC-96) hold them
   And `idleexit.ended` logs the same: key, kind, session, folder, command line, title
 
@@ -402,7 +402,16 @@ Scenario: AC-153 edge — what the summary does not know
   Given a folder, title or command line holds a control or invisible character, a `'`, `#(…)`, `$HOME` or `%s`
   Then each shows as it is, a control character as a visible escape (`\n`, `\u{202e}`), nothing of it runs; a folder with a control character, or one the pane's shell cannot take as one word, is not on the Resume line ("(in its folder)")
   And the Resume line's ID is the hooks' session only in the shape of an ID (letters, digits, `-`), else the list to pick from
-  And the original options are not added to Resume (a prompt among them would be sent again): "Started as" shows them
+
+Scenario: AC-153 edge — the options it started with go onto Resume, never its prompt
+  Given the user started the agent by an alias or a wrapper script (`ccdsp` for `claude --dangerously-skip-permissions`), with options of their own
+  Then "Started as" shows the agent's own command line (`claude --dangerously-skip-permissions --model opus 'fix the login'`), its words as the kernel holds them, each quoted for a POSIX shell
+  And Resume takes its options again (`claude --dangerously-skip-permissions --model opus --resume <id>`), each one word of the pane's shell, never the prompt: it would be sent again
+  And the options that pick, start or end a session (`--resume`, `--continue`, `--session-id`, `--print`, `--worktree`; Codex's `resume`, `--last`, `--image`) are left out, so an agent started from a Resume line gets the same Resume line
+  Given an option the agent's table does not know, or one whose value is optional, stands before a bare word (its value or the prompt cannot be told)
+  Or a secret's value, a control or invisible character, or more than 1000 characters are among the options
+  Or the words were read only from `ps` (joined by spaces), or from a program not named as the agent (a renamed link, which may be a wrapper the agent runs hooks under), or a host's older `terminum` sent none
+  Then Resume is the plain one, with "(add its options from Started as)"
 ```
 
 ## 6. Flow and sequence diagrams
@@ -467,7 +476,7 @@ sequenceDiagram
 |---|---|
 | `terminum hooks [status\|install\|remove] [claude\|codex]` | AC-39, AC-97; a person's command |
 | `terminum hook claude\|codex` | run by the agent's hooks: the event's JSON on stdin (its first 1 MiB kept, the rest read and dropped); posts to every sink at once: the local terminumd's socket (`TM_APP_DIR`, else `~/.terminum/state`), then the Macs' links in `~/.terminum/run`; prints at most `{"hookSpecificOutput":{"hookEventName":…,"additionalContext":…}}` |
-| `POST /hook` on `terminumd.sock` | `{agent, socket, socket_path, pane, event, session?, turn?, sub?, subtype?, kind?, error?, cwd?, model?, tool?, message?, asks?, plan?, prompt?}` → 204, or 200 `{"remind": text}` for a reminder |
+| `POST /hook` on `terminumd.sock` | `{agent, socket, socket_path, pane, event, session?, turn?, sub?, subtype?, kind?, error?, cwd?, model?, tool?, message?, asks?, plan?, prompt?, argv?, opts?}` → 204, or 200 `{"remind": text}` for a reminder, `"argv": true` asking for the agent's command line (event `Argv`, AC-153) |
 | `POST /agent` on `terminumd.sock` | `{socket, socket_path, pane, tool, args, session?}` → always 200 `{text, error}`; the tool `probe` asks whether terminumd knows the pane |
 | `GET /health` on the socket | adds `hooks: {claude\|codex: <Unix seconds last heard>}` |
 | `terminum mcp` | MCP over stdio, one JSON-RPC message a line, at most 1 MiB; protocol versions 2025-11-25, 2025-06-18, 2025-03-26 (default 2025-06-18); serverInfo name `terminum`; the pane from `TMUX` and `TMUX_PANE`, the session from `_meta.sessionId` |
@@ -475,7 +484,7 @@ sequenceDiagram
 | The list's item | may carry `tool`, `why`, `subagents`, `plan`, `unread` |
 | WebSocket `plan` | page asks for a pane's plan; the answer's `plan` has title, doing, items, done, total, pct, eta and more, `hooks` and `finished` (AC-97) |
 
-Hook fields, cut to these characters: event 40, socket 64, socket_path 300, session, turn and sub 100, subtype 60, kind 40, error 60, cwd 1000, model 80, tool 80, message 200, prompt 20,000. `asks` is one bit: the last message ended in a question mark. `turn` is `turn_id`, else `prompt_id`.
+Hook fields, cut to these characters: argv 300, opts 1000 in all (AC-153), event 40, socket 64, socket_path 300, session, turn and sub 100, subtype 60, kind 40, error 60, cwd 1000, model 80, tool 80, message 200, prompt 20,000. `asks` is one bit: the last message ended in a question mark. `turn` is `turn_id`, else `prompt_id`.
 
 Events run: Claude Code SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, Notification, Stop, StopFailure, SubagentStart, SubagentStop, SessionEnd, each async with a 3 s timeout, and PostToolBatch (AC-39); Codex SessionStart, UserPromptSubmit, PreToolUse, PermissionRequest, PostToolUse, Stop, SubagentStart, SubagentStop, SessionEnd, Interrupt, each async with 3 s but SessionEnd (AC-39).
 
@@ -552,4 +561,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
 - [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`), `web/test/e2e_liveplans.mjs`
-- [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`
+- [x] AC-153 — `cargo test idle_exit` (keys and the summary on a private tmux with a stand-in agent), `cargo test idle_summary`, `cargo test hookargv`, `cargo test hookopts`, `cargo test tmux::hookstate`, `cargo test settings`, `web/test/e2e_header.mjs`

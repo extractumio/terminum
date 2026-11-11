@@ -65,9 +65,13 @@ pub(crate) fn shell_name(job: &str) -> &str {
 /// `s` as one word of the shell `job`, or None if that shell cannot take it safely.
 pub fn quote(job: &str, s: &str) -> Option<String> {
     // a relative name that starts with "-" would be read as an option by the command
-    let s = if s.starts_with('-') { format!("./{s}") } else { s.to_string() };
-    if bare(&s) {
-        return Some(s);
+    if s.starts_with('-') { quote_word(job, &format!("./{s}")) } else { quote_word(job, s) }
+}
+
+/// `s` as one word of the shell `job` as it is, an option too, or None if that shell cannot take it safely.
+pub fn quote_word(job: &str, s: &str) -> Option<String> {
+    if bare(s) {
+        return Some(s.to_string());
     }
     match shell_name(job) {
         "bash" | "zsh" | "sh" | "dash" | "ksh" | "mksh" => Some(format!("'{}'", s.replace('\'', "'\\''"))),

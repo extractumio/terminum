@@ -9,6 +9,7 @@ pub mod agentsetup;
 mod commands;
 pub mod hook;
 mod hookargv;
+mod hookopts;
 pub mod statusline;
 mod hookplan;
 mod hooktokens;
