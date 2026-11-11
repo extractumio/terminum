@@ -308,6 +308,18 @@ export async function liveDispatcher(page, opts) {
   await page.reload();
   await page.waitForSelector("#sessions .item");
   check("AC-117 a closed line stays closed", await until(async () => await page.evaluate(() => document.querySelectorAll("#asks .taskline").length) <= left, 4000));
+  // many lines scroll in their own third of the window: the terminal keeps its room (40 copies of a line)
+  const crowded = await page.evaluate(() => {
+    const box = document.querySelector("#asks"), one = box.querySelector(".taskline") ?? Object.assign(document.createElement("div"), { className: "ask taskline", textContent: "TEST-1 failed" });
+    const was = box.hidden;
+    box.hidden = false;
+    const added = Array.from({ length: 40 }, () => box.appendChild(one.cloneNode(true)));
+    const r = { asks: box.getBoundingClientRect().height, scrolls: box.scrollHeight > box.clientHeight, term: document.querySelector("#termrow").getBoundingClientRect().height, h: innerHeight };
+    for (const c of added) c.remove();
+    box.hidden = was;
+    return r;
+  });
+  check("AC-117 many lines scroll in a third of the window; the terminal keeps its room", crowded.asks <= crowded.h / 3 + 1 && crowded.scrolls && crowded.term >= crowded.h / 3, JSON.stringify(crowded));
   // this test's windows go, their agents' states with them: what follows measures a quiet page
   for (const line of tmux("list-panes", "-a", "-F", "#{pane_id} #{@terminum-run}").split("\n")) {
     const [id, mark] = line.trim().split(" ");
