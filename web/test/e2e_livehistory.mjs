@@ -144,7 +144,8 @@ export async function liveHistory(page, opts) {
   const rowOf = (list, name) => page.evaluate(([list, name]) => ([...document.querySelectorAll(`#${list} .rrow`)].find((r) => r.textContent.includes(name))?.textContent ?? "").replace("︎", ""), [list, name]);
   await page.click('#dtabs [data-tab="system"]');
   check("AC-171 System: Dispatcher's sessions, the failures by reason, the agents' load", await until(async () => await tileOf("Sessions started") === String(sys0.tiles.sessions + 1), 6000)
-    && /tab=system/.test(page.url()) && /Write: This pane has closed/.test(await page.textContent("#failures")) && new RegExp(`Agent ${dash}\\d+%1$`).test(await rowOf("agents", dash))
+    // its failed write by its count: among the reasons shown it falls under Other once the suites before left ten kinds
+    && /tab=system/.test(page.url()) && (await numbers("tab=system&period=year")).tiles.failed_writes === sys0.tiles.failed_writes + 1 && /Write: This pane has closed|Other \(\d+\)/.test(await page.textContent("#failures")) &&new RegExp(`Agent ${dash}\\d+%1$`).test(await rowOf("agents", dash))
     && (await numbers("tab=system&period=year")).agents.find((a) => a.id === dash)?.busy_ms === 1_800_000
     && (await page.$$("#ends rect.hit")).length === 12 && (await page.$$("#load rect.hit")).length === 12 && (await page.$$("#fires rect.hit")).length === 12, `${await page.textContent("#tiles")} | ${await rowOf("agents", dash)}`);
   await page.click('#dtabs [data-tab="costs"]');
