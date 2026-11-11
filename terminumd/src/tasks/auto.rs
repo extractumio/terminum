@@ -42,6 +42,19 @@ pub struct Setting {
     pub wait: i64,
     /// the most tasks it starts in 24 hours
     pub day_most: i64,
+    /// how tasks are picked: AGENT, a round of the picking agent, or ORDER, down the board with no agent
+    pub mode: String,
+}
+
+/// The two ways of picking.
+pub const AGENT: &str = "agent";
+pub const ORDER: &str = "order";
+
+impl Setting {
+    /// Whether terminumd itself starts the tasks, down the board, with no agent picking.
+    pub fn by_order(&self) -> bool {
+        self.mode == ORDER
+    }
 }
 
 /// The most a day's cap may be.
@@ -54,12 +67,12 @@ pub const PASSED: i64 = DAY;
 /// The longest wait, in minutes: a day.
 pub const WAIT_MOST: i64 = 24 * 60;
 
-const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes, auto_day_most FROM projects";
+const SETTING: &str = "SELECT auto_agent, auto_default, auto_off_why, auto_on_at, id, auto_on, auto_severities, auto_wait_minutes, auto_day_most, auto_mode FROM projects";
 
 fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<(String, Setting)> {
     let severities: String = r.get(6)?;
     Ok((r.get(4)?, Setting { agent: r.get(0)?, default: r.get(1)?, off_why: r.get(2)?, on_at: r.get(3)?, on: r.get(5)?,
-        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)?, day_most: r.get(8)? }))
+        severities: serde_json::from_str(&severities).unwrap_or_default(), wait: r.get(7)?, day_most: r.get(8)?, mode: r.get(9)? }))
 }
 
 pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
@@ -69,7 +82,7 @@ pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
 impl Setting {
     /// What the board shows of it: its switch, the picking agent, the default one, what it takes, why it is off.
     pub fn shown(&self) -> Value {
-        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "day_most": self.day_most, "off_why": self.off_why})
+        json!({"on": self.on, "agent": self.agent, "default": self.default, "severities": self.severities, "wait_minutes": self.wait, "day_most": self.day_most, "mode": self.mode, "off_why": self.off_why})
     }
 
     /// This setting with what a human's `body` changes: a field it does not hold stays, so the board's switch sends
@@ -91,6 +104,9 @@ impl Setting {
         if let Some(wait) = body.get("wait_minutes") {
             s.wait = wait.as_i64().filter(|m| (0..=WAIT_MOST).contains(m)).ok_or(format!("Wait: 0 to {WAIT_MOST} minutes"))?;
         }
+        if let Some(mode) = body.get("mode") {
+            s.mode = mode.as_str().filter(|m| [AGENT, ORDER].contains(m)).ok_or(format!("mode: {AGENT} or {ORDER}"))?.to_string();
+        }
         if let Some(most) = body.get("day_most") {
             s.day_most = most.as_i64().filter(|n| (1..=DAY_MOST).contains(n)).ok_or(format!("Tasks a day: 1 to {DAY_MOST}"))?;
         }
@@ -101,7 +117,7 @@ impl Setting {
 /// How many tasks it started in each project in the 24 hours before `now`: what its cap counts. A press that started
 /// nothing left no row; a project with none is not listed.
 pub fn started_in_day_all(tx: &Transaction, now: i64) -> Result<std::collections::HashMap<String, i64>, String> {
-    Ok(rows(tx, "SELECT r.project, count(*) FROM auto_starts s JOIN auto_rounds r ON r.task = s.round WHERE s.at > ?1 GROUP BY r.project", [now - DAY / crate::dispatcher::scale()], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
+    Ok(rows(tx, "SELECT project, count(*) FROM auto_starts WHERE at > ?1 GROUP BY project", [now - DAY / crate::dispatcher::scale()], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect())
 }
 
 /// The same for `project` alone.
@@ -135,7 +151,7 @@ fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent
 pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<(), String> {
     ops::check_project(tx, project)?;
     let (agent, default) = (in_pool(tx, new.agent.as_deref())?.map(|a| a.id), in_pool(tx, new.default.as_deref())?.map(|a| a.id));
-    if new.on && agent.is_none() {
+    if new.on && agent.is_none() && !new.by_order() {
         return Err("Choose the agent that picks first: its settings.".to_string());
     }
     if new.on && new.severities.is_empty() {
@@ -143,8 +159,8 @@ pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<()
     }
     let was = setting(tx, project)?;
     let on_at = if new.on && !was.on { at } else { was.on_at };
-    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7, auto_day_most = ?8 WHERE id = ?1",
-        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait, new.day_most)).map(drop).map_err(sql)
+    tx.execute("UPDATE projects SET auto_on = ?2, auto_agent = ?3, auto_default = ?4, auto_off_why = CASE WHEN ?2 THEN NULL ELSE auto_off_why END, auto_on_at = ?5, auto_severities = ?6, auto_wait_minutes = ?7, auto_day_most = ?8, auto_mode = ?9 WHERE id = ?1",
+        (project, new.on, agent, default, on_at, json!(new.severities).to_string(), new.wait, new.day_most, &new.mode)).map(drop).map_err(sql)
 }
 
 /// It turns itself off for `project`, saying why: only a human turns it on again. Its agents stay chosen.
@@ -209,14 +225,15 @@ pub fn rounds_shown(tx: &Transaction, project: &str) -> Result<Vec<(String, Stri
     rows(tx, "SELECT t.id, t.slug, t.status FROM auto_rounds a JOIN tasks t ON t.id = a.task WHERE a.project = ?1 AND t.archived_at IS NULL ORDER BY a.at, a.rowid", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
 }
 
-/// Round `round` starts `task`: written before its press, so two calls at once never both find a slot of the round.
-pub fn started(tx: &Transaction, task: &str, round: &str, at: i64) -> Result<(), String> {
-    tx.execute("INSERT INTO auto_starts (task, round, at) VALUES (?1, ?2, ?3)", (task, round, at)).map(drop).map_err(sql)
+/// It starts `task` in `project`, by round `round` or, with none, by the board's order: written before its press, so
+/// two calls at once never both find a slot of the round, and its cap counts it.
+pub fn started(tx: &Transaction, task: &str, round: Option<&str>, project: &str, at: i64) -> Result<(), String> {
+    tx.execute("INSERT INTO auto_starts (task, round, project, at) VALUES (?1, ?2, ?3, ?4)", (task, round, project, at)).map(drop).map_err(sql)
 }
 
-/// The press of `task` by `round` started nothing: its slot of the round is free again.
-pub fn not_started(tx: &Transaction, task: &str, round: &str) -> Result<(), String> {
-    tx.execute("DELETE FROM auto_starts WHERE task = ?1 AND round = ?2", (task, round)).map(drop).map_err(sql)
+/// That press of `task` started nothing: its slot of the round and of the day is free again.
+pub fn not_started(tx: &Transaction, task: &str, round: Option<&str>) -> Result<(), String> {
+    tx.execute("DELETE FROM auto_starts WHERE rowid = (SELECT max(rowid) FROM auto_starts WHERE task = ?1 AND round IS ?2)", (task, round)).map(drop).map_err(sql)
 }
 
 /// When the last round of `project` since `on_at` was made, if it started nothing: the next rests a while
@@ -243,8 +260,8 @@ pub fn tripped(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<Str
     if let Some((id, status, key)) = last && status == "FAILED" && started_by(tx, &key)? == 0 {
         return Ok(Some(format!("its round {id} failed: see it in Archived.")));
     }
-    let ended: Vec<(String, String)> = rows(tx, "SELECT t.slug, t.status FROM auto_starts s JOIN tasks t ON t.id = s.task JOIN auto_rounds a ON a.task = s.round
-                 WHERE a.project = ?1 AND s.at >= ?2 AND t.status NOT IN ('IN PROGRESS', 'WAIT FOR HUMAN')
+    let ended: Vec<(String, String)> = rows(tx, "SELECT t.slug, t.status FROM auto_starts s JOIN tasks t ON t.id = s.task
+                 WHERE s.project = ?1 AND s.at >= ?2 AND t.status NOT IN ('IN PROGRESS', 'WAIT FOR HUMAN')
                    AND NOT EXISTS (SELECT 1 FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND e.at >= s.at
                      AND ((e.kind = 'move' AND u.kind = 'human') OR (e.kind = 'why' AND e.text = ?3)))
                  ORDER BY s.at DESC, s.rowid DESC LIMIT 2", (project, on_at, crate::dispatcher::runs::GAVE_UP), |r| Ok((r.get(0)?, r.get(1)?)))?;
@@ -297,7 +314,7 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
                  ORDER BY c.severity, c.rank LIMIT ?4",
-        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, (now - PASSED / scale + 1).max(s.on_at)),
+        (project, &s.default, only, (CANDIDATES_MOST * 2) as i64, json!(s.severities).to_string(), now - s.wait * 60 / scale, if s.by_order() { i64::MAX } else { (now - PASSED / scale + 1).max(s.on_at) }),
         |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, agent: r.get(2)?, changed: r.get(3)? }))?;
     let mut out = Vec::new();
     for c in found {
