@@ -322,7 +322,7 @@ Scenario: AC-36 happy path — paste an image
 
 Scenario: AC-36 happy path — upload and drop
   When the user presses Upload and picks a file, or drops files on the page
-  Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together, one per line in a coding agent's box (with bracketed paste on), else separated by spaces (in a shell each line would run as a command of its own at Enter); the terminal is outlined while files are held over it; a folder is refused; a drop never makes the browser open the file
+  Then each is saved as an image is, of any kind, named by time, hex digits and its own name in safe letters, and the paths are pasted together, one per line in a coding agent's box (with bracketed paste on), else separated by spaces (in a shell each line would run as a command of its own at Enter); the terminal is outlined while files are held over it, and the outline goes within 1 s of the drag leaving the page or ending without a drop there (Esc, a drop in the Files panel, the pointer leaving through it), never staying on the next session shown; a folder is refused; a drop never makes the browser open the file
 
 Scenario: AC-36 happy path — files dropped from Finder on a pane of this Mac
   Given the page is open in this Mac's browser (http://127.0.0.1:48080, not through tailscale serve: terminumd says so in its `build` message, the page never guesses it from its address) and the shown pane's shell runs on this Mac
