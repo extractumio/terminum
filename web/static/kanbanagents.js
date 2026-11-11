@@ -111,7 +111,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
   let pressed = false;
   list.addEventListener("pointerdown", () => { pressed = true; });
   for (const end of ["pointerup", "pointercancel"]) window.addEventListener(end, () => { if (pressed) { pressed = false; setTimeout(draw); } });
-  /** Anew only when what it shows changed, and not under a press or a drag: a press spanning a read keeps its key. */
+  /** Anew only when what it shows changed, and not under a press or a drag. */
   function draw() {
     const tasks = given(), agents = getMeta().agents;
     // the minute: a window's reset and a reading's age show without news

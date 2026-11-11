@@ -147,7 +147,7 @@ export async function liveSchedules(page, live) {
     // read once they hold still: a card drawn after the load (a session's dot, a reading) changes a bar's height
     const read = () => page.evaluate(() => ["#agentbar", "#schedbar"].map((bar) => Math.round(document.querySelector(bar).getBoundingClientRect().height)));
     let last = await read();
-    for (let i = 0; i < 20; i++) { await nap(250); const now = await read(); if (now.join() === last.join()) return now; last = now; }
+    await until(async () => { const now = await read(), same = now.join() === last.join(); last = now; return same; });
     return last;
   };
   const over = await bars(), many = [];

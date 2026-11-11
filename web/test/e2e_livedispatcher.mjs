@@ -310,7 +310,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-117 a closed line stays closed", await until(async () => await page.evaluate(() => document.querySelectorAll("#asks .taskline").length) <= left, 4000));
   // many lines scroll in their own third of the window: the terminal keeps its room (40 copies of a line)
   const crowded = await page.evaluate(() => {
-    const box = document.querySelector("#asks"), one = box.querySelector(".taskline") ?? Object.assign(document.createElement("div"), { className: "ask taskline", textContent: "TEST-1 failed" });
+    const box = document.querySelector("#asks"), one = Object.assign(document.createElement("div"), { className: "ask taskline", textContent: "TEST-1 failed" });
     const was = box.hidden;
     box.hidden = false;
     const added = Array.from({ length: 40 }, () => box.appendChild(one.cloneNode(true)));

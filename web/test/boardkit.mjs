@@ -51,8 +51,11 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
   /** A request by the page's own fetch, which signs in (signin.js): right after a navigation the browser's may
    *  still stand, and its request goes out signed out (seen once in WebKit). A 401 throws terminumd's words. */
   const j = async (p, method = "GET", body) => {
-    await page.waitForFunction(() => !/\[native code\]/.test(String(window.fetch)), null, { timeout: 10000 });
-    const r = await page.evaluate(async ([p, method, body]) => { const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) }); return { code: r.status, ...(await r.json().catch(() => ({}))) }; }, [p, method, body]);
+    const r = await page.evaluate(async ([p, method, body]) => {
+      for (let i = 0; i < 100 && /\[native code\]/.test(String(window.fetch)); i++) await new Promise((ok) => setTimeout(ok, 100));
+      const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
+      return { code: r.status, ...(await r.json().catch(() => ({}))) };
+    }, [p, method, body]);
     if (r.code === 401) throw new Error(`${method} ${p} refused as signed out: ${r.message ?? r.error}`);
     return r;
   };

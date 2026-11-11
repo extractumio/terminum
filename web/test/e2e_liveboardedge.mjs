@@ -239,7 +239,7 @@ ${"z".repeat(400)}
       const m = await page.evaluate(() => {
         const body = document.querySelector("#taskbody"), edge = body.getBoundingClientRect().left + body.clientLeft + body.clientWidth;
         // what sticks out past the body's inner edge, said when it fails (a scroller's own content excepted)
-        const out = [...body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > edge + 0.5 && !e.parentElement.closest("pre, .markdown pre"))
+        const out = [...body.querySelectorAll("*")].filter((e) => e.getBoundingClientRect().right > edge + 0.5 && !e.parentElement.closest("pre"))
           .slice(0, 6).map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join(".")}:${Math.round(e.getBoundingClientRect().right - edge)}`);
         return { page: document.documentElement.scrollWidth - innerWidth, box: document.querySelector("#taskbox").scrollWidth - document.querySelector("#taskbox").clientWidth, body: body.scrollWidth - body.clientWidth, h: document.querySelector("#taskbox").getBoundingClientRect().bottom - innerHeight, out };
       });
