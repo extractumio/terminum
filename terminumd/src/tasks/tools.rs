@@ -148,15 +148,22 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
         let me = || author(tx, who);
         match tool {
             "create_task" => {
-                let title = title_of(arg(args, "title")?)?;
-                if args["severity"].as_str().is_none_or(str::is_empty) {
-                    return Err("Give it a severity: P0, P1, P2 or P3.".into());
-                }
                 let project = who.project.clone().unwrap_or_else(|| DEFAULT_PROJECT.to_string());
+                // every fault of the call in one refusal, so one retry can fix them all
+                let title = title_of(arg(args, "title")?);
+                let severity = match args["severity"].as_str().is_none_or(str::is_empty) {
+                    true => Err("Give it a severity: P0, P1, P2 or P3.".to_string()),
+                    false => Ok(()),
+                };
+                let text = text_of(tx, &project, args["text"].as_str().unwrap_or_default());
+                let faults: Vec<&str> = [title.as_ref().err(), severity.as_ref().err(), text.as_ref().err()].into_iter().flatten().map(String::as_str).collect();
+                if !faults.is_empty() {
+                    return Err(faults.join("\n"));
+                }
+                let (title, text) = (title?, text?);
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));
                 }
-                let text = text_of(tx, &project, args["text"].as_str().unwrap_or_default())?;
                 let parent = args["parent"].as_str().map(str::to_string);
                 if let Some(p) = &parent {
                     visible(tx, who, p)?;

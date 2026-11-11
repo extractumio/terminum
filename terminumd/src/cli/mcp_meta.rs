@@ -75,11 +75,26 @@ fn summary(d: &Value) -> String {
     let name = d["name"].as_str().unwrap_or("");
     let description = d["description"].as_str().unwrap_or("");
     let first = description.split_inclusive(". ").next().unwrap_or(description).trim_end();
+    let area = catalog::card(name).map_or("", |c| c.area);
+    format!("{} [{area}]: {first}", signature(d))
+}
+
+/// `name(arg, arg?: a|b, …)`.
+fn signature(d: &Value) -> String {
     let required: Vec<&str> = d["inputSchema"]["required"].as_array().map(|r| r.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
     let args: Vec<String> = d["inputSchema"]["properties"].as_object()
         .map(|p| p.iter().map(|(k, v)| argument(k, v, required.contains(&k.as_str()))).collect()).unwrap_or_default();
-    let area = catalog::card(name).map_or("", |c| c.area);
-    format!("{name}({}) [{area}]: {first}", args.join(", "))
+    format!("{}({})", d["name"].as_str().unwrap_or(""), args.join(", "))
+}
+
+/// Said under a tool's first refusal in a session that has not read its card (AC-155): its
+/// signature, whole description and example call, the words get_tool_info gives, so the next call
+/// can follow them without another round.
+pub fn card_text(name: &str) -> Option<String> {
+    let (d, c) = (catalog::definition(name)?, catalog::card(name)?);
+    let example = serde_json::from_str::<Value>(c.example).unwrap_or(Value::Null);
+    Some(format!("How to call it: {}: {}\nExample: execute_tool({})", signature(d), d["description"].as_str().unwrap_or(""),
+                 json!({"name": name, "arguments": example})))
 }
 
 /// get_tool_info's answer for one tool: its definition, area and an example call.
@@ -124,11 +139,7 @@ e.g. \"create a task\". The tools by area: {}.", areas(true)));
 
 /// get_tool_info: Ok(text) or Err(why).
 pub fn describe(args: &Value) -> Result<String, String> {
-    let names: Vec<&str> = match args.get("names") {
-        Some(Value::String(n)) => vec![n.as_str()],
-        Some(Value::Array(a)) if !a.is_empty() && a.len() <= NAMES_MOST && a.iter().all(Value::is_string) => a.iter().filter_map(Value::as_str).collect(),
-        _ => return Err(format!("names is required: 1–{NAMES_MOST} tool names from search_tools")),
-    };
+    let names = names(args).ok_or_else(|| format!("names is required: 1–{NAMES_MOST} tool names from search_tools"))?;
     let mut out = Vec::new();
     for n in names {
         match catalog::definition(n) {
@@ -138,6 +149,15 @@ pub fn describe(args: &Value) -> Result<String, String> {
         }
     }
     Ok(Value::Array(out).to_string())
+}
+
+/// get_tool_info's names: one, or a list of 1 to NAMES_MOST.
+pub fn names(args: &Value) -> Option<Vec<&str>> {
+    match args.get("names") {
+        Some(Value::String(n)) => Some(vec![n.as_str()]),
+        Some(Value::Array(a)) if !a.is_empty() && a.len() <= NAMES_MOST && a.iter().all(Value::is_string) => Some(a.iter().filter_map(Value::as_str).collect()),
+        _ => None,
+    }
 }
 
 /// execute_tool: the catalog tool to run and its arguments, or why not.

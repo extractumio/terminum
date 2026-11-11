@@ -11,7 +11,7 @@ fn in_pane() -> Env {
 }
 
 fn env(tmux: Option<&str>, pane: Option<&str>, known: Option<bool>) -> Env {
-    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known) }
+    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known), carded: Default::default() }
 }
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
@@ -184,7 +184,7 @@ fn outside_a_pane_each_tool_says_so_and_nothing_is_sent() {
                 "execute_tool" => json!({"name": "get_task", "arguments": {"id": "T-1"}}),
                 "update_session_plan" => json!({"items": [{"text": "a", "status": "pending"}]}),
                 "list_tasks" | "get_session_plan" => json!({}),
-                "create_task" => json!({"title": "Bug: t", "severity": "P2"}),
+                "create_task" => json!({"title": "Bug: t", "text": "x", "severity": "P2"}),
                 "move_task" => json!({"id": "T-1", "to": "DONE"}),
                 "add_comment" => json!({"id": "T-1", "text": "a"}),
                 "ask_human" => json!({"id": "T-1", "questions": "a"}),
@@ -342,4 +342,40 @@ fn the_tools_stay_compact() {
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 3200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
+}
+
+/// AC-155: a tool's first refusal in a session carries its card (signature, whole description,
+/// example), once; a session that read the card with get_tool_info, or a call terminum never
+/// answered, gets none.
+#[test]
+fn ac155_a_tools_first_refusal_carries_its_card_once() {
+    let no = |text: &str| Ok((200, Some(json!({"text": text, "error": true}))));
+    let card = mcp_meta::card_text("create_task").unwrap();
+    assert!(card.starts_with("How to call it: create_task(") && card.contains("Bug:, Feat: or Debt:") && card.contains("\nExample: execute_tool({"), "{card}");
+    let text = |r: &Value| r["content"][0]["text"].as_str().unwrap().to_string();
+    let args = json!({"name": "create_task", "arguments": {"title": "a gap", "text": "x", "severity": "P2"}});
+    let e = in_pane();
+    let (r, _) = tool("execute_tool", args.clone(), &e, no("Start the title with Bug:, Feat: or Debt:."));
+    assert_eq!(r["isError"], true);
+    assert_eq!(text(&r), format!("Start the title with Bug:, Feat: or Debt:.\n\n{card}"));
+    let (r, _) = tool("execute_tool", args.clone(), &e, no("Start the title with Bug:, Feat: or Debt:."));
+    assert_eq!(text(&r), "Start the title with Bug:, Feat: or Debt:.", "once a session");
+    // refused here (the arguments' shape) carries it as well; a success never
+    let e = in_pane();
+    let (r, sent) = tool("execute_tool", json!({"name": "get_task", "arguments": {}}), &e, Err(()));
+    assert!(sent.is_none() && text(&r).starts_with("id is required\n\nHow to call it: get_task("), "{}", text(&r));
+    let (r, _) = tool("execute_tool", json!({"name": "add_comment", "arguments": {"id": "T-1", "text": "a"}}), &e, Ok((200, Some(json!({"text": "Comment kept on T-1."})))));
+    assert_eq!(text(&r), "Comment kept on T-1.");
+    // read with get_tool_info first: no card under its refusal
+    let e = in_pane();
+    let (r, _) = tool("get_tool_info", json!({"names": ["create_task"]}), &e, Err(()));
+    assert_eq!(r["isError"], false);
+    let (r, _) = tool("execute_tool", args.clone(), &e, no("Start the title with Bug:, Feat: or Debt:."));
+    assert_eq!(text(&r), "Start the title with Bug:, Feat: or Debt:.");
+    // terminum down: no card, and the next refusal still gets it
+    let e = in_pane();
+    let (r, _) = tool("execute_tool", args.clone(), &e, Err(()));
+    assert_eq!(text(&r), DOWN);
+    let (r, _) = tool("execute_tool", args, &e, no("Start the title with Bug:, Feat: or Debt:."));
+    assert!(text(&r).contains("How to call it: create_task("));
 }
