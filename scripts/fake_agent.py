@@ -6,7 +6,8 @@ mcp`; no model. What it does with a prompt is in the prompt's words:
 FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT; Auto-Dispatcher's
 round (terminum-dispatcher.md AC-170) starts its first candidates, one for each free slot, and finishes; a task a round started
 is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
-none`: never a box; `--start fast`: exits at once with 7."""
+none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
+machine's does, and a prompt pasted twice is not worked on."""
 import json
 import os
 import re
@@ -14,6 +15,7 @@ import signal
 import subprocess
 import sys
 import termios
+import time
 import tty
 
 RULE = "\x1b[37m" + "─" * 60 + "\x1b[0m"
@@ -28,7 +30,7 @@ def main():
     cli = args[0]
     opt = lambda name, default: args[args.index(name) + 1] if name in args else default
     kind, start, session = opt("--kind", "claude"), opt("--start", ""), opt("--resume", f"fake-{os.getpid()}")
-    typed, pasting = "", False
+    typed, pasting, pastes, late = "", False, 0, start == "slow"
 
     def hook(event, **more):
         subprocess.run([cli, "hook", kind], input=json.dumps({"session_id": session, "cwd": os.getcwd(), "hook_event_name": event, **more}), text=True, capture_output=True, timeout=8)
@@ -89,6 +91,7 @@ def main():
             for part in re.split(r"(\x1b\[20[01]~)", data):
                 if part in ("\x1b[200~", "\x1b[201~"):
                     pasting = part == "\x1b[200~"
+                    pastes += pasting
                 elif pasting:
                     typed += part.replace("\r", " ").replace("\n", " ")
                 else:
@@ -97,11 +100,15 @@ def main():
                         typed, part = "", part.rsplit("\x15", 1)[1]
                     typed += part.split("\r")[0]
             if not ends:
+                if late and typed:
+                    late = False
+                    time.sleep(3)             # what comes meanwhile is read after it
                 box()
                 continue
             prompt, typed = typed, ""
+            twice, pastes = start == "slow" and pastes > 1, 0
             box()
-            if "SILENT" in prompt:
+            if "SILENT" in prompt or twice:
                 continue
             if kind == "codex":
                 hook("SessionStart", source="startup")
