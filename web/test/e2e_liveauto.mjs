@@ -24,7 +24,7 @@ export async function liveAuto(page, live) {
 
   // off until a human says: nothing starts
   check("AC-170 off, its key says so and nothing starts", await until(async () => (await page.textContent("#autokey")) === "Auto-Dispatcher: OFF") && (await task(a)).status === "TODO" && (await setting()).agent === null);
-  check("AC-170 the setting takes only agents of the pool", /That agent is gone/.test((await j(`/api/task-projects/${project}/auto`, "PUT", { agent: "nobody", default: null })).error ?? ""));
+  check("AC-170 the setting takes only agents of the pool", /That agent is gone/.test((await j(`/api/task-projects/${project}/auto`, "PUT", { agent: "nobody", default: null, off_why: null })).error ?? ""));
   const other = newPane("no-round");
   await keyOf(other);
   const noRound = tool(other, "dispatch_task", { id: a, why: "x" });
@@ -45,12 +45,14 @@ export async function liveAuto(page, live) {
   check("AC-170 turned on, its key names the agent", await until(async () => (await page.textContent("#autokey")) === "Auto-Dispatcher: Auto picker" && await page.evaluate(() => document.querySelector("#autokey").classList.contains("on"))), await page.textContent("#autokey"));
 
   // a round starts both on the default agent, no press
-  const started = async (id) => (await task(id)).history.find((h) => /^Auto-Dispatcher's round \S+ started it on /.test(h.text ?? ""))?.text;
+  const said = async (id, words) => (await task(id)).history.find((h) => words.test(h.text ?? ""));
+  const started = async (id) => (await said(id, /^Auto-Dispatcher's round \S+ started it on /))?.text;
   check("AC-170 its round starts the TODO tasks for the free slots", await until(async () => (await task(a)).status === "IN PROGRESS" && (await task(b)).status === "IN PROGRESS", 30000), `${(await task(a)).status} ${(await task(b)).status}: ${JSON.stringify(await setting())}`);
-  const said = await started(a);
-  check("AC-170 a started task says which round, on which agent and why", /started it on Auto runner: RICE 3×2×1÷1 = 6/.test(said ?? ""), said);
+  const line = await started(a), why = await said(a, /^Why the round chose it: RICE 3×2×1÷1 = 6/);
+  check("AC-170 a started task says which round and on which agent, in Dispatcher's words", /started it on Auto runner\.$/.test(line ?? ""), line);
+  check("AC-170 and the round's reason, as its agent's words", why?.author_name === "Auto picker", JSON.stringify(why));
   check("AC-170 it runs on the default agent, its card saying so", await until(async () => (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Auto runner"));
-  const round = /round (\S+) started/.exec(said ?? "")?.[1];
+  const round = /round (\S+) started/.exec(line ?? "")?.[1];
   const roundTask = await task(round);
   check("AC-170 a round is Dispatcher's task with its candidates, its result in the short form", /^Auto-dispatch: \d free, 2 candidates$/.test(roundTask.title) && roundTask.text.includes(a) && roundTask.text.includes(b)
     && roundTask.history.some((h) => /Dispatcher made it/.test(h.text ?? "")), JSON.stringify({ title: roundTask.title, history: roundTask.history.map((h) => h.text) }).slice(0, 1500));
@@ -84,6 +86,8 @@ export async function liveAuto(page, live) {
   await open(`?project=${project}`);
   check("AC-170 its key says it turned itself off", await until(async () => (await page.textContent("#autokey")) === "Auto-Dispatcher: OFF" && await page.evaluate(() => document.querySelector("#autokey").classList.contains("stopped"))
     && /turned itself off for Autos: the last two tasks/.test(await page.getAttribute("#autokey", "title"))), await page.getAttribute("#autokey", "title"));
+  const unseen = await j(`/api/task-projects/${project}/auto`, "PUT", { agent: picker, default: runner, off_why: null });
+  check("AC-170 a window that did not show why it stopped does not turn it on again", /It turned itself off meanwhile: the last two tasks/.test(unseen.error ?? "") && (await setting()).agent === null, JSON.stringify(unseen));
   await page.click("#autokey");
   await page.waitForSelector("#autobox[open]");
   check("AC-170 its window says why, and Save turns it on again", /It turned itself off: the last two tasks it started failed/.test(await page.textContent("#autowhy")) && await page.inputValue("#autoagent") === "");

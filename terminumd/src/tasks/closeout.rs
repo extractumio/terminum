@@ -34,6 +34,11 @@ pub const SCHEDULED: [(&str, &str); 4] = [
     ("For the human", "what they should do, or nothing"),
 ];
 
+/// The short form as a prompt lists it: a line a section.
+pub fn short_form() -> String {
+    SCHEDULED.iter().map(|(name, what)| format!("\n{name}: {what}")).collect()
+}
+
 /// The form `task`'s result is written in: a schedule's task and Auto-Dispatcher's round the short one, any other the
 /// close-out's.
 pub fn form_of(tx: &Transaction, task: &str) -> Result<&'static [(&'static str, &'static str)], String> {

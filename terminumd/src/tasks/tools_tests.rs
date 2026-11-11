@@ -398,9 +398,11 @@ fn ac170_a_rounds_pane_makes_takes_and_moves_nothing() {
     }).unwrap();
     let w = who(Some("api"));
     for (tool, args) in [("create_task", json!({"title": "Bug: more work", "severity": "P1"})), ("take_task", json!({"id": other})), ("move_task", json!({"id": other, "to": "DONE"})),
-                         ("update_task", json!({"id": other, "severity": "P0", "reason": "x"})), ("ask_human", json!({"id": round, "questions": "1?"}))] {
-        assert_eq!(call(&s, &dir, &w, tool, args).unwrap_err(), format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own: {tool} is not its."));
+                         ("update_task", json!({"id": other, "severity": "P0", "reason": "x"})), ("ask_human", json!({"id": round.clone(), "questions": "1?"}))] {
+        assert_eq!(call(&s, &dir, &w, tool, args).unwrap_err(), format!("Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own, {round}: {tool} is not its."));
     }
+    assert!(call(&s, &dir, &w, "finish_task", json!({"id": other, "result": "done"})).unwrap_err().ends_with("finish_task is not its."), "another's task is not its to finish");
+    assert!(call(&s, &dir, &w, "add_comment", json!({"id": other, "text": "x"})).unwrap_err().ends_with("add_comment is not its."), "what is not named is not its");
     assert!(call(&s, &dir, &w, "get_task", json!({"id": other})).is_ok());
     assert!(call(&s, &dir, &who(Some("api")), "list_tasks", json!({})).is_ok());
 }

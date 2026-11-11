@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Auto-Dispatcher's setting (terminum-dispatcher.md AC-170): a key in the board's bar for the one project shown, "Auto-
 // Dispatcher: OFF" or its agent, and the window it opens: the agent that picks, or OFF, and the agent that runs a
-// task naming none. Having turned itself off it says why, in the key and in the window. terminumd keeps the setting
+// task naming none. Having turned itself off it says why, in the key and in the window, and only a Save from a window
+// that showed why turns it on again. terminumd keeps the setting
 // and says what is wrong; every page hears.
 import { oneAtATime } from "./dialogs.js";
 import { $, api, fillSelect, showError } from "./kanbanutil.js";
@@ -42,7 +43,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
 
   const keep = oneAtATime(box, async () => {
     try {
-      await api(`/api/task-projects/${shown.id}/auto`, { method: "PUT", body: { agent: $("autoagent").value || null, default: $("autodefault").value || null } });
+      await api(`/api/task-projects/${shown.id}/auto`, { method: "PUT", body: { agent: $("autoagent").value || null, default: $("autodefault").value || null, off_why: shown.auto?.off_why ?? null } });
       box.close();
       await reload();
     } catch (e) { showError($("autoerror"), e.message); }

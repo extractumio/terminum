@@ -16,10 +16,10 @@ CREATE TABLE auto_rounds (
   candidates TEXT NOT NULL,
   at INTEGER NOT NULL
 );
--- What a round started: the task, on which agent.
+-- What a round started.
 CREATE TABLE auto_starts (
   task TEXT NOT NULL REFERENCES tasks,
   round TEXT NOT NULL REFERENCES tasks,
-  agent_id TEXT NOT NULL,
   at INTEGER NOT NULL
 );
+CREATE INDEX auto_starts_round ON auto_starts (round);

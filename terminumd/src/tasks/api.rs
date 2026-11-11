@@ -212,12 +212,10 @@ async fn meta(State(app): State<Shared>) -> Response {
             super::limits::agent_limits(tx)?,
             super::projectapi::settings(tx)?,
         ))).unwrap_or_default();
-        let auto: HashMap<String, Value> = a.tasks.with(|tx| Ok(super::auto::for_board(tx)?.into_iter().collect())).unwrap_or_default();
         for p in &mut projects {
             if let (Some(v), Some(p)) = (p["id"].as_str().and_then(|id| own.get(id)).and_then(Value::as_object).cloned(), p.as_object_mut()) {
                 p.extend(v);
             }
-            p["auto"] = p["id"].as_str().and_then(|id| auto.get(id)).cloned().unwrap_or(Value::Null);
         }
         (projects, users, agents, limits, last_agents, at_once, a.tasks.problem(), a.tasks.is_set_aside())
     }).await.unwrap_or_default();

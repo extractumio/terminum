@@ -25,10 +25,17 @@ pub fn routes() -> Router<Shared> {
         .route("/api/task-projects/{id}", patch(edit_project))
 }
 
-/// Each project's letters, its own template and language (none: the default), by its id.
+/// Each project's letters, its own template and language (none: the default) and Auto-Dispatcher's setting
+/// (terminum-dispatcher.md AC-170), by its id.
 pub fn settings(tx: &Transaction) -> Result<HashMap<String, Value>, String> {
     let all = rows(tx, "SELECT id, prefix, task_template, language FROM projects", [], |r| Ok((r.get::<_, String>(0)?, json!({"prefix": r.get::<_, Option<String>>(1)?, "template": r.get::<_, Option<String>>(2)?, "language": r.get::<_, Option<String>>(3)?}))))?;
-    Ok(all.into_iter().collect())
+    let mut all: HashMap<String, Value> = all.into_iter().collect();
+    for (id, auto) in super::auto::all(tx)? {
+        if let Some(p) = all.get_mut(&id) {
+            p["auto"] = auto.shown();
+        }
+    }
+    Ok(all)
 }
 
 /// New project on the board: no session yet (AC-110).

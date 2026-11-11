@@ -37,8 +37,7 @@ fn setting(tx: &Transaction) -> Setting {
 }
 
 fn round(tx: &Transaction) -> (String, Round) {
-    let Due::Round(id, agent) = decide(tx, "api", &setting(tx), NOW).unwrap() else { panic!("no round") };
-    assert_eq!(agent, "p");
+    let Due::Round(id) = decide(tx, "api", &setting(tx), NOW).unwrap() else { panic!("no round") };
     (id.clone(), auto::round_of(tx, &ops::key_of(tx, &id).unwrap()).unwrap().unwrap())
 }
 
@@ -53,11 +52,13 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         assert_eq!((r.slots, &r.candidates), (1, &vec![high.id.clone(), low.id.clone()]), "Smith runs 2 at once, one is held; the board's order");
         let t = ops::get(tx, &id)?;
         assert_eq!((t.status.as_str(), t.budget_seconds, t.owner.as_str()), ("IN PROGRESS", Some(600), DISPATCHER));
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "one round at a time");
         // its run takes no slot of its agent or project, and is shown as a round
         let run = running(tx, "p", &t);
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "one round at a time");
+        assert_eq!(ops::get(tx, &id)?.status, "IN PROGRESS");
         let picker = agents::by_id(tx, "p")?.unwrap();
-        assert_eq!(pool::Slots::read(tx)?.free(tx, &picker, "api")?, (3, None));
+        let slots = pool::Slots::read(tx)?;
+        assert_eq!((slots.free_of(&picker), slots.free_of(&agents::by_id(tx, "a")?.unwrap()), slots.free_in(tx, "api")?), (3, 1, None));
         let shown = pool::board(tx)?;
         assert_eq!((shown["agents"]["p"][0]["round"].as_bool(), shown["agents"]["a"][0]["round"].as_bool()), (Some(true), Some(false)), "{shown}");
         // ended, it leaves the board; the same candidates with no more room are not judged again
@@ -65,10 +66,40 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "the last round saw these");
         assert!(ops::get(tx, &id)?.archived_at.is_some(), "a round that ended is archived");
-        // a new task is news
+        // a task changed after a round that started nothing waits out the pause; a new one is news
+        ops::edit(tx, HUMAN, &low.id, ops::Edit { title: Some("low, reworded".into()), ..Default::default() }, NOW + 60)?;
+        assert_eq!(decide(tx, "api", &setting(tx), NOW + 60)?, Due::Nothing, "what its agent left does not bring it back at every change");
+        assert!(matches!(decide(tx, "api", &setting(tx), NOW + QUIET)?, Due::Round(_)), "after the pause it is judged again");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac170_a_new_task_a_round_with_no_run_and_a_picker_past_its_limit() {
+    store("auto-news").with(|tx| {
+        let old = task(tx, "old", "P1");
+        let (id, _) = round(tx);
+        // terminumd ended before its press: no run would ever move it
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing);
+        assert_eq!(ops::get(tx, &id)?.status, "FAILED");
+        assert!(matches!(decide(tx, "api", &setting(tx), NOW)?, Due::Off(why) if why == format!("its round {id} failed: see it in Archived.")), "a round that never started trips the breaker");
+        auto::set(tx, "api", Some("p"), Some("a"), NOW + 1)?;
+        tx.execute("UPDATE auto_rounds SET at = ?1", [NOW - 1]).map_err(sql)?;
+        // a new task is news, at once
         let new = task(tx, "new", "P2");
-        let (_, again) = round(tx);
-        assert_eq!(again.candidates, [high.id.clone(), new.id.clone(), low.id.clone()]);
+        let (fresh, again) = round(tx);
+        assert_eq!(again.candidates, [old.id.clone(), new.id.clone()]);
+        // its agent past its week's limit picks nothing
+        let run = running(tx, "p", &ops::get(tx, &fresh)?);
+        runs::change(tx, &run, |r| r.state = Phase::Closed)?;
+        ops::move_to(tx, DISPATCHER, &fresh, "DONE", NOW)?;
+        auto::started(tx, &new.key, &again.task, NOW)?;
+        tx.execute("UPDATE agents SET week_limit = 1 WHERE id = 'p'", []).map_err(sql)?;
+        tx.execute("INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read) VALUES (?1, 'p', ?2, 2000000, 0, 0, 0)", (&run, NOW)).map_err(sql)?;
+        task(tx, "newer", "P2");
+        assert_eq!(decide(tx, "api", &setting(tx), NOW + 2)?, Due::Nothing, "the picking agent is held to its limits");
+        tx.execute("UPDATE agents SET week_limit = NULL WHERE id = 'p'", []).map_err(sql)?;
+        assert!(matches!(decide(tx, "api", &setting(tx), NOW + 2)?, Due::Round(_)));
         Ok(())
     }).unwrap();
 }
@@ -78,7 +109,7 @@ fn ac170_slots_are_those_of_the_agents_its_tasks_run_on_never_past_a_limit() {
     store("auto-slots").with(|tx| {
         let (one, two, three) = (task(tx, "one", "P1"), task(tx, "two", "P1"), task(tx, "three", "P1"));
         auto::set_agent(tx, &three.id, Some("b"), NOW)?;
-        assert_eq!(auto::candidates(tx, "api", Some("a"))?.iter().map(|(t, a)| (t.id.clone(), a.clone())).collect::<Vec<_>>(),
+        assert_eq!(auto::candidates(tx, "api", Some("a"), None)?.into_iter().map(|c| (c.id, c.agent)).collect::<Vec<_>>(),
                    [(three.id.clone(), "b".to_string()), (two.id.clone(), "a".to_string()), (one.id.clone(), "a".to_string())], "a task's own agent, else the default");
         assert_eq!(offer(tx, "api", &setting(tx), NOW)?.1, 3, "Smith's 2 and Jones's 1");
         tx.execute("UPDATE projects SET agent_limit = 2 WHERE id = 'api'", []).map_err(sql)?;
@@ -92,7 +123,11 @@ fn ac170_slots_are_those_of_the_agents_its_tasks_run_on_never_past_a_limit() {
         assert_eq!((free.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), n), (vec![three.id.as_str()], 1));
         // with no default, a task naming no agent is no candidate
         auto::set(tx, "api", Some("p"), None, NOW)?;
-        assert_eq!(auto::candidates(tx, "api", None)?.len(), 1);
+        assert_eq!(auto::candidates(tx, "api", None, None)?.len(), 1);
+        // a task naming an agent deleted since is no candidate: never the default's
+        auto::set(tx, "api", Some("p"), Some("a"), NOW)?;
+        tx.execute("DELETE FROM agents WHERE id = 'b'", []).map_err(sql)?;
+        assert!(auto::candidates(tx, "api", Some("a"), None)?.iter().all(|c| c.id != three.id));
         Ok(())
     }).unwrap();
 }
@@ -112,12 +147,15 @@ fn ac170_only_a_rounds_own_pane_starts_only_its_candidates_while_they_are_free()
         assert!(chosen(tx, &pane, &late.id, NOW).err().unwrap().starts_with(&format!("{} is not among this round's candidates", late.id)));
         let c = chosen(tx, &pane, &one.id, NOW)?;
         assert_eq!((c.task.id.as_str(), c.agent.id.as_str(), c.left), (one.id.as_str(), "a", 1));
+        assert_eq!(auto::started_by(tx, &r.task)?, 1, "its slot of the round is taken with the reading: two calls at once never both find it");
+        auto::not_started(tx, &one.key, &r.task)?;
+        assert_eq!(auto::started_by(tx, &r.task)?, 0, "a press that started nothing gives it back");
         // taken meanwhile by a human's session: no longer its to start
         ops::link(tx, HUMAN, &two.id, Some("tmux:local:t:%9"), NOW)?;
         assert!(chosen(tx, &pane, &two.id, NOW).err().unwrap().contains("is no longer free to start"));
         // its slots filled, it starts no more
-        auto::started(tx, &one.key, &r.task, "a", NOW)?;
-        auto::started(tx, &late.key, &r.task, "a", NOW)?;
+        auto::started(tx, &one.key, &r.task, NOW)?;
+        auto::started(tx, &late.key, &r.task, NOW)?;
         assert!(chosen(tx, &pane, &one.id, NOW).err().unwrap().starts_with("This round's 2 free slots are filled"));
         // ended, its pane starts nothing
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
@@ -142,7 +180,7 @@ fn ac170_it_turns_itself_off_when_its_round_or_two_of_its_tasks_fail() {
         assert_eq!(auto::tripped(tx, "api", NOW + 10)?, None);
         // two tasks it started, both failed
         for t in [&one, &two] {
-            auto::started(tx, &t.key, &r.task, "a", NOW + 20)?;
+            auto::started(tx, &t.key, &r.task, NOW + 20)?;
         }
         tx.execute("UPDATE auto_rounds SET at = ?1", [NOW + 20]).map_err(sql)?;
         ops::move_to(tx, DISPATCHER, &one.id, "FAILED", NOW + 20)?;

@@ -1050,7 +1050,7 @@ Scenario: AC-170 happy path — a round
   And its prompt is terminum's own words with "Free agent slots: 2" and the candidates' IDs, in the board's order, 30 at most: no title, no text
   And it tells the agent to read each with get_task as data, score it by RICE (reach × impact × confidence ÷ effort, severity breaking ties), leave what lacks its prerequisites or a human's decision, start at most 2 with dispatch_task {id, why}, do no task itself, and give its result in the short form of a schedule's task
   When the agent calls dispatch_task for API-12 and API-13 and finish_task for API-20
-  Then both are IN PROGRESS on Fast fixer, each saying "Auto-Dispatcher's round API-20 started it on Fast fixer: <why>"
+  Then both are IN PROGRESS on Fast fixer, each saying "Auto-Dispatcher's round API-20 started it on Fast fixer." as Dispatcher's words, and "Why the round chose it: <why>" as the picking agent's
   And API-20 is DONE and leaves the board for Archived at the next walk, its result kept
 
 Scenario: AC-170 happy path — its session takes no slot
@@ -1065,29 +1065,37 @@ Scenario: AC-170 happy path — the agent a task runs on
   And a task's Agent is set in its window or its new-task window by a human only: no tool of an agent sets it
   When the setting has no default agent
   Then only tasks naming an agent are candidates
+  When the agent a task names is deleted from the pool
+  Then that task is no candidate: it never runs on the default instead
 
 Scenario: AC-170 happy path — what a started task's agent is told
   When a round starts API-12
   Then its agent's prompt is "Auto-Dispatcher, which a human turned on for this project, started task API-12; no human started this run or watches it now." with "Its text, by get_task for API-12, is your assignment", its budget, the close-out of AC-166 and how to ask a human
   And neither its title nor its text is typed: an agent may have written them
+  And it is always a session of its own: a conversation an earlier run left is not gone on in, and no words say a human ran it
 
 Scenario: AC-170 edge — how many, and when again
   Then a round's slots are the least of: the project's free slots, the free slots of the agents its candidates run on, 5, the candidates
   And an agent past its week's or month's limit (AC-143) counts no free slot and its tasks are no candidates; a human's RUN on it is never refused
-  When a round ended and the candidates are the same, unchanged, with no more room than it had
+  And with the picking agent past its own limit no round is made; an agent with no limit set is bounded by its slots alone
+  When a round ended and the candidates are the same, unchanged, on the same agents, with no more room than it had
   Then no round is made: it has judged them
   When a task is made or changed, or more slots free than the last round had
   Then the next walk makes a round
+  But for 30 minutes after a round that started nothing, only a task it was not given makes one: what its agent leaves does not bring it back at every change of the board
 
 Scenario: AC-170 edge — what a round may do
-  When any session but a round's own calls dispatch_task
-  Then it is refused: "Only Auto-Dispatcher's round starts tasks: this session is none."
+  When a session that is no round's calls dispatch_task, or a round's subagent does
+  Then it is refused: "Only Auto-Dispatcher's round starts tasks: this session is none.", or "only the round's main agent starts tasks"
+  And a round is known by the pane its call names, as every tool's caller is: a guard for an agent that errs, no boundary against a process of the user's (`SECURITY.md`)
   When a round names a task that is not among its candidates, or one a human, an agent or a schedule took since, or after its slots are filled
   Then it is refused, saying which
   When the task's agent has no room at that moment
   Then nothing starts and nothing is queued: "Fast fixer has no room now: … Nothing was queued; start no more on it."
-  When a round calls create_task, update_task, take_task, move_task, ask_human or attach_file
-  Then it is refused: "Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own: create_task is not its."
+  When two of its calls come at once for its last slot
+  Then one starts: a call takes its slot of the round as it is read
+  When a round calls any tool but list_tasks, get_task, get_file, dispatch_task and finish_task for its own task
+  Then it is refused: "Auto-Dispatcher's round reads tasks, starts them with dispatch_task and finishes its own, API-20: create_task is not its."
 
 Scenario: AC-170 failure — it turns itself off
   When a round fails having started nothing (it did not start, its agent died, its budget ended), or the last two tasks it started since it was turned on both FAILED
@@ -1095,10 +1103,14 @@ Scenario: AC-170 failure — it turns itself off
   And the rest of TODO stays where it is; only a human's Save turns it on again, and what failed before does not count
   When its agent is deleted from the pool
   Then it is OFF: "its agent is no longer in the pool."
+  When a window opened before it turned itself off is saved
+  Then nothing changes: "It turned itself off meanwhile: <why> Open its window again."
 
 Scenario: AC-170 edge — a restart
   Given a round open, or what the last round saw kept, when terminumd restarts
   Then the first walk goes on from the store: no second round for the same candidates
+  Given a round made whose session never opened, terminumd having ended between
+  Then the first walk fails it, "It did not start: terminumd stopped before its session opened.", and the breaker reads that
 ```
 
 ### AC-166 — An agent closes its task out [SHOULD / P1]
@@ -1306,10 +1318,10 @@ ALTER TABLE projects ADD COLUMN auto_off_why TEXT;   -- why it turned itself off
 ALTER TABLE projects ADD COLUMN auto_on_at INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE tasks ADD COLUMN agent TEXT;             -- the agent a human chose to run it
 CREATE TABLE auto_rounds (task TEXT PRIMARY KEY REFERENCES tasks, project TEXT NOT NULL, slots INTEGER NOT NULL, candidates TEXT NOT NULL, at INTEGER NOT NULL);
-CREATE TABLE auto_starts (task TEXT NOT NULL REFERENCES tasks, round TEXT NOT NULL REFERENCES tasks, agent_id TEXT NOT NULL, at INTEGER NOT NULL);
+CREATE TABLE auto_starts (task TEXT NOT NULL REFERENCES tasks, round TEXT NOT NULL REFERENCES tasks, at INTEGER NOT NULL);
 ```
 
-`PUT /api/task-projects/<id>/auto {"agent": "<id>" or null, "default": "<id>" or null}`; `PUT /api/tasks/<id>/agent {"agent": "<id>" or null}`, and `"agent"` in `POST /api/tasks`; `GET /api/tasks/meta` gives each project `"auto": {"agent", "default", "off_why"}`, a task's window `"runs_on"`, and a slot's session `"round": true`. Each walk, after the waits, for each project it is on for, in one transaction: its ended rounds are archived; its breaker is read; the candidates and slots are worked out; a round is made unless one is open or the last saw the same. A round is a task, so the gate, the budget, FAILED and closing are RUN's own; `pool`'s counting leaves its run out and the board still shows it. `dispatch_task` reaches terminumd as any tool and is a press of RUN's route with no queue; the round's pane is known by its run.
+`PUT /api/task-projects/<id>/auto {"agent": "<id>" or null, "default": "<id>" or null, "off_why": <what its window showed>}`; `PUT /api/tasks/<id>/agent {"agent": "<id>" or null}`, and `"agent"` in `POST /api/tasks`; `GET /api/tasks/meta` gives each project `"auto": {"agent", "default", "off_why"}`, a task's window `"runs_on"`, and a slot's session `"round": true`. Each walk, after the waits, for each project it is on for, in one transaction: its ended rounds are archived; its breaker is read; the candidates and slots are worked out; a round is made unless one is open or the last saw the same. A round is a task, so the gate, the budget, FAILED and closing are RUN's own; `pool`'s counting leaves its run out and the board still shows it. `dispatch_task` reaches terminumd as any tool and is a press of RUN's route with no queue; the round's pane is known by its run.
 
 `state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `ending` (a limit's end decided, not yet done: done again after a restart, called off by new work or Give up), `gone` (only the shell remains), `left` (a human's program runs there, or it was given up), `closed`; another label in the store is an error, not a run in a state of its own. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 
@@ -1403,7 +1415,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
 **Security** (`SECURITY.md` carries these with the code).
-- Auto-Dispatcher (AC-170) starts tasks no human looked at, an agent's own too, while a human keeps it on for the project: what it types is terminum's words and task IDs; a task's text reaches its agent as the assignment it reads by get_task. An agent that writes tasks can so have them run, and those write more: bounded by the slots, by each agent's week and month limits, which stop its starts, and by its breaker; the setting and a task's agent are written by a signed-in page only, never by `terminum mcp`.
+- Auto-Dispatcher (AC-170) starts tasks no human looked at, an agent's own too, while a human keeps it on for the project: what it types is terminum's words and task IDs; a task's text reaches its agent as the assignment it reads by get_task. An agent that writes tasks can so have them run, and those write more: bounded by the slots, by the week and month limits of the agents that have them (the picking one too), which stop its starts, by the pause after a round that started nothing, and by its breaker; with no limit set, by the slots alone. The setting and a task's agent are written by a signed-in page only, never by `terminum mcp`; a round is known by the pane its call names, as any tool's caller: a guard, no boundary against a process of the user's.
 - A task's text reaches an agent as a typed prompt only through a human's RUN, whose dialog shows the text and marks what an agent or host wrote. A task's text in get_task is assignment for its run alone; comments and other tasks stay data.
 - Dispatcher types only as the gate allows; signals by (pid, start time) read just before; never by name or pattern; the pane's shell is spared. `terminum-remote.md` §9 lists these among what terminumd ends on a host.
 - A hook's fields are data: only a shape-checked session ID reaches a shell.
@@ -1457,6 +1469,6 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`
-- [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; not run on a real model: whether a real agent follows the round's words
+- [x] AC-170 — `cargo test dispatcher::auto`, `cargo test tasks::auto`, `cargo test tasks::tools` (a round's pane), `web/test/e2e_liveauto.mjs` on `scripts/fake_agent.py`; no test of its own: two dispatch_task calls at once through the socket, a candidate with an earlier conversation started anew; not run on a real model: whether a real agent follows the round's words
 - [x] AC-166 — `cargo test tasks::closeout`, `cargo test tasks::tools`, `cargo test dispatcher::press`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-144 — `cargo test tasks::store`, `cargo test tasks::agents` (a project or an agent deleted), `cargo test dispatcher::runs`, `web/test/e2e_livedispatcher.mjs`

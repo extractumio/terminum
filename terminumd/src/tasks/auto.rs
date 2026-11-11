@@ -38,33 +38,37 @@ pub struct Setting {
     pub on_at: i64,
 }
 
-const SETTING: &str = "SELECT auto_agent, auto_default, auto_seen, auto_off_why, auto_on_at FROM projects";
+const SETTING: &str = "SELECT auto_agent, auto_default, auto_seen, auto_off_why, auto_on_at, id FROM projects";
 
-fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<Setting> {
-    Ok(Setting { agent: r.get(0)?, default: r.get(1)?, seen: r.get(2)?, off_why: r.get(3)?, on_at: r.get(4)? })
+fn setting_of(r: &rusqlite::Row) -> rusqlite::Result<(String, Setting)> {
+    Ok((r.get(5)?, Setting { agent: r.get(0)?, default: r.get(1)?, seen: r.get(2)?, off_why: r.get(3)?, on_at: r.get(4)? }))
 }
 
 pub fn setting(tx: &Transaction, project: &str) -> Result<Setting, String> {
-    tx.query_row(&format!("{SETTING} WHERE id = ?1"), [project], setting_of).map_err(sql)
+    tx.query_row(&format!("{SETTING} WHERE id = ?1"), [project], setting_of).map(|(_, s)| s).map_err(sql)
 }
 
 /// The projects it is on for.
 pub fn on(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, "SELECT id, auto_agent, auto_default, auto_seen, auto_off_why, auto_on_at FROM projects WHERE auto_agent IS NOT NULL ORDER BY place", [],
-         |r| Ok((r.get(0)?, Setting { agent: r.get(1)?, default: r.get(2)?, seen: r.get(3)?, off_why: r.get(4)?, on_at: r.get(5)? })))
+    rows(tx, &format!("{SETTING} WHERE auto_agent IS NOT NULL ORDER BY place"), [], setting_of)
 }
 
-/// Each project's setting for the board, by its id: the picking agent, the default one, why it is off.
-pub fn for_board(tx: &Transaction) -> Result<Vec<(String, Value)>, String> {
-    rows(tx, "SELECT id, auto_agent, auto_default, auto_off_why FROM projects", [], |r| {
-        Ok((r.get(0)?, json!({"agent": r.get::<_, Option<String>>(1)?, "default": r.get::<_, Option<String>>(2)?, "off_why": r.get::<_, Option<String>>(3)?})))
-    })
+impl Setting {
+    /// What the board shows of it: the picking agent, the default one, why it is off.
+    pub fn shown(&self) -> Value {
+        json!({"agent": self.agent, "default": self.default, "off_why": self.off_why})
+    }
+}
+
+/// Every project's setting, by its id.
+pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
+    rows(tx, SETTING, [], setting_of)
 }
 
 /// An agent of the pool, or none.
-fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<String>, String> {
+fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent>, String> {
     match agent.filter(|a| !a.is_empty()) {
-        Some(a) => agents::by_id(tx, a)?.map(|a| Some(a.id)).ok_or_else(|| "That agent is gone.".to_string()),
+        Some(a) => agents::by_id(tx, a)?.map(Some).ok_or_else(|| "That agent is gone.".to_string()),
         None => Ok(None),
     }
 }
@@ -73,15 +77,17 @@ fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<String>, Stri
 /// why it was off and what it saw are forgotten.
 pub fn set(tx: &Transaction, project: &str, agent: Option<&str>, default: Option<&str>, at: i64) -> Result<(), String> {
     ops::check_project(tx, project)?;
-    let (agent, default) = (in_pool(tx, agent)?, in_pool(tx, default)?);
+    let (agent, default) = (in_pool(tx, agent)?.map(|a| a.id), in_pool(tx, default)?.map(|a| a.id));
     let was = setting(tx, project)?;
     let on_at = if agent.is_some() && was.agent.is_none() { at } else { was.on_at };
-    tx.execute("UPDATE projects SET auto_agent = ?2, auto_default = ?3, auto_seen = NULL, auto_off_why = NULL, auto_on_at = ?4 WHERE id = ?1", (project, agent, default, on_at)).map(drop).map_err(sql)
+    // what the last round saw stands while the same agents pick and run: a Save that changes nothing makes no round
+    let seen = was.seen.filter(|_| was.agent == agent && was.default == default);
+    tx.execute("UPDATE projects SET auto_agent = ?2, auto_default = ?3, auto_seen = ?5, auto_off_why = NULL, auto_on_at = ?4 WHERE id = ?1", (project, agent, default, on_at, seen)).map(drop).map_err(sql)
 }
 
 /// It turns itself off for `project`, saying why: only a human turns it on again.
 pub fn turn_off(tx: &Transaction, project: &str, why: &str) -> Result<(), String> {
-    tx.execute("UPDATE projects SET auto_agent = NULL, auto_seen = NULL, auto_off_why = ?2 WHERE id = ?1", (project, why)).map(drop).map_err(sql)
+    tx.execute("UPDATE projects SET auto_agent = NULL, auto_off_why = ?2 WHERE id = ?1", (project, why)).map(drop).map_err(sql)
 }
 
 pub fn saw(tx: &Transaction, project: &str, seen: &str) -> Result<(), String> {
@@ -96,15 +102,11 @@ pub fn agent_of(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
 /// A human names the agent that runs task `id`, or none; its history says so.
 pub fn set_agent(tx: &Transaction, id: &str, agent: Option<&str>, at: i64) -> Result<(), String> {
     let (key, agent) = (ops::key_of(tx, id)?, in_pool(tx, agent)?);
-    if agent_of(tx, &key)? == agent {
+    if agent_of(tx, &key)? == agent.as_ref().map(|a| a.id.clone()) {
         return Ok(());
     }
-    tx.execute("UPDATE tasks SET agent = ?2 WHERE id = ?1", (&key, &agent)).map_err(sql)?;
-    let words = match &agent {
-        Some(a) => format!("Its agent: {}", agents::by_id(tx, a)?.map_or_else(|| a.clone(), |a| a.name)),
-        None => "Its agent: none".to_string(),
-    };
-    ops::log(tx, &key, HUMAN, "why", &words, None, at).map(drop)
+    tx.execute("UPDATE tasks SET agent = ?2 WHERE id = ?1", (&key, agent.as_ref().map(|a| &a.id))).map_err(sql)?;
+    ops::log(tx, &key, HUMAN, "why", &format!("Its agent: {}", agent.map_or_else(|| "none".to_string(), |a| a.name)), None, at).map(drop)
 }
 
 /// A round as it was given.
@@ -131,14 +133,37 @@ pub fn add_round(tx: &Transaction, round: &Round, at: i64) -> Result<(), String>
     tx.execute("INSERT INTO auto_rounds (task, project, slots, candidates, at) VALUES (?1, ?2, ?3, ?4, ?5)", (&round.task, &round.project, round.slots, json!(round.candidates).to_string(), at)).map(drop).map_err(sql)
 }
 
-/// The rounds of `project` still on the board, oldest first: (ID, status).
-pub fn rounds_shown(tx: &Transaction, project: &str) -> Result<Vec<(String, String)>, String> {
-    rows(tx, "SELECT t.slug, t.status FROM auto_rounds a JOIN tasks t ON t.id = a.task WHERE a.project = ?1 AND t.archived_at IS NULL ORDER BY a.at, a.rowid", [project], |r| Ok((r.get(0)?, r.get(1)?)))
+/// The round whose run is in pane `pane`, with its task: the session Dispatcher started for it, while it stands.
+pub fn round_in_pane(tx: &Transaction, pane: &str) -> Result<Option<(Round, ops::Task)>, String> {
+    let Some(run) = crate::dispatcher::runs::in_pane(tx, pane)?.filter(|r| r.ids.len() == 1) else { return Ok(None) };
+    let own = ops::get(tx, &run.ids[0])?;
+    Ok(round_of(tx, &own.key)?.map(|round| (round, own)))
 }
 
-/// Round `round` started `task` on `agent`.
-pub fn started(tx: &Transaction, task: &str, round: &str, agent: &str, at: i64) -> Result<(), String> {
-    tx.execute("INSERT INTO auto_starts (task, round, agent_id, at) VALUES (?1, ?2, ?3, ?4)", (task, round, agent, at)).map(drop).map_err(sql)
+/// The rounds of `project` still on the board, oldest first: (key, ID, status).
+pub fn rounds_shown(tx: &Transaction, project: &str) -> Result<Vec<(String, String, String)>, String> {
+    rows(tx, "SELECT t.id, t.slug, t.status FROM auto_rounds a JOIN tasks t ON t.id = a.task WHERE a.project = ?1 AND t.archived_at IS NULL ORDER BY a.at, a.rowid", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+}
+
+/// Round `round` starts `task`: written before its press, so two calls at once never both find a slot of the round.
+pub fn started(tx: &Transaction, task: &str, round: &str, at: i64) -> Result<(), String> {
+    tx.execute("INSERT INTO auto_starts (task, round, at) VALUES (?1, ?2, ?3)", (task, round, at)).map(drop).map_err(sql)
+}
+
+/// The press of `task` by `round` started nothing: its slot of the round is free again.
+pub fn not_started(tx: &Transaction, task: &str, round: &str) -> Result<(), String> {
+    tx.execute("DELETE FROM auto_starts WHERE task = ?1 AND round = ?2", (task, round)).map(drop).map_err(sql)
+}
+
+/// The last round of `project` since `on_at`, when it started nothing: when it was made and what it was given. After
+/// such a round the next waits (dispatcher/auto.rs), so tasks its agent leaves do not bring it back at every change.
+pub fn fruitless(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<(i64, Vec<String>)>, String> {
+    let last: Option<(String, i64, String)> = tx.query_row("SELECT task, at, candidates FROM auto_rounds WHERE project = ?1 AND at >= ?2 ORDER BY at DESC, rowid DESC LIMIT 1", (project, on_at),
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional().map_err(sql)?;
+    Ok(match last {
+        Some((key, at, ids)) if started_by(tx, &key)? == 0 => Some((at, serde_json::from_str(&ids).unwrap_or_default())),
+        _ => None,
+    })
 }
 
 /// How many tasks round `round` started.
@@ -162,27 +187,46 @@ pub fn tripped(tx: &Transaction, project: &str, on_at: i64) -> Result<Option<Str
     Ok(None)
 }
 
+/// A task a round may start.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Candidate {
+    pub id: String,
+    pub key: String,
+    pub updated_at: i64,
+    /// the agent it runs on: the task's own, else the setting's default
+    pub agent: String,
+}
+
 /// What a round may start in `project`: its TODO tasks no session, run, wait, schedule or round holds, whose agent
-/// (the task's own, else `default`) is in the pool; in the board's order, CANDIDATES_MOST at most. Each with that agent.
-pub fn candidates(tx: &Transaction, project: &str, default: Option<&str>) -> Result<Vec<(ops::Task, String)>, String> {
-    let found: Vec<(String, String)> = rows(tx, "SELECT t.slug, a.id FROM tasks t JOIN agents a ON a.id = COALESCE((SELECT x.id FROM agents x WHERE x.id = t.agent), ?2)
-                 WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL
+/// (the task's own, else `default`) is in the pool: one naming an agent deleted since is none, never the default's;
+/// in the board's order, CANDIDATES_MOST at most. `only`: that task alone, by its ID.
+pub fn candidates(tx: &Transaction, project: &str, default: Option<&str>, only: Option<&str>) -> Result<Vec<Candidate>, String> {
+    let found: Vec<Candidate> = rows(tx, "SELECT t.slug, t.id, t.updated_at, a.id FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
+                 WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
-                 ORDER BY t.severity, t.rank LIMIT ?3", (project, default, (CANDIDATES_MOST * 2) as i64), |r| Ok((r.get(0)?, r.get(1)?)))?;
+                 ORDER BY t.severity, t.rank LIMIT ?4", (project, default, only, (CANDIDATES_MOST * 2) as i64),
+        |r| Ok(Candidate { id: r.get(0)?, key: r.get(1)?, updated_at: r.get(2)?, agent: r.get(3)? }))?;
     let mut out = Vec::new();
-    for (id, agent) in found {
-        let t = ops::get(tx, &id)?;
-        if crate::dispatcher::runs::holding(tx, &t.key)?.is_none() && out.len() < CANDIDATES_MOST {
-            out.push((t, agent));
+    for c in found {
+        // a run still holding it (its agent in a turn after it went back to TODO) is no free task
+        if out.len() < CANDIDATES_MOST && crate::dispatcher::runs::holding(tx, &c.key)?.is_none() {
+            out.push(c);
         }
     }
     Ok(out)
 }
 
-/// A human's setting for a project: {"agent": id or null, "default": id or null}.
+/// A human's setting for a project: {"agent": id or null, "default": id or null, "off_why": what its window showed}.
+/// A window that did not show why it turned itself off does not turn it on again unseen.
 async fn set_auto(State(app): State<Shared>, Path(project): Path<String>, Json(body): Json<Value>) -> Response {
-    let done = store(&app, move |tx| set(tx, &project, body["agent"].as_str(), body["default"].as_str(), ops::now()).map(|()| json!({"ok": true}))).await;
+    let done = store(&app, move |tx| {
+        ops::check_project(tx, &project)?;
+        if let Some(why) = setting(tx, &project)?.off_why.filter(|why| body["off_why"].as_str() != Some(why)) {
+            return Err(format!("It turned itself off meanwhile: {why} Open its window again."));
+        }
+        set(tx, &project, body["agent"].as_str(), body["default"].as_str(), ops::now()).map(|()| json!({"ok": true}))
+    }).await;
     if done.is_ok() {
         app.dispatcher.soon();
     }

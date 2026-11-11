@@ -115,7 +115,8 @@ fn a_line_too_long_is_dropped_to_its_newline() {
 /// terminum-dispatcher.md AC-137: the pool is not an agent's to read or change.
 #[test]
 fn ac137_no_tool_reaches_a_projects_agents() {
-    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task"]);
+    assert_eq!(tool_names(), ["update_session_plan", "get_session_plan", "list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "dispatch_task"],
+               "the last starts a task on an agent of the pool (AC-170), and changes none");
 }
 
 #[test]

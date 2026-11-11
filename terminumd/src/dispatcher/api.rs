@@ -112,6 +112,10 @@ fn queue_offer(full: &pool::Full) -> Value {
 /// goes first (AC-158). `alone`: the press runs `task` alone: one of a schedule's may take its kept slot
 /// (terminum-schedules.md AC-161).
 fn no_room(tx: &rusqlite::Transaction, slots: &pool::Slots, agent: &Agent, project: &str, (task, alone): (&Task, bool), but: Option<&str>) -> Result<Option<pool::Full>, String> {
+    // Auto-Dispatcher's round takes no slot and waits behind none (AC-170)
+    if alone && crate::tasks::auto::round_of(tx, &task.key)?.is_some() {
+        return Ok(None);
+    }
     if let Some(full) = slots.check_for(tx, agent, project, alone.then_some(task.key.as_str()), but)? {
         return Ok(Some(full));
     }
@@ -157,7 +161,8 @@ pub(super) async fn press_again(app: &Shared, id: &str, body: Value) -> Result<V
 /// Auto-Dispatcher's press (AC-170): a round on the agent that picks, or a task a round chose on its agent; with no
 /// room it answers `full` and nothing waits.
 pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Value, String> {
-    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, ..Default::default() }).await
+    // always a session of its own: a conversation a human's RUN left is never gone on in by its words
+    pressed(app, id, Press { agent: Some(agent.to_string()), auto: true, fresh: true, ..Default::default() }).await
 }
 
 /// The press on RUN: a comment is kept whatever follows (AC-122).
@@ -412,9 +417,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
         if closing && let Some(full) = pool::check_for(tx, &ag, &project, (now.len() == 1).then_some(now[0].key.as_str()), None)? {
             return Err(full.words);
         }
-        // a round's session takes no slot and waits behind none (AC-170)
-        let round = kept.auto && crate::tasks::auto::round_of(tx, &now[0].key)?.is_some();
-        if !round && let Some(kept) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
+        if let Some(kept) = wait_if_full(tx, &ag, &project, (&now[0], now.len() == 1), None, (&kept, said.as_deref(), &attached))? {
             return Ok(Next::Kept(kept));
         }
         let prompt = goes.prompt(said.as_deref());

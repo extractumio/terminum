@@ -25,13 +25,14 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         set(tx, "api", Some("p"), Some("a"), 5)?;
         assert_eq!(setting(tx, "api")?, Setting { agent: Some("p".into()), default: Some("a".into()), on_at: 5, ..Default::default() });
         saw(tx, "api", "x:1")?;
+        set(tx, "api", Some("p"), Some("a"), 7)?;
+        assert_eq!(setting(tx, "api")?.seen.as_deref(), Some("x:1"), "a Save that changes nothing makes no round");
         // its default changed while on: the round is judged anew, it stays on since then
         set(tx, "api", Some("p"), None, 9)?;
         assert_eq!(setting(tx, "api")?, Setting { agent: Some("p".into()), on_at: 5, ..Default::default() });
         turn_off(tx, "api", "its round API-3 failed.")?;
         assert_eq!(setting(tx, "api")?, Setting { off_why: Some("its round API-3 failed.".into()), on_at: 5, ..Default::default() });
-        let board: std::collections::HashMap<String, Value> = for_board(tx)?.into_iter().collect();
-        assert_eq!(board["api"], json!({"agent": null, "default": null, "off_why": "its round API-3 failed."}));
+        assert_eq!(super::super::projectapi::settings(tx)?["api"]["auto"], json!({"agent": null, "default": null, "off_why": "its round API-3 failed."}));
         set(tx, "api", None, Some("a"), 12)?;
         assert_eq!(setting(tx, "api")?, Setting { default: Some("a".into()), on_at: 5, ..Default::default() }, "off by a human: no why");
         Ok(())

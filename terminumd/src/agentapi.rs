@@ -29,6 +29,9 @@ pub const HOOKS_OFF: &str = "terminum's hooks are not running in this session (C
 /// The answer to a plan update from another session than the pane's hooked one.
 pub const OTHER_SESSION: &str = "Not applied: this call comes from another session than the pane's main agent (a subagent's). Only the main agent calls update_session_plan; report to it instead.";
 
+/// The answer to dispatch_task from another session than the pane's main agent (terminum-dispatcher.md AC-170).
+pub const OTHER_SESSION_DISPATCH: &str = "Not started: only the round's main agent starts tasks, not a subagent. Report to it instead.";
+
 /// The answer to a note tool of an agent started before the upgrade (AC-98).
 pub const NOTES_GONE: &str = "This tool is gone. Use create_task for what must not get lost. If your tools do not list it, this session started before the upgrade: say so and put the text in your report; the user's /mcp reconnect or a new session brings it.";
 
@@ -81,6 +84,9 @@ async fn task_tool(app: &Shared, caller: &Caller, tool: String, args: Value) -> 
         project: app.projects.lock().of(&caller.key).map(|p| p.id.clone()),
         dir: if host.is_none() { dir } else { None },
     };
+    if tool == "dispatch_task" && caller.other {
+        return answer(OTHER_SESSION_DISPATCH, true);
+    }
     if tool == "dispatch_task" {
         // Auto-Dispatcher's round starts a task (terminum-dispatcher.md AC-170): a press, not a store's write
         return match crate::dispatcher::auto::dispatch(app, &who.key, &args).await { Ok(text) => answer(&text, false), Err(e) => answer(&e, true) };
