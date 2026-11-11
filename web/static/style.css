@@ -17,6 +17,7 @@ html, body { margin: 0; height: 100%; background: var(--t-bg); color: var(--t-fg
 body { font: 14px/1.35 var(--ui); overflow: hidden; -webkit-text-size-adjust: 100%; }
 :where(button) { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; touch-action: manipulation; }   /* a reset any rule overrides: the material too (shapes.css) */
 button:focus-visible, input:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+:is(#renamebox, #login, .hrange) input:focus-visible { outline: none; box-shadow: var(--field-focus-edge); }   /* a text field: a glow, no line (UI-GUIDELINES §2.7) */
 svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 svg circle { fill: currentColor; stroke: none; }
 svg.lu { width: var(--s, 16px); height: var(--s, 16px); stroke-width: 2; stroke-linejoin: round; flex: 0 0 auto; }

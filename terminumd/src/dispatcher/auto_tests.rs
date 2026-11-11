@@ -74,9 +74,9 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         assert!(ops::get(tx, &id)?.archived_at.is_some(), "a round that ended is archived");
         let given = |at: i64| offer(tx, "api", &setting(tx), at).map(|(free, n)| (free.into_iter().map(|c| c.id).collect::<Vec<_>>(), n));
         // a round that filled its slots left the rest for want of room: they are offered again
-        auto::started(tx, &high.key, &r.task, NOW)?;
+        auto::started(tx, &high.key, Some(&r.task), "api", NOW)?;
         assert_eq!(given(NOW)?, (vec![low.id.clone()], 1));
-        auto::not_started(tx, &high.key, &r.task)?;
+        auto::not_started(tx, &high.key, Some(&r.task))?;
         assert_eq!(given(NOW)?.1, 0);
         // one a human edits since is judged anew; a comment or a day's end apart, the rest stays passed over
         ops::edit(tx, HUMAN, &low.id, ops::Edit { title: Some("low, reworded".into()), ..Default::default() }, NOW + 60)?;
@@ -114,6 +114,64 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_parent_waits_for_its_subtas
 }
 
 #[test]
+fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
+    store("auto-order").with(|tx| {
+        auto::set(tx, "api", &Setting { mode: auto::ORDER.into(), agent: None, day_most: 5, ..setting(tx) }, NOW)?;
+        let (low, high, mid, other) = (task(tx, "low", "P2"), task(tx, "high", "P0"), task(tx, "mid", "P1"), task(tx, "other", "P1"));
+        auto::set_agent(tx, &other.id, Some("b"), NOW)?;
+        let ids = |due: Due| { let Due::Start(l) = due else { panic!("no start: {due:?}") }; l.into_iter().map(|c| (c.id, c.agent)).collect::<Vec<_>>() };
+        let first = ids(decide(tx, "api", &setting(tx), NOW)?);
+        assert_eq!(first[0], (high.id.clone(), "a".to_string()), "P0 first");
+        let mut rest = first[1..].to_vec();
+        rest.sort();
+        let mut wanted = vec![(mid.id.clone(), "a".to_string()), (other.id.clone(), "b".to_string())];
+        wanted.sort();
+        assert_eq!(rest, wanted, "then P1, each while its agent has a free slot: Smith's 2, Jones's 1; P2 waits for room");
+        assert_eq!(auto::started_in_day(tx, "api", NOW)?, 3, "each took its slot of the day");
+        assert!(auto::rounds_shown(tx, "api")?.is_empty(), "no round: no agent picks");
+        // a press that found no room gives its slot back, and a later walk takes it again; what it started and its agent
+        // put back is not started twice
+        auto::not_started(tx, &mid.key, None)?;
+        for t in [&high, &other] {
+            // its session opened and its agent never took the prompt: the task never left TODO, its run ended
+            let run = running(tx, "a", t);
+            runs::change(tx, &run, |r| r.state = Phase::Closed)?;
+        }
+        let mut again = ids(decide(tx, "api", &setting(tx), NOW)?);
+        again.sort();
+        let mut wanted = vec![(mid.id.clone(), "a".to_string()), (low.id.clone(), "a".to_string())];
+        wanted.sort();
+        assert_eq!(again, wanted, "high and other stand in TODO still, started once: not again");
+        // terminumd stopped between taking a slot and its press: the start is given back at the next walk
+        let lost = task(tx, "lost", "P3");
+        auto::started(tx, &lost.key, None, "api", NOW)?;
+        assert_eq!(auto::started_in_day(tx, "api", NOW)?, 5);
+        tx.execute("UPDATE projects SET auto_day_most = 9 WHERE id = 'api'", []).map_err(sql)?;
+        tx.execute("UPDATE agents SET at_once = 0 WHERE id IN ('a', 'b')", []).map_err(sql)?;
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "no room");
+        assert_eq!(auto::started_in_day(tx, "api", NOW)?, 2, "the three never pressed are free again; the two that ran are kept");
+        tx.execute("UPDATE agents SET at_once = 2 WHERE id IN ('a', 'b')", []).map_err(sql)?;
+        // its day's cap holds here too
+        tx.execute("UPDATE projects SET auto_day_most = 2 WHERE id = 'api'", []).map_err(sql)?;
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "the cap of 24 hours is reached");
+        // a human moves one that failed back to TODO: a candidate anew
+        tx.execute("UPDATE projects SET auto_day_most = 9 WHERE id = 'api'", []).map_err(sql)?;
+        ops::move_to(tx, HUMAN, &high.id, "FAILED", NOW + 1)?;
+        assert!(auto::candidates(tx, "api", &setting(tx), NOW + 1, None)?.iter().all(|c| c.id != high.id), "FAILED is never taken");
+        ops::move_to(tx, HUMAN, &high.id, "TODO", NOW + 2)?;
+        assert_eq!(auto::candidates(tx, "api", &setting(tx), NOW + 2, None)?[0].id, high.id);
+        // a round left from the other way of picking starts no more
+        tx.execute("UPDATE projects SET auto_day_most = 9, auto_mode = 'agent', auto_agent = 'p' WHERE id = 'api'", []).map_err(sql)?;
+        let (id, r) = round(tx);
+        let pane = format!("tmux:local:t:%{}", running(tx, "p", &ops::get(tx, &id)?));
+        tx.execute("UPDATE projects SET auto_mode = 'order' WHERE id = 'api'", []).map_err(sql)?;
+        assert!(chosen(tx, &pane, &r.candidates[0], NOW).err().unwrap().starts_with("Auto-Dispatch was set to the board's order"));
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "its round is still open");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac170_it_starts_no_more_than_its_days_cap() {
     store("auto-cap").with(|tx| {
         auto::set(tx, "api", &Setting { day_most: 2, ..setting(tx) }, NOW)?;
@@ -122,9 +180,9 @@ fn ac170_it_starts_no_more_than_its_days_cap() {
         let (id, r) = round(tx);
         assert_eq!(r.slots, 2, "Smith's 2 and Jones's 1 are free: the cap leaves 2");
         let pane = format!("tmux:local:t:%{}", running(tx, "p", &ops::get(tx, &id)?));
-        auto::started(tx, &one.key, &r.task, NOW)?;
+        auto::started(tx, &one.key, Some(&r.task), "api", NOW)?;
         assert_eq!((auto::started_in_day(tx, "api", NOW)?, offer(tx, "api", &setting(tx), NOW)?.1), (1, 1));
-        auto::started(tx, &two.key, &r.task, NOW)?;
+        auto::started(tx, &two.key, Some(&r.task), "api", NOW)?;
         assert_eq!(offer(tx, "api", &setting(tx), NOW)?.1, 0, "the day's cap is reached: no round");
         assert!(chosen(tx, &pane, &three.id, NOW).err().unwrap().starts_with("This project's 2 tasks a day are started"));
         // 24 hours on, it starts again
@@ -176,7 +234,7 @@ fn ac170_it_takes_the_severities_chosen_after_the_wait_and_none_twice() {
         crate::tasks::comments::comment(tx, HUMAN, &one.id, "a word", NOW + 1100)?;
         assert_eq!(ids(NOW + 1190)?, std::slice::from_ref(&one.id));
         // started by it once and put back by an agent: not run again; a human's move makes it a candidate anew
-        auto::started(tx, &one.key, &round.key, NOW + 1200)?;
+        auto::started(tx, &one.key, Some(&round.key), "api", NOW + 1200)?;
         ops::move_to(tx, DISPATCHER, &one.id, "IN PROGRESS", NOW + 1200)?;
         ops::move_to(tx, DISPATCHER, &one.id, "TODO", NOW + 1300)?;
         assert!(ids(NOW + 9000)?.is_empty(), "no loop over a task its agent gives back");
@@ -206,7 +264,7 @@ fn ac170_a_new_task_a_round_with_no_run_and_a_picker_past_its_limit() {
         let run = running(tx, "p", &ops::get(tx, &fresh)?);
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         ops::move_to(tx, DISPATCHER, &fresh, "DONE", NOW)?;
-        auto::started(tx, &new.key, &again.task, NOW)?;
+        auto::started(tx, &new.key, Some(&again.task), "api", NOW)?;
         tx.execute("UPDATE agents SET week_limit = 1 WHERE id = 'p'", []).map_err(sql)?;
         tx.execute("INSERT INTO usage (run, agent_id, at, input, output, cache_write, cache_read) VALUES (?1, 'p', ?2, 2000000, 0, 0, 0)", (&run, NOW)).map_err(sql)?;
         task(tx, "newer", "P2");
@@ -261,7 +319,7 @@ fn ac170_only_a_rounds_own_pane_starts_only_its_candidates_while_they_are_free()
         let c = chosen(tx, &pane, &one.id, NOW)?;
         assert_eq!((c.task.id.as_str(), c.agent.id.as_str(), c.left), (one.id.as_str(), "a", 1));
         assert_eq!(auto::started_by(tx, &r.task)?, 1, "its slot of the round is taken with the reading: two calls at once never both find it");
-        auto::not_started(tx, &one.key, &r.task)?;
+        auto::not_started(tx, &one.key, Some(&r.task))?;
         assert_eq!(auto::started_by(tx, &r.task)?, 0, "a press that started nothing gives it back");
         // taken meanwhile by a human's session: no longer its to start
         ops::link(tx, HUMAN, &two.id, Some("tmux:local:t:%9"), NOW)?;
@@ -271,8 +329,8 @@ fn ac170_only_a_rounds_own_pane_starts_only_its_candidates_while_they_are_free()
         assert!(chosen(tx, &pane, &one.id, NOW).err().unwrap().starts_with("Auto-Dispatch was turned off for this project meanwhile"));
         tx.execute("UPDATE projects SET auto_on = 1 WHERE id = 'api'", []).map_err(sql)?;
         // its slots filled, it starts no more
-        auto::started(tx, &one.key, &r.task, NOW)?;
-        auto::started(tx, &late.key, &r.task, NOW)?;
+        auto::started(tx, &one.key, Some(&r.task), "api", NOW)?;
+        auto::started(tx, &late.key, Some(&r.task), "api", NOW)?;
         assert!(chosen(tx, &pane, &one.id, NOW).err().unwrap().starts_with("This round's 2 free slots are filled"));
         // ended, its pane starts nothing
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
@@ -297,7 +355,7 @@ fn ac170_it_turns_itself_off_when_its_round_or_two_of_its_tasks_fail() {
         // two tasks it started, both failed
         let own = task(tx, "a human ends it", "P2");
         for t in [&one, &two, &own] {
-            auto::started(tx, &t.key, &r.task, NOW + 20)?;
+            auto::started(tx, &t.key, Some(&r.task), "api", NOW + 20)?;
         }
         ops::move_to(tx, HUMAN, &own.id, "FAILED", NOW + 20)?;   // a human's own move, or giving up on its run, is no failure of its agent
         tx.execute("UPDATE auto_rounds SET at = ?1", [NOW + 20]).map_err(sql)?;

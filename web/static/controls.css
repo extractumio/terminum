@@ -83,7 +83,7 @@
 #app #bar > .sections { display: none; }
 @media (min-width: 861px) { #app.nav-hidden #bar > .sections { display: inline-flex; } }
 
-/* ---- fields: a recess at rest; in focus edged in the accent, its fill as at rest (no gradient) ---- */
+/* ---- fields: soft shadows, never a line: a recess at rest; in focus a glow, its fill as at rest (no gradient) ---- */
 :is(.field, .search, .filter, .inline-edit input), #findq { border: 0; border-radius: var(--key-r); color: inherit;
   background-color: var(--field-fill); box-shadow: var(--field-edge); }
 :is(#mbtext, #marktext, #asktext) { border-radius: var(--key-r); box-shadow: var(--field-edge); }   /* a quote: a field's recess, the terminal's ground */

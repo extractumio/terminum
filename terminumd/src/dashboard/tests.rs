@@ -257,7 +257,7 @@ fn ac176_who_does_the_work_on_tasks() {
         ops::move_to(tx, "agent:x", &mine.key, "DONE", at + 7)?;
         // a task Dispatcher made and Auto-Dispatcher chose
         let own = ops::create(tx, DISPATCHER, NewTask { title: "By itself".into(), ..Default::default() }, at)?;
-        tx.execute("INSERT INTO auto_starts (task, round, at) VALUES (?1, ?2, ?3)", (&own.key, &mine.key, at + 60)).map_err(sql)?;
+        tx.execute("INSERT INTO auto_starts (task, round, project, at) VALUES (?1, ?2, ?4, ?3)", (&own.key, &mine.key, at + 60, &own.project)).map_err(sql)?;
         for (t, slug) in [(at + 10, &mine.id), (at + 90, &own.id)] {
             tx.execute("INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, tasks, version) VALUES (?1, ?1, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, 'k9', 'r', ?2, 'test')", (t * 1000, slug)).map_err(sql)?;
         }
