@@ -118,6 +118,7 @@ A 4px grid: `--sp-0` 2 (inside a control only), `--sp-1` 4, `--sp-2` 8, `--sp-3`
 | Sibling controls | 4px (footer list), 8px (forms, dialog actions, header tools) |
 | A form | padding 12 (16 on touch); field ↔ field 8; a hint under its field 4; the last field → its buttons 16 (20 on touch) |
 | A dialog | padding 16; its text → its buttons 20 |
+| A task's window (New task, Run, a schedule) | its parts 12 apart; Text's head with its keys 4 over the text, as a label; every label, field and group on the form's one edge, a field's text 12 in, a read-only text (the prompt) a field |
 
 | Radius | Use |
 | --- | --- |
@@ -246,7 +247,7 @@ setting `--key-primary-fill` and `--key-primary-ink`, never by a rule of its own
 | Disabled | any `button:disabled` | `--key-disabled` opacity; flat, never pressed |
 | Icon key | `.icon` (header, dialogs' ×, panes, find, quick shell), a group header's +, ⋯, copy, import, clone, the name's pencil, a bookmark row's ×, a waiting card's ×, the steppers | `--icon-key` (30; touch 44), `--icon-key-sm` (24: a thin bar's), `--icon-key-list` (the session list's: 24; touch 40) with `--row-inset` round it on every side (4; touch 8: a group header is the key and its inset, Clone on its row's middle), `--icon-gap` between them, `--icon-ink`; a rule sizes one through `--ik`, never `width` (the kinds' selectors weigh an id); pressed or expanded: `--m-well` |
 | Segmented control | `.seg` | the track `--field-fill` with `--m-groove`; the chosen segment a key |
-| Field | `.field`, `.search`, `.filter`, `#findq`, the Panel's `.filter`; a quote (`#asktext`, `#marktext`) as its recess | `--field-fill`, `--field-px`, `--field-edge` at rest; `--field-focus-edge` in focus (a soft glow in `--ring` round the same fill: no line, no gradient) |
+| Field | `.field`, `.search`, `.filter`, `#findq`, the Panel's `.filter`; a read-only text as `pre.field` (`.runprompt`: RUN's and a schedule's prompt); a quote (`#asktext`, `#marktext`) as its recess | `--field-fill`, `--field-px`, `--field-edge` at rest; `--field-focus-edge` in focus (a soft glow in `--ring` round the same fill: no line, no gradient) |
 | Pane | menus, the sent and reminders panes, the bookmarks pane, the find box, the bookmark bar, footer forms, the note, waiting cards | `--pane-shadow` |
 | Dialog | `dialog.dlg`, the bookmarks window | Centered on the window, across and down, by the browser's modal placement, never placed by a script: it stays there as the window or a field in it is resized (the bookmarks window keeps View's place). `--dialog-shadow` (a halo that shades the text around it), `--scrim` behind it; the sent and reminders panes are modal over `#panescrim` |
 | Dialog size | `dialog.dlg[data-size]`: `ask`, `form`, `write`, `list`, `read`; `data-parent` | dialogsize.css, dlgsize.js | 80% of its parent (the dialog under it, its `data-parent`, else the window) across; `write`, `list`, `read` also down, their one growing part (the text field, the list, the body) taking the rest and their `.actions` at the foot, sticky; each kind between a floor and a ceiling (terminum.md AC-173 lists them); a new dialog picks its kind, never a width of its own. |

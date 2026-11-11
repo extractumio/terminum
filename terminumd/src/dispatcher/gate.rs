@@ -13,6 +13,9 @@ use crate::tmux::Server;
 
 /// How long what was pasted may take to show in the box.
 const SHOWN: Duration = Duration::from_millis(1500);
+/// A first prompt's: an agent still starting on a busy machine shows it seconds late, and one
+/// given up on stands there unsent. Not scaled by a test's clock: the agent's own real time.
+const SHOWN_FIRST: Duration = Duration::from_secs(30);
 
 /// What missed.
 #[derive(Debug, PartialEq)]
@@ -86,7 +89,7 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
     let pasted = guarded(&client, &run.id, pane, &format!("paste-buffer -p -b {buffer} -t {pane}")).await;
     let shown = async {
         pasted.map_err(|e| other(format!("tmux did not take the paste: {e}")))?;
-        let until = tokio::time::Instant::now() + SHOWN;
+        let until = tokio::time::Instant::now() + if first { SHOWN_FIRST } else { SHOWN };
         loop {
             tokio::time::sleep(Duration::from_millis(100)).await;
             if screen::shows(&read(server, pane, &run.kind).await.map_err(other)?, text) {

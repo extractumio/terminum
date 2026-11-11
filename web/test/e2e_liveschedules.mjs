@@ -105,6 +105,22 @@ export async function liveSchedules(page, live) {
   await page.selectOption("#schedkind", "weekly");
   await page.click('#whendays button:has-text("Fri")');
   check("AC-160 weekly days are keys", await until(async () => (await page.textContent("#schedfields")).endsWith("* * 1,5")), await page.textContent("#schedfields"));
+  // its window on one grid, the weekly kind's parts shown: every label and field on the form's edge, the prompt a field (its well, its text where a
+  // field's is), When's fields as tall as the others, the tick on its field's middle
+  const grid = await page.evaluate(() => {
+    const f = document.querySelector("#schedbox form").getBoundingClientRect(), at = (q) => document.querySelector(q).getBoundingClientRect();
+    const css = (q) => getComputedStyle(document.querySelector(q)), textX = (q) => Math.round(at(q).x - f.x + parseFloat(css(q).paddingLeft));
+    const middle = (q) => at(q).y + at(q).height / 2;
+    return { edges: ["#schedtitle", "#schedtext", "#schedproj", "#schedwhen", "#schedkind", "#whendays", "#schedbudget", "#schedwhat", "#schedwhat .runfacts", "#schedprompt"].map((q) => Math.round(at(q).x - f.x)),
+      text: [textX("#schedtitle"), textX("#schedprompt")], sizes: [css("#schedtitle").fontSize, css("#schedprompt").fontSize], well: css("#schedprompt").boxShadow !== "none",
+      heights: ["#schedtitle", "#schedkind", "#schedtime"].map((q) => Math.round(at(q).height)), tick: Math.round(middle("#schedpaused") - middle("#schedbudget")),
+      gaps: [Math.round(at("#schedtext").y - at("#schedbox .edithead").bottom), Math.round(at("#schedproj").y - at("#schedtext").bottom)] };
+  });
+  check("AC-160 the schedule window's parts stand on one edge, the prompt a field with a field's text inset",
+    grid.edges.every((x) => x === 0) && grid.text[0] === grid.text[1] && grid.well && grid.sizes[0] === grid.sizes[1], JSON.stringify(grid));
+  check("AC-160 Text's head stands 4px over its text, as a label; the parts stand apart", grid.gaps[0] === 4 && grid.gaps[1] > grid.gaps[0], JSON.stringify(grid));
+  check("AC-160 When's fields are as tall as the others; Paused stands on its field's middle",
+    grid.heights.every((h) => Math.abs(h - grid.heights[0]) <= 1) && Math.abs(grid.tick) <= 1, JSON.stringify(grid));
   await page.selectOption("#schedkind", "minutes");
   await page.selectOption("#schedevery", "1");
   check("AC-160 runs a minute apart are taken", await until(async () => await page.textContent("#schedfields") === "*/1 * * * *" && /^Every minute\. Next: /.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
