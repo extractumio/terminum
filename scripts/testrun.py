@@ -9,8 +9,12 @@ import re
 import signal
 import socket
 import subprocess
+import sys
 import tempfile
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import check_step  # noqa: E402
 
 _sockets = set()
 
@@ -69,6 +73,28 @@ def remove_dead_sockets():
                 except OSError:
                     break
             time.sleep(0.05)
+
+
+def naming(folder):
+    """The pids of the processes whose environment holds a path in `folder` (a private terminumd's
+    TM_HOME, its fake host's HOME): a run's whatever their parent, as a host's `claude plugin …`
+    in a session of its own whose ssh was dropped."""
+    holds = re.compile(rf"=(\S*:)?{re.escape(folder)}(/|:|\s|$)")
+    return [pid for pid, _, text in check_step.listing() if holds.search(text)]
+
+
+def end_naming(folder, settle=check_step.SETTLE_S):
+    """Waits `settle` seconds at most for the processes `naming` the folder to end by themselves (one
+    may still write into it), then ends those left by pid as check_step.py does; their commands,
+    never their environment."""
+    end = time.monotonic() + settle
+    while (left := naming(folder)) and time.monotonic() < end:
+        time.sleep(0.5)
+    if not left:
+        return []
+    said = subprocess.run(["ps", "-o", "command=", "-p", ",".join(map(str, left))], capture_output=True, text=True).stdout
+    check_step.end_pids(left)
+    return [line.strip()[:120] for line in said.splitlines()]
 
 
 def container_name(kind, pid=None):

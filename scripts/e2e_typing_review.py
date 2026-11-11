@@ -126,7 +126,6 @@ def main():
             except ProcessLookupError:
                 pass
         t.cleanup()
-        subprocess.run(["tmux", "-L", remote_socket, "kill-server"], stderr=subprocess.DEVNULL)
     summary()
 
 

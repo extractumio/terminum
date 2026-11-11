@@ -20,7 +20,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from testrun import short_tmp  # noqa: E402
+from testrun import end_naming, own_server_pids, short_tmp  # noqa: E402
 
 
 def _ended(sig, _frame):
@@ -62,7 +62,15 @@ def end_tmux(socket_name):
             os.kill(int(pid), signal.SIGKILL)
         except (ValueError, ProcessLookupError):
             pass
-    tmux_on(socket_name, "kill-server")
+    if subprocess.run(["tmux", "-L", socket_name, "kill-server"], capture_output=True).returncode == 0:
+        return
+    # it reached none: one whose socket file went (a dying server unlinked its successor's) still runs, ended by its pid
+    listed = subprocess.run(["ps", "-axo", "pid=,command="], capture_output=True, text=True).stdout
+    for pid in own_server_pids(listed, {socket_name}):
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
 
 
 def wait_for(read, predicate, seconds=15, every=0.1, last=False):
@@ -231,8 +239,16 @@ class Terminumd:
             self.proc.wait(10)
 
     def cleanup(self):
+        """Ends it, its tmux server and its fake host's (FAKE_SSH_TMUX_SOCKET), then waits for what
+        else runs with its folder before the folder goes: a host's `claude plugin …` whose ssh was
+        dropped writes into the fake home after its parent ended. One still there after the wait is
+        a leftover: ended by its pid, and a failed check (AC-102)."""
         self.stop()
-        end_tmux(self.tmux_socket)
+        for name in filter(None, (self.tmux_socket, self.env.get("FAKE_SSH_TMUX_SOCKET"))):
+            end_tmux(name)
+        left = end_naming(self.root)
+        if left:
+            check("AC-102 nothing of the test runs on with its folder after its cleanup", False, left)
         shutil.rmtree(self.root, ignore_errors=True)
 
     def log(self):

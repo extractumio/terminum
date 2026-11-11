@@ -132,7 +132,6 @@ def main():
         check("AC-123 so does the window of an agent ended", window_holds_shell(timed))
     finally:
         t.cleanup()
-        end_tmux(REMOTE_SOCKET)
     return summary()
 
 

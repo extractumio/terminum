@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The Dashboard's own charts (terminum.md AC-152), inline SVG as charts.js's: the working day (a day a
 // column, midnight on top as a calendar's, a thin line from the first to the last event and the
-// active stretches solid on it), the hour × weekday heat map, the projects ranked.
-import { el } from "./listparts.js";
+// active stretches solid on it), the hour × weekday heat map.
 import { pointer, svg } from "./charts.js";
-import { WEEK, dotOf, projectLabel } from "./msgpage.js";
+import { WEEK } from "./msgpage.js";
 
 /** Working days: `series` [{spans: [[from, to] minutes]}], `label(i)` under a column; select(i) as charts.js's. */
 export function workingDays(box, series, { label = () => "", select = () => {} } = {}) {
@@ -58,23 +57,4 @@ export function heatMap(box, heat, { select = () => {} } = {}) {
   box.replaceChildren(s);
   const info = (i) => (i < 0 ? null : { wd: Math.floor(i / cols), hour: (i % cols) * per, hours: per, minutes: rows[Math.floor(i / cols)][i % cols] });
   pointer(box, s, marks, { cols, select: (i) => select(info(i)), at: (e) => marks.indexOf(document.elementFromPoint(e.clientX, e.clientY)?.closest?.("rect.cell")) });
-}
-
-/** Projects ranked: [{id, name, n, color}], the first `most` and the rest as Other; a row presses `open(p)`. */
-export function ranked(box, projects, { most = 8, ink, open, other = () => {} }) {
-  const shown = projects.slice(0, most), rest = projects.slice(most);
-  const total = projects.reduce((s, p) => s + p.n, 0) || 1, max = Math.max(1, ...shown.map((p) => p.n), rest.reduce((s, p) => s + p.n, 0));
-  const row = (name, n, color, onPress) => {
-    const b = el("button", "rrow");
-    b.type = "button";
-    const bar = el("span", "rbar");
-    bar.style.setProperty("--w", `${(n / max) * 100}%`);
-    bar.style.setProperty("--proj", color);
-    b.append(dotOf(color), el("span", "rname", name), bar, el("span", "rnum", `${Math.round((n / total) * 100)}%`), el("span", "rnum", n.toLocaleString("en-US")));
-    b.addEventListener("click", onPress);
-    return b;
-  };
-  const rows = shown.map((p) => row(projectLabel(p), p.n, ink(p), () => open(p)));
-  if (rest.length) rows.push(row(`Other (${rest.length})`, rest.reduce((s, p) => s + p.n, 0), "var(--faint)", other));
-  box.replaceChildren(...(rows.length ? rows : [el("p", "msay", "Nothing sent in this period.")]));
 }

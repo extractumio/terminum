@@ -265,7 +265,6 @@ def main():
     finally:
         cleanup_fixtures()
         t.cleanup()
-        remote("kill-server")
     return summary()
 
 

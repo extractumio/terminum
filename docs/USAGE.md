@@ -146,11 +146,15 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   your schedules, newest first: when, the schedule, its task (a press opens it on the board), its
   agent and status, when it went IN PROGRESS and ended; a row opens to the prompt that went in and
   the result that came out, or says why nothing ran (skipped, missed, did not start). Schedule picks one.
-- **Dashboard** (`/dashboard/`): how much you drive sessions over 7, 30 or 90 days, never counting
-  Dispatcher: messages, active time (your sends and typing; a pause over 15 minutes ends a stretch),
-  active days, messages an active hour, sessions a day, the phone's share, each against the period
-  before; messages a day by project, your working day, the week's busy hours, projects and sessions
-  a day. A day opens its messages in the Message history.
+- **Dashboard** (`/dashboard/`): three tabs over one period (Day, 2 weeks, Month, Quarter, Year) and
+  one project or all. **You**: how much you work here and how loaded, never counting Dispatcher:
+  active time (your sends, typing and board actions; a pause over 15 minutes ends a stretch), active
+  days, your longest stretch, switches between sessions an hour, board actions, how long tasks waited
+  for you, off hours, the phone's share, each against the span before; active time by project, your
+  working day, the week's busy hours, sessions at once. **System**: the sessions Dispatcher started
+  and how their tasks ended, failures by reason, the agents' load, schedules' firings. **Costs**:
+  dollars at API list prices and tokens of Dispatcher's sessions by agent, project and model, and
+  each agent's use against its limits. A column of Active time opens its messages in the history.
 - **The agent's folder**: when Claude Code works in another folder than where it started (a
   worktree), its row in the list, the header's folder and the Files tree follow it, and paths
   it prints open from there. Settings' Follow the agent's folder turns that off for this browser (`page.followAgent`

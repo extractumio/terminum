@@ -117,7 +117,6 @@ def host():
         print("Private daemon log:", t.log())
     finally:
         t.cleanup()
-        subprocess.run(["tmux", "-L", remote_socket, "kill-server"], stderr=subprocess.DEVNULL)
 
 
 def security():

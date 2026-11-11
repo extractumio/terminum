@@ -56,10 +56,14 @@ export function readQuery(keys) {
   const q = new URLSearchParams(location.search);
   return Object.fromEntries(keys.map((k) => [k, q.get(k) ?? ""]));
 }
-export function writeQuery(state, keys, push) {
+/** This page's address with `state`'s `keys` that are set. */
+export function queryUrl(state, keys) {
   const q = new URLSearchParams();
   for (const k of keys) if (state[k]) q.set(k, state[k]);
-  const url = `${location.pathname}${q.size ? `?${q}` : ""}`;
+  return `${location.pathname}${q.size ? `?${q}` : ""}`;
+}
+export function writeQuery(state, keys, push) {
+  const url = queryUrl(state, keys);
   if (url !== `${location.pathname}${location.search}`) history[push ? "pushState" : "replaceState"](null, "", url);
 }
 

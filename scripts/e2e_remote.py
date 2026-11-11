@@ -348,7 +348,6 @@ def main():
         if not all(results):
             print(t.log())
         t.cleanup()
-        os.system(f"tmux -L {REMOTE_SOCKET} kill-server 2>/dev/null")
     summary()
 
 

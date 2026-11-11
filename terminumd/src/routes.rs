@@ -76,6 +76,7 @@ pub fn pages(app: Shared) -> Router {
         .nest("/fb", files_api(&app))
         .merge(crate::tasks::api::routes())
         .merge(crate::messages::api::routes())
+        .merge(crate::dashboard::routes())
         .fallback(static_file)
         .layer(middleware::from_fn_with_state(app.clone(), guard))
         .with_state(app)

@@ -23,7 +23,11 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
     assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
     (r.nudged, r.idle_for) = (true, 0);                 // as acts.rs writes it once it went
     assert!(step(&mut r, &up(30)).is_empty(), "once a run");
-    assert_eq!(moved(&step(&mut r, &up(3600 - 31))), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
+    // the turn's tokens come after its Stop, from the same hook, and a closed pane drops them (sock.rs, AC-129):
+    // up to the hour nothing closes or ends it, however late the agent's next event is
+    let acts = step(&mut r, &up(3600 - 31));
+    assert!(!acts.iter().any(|a| matches!(a, Act::Close { .. } | Act::End)), "{acts:?}");
+    assert_eq!(moved(&acts), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
     let (to, words) = moved(&step(&mut r, &up(1))).unwrap();
     assert_eq!((to, words.as_str()), ("FAILED", "No result from the agent within an hour of Dispatcher's request."));
 }

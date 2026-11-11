@@ -10,7 +10,6 @@ when a check fails.
 import json
 import os
 import signal
-import subprocess
 import sys
 import time
 
@@ -156,7 +155,6 @@ def main():
         if frozen:
             os.kill(frozen, signal.SIGCONT)
         t.cleanup()
-        subprocess.run(["tmux", "-L", REMOTE, "kill-server"], stderr=subprocess.DEVNULL)
     return summary()
 
 
