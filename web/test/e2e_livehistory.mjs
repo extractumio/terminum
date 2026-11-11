@@ -19,10 +19,12 @@ export async function liveHistory(page, opts) {
   hook(agent, "UserPromptSubmit", { prompt: "Исправь поиск по сообщениям", prompt_id: "h2" });
   // what Dispatcher typed, as its gate keeps it (a real run needs an agent: e2e_livedispatcher.mjs)
   intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`);
-  // a shell's command, typed in the page: what stood after the prompt, with its line
+  // a shell's command, typed in the page: what stood after the prompt, with its line. In a pane of its own: the
+  // list's first row is whatever the suites before left there, and a row an agent's mark stands on sends prompts
+  const shell = newPane("histshell"), shellKey = await keyOf(shell);
   await page.goto(`${base}/sessions/`);
-  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 15000 });
-  await page.click("#sessions .item");
+  await page.waitForSelector(`#sessions .item[data-id="${shellKey}"]`, { timeout: 15000 });
+  await page.click(`#sessions .item[data-id="${shellKey}"]`);
   await page.waitForSelector("#term", { state: "visible" });
   await page.evaluate(() => document.getElementById("kbd").focus());
   // Enter tells what the screen shows at the cursor: the typed line, once it is drawn (one more
