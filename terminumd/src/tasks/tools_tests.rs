@@ -310,6 +310,16 @@ fn ac145_an_agent_s_text_follows_its_project_s_template() {
     let own = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": SECTIONS})).unwrap_err();
     assert!(own.ends_with("## Why\n## Done when"), "the project's own is quoted: {own}");
     assert!(run(&s, &dir, &w, "create_task", &json!({"title": "Bug: own", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).is_ok());
+    // a title without its kind and a text without the sections: both said in one refusal
+    let both = run(&s, &dir, &w, "create_task", &json!({"title": "a gap", "severity": "P2", "text": "it breaks"})).unwrap_err();
+    assert!(both.starts_with("Start the title with Bug:, Feat: or Debt:.\nNot kept: the text lacks the sections") && both.ends_with("## Done when"), "{both}");
+    let all = run(&s, &dir, &w, "create_task", &json!({"title": "a gap", "text": "it breaks"})).unwrap_err();
+    assert!(all.starts_with("Give it a severity: P0, P1, P2 or P3.\nStart the title with Bug:, Feat: or Debt:.\nNot kept:"), "{all}");
+    // update_task by the same rules, every fault at once
+    let id = run(&s, &dir, &w, "create_task", &json!({"title": "Bug: mine", "severity": "P2", "text": "## Why\na\n## Done when\nb"})).unwrap().0;
+    let id = id.split_whitespace().find(|x| x.starts_with("API-")).unwrap().trim_end_matches(['.', ':', ',']).to_string();
+    let upd = run(&s, &dir, &w, "update_task", &json!({"id": id, "title": "mine", "text": "it breaks"})).unwrap_err();
+    assert!(upd.starts_with("Start the title with Bug:, Feat: or Debt:.\nNot kept: the text lacks the sections"), "{upd}");
 }
 
 #[test]

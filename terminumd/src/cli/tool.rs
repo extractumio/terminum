@@ -28,7 +28,7 @@ enum Caller {
 
 /// In a pane the pane's session calls, whatever token its environment holds: a token is for outside.
 fn caller(ctx: &Ctx) -> Result<Caller, String> {
-    let env = Env { tmux: ctx.var("TMUX").map(str::to_string), pane: ctx.var("TMUX_PANE").map(str::to_string), known: Default::default(), manager: Default::default() };
+    let env = Env { tmux: ctx.var("TMUX").map(str::to_string), pane: ctx.var("TMUX_PANE").map(str::to_string), ..Default::default() };
     if mcp::pane_of(&env).is_some() {
         return Ok(Caller::Pane(env));
     }
@@ -109,7 +109,7 @@ pub fn tools(ctx: &Ctx, rest: &[String]) -> Result<i32, String> {
             Ok(format!("You call as a {}.\n{}\nterminum tools search <words> finds one; terminum tools info <name> describes it; terminum tool <name> '<json>' runs it.", crate::roles::name(manager), areas.join("\n")))
         }
         [s, words @ ..] if s == "search" && !words.is_empty() => super::mcp_meta::search(&json!({"query": words.join(" "), "limit": 10}), manager),
-        [i, names @ ..] if i == "info" && !names.is_empty() => super::mcp_meta::describe(&json!({"names": names}), manager),
+        [i, names @ ..] if i == "info" && !names.is_empty() => super::mcp_meta::describe(&json!({"names": names}), manager).map(|(text, _)| text),
         _ => Err("usage: terminum tools [search <words> | info <name>…]".into()),
     }?;
     ctx.say(said);
