@@ -182,7 +182,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentlist .pbar { opacity: .75; }
 .agentlist .pbar.busy { opacity: 1; }
 .pickhint { margin: 0; min-width: 0; font-size: var(--fs-small); color: var(--accent); }
-.fieldvalue { display: flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); font-size: var(--fs-body); color: var(--t-fg); }
 #agentdrop { margin-right: auto; color: var(--danger-text); }
 .colempty { margin: var(--sp-1) var(--sp-1) 0; font-size: var(--fs-small); color: var(--muted); }
 .colmore { align-self: center; flex: none; }

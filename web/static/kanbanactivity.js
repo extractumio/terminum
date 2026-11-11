@@ -53,7 +53,10 @@ export function activity(t, { refresh, confirmed }) {
     } else if (e.kind === "deleted") {
       li.append(el("em", null, "Comment deleted"));
     } else {
-      li.append(el("span", "evtext", e.text ?? ""));
+      // its words, and what a screen showed, as Dispatcher quotes it between ``` lines, as it stood
+      const [, words, screen] = /^([\s\S]*?)\n+```\n([\s\S]*)\n```\s*$/.exec(e.text ?? "") ?? [null, e.text ?? "", null];
+      li.append(el("span", "evtext", words));
+      if (screen) li.append(el("pre", "evscreen", screen));
     }
     return li;
   }
