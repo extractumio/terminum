@@ -11,7 +11,7 @@ fn in_pane() -> Env {
 }
 
 fn env(tmux: Option<&str>, pane: Option<&str>, known: Option<bool>) -> Env {
-    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known) }
+    Env { tmux: tmux.map(str::to_string), pane: pane.map(str::to_string), known: std::cell::Cell::new(known), manager: Default::default() }
 }
 
 fn no_call(_: &Value) -> Result<(u16, Option<Value>), Down> {
@@ -124,7 +124,7 @@ fn tools_list_has_its_tools_with_schemas_and_hints() {
     let r = ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{"_meta":{"progressToken":1}}}"#);
     let tools = r["result"]["tools"].as_array().unwrap();
     let names: Vec<&str> = tools.iter().map(|t| t["name"].as_str().unwrap()).collect();
-    assert_eq!(names, mcp_meta::listed().iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>());
+    assert_eq!(names, mcp_meta::listed(false).iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>());
     let catalog = catalog();
     assert_eq!(catalog.iter().map(|t| t["name"].as_str().unwrap()).collect::<Vec<_>>(), tool_names());
     for t in &catalog {
@@ -257,7 +257,7 @@ fn outside_tmux_initialize_has_no_instructions_and_no_tools() {
         assert_eq!(say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"], json!({"tools": []}));
     }
     assert_eq!(ask(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#)["result"]["instructions"], INSTRUCTIONS, "in a pane: kept");
-    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed().len());
+    assert_eq!(ask(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed(false).len());
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn nothing_up_at_the_start_still_offers_the_tools_and_asks_again() {
     let init = say(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#);
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "nothing up: offered");
     let list = say(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#);
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed().len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed(false).len());
     assert_eq!(probes.get(), 2, "a probe that reached nobody is not kept");
     let call = say(r#"{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_session_plan","arguments":{}}}"#);
     assert_eq!(call["result"]["content"][0]["text"], DOWN, "{call}");
@@ -329,7 +329,7 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
     let init: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":0,"method":"initialize"}"#, &e, &f).unwrap()).unwrap();
     assert_eq!(init["result"]["instructions"], INSTRUCTIONS);
     let list: Value = serde_json::from_str(&answer(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#, &e, &f).unwrap()).unwrap();
-    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed().len());
+    assert_eq!(list["result"]["tools"].as_array().unwrap().len(), mcp_meta::listed(false).len());
 }
 
 /// What every session in a terminum pane pays for terminum's tools stays small (the owner
@@ -337,9 +337,72 @@ fn a_link_that_knows_the_pane_gives_the_tools() {
 /// description within 500, all the listed tools' JSON within 3,200: what the catalog adds behind search_tools costs nothing here (AC-155).
 #[test]
 fn the_tools_stay_compact() {
-    let t = Value::Array(mcp_meta::listed());
+    let t = Value::Array(mcp_meta::listed(false));
     let sizes: Vec<(String, usize)> = t.as_array().unwrap().iter().map(|x| (x["name"].to_string(), x["description"].as_str().unwrap().len())).collect();
     eprintln!("instructions {} tools {} descriptions {sizes:?}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(INSTRUCTIONS.len() <= 512 && t.to_string().len() <= 3200, "{} {}", INSTRUCTIONS.len(), t.to_string().len());
     assert!(sizes.iter().all(|(_, n)| *n <= 500), "{sizes:?}");
+}
+
+/// A forward that answers a probe with `role` and any call with its tool's name.
+fn as_role(role: &'static str) -> impl Fn(&Value) -> Result<(u16, Option<Value>), Down> {
+    move |body: &Value| Ok((200, Some(if body["tool"] == "probe" { json!({"text": "terminum knows this pane.", "error": false, "role": role}) } else { json!({"text": format!("ran {}", body["tool"].as_str().unwrap()), "error": false}) })))
+}
+
+fn asked(e: &Env, forward: Forward, method: &str, params: Value) -> Value {
+    serde_json::from_str(&answer(&json!({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).to_string(), e, forward).unwrap()).unwrap()
+}
+
+fn tool_text(e: &Env, forward: Forward, name: &str, args: Value) -> (String, bool) {
+    let r = asked(e, forward, "tools/call", json!({"name": name, "arguments": args}));
+    (r["result"]["content"][0]["text"].as_str().unwrap_or_default().to_string(), r["result"]["isError"] == true)
+}
+
+#[test]
+fn ac174_a_worker_s_session_neither_finds_nor_runs_a_manager_s_tool() {
+    let (e, forward) = (env(Some(TMUX), Some("%3"), None), as_role("worker"));
+    let init = asked(&e, &forward, "initialize", json!({}));
+    assert_eq!(init["result"]["instructions"], INSTRUCTIONS, "a worker is told nothing of a manager");
+    let listed = asked(&e, &forward, "tools/list", json!({}))["result"]["tools"].to_string();
+    assert!(!listed.contains("run_task") && !listed.contains("sessions (") && !listed.contains("agents ("), "its search names no manager's area");
+    let (found, _) = tool_text(&e, &forward, "search_tools", json!({"query": "run a task on an agent", "limit": 10}));
+    for theirs in crate::roles::MANAGER_TOOLS {
+        assert!(!found.contains(&format!("{theirs}(")), "{theirs} in {found}");
+        let (said, refused) = tool_text(&e, &forward, "execute_tool", json!({"name": theirs, "arguments": {}}));
+        assert!(refused && said.starts_with(&format!("No tool is named {theirs:?}")), "{said}");
+        let (said, refused) = tool_text(&e, &forward, "get_tool_info", json!({"names": [theirs]}));
+        assert!(refused && said.starts_with(&format!("No tool is named {theirs:?}")), "{said}");
+        assert!(asked(&e, &forward, "tools/call", json!({"name": theirs, "arguments": {}}))["error"]["message"].as_str().unwrap().starts_with("Unknown tool"));
+    }
+    let (empty, _) = tool_text(&e, &forward, "search_tools", json!({"query": "zzz qqq"}));
+    assert!(!empty.contains("run_task"), "the areas listed are a worker's: {empty}");
+}
+
+#[test]
+fn ac174_a_manager_s_session_finds_and_runs_its_tools() {
+    let (e, forward) = (env(Some(TMUX), Some("%3"), None), as_role("manager"));
+    let init = asked(&e, &forward, "initialize", json!({}));
+    assert_eq!(init["result"]["instructions"], format!("{INSTRUCTIONS}{MANAGER_INSTRUCTIONS}"));
+    assert!(asked(&e, &forward, "tools/list", json!({}))["result"]["tools"].to_string().contains("sessions (the project's sessions"));
+    for (query, tool) in [("start a task on an agent", "run_task"), ("add a new agent to the pool", "create_agent"), ("run a schedule now", "run_schedule"),
+                          ("type text into a session", "send_to_session"), ("close a session", "close_session"), ("what is running", "list_runs"), ("costs statistics", "get_dashboard")] {
+        let (found, _) = tool_text(&e, &forward, "search_tools", json!({"query": query}));
+        assert!(found.contains(&format!("{tool}(")), "{query}: {found}");
+    }
+    assert_eq!(tool_text(&e, &forward, "execute_tool", json!({"name": "run_task", "arguments": {"id": "TERM-1", "agent": "Opus"}})), ("ran run_task".to_string(), false));
+    // a call's shape is checked before it goes
+    let (said, refused) = tool_text(&e, &forward, "execute_tool", json!({"name": "run_task", "arguments": {}}));
+    assert!(refused && said == "id is required", "{said}");
+    // a worker's tools stay its own too
+    assert!(tool_text(&e, &forward, "search_tools", json!({"query": "create a task"})).0.contains("create_task("));
+}
+
+#[test]
+fn ac174_a_session_that_becomes_known_as_manager_later_finds_its_tools_then() {
+    let role = std::cell::Cell::new("worker");
+    let forward = |body: &Value| as_role(role.get())(body);
+    let e = env(Some(TMUX), Some("%3"), None);
+    assert!(!tool_text(&e, &forward, "search_tools", json!({"query": "start a task on an agent"})).0.contains("run_task("));
+    role.set("manager");
+    assert!(tool_text(&e, &forward, "search_tools", json!({"query": "start a task on an agent"})).0.contains("run_task("));
 }

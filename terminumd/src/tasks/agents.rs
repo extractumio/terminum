@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! The pool of agents (`terminum-dispatcher.md` AC-137): what RUN can start, none a project's. Where it
-//! starts is the project's (AC-140). Only a signed-in page changes them, never `terminum mcp`; a command is
-//! the human's own words, kept as written.
+//! starts is the project's (AC-140). A signed-in page changes them, and a project's manager by its tools
+//! (terminum-agents.md AC-180), never a worker; a command is kept as written.
 
 use axum::extract::{Path, State};
 use axum::response::Response;
@@ -60,7 +60,7 @@ fn command_line(kind: &str, command: &str, effort: &str) -> String {
 }
 
 /// What a page keeps, trimmed.
-struct Given {
+pub(crate) struct Given {
     name: String,
     kind: String,
     command: String,
@@ -166,7 +166,7 @@ pub fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
 }
 
 /// Keeps a new one. Its id.
-fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
+pub(crate) fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
     given.fits(tx, "")?;
     let id = crate::auth::crypto::random_hex::<8>();
     // the next color after the last: agents far apart, and no two alike for a palette's length
@@ -176,7 +176,7 @@ fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
     Ok(id)
 }
 
-fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
+pub(crate) fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     given.fits(tx, id)?;
     // its schedules keep their slots (terminum-schedules.md AC-161)
     let kept = super::schedules::kept_on(tx, id, None)?;
@@ -193,7 +193,7 @@ fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
     }
 }
 
-fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
+pub(crate) fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
     let runs_them: Vec<String> = rows(tx, "SELECT 'SCH-' || number FROM schedules WHERE agent_id = ?1 AND deleted_at IS NULL ORDER BY number", [id], |r| r.get(0))?;
     if !runs_them.is_empty() {
         let name = by_id(tx, id)?.map_or_else(|| id.to_string(), |a| a.name);
@@ -215,7 +215,7 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// The body as kept, or what is wrong with it.
-fn checked(body: &Value) -> Result<Given, String> {
+pub(crate) fn checked(body: &Value) -> Result<Given, String> {
     let given = Given::of(body);
     given.check()?;
     Ok(given)

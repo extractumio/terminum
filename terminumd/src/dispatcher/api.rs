@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
-use super::press::{again_words, also_of, budget_told, facts, way, ways, Asked, Way};
+use super::press::{again_words, also_of, facts, way, ways, Asked, Way};
 use super::pool;
 use super::screen::Screen;
 use super::places::{ad_hoc, folder_there, launch, no_folder, place, project_named, server_of};
@@ -28,9 +28,9 @@ use crate::tmux::Server;
 pub fn routes() -> Router<Shared> {
     Router::new()
         .route("/api/tasks/{id}/run", get(offer).post(press))
-        .route("/api/tasks/{id}/give-up", post(give_up))
+        .route("/api/tasks/{id}/give-up", post(super::letgo::give_up))
         .route("/api/task-projects/{id}/session", post(ad_hoc))
-        .route("/api/runs/{id}/let-go", post(let_go))
+        .route("/api/runs/{id}/let-go", post(super::letgo::let_go))
         .merge(super::queue::routes())
 }
 
@@ -87,9 +87,36 @@ struct Press {
     /// Auto-Dispatcher's press, no human's (AC-170): never read from a request
     #[serde(skip)]
     auto: bool,
+    /// the project's manager pressed, by its tool (terminum-agents.md AC-179): the user it writes as. Kept with a
+    /// wait so its start says the same; never taken from a page's request
+    #[serde(default)]
+    manager: Option<String>,
     /// how it was pressed, kept with its run and with a wait (AC-183); a page's request says only a human's way
     #[serde(default)]
     how: How,
+}
+
+impl Press {
+    /// Who pressed: the manager's user, else the human.
+    fn by(&self) -> &str {
+        self.manager.as_deref().unwrap_or(HUMAN)
+    }
+
+    /// Who asked for the run it starts, and how (AC-183): a manager's press is its own user's.
+    fn started(&self) -> Started<'_> {
+        match &self.manager {
+            Some(user) => Started { by: user, how: self.how },
+            None => Started::of(self.how),
+        }
+    }
+
+    /// Keeps the presser's message on `task`: a human's as theirs, with its files; a manager's as its comment.
+    fn keep(&self, tx: &rusqlite::Transaction, task: &str, text: &str, files: &[String]) -> Result<Option<String>, String> {
+        match &self.manager {
+            None => ops::keep_human_comment(tx, task, text, files, ops::now()),
+            Some(user) => ops::comment(tx, user, task, text, ops::now()).map(Some),
+        }
+    }
 }
 
 /// What a press that would start a process comes to: its run, a wait for a slot (AC-158), or the queue offered,
@@ -147,7 +174,7 @@ fn wait_if_full(tx: &rusqlite::Transaction, agent: &Agent, project: &str, (task,
     }
     let why = full.words;
     if let Some(c) = comment {
-        ops::keep_human_comment(tx, &task.id, c, files, ops::now())?;
+        body.keep(tx, &task.id, c, files)?;
     }
     super::waits::add(tx, task, &agent.id, project, &serde_json::to_value(body).map_err(|e| e.to_string())?, ops::now())?;
     Ok(Some(Kept::Waits(super::waits::words(&agent.name, &why))))
@@ -170,9 +197,15 @@ pub(super) async fn press_auto(app: &Shared, id: &str, agent: &str) -> Result<Va
 
 /// The press on RUN: a comment is kept whatever follows (AC-122).
 async fn press(State(app): State<Shared>, Path(id): Path<String>, Json(mut body): Json<Press>) -> Response {
+    body.manager = None;
     // a page presses for the human alone: it never starts a run as Dispatcher's own (AC-183)
     body.how = body.how.of_page();
     answer(pressed(&app, &id, body).await)
+}
+
+/// The manager's press, by its run_task (terminum-agents.md AC-179): as a human's, its words said to be the manager's.
+pub(crate) async fn press_by_manager(app: &Shared, id: &str, user: &str, agent: Option<String>, comment: Option<String>, (fresh, queue): (bool, bool)) -> Result<Value, String> {
+    pressed(app, id, Press { agent, comment, fresh, queue, manager: Some(user.to_string()), ..Default::default() }).await
 }
 
 /// Where a run's pane is.
@@ -186,24 +219,28 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         return Err("The message has control or invisible characters.".to_string());
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
-    let kept = body.clone();
+    let (kept, by) = (body.clone(), body.clone());
     let (tasks, w, who, answers) = store(app, move |tx| {
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
-            ops::keep_human_comment(tx, &wanted, c, &attached, ops::now())?;
+            by.keep(tx, &wanted, c, &attached)?;
         }
-        // its agent asked: what the humans answered since goes, theirs alone (AC-157)
+        // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
+        // own message (terminum-agents.md AC-179), never another agent's comment
         let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
-        let answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
-        Ok((tasks, w, ops::user_name(tx, HUMAN)?, answers))
+        let mut answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
+        if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
+            a.push(c.clone());
+        }
+        Ok((tasks, w, ops::user_name(tx, by.by())?, answers))
     }).await?;
     let t = tasks[0].clone();
     let going_on = !matches!(w, Ok(Way::First));
     if comment.is_some() && going_on {
         told(app, id);
     }
-    let again = again_words(&t.id, &who, comment.as_deref(), answers.as_deref());
+    let again = again_words(&t.id, &who, comment.as_deref(), answers.as_deref(), body.manager.is_some());
     match w? {
         Way::First => first_run(app, &tasks, body, kept, comment).await,
         Way::Live(r) => {
@@ -227,7 +264,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                     Miss::Other(why) => format!("Not delivered: {why}"),
                 });
             }
-            went_on(app, &r, &t).await
+            went_on(app, &r, &t, kept.manager.is_some()).await
         }
         Way::Shell(r) => {
             let (server, pane) = pane_of(app, &r)?;
@@ -330,8 +367,8 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
 
 /// RUN goes on in its live session: every clock starts anew; a finished task reopens alone, an open one
 /// with the others waiting with it.
-async fn went_on(app: &Shared, r: &Run, t: &Task) -> Result<Value, String> {
-    let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), "The human ran it again.");
+async fn went_on(app: &Shared, r: &Run, t: &Task, manager: bool) -> Result<Value, String> {
+    let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), if manager { "The project's manager ran it again." } else { "The human ran it again." });
     let done = store(app, move |tx| {
         let now = runs::change(tx, &id, |now| { now.state = Phase::Working; now.new_work(); })?;
         bring_back(tx, &task)?;
@@ -379,23 +416,10 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) 
         }
         bring_back(tx, &id)?;
         super::waits::remove(tx, &key)?;
-        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], Started::of(kept.how), ops::now())?);
+        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], kept.started(), ops::now())?);
         super::usage::carry(tx, &from, &id)?;
         Ok(Next::Run(id))
     }).await
-}
-
-/// The human lets go of a session Dispatcher holds: its open tasks fail, its slot frees, its window stays (AC-142).
-async fn let_go(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    let_go_of(&app, store(&app, move |tx| runs::let_go(tx, &id)).await)
-}
-
-/// What a run let go of says, and every page hears of its tasks.
-fn let_go_of(app: &Shared, done: Result<Run, String>) -> Response {
-    if let Ok(r) = &done {
-        super::told_all(app, r);
-    }
-    answer(done.map(|r| json!({"ok": true, "ids": r.ids})))
 }
 
 async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comment: Option<String>) -> Result<Value, String> {
@@ -414,6 +438,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
         // what the human saw is what goes: an agent may have changed a task meanwhile
         let mut goes = facts(tx, &now)?;
         goes.auto = kept.auto;
+        goes.manager = kept.manager.is_some();
         if seen.is_some_and(|rev| rev != goes.rev()) {
             return Err("The task's text changed: look at it again.".to_string());
         }
@@ -427,9 +452,9 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
         }
         let prompt = goes.prompt(said.as_deref());
         // a wait kept its comment when it began (AC-158)
-        if let Some(c) = &said && ops::keep_human_comment(tx, &now[0].id, c, &attached, ops::now())?.is_some() {
+        if let Some(c) = &said && kept.keep(tx, &now[0].id, c, &attached)?.is_some() {
             for t in &now[1..] {
-                ops::comment(tx, HUMAN, &t.id, c, ops::now())?;
+                ops::comment(tx, kept.by(), &t.id, c, ops::now())?;
             }
         }
         for t in &now {
@@ -443,7 +468,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
             }
         }
         super::waits::remove(tx, &keys[0])?;
-        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, Started::of(kept.how), ops::now()).map(Next::Run)
+        runs::add(tx, &Run::of(&ag, host, f, project, Some(prompt)), &keys, kept.started(), ops::now()).map(Next::Run)
     }).await?;
     let run = match next {
         Next::Run(run) => run,
@@ -455,41 +480,4 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
         told(app, id);
     }
     Ok(json!({"run": run}))
-}
-
-/// The human gives up on a run they cannot reach or no longer want (AC-138).
-async fn give_up(State(app): State<Shared>, Path(id): Path<String>) -> Response {
-    // a wait is called off, the task where it stood (AC-158); else its run is given up
-    let wanted = id.clone();
-    let done = store(&app, move |tx| {
-        let key = ops::key_of(tx, &wanted)?;
-        let Some(w) = super::waits::of_task(tx, &key)? else { return runs::give_up(tx, &key).map(Some) };
-        let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
-        super::waits::call_off(tx, &key, &format!("The human called off its wait for {name}.")).map(|()| None)
-    }).await;
-    match done {
-        Ok(None) => {
-            told(&app, &id);
-            answer(Ok(json!({"ok": true, "ids": [id]})))
-        }
-        given_up => let_go_of(&app, given_up.map(|r| r.unwrap_or_default())),
-    }
-}
-
-/// A human changed the budget on a running task: it holds at once, and the agent is told as the last
-/// warning is (AC-126).
-pub fn budget_changed(app: &Shared, task: &Task) {
-    let Some(key) = task.session.clone().filter(|k| app.dispatcher.has_run(k)) else { return };
-    let (app, id, own) = (app.clone(), task.id.clone(), task.budget_seconds);
-    tokio::spawn(async move {
-        let k = key.clone();
-        let Ok(Some(r)) = store(&app, move |tx| {
-            let Some(r) = runs::in_pane(tx, &k)? else { return Ok(None) };
-            runs::change(tx, &r.id, |now| now.warned = false).map(Some)
-        }).await else { return };
-        if let Some((server, pane)) = app.tmux.resolve(&key) {
-            let words = budget_told(&id, own, &r);
-            acts::tell(&app, &r, &server, &pane, words, "The new budget").await;
-        }
-    });
 }

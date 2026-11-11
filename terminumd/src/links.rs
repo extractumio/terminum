@@ -171,7 +171,7 @@ async fn hook(State(l): State<Link>, Json(ev): Json<Value>) -> Response {
 
 async fn agent(State(l): State<Link>, Json(body): Json<Value>) -> Json<Value> {
     let server = l.resolved(&body).await;
-    crate::agentapi::agent_on(l.app, server, body).await
+    crate::agentapi::agent_on(l.app, server, body, None).await
 }
 
 /// Each host's link: its socket path and the task serving it (aborted, its connections end too).

@@ -261,8 +261,24 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   in TODO, its card saying SCH-1. A firing while a task of it is still IN PROGRESS is skipped and
   counted on the schedule's card; a run missed while the Mac slept is not run on wake: the next
   comes by the cadence; one that cannot start (no folder, no hooks, agent gone) fails its task,
-  the schedule's card says why, and the next firing tries again. Only you make schedules: agents
-  have no tool for them.
+  the schedule's card says why, and the next firing tries again. Run now on a card makes its task
+  and starts it at once, whatever its cadence, which stays. You make schedules, and so does a
+  project's manager (below); a worker's agent has no tool for them.
+  **Managers and workers.** The session + Session starts for a project is that project's
+  manager: beside every agent's tools, its `terminum mcp` finds tools to run the project's tasks
+  on the pool's agents (`run_task`: a worker's session does each, by Dispatcher's rules), follow
+  them (`list_runs`, `get_task`), answer their questions and run them again (`run_task` with a
+  comment), stop them, add, change and remove the pool's agents and the project's schedules, run
+  a schedule now, list, read, type into and close the project's other sessions, and read its
+  numbers. Every other session is a worker and neither finds nor runs these: one Dispatcher
+  started for a task, one you opened by hand. What a manager makes is in force at once and
+  carries its name ("Opus · manager"); what it tells a worker is said to be the manager's,
+  never yours. From a shell: `terminum tools` lists what the pane's session may run, `terminum
+  tool <name> '<json>'` runs one. A program outside terminum calls the same with a token in
+  `TERMINUM_TOKEN`: `terminum tokens add <name> --role manager|worker --project <project>
+  [--days N]`, run in a terminal outside terminum, prints it once; `terminum tokens` lists them,
+  `terminum tokens remove <name>` ends one. Roles guide agents; they are no wall against a
+  program of yours (SECURITY.md).
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,
