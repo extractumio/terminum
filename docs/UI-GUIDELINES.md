@@ -118,7 +118,7 @@ A 4px grid: `--sp-0` 2 (inside a control only), `--sp-1` 4, `--sp-2` 8, `--sp-3`
 | Sibling controls | 4px (footer list), 8px (forms, dialog actions, header tools) |
 | A form | padding 12 (16 on touch); field ↔ field 8; a hint under its field 4; the last field → its buttons 16 (20 on touch) |
 | A dialog | padding 16; its text → its buttons 20 |
-| A task's window (New task, Run, a schedule) | its parts 12 apart; Text's head with its keys 4 over the text, as a label; every label, field and group on the form's one edge, a field's text 12 in, a read-only text (the prompt) a field |
+| A task's window (New task, Run, a schedule) | its parts 12 apart; Text's head with its keys 4 over the text, as a label; every label, field and group on the form's one edge, a field's text 12 in, a read-only text (the prompt) a field; a task's own window the same inside its framed part, its fields three to a line (two on a phone), its parts (the task, subtasks, comments and history, the comment field) 24 apart |
 
 | Radius | Use |
 | --- | --- |

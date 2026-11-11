@@ -66,9 +66,15 @@ export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dat
 /** "made …, changed …": when a task was made and last changed (AC-149). */
 export const madeChanged = (t) => `made ${stamp(t.created_at)}${t.updated_at > t.created_at ? ` · changed ${stamp(t.updated_at)}` : ""}`;
 
+/** A box in a status's color (AC-112). */
+const statusClass = (status) => `stbox st-${status.toLowerCase().replaceAll(" ", "-")}`;
+
+/** A task's status in words on its color; an archived task says so, in no status's color. */
+export const statusTag = (t) => (t.archived_at ? el("span", "stbox word", "Archived") : el("span", `${statusClass(t.status)} word`, t.status));
+
 /** A task as a small box: its ID on its status's color, the status in words too (AC-112). */
 export function statusBox(t, open) {
-  const b = el(open ? "button" : "span", `stbox st-${t.status.toLowerCase().replaceAll(" ", "-")}`, t.id);
+  const b = el(open ? "button" : "span", statusClass(t.status), t.id);
   const said = [t.id, t.status, t.title].filter(Boolean).join(" · ");
   b.title = said;
   b.setAttribute("aria-label", said);

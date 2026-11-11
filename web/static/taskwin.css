@@ -43,7 +43,8 @@ dialog .markdown img { max-width: 100%; }
 :is(.filelist, .sublist):empty { display: none; }
 :is(.filelist, .sublist) li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; overflow-wrap: anywhere; }
 :is(.filelist, .sublist) small { color: var(--muted); }
-.filelist .icon { --ik: var(--icon-key-list); margin-left: auto; }
+.filelist small { flex: none; white-space: nowrap; }
+.filelist .icon { --ik: var(--icon-key-list); }
 .linklike { font: inherit; padding: 0; color: var(--link, var(--accent)); text-decoration: underline; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; }
 .history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .ev { font-family: var(--ui); font-size: var(--fs-label); min-width: 0; }
@@ -51,6 +52,8 @@ dialog .markdown img { max-width: 100%; }
 .evhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .evhead strong { color: var(--t-fg); font-weight: var(--fw-head); }
 .evtext { color: var(--muted); }
+/* what a screen showed, quoted in a line of history: its lines as they stood, in the terminal's type */
+.evscreen { margin: var(--sp-1) 0 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-0); color: var(--muted); font: var(--fs-meta)/var(--lh-ui) var(--term-font); }
 .by-system .evhead strong { color: var(--accent); }
 .evacts { display: flex; gap: var(--icon-gap); margin-left: auto; }
 .evacts .icon { --ik: var(--icon-key-list); }
@@ -64,11 +67,19 @@ dialog .markdown img { max-width: 100%; }
 .cstate:is(.waiting, .stopped) { --sev: var(--waiting); }
 .cstate:is(.failed, .closed) { --sev: var(--danger); color: var(--danger-text); }
 
-/* the task itself, its subtasks, what was said of it: three parts set apart (AC-149) */
-#taskbody { gap: var(--sp-4); }
+/* the task itself, its subtasks, what was said of it: three parts a section break apart (AC-149) */
+#taskbody { gap: var(--sp-6); }
 .tasksec { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
-.taskown { padding: var(--sp-3); border-radius: var(--r-sm); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--line); }
-.taskstamps { margin: 0; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+/* the task: a framed part; its groups (when, status, fields, text, files) 12px apart as a task's other windows' parts,
+   each a label 4px over what it names, the fields three to a line on one grid (two on a phone) */
+.taskown { gap: var(--sp-3); padding: var(--sp-4); border-radius: var(--r-sm); background: var(--surface-1); box-shadow: inset 0 0 0 1px var(--line); }
+.taskwhen { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }   /* when it was made and changed, the schedule it came from */
+.taskstamps, .taskfrom { margin: 0; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
+.tasknone { margin: 0; font-size: var(--fs-small); color: var(--muted); }
+/* its status, read only: the status in its color, the agent on it, what it waits for, its conversation; what does not fit takes a line of its own, whole */
+.fieldvalue { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-height: var(--key-h); font-size: var(--fs-body); color: var(--t-fg); }
+.tasktext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.tasktext .edithead { align-items: flex-end; }   /* Text 4px over its text, its keys beside it */
 .sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--line); }
 .sechead h3 { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .sechead h3 .linklike { text-transform: none; letter-spacing: 0; }
@@ -81,7 +92,7 @@ dialog .markdown img { max-width: 100%; }
 /* an agent's questions for the human (terminum-dispatcher.md AC-157): set apart in the waiting color */
 .ev-questions { box-shadow: inset 3px 0 0 var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
 .evasks { color: color-mix(in srgb, var(--waiting) 70%, var(--t-fg)); font-weight: var(--fw-head); }
-.cconv { margin-left: var(--sp-2); font: var(--fs-meta) ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
+.cconv { font: var(--fs-meta) ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 
 .stbox { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-1); border-radius: var(--r-xs); font: 600 var(--fs-micro)/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;
   color: var(--t-fg); background: color-mix(in srgb, var(--t-fg) 18%, var(--t-bg)); }
@@ -89,12 +100,14 @@ dialog .markdown img { max-width: 100%; }
 .stbox.st-wait-for-human { color: #1f1300; background: var(--waiting); }
 .stbox.st-failed { color: var(--danger-ink); background: var(--danger-fill); }
 .stbox.st-done { color: #ffffff; background: var(--ok-fill); }
+.stbox.word { font-size: var(--fs-meta); padding: 0 var(--sp-2); }   /* a status in words, not an ID */
 button.stbox { cursor: pointer; border: 0; }
 @media (hover: hover) { button.stbox:hover { filter: brightness(1.12); } }
 
 @media (max-width: 860px) {
   .fieldgrid, .fieldgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fieldgrid > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
+  .taskown { padding: var(--sp-3); }   /* a narrow window: the frame takes less of it */
   .ev { font-size: var(--fs-small); }
   .stbox { min-height: 24px; }
 }
