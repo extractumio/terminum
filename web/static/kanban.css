@@ -137,11 +137,14 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #autoswitch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--surface-0); }
 .autoticks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); min-width: 0; margin: 0; padding: 0; border: 0; }
 #autobox .checkrow { align-self: start; }
+#automode { display: flex; flex-wrap: wrap; }
+#automode button { flex: 1 1 auto; }
 .autoticks legend { padding: 0 0 var(--sp-1); }
 .autoticks label { display: inline-flex; align-items: center; gap: var(--sp-2); min-height: var(--key-h); }
 #autorules { margin: 0; font-size: var(--fs-small); }
 #autorules dt { margin-top: var(--sp-2); color: var(--muted); }
 #autorules dd { margin: 0; }
+#autobox[data-mode="order"] :is(.byagent, #autoagentrow), #autobox[data-mode="agent"] .byorder { display: none; }
 @media (prefers-reduced-motion: reduce) { #autoswitch .track, #autoswitch .track::after { transition: none; } }
 .agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
 .agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
