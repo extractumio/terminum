@@ -2,15 +2,13 @@
 //! The command line a coding agent started with, as its hook sees it (`terminum-agents.md` AC-153's
 //! summary): the nearest of the hook's ancestors whose program is the agent (Claude Code runs a
 //! hook through a shell; Codex's `node …/codex` runs its own `codex`), read with `ps` one process at
-//! a time (a few ms each; the whole table costs tens). Its program is named by the agent alone
+//! a time (a few ms each; the whole table costs tens), once a session, when terminumd asks. Its program is named by the agent alone
 //! (`codex --yolo`, not a vendor binary's path); secrets' values are left out.
 
 use std::process::Command;
 
 /// The ancestors looked at: the hook's shell, the agent, an interpreter.
 const UP: usize = 4;
-/// The most characters kept.
-const MOST: usize = 300;
 
 /// The agent's command line, None where no ancestor is it (or `ps` does not answer).
 pub fn started_as(agent: &str) -> Option<String> {
@@ -29,12 +27,11 @@ pub fn started_as(agent: &str) -> Option<String> {
 
 /// `args` as the agent's command line when its program (or an interpreter's script, the second
 /// word) is `agent`: the agent's name, then the words after it, redacted and cut.
-pub(crate) fn as_agent(args: &str, agent: &str) -> Option<String> {
+fn as_agent(args: &str, agent: &str) -> Option<String> {
     let words: Vec<&str> = args.split_whitespace().collect();
-    let base = |w: &str| w.rsplit('/').next().unwrap_or(w).to_string();
-    let at = words.iter().take(2).position(|w| base(w) == agent)?;
+    let at = words.iter().take(2).position(|w| w.rsplit('/').next() == Some(agent))?;
     let line = std::iter::once(agent).chain(words[at + 1..].iter().copied()).collect::<Vec<_>>().join(" ");
-    Some(crate::sent::redact(&line).chars().take(MOST).collect())
+    Some(crate::sent::redact(&line).chars().take(crate::tmux::hookstate::ARGV_MOST).collect())
 }
 
 #[cfg(test)]
@@ -60,7 +57,7 @@ mod tests {
         let got = as_agent("claude --api-key opensesame-value --model opus", "claude").unwrap();
         assert!(!got.contains("opensesame"), "{got}");
         assert!(got.starts_with("claude --api-key"), "{got}");
-        assert_eq!(as_agent(&format!("claude {}", "x".repeat(1000)), "claude").unwrap().chars().count(), MOST);
+        assert_eq!(as_agent(&format!("claude {}", "x".repeat(1000)), "claude").unwrap().chars().count(), crate::tmux::hookstate::ARGV_MOST);
     }
 
     #[test]

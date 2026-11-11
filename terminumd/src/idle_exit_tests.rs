@@ -12,10 +12,9 @@ fn pane(seen: Option<u64>) -> Pane {
 
 #[test]
 fn ac153_tmux_fields_are_read_in_order() {
-    let p = Pane::parse("1700000000\t\t0\t2.1.318\t\t/Users/alex/api\tmac\t\u{2733} Fix\tthe login");
+    let p = Pane::parse("1700000000\t\t0\t2.1.318\t\t/Users/alex/api");
     assert_eq!(p, Pane { seen: Some(1_700_000_000), run: String::new(), in_mode: false, command: "2.1.318".into(), start: String::new(),
-                         path: "/Users/alex/api".into(), host: "mac".into(), title: "\u{2733} Fix\tthe login".into() });
-    assert_eq!(Pane { title: "mac".into(), ..p }.title(), "", "tmux's own title, the host's name, says nothing");
+                         path: "/Users/alex/api".into() });
     assert_eq!(Pane::parse("\tr1\t1\tclaude\t\"claude\"").seen, None, "never stamped");
 }
 
@@ -129,9 +128,11 @@ async fn ac153_the_pane_says_which_agent_ended_and_how_to_resume_it() {
         let trap = s.root.join("trap");
         let folder = format!("/Users/alex/it's #(touch {}) $HOME a;b \\x %s", trap.display());
         let argv = format!("{kind} --model #{{pane_id}} 'quoted'");
-        s.app.hooks.apply(&s.key, &json!({"agent": kind, "event": "SessionStart", "session": "3f2a9c1e-0b7d", "cwd": folder, "argv": argv}), Instant::now());
+        let ev = json!({"agent": kind, "event": "SessionStart", "session": "3f2a9c1e-0b7d", "cwd": folder, "argv": argv});
+        s.app.hooks.apply(&s.key, &ev, Instant::now());
+        s.app.hooks.heard_argv(&s.key, &ev);
         let first = read(&s.server, &s.pane).await.unwrap();
-        let summary = Summary::of(&s.app, &s.key, kind, &first.path, first.title(), 4 * DAY, now());
+        let summary = Summary::of(&s.app, &s.key, kind, &first.path, "", 4 * DAY, now());
         assert_eq!(s.end().await, (2, Ok(())), "{kind}");
         leave(&s.server, &s.pane, &summary).await;
         let mut shown = String::new();
@@ -143,7 +144,7 @@ async fn ac153_the_pane_says_which_agent_ended_and_how_to_resume_it() {
         let label = if kind == "codex" { "Codex" } else { "Claude Code" };
         let resume = if kind == "codex" { "codex resume 3f2a9c1e-0b7d" } else { "claude --resume 3f2a9c1e-0b7d" };
         for want in ["terminum ended this idle agent: not opened for 4 days".to_string(), format!("Agent:      {label}, session 3f2a9c1e-0b7d"),
-                     format!("Started as: {argv}"), format!("Folder:     {folder}"), format!("Resume:     cd '/Users/alex/it"), format!("&& {resume}")] {
+                     format!("Started as: {argv}"), format!("Folder:     {folder}"), "Resume:     cd '/Users/alex/it".to_string(), format!("&& {resume}")] {
             assert!(shown.contains(&want), "{kind}: {want:?} in\n{shown}");
         }
         assert!(!trap.exists(), "nothing of a folder's words ran");

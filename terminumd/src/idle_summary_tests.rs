@@ -6,8 +6,8 @@ use super::*;
 
 const ID: &str = "3f2a9c1e-0b7d-4e55-9a1c-2d6f8e4b7a10";
 
-fn hooks(agent: &'static str, folder: &str, start: bool, argv: &str) -> Option<Started> {
-    Some(Started { agent, session: ID.into(), folder: folder.into(), folder_is_start: start, argv: argv.into() })
+fn hooks(agent: &'static str, folder: &str, start: bool, argv: &str) -> Started {
+    Started { agent, session: ID.into(), folder: folder.into(), folder_is_start: start, argv: argv.into() }
 }
 
 fn line<'a>(lines: &'a [String], label: &str) -> Option<&'a str> {
@@ -55,7 +55,7 @@ fn ac153_without_hooks_the_pane_folder_is_said_as_such_and_the_resume_lists_the_
     }
     let moved = Summary { kind: "claude".into(), started: hooks("claude", "/srv/x", false, ""), ..Summary::default() };
     assert_eq!(line(&moved.lines("zsh", 0), "Folder:"), Some("/srv/x (where it last worked; where it started is not known)"));
-    let bad = Summary { kind: "claude".into(), started: Some(Started { session: "x; rm -rf ~".into(), ..hooks("claude", "/a", true, "").unwrap() }), ..Summary::default() };
+    let bad = Summary { kind: "claude".into(), started: Started { session: "x; rm -rf ~".into(), ..hooks("claude", "/a", true, "") }, ..Summary::default() };
     assert_eq!(line(&bad.lines("zsh", 0), "Resume:"), Some("cd /a && claude --resume   (pick it from the list)"), "an ID of another shape is never on a command line");
 }
 

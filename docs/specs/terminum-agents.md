@@ -390,8 +390,13 @@ Scenario: AC-153 happy path — the pane says what ended and how to resume it
 Scenario: AC-153 edge — what the summary does not know
   Given the agent's hooks never spoke (not installed, or the pane started before them)
   Then its session is "not known", "Started as: not known", the folder the pane's own, said so, and Resume lists the conversations to pick from (`claude --resume`, `codex resume`), never `--continue` or `--last`: another pane's later session in that folder would be taken
-  Given its hooks spoke but no start of its session (a record made again after a restart, a host's older `terminum` with no command line)
-  Then the folder is where it last worked, said so; "Started as: not known"
+  Given its hooks spoke but no start of its session was heard (a record made again after a restart or a host's dropped link)
+  Then the folder is where it last worked, said so
+  Given a host's older `terminum`, or a hook that found no agent among its ancestors
+  Then "Started as: not known"
+  Given its session started again (a compaction, a resume: Claude Code's SessionStart of the same session)
+  Then the folder it began in and its command line stay
+  And the command line is read once a session: terminumd's answer to its start or a prompt asks the hook for it while it has none, and the hook sends it after that event
   Given the command line held a secret's value (`--api-key …`)
   Then it is left out, as in sent history (terminum-terminal.md AC-90)
   Given a folder, title or command line holds a control or invisible character, a `'`, `#(…)`, `$HOME` or `%s`
@@ -526,7 +531,7 @@ Limits a scenario states are not repeated.
 - execute_tool runs only a tool of the catalog, through the same checks and terminumd's own rules as a direct call; an agent's client that allows execute_tool without asking allows every tool behind it (AC-155).
 - Plan items, the current step, titles and records are model-written text: cleaned and shown as AC-97 and AC-98 say, never run. `SECURITY.md` has the threat.
 - The idle exit (AC-153) types only Ctrl+C, `/exit` and Enter, fixed by terminumd, and only as that scenario allows; it is off until the user sets the days.
-- Its summary is written to the pane's tty by `run-shell` on the tmux server's host: output, never input; each line a quoted argument of `printf '%s\n'` (never its format), `#` doubled, control characters shown as escapes; `terminum hook` reads the agent's command line with `ps` from its own ancestors, redacted.
+- Its summary is written to `#{pane_tty}` by `run-shell` on the tmux server's host, through its `/bin/sh`: output, never input; a fixed `printf '%s\n'`, each line one POSIX-quoted argument (never the format) with `#` doubled for run-shell's format, control and invisible characters shown as escapes; `terminum hook` reads the agent's command line with `ps` from its own ancestors, redacted, and terminumd keeps at most 300 characters of it.
 
 ### Compatibility
 

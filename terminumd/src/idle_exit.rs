@@ -28,10 +28,8 @@ const GRACE: Duration = Duration::from_secs(3600);
 const ENDS_WITHIN: Duration = Duration::from_secs(10);
 #[cfg(test)]
 const ENDS_WITHIN: Duration = Duration::from_secs(3);
-const DAY: u64 = 86_400;
-/// The pane's title last: it may hold a tab.
-const FIELDS: &str = "#{@terminum-seen}\t#{@terminum-run}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_start_command}\t\
-#{pane_current_path}\t#{host}\t#{pane_title}";
+pub(crate) const DAY: u64 = 86_400;
+const FIELDS: &str = "#{@terminum-seen}\t#{@terminum-run}\t#{pane_in_mode}\t#{pane_current_command}\t#{pane_start_command}\t#{pane_current_path}";
 /// Between the two Ctrl+C: inside the agents' window for a second press (Claude Code's is under a second).
 const PRESS_GAP: Duration = Duration::from_millis(300);
 /// How long after the agent ended its summary is written: its shell's prompt comes first.
@@ -48,21 +46,13 @@ struct Pane {
     command: String,
     start: String,
     path: String,
-    host: String,
-    title: String,
 }
 
 impl Pane {
     fn parse(line: &str) -> Pane {
         let f: Vec<&str> = line.split('\t').collect();
         let at = |i: usize| f.get(i).copied().unwrap_or("").to_string();
-        let title = f.get(7..).map(|t| t.join("\t")).unwrap_or_default();
-        Pane { seen: at(0).trim().parse().ok(), run: at(1), in_mode: at(2) != "0", command: at(3), start: at(4), path: at(5), host: at(6), title }
-    }
-
-    /// Its title, unless tmux's own (the host's name) or the program's name.
-    fn title(&self) -> &str {
-        Some(self.title.trim()).filter(|t| *t != self.host && *t != self.command).unwrap_or("")
+        Pane { seen: at(0).trim().parse().ok(), run: at(1), in_mode: at(2) != "0", command: at(3), start: at(4), path: at(5) }
     }
 }
 
@@ -132,9 +122,11 @@ fn idle_agent(it: &serde_json::Value) -> Option<&str> {
     it["agent"].as_str().filter(|a| matches!(*a, "claude" | "codex") && !crate::page::turns::busy(it))
 }
 
-/// The list's idle coding agents: (key, claude or codex).
-fn idle_agents(app: &Shared) -> Vec<(String, String)> {
-    layout_rows(&app.layout.read()).filter_map(|it| Some((it["id"].as_str()?.to_string(), idle_agent(it)?.to_string()))).collect()
+/// The list's idle coding agents: (key, claude or codex, its row's title).
+fn idle_agents(app: &Shared) -> Vec<(String, String, String)> {
+    layout_rows(&app.layout.read()).filter_map(|it| {
+        Some((it["id"].as_str()?.to_string(), idle_agent(it)?.to_string(), it["title"].as_str().unwrap_or("").to_string()))
+    }).collect()
 }
 
 fn busy(app: &Shared, key: &str) -> bool {
@@ -227,7 +219,7 @@ async fn leave(server: &Server, pane: &str, summary: &Summary) {
 /// One look at every listed agent: those due are asked to exit, one after another.
 async fn look(app: &Shared, days: u32, may_end: bool) {
     let at = now();
-    for (key, kind) in idle_agents(app) {
+    for (key, kind, title) in idle_agents(app) {
         let Some((server, pane)) = app.tmux.resolve(&key) else { continue };
         let read_at = Instant::now();
         let Some(p) = read(&server, &pane).await else { continue };
@@ -236,14 +228,15 @@ async fn look(app: &Shared, days: u32, may_end: bool) {
             Due::Wait => {}
             Due::Skip(why) => tracing::debug!(event = "idleexit.skipped", key = %key, why),
             Due::Go if may_end => {
-                let summary = Summary::of(app, &key, &kind, &p.path, p.title(), at.saturating_sub(p.seen.unwrap_or(at)), at);
+                let summary = Summary::of(app, &key, &kind, &p.path, &title, at.saturating_sub(p.seen.unwrap_or(at)), at);
                 let (keys, got) = end(app, &server, &pane, &key, &kind, &p, read_at).await;
                 match got {
                     Ok(()) => {
-                        let st = summary.started.clone().unwrap_or_default();
+                        let st = &summary.started;
                         tracing::info!(event = "idleexit.ended", key = %key, kind = %kind, days, keys, session = %st.session,
                                        folder = %st.folder, argv = %st.argv, title = %summary.title);
-                        leave(&server, &pane, &summary).await;
+                        let (server, pane) = (server.clone(), pane.clone());
+                        tokio::spawn(async move { leave(&server, &pane, &summary).await });   // the next agent waits for none of it
                     }
                     Err(why) => tracing::warn!(event = "idleexit.stayed", key = %key, kind = %kind, why = %why, keys),
                 }
