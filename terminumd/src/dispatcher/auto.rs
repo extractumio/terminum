@@ -97,9 +97,11 @@ fn offer(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Re
     Ok((free.into_iter().take((n * FOR_A_SLOT) as usize).collect(), n))
 }
 
-/// Every candidate whose agent can start one now, in the board's order, the slots that may be filled, and each such
+/// Every candidate whose agent can start one now, in the board's order; the slots that may be filled; each such
 /// agent's free slots.
-fn room_for(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<(Vec<Candidate>, i64, BTreeMap<String, i64>), String> {
+type Room = (Vec<Candidate>, i64, BTreeMap<String, i64>);
+
+fn room_for(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<Room, String> {
     let (slots, spent) = (pool::Slots::read(tx)?, super::usage::of_agents(tx, now)?);
     let mut room: BTreeMap<String, i64> = BTreeMap::new();
     let mut free = Vec::new();
