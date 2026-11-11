@@ -108,18 +108,16 @@ export async function liveSchedules(page, live) {
   // its window on one grid, the weekly kind's parts shown: every label and field on the form's edge, the prompt a field (its well, its text where a
   // field's is), When's fields as tall as the others, the tick on its field's middle
   const grid = await page.evaluate(() => {
-    const f = document.querySelector("#schedbox form").getBoundingClientRect(), at = (id) => document.getElementById(id).getBoundingClientRect();
-    const textX = (id) => Math.round(at(id).x - f.x + parseFloat(getComputedStyle(document.getElementById(id)).paddingLeft));
-    const edges = ["schedtitle", "schedtext", "schedproj", "schedwhen", "schedkind", "whendays", "schedbudget", "schedwhat", "schedprompt"].map((id) => Math.round(at(id).x - f.x));
-    const mid = (r) => r.y + r.height / 2;
-    return { edges, line: Math.round(document.querySelector("#schedwhat .runfacts").getBoundingClientRect().x - f.x), text: [textX("schedtitle"), textX("schedprompt")],
-      well: getComputedStyle(document.getElementById("schedprompt")).boxShadow !== "none",
-      heights: ["schedtitle", "schedkind", "schedtime"].map((id) => Math.round(at(id).height)), tick: Math.round(mid(at("schedpaused")) - mid(at("schedbudget"))),
-      sizes: ["schedtitle", "schedprompt"].map((id) => getComputedStyle(document.getElementById(id)).fontSize),
-      gaps: [Math.round(at("schedtext").y - document.querySelector("#schedbox .edithead").getBoundingClientRect().bottom), Math.round(at("schedproj").y - at("schedtext").bottom)] };
+    const f = document.querySelector("#schedbox form").getBoundingClientRect(), at = (q) => document.querySelector(q).getBoundingClientRect();
+    const css = (q) => getComputedStyle(document.querySelector(q)), textX = (q) => Math.round(at(q).x - f.x + parseFloat(css(q).paddingLeft));
+    const middle = (q) => at(q).y + at(q).height / 2;
+    return { edges: ["#schedtitle", "#schedtext", "#schedproj", "#schedwhen", "#schedkind", "#whendays", "#schedbudget", "#schedwhat", "#schedwhat .runfacts", "#schedprompt"].map((q) => Math.round(at(q).x - f.x)),
+      text: [textX("#schedtitle"), textX("#schedprompt")], sizes: [css("#schedtitle").fontSize, css("#schedprompt").fontSize], well: css("#schedprompt").boxShadow !== "none",
+      heights: ["#schedtitle", "#schedkind", "#schedtime"].map((q) => Math.round(at(q).height)), tick: Math.round(middle("#schedpaused") - middle("#schedbudget")),
+      gaps: [Math.round(at("#schedtext").y - at("#schedbox .edithead").bottom), Math.round(at("#schedproj").y - at("#schedtext").bottom)] };
   });
   check("AC-160 the schedule window's parts stand on one edge, the prompt a field with a field's text inset",
-    grid.edges.every((x) => x === 0) && grid.line === 0 && grid.text[0] === grid.text[1] && grid.well && grid.sizes[0] === grid.sizes[1], JSON.stringify(grid));
+    grid.edges.every((x) => x === 0) && grid.text[0] === grid.text[1] && grid.well && grid.sizes[0] === grid.sizes[1], JSON.stringify(grid));
   check("AC-160 Text's head stands 4px over its text, as a label; the parts stand apart", grid.gaps[0] === 4 && grid.gaps[1] > grid.gaps[0], JSON.stringify(grid));
   check("AC-160 When's fields are as tall as the others; Paused stands on its field's middle",
     grid.heights.every((h) => Math.abs(h - grid.heights[0]) <= 1) && Math.abs(grid.tick) <= 1, JSON.stringify(grid));

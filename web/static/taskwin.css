@@ -13,7 +13,7 @@
 #runmessage { width: 100%; box-sizing: border-box; }
 /* a task's windows (New task, Run, a schedule): their parts 12px apart; Text's head 4px over its text, as a label */
 :is(#newbox, #runbox, #schedbox) > form { gap: var(--sp-3); }
-:is(#newbox, #schedbox) :is(.edithead + textarea.field, .edithead + [hidden] + .markdown) { margin-top: calc(var(--sp-1) - var(--sp-3)); }
+:is(#newbox, #schedbox) .edithead { margin-bottom: calc(var(--sp-1) - var(--sp-3)); }
 
 /* its windows: the page's own type; what is typed for a machine stays in the terminal's */
 #taskbox, #runbox, .board-page dialog.dlg { font-family: var(--ui); font-size: var(--fs-body); }
@@ -22,7 +22,6 @@
 .more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
 .more[open] summary { margin-bottom: var(--sp-2); }
 details.more > :not(summary, [hidden]) ~ :not([hidden]) { margin-top: var(--sp-2); }   /* its lines 8px apart */
-details.more > .runprompt.field { font-size: var(--fs-label); }   /* the prompt in the fields' size, not the window's */
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* its windows */

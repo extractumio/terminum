@@ -186,9 +186,8 @@ async function agentPool(page, opts) {
   check("AC-138 its title names both and the agent", head.includes(a) && head.includes(b) && head.endsWith("on Fast fixer"), head);
   check("AC-138 no agent to choose: it was dropped on one", !(await page.isVisible("#runagent")));
   check("AC-138 what will be sent stands open for several", await page.evaluate(() => document.querySelector("#runwhat").open) && /The human ran 2 tasks: /.test(await page.textContent("#runprompt")), await page.textContent("#runprompt"));
-  const well = await page.evaluate(() => { const p = getComputedStyle(document.getElementById("runprompt")), m = getComputedStyle(document.getElementById("runmessage"));
-    return { shadow: p.boxShadow !== "none", inset: p.paddingLeft === m.paddingLeft, size: p.fontSize === m.fontSize, said: [p.paddingLeft, p.fontSize, m.paddingLeft, m.fontSize] }; });
-  check("AC-138 what will be sent is a read-only field: a field's well, its text as far in and as large as the message's", well.shadow && well.inset && well.size, JSON.stringify(well));
+  const [p, m] = await page.evaluate(() => ["runprompt", "runmessage"].map((id) => { const s = getComputedStyle(document.getElementById(id)); return { shadow: s.boxShadow, inset: s.paddingLeft, size: s.fontSize }; }));
+  check("AC-138 what will be sent is a read-only field: a field's well, its text as far in and as large as the message's", p.shadow !== "none" && p.inset === m.inset && p.size === m.size, JSON.stringify([p, m]));
   check("AC-121 where and how stays folded, filled", !(await page.evaluate(() => document.querySelector("#runhow").open)) && await page.textContent("#runfolder") === work && (await page.textContent("#runcommand")).includes("fake_agent.py"));
   if (shots) await page.screenshot({ path: path.join(shots, "run-several.png") });
   await page.fill("#runmessage", "WORKS");
