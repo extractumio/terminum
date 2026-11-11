@@ -13,7 +13,7 @@ pub const HOST_ACTIONS: [&str; 6] = ["remove", "enable", "files-remove", "off", 
 const MIN_PASSWORD: usize = 8;
 
 /// The answer of terminumd; Err with its message when it refused or is down.
-fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+pub(super) fn checked(ctx: &Ctx, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
     waited(ctx, method, path, body, Duration::from_secs(5))
 }
 

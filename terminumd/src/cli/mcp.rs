@@ -17,7 +17,7 @@ use super::sockhttp::Down;
 
 const BUDGET: Duration = Duration::from_secs(2);
 /// The longest line read; a longer one is dropped to its newline and answered a parse error.
-const MAX_LINE: usize = 1 << 20;
+pub(super) const MAX_LINE: usize = 1 << 20;
 const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_VERSION: &str = "2025-06-18";
 
@@ -26,6 +26,11 @@ own plan tool, else update_session_plan; send doing and eta_minutes at each step
 minutes. Only the main agent calls update_session_plan; subagents report to it. Other tools: execute_tool(name, \
 arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before you stop. Left to \
 do: execute_tool(\"create_task\", {title, severity, text}). A tool says you are not in terminum: stop calling.";
+
+/// What a manager's session is told besides (AC-174): its tools are the way it acts on its project.
+pub const MANAGER_INSTRUCTIONS: &str = " You are this project's manager: search_tools also finds the tools to run its tasks on \
+agents (run_task), follow and answer them (list_runs, get_task), and manage the pool's agents, the project's schedules \
+and sessions. Act on the project through these tools alone, never by typing into tmux or changing terminum's files.";
 
 pub use crate::plans::rules::NOT_IN_PANE;
 use crate::plans::rules::{self, STATUSES};
@@ -42,10 +47,13 @@ pub fn tool_names() -> Vec<&'static str> {
 
 /// The agent's environment: TMUX and TMUX_PANE; `known`: whether a sink knows the pane
 /// (None until probed).
+#[derive(Default)]
 pub struct Env {
     pub tmux: Option<String>,
     pub pane: Option<String>,
     pub known: std::cell::Cell<Option<bool>>,
+    /// whether terminumd said the pane's session is its project's manager (kept once it says so)
+    pub manager: std::cell::Cell<bool>,
     /// tools whose card this session has read (get_tool_info) or been shown under a refusal
     pub carded: std::cell::RefCell<std::collections::HashSet<String>>,
 }
@@ -60,12 +68,15 @@ pub fn main() -> i32 {
         eprintln!("terminum mcp is the MCP server a coding agent starts; to set it up: terminum hooks install");
         return 2;
     }
-    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default(), carded: Default::default() };
+    let env = Env { tmux: std::env::var("TMUX").ok(), pane: std::env::var("TMUX_PANE").ok(), known: Default::default(), manager: Default::default(),
+                    carded: Default::default() };
     let forward = |body: &Value| {
         // listed at each call: a Mac's link may come up after the agent started
         let sinks = super::sinks::all();
         // a probe is cheap: 2 s for all the sinks; a call: 2 s for each
-        let each = if body["tool"] == "probe" { BUDGET / sinks.len().max(1) as u32 } else { BUDGET };
+        // a manager's tool may open a window or type into one: it gets the command's own time (tool.rs)
+        let managers = body["tool"].as_str().is_some_and(super::mcp_catalog::manager_only);
+        let each = if body["tool"] == "probe" { BUDGET / sinks.len().max(1) as u32 } else if managers { super::tool::BUDGET } else { BUDGET };
         super::sinks::first_knowing(&sinks, |p| super::sockhttp::call(p, "POST", "/agent", Some(body), each))
     };
     let mut stdin = std::io::stdin().lock();
@@ -128,9 +139,12 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
     }
     let params = obj.get("params").cloned().unwrap_or_else(|| json!({}));
     match method {
-        "initialize" => result(id, initialize(&params, knows(env, forward))),
+        "initialize" => {
+            let in_pane = knows(env, forward);
+            result(id, initialize(&params, in_pane, env.manager.get()))
+        }
         "ping" => result(id, json!({})),
-        "tools/list" => result(id, json!({"tools": if knows(env, forward) { super::mcp_meta::listed() } else { vec![] }})),
+        "tools/list" => result(id, json!({"tools": if knows(env, forward) { super::mcp_meta::listed(env.manager.get()) } else { vec![] }})),
         "tools/call" => {
             let name = params.get("name").and_then(Value::as_str).unwrap_or("");
             let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
@@ -138,7 +152,8 @@ pub fn answer(line: &str, env: &Env, forward: Forward) -> Option<String> {
             if super::mcp_meta::META.contains(&name) {
                 return result(id, meta(name, &args, session, env, forward));
             }
-            if !PLAN_TOOLS.contains(&name) && !TASK_TOOLS.contains(&name) {
+            let managers = super::mcp_catalog::manager_only(name) && manager(env, forward);
+            if !PLAN_TOOLS.contains(&name) && !TASK_TOOLS.contains(&name) && !managers {
                 return error(id, -32602, &format!("Unknown tool {name:?}: search_tools finds terminum's tools by what they do"));
             }
             result(id, call(name, &args, session, env, forward))
@@ -158,10 +173,24 @@ fn knows(env: &Env, forward: Forward) -> bool {
     let body = json!({"socket": socket, "socket_path": socket_path(env), "pane": pane, "tool": "probe", "args": {}});
     let k = match forward(&body) {
         Err(Down) => return true,
-        Ok(a) => a.0 == 200 && a.1.is_some() && !super::sinks::not_in_pane(&a),
+        Ok(a) => {
+            env.manager.set(a.1.as_ref().is_some_and(|v| v["role"] == "manager"));
+            a.0 == 200 && a.1.is_some() && !super::sinks::not_in_pane(&a)
+        }
     };
     env.known.set(Some(k));
     k
+}
+
+/// Whether the pane's session is its project's manager (AC-174): terminumd's word at the probe, asked again while
+/// it says no, so a session whose run terminumd wrote a moment after its start still finds its tools. What it
+/// may run terminumd decides at each call; this only chooses what search shows.
+pub fn manager(env: &Env, forward: Forward) -> bool {
+    if !env.manager.get() {
+        env.known.set(None);
+        knows(env, forward);
+    }
+    env.manager.get()
 }
 
 /// TMUX's first field: the tmux server's socket path.
@@ -170,13 +199,13 @@ fn socket_path(env: &Env) -> String {
 }
 
 /// Outside a pane a sink knows (`in_pane` false) the session pays for no instructions and no tools.
-fn initialize(params: &Value, in_pane: bool) -> Value {
+fn initialize(params: &Value, in_pane: bool, manager: bool) -> Value {
     let asked = params.get("protocolVersion").and_then(Value::as_str).unwrap_or("");
     let version = VERSIONS.iter().find(|v| **v == asked).copied().unwrap_or(DEFAULT_VERSION);
     let mut r = json!({"protocolVersion": version, "capabilities": {"tools": {}},
                        "serverInfo": {"name": "terminum", "version": crate::config::build_id()}});
     if in_pane {
-        r["instructions"] = json!(INSTRUCTIONS);
+        r["instructions"] = if manager { json!(format!("{INSTRUCTIONS}{MANAGER_INSTRUCTIONS}")) } else { json!(INSTRUCTIONS) };
     }
     r
 }
@@ -200,13 +229,16 @@ fn meta(name: &str, args: &Value, session: Option<&str>, env: &Env, forward: For
     if pane_of(env).is_none() {
         return text_result(NOT_IN_PANE, true);
     }
+    // the role chooses what search and describe show; running a tool every session has asks nothing
+    let asks = name != "execute_tool" || args.get("name").and_then(Value::as_str).is_some_and(super::mcp_catalog::manager_only);
+    let manager = asks && manager(env, forward);
     let answer = match name {
-        "execute_tool" => match m::target(args) {
+        "execute_tool" => match m::target(args, manager) {
             Ok((tool, arguments)) => return call(tool, &arguments, session, env, forward),
             Err(why) => Err(why),
         },
-        "search_tools" => m::search(args),
-        _ => m::describe(args).inspect(|_| env.carded.borrow_mut().extend(m::names(args).into_iter().flatten().map(str::to_string))),
+        "search_tools" => m::search(args, manager),
+        _ => m::describe(args, manager).inspect(|_| env.carded.borrow_mut().extend(m::names(args).into_iter().flatten().map(str::to_string))),
     };
     match answer {
         Ok(text) => text_result(&text, false),
@@ -301,6 +333,9 @@ pub fn checked(tool: &str, args: &Value) -> Result<Value, String> {
     }
     if crate::tasks::tools::NAMES.contains(&tool) {
         return super::mcp_tasks::checked(tool, args);
+    }
+    if super::mcp_catalog::manager_only(tool) {
+        return super::mcp_manager::checked(tool, args);
     }
     let mut out = Map::new();
     match tool {

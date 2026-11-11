@@ -6,7 +6,7 @@
 
 use serde_json::{json, Value};
 
-use super::mcp_catalog::{self as catalog, AREAS};
+use super::mcp_catalog as catalog;
 
 pub const META: [&str; 3] = ["search_tools", "get_tool_info", "execute_tool"];
 /// Listed in full: the plan, sent at every step with a schema the client checks. Every other tool
@@ -19,21 +19,21 @@ const QUERY_MOST: usize = 500;
 const NAMES_MOST: usize = 5;
 
 /// The areas, for search_tools' description; with their tools' names for an empty search.
-fn areas(names: bool) -> String {
-    AREAS.iter().map(|(area, what)| {
-        let tools: Vec<&str> = catalog::CARDS.iter().filter(|c| c.area == *area).map(|c| c.name).collect();
+fn areas(names: bool, manager: bool) -> String {
+    catalog::areas(manager).map(|(area, what)| {
+        let tools: Vec<&str> = catalog::cards(manager).filter(|c| c.area == *area).map(|c| c.name).collect();
         if names { format!("{area} ({what}): {}", tools.join(", ")) } else { format!("{area} ({what})") }
     }).collect::<Vec<_>>().join("; ")
 }
 
-/// The meta tools' definitions.
-pub fn definitions() -> Vec<Value> {
+/// The meta tools' definitions, their areas a role's own.
+pub fn definitions(manager: bool) -> Vec<Value> {
     let read = super::mcp::hints(true, true);
     vec![
         json!({"name": "search_tools", "title": "Search terminum's tools",
             "description": format!("Finds terminum's tools for an action. query: the action as verb and object, in English, e.g. \"change a task's priority\", \"make a task a subtask of another\", \"attach a screenshot to a task\"; \
 synonyms count. Answers the best tools with their arguments: run one with execute_tool. \
-Areas: {}.", areas(false)),
+Areas: {}.", areas(false, manager)),
             "annotations": read,
             "inputSchema": {"type": "object", "required": ["query"], "properties": {
                 "query": {"type": "string", "maxLength": QUERY_MOST, "description": "The action: verb and object, e.g. \"move a task under another task\"."},
@@ -53,8 +53,8 @@ Areas: {}.", areas(false)),
 }
 
 /// tools/list: the meta tools, then the direct ones.
-pub fn listed() -> Vec<Value> {
-    let mut all = definitions();
+pub fn listed(manager: bool) -> Vec<Value> {
+    let mut all = definitions(manager);
     all.extend(DIRECT.iter().filter_map(|n| catalog::definition(n).cloned()));
     all
 }
@@ -107,15 +107,15 @@ fn info(d: &Value) -> Value {
     out
 }
 
-/// A name that is no tool: why, and the nearest by search.
-fn unknown(name: &str) -> String {
-    let near = catalog::index().search(name, 3);
+/// A name that is no tool of this role: why, and the nearest by search. A manager's tool is no tool to a worker.
+fn unknown(name: &str, manager: bool) -> String {
+    let near = catalog::index(manager).search(name, 3);
     let near = if near.is_empty() { String::new() } else { format!(" Nearest: {}.", near.join(", ")) };
     format!("No tool is named {name:?}.{near} search_tools finds a tool by what it does.")
 }
 
 /// search_tools: Ok(text) or Err(why).
-pub fn search(args: &Value) -> Result<String, String> {
+pub fn search(args: &Value, manager: bool) -> Result<String, String> {
     let query = args.get("query").and_then(Value::as_str).map(str::trim).filter(|q| !q.is_empty())
         .ok_or("query is required: the action as a verb and its object, e.g. \"change a task's priority\"")?;
     if query.chars().count() > QUERY_MOST {
@@ -128,24 +128,24 @@ pub fn search(args: &Value) -> Result<String, String> {
             _ => return Err(format!("limit {v} is not a whole number from 1 to {LIMIT_MOST}")),
         },
     };
-    let hits = catalog::index().search(query, limit);
+    let hits = catalog::index(manager).search(query, limit);
     if hits.is_empty() {
         return Ok(format!("No tool matches {query:?}. Ask again with the action as a verb and its object in English, \
-e.g. \"create a task\". The tools by area: {}.", areas(true)));
+e.g. \"create a task\". The tools by area: {}.", areas(true, manager)));
     }
     let lines: Vec<String> = hits.iter().filter_map(|n| catalog::definition(n)).enumerate().map(|(i, d)| format!("{}. {}", i + 1, summary(d))).collect();
     Ok(format!("Tools for {query:?}, best first (? optional):\n{}\nRun one: execute_tool {{name, arguments}}; get_tool_info {{names}} gives its whole description, schema and an example.", lines.join("\n")))
 }
 
 /// get_tool_info: Ok(text) or Err(why).
-pub fn describe(args: &Value) -> Result<String, String> {
+pub fn describe(args: &Value, manager: bool) -> Result<String, String> {
     let names = names(args).ok_or_else(|| format!("names is required: 1–{NAMES_MOST} tool names from search_tools"))?;
     let mut out = Vec::new();
     for n in names {
-        match catalog::definition(n) {
+        match catalog::definition(n).filter(|_| manager || !catalog::manager_only(n)) {
             Some(d) => out.push(info(d)),
             None if META.contains(&n) => return Err(format!("{n} is listed by tools/list already.")),
-            None => return Err(unknown(n)),
+            None => return Err(unknown(n, manager)),
         }
     }
     Ok(Value::Array(out).to_string())
@@ -161,12 +161,12 @@ pub fn names(args: &Value) -> Option<Vec<&str>> {
 }
 
 /// execute_tool: the catalog tool to run and its arguments, or why not.
-pub fn target(args: &Value) -> Result<(&'static str, Value), String> {
+pub fn target(args: &Value, manager: bool) -> Result<(&'static str, Value), String> {
     let name = args.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).ok_or("name is required: a tool from search_tools")?;
     if META.contains(&name) {
         return Err(format!("{name} is called directly, not through execute_tool."));
     }
-    let card = catalog::card(name).ok_or_else(|| unknown(name))?;
+    let card = catalog::card(name).filter(|c| manager || !catalog::manager_only(c.name)).ok_or_else(|| unknown(name, manager))?;
     let arguments = match args.get("arguments") {
         None | Some(Value::Null) => json!({}),
         Some(a @ Value::Object(_)) => a.clone(),

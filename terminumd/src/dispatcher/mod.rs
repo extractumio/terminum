@@ -7,6 +7,7 @@ mod acts;
 pub mod auto;
 pub mod fire;
 pub mod api;
+pub(crate) mod letgo;
 mod press;
 mod places;
 mod queue;

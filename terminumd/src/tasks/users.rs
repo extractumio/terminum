@@ -12,7 +12,11 @@ pub(crate) fn user_name(tx: &Transaction, user: &str) -> Result<String, String> 
 /// The user an agent of the pool writes as, by its name (terminum-dispatcher.md AC-137): made the first time; the
 /// agent's window renames it.
 pub fn pool_user(tx: &Transaction, agent: &str, name: &str) -> Result<String, String> {
-    let id = pool_user_id(agent);
+    agent_named(tx, pool_user_id(agent), name)
+}
+
+/// The agent's user `id`, made as `name` the first time: the id.
+pub fn agent_named(tx: &Transaction, id: String, name: &str) -> Result<String, String> {
     tx.execute("INSERT OR IGNORE INTO users (id, kind, name, role) VALUES (?1, 'agent', ?2, 'agent')", (&id, name)).map_err(sql)?;
     Ok(id)
 }
@@ -24,7 +28,5 @@ pub fn pool_user_id(agent: &str) -> String {
 /// The user an agent with no run of the pool writes as ("claude · api"), made the first time.
 pub fn agent_user(tx: &Transaction, agent: &str, session: &str) -> Result<String, String> {
     let name = format!("{agent} · {session}");
-    let id = format!("agent:{name}");
-    tx.execute("INSERT OR IGNORE INTO users (id, kind, name, role) VALUES (?1, 'agent', ?2, 'agent')", (&id, &name)).map_err(sql)?;
-    Ok(id)
+    agent_named(tx, format!("agent:{name}"), &name)
 }

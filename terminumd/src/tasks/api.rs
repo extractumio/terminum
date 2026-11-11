@@ -398,7 +398,7 @@ async fn change(State(app): State<Shared>, Path(id): Path<String>, Json(body): J
         None => (task, None),
     };
     if budget.is_some() {
-        crate::dispatcher::api::budget_changed(&app, &task);
+        crate::dispatcher::letgo::budget_changed(&app, &task);
     }
     told(&app, if reparented { "" } else { &task.id });   // reparented: its parents' cards, old and new, count it
     let mut answered = card(&app, &task);

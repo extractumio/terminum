@@ -102,13 +102,23 @@ pub fn app(tag: &str) -> (PathBuf, crate::app::Shared) {
 
 /// `app` whose terminum tmux is reached by `link` (a test's own server).
 pub fn app_linked(tag: &str, link: crate::tmux::server::Link) -> (PathBuf, crate::app::Shared) {
+    built(tag, link, true)
+}
+
+/// `app` with a tasks' store of its own, as the Mac's terminumd has one.
+pub fn app_with_tasks(tag: &str) -> (PathBuf, crate::app::Shared) {
+    let link = crate::tmux::server::Link::Local { tmux: "unused".into(), socket: format!("tm-test-{tag}"), conf: "/dev/null".into() };
+    built(tag, link, false)
+}
+
+fn built(tag: &str, link: crate::tmux::server::Link, agent: bool) -> (PathBuf, crate::app::Shared) {
     let root = fresh_dir(tag);
     let (home, dir) = (root.join("home"), root.join("state"));
     std::fs::create_dir_all(&home).unwrap();
     std::fs::create_dir_all(&dir).unwrap();
     let env = crate::config::Env { port: 0, tmux_socket: format!("tm-test-{tag}"), history: 1000,
         text_max: 1 << 20, list_cache_mb: 1, ttl_days: 1, roots: root.display().to_string() };
-    let cfg = crate::app::Config { port: 0, agent: true, service: false, text_max: 1 << 20,
+    let cfg = crate::app::Config { port: 0, agent, service: false, text_max: 1 << 20,
         history: 1000, dir, home: home.clone(), agent_token: String::new() };
     let socket = match &link { crate::tmux::server::Link::Local { socket, .. } => socket.clone(), _ => env.tmux_socket.clone() };
     let app = crate::build_app(cfg, &env, crate::looks::Looks::load(&home), link, &socket);

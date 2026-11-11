@@ -2,6 +2,7 @@
 // The board's Scheduled section (terminum-schedules.md AC-163): between the pool and the columns, folded to its
 // head by default and remembered by this browser; open, its cards stand on the columns' tracks, four to a row.
 // terminumd owns the schedules and says their next runs and words; every page hears of a change.
+import { askConfirm } from "./dialogs.js";
 import { el, read, write } from "./listparts.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
 import { agentColor, api, button, say, statusBox } from "./kanbanutil.js";
@@ -34,7 +35,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     const a = getMeta().agents.find((x) => x.id === s.agent);
     c.style.setProperty("--ag", a ? agentColor(a) : "var(--muted)");
     const top = el("div", "chead");
-    top.append(el("span", "cid", s.key), el("span", `csev ${s.severity}`, s.severity));
+    top.append(el("span", "cid", s.key), el("span", `csev ${s.severity}`, s.severity), runNow(s));
     const foot = el("div", "cfoot");
     foot.append(el("span", "schedwords", s.words));
     foot.append(el("span", `schednext${s.paused ? " paused" : ""}`, s.paused ? s.paused_why ?? "paused" : s.next.length ? `next ${s.next_words[0]}` : "never"));
@@ -53,6 +54,24 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
     c.addEventListener("click", go);
     c.addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target === c) go(); });
     return c;
+  }
+
+  /** Run now (AC-182): the schedule's task made and started at once, whatever its cadence; terminumd says why not. */
+  function runNow(s) {
+    const b = button("textkey schedrun", "Run now", async (e) => {
+      e.stopPropagation();                         // the card's own press opens its window
+      if (!await askConfirm(`Run ${s.key} now, on its agent? Its cadence stays as it is.`, "Run now")) return;
+      b.disabled = true;
+      try {
+        const { task } = await api(`/api/schedules/${s.id}/run`, { method: "POST" });
+        say(`${s.key} runs now: ${task}`);
+        load();
+      } catch (err) { say(`${s.key} did not run: ${err.message}`); }
+      b.disabled = false;
+    });
+    b.title = "Make its task and start it now";
+    b.addEventListener("keydown", (e) => e.stopPropagation());
+    return b;
   }
 
   /** Anew only when what it shows changed. */
