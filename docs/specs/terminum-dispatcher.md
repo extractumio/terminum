@@ -132,6 +132,12 @@ Scenario: AC-121 edge — a question before the box
   When the screen is one the gate does not know
   Then at 60 s API-12 is FAILED, as below; the window stays for the human
 
+Scenario: AC-121 edge — a paste shown late
+  When the agent, still starting on a busy machine, shows what was pasted seconds after the paste
+  Then the gate waits for it up to 30 s, pastes nothing more meanwhile, and sends Enter: API-12 is IN PROGRESS
+  When it is not shown in 30 s
+  Then no Enter is sent, and at 60 s API-12 is FAILED, as below
+
 Scenario: AC-121 failure — did not start
   When the program is not found, the box does not come in 60 s, or the prompt is not taken in 30 s
   Then API-12 is FAILED and its comment says "Session did not start: <reason>" with the screen's last 20 rows, redacted (`sent::redact`) as a Markdown block
@@ -1470,7 +1476,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 2. The hooks say the turn ended (for the first prompt: Claude Code's SessionStart, or a box empty for 2 s should its hook have gone unheard: the prompt's own hook proves them); no exit is recorded and `pane_current_command` is no shell; the pane is in no tmux mode. The run's kind says whose screen it is: `pane_current_command` is a version number for Claude Code.
 3. The screen reads as a known, empty input box of that kind (AS-125). Anything else, a new version's changed screen included, is not empty.
 4. Paste with `paste-buffer -p`, no Enter; tmux itself reads the mark and the exit in the same command (`if-shell -F` with both branches, the other one printing a refusal: tmux answers it twice, and the control client gives the branch's answer to the gate and the next command its own), so an agent ending just before leaves nothing on its shell's line.
-5. Read the screen again: the text or Claude's fold marker stands in the box, with no dialog.
+5. Read the screen again until the text or Claude's fold marker stands in the box, with no dialog, within its time below (a first prompt's longer: an agent still starting shows it late).
 6. Enter.
 
 Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own); the prompt of a human's RUN: for one task its title and text, for several their numbers and the human's message alone (AC-138); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set. terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
@@ -1481,6 +1487,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 |---|---|
 | Walk | every 30 s; a gap over 2 minutes adds nothing to a clock |
 | Agent's box after start | 60 s; prompt taken 30 s |
+| Paste shown in the box | 1.5 s; a first prompt's 30 s |
 | WAIT FOR HUMAN after waiting | 2 min from the event |
 | Request after a turn without a result | 5 min, once a run; FAILED 60 min after it with no activity |
 | FAILED after no activity | 60 min |

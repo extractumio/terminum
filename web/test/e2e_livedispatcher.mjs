@@ -91,6 +91,10 @@ export async function liveDispatcher(page, opts) {
   await run(silent);
   check("AC-121 a prompt not taken: FAILED", await hasStatus(silent, "FAILED", 20000) && /not taken in 30 s/.test(await history(silent)), await history(silent));
 
+  const late = await task("a paste shown late FINISHES");
+  await run(late, { agent: await agent("Slow", "--start slow") });
+  check("AC-121 a paste that shows late gets its Enter", await hasStatus(late, "DONE", 20000), await history(late));
+
   // AC-121: its own question before the box: nothing is typed, a human is asked, and the prompt goes in after
   const trusting = await agent("Trusting", "--start trust");
   const asks = await task("a folder's trust FINISHES");
