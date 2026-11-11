@@ -231,7 +231,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #projectdelete { margin-right: auto; color: var(--danger-text); }
 
 
-#archivedlist { overflow-y: auto; }   /* its height: dialogsize.css */
+#archivedlist { overflow-y: auto; }
 #archivedlist li { align-items: center; }
 #archivedlist .linklike { flex: 1; min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 

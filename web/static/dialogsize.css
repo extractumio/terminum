@@ -18,13 +18,12 @@
    it takes all the height in sight above the keyboard. */
 
 dialog.dlg { --pw: 100vw; --ph: 100dvh; --w-min: 360px; --w-max: 480px; }
-dialog.dlg[data-size] { width: min(calc(100vw - 32px), clamp(var(--w-min), calc(var(--pw) * .8), var(--w-max))); box-sizing: border-box; }
-dialog.dlg[data-size="form"] { --w-min: 480px; --w-max: 640px; max-height: calc(100dvh - 32px); overflow: auto; }
+dialog.dlg[data-size] { width: min(calc(100vw - 32px), clamp(var(--w-min), calc(var(--pw) * .8), var(--w-max)));
+  max-height: calc(100dvh - 32px); overflow: auto; box-sizing: border-box; }
+dialog.dlg[data-size="form"] { --w-min: 480px; --w-max: 640px; }
 dialog.dlg[data-size="write"] { --w-min: 520px; --w-max: 960px; --h-min: 480px; --h-max: 880px; }
 dialog.dlg[data-size="list"] { --w-min: 480px; --w-max: 720px; --h-min: 360px; --h-max: 760px; }
 dialog.dlg[data-size="read"] { --w-min: 560px; --w-max: 1040px; --h-min: 420px; --h-max: 100dvh; }
-dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
-  height: min(calc(100dvh - 32px), clamp(var(--h-min), calc(var(--ph) * .8), var(--h-max))); max-height: none; overflow: auto; }
 #projectbox { --w-max: 720px; }                  /* short fields: not stretched across */
 #projectbox:has(#projectagents:not([hidden])) { --w-max: 960px; }   /* its agents' list, a row each */
 #schedbox { --h-min: 640px; }                    /* a schedule's fields: the text keeps room among them */
@@ -33,22 +32,19 @@ dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
 #markdoc { --w-max: 960px; }                     /* prose: about 100 characters a line */
 #lastlines { --w-max: 1280px; }                  /* a terminal's lines, as wide as it drew them */
 
-/* a dialog that fills its height: its form a column down to its foot, one part taking what is left */
-dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) > form { min-height: 100%; box-sizing: border-box; }
-/* its buttons at its foot however little is above them (an empty list), in sight when it scrolls */
-dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) > form > .actions {
-  margin-top: auto; position: sticky; bottom: calc(-1 * var(--sp-4)); padding: var(--sp-3) 0 var(--sp-4); margin-bottom: calc(-1 * var(--sp-4)); background: var(--fill); }
-:is(#runmessage, #askq, #marknote, #pastetext, #newtext, #newshown, #schedtext, #schedshown, #taskbody, #archivedlist, #folderlist) {
-  flex: 1 1 0; min-height: 0; }
-:is(#runmessage, #askq, #marknote, #pastetext, #newtext, #schedtext) { min-height: 6em; resize: none; }
-#runform > label:has(#runmessage) { flex: 1 1 0; min-height: 0; }   /* its label holds it: the label is the column's part */
+/* a dialog that fills its height: its form a column down to its foot, the part marked data-grow
+   (its text field, list or body; --grow-min its floor) taking what is left, its buttons at the foot
+   however little is above them (an empty list) and in sight when it scrolls */
+dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
+  height: clamp(var(--h-min), calc(var(--ph) * .8), var(--h-max));
+  & > form { min-height: 100%; box-sizing: border-box; }
+  & > form > .actions { margin-top: auto; position: sticky; bottom: calc(-1 * var(--sp-4)); padding: var(--sp-3) 0 var(--sp-4);
+    margin-bottom: calc(-1 * var(--sp-4)); background: var(--fill); }
+  & [data-grow] { flex: 1 1 0; min-height: var(--grow-min, 0); overflow: auto; }
+  & :is(textarea[data-grow], [data-grow] > textarea) { flex: 1 1 0; min-height: var(--grow-min, 6em); resize: none; }
+  & label[data-grow] { min-height: auto; overflow: visible; }   /* holds its field: as tall as it at least */
+}
 #runprompt { max-height: 30vh; }                 /* what will be sent, opened: the message keeps its room */
-#taskbody { max-height: none; }
-#archivedlist { max-height: none; }
-#folderlist { height: auto; min-height: 8em; }
-#archivednone { flex: 1 1 0; }
-#schedtext, #schedshown { min-height: 8em; }     /* among the schedule's many fields: the window scrolls before it shrinks */
-:is(#newshown, #schedshown) { overflow: auto; }
 
 /* a phone or a narrow window: a sheet (sheets.css) as wide as the screen; one that fills its height
    takes all that is in sight above the keyboard (a small screen has no room to spare) */

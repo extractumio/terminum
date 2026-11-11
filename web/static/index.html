@@ -332,7 +332,7 @@
   <form method="dialog">
     <div class="dhead"><h2 id="pastetitle">Paste</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label for="pastetext">Paste here, then send it to the terminal</label>
-    <textarea id="pastetext" class="field" rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <textarea id="pastetext" class="field" data-grow rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
     <div class="actions">
       <button value="cancel" type="submit">Cancel</button>
       <button value="send" type="submit" class="primary" title="Send it to the terminal (⌘Enter)">Send</button>
@@ -363,7 +363,7 @@
   <form method="dialog">
     <div class="dhead"><h2 id="asktitle">Ask about the selection</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="asktext"></div>
-    <textarea id="askq" class="field" rows="4" maxlength="4000" autocapitalize="sentences" placeholder="Your comment or task about it" aria-label="Your comment or task about the selection"></textarea>
+    <textarea id="askq" class="field" data-grow rows="4" maxlength="4000" autocapitalize="sentences" placeholder="Your comment or task about it" aria-label="Your comment or task about the selection"></textarea>
     <p id="askerr" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -381,7 +381,7 @@
     </div>
     <div id="marktext"></div>
     <label for="marknote">Note</label>
-    <textarea id="marknote" class="field" rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
+    <textarea id="marknote" class="field" data-grow rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
     <p id="markerr" role="alert" hidden></p>
     <div class="actions">
       <button id="marktask" type="button" title="Open the board's new-task window with this text">New task from selection</button>

@@ -260,21 +260,18 @@ export async function webApp(browser) {
   check("AC-52 web app: a file dropped on the terminal is uploaded and its quoted path pasted, without Enter",
     typed.includes("'/tmp/up/a b.txt'") && !typed.includes("\r") && new URL(page.url()).pathname === "/", JSON.stringify(typed));
   // a drag that ends with neither a drop nor a dragleave the page sees (Esc, a drop in the Files
-  // panel's frame) leaves no dashed frame behind; nor does one that leaves into a frame
+  // panel's frame, the pointer leaving through it) leaves no dashed frame behind
   const frame = () => $eval(() => document.getElementById("term").classList.contains("dropping"));
-  const over = (leave) => $eval((leave) => {
+  await $eval(() => {
     const dt = new DataTransfer();
     dt.items.add(new File(["x"], "x.txt", { type: "text/plain" }));
     document.getElementById("term").dispatchEvent(new DragEvent("dragover", { dataTransfer: dt, bubbles: true, cancelable: true }));
-    if (leave) document.getElementById("term").dispatchEvent(new DragEvent("dragleave", { dataTransfer: dt, bubbles: true, relatedTarget: document.createElement("iframe") }));
-  }, leave);
-  await over(false);
+  });
   const lit = await frame();
   await page.waitForTimeout(1000);
   const quiet = await frame();
-  await over(true);
-  check("AC-36 web app: the drop frame shows while a drag is over the page and goes when its dragovers stop or it leaves into a frame",
-    lit && !quiet && !(await frame()), JSON.stringify({ lit, quiet }));
+  check("AC-36 web app: the drop frame shows while a drag is over the page and goes within 1 s of its dragovers stopping",
+    lit && !quiet, JSON.stringify({ lit, quiet }));
   // rows dragged from Files: their paths put at the input, nothing uploaded; another host's refused (AC-36)
   const dropRows = (data) => $eval((data) => {
     const dt = new DataTransfer();

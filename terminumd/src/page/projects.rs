@@ -308,15 +308,10 @@ impl Projects {
     }
 
     /// Pane `key` took a message (its agent's prompt, a human's or Dispatcher's): it goes to the top of
-    /// its project, the others keeping their order. True when it moved (then `save`).
-    pub fn to_top(&mut self, key: &str) -> bool {
-        if self.unread() {
-            return false;
-        }
-        let Some(p) = self.list.iter_mut().find(|p| p.members.iter().any(|m| m == key)) else { return false };
-        let at = p.members.iter().position(|m| m == key).unwrap_or(0);
-        p.members[..=at].rotate_right(1);
-        at > 0
+    /// its project, the others keeping their order, kept as `members` keeps it. True when it moved.
+    pub fn to_top(&mut self, key: &str) -> Result<bool, String> {
+        let Some(id) = self.list.iter().find(|p| p.members.iter().skip(1).any(|m| m == key)).map(|p| p.id.clone()) else { return Ok(false) };
+        self.members(&id, &[key.to_string()]).map(|()| true)
     }
 
     /// The panes of a server whose list was just read (`prefix` its keys' start, `identity` its

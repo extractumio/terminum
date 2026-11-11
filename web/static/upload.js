@@ -7,12 +7,12 @@
 // the limit is not sent: the page says to give its path instead (a browser never gives a page a
 // file's path). A drop on a pane of this Mac in this Mac's browser puts the files' own paths
 // instead, nothing uploaded at any size: terminumd finds them on macOS's drag pasteboard (dragged.rs).
+import { dropLit } from "./droplit.js";
 import { NOT_PASTED, shellWord } from "./input.js";
 
 // what terminumd takes as a pasted image; another type the browser can draw goes as a PNG
 const TAKEN = ["image/png", "image/jpeg", "image/gif", "image/webp"];
 const MAX_BYTES = 100 << 20;            // terminumd's upload limit (page/upload.rs MAX_BYTES)
-const DRAG_QUIET = 800;                 // ms without a dragover after which no drag is over the page
 
 /** Why a file over the upload limit was not sent. */
 export const tooLarge = (name) => `${name} is larger than the 100 MB an upload may be: type or paste the path to the file instead (in Finder ⌥⌘C copies it).`;
@@ -130,23 +130,14 @@ export function uploads({ sid, host = () => null, atMac = () => false, paste, li
      *  put their paths (AC-36). */
     bindDrop(target) {
       const kind = (e) => { const t = [...(e.dataTransfer?.types ?? [])]; return t.includes(PATHS) ? "paths" : t.includes("Files") ? "files" : null; };
-      // the dashed frame stands while a drag is over the page: a browser repeats dragover at least
-      // every 550 ms (HTML's drag processing model), so one that stops coming ends it whatever ended
-      // the drag (Esc, a drop in the Files panel's frame, the pointer leaving through it)
-      let off = 0;
-      const lit = (on) => {
-        clearTimeout(off);
-        target.classList.toggle("dropping", on);
-        if (on) off = setTimeout(() => lit(false), DRAG_QUIET);
-      };
+      const lit = dropLit((on) => target.classList.toggle("dropping", on));
       document.addEventListener("dragover", (e) => {
         if (!kind(e)) return;
         e.preventDefault();
         e.dataTransfer.dropEffect = "copy";
         lit(true);
       });
-      document.addEventListener("dragleave", (e) => { if (!e.relatedTarget || e.relatedTarget.tagName === "IFRAME") lit(false); });
-      addEventListener("dragend", () => lit(false));   // a drag that began on the page
+      document.addEventListener("dragleave", (e) => { if (!e.relatedTarget) lit(false); });
       document.addEventListener("drop", (e) => {
         const k = kind(e);
         if (!k) return;

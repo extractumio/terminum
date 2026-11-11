@@ -4,20 +4,15 @@
 // Ask, Paste), else the window. Its parent's size is read once, as it opens: a dialog never
 // resizes under the user's hands while they type.
 
-let opened = 0;
-const order = new WeakMap();                     // dialog -> when it opened, to find the one under a new one
+const opened = [];                               // the dialogs in the order they opened, the last on top
 
 function sized(d) {
-  // the last opened before it (one opened in the same moment, after it, is not under it)
-  const under = [...document.querySelectorAll("dialog.dlg[open]")].filter((o) => o !== d && order.has(o))
-    .sort((a, b) => order.get(b) - order.get(a))[0];
-  order.set(d, ++opened);
-  const parent = under ?? (d.dataset.parent && document.getElementById(d.dataset.parent));
-  const shown = parent && parent.offsetWidth > 0;   // laid out, its size without its pop's scale
-  for (const [v, n] of [["--pw", shown && parent.offsetWidth], ["--ph", shown && parent.offsetHeight]]) {
-    if (n) d.style.setProperty(v, `${n}px`);
-    else d.style.removeProperty(v);
-  }
+  const under = opened.filter((o) => o.open && o !== d).at(-1);
+  opened.splice(0, opened.length, ...opened.filter((o) => o.open && o !== d), d);
+  const parent = under ?? document.getElementById(d.dataset.parent ?? "");
+  const shown = parent?.offsetWidth > 0;         // laid out, its size without its pop's scale
+  d.style.setProperty("--pw", shown ? `${parent.offsetWidth}px` : "");
+  d.style.setProperty("--ph", shown ? `${parent.offsetHeight}px` : "");
 }
 
 new MutationObserver((records) => {

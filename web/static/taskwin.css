@@ -93,7 +93,6 @@ button.stbox { cursor: pointer; border: 0; }
 @media (max-width: 860px) {
   .fieldgrid, .fieldgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .fieldgrid > :first-child:nth-last-child(odd) { grid-column: 1 / -1; }
-  #taskbody { max-height: none; overflow: visible; }   /* the sheet scrolls, once */
   .ev { font-size: var(--fs-small); }
   .stbox { min-height: 24px; }
 }

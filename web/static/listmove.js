@@ -1,54 +1,63 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A project's sessions that change order glide to their new places (AC-92: a session whose agent
-// takes a prompt goes to its project's top). The list is drawn anew each time (nav.js renderNav):
-// where each project's rows stood is read before, where they stand after, and the rows of a project
-// whose order changed slide from the one to the other (FLIP); the one that rose passes over the
-// others. A redraw while they glide (the list is drawn often) carries them on from where they are.
-// Nothing moves when only a row's height or the list around it changed, nor under
+// takes a message goes to its project's top). The list is drawn anew each time (nav.js renderNav):
+// when a project's rows come in another order, where they stood is read before the new rows go in
+// and where they stand after, and each slides from the one to the other (FLIP); the one that rose
+// passes over the others. A redraw while they glide (the list is drawn often) carries them on from
+// where they are. A redraw that moves nothing reads no layout. Nothing moves under
 // prefers-reduced-motion.
 
-const DURATION = 360;
-const EASE = "cubic-bezier(.2, .8, .2, 1)";      // tokens.css --ease-out
 const still = matchMedia("(prefers-reduced-motion: reduce)");
+let gliding = 0;                                 // glides running, so a redraw carries them on
+let motion = null;                               // [ms, easing]: tokens.css's, read once
 
-const gliding = new WeakMap();                  // li -> its glide, while it runs
+/** Each project's rows under `root`: project id -> their session ids in order. */
+const orders = (root) => new Map([...root.querySelectorAll("ul[data-project]")]
+  .map((ul) => [ul.dataset.project, [...ul.children].map((li) => li.firstElementChild?.dataset.id)]));
 
-/** Each project's top rows as drawn in `list`: project id -> [[session id, li, top, ms left of
- *  its glide (0: none)]], top as seen (a glide's offset in it), within the list's content. */
-function places(list) {
+/** Whether the ids both lists hold stand in the same order. */
+function sameOrder(a, b) {
+  const inA = new Set(a), common = b.filter((id) => inA.has(id)), inB = new Set(common);
+  return a.filter((id) => inB.has(id)).every((id, i) => id === common[i]);
+}
+
+/** Session id -> [li, top as seen, the glide it has], for `pids`' rows; top within the list's content. */
+function places(list, pids) {
   const base = list.getBoundingClientRect().top - list.scrollTop, out = new Map();
-  const left = (li) => { const a = gliding.get(li); return a?.playState === "running" ? DURATION - a.currentTime : 0; };
   for (const ul of list.querySelectorAll("ul[data-project]")) {
-    out.set(ul.dataset.project, [...ul.children].map((li) => [li.firstElementChild?.dataset.id, li, li.getBoundingClientRect().top - base, left(li)]));
+    if (!pids.has(ul.dataset.project)) continue;
+    for (const li of ul.children) {
+      const a = li.getAnimations().find((x) => x.id === "glide");
+      out.set(li.firstElementChild?.dataset.id, [li, li.getBoundingClientRect().top - base, a]);
+    }
   }
   return out;
 }
 
-const sameOrder = (a, b) => {
-  const common = new Set(a.filter((id) => b.includes(id)));
-  const x = a.filter((id) => common.has(id)), y = b.filter((id) => common.has(id));
-  return x.every((id, i) => id === y[i]);
-};
-
-/** Reads the rows' places, then `draw()` redraws `list`; a project whose rows changed order glides. */
-export function glide(list, draw) {
-  const before = still.matches || !list.isConnected ? null : places(list);
-  draw();
-  if (!before?.size) return;
-  for (const [pid, rows] of places(list)) {
-    const was = before.get(pid);
-    if (!was) continue;
-    const moved = !sameOrder(was.map((r) => r[0]), rows.map((r) => r[0]));
-    const old = new Map(was.map(([id, li, t, ms]) => [id, { t, ms, rising: li.classList.contains("rising") }]));
-    for (const [id, li, now] of rows) {
-      const o = old.get(id);
-      if (!o || !(moved || o.ms > 0)) continue;   // a new row, or one standing still in an unchanged order
-      const dy = o.t - now;
-      if (Math.abs(dy) < 1) continue;
-      if (dy > 0 || o.rising) li.classList.add("rising");   // passes over the rows it leaves behind (projects.css)
-      const a = li.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }], { duration: moved ? DURATION : Math.max(o.ms, 60), easing: EASE });
-      gliding.set(li, a);
-      a.finished.then(() => li.classList.remove("rising"), () => {});
-    }
+/** Puts `frag` in `list` for its old rows; a project whose rows changed order glides there. */
+export function glide(list, frag) {
+  if (still.matches || !list.isConnected) return list.replaceChildren(frag);
+  const was = orders(list), now = orders(frag);
+  const moved = new Set([...now].filter(([pid, ids]) => was.has(pid) && !sameOrder(was.get(pid), ids)).map(([pid]) => pid));
+  if (!moved.size && !gliding) return list.replaceChildren(frag);
+  const pids = new Set(gliding ? now.keys() : moved);
+  const before = places(list, pids);
+  list.replaceChildren(frag);
+  motion ??= (() => { const s = getComputedStyle(document.documentElement);
+    return [parseFloat(s.getPropertyValue("--dur-pop")) || 350, s.getPropertyValue("--ease-out").trim() || "ease-out"]; })();
+  for (const [id, [li, top]] of places(list, pids)) {
+    const [old, t, a] = before.get(id) ?? [];
+    if (!old) continue;                           // a new row
+    const left = a?.playState === "running" ? motion[0] - a.currentTime : 0;
+    a?.cancel();
+    const pid = li.parentElement.dataset.project;
+    if (!(moved.has(pid) || left > 0)) continue;  // a row standing still in an unchanged order
+    const dy = t - top;
+    if (Math.abs(dy) < 1) continue;
+    if (dy > 0 || old.classList.contains("rising")) li.classList.add("rising");   // passes over the rows it leaves (projects.css)
+    const g = li.animate([{ transform: `translateY(${dy}px)` }, { transform: "none" }],
+      { id: "glide", duration: moved.has(pid) ? motion[0] : Math.max(left, 60), easing: motion[1] });
+    gliding++;
+    g.finished.then(() => li.classList.remove("rising"), () => {}).finally(() => { gliding--; });
   }
 }

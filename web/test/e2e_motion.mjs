@@ -130,7 +130,7 @@ export async function webMotion(browser, name) {
   f.say(P([ID(1), ID(2), ID(3)]));
   await pause(page, 400);
   const glides = () => page.evaluate(() => [...document.querySelectorAll("#sessions ul[data-project] > li")]
-    .map((li) => `${li.firstElementChild.dataset.id.split(":").pop()}${li.classList.contains("rising") ? "^" : ""}:${li.getAnimations().filter((a) => a.playState === "running" && !a.transitionProperty).length}`).join());
+    .map((li) => `${li.firstElementChild.dataset.id.split(":").pop()}${li.classList.contains("rising") ? "^" : ""}:${li.getAnimations().filter((a) => a.playState === "running" && a.id === "glide").length}`).join());
   const steady = await glides();
   f.say(P([ID(3), ID(1), ID(2)]));
   await pause(page, 60);

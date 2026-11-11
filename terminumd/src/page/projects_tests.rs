@@ -275,12 +275,12 @@ fn a_session_that_takes_a_message_goes_to_its_projects_top() {
     let p1 = ps.add_new(A, None, None, "/a".into()).unwrap();
     ps.add_to(B, &p1, None).unwrap();
     ps.add_to(C, &p1, None).unwrap();
-    assert!(ps.to_top(C), "the last one rises");
+    assert!(ps.to_top(C).unwrap(), "the last one rises");
     assert_eq!(ps.of(A).unwrap().members, [C, A, B]);
-    assert!(!ps.to_top(C), "already on top: nothing to tell");
-    assert!(ps.to_top(B));
+    assert!(!ps.to_top(C).unwrap(), "already on top: nothing to tell");
+    assert!(ps.to_top(B).unwrap());
     assert_eq!(ps.of(A).unwrap().members, [B, C, A]);
-    assert!(!ps.to_top("tmux:local:terminum:%7"), "a session in no project");
+    assert!(!ps.to_top("tmux:local:terminum:%7").unwrap(), "a session in no project");
     assert_eq!(ps.of(A).unwrap().members, [B, C, A]);
 }
 

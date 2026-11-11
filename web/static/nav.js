@@ -445,7 +445,7 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
   }
   if (lastShown !== undefined && current !== lastShown) frag.querySelector(".item.on")?.classList.add("fresh");   // it settles once (motion.css)
   lastShown = current;
-  glide(list, () => list.replaceChildren(frag));   // a project's sessions that changed order glide there (AC-92)
+  glide(list, frag);                               // a project's sessions that changed order glide there (AC-92)
 }
 
 export function findItem(groups, id) {
