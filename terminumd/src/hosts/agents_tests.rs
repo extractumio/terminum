@@ -122,3 +122,16 @@ fn on_saves_nothing_when_the_record_changed_while_it_ran() {
     assert!(run(set_with(&f, "devbox", true)).unwrap_err().contains("changed meanwhile"));
     assert!(!f.hosts.lock().contains_key("devbox"));
 }
+
+/// AC-99 edge: the refresh at the link's first up runs once per host per run, never with agents
+/// not on; an update's runs again; another host has its own.
+#[test]
+fn a_refresh_at_the_link_up_runs_once_per_run() {
+    let mut done = HashSet::new();
+    assert!(!claim(&mut done, "devbox", false, false), "agents off or undecided: none");
+    assert!(!claim(&mut done, "devbox", false, true));
+    assert!(claim(&mut done, "devbox", true, false), "the first up");
+    assert!(!claim(&mut done, "devbox", true, false), "the link back after a drop");
+    assert!(claim(&mut done, "devbox", true, true), "the helper updated");
+    assert!(claim(&mut done, "other", true, false));
+}

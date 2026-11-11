@@ -330,7 +330,7 @@ Scenario: AC-99 failure — no ready line
 Scenario: AC-99 edge — two Macs on one host
   Given two Macs, each with devbox's agents enabled
   Then each has its own "m-<mac id>-*.sock" and "mac-<mac id>.sock"; a hook posts to both; neither removes the other's live socket; one stopped leaves the other's events flowing
-  And a refresh after AC-84 reinstalls only when the plugin's files, ".mcp.json" or the hook command differ, never because the two builds differ
+  And a refresh after AC-84 reinstalls only when the plugin's files, ".mcp.json" or the hook command differ, or the agent lacks terminum's entries, never because the two builds differ
 
 Scenario: AC-99 edge — a TMUX_TMPDIR server also named "default"
   Given a user's own tmux on devbox with TMUX_TMPDIR=/x, so its socket is also named "default"
@@ -348,6 +348,13 @@ Scenario: AC-99 edge — link loss
 Scenario: AC-99 edge — upgrade
   When AC-84 updates devbox's helper
   Then "terminum-host hooks install --host-mode --refresh" runs there and refreshes by content; a current install changes nothing
+
+Scenario: AC-99 edge — a coding agent installed after the agents were turned on
+  Given devbox's agents are enabled, and Claude Code was not found there when they were turned on
+  When Claude Code is installed on devbox and terminumd's link to devbox first comes up with a current helper since terminumd started, or AC-84 updates the helper
+  Then the refresh installs terminum's hooks and MCP server in Claude Code as an install does, and its next sessions there have terminum's tools; Codex likewise ("installed; trust terminum's hooks in Codex's /hooks once")
+  And one refresh runs per host per terminumd run at most, plus one after each helper update; a link that drops and comes back runs none
+  And terminum's entries taken out of an agent by hand come back at the next refresh: "terminum hosts agents devbox off" is the way to keep them out
 
 Scenario: AC-99 edge — disable or remove the host
   When the user picks the menu item again and turns it off, runs "terminum hosts agents devbox off", or removes devbox
