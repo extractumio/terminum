@@ -90,6 +90,30 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
 }
 
 #[test]
+fn ac170_one_round_at_a_time_over_the_projects_and_a_parent_waits_for_its_subtasks() {
+    store("auto-shared").with(|tx| {
+        tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '/srv', 1)", []).map_err(sql)?;
+        crate::tasks::slugs::fill(tx)?;
+        auto::set(tx, "web", &Setting { on_at: 0, ..setting(tx) }, NOW)?;
+        let parent = task(tx, "parent", "P1");
+        let child = ops::create(tx, HUMAN, NewTask { title: "child".into(), parent: Some(parent.id.clone()), project: Some("api".into()), severity: Some("P2".into()), ..Default::default() }, NOW)?;
+        ops::create(tx, HUMAN, NewTask { title: "of web".into(), project: Some("web".into()), severity: Some("P1".into()), ..Default::default() }, NOW)?;
+        let (id, r) = round(tx);
+        assert_eq!(r.candidates, std::slice::from_ref(&child.id), "the parent waits for its subtask");
+        let web = auto::setting(tx, "web")?;
+        assert_eq!(decide(tx, "web", &web, NOW)?, Due::Nothing, "api's round is open: both would count on Smith's free slots");
+        let run = running(tx, "p", &ops::get(tx, &id)?);
+        runs::change(tx, &run, |r| r.state = Phase::Closed)?;
+        ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
+        assert_eq!(auto::due_for(tx)?.into_iter().map(|(p, _)| p).collect::<Vec<_>>(), ["web", "api"], "the project whose last round is oldest goes first");
+        assert!(matches!(decide(tx, "web", &web, NOW)?, Due::Round(_)));
+        ops::move_to(tx, HUMAN, &child.id, "DONE", NOW)?;
+        assert!(auto::candidates(tx, "api", &setting(tx), NOW, None)?.iter().any(|c| c.id == parent.id), "its subtask done, the parent is a candidate");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
 fn ac170_it_starts_no_more_than_its_days_cap() {
     store("auto-cap").with(|tx| {
         auto::set(tx, "api", &Setting { day_most: 2, ..setting(tx) }, NOW)?;

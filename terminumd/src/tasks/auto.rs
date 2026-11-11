@@ -107,10 +107,12 @@ pub fn all(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
     rows(tx, SETTING, [], setting_of)
 }
 
-/// The projects a walk looks at, in their order: those it is on for, and those with a round still on the board, which
-/// leaves it when it ended though the setting is off.
+/// The projects a walk looks at: those it is on for, and those with a round still on the board, which leaves it when
+/// it ended though the setting is off. The one whose last round is oldest first: projects that share agents take
+/// the free slots in turn.
 pub fn due_for(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
-    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL) ORDER BY place"), [], setting_of)
+    rows(tx, &format!("{SETTING} WHERE auto_on = 1 OR EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project = projects.id AND t.archived_at IS NULL)
+        ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place"), [], setting_of)
 }
 
 /// An agent of the pool, or none.
@@ -141,6 +143,12 @@ pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<()
 /// It turns itself off for `project`, saying why: only a human turns it on again. Its agents stay chosen.
 pub fn turn_off(tx: &Transaction, project: &str, why: &str) -> Result<(), String> {
     tx.execute("UPDATE projects SET auto_on = 0, auto_off_why = ?2 WHERE id = ?1", (project, why)).map(drop).map_err(sql)
+}
+
+/// Whether a round of another project than `project` is open: one round at a time over all projects, so two never
+/// count on the same free slot of an agent they share.
+pub fn open_elsewhere(tx: &Transaction, project: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project <> ?1 AND t.archived_at IS NULL AND t.status NOT IN ('DONE', 'FAILED'))", [project], |r| r.get(0)).map_err(sql)
 }
 
 /// The agent a human chose to run task `key`, while it is in the pool.
@@ -256,6 +264,7 @@ pub struct Candidate {
 /// - that stand for its wait: made, moved or edited no later than that ago (a comment, a new place among the cards or
 ///   a subtask does not start the wait anew), so one still being written is not taken;
 /// - that no session, run, wait, schedule or round holds;
+/// - with no subtask still to do: a parent waits for its subtasks, which are candidates themselves;
 /// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
 ///   none, never the default's;
 /// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
@@ -275,7 +284,8 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND t.severity IN (SELECT value FROM json_each(?5))
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
-                   AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id))
+                   AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
+                   AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'))
                  SELECT c.slug, c.id, c.agent, c.changed FROM c WHERE c.changed <= ?6
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)

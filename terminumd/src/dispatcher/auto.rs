@@ -140,6 +140,9 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     if over_limit(&super::usage::of_agents(tx, now)?, &picker).is_some() {
         return Ok(Due::Nothing);
     }
+    if auto::open_elsewhere(tx, project)? {
+        return Ok(Due::Nothing);
+    }
     let (free, n) = offer(tx, project, s, now)?;
     if n == 0 {
         return Ok(Due::Nothing);

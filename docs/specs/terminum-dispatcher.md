@@ -1061,6 +1061,7 @@ Scenario: AC-170 happy path — what it takes
   Given it on for api, taking P0 and P1 after 10 minutes
   Then a candidate is a TODO task of api, P0 or P1, that no session, run, wait, schedule or round holds
   And made, moved or edited at least 10 minutes ago: one still being written is left; a comment, a new place among the cards or a subtask does not start the wait anew
+  And a task with a subtask not DONE is no candidate: a parent waits for its subtasks, which are candidates themselves
   And a task it started before is no candidate until a human moves or edits it: one its agent put back in TODO is not run again
   And a task a round was given and left, having ended DONE with a slot unfilled, is no candidate for a day, unless a human moves or edits it or it is turned on anew: the next round is given the tasks below, and an agent's own edit does not bring it back
   And a round that filled its slots left the rest for want of room: they are candidates again
@@ -1103,6 +1104,7 @@ Scenario: AC-170 edge — how many, and when again
   And with the picking agent past its own limit no round is made; an agent with no limit set is bounded by its slots and the project's cap of 24 hours
   When a task becomes a candidate (made and stood its wait, changed, a slot freed), at the next walk
   Then a round is made; with no candidate or no free slot none is: it waits
+  And one round is open at a time over all projects, the project whose last round is oldest first: two projects never count on the same free slot of an agent they share
   But for 30 minutes after a round that started nothing, only a task made, moved or edited since makes one: a long list its agent leaves is not read through at once
   And a setting saved while it is off keeps why it turned itself off; an empty wait is refused: "Wait: 0 to 1440 minutes"
 
