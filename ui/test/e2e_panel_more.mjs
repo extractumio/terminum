@@ -4,6 +4,7 @@
 
 import fs from "node:fs";
 import { base, check, SB, within } from "./e2e_harness.mjs";
+import { NO_SIGNALS } from "./process-stop.mjs";
 
 /** AC-70 the View alone: renders the file, no tree, no secret in its URL, a path bar. */
 export async function viewerTools(context, base, SB, errors) {
@@ -51,17 +52,25 @@ export async function diagrams(context, base, SB, errors) {
   check("AC-54 nothing in a diagram runs: no dialog, no element of its label in the page", !errors.some((e) => e.startsWith("diagram dialog")) && !(await vp.$(".md-body img[src='x']")), errors.join(" | "));
   await vp.close();
 
-  // Mermaid's code failed to load once (a gap, a restart): the next render of the document loads it again
-  const gp = await context.newPage();
-  let refused = 0;
-  await gp.route("**/chunks/mermaid.core-*.js", (route) => refused++ ? route.fallback() : route.abort("connectionreset"));
-  await gp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
-  await within("AC-54 Mermaid's code that did not load says so at the fence", (ms) => gp.waitForSelector(".md-diagram-error", { timeout: ms }));
-  const now = new Date();
-  fs.utimesSync(`${SB}/docs/diagram.md`, now, now);   // changed on disk: the clean document is drawn again
-  await within("AC-54 … and the next render loads it and draws the diagrams", (ms) =>
-    gp.waitForFunction(() => document.querySelectorAll(".md-diagram img.diagram").length === 2, null, { timeout: ms }), 10000);
-  await gp.close();
+  // Mermaid's code failed to load once (a gap, a restart): the next render of the document loads it
+  // again. In WebKit (Safari): Chromium keeps a module that failed to load until the page reloads.
+  const { webkit } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
+  const wk = await webkit.launch(NO_SIGNALS);
+  try {
+    // the sign-in the run holds (signIn would set the password again and end it for the others)
+    const secret = await context.pages()[0].evaluate(() => localStorage.getItem("tm.session"));
+    const gp = await wk.newPage();
+    await gp.goto(`${base}/custom.css`);
+    await gp.evaluate((s) => localStorage.setItem("tm.session", s), secret);
+    let refused = 0;
+    await gp.route("**/chunks/mermaid.core-*.js", (route) => refused++ ? route.fallback() : route.abort("connectionreset"));
+    await gp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
+    await within("AC-54 Mermaid's code that did not load says so at the fence", (ms) => gp.waitForSelector(".md-diagram-error", { timeout: ms }));
+    const now = new Date();
+    fs.utimesSync(`${SB}/docs/diagram.md`, now, now);   // changed on disk: the clean document is drawn again
+    await within("AC-54 … and the next render loads it and draws the diagrams (WebKit)", (ms) =>
+      gp.waitForFunction(() => document.querySelectorAll(".md-diagram img.diagram").length === 2, null, { timeout: ms }), 10000);
+  } finally { await wk.close(); }
 }
 
 /** AC-70 in a page around it (same origin), a file opens in the page's View: the panel posts

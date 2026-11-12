@@ -38,7 +38,7 @@ async function doSave(path: string, d: Doc, force: boolean, h: SaveHost): Promis
       toast("Not saved: file was renamed — save again");
       return false;
     }
-    d.gen = (d.gen ?? 0) + 1;         // a re-check sent before this save answers for older bytes
+    d.gen++;                          // a re-check sent before this save answers for older bytes
     d.file = { ...d.file, etag: r.etag, size: new TextEncoder().encode(text).length, text };
     d.saved = doc;
     d.deleted = false;                // a save recreates a file deleted on disk
@@ -71,7 +71,7 @@ export async function revalidateDoc(
 ): Promise<void> {
   if (!d.file) return;
   path = d.file.path;
-  const gen = d.gen = (d.gen ?? 0) + 1;
+  const gen = ++d.gen;
   const stale = () => d.gen !== gen || d.file?.path !== path;
   try {
     const f = await api<FileView | undefined>("GET", "/api/file", { query: { path }, host: d.host, headers: { "If-None-Match": `"${d.file.etag}"` } });

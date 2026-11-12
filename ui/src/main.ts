@@ -96,17 +96,19 @@ function failed(kind: string, text: string) {
 
 /** One workspace PUT at a time, each taking the snapshot when it starts: terminumd gets this
  *  panel's writes in order, and `ambiguous` always belongs to the PUT that is current. */
-let saving: Promise<boolean> = Promise.resolve(true);
-/** Resolves false when this panel's state is not on terminumd yet (said, sent again later). */
-function saveNow(): Promise<boolean> {
+let saving: Promise<void> = Promise.resolve();
+function saveNow(): Promise<void> {
   clearTimeout(saveTimer);
   saving = saving.then(saveOnce, saveOnce);
   return saving;
 }
 
-async function saveOnce(): Promise<boolean> {
+/** terminumd has this panel's state (nothing to send, or the last write took it). */
+const inSync = (snap = snapshot()) => !snap || !key || content(snap) === content(ws!);
+
+async function saveOnce() {
   const snap = snapshot(), k = key;
-  if (!snap || !k || content(snap) === content(ws!)) return true;
+  if (!snap || !k || inSync(snap)) return;
   const previous = ws, run = workspaceRun;
   const current = () => key === k && ws === previous && run === workspaceRun;
   try {
@@ -114,22 +116,20 @@ async function saveOnce(): Promise<boolean> {
     ambiguous = null;
     warned.delete("workspace");
     if (current()) { workspaceRun++; ws = { ...snap, rev: r.rev }; }
-    return true;
   } catch (e) {
     if (e instanceof ApiError && e.code === "stale_rev" && current()) {
       workspaceRun++;
       const theirs = e.body.current as Pane;
       // our own earlier write landed although its answer was lost: keep what changed since, on its rev
-      if (ambiguous?.key === k && content(theirs) === ambiguous.content) { ambiguous = null; ws = theirs; scheduleSave(); return false; }
+      if (ambiguous?.key === k && content(theirs) === ambiguous.content) { ambiguous = null; ws = theirs; scheduleSave(); return; }
       ambiguous = null;
       // another page showing this pane, or a cd, won the race: take the server's version
       await applyWorkspace(theirs);
-      return true;
+      return;
     }
     // fail loud; the snapshot stays unsaved (ws unchanged): the next change or reconnect retries
     if (!(e instanceof ApiError) || e.code === "network") ambiguous = { key: k, content: content(snap) };   // api() wraps a network error
     failed("workspace", `Panel state not saved: ${(e as Error).message}`);
-    return false;
   }
 }
 
@@ -380,7 +380,8 @@ function revealInTree(p: string) {
   });
 }
 
-const busy = () => viewer.hasDirty || !!document.querySelector(".modal, .inline-edit.on, dialog[open]");
+// a panel state terminumd lacks (a write pending or refused) holds a reload too: it would be lost
+const busy = () => viewer.hasDirty || !inSync() || !!document.querySelector(".modal, .inline-edit.on, dialog[open]");
 // The page reloads after an upgrade only while none of its frames is busy (AC-16).
 if (PROXIED) (window as unknown as { fbBusy: () => boolean }).fbBusy = busy;
 const upgrade = new Upgrade({

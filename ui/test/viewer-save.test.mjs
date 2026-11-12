@@ -3,29 +3,18 @@
 // order: an older answer never replaces a newer one, and a save clears "Deleted on disk".
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { load } from "./bundle.mjs";
+import { DEFERRED_API, load, stubs, tick } from "./bundle.mjs";
 
-// api, toast and ask stand-ins: each call waits until the test settles it
-const stubs = {
-  name: "stubs",
-  setup(b) {
-    b.onResolve({ filter: /^\.\/(api|dialogs)$/ }, (a) => ({ path: a.path, namespace: "stub" }));
-    b.onLoad({ filter: /.*/, namespace: "stub" }, (a) => ({
-      loader: "js",
-      contents: a.path === "./api"
-        ? `export class ApiError extends Error { constructor(m, status, code) { super(m); this.status = status; this.code = code; } }
-           globalThis.__ApiError = ApiError;
-           export const basename = (p) => p.split("/").pop();
-           export const toast = (m) => globalThis.__toasts.push(m);
-           export const api = (...args) => new Promise((resolve, reject) => globalThis.__calls.push({ args, resolve, reject }));`
-        : `export const ask = async () => globalThis.__answer;`,
-    }));
-  },
-};
-const { saveDoc, revalidateDoc } = await load("src/viewer-save.ts", { plugins: [stubs] });
+// api, toast and ask stand-ins: each api call waits until the test settles it
+const { saveDoc, revalidateDoc } = await load("src/viewer-save.ts", { plugins: [stubs({
+  "./api": `export class ApiError extends Error { constructor(m, status, code) { super(m); this.status = status; this.code = code; } }
+    globalThis.__ApiError = ApiError;
+    export const basename = (p) => p.split("/").pop();
+    export const toast = (m) => globalThis.__toasts.push(m);
+    ${DEFERRED_API}`,
+  "./dialogs": `export const ask = async () => globalThis.__answer;`,
+})] });
 const apiError = (status, code) => new globalThis.__ApiError(code, status, code);
-
-const tick = () => new Promise((r) => setTimeout(r, 0));
 function setup() {
   globalThis.__calls = []; globalThis.__toasts = []; globalThis.__answer = "cancel";
   const text = "v1";
@@ -33,7 +22,7 @@ function setup() {
     file: { path: "/r/a.md", etag: "e1", writable: true, text, size: 2 },
     // the editor state the save reads: one document, never typed into here
     state: { doc: { eq: () => true }, sliceDoc: () => text },
-    dirty: false, diskChanged: false, scroll: {}, host: null,
+    dirty: false, diskChanged: false, gen: 0, scroll: {}, host: null,
   };
   const redraw = (_p, update) => update();
   const host = { revalidate: async () => {}, tabsChanged() {}, redraw() {}, discard() {} };

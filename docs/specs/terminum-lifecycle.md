@@ -214,7 +214,7 @@ Scenario: AC-16 happy path — upgrade
   When the user runs "terminum upgrade" (the latest signed release, or --to vX.Y.Z)
   Then the package is verified (signature, checksum), "builds/B" is unpacked, "B/terminumd --version" prints its id, "previous" → "A", "current" → "B", "daemon/terminumd" becomes B's terminumd (the tmux server started by A's keeps its folder access, AC-08), terminumd is restarted with "launchctl kickstart -k gui/<uid>/io.terminum.terminumd" while the plist it would write differs at most in PATH, so launchd keeps the port (otherwise, and after a failed kickstart, the plist is written and the agent loaded again; on Linux the service restarts), and within 10 s its health (on the socket) reports "build": "B"; then other build folders are pruned and it says "Upgraded A → B"
   And every open page learns the build from the WebSocket and reloads itself once; one with unsaved edits or a dialog waits and says "An update is ready: the page reloads after you save."; one that already reloaded for this build says "An update is ready: reload the page."
-  And a Files panel reloads only once terminumd has its workspace: while that write is refused (said: "Panel state not saved: …") it waits and tries again each second
+  And a Files panel reloads only once terminumd has its workspace: while that write is refused (said: "Panel state not saved: …") it waits, also inside the page, until a later change or reconnect saves it
 Scenario: AC-16 happy path — rollback and uninstall
   When the user runs "terminum rollback"
   Then "current" → "A", "previous" → "B", "daemon/terminumd" becomes A's, terminumd restarts (kickstart) and reports "A" within 10 s, and it says "Rolled back B → A"; a state file written by "B" with fields "A" does not know is read by "A" (unknown fields ignored, every field has a default)
@@ -820,7 +820,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-08 — `scripts/e2e_install.sh`; `scripts/e2e_core.py`; `cargo test cli::tests` (`install_tests`, `launch_tests`, `systemd_tests`, `folders_tests`, `upgrade_tests`); `cargo test folders`; `scripts/tests/test_package.py`; `terminumd/tests/launchd.rs` (opt-in, `TM_LAUNCHD_TEST=1`)
 - [x] AC-14 — `scripts/e2e_core.py`; `web/test/e2e_live.mjs`; `terminumd/tests/launchd.rs` (opt-in); `cargo test tmux::control`
 - [x] AC-15 — `scripts/e2e_restore.py` (Restore again on the user's own tmux, twice at once); `cargo test restore` (a failed restore retried on another link); `web/test/e2e_tmux.mjs`
-- [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/upgrade.test.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
+- [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/e2e_panel.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)

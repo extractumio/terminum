@@ -344,7 +344,16 @@ try {
   await bringBack({ TM_BUILD_ID: "e2e-next" });
   await within("AC-16 a dirty panel waits for the save", (ms) => page.waitForFunction(() => document.getElementById("note").textContent.startsWith("Update ready"), null, { timeout: ms }));
   check("AC-16 … without reloading", (await page.evaluate(() => window.__before)) === 1);
-  await page.keyboard.press("ControlOrMeta+s");
+  // a panel state terminumd refused holds the reload too, until a later change saves it
+  const refuse = (route) => route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "io", message: "disk full (test)" }) }) : route.fallback();
+  await page.route("**/fb/api/workspace?*", refuse);
+  await page.focus("#tree"); await page.keyboard.press("ArrowUp");   // the selection moved: its write is refused
+  await within("AC-71 the refused write says so", (ms) => page.waitForFunction(() => document.getElementById("toast").textContent.startsWith("Panel state not saved"), null, { timeout: ms }));
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
+  await page.waitForTimeout(2500);
+  check("AC-16 a saved tab whose panel state terminumd refused still waits", (await page.evaluate(() => window.__before)) === 1);
+  await page.unroute("**/fb/api/workspace?*", refuse);
+  await page.focus("#tree"); await page.keyboard.press("ArrowDown"); // the next change is saved
   await within("AC-16 after the save the panel reloads", (ms) => page.waitForFunction(() => window.__before === undefined, null, { timeout: ms }), 8000);
   await within("AC-16 … with its tabs and tree", (ms) => page.waitForSelector(`${row("src")}`, { timeout: ms }));
   // its tabs come back after its tree

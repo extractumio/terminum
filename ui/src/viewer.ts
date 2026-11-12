@@ -236,7 +236,7 @@ export class Viewer {
 
   private doc(path: string): Doc {
     let d = this.docs.get(path);
-    if (!d) { d = { dirty: false, diskChanged: false, scroll: {}, host: this.host || null }; this.docs.set(path, d); }
+    if (!d) { d = { dirty: false, diskChanged: false, gen: 0, scroll: {}, host: this.host || null }; this.docs.set(path, d); }
     return d;
   }
 
@@ -352,7 +352,7 @@ export class Viewer {
     if (!d) return;
     path = d.file?.path ?? path;
     d.dirty = false; d.diskChanged = false; d.loading = undefined; d.file = undefined; d.state = undefined;
-    d.gen = (d.gen ?? 0) + 1;  // a re-check in flight answers for the discarded version
+    d.gen++;  // a re-check in flight answers for the discarded version
     if (this.docs.get(path) !== d) return;
     this.renderTabs();
     if (this.activePath() === path) this.reshow();

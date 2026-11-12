@@ -3,23 +3,14 @@
 // answers the test releases: a relocate of an older read never acts after a newer one.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { load } from "./bundle.mjs";
+import { DEFERRED_API, load, stubs, tick } from "./bundle.mjs";
 
-const stubs = {
-  name: "stubs",
-  setup(b) {
-    b.onResolve({ filter: /^\.\/api$/ }, (a) => ({ path: a.path, namespace: "stub" }));
-    b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({
-      loader: "js",
-      contents: `export const join = (d, n) => d + "/" + n;
-        export const basename = (p) => p.split("/").pop();
-        export const dirname = (p) => p.slice(0, p.lastIndexOf("/"));
-        export const api = (...args) => new Promise((resolve, reject) => globalThis.__calls.push({ args, resolve, reject }));`,
-    }));
-  },
-};
-const { Pager } = await load("src/tree-load.ts", { plugins: [stubs] });
-const tick = () => new Promise((r) => setTimeout(r, 0));
+const { Pager } = await load("src/tree-load.ts", { plugins: [stubs({
+  "./api": `export const join = (d, n) => d + "/" + n;
+    export const basename = (p) => p.split("/").pop();
+    export const dirname = (p) => p.slice(0, p.lastIndexOf("/"));
+    ${DEFERRED_API}`,
+})] });
 const listing = (gen, names) => ({ status: "ok", gen, total: 2, writable: true, entries: names.map((n) => ({ n })) });
 
 function setup() {

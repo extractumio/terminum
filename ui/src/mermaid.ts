@@ -5,7 +5,7 @@
 let mermaidLib: Promise<typeof import("mermaid").default> | null = null;
 let shownTheme = "";
 let seq = 0;
-let redraws = 0;   // the newest theme redraw: an older one stops
+let redraws = 0;   // bumps at each theme redraw: an older one stops, a fence drawn meanwhile redraws
 
 /** A Mermaid diagram's SVG markup. Strict: no click handlers, no HTML labels (the SVG is shown
  *  as an image, where HTML inside it would not draw). Throws Mermaid's message on bad source. */
@@ -71,7 +71,7 @@ export async function redrawDiagrams(): Promise<void> {
  *  show the fence and "Diagram" back; a fence Mermaid cannot draw keeps its source, Mermaid's
  *  message above it. Dark as the panel's theme (drawn again when it changes). */
 export async function drawFence(pre: HTMLElement, source: string): Promise<void> {
-  const dark = darkPanel();
+  const dark = darkPanel(), run = redraws;
   let img: HTMLImageElement;
   try {
     img = await diagramImage(source, dark);
@@ -92,5 +92,5 @@ export async function drawFence(pre: HTMLElement, source: string): Promise<void>
     shown.hidden = !source; pre.hidden = source;
     toggle.textContent = source ? "Source" : "Diagram";
   });
-  if (darkPanel() !== dark) void redrawDiagrams();   // the theme changed while it was drawn
+  if (run !== redraws) void redrawDiagrams();   // the theme changed while it was drawn
 }

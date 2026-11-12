@@ -11,8 +11,9 @@ const GRACE = 3000;
 const RELOADED = "fb.reloaded-for";
 
 export interface UpgradeHost {
-  busy(): boolean;                 // unsaved tabs, a dialog, an inline edit or a save running
-  beforeReload(): Promise<boolean>; // persist the workspace; false: not saved (said), try later
+  busy(): boolean;                 // unsaved tabs, a dialog, an inline edit, a save running, or
+                                   // a workspace terminumd does not have yet
+  beforeReload(): Promise<void>;   // persist the workspace
   waiting(text: string): void;     // tell the user an update is waiting for them
 }
 
@@ -53,18 +54,11 @@ export class Upgrade {
     if (this.ready) return;
     this.ready = true;
     if (session.get(RELOADED) === build) return this.host.waiting("Reload the panel to update"); // no loop
-    let saving = false;
     const attempt = async () => {
-      if (saving) return;
       if (this.host.busy()) return this.host.waiting("Update ready — reloads after you save");
-      saving = true;
-      const saved = await this.host.beforeReload().catch(() => false);
-      saving = false;
-      // a reload now would lose the panel's state: held until a later attempt saves it
-      if (!saved) return this.host.waiting("Update ready — reloads once the panel state is saved");
-      if (this.host.busy()) return;  // an edit or a dialog began meanwhile
       clearInterval(timer);
       session.set(RELOADED, build);
+      await this.host.beforeReload().catch(() => {});
       location.reload();
     };
     const timer = window.setInterval(() => void attempt(), 1000);

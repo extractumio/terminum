@@ -3,7 +3,7 @@
 // proof that returns late never opens a second socket nor one that was closed meanwhile.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { load } from "./bundle.mjs";
+import { load, stubs } from "./bundle.mjs";
 
 // the proof, resolved by the test (pending proofs in globalThis.proofs); api.ts needs a browser
 const API = `
@@ -13,13 +13,6 @@ const API = `
   export const socketUrl = () => "ws://127.0.0.1:48080/fb/api/ws";
   export const socketProtocols = () => ["tm", "secret"];
 `;
-const stubApi = {
-  name: "stub-api",
-  setup(b) {
-    b.onResolve({ filter: /^\.\/api$/ }, () => ({ path: "api", namespace: "stub" }));
-    b.onLoad({ filter: /.*/, namespace: "stub" }, () => ({ contents: API, loader: "js" }));
-  },
-};
 
 globalThis.proofs = [];
 const timers = [];
@@ -31,7 +24,7 @@ globalThis.WebSocket = class {
   constructor(url, protocols) { this.url = url; this.protocols = protocols; this.closed = false; sockets.push(this); }
   close() { this.closed = true; this.onclose?.(); }
 };
-const { Stream } = await load("src/stream.ts", { plugins: [stubApi] });
+const { Stream } = await load("src/stream.ts", { plugins: [stubs({ "./api": API })] });
 
 const open = () => sockets.filter((s) => !s.closed).length;
 const flush = () => new Promise((r) => setImmediate(r));
