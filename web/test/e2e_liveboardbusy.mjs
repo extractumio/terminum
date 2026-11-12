@@ -41,7 +41,7 @@ async function sendsOnce(page, { what, url, method, open, box, field, ok, kept }
 
 export async function liveBoardBusy(page, opts) {
   const { base, work } = opts;
-  const { j } = boardKit(page, opts);
+  const { j, open } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Once" })).id;
   const meta = () => j("/api/tasks/meta");
   await page.goto(`${base}/kanban/?project=${project}`);
@@ -96,12 +96,12 @@ export async function liveBoardBusy(page, opts) {
   const both = await answers;
   check("AC-165 Esc then answers the second alone", JSON.stringify(both) === JSON.stringify([["first", true], ["second", false]]), JSON.stringify(both));
 
-  await newTaskOnce(page, { base, j, project });
-  await commentOnce(page, { base, j, id: await make("commented once") });
-  await commentWaitsForFiles(page, { base, j, id: await make("commented with a file") });
-  await lateFile(page, { base, project });
+  await newTaskOnce(page, { open, j, project });
+  await commentOnce(page, { open, j, id: await make("commented once") });
+  await commentWaitsForFiles(page, { open, j, id: await make("commented with a file") });
+  await lateFile(page, { open, project });
   const runs = (await j("/api/task-projects", "POST", { name: "Run once", dir: work })).id;
-  await runOnce(page, { base, project: runs, id: (await j("/api/tasks", "POST", { title: "run once", project: runs })).id });
+  await runOnce(page, { open, project: runs, id: (await j("/api/tasks", "POST", { title: "run once", project: runs })).id });
   await page.goto(`${base}/kanban/`);
 }
 
@@ -113,8 +113,8 @@ async function typeMeanwhile(page, field) {
 }
 
 /** The new task's window: Enter and ⌘Enter again send nothing, the text stands still and Esc waits; made once. */
-async function newTaskOnce(page, { base, j, project }) {
-  await page.goto(`${base}/kanban/?project=${project}`);
+async function newTaskOnce(page, { open, j, project }) {
+  await open(`?project=${project}`);
   await page.click("#newtask");
   await page.waitForSelector("#newbox[open]");
   await page.fill("#newtitle", "Made once by Enter");
@@ -137,8 +137,8 @@ async function newTaskOnce(page, { base, j, project }) {
 }
 
 /** A comment's Close by ⌘Enter, three times while terminumd has not answered: one comment, nothing typed lost. */
-async function commentOnce(page, { base, j, id }) {
-  await page.goto(`${base}/kanban/${id}`);
+async function commentOnce(page, { open, j, id }) {
+  await open(id);
   await page.waitForSelector("#taskbox[open] .newcomment textarea");
   await page.fill(".newcomment textarea", "said once");
   const held = await hold(page, `**/api/tasks/${id}/comments`, "POST");
@@ -160,8 +160,8 @@ async function commentOnce(page, { base, j, id }) {
 
 /** A comment's ⌘Enter while its file is on its way, after the window was drawn anew: nothing is sent; once the file
  *  is kept, the comment goes with it. */
-async function commentWaitsForFiles(page, { base, j, id }) {
-  await page.goto(`${base}/kanban/${id}`);
+async function commentWaitsForFiles(page, { open, j, id }) {
+  await open(id);
   await page.waitForSelector("#taskbox[open] .newcomment textarea");
   await page.fill(".newcomment textarea", "with a file");
   const upload = await hold(page, /\/api\/task-files\?/, "POST"), posts = await hold(page, `**/api/tasks/${id}/comments`, "POST");
@@ -194,8 +194,8 @@ async function commentWaitsForFiles(page, { base, j, id }) {
 }
 
 /** A file on its way when its draft is discarded: Create waits for it, and once it lands it is in no other draft. */
-async function lateFile(page, { base, project }) {
-  await page.goto(`${base}/kanban/?project=${project}`);
+async function lateFile(page, { open, project }) {
+  await open(`?project=${project}`);
   await page.click("#newtask");
   await page.waitForSelector("#newbox[open]");
   await page.fill("#newtitle", "the first draft");
@@ -224,8 +224,8 @@ async function lateFile(page, { base, project }) {
 
 /** RUN's window: ⌘Enter again while terminumd answers sends nothing, and ⌘Enter while Run is off sends none; its
  *  answer is lost here, so no agent starts. */
-async function runOnce(page, { base, project, id }) {
-  await page.goto(`${base}/kanban/?project=${project}`);
+async function runOnce(page, { open, project, id }) {
+  await open(`?project=${project}`);
   await pressRun(page, id);
   await page.waitForSelector("#runbox[open]");
   const held = await hold(page, `**/api/tasks/${id}/run`, "POST");

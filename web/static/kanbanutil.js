@@ -166,6 +166,8 @@ const fileUrl = (id) => `/api/task-files/${id}`;
 
 /** Markdown of a kept file: terminumd calls a file image/* only when it shows as one; anything else links. */
 export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
+/** `text` with file `f`'s link on a line of its own at its end. */
+export const withFileLink = (text, f) => `${text}${text && !text.endsWith("\n") ? "\n" : ""}${fileMarkdown(f)}\n`;
 
 /** Saves a file through a fetch with the sign-in, never its address (terminum.md AC-09). */
 export async function download(id, name) {

@@ -4,7 +4,7 @@
 // CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -124,7 +124,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       try {
         const file = await upload(f, getMeta().most_bytes);
         kept(file);
-        area.value += `${area.value && !area.value.endsWith("\n") ? "\n" : ""}${fileMarkdown(file)}\n`;
+        area.value = withFileLink(area.value, file);
         area.dispatchEvent(new Event("input"));
       } catch (e) { say(e.message); }
       each();
@@ -195,7 +195,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     area.placeholder = "Comment, Markdown. Drop or paste files here.";
     area.addEventListener("input", () => write(draft, area.value));
     // the files of a comment being written: kept with its text, or the sweep would take them
-    const n = note = { id, area, uploads: 0, keys: [], dropped: () => read(filesKey) ?? [] };
+    const wrap = el("section", "newcomment");
+    wrap.append(expandable(area));
+    const n = note = { id, area, wrap, uploads: 0, keys: [], dropped: () => read(filesKey) ?? [] };
     n.wait = () => { for (const k of n.keys) k.disabled = n.uploads > 0; };
     /** What was sent goes: the field is empty, the draft and its files too. */
     n.sent = () => { write(draft, null); write(filesKey, null); area.value = area.defaultValue = ""; if (note === n) note = null; };
@@ -225,8 +227,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     await tryClose();                              // an edit of its text or of a comment not saved is asked about
   });
 
-  function commentForm(t) {
-    const wrap = el("section", "newcomment"), n = noteFor(t.id), area = n.area;
+  /** The comment's keys at the window's foot, for `t` as it stands. */
+  function commentKeys(t, n) {
+    const area = n.area;
     const close = button(t.run_holds ? "primary" : null, "Close", () => keepComment(n, t));
     // Run: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
     const run = button(t.run_holds ? null : "primary", "Run", async () => {
@@ -248,10 +251,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     shelve.classList.add("evenleft");
-    wrap.append(expandable(area));
     // its keys at the window's foot, in sight while the task scrolls above them
     $("taskacts").replaceChildren(...[t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run].filter(Boolean));
-    return wrap;
   }
 
   /** A change terminumd must take, or it throws its refusal (a dialog says it); the window shows what stands. */
@@ -278,11 +279,13 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     shown = t;
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
-    const scroll = body.scrollTop, typing = note && document.activeElement === note.area ? [note.area.selectionStart, note.area.selectionEnd] : null;
-    const kin = family(t, { openTask, newSubtask, patch, send });
-    body.replaceChildren(own(t), kin, activity(t, { refresh, confirmed }), commentForm(t));
+    const scroll = body.scrollTop, n = noteFor(t.id), kin = family(t, { openTask, newSubtask, patch, send });
+    // the comment being written stays where it is, never taken out: its focus, cursor and files on their way stay too
+    if (n.wrap.parentNode !== body) body.replaceChildren(n.wrap);
+    for (const c of [...body.children]) if (c !== n.wrap) c.remove();
+    n.wrap.before(own(t), kin, activity(t, { refresh, confirmed }));
+    commentKeys(t, n);
     body.scrollTop = scroll;
-    if (typing && note?.id === t.id) { note.area.focus({ preventScroll: true }); note.area.setSelectionRange(...typing); }
   }
 
   /** The newest asked is the one that shows, whichever answers last; one closed or called off (`forget`) meanwhile
@@ -319,7 +322,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const mine = ++reading;
     try {
       const t = await api(`/api/tasks/${shown.id}`);
-      if (mine !== reading || t.id !== shown.id) return;   // a newer read, or another task opened meanwhile: that one stays
+      if (mine !== reading) return;              // a newer read, or another task opened meanwhile: that one stays
       if (!editing() && (!news || JSON.stringify(t) !== drawn)) draw(t);   // an editor opened while it was read stays
     } catch (e) { say(e.message); }
   }

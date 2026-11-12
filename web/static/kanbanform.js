@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, AT_LIMIT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
+import { $, AT_LIMIT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -51,7 +51,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   /** A file kept for a draft that is not shown: it goes into that draft as stored, linked at its end. */
   function intoStored(key, kept) {
     const d = read(key);
-    if (d) write(key, { ...d, files: [...(d.files ?? []), kept], text: `${d.text ?? ""}${d.text && !d.text.endsWith("\n") ? "\n" : ""}${fileMarkdown(kept)}\n` });
+    if (d) write(key, { ...d, files: [...(d.files ?? []), kept], text: withFileLink(d.text ?? "", kept) });
   }
 
   /** Kept by terminumd at once, linked at the cursor of the draft it was added to; a refusal keeps the window and

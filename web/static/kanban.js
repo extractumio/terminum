@@ -273,11 +273,10 @@ $("schedbar").append(scheduled.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 
-/** The cards drawn, by task: one whose task shows the same is the same element at the next draw, so a press that
- *  straddles a redraw of its column lands (AC-133). */
+/** The cards drawn, by task: one whose task shows the same (`key`) is the same element at the next draw, so a press
+ *  that straddles a redraw of its column lands (AC-133). */
 const drawnCards = new Map();
-function keptCard(t, under) {
-  const p = projectOf(t.project), key = JSON.stringify([t, under, filters().project.length === 1, p?.name, p?.color]);
+function keptCard(t, under, key) {
   const had = drawnCards.get(t.id);
   if (had?.key === key) return had.c;
   const c = card(t, under);
@@ -290,15 +289,18 @@ function keptCard(t, under) {
 function draw() {
   if (dragging) return;
   folds.keep(cards);
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed(), one = filters().project.length === 1;
+  const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
   for (const [column, part] of columns) {
-    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered, filters().project.length === 1]);   // a session's state changes on its card alone (sessionsCame)
+    // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
+    const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));
+    const shown = JSON.stringify([seen, n, !!filtered, one]);
     part.count.textContent = String(n);
     part.tab.textContent = `${column} ${n}`;
     if (shown === part.drawn) continue;
     part.drawn = shown;
-    const scroll = part.list.scrollTop;
-    part.list.replaceChildren(...underParents(have).map(([t, under]) => keptCard(t, under)));
+    const scroll = part.list.scrollTop, keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
+    part.list.replaceChildren(...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)));
     if (!have.length) part.list.append(el("p", "colempty", filtered ? "No tasks match" : "No tasks"));
     if (have.length < n) part.list.append(button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column)));
     part.list.scrollTop = scroll;
