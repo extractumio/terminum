@@ -42,7 +42,7 @@ dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
     margin-bottom: calc(-1 * var(--sp-4)); background: var(--fill); }
   & [data-grow] { flex: 1 1 0; min-height: var(--grow-min, 0); overflow: auto; }
   & :is(textarea[data-grow], [data-grow] > textarea) { flex: 1 1 0; min-height: var(--grow-min, 6em); resize: none; }
-  & :is(label, .xbox)[data-grow] { min-height: auto; overflow: visible; }   /* holds its field: as tall as it at least */
+  & :is(.fieldrow, .xbox)[data-grow] { min-height: auto; overflow: visible; }   /* holds its field: as tall as it at least */
 }
 #runprompt { max-height: 30vh; }                 /* what will be sent, opened: the message keeps its room */
 
@@ -51,4 +51,3 @@ dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
 @media (hover: none), (max-width: 860px) {
   dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) { height: calc(var(--app-h, 100dvh) - 32px) !important; }
 }
-

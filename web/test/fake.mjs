@@ -84,7 +84,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
     const f = path.join(STATIC, p === "/" || p === "/sessions/" ? "index.html" : path.normalize(p));   // the session page's address, as terminumd serves it
     if (!f.startsWith(STATIC) || !fs.existsSync(f)) return route.fulfill({ status: 404, body: "" });
     let body = fs.readFileSync(f);
-    if (f.endsWith("index.html")) body = body.toString().replace("__BUILD__", "test");
+    if (f.endsWith(".html")) body = body.toString().replace("__BUILD__", "test");   // the build it names: no page reloads for another
     return route.fulfill({ contentType: TYPES[f.split(".").pop()] ?? "application/octet-stream", body });
   });
   let say = () => {};

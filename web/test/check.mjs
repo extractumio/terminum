@@ -52,3 +52,12 @@ export function fills(tmux, pane) {
   const [zoomed, active, width, whole] = tmux("display", "-p", "-t", pane, "#{window_zoomed_flag} #{pane_active} #{pane_width} #{window_width}").split(" ");
   return zoomed === "1" && active === "1" && width === whole;
 }
+/** Whether the element `sel` finds covers the page's window (terminum.md AC-184): its box the window's, and the window's
+ *  corners and middle its own (a box clipped by a dialog or under another fails). Answers { covers, rect }. */
+export const coversWindow = (page, sel) => page.evaluate((sel) => {
+  const box = document.querySelector(sel), r = box?.getBoundingClientRect();
+  const at = [[1, 1], [innerWidth - 2, 1], [1, innerHeight - 2], [innerWidth - 2, innerHeight - 2], [innerWidth / 2, innerHeight / 2]];
+  const covers = !!r && !r.x && !r.y && Math.abs(r.width - innerWidth) <= 1 && Math.abs(r.height - innerHeight) <= 1
+    && at.every(([x, y]) => box.contains(document.elementFromPoint(x, y)));
+  return { covers, rect: r && [r.x, r.y, r.width, r.height].map(Math.round), win: [innerWidth, innerHeight] };
+}, sel);

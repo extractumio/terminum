@@ -60,9 +60,7 @@ export function activity(t, { refresh, confirmed }) {
       const quoted = at >= 0 && text.endsWith(CLOSES) && end >= at + OPENS.length;
       li.append(el("span", "evtext", quoted ? text.slice(0, at) : text));
       if (quoted) {
-        const screen = el("pre", "evscreen", text.slice(at + OPENS.length, end));
-        screen.tabIndex = 0;                         // scrolled by the keyboard too
-        li.append(expandable(screen));
+        li.append(expandable(el("pre", "evscreen", text.slice(at + OPENS.length, end))));   // scrolled by the keys too (expand.js)
       }
     }
     return li;

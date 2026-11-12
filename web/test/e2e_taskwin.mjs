@@ -4,7 +4,7 @@
 // apart, its fields alike, three to a line, two on a phone), its status whole on a line, the three parts a section
 // break apart, a screen quoted in a line of history as it stood, nothing past the window's edge.
 
-import { check, runningIn } from "./check.mjs";
+import { check, coversWindow, runningIn } from "./check.mjs";
 import { drawn, openPage, PHONE, SIZES } from "./fake.mjs";
 
 const AT = 1794435120, FILE = "0123456789abcdef0123456789abcdef";
@@ -78,8 +78,7 @@ export async function webTaskWin(browser, name) {
     // its boxes to read or type in, each with its key to the whole window (terminum.md AC-184)
     const keyed = await f.page.evaluate(() => [".tasktext", ".newcomment", ".history"].map((s) => !!document.querySelector(`#taskbody ${s} .xbox:has(> :is(textarea, .evscreen)) > .xkey`)));
     await f.page.click("#taskbody .xbox:has(> .evscreen) > .xkey");
-    const screen = await f.page.evaluate(() => { const r = document.querySelector("#taskbody .xbox:has(> .evscreen)").getBoundingClientRect();
-      return { x: r.x, y: r.y, w: Math.round(r.width) - innerWidth, h: Math.round(r.height) - innerHeight }; });
+    const screen = await coversWindow(f.page, ".xbox.full:has(> .evscreen)");
     // a board update while it covers the window redraws nothing under it
     const held = await f.page.evaluate(async () => { const pre = document.querySelector("#taskbody .evscreen");
       await window.taskwin.refresh();
@@ -87,7 +86,7 @@ export async function webTaskWin(browser, name) {
     await f.page.keyboard.press("Escape");
     const back = await f.page.evaluate(() => ({ full: !!document.querySelector(".xbox.full"), open: document.getElementById("taskbox").open }));
     check("AC-184 its text being edited, the comment field and a quoted screen have their key; the screen's covers the window, Esc gives it back",
-      keyed.every(Boolean) && held && !screen.x && !screen.y && Math.abs(screen.w) <= 1 && Math.abs(screen.h) <= 1 && !back.full && back.open, JSON.stringify({ keyed, held, screen, back }));
+      keyed.every(Boolean) && held && screen.covers && !back.full && back.open, JSON.stringify({ keyed, held, screen, back }));
     check("no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();
   }

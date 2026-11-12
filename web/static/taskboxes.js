@@ -16,13 +16,13 @@ const MARKUP = `
     <div class="dhead"><h2 id="runhead">Run</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="runnone" hidden></p>
     <label id="runagentrow" class="fieldrow">Agent <select id="runagent" class="field"></select></label>
-    <label class="fieldrow" data-grow>Message to the agent <div class="xbox"><textarea id="runmessage" class="field" rows="3" placeholder="Optional: what to mind, in a line or two"></textarea></div></label>
+    <div class="fieldrow" data-grow><label for="runmessage">Message to the agent</label><div class="xbox" data-grow><textarea id="runmessage" class="field" rows="3" placeholder="Optional: what to mind, in a line or two"></textarea></div></div>
     <details id="runhow" class="more"><summary>Where and how</summary>
       <dl class="runfacts"><dt>Server</dt><dd id="runserver"></dd><dt>Folder</dt><dd id="runfolder"></dd><dt>Command</dt><dd id="runcommand"></dd></dl>
     </details>
     <details id="runwhat" class="more"><summary>What will be sent</summary>
       <p id="runmarked" class="runmarked" hidden>An agent wrote some of this text.</p>
-      <div class="xbox"><pre id="runprompt" class="runprompt field" tabindex="0" aria-label="What will be sent"></pre></div>
+      <div class="xbox"><pre id="runprompt" class="runprompt field" aria-label="What will be sent"></pre></div>
     </details>
     <p id="runerror" role="alert" hidden></p>
     <div class="actions">
@@ -40,5 +40,5 @@ const MARKUP = `
 export function taskBoxes() {
   if (document.getElementById("taskbox")) return;
   document.body.insertAdjacentHTML("beforeend", MARKUP);
-  expandKeys(document.getElementById("runbox"));
+  expandKeys();
 }

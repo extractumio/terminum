@@ -3,66 +3,61 @@
 // window with it; the same key or Esc gives it back to its dialog. The field never moves, so what was typed,
 // its undo, its keys and its draft stay as they were (expand.css). The board and the session page load it with
 // taskboxes.js, the schedules' page with scheduled.js.
+import { el, iconButton } from "./listparts.js";
 import { icon } from "./icons.js";
 
-const WORDS = { true: "Back to its window (Esc)", false: "Full window" };
+const BACK = "Back to its window (Esc)", FULL = "Full window";
+let shown = null;                                // the box over the window: one at a time (a redraw may drop it)
 
 /** Wraps `field`, in the page or not yet, in a box with the key; answers the box. */
 export function expandable(field) {
-  const box = document.createElement("div");
-  box.className = "xbox";
+  const box = el("div", "xbox");
   field.replaceWith(box);
   box.append(field);
   addKey(box);
   return box;
 }
 
-/** Gives the key to each `.xbox` under `root` that has none (the boxes the markup writes). */
-export function expandKeys(root = document) {
-  for (const box of root.querySelectorAll(".xbox:not(:has(> .xkey))")) addKey(box);
+/** Gives the key to each `.xbox` in the page that has none (the boxes the markup writes). */
+export function expandKeys() {
+  for (const box of document.querySelectorAll(".xbox")) if (!box.lastElementChild?.classList.contains("xkey")) addKey(box);
 }
 
 function addKey(box) {
-  const key = document.createElement("button");
-  key.type = "button";
-  key.className = "icon xkey";
-  key.addEventListener("click", () => full(box, !box.classList.contains("full"), true));
-  for (const shown of box.children) if (shown.tabIndex < 0) shown.tabIndex = 0;   // a preview scrolls by the keys too
+  for (const part of box.children) if (part.tabIndex < 0) part.tabIndex = 0;   // a preview or a pre scrolls by the keys too
+  const key = iconButton("icon xkey", "maximize-2", FULL, FULL, () => full(box, shown !== box));
+  key.setAttribute("aria-pressed", "false");
   box.append(key);
-  drawKey(key, false);
 }
 
-function drawKey(key, on) {
-  key.replaceChildren(icon(on ? "minimize-2" : "maximize-2", 14));
-  key.title = WORDS[on];
-  key.setAttribute("aria-label", WORDS[on]);
-  key.setAttribute("aria-pressed", String(on));
-}
-
-/** Shows `box` over the window or back in its place; `focus`: the field it shows takes the keys. */
-function full(box, on, focus) {
+/** Shows `box` over the window or back in its place; the part it shows takes the keys. */
+function full(box, on) {
+  if (on && shown) full(shown, false);
+  shown = on ? box : null;
   box.classList.toggle("full", on);
-  const key = box.querySelector(":scope > .xkey");
-  drawKey(key, on);
-  if (focus) [...box.children].find((c) => c !== key && !c.hidden)?.focus({ preventScroll: true });
+  const key = box.lastElementChild;
+  key.title = on ? BACK : FULL;
+  key.setAttribute("aria-pressed", String(on));
+  key.replaceChildren(icon(on ? "minimize-2" : "maximize-2", 14));
+  [...box.children].find((c) => c !== key && !c.hidden)?.focus({ preventScroll: true });
 }
 
-/** Whether nothing stands over `box` (a question opened after Save would): its middle is its own. */
-function onTop(box) {
-  const r = box.getBoundingClientRect();
-  return box.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
+/** Whether nothing stands over the box shown (a question opened after Save would): its middle is its own. */
+function onTop() {
+  const r = shown.getBoundingClientRect();
+  return shown.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2));
 }
 
 // Esc gives the box back before anything else hears it (a keydown cancelled closes no dialog), unless a
 // window over it has the keys
 addEventListener("keydown", (e) => {
-  const box = e.key === "Escape" && !e.isComposing && document.querySelector(".xbox.full");
-  if (!box || !onTop(box)) return;
+  if (e.key !== "Escape" || !shown?.isConnected || e.isComposing || !onTop()) return;   // gone with a redraw: nothing to give back
   e.preventDefault();
   e.stopImmediatePropagation();
-  full(box, false, true);
+  full(shown, false);
 }, true);
-// a dialog closed another way (its own keys, a script) takes its box back with it
-addEventListener("close", (e) => { for (const box of e.target.querySelectorAll?.(".xbox.full") ?? []) full(box, false); }, true);
+// a dialog closed another way (its own keys, a script) takes its box back with it; its close is heard a moment
+// later, when it may be open again
+addEventListener("close", (e) => { if (shown && !e.target.open && e.target.contains?.(shown)) full(shown, false); }, true);
 
 expandKeys();
