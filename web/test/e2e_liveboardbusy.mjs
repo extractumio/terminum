@@ -182,9 +182,14 @@ async function commentWaitsForFiles(page, { base, j, id }) {
       posts.sent() === 0 && !!(await page.$("#taskbox[open]")), `posts=${posts.sent()}`);
     upload.release();
     await until(async () => (await page.inputValue(".newcomment textarea")).includes("note.txt"));
+    await page.click('#taskbody .tasktext button:has-text("Edit")');   // an edit of the text, not saved
+    await page.fill("#taskbody .tasktext textarea", "an edit not saved");
     await page.press(".newcomment textarea", "ControlOrMeta+Enter");
     check("AC-133 once the file is kept, the comment goes once, with it", await until(async () => (await said()).length === 1) && posts.sent() === 1
       && (await said())[0].files?.length === 1, JSON.stringify(await said()));
+    check("AC-133 and Close then asks about the edit not saved, the window open", await until(() => page.$("#confirmbox[open]")) && !!(await page.$("#taskbox[open]")));
+    await page.click("#confirmok");
+    await page.waitForSelector("#taskbox", { state: "hidden" });
   } finally { upload.release(); await upload.end(); await posts.end(); }
 }
 
