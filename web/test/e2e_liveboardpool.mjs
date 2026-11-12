@@ -13,7 +13,7 @@ const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../s
 const paneAlive = (tmux, pane) => tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").map((l) => l.trim()).includes(pane);
 
 /** AC-138: tasks chosen and dropped on a free agent, one session; busy refuses more; it stays on their cards. */
-export async function agentPool(page, opts) {
+export async function agentPool(page, opts, pressAt) {
   const { base, work, tmux, shots } = opts;
   const { j, card, cli, newPane, envOf, newTask } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Pool", dir: work })).id;
@@ -276,4 +276,3 @@ export async function agentPool(page, opts) {
   check("AC-141 and their slots free", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
   await j(`/api/task-agents/${other}`, "DELETE");
 }
-

@@ -106,7 +106,7 @@ export async function liveBoardAgents(page, opts) {
   // a reload finds what stays
   await page.goto(`${base}/kanban/?project=${project}`);
   check("AC-137 a reload finds it", await until(() => page.isVisible('.agents .agentcard:has-text("Codex two")')));
-  await agentPool(page, opts);
+  await agentPool(page, opts, pressAt);
   await projectWindowChecks(page, opts);
   await page.goto(`${base}/kanban/`);
   await page.waitForSelector("#addagent");
