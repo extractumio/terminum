@@ -266,10 +266,10 @@ async function agentPool(page, opts) {
   tmux("kill-pane", "-t", await paneOf(c));
   check("AC-138 closing a session frees its slot", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
 
-  // made and run at once: the new-task window's Run
   await newTask();
   await page.waitForSelector("#newbox[open]");
-  check("AC-138 a new task offers a free agent", await page.inputValue("#newagent") === fixer, await page.inputValue("#newagent"));
+  check("AC-106 a new task leaves its agent unspecified despite earlier runs", await page.inputValue("#newagent") === "", await page.inputValue("#newagent"));
+  await page.selectOption("#newagent", fixer);
   await page.fill("#newtitle", "made and run FINISHES");
   await page.click("#newrun");
   let made;
@@ -282,7 +282,7 @@ async function agentPool(page, opts) {
   await newTask();
   await page.waitForSelector("#newbox[open]");
   await page.fill("#newtitle", "made, its agent not chosen");
-  await page.selectOption("#newagent", "");
+  check("AC-106 another new task defaults to choosing at assignment", await page.inputValue("#newagent") === "");
   // a window opened and closed while it is open: the page reads the sessions again, the choice stays
   tmux("kill-window", "-t", tmux("new-window", "-d", "-P", "-F", "#{window_id}").trim());
   check("AC-106 none picked stays none as the windows change", !(await until(async () => await page.inputValue("#newagent") !== "", 2000)), await page.inputValue("#newagent"));

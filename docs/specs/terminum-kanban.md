@@ -172,7 +172,7 @@ Scenario: AC-159 edge — what stays
 ```gherkin
 Scenario: AC-106 happy path — the window
   When the user presses + Task in the board's head, a key as its neighbours, not a primary one
-  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Owner the user, Session none, Parent none, Budget none
+  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Agent "Choose when it runs" (none specified, even with a last-used agent), Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
@@ -188,12 +188,21 @@ Scenario: AC-106 failure — no project chosen
   Then the words go, and Create makes the task in Billing
 
 Scenario: AC-106 happy path — Run
-  Given Billing has a free agent, the one Run last started in it picked in the window's Agent field
+  Given the user explicitly picked Billing's free agent in the window's Agent field
   When the user types a title and presses Run
   Then API-12 is kept and starts on that agent at once, no other window opening (terminum-dispatcher.md AC-138)
   Given no agent, none free, or a folder it lacks
   Then API-12 is kept and RUN's window opens saying what stands in the way
   And the agent the user picked in the window, or none, stays picked while it is open, as sessions, windows and agents change
+
+Scenario: AC-106 edge — the agent is chosen at assignment
+  Given the new-task window's Agent says "Choose when it runs"
+  When the user presses Create
+  Then the task is kept without a specified agent, and its assignment chooses one when it runs
+  When the user opens another new-task window and presses Run without choosing an agent
+  Then the task is kept without a specified agent and RUN's window opens to choose one (terminum-dispatcher.md AC-138)
+  When an explicitly chosen agent is removed before Create
+  Then Agent returns to "Choose when it runs" and Create sends no removed agent's ID
 
 Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
@@ -1158,7 +1167,7 @@ Depends on: nothing more.
 
 - [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
 - [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone)
-- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
+- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`
