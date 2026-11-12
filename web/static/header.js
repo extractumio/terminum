@@ -5,7 +5,7 @@
 // profile, titles). That last part gives way first, then the folder, down to a few letters each.
 // In a narrow window a tap on the title slides the buttons aside for 3 s and shows the session's
 // full name and path (peek.css).
-import { el } from "./listparts.js";
+import { el, pointerKey } from "./listparts.js";
 import { agentMark, folderBar, metaLine, shownState, stateIcon } from "./nav.js";
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
@@ -50,9 +50,8 @@ export function pageHeader({ narrow, copy, renaming, setAgent, send, sid, toChat
     else {
       const { group: g, item: it } = found, { folder, path, where, rest } = headerParts(g, it), parts = [];
       if (folder) {
-        const b = document.createElement("button");
+        const b = pointerKey(el("button", "copydir"));
         b.type = "button";
-        b.className = "copydir";
         b.title = b.ariaLabel = `Copy ${path}`;
         b.append(icon("copy", 13));
         b.addEventListener("click", (e) => { e.stopPropagation(); copy(path); });   // not the header's own click (the list)

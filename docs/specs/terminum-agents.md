@@ -324,7 +324,7 @@ Scenario: AC-155 happy path — the index
   When a query is searched
   Then its words and the catalog's are split at anything not a letter or digit, stop words left out, stemmed (plural, -ing, -ed, a final e, a doubled consonant: "moving", "moved", "moves" meet "move") and taken to their synonym group (ticket, issue, card = task; close, done, complete, resolve = finish; priority, severity, urgency, bump = priority; subtask, epic, child = parent; claim, assign, pick = take; …), no word in two groups
   And the tools are ranked by BM25 over the distinct terms, a tool named exactly in the query first; a tool scoring under a fifth of the best one is left out; a tie goes to the shorter name
-  And each phrasing of `terminumd/src/cli/mcp_meta_tests.rs` GOLDEN finds its tool first ("mark my task done" → finish_task, "I need a human" → move_task, "download the attachment" → get_file, "make it a subtask of T-3" → update_task), each of NEAR among the first three
+  And each phrasing of `terminumd/src/cli/mcp_meta_tests.rs` GOLDEN finds its tool first ("mark my task done" → finish_task, "I need a human" → ask_human, "download the attachment" → get_file, "make it a subtask of T-3" → update_task), each of NEAR among the first three
 
 Scenario: AC-155 edge — growing the catalog
   Given a new tool

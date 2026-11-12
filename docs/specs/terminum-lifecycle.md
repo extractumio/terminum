@@ -490,6 +490,13 @@ Scenario: AC-104 edge — several worktrees land at once
   Then two merges what one landed; its targeted checks run again only if both changed the same file, its smoke set on every merge
   And only the last look at origin/main and the push take turns, so neither waits for the other's tests
 
+Scenario: AC-104 edge — a tree that lost the race once
+  Given worktree two's smoke set passed, and one landed while it ran
+  When two tries again
+  Then it says "lost the race once: holding the landing turn through this merge's checks", and holds the turn from its merge to its push and install, so no other landing pushes before it and it loses no second race
+  And a landing waiting for that turn says "land: two's landing has its turn (its checks, push and install can take half an hour): waiting"
+  And a smoke set still running after 90 minutes is ended with its processes, said, and fails as "smoke checks failed", freeing the turn
+
 Scenario: AC-104 failure — others' code breaks the merged build
   Given one tree renamed a function and another, touching other files, added a caller of it
   When the second merges what the first landed
