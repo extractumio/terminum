@@ -11,7 +11,7 @@ const DRAFT = "tm.taskdraft";
  *  `slots()`: who is at a limit, as terminumd counts it. */
 export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
-  let files = [], uploads = 0, offered = "", parent = null, chose = null;   // chose: the agent the user picked in this window, "" for none
+  let files = [], uploads = 0, offered = "", parent = null, chose = "";   // chose: the agent the user picked in this window, "" for none
   /** Each its own draft: a subtask's never takes a new task's. */
   const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
@@ -63,13 +63,12 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
 
   const view = writePreview("new", $("newtext"), $("newshown"));
 
-  /** The pool: the agent the user picked, else the project's last run's, else the first; one at a limit is chosen
-   *  all the same, said so: Run offers its queue (terminum-dispatcher.md AC-169). None picked stays none,
-   *  whatever changes meanwhile (AC-106). */
+  /** The pool: only an explicit choice picks an agent (AC-106); otherwise assignment chooses later.
+   *  One at a limit is said so: Run offers its queue (terminum-dispatcher.md AC-169). */
   function showAgents() {
     const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
     const busy = (a) => (now.full.includes(a.id) ? AT_LIMIT : now.full_projects.includes(project) ? `the project is ${AT_LIMIT}` : "");
-    fillAgents($("newagent"), all, busy, [chose, meta.last_agents?.[project]], !all.length ? "No agents yet" : "Choose when it runs");
+    fillAgents($("newagent"), all, busy, [chose, ""], !all.length ? "No agents yet" : "Choose when it runs");
   }
 
   /** `given.parent`: a subtask of that task, in its project (AC-112). */
@@ -81,7 +80,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     const filter = getFilter().project;   // a draft with nothing typed says nothing of where it goes
     const project = given.project ?? (saved.title || saved.text ? saved.project : null) ?? onlyProject(filter, meta);
     fillSelect($("newproj"), projectOptions(meta, project), project);
-    chose = null;
+    chose = "";
     showAgents();
     fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
     $("newsev").value = saved.severity ?? "P2";
@@ -103,7 +102,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     const d = draft(), agent = $("newagent").value;
     canCreate(true);
     try {
-      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: chose || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id) } });
+      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id) } });
       write(draftKey(), null);
       files = [];
       box.close();

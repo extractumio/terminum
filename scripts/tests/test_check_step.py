@@ -15,13 +15,14 @@ import time
 import unittest
 
 GUARD = str(Path(__file__).resolve().parents[1] / "check_step.py")
+GUARD_WAIT_S = 60   # 15 s settling, bounded native directory queries, and process termination
 
 
 def guarded(script, **kwargs):
     """Runs `script` under the guard; (exit status, its stderr, the folder it was given)."""
     with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
         done = subprocess.run([sys.executable, "-I", GUARD, "sh", "-c", f'echo "$TMPDIR" > {where.name}; {script}'],
-                              capture_output=True, text=True, timeout=30, **kwargs)
+                              capture_output=True, text=True, timeout=GUARD_WAIT_S, **kwargs)
         return done.returncode, done.stderr, where.read().strip()
 
 
@@ -121,20 +122,20 @@ class Guard(unittest.TestCase):
 
     def test_a_signal_still_removes_the_folder(self):
         with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
-            run = subprocess.Popen([sys.executable, "-I", GUARD, "sh", "-c", f'touch "$TMPDIR/x"; echo "$TMPDIR" > {where.name}; exec sleep 30'],
-                                   stderr=subprocess.PIPE, text=True)
-            for _ in range(1200):    # up to 60 s: a signal before the step started tests nothing, and a busy machine starts it late
-                folder = where.read().strip()
-                where.seek(0)
-                if folder:
-                    break
-                time.sleep(0.05)
-            self.assertTrue(folder, "the step never started")
-            run.send_signal(signal.SIGTERM)
-            _, err = run.communicate(timeout=20)
-            self.assertNotEqual(run.returncode, 0)
-            self.assertIn("LEFT x", err)
-            self.assertFalse(os.path.exists(folder))
+            with subprocess.Popen([sys.executable, "-I", GUARD, "sh", "-c", f'touch "$TMPDIR/x"; echo "$TMPDIR" > {where.name}; exec sleep 30'],
+                                  stderr=subprocess.PIPE, text=True) as run:
+                for _ in range(1200):    # a signal before the step starts tests nothing
+                    folder = where.read().strip()
+                    where.seek(0)
+                    if folder:
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(folder, "the step never started")
+                run.send_signal(signal.SIGTERM)
+                _, err = run.communicate(timeout=GUARD_WAIT_S)
+                self.assertNotEqual(run.returncode, 0)
+                self.assertIn("LEFT x", err)
+                self.assertFalse(os.path.exists(folder))
 
 
 def gone(pid, seconds=5):
