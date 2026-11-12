@@ -87,9 +87,7 @@ fn ac137_a_project_deleted_leaves_the_pool() {
 const CLAUDE_INLINE: &str = r#"--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#;
 const CODEX_INLINE: &str = "-c tui.alternate_screen=never";
 
-/// Every run's agent in its inline TUI, the gate's to read, and a Codex in its own process, where its MCP server and
-/// hooks know their pane (terminum-dispatcher.md AC-156, §9): options either agent takes twice, so an alias naming
-/// one already still starts.
+/// terminum-dispatcher.md AC-156 "inline and in its own process", §9.
 #[test]
 fn ac156_a_run_s_agent_is_inline_and_in_its_own_process() {
     assert_eq!(command_line("codex", "codsp", ""), format!("codsp {CODEX_INLINE}"));

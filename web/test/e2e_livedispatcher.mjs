@@ -25,7 +25,8 @@ export async function liveDispatcher(page, opts) {
   const { base, tmux, work, shots, stop, start } = opts;
   const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
-  const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { name, kind, command: `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}` })).id;
+  const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
+  const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { name, kind, command: fake(kind, more) })).id;
   const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
@@ -44,8 +45,9 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 it stays where it was until one takes it", await status(first) === "TODO");
   check("AC-121 the dialog offers the pool", await page.$eval("#runagent", (e, id) => [...e.options].some((o) => o.value === id), plain));
   await page.selectOption("#runagent", plain);
-  check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
-  check("AC-156 with the inline TUI Dispatcher adds", (await page.textContent("#runcommand")).includes(`--settings '{"tui":"default"`), await page.textContent("#runcommand"));
+  const line = await page.textContent("#runcommand");
+  check("AC-121 it shows the command in full", line.includes("fake_agent.py"), line);
+  check("AC-156 with the inline TUI Dispatcher adds", line.includes(`--settings '{"tui":"default"`), line);
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
   check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nBefore you call execute_tool\("finish_task", \{id, result\}\), close the task out[\s\S]*\nOutcome: [\s\S]*\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
@@ -177,9 +179,11 @@ export async function liveDispatcher(page, opts) {
   const unsaid = await task("never heard FINISHES", "The whole text.");
   await run(unsaid, { agent: flaky });
   check("AC-121 an agent that ends before its box: FAILED", await hasStatus(unsaid, "FAILED", 15000), await history(unsaid));
-  await j(`/api/task-agents/${flaky}`, "PATCH", { name: "Flaky", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` });
+  await j(`/api/task-agents/${flaky}`, "PATCH", { name: "Flaky", kind: "claude", command: fake("claude") });
   // the fake finishes only on a prompt holding FINISHES: the task's title has it, the comment and "go on" words do not
-  const whole = await run(unsaid, { agent: flaky, comment: "Mind the tests" });
+  const offered = await j(`/api/tasks/${unsaid}/run?agent=${flaky}`);
+  check("AC-122 with no conversation RUN's window shows a first run's words", offered.first === true && /never heard FINISHES/.test(offered.prompt ?? ""), JSON.stringify(offered).slice(0, 400));
+  const whole = await run(unsaid, { agent: flaky, comment: "Mind the tests", prompt_rev: offered.prompt_rev });
   check("AC-122 from its shell with no conversation: the task's own words go in, and it ends", !!whole.run && await hasStatus(unsaid, "DONE", 20000), JSON.stringify(whole) + await history(unsaid));
 
   // AC-122 RUN right after its agent exits: its last screen still shows a box, nothing is pasted into the shell

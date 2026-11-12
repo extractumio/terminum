@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
-use super::press::{again_words, also_of, facts, way, ways, Asked, Way};
+use super::press::{again_words, also_of, facts, way, ways, Asked, Facts, Way};
 use super::pool;
 use super::screen::Screen;
 use super::places::{ad_hoc, folder_there, launch, no_folder, place, project_named, server_of};
@@ -62,7 +62,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         };
         let last = runs::last_agent(tx, &t.project)?.filter(|l| all.iter().any(|a| a.id == *l));
         let shown = facts(tx, &tasks)?;
-        Ok(json!({"first": matches!(w, Way::First), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
+        Ok(json!({"first": w.first_words(), "agents": offered, "last": last, "dir": dir, "host": host, "project": t.project, "no_folder": lacks,
                   "prompt_rev": shown.rev(), "prompt": shown.shown(), "moved": moved, "by_agent": tasks.iter().any(|t| t.by_agent), "ids": tasks.iter().map(|t| &t.id).collect::<Vec<_>>()}))
     }).await)
 }
@@ -97,6 +97,18 @@ struct Press {
 }
 
 impl Press {
+    /// The words a first run's agent hears, from the tasks as they stand: refused when they are not what the human
+    /// saw, as an agent may have changed a task meanwhile (AC-121).
+    fn first_words(&self, tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
+        let mut goes = facts(tx, tasks)?;
+        goes.auto = self.auto;
+        goes.manager = self.manager.is_some();
+        if self.prompt_rev.as_ref().is_some_and(|rev| *rev != goes.rev()) {
+            return Err("The task's text changed: look at it again.".to_string());
+        }
+        Ok(goes)
+    }
+
     /// Who pressed: the manager's user, else the human.
     fn by(&self) -> &str {
         self.manager.as_deref().unwrap_or(HUMAN)
@@ -220,42 +232,41 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
     let (kept, by) = (body.clone(), body.clone());
-    let (tasks, w, who, answers, anew) = store(app, move |tx| {
+    let (tasks, w, again) = store(app, move |tx| {
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
             by.keep(tx, &wanted, c, &attached)?;
         }
-        // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
-        // own message (terminum-agents.md AC-179), never another agent's comment
-        let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
-        let mut answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
-        if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
-            a.push(c.clone());
-        }
-        // its shell starts an agent with no conversation to go on: it hears the task as a first run does (AC-122)
-        let anew = match &w {
-            Ok(Way::Shell(r)) if r.agent_session.is_none() => {
-                let mut goes = facts(tx, &tasks)?;
-                goes.manager = by.manager.is_some();
-                Some(goes.prompt(said.as_deref()))
+        let again = match &w {
+            Ok(Way::Anew(_)) => by.first_words(tx, &tasks)?.prompt(said.as_deref()),
+            _ => {
+                // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
+                // own message (terminum-agents.md AC-179), never another agent's comment
+                let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
+                let mut answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
+                if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
+                    a.push(c.clone());
+                }
+                again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some())
             }
-            _ => None,
         };
-        Ok((tasks, w, ops::user_name(tx, by.by())?, answers, anew))
+        Ok((tasks, w, again))
     }).await?;
     let t = tasks[0].clone();
-    let going_on = !matches!(w, Ok(Way::First));
-    if comment.is_some() && going_on {
+    if comment.is_some() && !matches!(w, Ok(Way::First)) {
         told(app, id);
     }
-    let again = anew.unwrap_or_else(|| again_words(&t.id, &who, comment.as_deref(), answers.as_deref(), body.manager.is_some()));
     match w? {
         Way::First => first_run(app, &tasks, body, kept, comment).await,
         Way::Live(r) => {
             let (server, pane) = pane_of(app, &r)?;
             // the walk may not have read yet that its agent ended
             if start::exit_of(&server, &pane).await.is_some() {
+                // with no conversation its next press is a first run's, the words shown (AC-122)
+                if r.agent_session.is_none() {
+                    return Err("Its agent has just ended: run it again.".to_string());
+                }
                 return from_shell(app, &r, &server, &pane, again, &t, kept).await;
             }
             // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
@@ -275,7 +286,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             }
             went_on(app, &r, &t, kept.manager.is_some()).await
         }
-        Way::Shell(r) => {
+        Way::Shell(r) | Way::Anew(r) => {
             let (server, pane) = pane_of(app, &r)?;
             from_shell(app, &r, &server, &pane, again, &t, kept).await
         }
@@ -433,7 +444,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) 
 
 async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comment: Option<String>) -> Result<Value, String> {
     let t = &tasks[0];
-    let (all, seen, said, attached, closing) = (tasks.to_vec(), body.prompt_rev.clone(), comment, body.files.clone(), body.close.is_some());
+    let (all, said, attached, closing) = (tasks.to_vec(), comment, body.files.clone(), body.close.is_some());
     let (a, host, dir, server) = place(app, &t.project, body.agent.clone()).await?;
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
@@ -444,13 +455,7 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
         for t in &now {
             way(t, runs::last_of(tx, &t.key)?, true)?;
         }
-        // what the human saw is what goes: an agent may have changed a task meanwhile
-        let mut goes = facts(tx, &now)?;
-        goes.auto = kept.auto;
-        goes.manager = kept.manager.is_some();
-        if seen.is_some_and(|rev| rev != goes.rev()) {
-            return Err("The task's text changed: look at it again.".to_string());
-        }
+        let goes = kept.first_words(tx, &now)?;
         // the one check that counts: in the transaction that takes the slots; a press that closed a holder
         // for its room does not wait (AC-141)
         if closing && let Some(full) = pool::check_for(tx, &ag, &project, (now.len() == 1).then_some(now[0].key.as_str()), None)? {

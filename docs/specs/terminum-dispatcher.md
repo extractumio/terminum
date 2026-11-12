@@ -239,7 +239,10 @@ Scenario: AC-122 happy path — only the shell remains
   When the user presses RUN
   Then the agent starts there by `respawn-pane -k` with the window command and the resume of §9, and the prompt goes in as above
   When no conversation of its agent is known: it ended before its prompt was taken, as an agent that updated itself and exited
-  Then the agent starts there by its command alone and the prompt is AC-121's, the comment as the human's message: an agent with no conversation has nothing to go on with
+  Then RUN's window shows the text that will be sent, as a first run's (AC-121), and the agent starts there by its command alone with that prompt, the comment as the human's message: an agent with no conversation has nothing to go on with
+  And a task's text changed since the window opened is asked again, as AC-121's
+  When RUN finds the live agent has just ended and no conversation is known
+  Then it starts nothing and says "Its agent has just ended: run it again."; the next RUN goes as above
 
 Scenario: AC-122 edge — the same pane
   When RUN goes on in a pane of this task's last run
