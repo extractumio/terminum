@@ -158,6 +158,17 @@ try {
   check("AC-56 … all of it on disk", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# b\n# c"), JSON.stringify(fs.readFileSync(`${SB}/app.py`, "utf8").slice(-30)));
   await page.waitForTimeout(900); // our own save's fs event must not raise "Changed on disk"
   check("AC-61 own save does not show 'Changed on disk'", !(await page.$('.banner:has-text("Changed on disk")')));
+  // AC-56 a save that recreates a file deleted on disk takes its "Deleted on disk" banner away
+  const kept = fs.readFileSync(`${SB}/app.py`, "utf8");
+  fs.rmSync(`${SB}/app.py`);
+  await within("AC-61 an open file deleted on disk shows 'Deleted on disk'", (ms) => page.waitForSelector('.banner:has-text("Deleted on disk")', { timeout: ms }));
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
+  await within("AC-56 saving a deleted file asks", (ms) => page.waitForSelector(".modal button[data-id=overwrite]", { timeout: ms }));
+  await page.click(".modal button[data-id=overwrite]");
+  await within("AC-56 Overwrite recreates the deleted file", (ms) => waitFor(() => fs.existsSync(`${SB}/app.py`), ms));
+  await page.waitForTimeout(900); // its own fs event and re-check come and go
+  check("AC-56 … with its text, and the 'Deleted on disk' banner is gone", fs.readFileSync(`${SB}/app.py`, "utf8") === kept && !(await page.$('.banner:has-text("Deleted on disk")')),
+    JSON.stringify(await page.evaluate(() => document.querySelector(".banner")?.textContent)));
 
   await panelDocs(page, { row, SECRET, outside, blocked });   // AC-54, AC-67: Markdown and HTML documents
 

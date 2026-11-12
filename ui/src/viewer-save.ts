@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A viewer document against the disk: saving (one save per file at a time, If-Match with the
 // held etag, the Overwrite / Reload / Cancel question on a conflict) and the 304 re-check.
+// Each re-check and save takes a new `gen`: an answer whose `gen` is no longer the document's
+// is older than another request's and is dropped.
 
 import { api, ApiError, basename, toast, type FileView } from "./api";
 import { ask } from "./dialogs";
@@ -36,8 +38,10 @@ async function doSave(path: string, d: Doc, force: boolean, h: SaveHost): Promis
       toast("Not saved: file was renamed — save again");
       return false;
     }
+    d.gen = (d.gen ?? 0) + 1;         // a re-check sent before this save answers for older bytes
     d.file = { ...d.file, etag: r.etag, size: new TextEncoder().encode(text).length, text };
     d.saved = doc;
+    d.deleted = false;                // a save recreates a file deleted on disk
     d.dirty = !d.state.doc.eq(doc);  // edits typed during the request stay unsaved
     d.diskChanged = false;
     h.tabsChanged();
@@ -67,9 +71,11 @@ export async function revalidateDoc(
 ): Promise<void> {
   if (!d.file) return;
   path = d.file.path;
+  const gen = d.gen = (d.gen ?? 0) + 1;
+  const stale = () => d.gen !== gen || d.file?.path !== path;
   try {
     const f = await api<FileView | undefined>("GET", "/api/file", { query: { path }, host: d.host, headers: { "If-None-Match": `"${d.file.etag}"` } });
-    if (d.file?.path !== path) return;
+    if (stale()) return;
     if (!f && !d.deleted) return; // 304: unchanged
     redraw(path, () => {
       d.deleted = false;
@@ -77,7 +83,7 @@ export async function revalidateDoc(
       if (f && !d.dirty) { d.file = f; d.state = undefined; d.saved = undefined; }
     }, d);
   } catch (e) {
-    if (d.file?.path !== path) return;
+    if (stale()) return;
     // keep the content: the file may have been renamed (the rename event can arrive first)
     if (e instanceof ApiError && e.status === 404 && e.code !== "no_agent" && !d.deleted) redraw(path, () => { d.deleted = true; }, d);
   }

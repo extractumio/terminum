@@ -352,6 +352,7 @@ export class Viewer {
     if (!d) return;
     path = d.file?.path ?? path;
     d.dirty = false; d.diskChanged = false; d.loading = undefined; d.file = undefined; d.state = undefined;
+    d.gen = (d.gen ?? 0) + 1;  // a re-check in flight answers for the discarded version
     if (this.docs.get(path) !== d) return;
     this.renderTabs();
     if (this.activePath() === path) this.reshow();
