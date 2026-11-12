@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, intoStore, nap, pressCard, pressRun } from "./boardkit.mjs";
+import { boardKit, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -22,8 +22,8 @@ const taskKit = (j) => {
 };
 
 export async function liveDispatcher(page, opts) {
-  const { base, tmux, work, shots, stop, start, app } = opts;
-  const { j, keyOf, card, open, backToSessions, cli, tool, hook } = boardKit(page, opts);
+  const { base, tmux, work, shots, stop, start } = opts;
+  const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
   const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
   const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { name, kind, command: fake(kind, more) })).id;
@@ -141,32 +141,6 @@ export async function liveDispatcher(page, opts) {
   check("AC-124 a question for 2 minutes: WAIT FOR HUMAN, with what it asks", await hasStatus(waits, "WAIT FOR HUMAN", 15000) && await said(waits, "Approve Bash"), await history(waits));
   check("AC-124 and a line says so on the page", await until(async () => /[A-Z][A-Z0-9]*-\d+ waits for you/.test(await page.textContent("#asks"))), await page.textContent("#asks"));
   if (shots) await page.screenshot({ path: path.join(shots, "needs-line.png") });
-
-  // AC-122, AC-157: answer from the task window before its waiting session closes (TERM-170).
-  const stillOpen = await task("answer before closing WORKS");
-  const liveRun = await run(stillOpen);
-  await hasStatus(stillOpen, "IN PROGRESS", 15000);
-  const livePane = await paneOf(stillOpen);
-  const liveConversation = (await j(`/api/tasks/${stillOpen}`)).agent?.conversation;
-  tool(livePane, "execute_tool", { name: "ask_human", arguments: { id: stillOpen, questions: "Which API? Options: v1, v2. Recommended: v2." } });
-  // Give browser actions the human's unscaled minute; only this private run's quiet clock changes.
-  hook(livePane, "Stop", { session_id: liveConversation });
-  intoStore(app, `UPDATE runs SET closing_for = -18000 WHERE id = '${liveRun.run}'`);
-  await page.goto(`${base}/kanban/?project=${project}`);
-  await page.waitForSelector(card(stillOpen));
-  await pressCard(page, stillOpen);
-  await page.waitForSelector("#taskbox[open]");
-  const openWait = await j(`/api/tasks/${stillOpen}`), original = openWait.agent?.conversation;
-  check("AC-122 WAIT FOR HUMAN still holds its open session and offers RUN", openWait.status === "WAIT FOR HUMAN" && !!openWait.run_holds && !openWait.session?.closed && await page.getByRole("button", { name: "Run", exact: true }).isVisible());
-  await page.fill(".newcomment textarea", "Use v2 and keep working WORKS");
-  await page.getByRole("button", { name: "Run", exact: true }).click();
-  await page.waitForSelector("#runbox[open]");
-  await page.click("#rungo");
-  check("AC-122 the human's answer continues in the same open pane", await hasStatus(stillOpen, "IN PROGRESS", 15000) && await paneOf(stillOpen) === livePane && (await j(`/api/tasks/${stillOpen}`)).agent?.conversation === original);
-  await nap(1500);
-  const continued = await j(`/api/tasks/${stillOpen}`);
-  check("AC-122 the resumed work stays open and keeps the answer once", !continued.session?.closed && continued.status === "IN PROGRESS" && continued.history.filter((e) => e.kind === "comment" && e.text === "Use v2 and keep working WORKS").length === 1, await history(stillOpen));
-  await j(`/api/tasks/${stillOpen}/give-up`, "POST");
 
   // AC-157 the agent asks by ask_human: its session closes, RUN resumes the same conversation with the answers
   const asking = await task("needs a decision QUESTIONS");

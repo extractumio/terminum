@@ -43,6 +43,7 @@ import { liveBoardBusy } from "./e2e_liveboardbusy.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
+import { liveWaitingRun } from "./e2e_livewaiting.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
@@ -110,10 +111,10 @@ const onSocket = (method, p, body) => new Promise((resolve, reject) => {
   req.end(body === undefined ? undefined : JSON.stringify(body));
 });
 let ended = false;
-async function start() {
+async function start(clock = process.env.TM_TEST_CLOCK_SCALE ?? "300") {
   if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
-  const env = { ...process.env, TM_TEST_CLOCK_SCALE: process.env.TM_TEST_CLOCK_SCALE ?? "300", TM_TEST_CLOSE_AFTER: "7200", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
+  const env = { ...process.env, TM_TEST_CLOCK_SCALE: clock, TM_TEST_CLOSE_AFTER: "7200", TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });
   for (let i = 0; i < 100; i++) {
@@ -151,6 +152,7 @@ const signIn = async (page) => {
 const SORT_ALONE = process.argv.includes("boardsort");
 const BOARD_ALONE = process.argv.includes("board");
 const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
+const WAITING_ALONE = process.argv.includes("waiting");  // RUN before a waiting session closes, with a normal clock
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
@@ -187,7 +189,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveWaitingRun]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -203,8 +205,12 @@ async function wide(browser, name) {
     await boards([liveAuto]);
     return ctx;
   }
+  if (WAITING_ALONE) {
+    await boards([liveWaitingRun]);
+    return ctx;
+  }
   if (POOL_ALONE) {
-    await boards([liveBoardAgents, liveBoardBusy, liveDispatcher]);
+    await boards([liveBoardAgents, liveBoardBusy, liveDispatcher, liveWaitingRun]);
     return ctx;
   }
   if (HISTORY_ALONE) {
@@ -395,6 +401,11 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
+  if (WAITING_ALONE) {
+    await liveWaitingRun(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start });
+    await ctx.close();
+    return;
+  }
   if (SORT_ALONE) {
     await liveBoardSort(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await ctx.close();

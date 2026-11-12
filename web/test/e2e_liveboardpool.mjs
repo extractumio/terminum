@@ -72,7 +72,7 @@ export async function agentPool(page, opts, pressAt) {
   check("AC-138 in one session", !!key && (await j(`/api/tasks/${b}`)).session?.key === key, key);
   check("AC-138 what was chosen is let go", await until(async () => await page.locator(".card.picked").count() === 0));
   check("AC-138 one dot blinks for the session, saying both", await dotted((d) => d.length === 1 && /agdot on/.test(d[0]) && d[0].includes(a) && d[0].includes(b)), JSON.stringify(await dots()));
-  check("AC-138 a task in progress has no play key, its card names the agent", await until(async () => !(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
+  check("AC-122 a task in progress keeps its play key and names the agent", await until(async () => !!(await page.$(`${card(a)} .crun`)) && (await page.textContent(`${card(a)} .cagent`).catch(() => "")) === "Fast fixer"));
   check("AC-138 and hides the owner", !(await page.$(`${card(a)} .cowner`)));
 
   // busy: a third is offered the queue (AC-169) and, agreed, waits for its room (AC-158), said in RUN's window and by terminumd
@@ -211,7 +211,7 @@ export async function agentPool(page, opts, pressAt) {
   await shown();
   await pressCard(page, held);
   await page.waitForSelector("#taskbox[open]");
-  check("AC-138 a task its run holds offers Give up, not Run", await until(() => page.isVisible('#taskacts button:has-text("Give up")')) && !(await page.isVisible('#taskacts button:has-text("Run")')));
+  check("AC-122 a task its run holds offers Give up and Run", await until(() => page.isVisible('#taskacts button:has-text("Give up")')) && await page.isVisible('#taskacts button:has-text("Run")'));
   await page.click('#taskacts button:has-text("Give up")');
   await pressAt(page, "#confirmok");
   check("AC-138 Give up fails its open tasks", await hasStatus(held, "FAILED") && await hasStatus(held2, "FAILED"), `${await status(held)} ${await status(held2)}`);
