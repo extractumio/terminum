@@ -48,7 +48,7 @@ dialog .markdown img { max-width: 100%; }
 .linklike { font: inherit; padding: 0; color: var(--link, var(--accent)); text-decoration: underline; text-underline-offset: 2px; text-align: left; overflow-wrap: anywhere; }
 .history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .ev { font-family: var(--ui); font-size: var(--fs-label); min-width: 0; }
-.ev-comment { padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); }
+.ev-comment { padding-block: var(--sp-2); padding-right: var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); }   /* its left: the left bar's (controls.css) */
 .evhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
 .evhead strong { color: var(--t-fg); font-weight: var(--fw-head); }
 .evtext { color: var(--muted); }
@@ -88,9 +88,9 @@ dialog .markdown img { max-width: 100%; }
 .subtext { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .sublist .icon { --ik: var(--icon-key-list); flex: none; }
 .evedited { font-style: italic; }
-.ev-comment { box-shadow: inset 3px 0 0 var(--accent); }
+.ev-comment { --lbar: var(--accent); }
 /* an agent's questions for the human (terminum-dispatcher.md AC-157): set apart in the waiting color */
-.ev-questions { box-shadow: inset 3px 0 0 var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
+.ev-questions { --lbar: var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
 .evasks { color: color-mix(in srgb, var(--waiting) 70%, var(--t-fg)); font-weight: var(--fw-head); }
 .cconv { font: var(--fs-meta) ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 

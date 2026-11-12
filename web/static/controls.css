@@ -146,6 +146,12 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
   .item .plpct { padding: 12px 6px; margin: -12px 0; }   /* the row's percent: a finger's height, the row's own kept */
 }
 
+/* a box's left bar: a box set apart by what it holds (a comment, an agent's questions, the plan's Now) carries
+   a straight bar inside it at its left, as a session row's folder bar (style.css .pbar), in --lbar; never a
+   line along the box's edge (docs/UI-GUIDELINES.md "No edge stripes") */
+:is(.plnow, .ev-comment) { position: relative; padding-left: calc(var(--sp-3) + 10px);
+  &::before { content: ""; position: absolute; left: 7px; top: 7px; bottom: 7px; width: 4px; border-radius: 2px; background: var(--lbar, var(--muted)); } }
+
 /* a tick, drawn: a recess, its check in the accent (as todobem's list marks its value); a switch keeps its own */
 input[type="checkbox"]:not([role="switch"]) { appearance: none; -webkit-appearance: none; flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; padding: 0;
   border-radius: var(--r-xs); background: var(--field-fill); box-shadow: var(--m-well); cursor: pointer;
