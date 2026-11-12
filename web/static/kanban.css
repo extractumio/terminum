@@ -89,7 +89,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .fieldgrid > .checkrow { margin-bottom: min(0px, (var(--field-h) - var(--key-h)) / 2); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
 .agentlist .item .s { padding-left: 20px; }
-/* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled in the agent's color, the percent;
+/* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled by its use's level, the percent;
    an old reading fades; in its window the reset time follows the percent */
 .agsubs { display: flex; flex-direction: column; gap: 3px; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .agsubs.stale { opacity: .55; }
@@ -97,7 +97,9 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agsub { display: flex; align-items: center; gap: var(--sp-1); min-width: 0; }
 .agsublabel { flex: none; width: 3.2em; }
 .agtrack { flex: 1; min-width: 24px; height: 4px; border-radius: 2px; background: color-mix(in srgb, currentColor 18%, transparent); overflow: hidden; }
-.agfill { display: block; height: 100%; background: var(--ag, var(--accent)); }
+/* filled by how much is used, in the palette's meaning hues: green under 40%, yellow to 90%, red over it (AC-168) */
+.agfill { display: block; height: 100%; background: var(--ok); }
+.agtrack.mid .agfill { background: var(--waiting); }
 .agtrack.high .agfill { background: var(--danger); }
 .agsubpct { flex: none; min-width: 3.4em; text-align: right; white-space: nowrap; }
 .agsubs.full { padding-left: 0; gap: var(--sp-1); font-size: var(--fs-small); }
@@ -203,8 +205,11 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 @media (hover: hover) { .card:not(:hover, :focus-within) .crun { opacity: 0; } }
 /* TODO and DONE: a line a card, its ID, severity and title; a press shows one whole, folding the one before (terminum-kanban.md AC-159) */
 .card.compact:not(.open) { flex-direction: row; align-items: center; gap: var(--sp-2); }
-.card.compact:not(.open) > :not(.chead, .ctitle), .card.compact:not(.open) .chead > :not(.cid, .csev, .crun) { display: none; }
-.card.compact:not(.open) .chead { display: contents; }
+.card.compact:not(.open) > :not(.chead, .ctitle, .cfoot), .card.compact:not(.open) .chead > :not(.cid, .csev, .crun), .card.compact:not(.open) .cfoot > :not(.cstate) { display: none; }
+.card.compact:not(.open) :is(.chead, .cfoot) { display: contents; }
+/* its session's state as its dot alone, the words on hover, as the card shown whole says them (waits for an agent's room) */
+.card.compact:not(.open) .cstate { flex: none; display: inline-flex; font-size: 0; }
+.card.compact:not(.open) .cstate::before { margin-right: 0; vertical-align: 0; }
 .card.compact:not(.open) .cid { flex: none; font-size: var(--fs-meta); color: var(--muted); }
 .card.compact:not(.open) .csev { flex: none; }
 .card.compact:not(.open) .ctitle { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

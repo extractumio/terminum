@@ -103,7 +103,7 @@ const projectOf = (id) => meta.projects.find((p) => p.id === id);
 /** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
 function sessionLine(t) {
   const s = t.session;
-  const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); if (why) e.title = why; return e; };
+  const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); e.title = why ? `${words}: ${why}` : words; return e; };
   if (t.waits) return line("waiting", `waits for ${t.waits}`, "Run waits for that agent's room, then starts");
   if (!s && !t.run) return null;
   const open = t.status === "IN PROGRESS";
