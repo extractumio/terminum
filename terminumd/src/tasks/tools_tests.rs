@@ -445,3 +445,24 @@ fn ac166_follow_ups_that_name_no_task_are_reminded() {
     let id = started();
     assert_eq!(finish(&id, "Outcome: done"), format!("{id} is DONE, with your result."), "every follow-up None");
 }
+
+#[test]
+fn ac185_a_main_task_is_finished_after_the_subtasks_of_its_run() {
+    use crate::dispatcher::runs::{self, Phase, Run};
+    let (s, dir) = fresh("tt-main");
+    let w = who(Some("api"));
+    let main = task(&s, "api", Some(KEY));
+    let (kid, later) = s.with(|tx| {
+        let made = |title: &str| ops::create(tx, HUMAN, NewTask { title: title.into(), text: "body".into(), project: Some("api".into()), parent: Some(main.clone()), ..Default::default() }, 1).map(|t| (t.id, t.key));
+        let (kid, later) = (made("kid")?, made("made after the run started")?);
+        let run = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, &[ops::key_of(tx, &main)?, kid.1], Default::default(), 2)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); })?;
+        Ok((kid.0, later.0))
+    }).unwrap();
+    let refused = call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap_err();
+    assert_eq!(refused, format!("{main} is a main task: its subtasks of this run are not DONE: {kid}. Finish them first, or move {main} to FAILED with a comment saying why."));
+    call(&s, &dir, &w, "move_task", json!({"id": kid, "to": "FAILED"})).unwrap();
+    assert!(call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).is_err(), "a failed subtask fails its main task: it is not DONE");
+    call(&s, &dir, &w, "finish_task", json!({"id": kid, "result": "the subtask"})).unwrap();
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap(), format!("{main} is DONE, with your result."), "{later} is none of the run's");
+}

@@ -307,7 +307,9 @@ pub struct Candidate {
 /// - that stand for its wait: made, moved or edited no later than that ago (a comment, a new place among the cards or
 ///   a subtask does not start the wait anew), so one still being written is not taken;
 /// - that no session, run, wait, schedule or round holds;
-/// - with no subtask still to do: a parent waits for its subtasks, which are candidates themselves;
+/// - that are no subtask of a main task not DONE: it goes with its main task (AC-185);
+/// - whose subtasks still to do all stand in TODO, free as it is: they go with it, and its wait counts from the last
+///   of them made, moved or edited; a failed or waiting one is the human's to run or move first;
 /// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
 ///   none, never the default's;
 /// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
@@ -321,14 +323,17 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
     let found: Vec<Candidate> = rows(tx, "WITH passed AS MATERIALIZED (SELECT g.value AS slug, max(r.at) AS at FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g
                    WHERE r.project = ?1 AND r.at >= ?7 AND rt.status = 'DONE' AND (SELECT count(*) FROM auto_starts f WHERE f.round = r.task) < r.slots GROUP BY g.value),
                  c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
-                   COALESCE((SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind IN ('made', 'move', 'edit')), 0) AS changed,
+                   COALESCE((SELECT max(e.at) FROM events e WHERE (e.task = t.id OR e.task IN (SELECT k.id FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'))
+                     AND e.kind IN ('made', 'move', 'edit')), 0) AS changed,
                    COALESCE((SELECT max(e.at) FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND u.kind = 'human' AND e.kind IN ('move', 'edit')), 0) AS by_human
                  FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND t.severity IN (SELECT value FROM json_each(?5))
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
-                   AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'))
+                   AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.archived_at IS NULL AND p.status <> 'DONE')
+                   AND NOT EXISTS (SELECT 1 FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'
+                     AND (k.status <> 'TODO' OR k.session_key IS NOT NULL OR EXISTS (SELECT 1 FROM run_waits w WHERE w.task = k.id))))
                  SELECT c.slug, c.id, c.agent, c.changed FROM c WHERE c.changed <= ?6
                    AND NOT EXISTS (SELECT 1 FROM auto_starts s WHERE s.task = c.id AND s.at > c.by_human)
                    AND NOT EXISTS (SELECT 1 FROM passed p WHERE p.slug = c.slug AND p.at >= c.by_human)
@@ -338,7 +343,14 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
     let mut out = Vec::new();
     for c in found {
         // a run still holding it (its agent in a turn after it went back to TODO) is no free task
-        if out.len() < CANDIDATES_MOST && crate::dispatcher::runs::holding(tx, &c.key)?.is_none() {
+        if out.len() >= CANDIDATES_MOST || crate::dispatcher::runs::holding(tx, &c.key)?.is_some() {
+            continue;
+        }
+        let mut free = true;
+        for sub in super::family::to_do(tx, &c.key)? {
+            free &= crate::dispatcher::runs::holding(tx, &sub.key)?.is_none();
+        }
+        if free {
             out.push(c);
         }
     }

@@ -3,7 +3,8 @@
 """A coding agent as Dispatcher sees it, for web/test/e2e_livedispatcher.mjs: the measured input box of
 Claude Code or Codex (terminum-dispatcher.md AS-125), hooks by `terminum hook`, finish_task by `terminum
 mcp`; no model. What it does with a prompt is in the prompt's words:
-FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT; Auto-Dispatcher's
+FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn ends), LIMIT, DIES, CLEAN, SILENT, STUCK (of a main
+task with its subtasks, terminum-dispatcher.md AC-185: the last subtask and the main task fail, the rest is finished); Auto-Dispatcher's
 round (terminum-dispatcher.md AC-170) starts its first candidates, one for each free slot, and finishes; a task a round started
 is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
 none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
@@ -117,6 +118,10 @@ def main():
             hook("UserPromptSubmit", prompt=prompt)
             several = re.search(rf"tasks: ((?:{TASK_ID}(?:, )?)+)", prompt)   # a press of several names them all (AC-138)
             tasks = re.findall(TASK_ID, several[1]) if several else re.findall(TASK_ID, prompt)[:1] or [""]
+            # a main task with its subtasks: they go first, it goes last (AC-185)
+            main = re.search(rf"main task ({TASK_ID}) with its (?:\d+ subtasks|subtask) still to do: ((?:{TASK_ID}(?:, )?)+)", prompt)
+            if main:
+                tasks = re.findall(TASK_ID, main[2]) + [main[1]]
             round_of = re.search(rf"^\[terminum Auto-Dispatcher\] Task ({TASK_ID}):.*Free agent slots: (\d+)\. Candidates, this project's TODO tasks: ((?:{TASK_ID}(?:, )?)+)", prompt, re.S)
             if round_of:
                 for task in re.findall(TASK_ID, round_of[3])[:int(round_of[2])]:
@@ -145,6 +150,13 @@ def main():
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt or prompt.startswith("Auto-Dispatcher, which a human turned on"):
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
+            elif "STUCK" in prompt and main:
+                for task in tasks[:-2]:
+                    finish(task)
+                for task in tasks[-2:]:
+                    tool("add_comment", {"id": task, "text": "It cannot be done: the cause is outside."})
+                    tool("move_task", {"id": task, "to": "FAILED"})
+                hook("Stop", last_assistant_message="stuck")
             elif "FINISHES" in prompt:
                 hook("PostToolUse", tool_name="Read", tool_input={}, tool_response={})
                 for task in tasks:

@@ -288,6 +288,9 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,
   Add existing, Make it a subtask, × to take one out), then its comments and history, newest first
   (press Newest first to turn them); a card shows its subtasks as boxes in their status's color.
+  Run on a task with subtasks takes those not DONE into the same session: its agent does them one
+  after another in the order it decides, the main task last; one that cannot be done fails with
+  its main task, and Run on the main task again runs what is not DONE. Auto-Dispatch does the same.
   The round button with a blue number under the sent history's counts the tasks made in the shown
   session, and opens them in the same window; Convert to task on a bookmark or reminder (its pane,
   its bar, the list below the sessions) makes one in TODO without leaving the session.

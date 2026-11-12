@@ -231,6 +231,11 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "finish_task" => {
                 let id = arg(args, "id")?;
                 let t = movable(tx, who, id)?;
+                // a main task ends last: its run's subtasks first (terminum-dispatcher.md AC-185)
+                let open = crate::dispatcher::runs::subtasks_open(tx, &t.key)?;
+                if !open.is_empty() {
+                    return Err(format!("{id} is a main task: its subtasks of this run are not DONE: {}. Finish them first, or move {id} to FAILED with a comment saying why.", open.join(", ")));
+                }
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
                 ops::comment(tx, &me, id, &result, at)?;
