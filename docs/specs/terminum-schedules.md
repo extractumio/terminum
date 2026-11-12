@@ -70,7 +70,7 @@ Open questions: none.
 Scenario: AC-160 happy path — made
   Given Billing chosen on the board and Opus reviewer in the pool with 2 at once
   When the user presses + Schedule in the board's Scheduled section
-  Then a window opens with Title, Text (the task window's Markdown editor), Project (the board's only project, else Default), Severity P2, Agent (the pool), When, Time budget 60 minutes and Paused off
+  Then a window opens with Title, Text (the task window's Markdown editor), Project (the board's only project, else the only project there is, else none chosen), Severity P2, Agent (the pool), When, Time budget 60 minutes and Paused off
   When the user types "Nightly deps check", a text, picks Opus reviewer, Every day at 03:00, 30 minutes, and presses Save
   Then SCH-1 is kept by the user, every page shows it within 2 s and the window closes
 
@@ -107,8 +107,8 @@ Scenario: AC-160 happy path — paused and deleted
   And a task of it waiting for room (AC-158) is called off and FAILED, saying "Its schedule was paused." or "was deleted."
 
 Scenario: AC-160 failure — refused
-  When Save has no title or one over 200 characters, a text over 1 MiB, no agent, no time budget or one over 24 hours
-  Then the window says "Title: 1–200 characters", "Text: at most 1 MiB", "Choose the agent that runs it.", "A scheduled run needs a time budget: no human watches it." or "Time budget: 1 to 1440 minutes." and nothing is kept
+  When Save has no title or one over 200 characters, a text over 1 MiB, no project chosen, no agent, no time budget or one over 24 hours
+  Then the window says "Title: 1–200 characters", "Text: at most 1 MiB", "Choose the project it runs in.", "Choose the agent that runs it.", "A scheduled run needs a time budget: no human watches it." or "Time budget: 1 to 1440 minutes." and nothing is kept
   When the cron has not five fields, a number out of its field's range, a range that runs backwards or a step of 0
   Then it says which: "The hour \"24\" is not 0 to 23."
   When the cadence names no minute within eight years, "0 0 31 2 *", or Once is not in the future

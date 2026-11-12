@@ -32,3 +32,11 @@ function mountSections() {
 }
 
 mountSections();
+
+/** The switcher's Kanban opens the board of `project` (an id; none: the board as this browser left it), the project
+ *  of the session shown (terminum-kanban.md AC-135). */
+export function boardFor(project) {
+  for (const a of document.querySelectorAll("nav.sections a")) {
+    if (a.pathname === "/kanban/") a.setAttribute("href", project ? `/kanban/?project=${encodeURIComponent(project)}` : "/kanban/");
+  }
+}

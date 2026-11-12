@@ -68,11 +68,13 @@ export async function liveBoardSessions(page, opts) {
   await page.click(`#sessions .item[data-id="${other}"]`);
   check("AC-134 a press on a row changes the address", await until(() => new URL(page.url()).hash === hashOf(other)), page.url());
   check("AC-134 and shows that session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, other)));
-  check("AC-134 Kanban stays in the list's head", await page.isVisible('.nav-head .sections a[href="/kanban/"]'));
+  check("AC-134 Kanban stays in the list's head", await page.isVisible('.nav-head .sections a[href^="/kanban/"]'));
+  check("AC-135 from a session in no project, Kanban opens the board as it was left", await page.getAttribute('.nav-head .sections a[href^="/kanban/"]', "href") === "/kanban/");
   await page.evaluate(() => history.back());       // within the page: Playwright's goBack waits for a load that never comes
   check("AC-134 Back returns to the session before", await until(() => new URL(page.url()).hash === hashOf(key)), page.url());
   check("AC-134 and shows it", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key)));
-  check("AC-134 Kanban still in the list's head", await page.isVisible('.nav-head .sections a[href="/kanban/"]'));
+  check("AC-134 Kanban still in the list's head", await page.isVisible('.nav-head .sections a[href^="/kanban/"]'));
+  check("AC-135 from a session of Billing, Kanban opens Billing's board", await until(async () => await page.getAttribute('.nav-head .sections a[href^="/kanban/"]', "href") === `/kanban/?project=${project}`), await page.getAttribute('.nav-head .sections a[href^="/kanban/"]', "href"));
   await page.evaluate(() => history.back());
   const home = await until(() => new URL(page.url()).pathname === "/kanban/", 3000);
   check("AC-134 Back again returns to the board", home, page.url());

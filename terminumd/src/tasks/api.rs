@@ -242,6 +242,9 @@ async fn start_empty(State(app): State<Shared>) -> Response {
     answer(done.map(|()| json!({"ok": true})))
 }
 
+/// A new task's window with no project chosen (AC-106).
+pub const NO_PROJECT: &str = "Choose the project to make it in.";
+
 pub(super) fn text(v: &Value, key: &str) -> Option<String> {
     v[key].as_str().map(str::to_string)
 }
@@ -253,6 +256,10 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     let _converting = match crate::page::marks::claim(&app, body["record"].as_str()).await {
         Ok(held) => held, Err(why) => return refuse(StatusCode::CONFLICT, why),     // held until the record goes
     };
+    // the window sends the field: empty there is a choice not made, never Default (AC-106)
+    if body["project"].as_str() == Some("") {
+        return refuse(StatusCode::BAD_REQUEST, NO_PROJECT);
+    }
     let new = NewTask {
         title: text(&body, "title").unwrap_or_default(),
         text: text(&body, "text").unwrap_or_default(),

@@ -47,7 +47,7 @@ export function taskLines(box, open) {
       seen = new Set([...seen].filter((s) => now.has(s)));   // asks anew: said anew
       if (seen.size !== was) keep();
       draw();
-      for (const a of document.querySelectorAll('a[href="/kanban/"]')) {
+      for (const a of [...document.querySelectorAll("nav.sections a")].filter((x) => x.pathname === "/kanban/")) {   // its project may follow (sections.js boardFor)
         a.querySelector(".taskneed")?.remove();
         if (!m.need) continue;
         const n = el("span", "taskneed", m.need);

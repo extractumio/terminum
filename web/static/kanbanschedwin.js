@@ -5,7 +5,7 @@
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, plural } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
-import { $, DEFAULT, api, fillSelect, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
+import { $, api, fillSelect, onlyProject, projectOptions, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
 const HOUR_STEPS = [1, 2, 3, 4, 6, 8, 12];
 
@@ -83,7 +83,8 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
   function open(s = null) {
     editing = s;
     const meta = getMeta(), shown = chosen();
-    fillSelect(f.project, meta.projects.map((p) => [p.id, p.name]), s?.project ?? (shown.length === 1 ? shown[0] : DEFAULT));
+    const project = s?.project ?? onlyProject(shown, meta);
+    fillSelect(f.project, projectOptions(meta, project), project);
     fillSelect(f.agent, [["", "Choose an agent"], ...meta.agents.map((a) => [a.id, a.name])], s?.agent ?? (meta.agents.length === 1 ? meta.agents[0].id : ""));
     f.title.value = s?.title ?? "";
     f.text.value = s?.body ?? "";
