@@ -28,7 +28,7 @@ fn members(app: &Shared, boss: &Boss) -> Vec<String> {
 /// Another session of the manager's project, by the name list_sessions gave it: its key, server and pane. Never a
 /// manager's: one the human opened is theirs to type into and close, not an agent's (AC-179).
 async fn other(app: &Shared, boss: &Boss, args: &Value, to: &str) -> Result<(String, Arc<Server>, String), String> {
-    let key = arg(args, "session")?.to_string();
+    let (key, (server, pane)) = of_project(app, boss, args)?;
     if key == boss.key {
         return Err(format!("That is your own session: {to} another one."));
     }
@@ -36,7 +36,6 @@ async fn other(app: &Shared, boss: &Boss, args: &Value, to: &str) -> Result<(Str
     if store(app, move |tx| Ok(super::manages(tx, &k)?.is_some())).await? {
         return Err(format!("{key} is a manager's session, the human's: you cannot {to} it. Read it with get_session; run_task starts a worker you can."));
     }
-    let (key, (server, pane)) = of_project(app, boss, args)?;
     Ok((key, server, pane))
 }
 
@@ -50,11 +49,10 @@ fn of_project(app: &Shared, boss: &Boss, args: &Value) -> Result<(String, (Arc<S
 }
 
 pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
-    let keys = members(app, boss);
     let (held, managers) = store(app, move |tx| {
-        let held = runs::live(tx)?.into_iter().filter(|r| r.holds_slot()).filter_map(|r| r.pane_key.clone().map(|k| (k, r))).collect::<std::collections::HashMap<_, _>>();
-        let managers = keys.into_iter().filter_map(|k| super::manages(tx, &k).map(|m| m.map(|_| k)).transpose()).collect::<Result<std::collections::HashSet<_>, _>>()?;
-        Ok((held, managers))
+        let live = runs::live(tx)?;
+        let managers = super::managers(tx, &live)?;
+        Ok((live.into_iter().filter(|r| r.holds_slot()).filter_map(|r| r.pane_key.clone().map(|k| (k, r))).collect::<std::collections::HashMap<_, _>>(), managers))
     }).await?;
     let now = crate::auth::store::unix_now();
     let layout = app.layout.read();

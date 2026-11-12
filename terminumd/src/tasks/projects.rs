@@ -93,13 +93,9 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
 /// made again drops, said on its task (AC-113).
 pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)], now: i64) -> Result<usize, String> {
     // where a task was made follows its pane too, so a new pane of an old number counts none of them (AC-150)
-    for (task, key) in on_server(tx, "made_in", prefix)? {
-        let old = key.strip_prefix(prefix).unwrap_or(&key);
-        let new = panes.iter().find(|(o, _)| o == old).map(|(_, n)| format!("{prefix}{n}"));
-        tx.execute("UPDATE tasks SET made_in = ?1 WHERE id = ?2", (new, &task)).map_err(sql)?;
-    }
-    runs_follow(tx, prefix, Some(panes))?;
-    let linked = on_server(tx, "session_key", prefix)?;
+    follow(tx, "tasks", "made_in", prefix, Some(panes))?;
+    follow(tx, "runs", "pane_key", prefix, Some(panes))?;
+    let linked = on_server(tx, "tasks", "session_key", prefix)?;
     let mut changed = 0;
     for (task, key) in linked {
         let old = key.strip_prefix(prefix).unwrap_or(&key);
@@ -121,35 +117,32 @@ pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)]
 /// A server started anew without a restore: its pane IDs name other panes now, so its tasks' links
 /// drop, said on each task (AC-113). How many.
 pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, String> {
-    for (task, _) in on_server(tx, "made_in", prefix)? {
-        tx.execute("UPDATE tasks SET made_in = NULL WHERE id = ?1", [&task]).map_err(sql)?;
-    }
-    runs_follow(tx, prefix, None)?;
-    let linked = on_server(tx, "session_key", prefix)?;
+    follow(tx, "tasks", "made_in", prefix, None)?;
+    follow(tx, "runs", "pane_key", prefix, None)?;
+    let linked = on_server(tx, "tasks", "session_key", prefix)?;
     for (task, _) in &linked {
         drop_link(tx, task, now)?;
     }
     Ok(linked.len())
 }
 
-/// Dispatcher's runs on the server whose keys start with `prefix` follow their panes too (`panes`: old id, new id;
-/// none: started anew): a pane of a reused number is never taken for a run's, a worker's, nor a run's pane for a
-/// human's (terminum-agents.md AC-174).
-fn runs_follow(tx: &Transaction, prefix: &str, panes: Option<&[(String, String)]>) -> Result<(), String> {
-    let like = format!("{}%", super::query::like_escaped(prefix));
-    let named: Vec<(String, String)> = rows(tx, "SELECT id, pane_key FROM runs WHERE pane_key LIKE ?1 ESCAPE '\\'", [like], |r| Ok((r.get(0)?, r.get(1)?)))?;
-    for (run, key) in named {
+/// `table`'s `column` naming a pane of the server whose keys start with `prefix` follows it (`panes`: old id, new id;
+/// none: started anew), or names none: a pane of a reused number is never taken for the one it was. Dispatcher's runs
+/// so too: a worker's pane is never a human's by mistake, nor a human's a worker's (terminum-agents.md AC-174).
+fn follow(tx: &Transaction, table: &str, column: &str, prefix: &str, panes: Option<&[(String, String)]>) -> Result<(), String> {
+    for (id, key) in on_server(tx, table, column, prefix)? {
         let old = key.strip_prefix(prefix).unwrap_or(&key);
         let new = panes.and_then(|p| p.iter().find(|(o, _)| o == old)).map(|(_, n)| format!("{prefix}{n}"));
-        tx.execute("UPDATE runs SET pane_key = ?1 WHERE id = ?2", (new, &run)).map_err(sql)?;
+        tx.execute(&format!("UPDATE {table} SET {column} = ?1 WHERE id = ?2"), (new, &id)).map_err(sql)?;
     }
     Ok(())
 }
 
-/// Tasks whose `column` (`session_key` or `made_in`) names a pane of the server whose keys start with `prefix`.
-fn on_server(tx: &Transaction, column: &str, prefix: &str) -> Result<Vec<(String, String)>, String> {
+/// Rows of `table` whose `column` (a task's `session_key` or `made_in`, a run's `pane_key`) names a pane of the server
+/// whose keys start with `prefix`.
+fn on_server(tx: &Transaction, table: &str, column: &str, prefix: &str) -> Result<Vec<(String, String)>, String> {
     let like = format!("{}%", super::query::like_escaped(prefix));
-    rows(tx, &format!("SELECT id, {column} FROM tasks WHERE {column} LIKE ?1 ESCAPE '\\'"), [like], |r| Ok((r.get(0)?, r.get(1)?)))
+    rows(tx, &format!("SELECT id, {column} FROM {table} WHERE {column} LIKE ?1 ESCAPE '\\'"), [like], |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 fn drop_link(tx: &Transaction, task: &str, now: i64) -> Result<(), String> {

@@ -2,9 +2,8 @@
 //! Who a caller of terminum's tools is (`terminum-agents.md` AC-174 to AC-181). A worker: any session, with its
 //! project's tasks (tasks/tools.rs). A manager: the session a human's + Session started for a project, a session
 //! the human opened in a project, or a manager's token: it runs its project as the human would, through the tools
-//! here alone. terminumd decides the
-//! role from its own records at every call, never from the caller's word; a guard against an agent that errs, no
-//! boundary against a process of the same user (SECURITY.md).
+//! here alone. terminumd decides the role from its own records at every call, never from the caller's word; a guard
+//! against an agent that errs, no boundary against a process of the same user (SECURITY.md).
 
 use rusqlite::Transaction;
 use serde_json::Value;
@@ -47,9 +46,11 @@ pub struct Boss {
 const OPENED: &str = "SELECT m.pane_key, m.project FROM project_members m
                       WHERE m.project <> 'default' AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.pane_key = m.pane_key)";
 
-/// The panes of every session the human opened in a project: managers, for the list's crown.
-pub fn opened(tx: &Transaction) -> Result<Vec<String>, String> {
-    crate::tasks::ops::rows(tx, OPENED, [], |r| r.get(0))
+/// Every manager's pane (AC-174): of `live`'s + Session runs, and the sessions the human opened in a project.
+pub fn managers(tx: &Transaction, live: &[runs::Run]) -> Result<std::collections::HashSet<String>, String> {
+    let mut all: std::collections::HashSet<String> = live.iter().filter(|r| r.manages()).filter_map(|r| r.pane_key.clone()).collect();
+    all.extend(crate::tasks::ops::rows(tx, OPENED, [], |r| r.get::<_, String>(0))?);
+    Ok(all)
 }
 
 /// The project pane `key`'s session manages, and the + Session's run that makes it so (AC-174): a run with no task
@@ -57,7 +58,7 @@ pub fn opened(tx: &Transaction) -> Result<Vec<String>, String> {
 /// whoever started it, and so does a pane in no project.
 pub fn manages(tx: &Transaction, key: &str) -> Result<Option<(String, Option<runs::Run>)>, String> {
     if let Some(r) = runs::in_pane(tx, key)? {
-        return Ok((r.ad_hoc() && r.holds_slot()).then(|| (r.project.clone(), Some(r))));
+        return Ok(r.manages().then(|| (r.project.clone(), Some(r))));
     }
     let found: Vec<String> = crate::tasks::ops::rows(tx, &format!("{OPENED} AND m.pane_key = ?1"), [key], |r| r.get(1))?;
     Ok(found.into_iter().next().map(|project| (project, None)))

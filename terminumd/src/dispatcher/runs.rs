@@ -212,6 +212,11 @@ impl Run {
         self.task.is_empty()
     }
 
+    /// Its pane's session is its project's manager: + Session's, while Dispatcher holds it (terminum-agents.md AC-174).
+    pub fn manages(&self) -> bool {
+        self.ad_hoc() && self.holds_slot()
+    }
+
     /// It holds a slot of its agent and of its project (AC-141): from RUN until it is closed, let go or its agent is gone.
     pub fn holds_slot(&self) -> bool {
         !self.is_over() && self.state != Phase::Gone

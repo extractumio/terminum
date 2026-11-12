@@ -25,7 +25,7 @@ pub fn hello(app: &Shared, page: &Page) {
 /// Every page learns the projects (after a change).
 pub fn tell(app: &Shared) {
     app.pages.tell(&message(app));
-    app.dispatcher.soon();                 // a session the human put in a project manages it: its row's crown (AC-174)
+    crate::dispatcher::Dispatcher::members_changed(app);   // a session the human put in a project manages it: its crown
 }
 
 /// The servers' lists were read and told: the projects those reads changed are told now, after the

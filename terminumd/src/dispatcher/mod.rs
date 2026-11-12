@@ -164,7 +164,7 @@ impl Dispatcher {
     fn pane_opened(&self, tx: &rusqlite::Transaction, run: &str, key: &str) -> Result<runs::Run, String> {
         let r = runs::change(tx, run, |r| r.pane_key = Some(key.to_string()))?;
         self.panes.lock().insert(key.to_string());
-        if r.ad_hoc() && self.managers.lock().insert(key.to_string()) {
+        if r.manages() && self.managers.lock().insert(key.to_string()) {
             self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         Ok(r)
@@ -174,14 +174,30 @@ impl Dispatcher {
     pub(crate) fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
         let all = runs::live(tx)?;
         *self.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
-        let mut managers: HashSet<String> = all.iter().filter(|r| r.ad_hoc() && r.holds_slot()).filter_map(|r| r.pane_key.clone()).collect();
-        managers.extend(crate::roles::opened(tx)?);          // and the sessions the human opened in a project (AC-174)
+        self.hold_managers(crate::roles::managers(tx, &all)?);
+        Ok(all)
+    }
+
+    fn hold_managers(&self, managers: HashSet<String>) {
         let mut held = self.managers.lock();
         if *held != managers {
             *held = managers;
             self.managers_changed.store(true, std::sync::atomic::Ordering::Relaxed);
         }
-        Ok(all)
+    }
+
+    /// The managers read again at once, a project's members having changed: a session the human put in a project
+    /// shows its crown without waiting for the walk (AC-174).
+    pub fn members_changed(app: &crate::app::Shared) {
+        let Ok(rt) = tokio::runtime::Handle::try_current() else { return };
+        let a = app.clone();
+        rt.spawn(async move {
+            let b = a.clone();
+            let read = store(&a, move |tx| crate::roles::managers(tx, &runs::live(tx)?).map(|m| b.dispatcher.hold_managers(m))).await;
+            if read.is_ok() && a.dispatcher.managers_changed() {
+                a.dirty.notify_one();                    // the rows say which sessions are managers
+            }
+        });
     }
 
     /// A hook's facts of a watched pane: a new agent starts clean; its subagents, shape-checked (AC-127).

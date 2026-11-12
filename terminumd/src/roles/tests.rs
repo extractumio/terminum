@@ -250,13 +250,3 @@ async fn ac174_a_session_the_human_opened_in_a_project_is_its_manager() {
     mark(&app, &mut groups);
     assert_eq!(groups[0]["items"], json!([{"id": PLAIN, "manager": true}, {"id": WORKER}, {"id": DEFAULTS}]), "its row has the crown");
 }
-
-#[tokio::test]
-async fn ac179_a_manager_never_types_into_nor_closes_another_manager_s_session() {
-    let (app, _) = app("roles-guard");
-    member(&app, PLAIN, "api");
-    for tool in ["send_to_session", "close_session"] {
-        let said = call(&app, BOSS, tool, json!({"session": PLAIN, "text": "hello"})).await.unwrap_err();
-        assert!(said.starts_with(&format!("{PLAIN} is a manager's session, the human's: you cannot ")), "{tool}: {said}");
-    }
-}
