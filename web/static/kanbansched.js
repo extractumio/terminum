@@ -3,15 +3,11 @@
 // head by default and remembered by this browser; open, its cards stand on the columns' tracks, four to a row.
 // terminumd owns the schedules and says their next runs and words; every page hears of a change.
 import { askConfirm } from "./dialogs.js";
-import { el, iconButton, read, write } from "./listparts.js";
+import { el, iconButton, pointerKey, read, write } from "./listparts.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
 import { agentColor, api, button, say, statusBox } from "./kanbanutil.js";
 
 const OPEN_KEY = "tm.board.schedules";
-
-/** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring;
- *  Tab still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"). */
-const pointerKey = (b) => { b.addEventListener("mousedown", (e) => e.preventDefault()); return b; };
 
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {

@@ -20,6 +20,7 @@ PREFIXES = {"env", "command", "exec", "time", "builtin", "nohup", "then", "do", 
 ARITHMETIC_OR_TEST = re.compile(r"\(\(.*?\)\)|\[\[.*?\]\]", re.S)   # their > compares
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(?:.*?\n)??[ \t]*\2[ \t]*(?=\n|$)", re.S)
 ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+SUBSTITUTION = "substitution"   # tokens' mark for the body of a $( ) inside double quotes
 
 
 def strip_text(command):
@@ -27,15 +28,46 @@ def strip_text(command):
     return ARITHMETIC_OR_TEST.sub(" ", HEREDOC.sub(lambda m: m.group(0).split("\n", 1)[0] + "\n", command))
 
 
+def quoted_end(command, i):
+    """The index past the `"` closing the double quote opened at `i`; a `$( )` in it keeps its own quotes."""
+    i, n = i + 1, len(command)
+    while i < n and command[i] != '"':
+        if command.startswith("$(", i):
+            i = substitution_end(command, i)
+        else:
+            i += 2 if command[i] == "\\" else 1
+    return i + 1
+
+
+def substitution_end(command, i):
+    """The index past the `)` closing the `$(` at `i`, read as bash reads it: its own quotes, nested ( )."""
+    depth, i, n = 1, i + 2, len(command)
+    while depth and i < n:
+        c = command[i]
+        if c == "\\":
+            i += 2
+        elif c == "'":
+            end = command.find("'", i + 1)
+            i = n if end < 0 else end + 1
+        elif c == '"':
+            i = quoted_end(command, i)
+        else:
+            depth += (c == "(") - (c == ")")
+            i += 1
+    return i
+
+
 def tokens(command):
-    """[(text, quoted)] of the command's words and operators; an operator is unquoted."""
-    out, word, quoted, i, n = [], "", False, 0, len(command)
+    """[(text, quoted)] of the command's words and operators; an operator is unquoted. A `$( )` inside double
+    quotes is its word's text, and after that word its body, marked SUBSTITUTION: a command of its own."""
+    out, subs, word, quoted, i, n = [], [], "", False, 0, len(command)
 
     def flush():
-        nonlocal word, quoted
+        nonlocal word, quoted, subs
         if word or quoted:
             out.append((word, quoted))
-        word, quoted = "", False
+        out.extend(subs)
+        word, quoted, subs = "", False, []
     while i < n:
         c = command[i]
         if c == "\\" and i + 1 < n:
@@ -49,6 +81,12 @@ def tokens(command):
         elif c == '"':
             i += 1
             while i < n and command[i] != '"':
+                if command.startswith("$(", i):
+                    end = substitution_end(command, i)
+                    subs.append((command[i + 2:end - 1], SUBSTITUTION))
+                    word += command[i:end]
+                    i = end
+                    continue
                 if command[i] == "\\" and i + 1 < n:
                     i += 1
                 word += command[i]
@@ -76,13 +114,16 @@ def tokens(command):
 
 
 def simple_commands(words):
-    """The commands of a tokenized line: [(arguments, redirection targets)]; here-strings and inputs dropped."""
-    done, args, targets, i = [], [], [], 0
+    """The commands of a tokenized line: [(arguments, redirection targets, substitutions' bodies)]; here-strings
+    and inputs dropped."""
+    done, args, targets, subs, i = [], [], [], [], 0
     while i < len(words):
         text, quoted = words[i]
-        if not quoted and text in SEPARATORS:
-            done.append((args, targets))
-            args, targets = [], []
+        if quoted is SUBSTITUTION:
+            subs.append(text)
+        elif not quoted and text in SEPARATORS:
+            done.append((args, targets, subs))
+            args, targets, subs = [], [], []
         elif not quoted and text in REDIRECTS:
             if i + 1 < len(words):
                 target = words[i + 1][0]
@@ -94,7 +135,7 @@ def simple_commands(words):
         else:
             args.append(text)
         i += 1
-    done.append((args, targets))
+    done.append((args, targets, subs))
     return done
 
 
@@ -135,7 +176,10 @@ def writes(command, cwd):
 
     def placed(names, own):
         return [(where, own) for name in names if readable(name) and (where := at(folder, name))]
-    for args, targets in simple_commands(tokens(strip_text(command))):
+    for args, targets, subs in simple_commands(tokens(strip_text(command))):
+        for body in subs:                       # run first, in this folder; a cd in one stays in it
+            sub_inline, sub_paths, sub_git = writes(body, folder)
+            inline, paths, git_folders = inline or sub_inline, paths + sub_paths, git_folders + sub_git
         paths += placed(targets, False)
         while args and (ASSIGNMENT.match(args[0]) or args[0] in PREFIXES):
             inline = inline or args[0].startswith("TM_EDIT_PRIMARY=")

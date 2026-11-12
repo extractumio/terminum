@@ -52,6 +52,10 @@ export async function showRun(page, id) {
   const sel = `.card[data-id="${id}"]`;
   if (await page.$(`${sel}.compact:not(.open, .onagent)`)) await page.click(`${sel} .ctitle`);
 }
+/** A key's focus ring as the page draws it (docs/UI-GUIDELINES.md "Focus"): lit, focused, matching :focus-visible. */
+export const ring = (page, sel) => page.$eval(sel, (b) => ({ lit: getComputedStyle(b).outlineStyle !== "none", focused: document.activeElement === b, visible: b.matches(":focus-visible") }));
+/** Tab as a Mac's browser takes it to a key: WebKit with Option, as Safari. */
+export const tabKey = (page) => page.keyboard.press(page.context().browser().browserType().name() === "webkit" ? "Alt+Tab" : "Tab");
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
 /** How a client opens `terminum mcp`, before its calls. */
 export const mcpOpening = [rpc(1, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } }), rpc(null, "notifications/initialized")];
