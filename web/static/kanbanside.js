@@ -35,7 +35,7 @@ export function boardSessions({ chosen, openTask, send, narrow, newSession }) {
     groups: () => st.groups,
     keepFolded: (from, to) => { if (collapsed.has(from)) { collapsed.add(to); store.set("collapsed", [...collapsed]); } } });
   // + Session: under the project's sessions, while it is the one project shown
-  const adhoc = button("textkey adhoc", "Session", newSession);
+  const adhoc = button("textkey", "Session", newSession);
   Object.assign(adhoc, { id: "adhocsession", title: "A session of an agent in this project, no task" });
   adhoc.setAttribute("aria-label", "New session");
   adhoc.prepend(icon("plus", 14));

@@ -157,11 +157,11 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
    that is one (Auto-Dispatch in the board's bar: its .track) */
 :is(input[type="checkbox"][role="switch"], [role="switch"] > .track) { appearance: none; -webkit-appearance: none; position: relative; flex: none; display: inline-block;
   width: 26px; height: 14px; margin: 0; padding: 0; border-radius: 7px; background: var(--field-fill); box-shadow: var(--m-well); cursor: pointer; transition: background var(--dur-hover);
-  &::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform var(--dur-hover); } }
+  &::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform var(--dur-hover); }
+  @media (prefers-reduced-motion: reduce) { &, &::after { transition: none; } } }
 :is(input[type="checkbox"][role="switch"]:checked, [role="switch"][aria-checked="true"] > .track) { background: var(--accent);
   &::after { transform: translateX(12px); background: var(--surface-0); } }
 input[type="checkbox"][role="switch"] { &:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; } &:disabled { cursor: default; opacity: var(--key-disabled); } }
-@media (prefers-reduced-motion: reduce) { :is(input[type="checkbox"][role="switch"], [role="switch"] > .track), :is(input[type="checkbox"][role="switch"], [role="switch"] > .track)::after { transition: none; } }
 
 /* a tick, drawn: a recess, its check in the accent (as todobem's list marks its value): what is included */
 input[type="checkbox"]:not([role="switch"]) { appearance: none; -webkit-appearance: none; flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; padding: 0;
