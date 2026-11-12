@@ -219,7 +219,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     shelve.classList.add("evenleft");
-    wrap.append(expandable(area), row(t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run));
+    wrap.append(expandable(area));
+    // its keys at the window's foot, in sight while the task scrolls above them
+    $("taskacts").replaceChildren(...[t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run].filter(Boolean));
     return wrap;
   }
 

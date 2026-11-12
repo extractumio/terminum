@@ -8,6 +8,7 @@ const MARKUP = `
   <form method="dialog">
     <div class="dhead"><h2 id="tasktitle"></h2><button id="taskclose" class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <div id="taskbody" data-grow></div>
+    <div id="taskacts" class="actions"></div>
   </form>
 </dialog>
 
