@@ -119,7 +119,6 @@ export function filterBar({ getMeta, changed, editProject, newProject, newSessio
     $("farchived").setAttribute("aria-pressed", String(!!f.archived));
     $("fsubtasks").setAttribute("aria-pressed", String(!!f.subtasks));
     $("clearfilters").hidden = !narrowed();
-    $("adhocsession").hidden = f.project.length !== 1;
     $("filtersbtn").textContent = on ? `Filters ${on}` : "Filters";
     if (on) $("picks").classList.add("open");
   }
