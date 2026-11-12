@@ -20,16 +20,17 @@ export function el(tag, cls, text) {
 /** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring, and a
  *  menu it opens gives the focus back to what had it (the terminal's keys); Tab still reaches it, ringed
  *  (docs/UI-GUIDELINES.md "Focus"). */
-export const pointerKey = (b) => { b.addEventListener("mousedown", (e) => e.preventDefault()); return b; };
+const noFocus = (e) => e.preventDefault();
+export const pointerKey = (b) => { b.addEventListener("mousedown", noFocus); return b; };
 
-/** A small icon button: its class, icon, label for a screen reader, tooltip; a pointer's press leaves it unfocused
- *  (pointerKey). Inside a draggable it starts no drag. */
-export function iconButton(cls, name, label, title, onClick) {
+/** A small icon button: its class, icon (and its size), label for a screen reader, tooltip; a pointer's press leaves it
+ *  unfocused (pointerKey). Inside a draggable it starts no drag. */
+export function iconButton(cls, name, label, title, onClick, size = 14) {
   const b = pointerKey(el("button", cls));
   b.type = "button";
   b.title = title;
   b.setAttribute("aria-label", label);
-  b.append(icon(name, 14));
+  b.append(icon(name, size));
   b.addEventListener("click", (e) => { e.stopPropagation(); onClick(b); });
   return b;
 }

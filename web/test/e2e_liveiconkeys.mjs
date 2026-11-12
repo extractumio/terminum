@@ -17,7 +17,7 @@ async function pressed(page, sel) {
 
 /** The board's icon keys; `phone`: those a phone shows (its pool is a row of its own), and no session list. */
 export async function liveIconKeys(page, live, phone = false) {
-  const { j, open } = boardKit(page, live);
+  const { j, open, backToSessions } = boardKit(page, live);
   const agent = phone ? null : (await j("/api/task-agents", "POST", { name: "Icon agent", kind: "claude", command: "claude" })).id;
   await open("?project=default");
   const newTask = '.col[data-status="TODO"] .new';
@@ -38,16 +38,14 @@ export async function liveIconKeys(page, live, phone = false) {
     await page.evaluate(() => document.activeElement?.blur());
   }
   if (agent) await j(`/api/task-agents/${agent}`, "DELETE");
-  if (!phone) await liveListKeys(page, live);
+  if (!phone) await liveListKeys(page, backToSessions);
 }
 
 /** A group's ... key in the session list: its menu, opened by a press and closed by Esc, gives the keys back to the
  *  terminal; opened from the keyboard, back to the key. */
-async function liveListKeys(page, live) {
-  await page.goto(`${live.base}/sessions/`);
-  await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 10000 });
+async function liveListKeys(page, backToSessions) {
   const menu = "#sessions h2 .hostbtn";
-  await page.click("#sessions .item");
+  await backToSessions();
   check("AC-07 the terminal has the keys", await until(() => page.evaluate(() => document.activeElement?.id === "kbd")));
   await page.hover("#sessions .grp h2:has(.hostbtn)");
   await page.click(menu);

@@ -12,7 +12,7 @@ import { closeSession } from "./navtools.js";
 import { icon } from "./icons.js";
 import { inside, placeModal } from "./fabpane.js";
 import { floats } from "./fold.js";
-import { plural, projectColor } from "./listparts.js";
+import { plural, pointerKey, projectColor } from "./listparts.js";
 import { groupKey, groupRows, taskMarksOf, tasksOfProject } from "./nav.js";
 import { newTaskUrl } from "./tasklink.js";
 import { lastLinesView } from "./lastlines.js";
@@ -71,7 +71,7 @@ export function rowMenus({ list, send, item, projects, clone, orderList, groups,
     if (mark) b.prepend(icon(mark, 16));
     // the lift of the finger that opened it is no press of what is under it now
     b.onclick = (e) => { e.stopPropagation(); if (performance.now() - openedAt > 350) run(); };
-    b.addEventListener("mousedown", (e) => e.preventDefault());   // the input keeps the keys (a menu opened with them, open)
+    pointerKey(b);                                 // the input keeps the keys (a menu opened with them, open)
     return b;
   };
   /** The menu's items under a head: what it is for, and × to close it. */

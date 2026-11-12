@@ -401,13 +401,14 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
+  const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP };
   if (SORT_ALONE) {
-    await liveBoardSort(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveBoardSort(page, live);
     await ctx.close();
     return;
   }
   if (ICONS_ALONE) {
-    await liveIconKeys(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP }, true);
+    await liveIconKeys(page, live, true);
     await ctx.close();
     return;
   }
@@ -417,9 +418,9 @@ async function phone(browser, name) {
     return;
   }
   if (SCHEDULES_ALONE) {
-    const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
-    await liveFolded(page, live);
-    await liveQueue(page, live);
+    const shots = { ...live, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
+    await liveFolded(page, shots);
+    await liveQueue(page, shots);
     await ctx.close();
     return;
   }
@@ -427,7 +428,7 @@ async function phone(browser, name) {
     await liveBoardPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
     await liveBoardSessionsPhone(page, { base: BASE });
     await liveBoardScale(page, { base: BASE, app: APP });
-    await liveIconKeys(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP }, true);
+    await liveIconKeys(page, live, true);
     await ctx.close();
     return;
   }

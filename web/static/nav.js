@@ -11,7 +11,7 @@ import { icon } from "./icons.js";
 import { glide } from "./listmove.js";
 import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
-import { PROJECT_HUES, el, hueColor, iconButton, plural, pointerKey, projectColor, projectHue } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton, plural, projectColor, projectHue } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
@@ -377,31 +377,16 @@ export function renderNav(list, groups, current, query, onPick, collapsed, onTog
     h.append(t, acts);
     if (g.new && g.wid && onGroupNew) acts.append(newButton(g.label, g.session ?? g.label, () => onGroupNew(g, sessionsOf(left).at(-1))));
     if (g.attach && onCopy) {                    // attach from another terminal (tmux -L … / ssh -t …)
-      const c = pointerKey(el("button", "attach"));
-      c.type = "button";
-      c.title = `Copy: ${g.attach}`;
-      c.setAttribute("aria-label", `Copy the command that attaches to ${g.session ?? g.label}`);
-      c.append(icon("copy", 13));
-      c.addEventListener("click", (e) => { e.stopPropagation(); onCopy(g.attach); });
-      acts.append(c);
+      acts.append(iconButton("attach", "copy", `Copy the command that attaches to ${g.session ?? g.label}`, `Copy: ${g.attach}`, () => onCopy(g.attach), 13));
     }
     if (g.host && !g.attached && g.others > 0 && onImport) {
-      const n = pointerKey(el("button", "import"));
-      n.type = "button";
-      n.title = `Attach tmux sessions running on ${g.host} (${g.others})`;
-      n.setAttribute("aria-label", n.title);
-      n.append(icon("import", 14));
-      n.addEventListener("click", (e) => { e.stopPropagation(); onImport(g); });
-      acts.append(n);
+      const said = `Attach tmux sessions running on ${g.host} (${g.others})`;
+      acts.append(iconButton("import", "import", said, said, () => onImport(g)));
     }
     if (own && onHost) {
-      const m = pointerKey(el("button", "hostbtn"));
-      m.type = "button";
-      m.title = g.attached ? `${g.label}: detach from terminum` : `${g.host}: retry, off, on, remove`;
-      m.setAttribute("aria-label", g.attached ? `Session ${g.label} of your tmux${g.host ? ` on ${g.host}` : ""}` : `Host ${g.host}`);
+      const m = iconButton("hostbtn", "ellipsis", g.attached ? `Session ${g.label} of your tmux${g.host ? ` on ${g.host}` : ""}` : `Host ${g.host}`,
+        g.attached ? `${g.label}: detach from terminum` : `${g.host}: retry, off, on, remove`, (b) => onHost(g, b));
       m.setAttribute("aria-haspopup", "true");
-      m.append(icon("ellipsis", 14));
-      m.addEventListener("click", (e) => { e.stopPropagation(); onHost(g, m); });
       acts.append(m);
     } else if (g.wid && onGroupMenu) {             // a tmux session's group: its menu (as a right click on its header)
       const m = iconButton("hostbtn", "ellipsis", `Session group ${g.label}`, `${g.label}: new session, move, close`, (b) => onGroupMenu(g.wid, b));
