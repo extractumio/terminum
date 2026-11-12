@@ -38,8 +38,8 @@ pub(super) const TOGETHER: &str = "Do them all in this session, one after anothe
 
 If one cannot be done, say why in a comment on it (execute_tool(\"add_comment\", {id, text})) and move it to FAILED (execute_tool(\"move_task\", {id, to})). Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. The human can remove the cause and run the main task again: what is not DONE runs again.";
 
-/// How such an agent asks a human (AC-185): every task that waits for the answer waits, so the session closes.
-pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then move each other task that waits for the answer, its main task among them, to WAIT FOR HUMAN by execute_tool(\"move_task\", {id, to}), call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window.";
+/// How such an agent asks a human (AC-185): one question, and what is still in progress waits with it (tasks/tools.rs).
+pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window.";
 
 /// The main tasks among `tasks`, each with its subtasks there (AC-185).
 fn mains(tasks: &[Task]) -> Vec<(&Task, Vec<&str>)> {
@@ -99,8 +99,8 @@ pub(super) struct Facts {
     language: String,
     /// the first task is Auto-Dispatcher's round (AC-170)
     round: Option<crate::tasks::auto::Round>,
-    /// the humans' answers to the questions asked on its tasks that wait for them, by task: a main task's run with
-    /// its subtasks starts anew and brings them (AC-185)
+    /// the humans' answers to the questions asked on its tasks, by task: a run of several starts anew and brings
+    /// them (AC-138, AC-185)
     answers: Vec<(String, Vec<String>)>,
     /// a round started it, no human: its words name the task and carry none of its text
     pub(super) auto: bool,
@@ -115,7 +115,8 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts,
         None => None,
     };
     let mut answers = Vec::new();
-    if !mains(tasks).is_empty() {
+    // several tasks start anew (starts_anew): what the humans answered rides in the first words
+    if tasks.len() > 1 {
         for t in tasks {
             if let Some(said) = ops::answers(tx, &t.id)?.filter(|said| !said.is_empty()) {
                 answers.push((t.id.clone(), said));

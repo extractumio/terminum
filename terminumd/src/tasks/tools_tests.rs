@@ -459,6 +459,12 @@ fn ac185_a_main_task_is_finished_after_the_subtasks_of_its_run() {
         runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); })?;
         Ok((kid.0, later.0))
     }).unwrap();
+    // one question, and what is in progress waits with it: the session can close
+    let status = |id: &str| s.with(|tx| ops::get(tx, id)).unwrap().status;
+    s.with(|tx| { ops::link(tx, HUMAN, &kid, Some(KEY), 2)?; ops::move_to(tx, HUMAN, &main, "IN PROGRESS", 2)?; ops::move_to(tx, HUMAN, &kid, "IN PROGRESS", 2) }).unwrap();
+    let asked = call(&s, &dir, &w, "ask_human", json!({"id": kid, "questions": "v1 or v2?"})).unwrap();
+    assert!(asked.ends_with("this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."), "{asked}");
+    assert_eq!((status(&main), status(&kid), status(&later)), ("WAIT FOR HUMAN".to_string(), "WAIT FOR HUMAN".to_string(), "TODO".to_string()));
     let refused = call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap_err();
     assert_eq!(refused, format!("{main} is a main task: its subtasks of this run are not DONE: {kid}. Finish them first, or move {main} to FAILED with a comment saying why."));
     assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": main, "to": "DONE"})).unwrap_err(), refused, "nor by a move");

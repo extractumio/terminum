@@ -116,8 +116,8 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
     }
     Ok(match (waits, run.map(|r| r.ids.len() > 1)) {
         (false, _) => "",
-        // several tasks: the session stays while one of them is in progress, and their next RUN may start anew (AC-185)
-        (true, Some(true)) => " End your turn now, with no more tool calls: once no task of this session is in progress Dispatcher closes it, and the human's RUN brings the answers.",
+        // several tasks: they wait together, and their next RUN may start anew (AC-185)
+        (true, Some(true)) => " End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers.",
         (true, Some(false)) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
         (true, None) => " Wait for the answer in this session.",
     })
@@ -236,7 +236,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 ops::questions(tx, &me, id, &rules::clean(arg(args, "questions")?), at)?;
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
-                Ok((format!("{id} waits for the human, with your questions.{}", asked(tx, who, true)?), vec![id.to_string()]))
+                let then = asked(tx, who, true)?;
+                // in a run of several its other tasks in progress wait with it: one question closes the session (AC-185)
+                let mut cards = vec![id.to_string()];
+                if let Some(run) = crate::dispatcher::runs::in_pane(tx, &who.key)?.filter(|r| r.ids.len() > 1) {
+                    cards.extend(crate::dispatcher::wait_with(tx, &run, id)?);
+                }
+                Ok((format!("{id} waits for the human, with your questions.{then}"), cards))
             }
             "add_comment" => {
                 let id = arg(args, "id")?;

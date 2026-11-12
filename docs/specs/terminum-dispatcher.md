@@ -1262,14 +1262,17 @@ Scenario: AC-185 edge — the main task ends last
   Then it is refused as well: what API-12's newest run took holds it until it is DONE; a human moves a card as they will
 
 Scenario: AC-185 edge — asking a human
-  Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then move each other task that waits for the answer, its main task among them, to WAIT FOR HUMAN by execute_tool("move_task", {id, to}), call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window."
-  And ask_human and move_task to WAIT FOR HUMAN answer, in a run of several tasks, "End your turn now, with no more tool calls: once no task of this session is in progress Dispatcher closes it, and the human's RUN brings the answers."
+  Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window."
+  When the agent calls ask_human on API-14, with API-12 and API-15 of its run still IN PROGRESS
+  Then API-12 and API-15 are WAIT FOR HUMAN too, by Dispatcher: "It waits with API-14: its session's agent asked the human there."; in any run of several tasks (AC-138)
+  And the tool answers "API-14 waits for the human, with your questions. End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."
   And a move of another task of the run, neither into the wait nor out of it, leaves the agent's question standing
-  When every open task of the run waits and the agent's turn is over
+  When the agent's turn is over
   Then the session closes as AC-157 says
   When the human answers in comments and presses Run on API-12
   Then a new session starts for what is not DONE, and its prompt carries, after the rules, each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
   And RUN's window shows them: one written or changed after it was read is "The task's text changed: look at it again." (AC-121)
+  And any run of several tasks carries them so (AC-138): it starts anew too
   When the human presses Run on the subtask that asked instead
   Then AC-157 holds for it alone: its conversation resumes
 
