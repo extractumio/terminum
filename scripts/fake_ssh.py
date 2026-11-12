@@ -28,6 +28,8 @@ import tempfile
 import threading
 import time
 
+import owned_children
+
 WITH_VALUE = set("BbcDEeFIiJLlmOopQRSWw")
 
 
@@ -237,8 +239,6 @@ def main():
     # TMUX_TMPDIR stays: a run's private folder is where its tests look for this "host's" server
     env = {k: v for k, v in os.environ.items() if k not in ("TMUX", "TMUX_PANE") and not k.startswith("TM_")}
     env.update(HOME=home, PATH=shim + ":" + os.environ.get("PATH", "/usr/bin:/bin"), SHELL="/bin/sh")
-    p = subprocess.Popen(["/bin/sh", "-c", command or "exec /bin/sh"], env=env, cwd=home, start_new_session=True)
-
     def drop(_sig, _frame):
         # the link drops: the remote side's processes go with it, as sshd would end them
         try:
@@ -248,8 +248,18 @@ def main():
         shutil.rmtree(shim, ignore_errors=True)
         ran(command, start)
         os._exit(255)
+    p = subprocess.Popen(["/bin/sh", "-c", command or "exec /bin/sh"], env=env, cwd=home, start_new_session=True)
     signal.signal(signal.SIGTERM, drop)
     signal.signal(signal.SIGHUP, drop)
+    try:
+        for registry in {os.environ.get("FAKE_SSH_CHILDREN_FILE"), os.environ.get("TM_TEST_CHILDREN_FILE")} - {None}:
+            owned_children.register(registry, p.pid)
+    except Exception:
+        try: os.killpg(p.pid, signal.SIGKILL)
+        except ProcessLookupError: pass
+        p.wait()
+        raise
+
     try:
         code = p.wait()
     except KeyboardInterrupt:
