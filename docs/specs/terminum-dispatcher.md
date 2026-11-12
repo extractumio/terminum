@@ -146,6 +146,12 @@ Scenario: AC-121 failure — did not start
   And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex, or Codex runs in a shared app-server (AC-156)"; the agent left running is named, and Dispatcher does not watch it
   And the window stays for AC-125 to close
 
+Scenario: AC-121 edge — text queued when the agent ends
+  Given the agent is still running with a complete command queued in its tty
+  When the agent ends without reading it
+  Then the wrapper drops that input and the command does not run
+  And the shell left in the window accepts a new command
+
 Scenario: AC-121 edge — the window still opening
   Given a press has made the run and its window opens over a slow link
   When Dispatcher's walk comes first
@@ -780,7 +786,7 @@ Scenario: AC-141 failure — settings
 ```gherkin
 Scenario: AC-142 happy path
   Given project api with its folder set
-  When the user presses + Session beside api's pencil in the project menu, or in the head with api alone shown
+  When the user presses + Session beside api's pencil in the project menu, or under api's sessions in the board's session list with api alone shown
   Then the pool's agents are offered, the one last used in api first; a press starts it in api's place with nothing typed, and its session opens
   And it stands in the list as a member of api, and as a dot on its agent
 
@@ -823,7 +829,8 @@ Scenario: AC-143 edge — what counts
 Scenario: AC-168 happy path — Claude Code's
   Given Claude Code's status line runs `terminum statusline`, before the user's own command if there is one
   When a Claude Code session in a pane terminumd lists redraws its status line, its five-hour window at 34% and its week at 21%
-  Then within a walk every Claude Code agent's rectangle shows two stripes, "5h 34%" and "week 21%", filled that far in the agent's color
+  Then within a walk every Claude Code agent's rectangle shows two stripes, "5h 34%" and "week 21%", filled that far, green as each is under 40%
+  And a stripe from 40% to 90% fills yellow (`--waiting`), one over 90% red (`--danger`)
   And the user's own status line prints as it did, also when terminumd does not answer
 
 Scenario: AC-168 happy path — Codex's
@@ -1695,7 +1702,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs`
+- [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
