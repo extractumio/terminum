@@ -945,9 +945,11 @@ Scenario: AC-165 edge — two questions at once
   Then Esc answers the question alone; the menu stays for the next key
 
 Scenario: AC-165 edge — Enter again while it is kept
-  Given an agent's window, a new project's window, or a name's dialog that terminumd checks (Add existing)
-  When the user presses Enter and again before terminumd answered
-  Then one request is sent, its button is off, Esc and Cancel wait
+  Given an agent's window, a new project's window, a name's dialog that terminumd checks (Add existing), a new task's window, a task's comment, RUN's window, or Convert to task
+  When the user presses Enter, ⌘Enter or the button, and again before terminumd answered
+  Then one request is sent, its buttons are off, its text stands still (what is typed meanwhile goes nowhere and nothing typed is lost), Esc and Cancel wait
+  When Run is off (no agent yet)
+  Then Enter and ⌘Enter send nothing either
   When terminumd answers
   Then it is kept once and the window closes (a new project's stays on it, AC-139), or says why and stays
 ```

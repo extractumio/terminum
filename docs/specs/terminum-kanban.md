@@ -729,7 +729,11 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
   When an older read answers after a newer, or two windows are opened with the first slower
   Then the newest stands
   When another's change arrives during a drag
-  Then the drag goes on, the card held; the columns' scroll stays through any change
+  Then the drag goes on, the card held; the columns' scroll stays through any change; after the drop each card shows once
+  When a column is drawn anew while a card in it is pressed, and that card's task did not change
+  Then the card is the same, and the press lands
+  When the board's connection to terminumd opens, or opens again
+  Then the board reads its columns again: a change made before it opened shows; signed out, the board goes to sign in (AC-09)
 
 Scenario: AC-133 edge — nothing typed is lost by a slip
   When Discard is pressed on a window with text, or Esc, × or Back on an edit not saved
@@ -737,7 +741,9 @@ Scenario: AC-133 edge — nothing typed is lost by a slip
   When Enter is pressed in the title
   Then it is Create; ⌘Enter in a text is Create or CLOSE
   When Create is pressed while a file is on its way
-  Then it waits for the file
+  Then it waits for the file; a comment's Close and Run wait for its files the same way
+  When a file lands after its draft was sent or discarded, or after another draft opened in the window
+  Then it is in no other draft: a draft closed only, not ended, gets it
 
 Scenario: AC-133 failure — another changed the text meanwhile
   Given Alex editing API-12's text
@@ -1074,6 +1080,7 @@ Comments and history are one table, `events`: a window lists them in one order. 
 |---|---|---|
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
+| AC-133 | A task window's fields go as separate PATCHes, unordered: two choices made quickly may land in the other order, so the first may stand. Only its text has a revision (`text_rev`). | `web/static/kanbanwin.js` |
 | AC-154 | An agent may take a human's free task (take_task) and finish it (finish_task): DONE, then archived after 2 days (AC-118), with no human deciding. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -1173,7 +1180,7 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
