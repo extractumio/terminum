@@ -131,7 +131,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
     // a folded card's first press shows it whole (terminum-kanban.md AC-159): pressed until it opens
     const press = () => { const c = document.querySelector(sel); if (c.matches(".compact:not(.open)")) c.click(); c.click(); };
     document.getElementById("taskbox").addEventListener("close", () => queueMicrotask(() => { press(); done(); }), { once: true });
-    [...document.querySelectorAll(".newcomment button")].find((b) => b.textContent === "Close").click();
+    [...document.querySelectorAll("#taskacts button")].find((b) => b.textContent === "Close").click();
   }), card(second));
   await page.waitForTimeout(800);
   check("AC-105 a card pressed as its window closes opens and stays, at its address",
@@ -256,7 +256,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.reload();
   await page.waitForSelector("#board .col");
   check("AC-111 a reload keeps it", await until(async () => (await inColumn("DONE")).join() === urgent));
-  // every key of the head shown, a filter on, one project's + Session too: none stands over another as the board narrows
+  // every key of the head shown, a filter on: none stands over another as the board narrows
   const over = [];
   for (const width of [1100, 1200, 1300, 1400]) {   // the last the run's own size
     await page.setViewportSize({ width, height: 900 });
