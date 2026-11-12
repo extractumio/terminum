@@ -145,7 +145,8 @@ async fn did_not_start(app: &Shared, r: &Run, at: Option<(&Server, &str)>, why: 
     }
     let id = r.id.clone();
     let done = store(app, move |tx| {
-        let now = runs::change(tx, &id, |r| { r.state = Phase::Gone; r.prompt = None; })?;
+        // its task never went in: no conversation of it to go on with, whatever session its agent opened (AC-122)
+        let now = runs::change(tx, &id, |r| { r.state = Phase::Gone; r.prompt = None; r.agent_session = None; })?;
         super::fail(tx, &now, &words)
     }).await;
     if let Err(e) = done {
@@ -230,7 +231,7 @@ async fn watching(app: &Shared, id: &str) {
         if r.state == Phase::Typed {
             let at = *typed_at.get_or_insert_with(Instant::now);
             if at.elapsed() >= start_scaled(TAKEN_WITHIN) {
-                let why = if r.kind == "codex" { "the prompt was not taken in 30 s; hooks not trusted: open /hooks in Codex" } else { "the prompt was not taken in 30 s" };
+                let why = if r.kind == "codex" { "the prompt was not taken in 30 s; hooks not trusted: open /hooks in Codex, or Codex runs in a shared app-server (AC-156)" } else { "the prompt was not taken in 30 s" };
                 return did_not_start(app, &r, Some((&server, &pane)), why).await;
             }
         } else {
