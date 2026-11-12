@@ -115,15 +115,15 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_main_task_goes_with_its_sub
         // the round above was given the main task and left it: the human's move of its subtask has it judged anew
         let waits = Setting { wait: 1, ..setting(tx) };
         assert!(found(tx, &waits, NOW + 120)?.is_empty(), "its wait counts from its subtask's move");
-        assert_eq!(found(tx, &waits, NOW + 160)?, [parent.id.clone()]);
+        assert_eq!(found(tx, &waits, NOW + 160)?, std::slice::from_ref(&parent.id));
         let only = |p: &str| Setting { severities: vec![p.to_string()], ..setting(tx) };
-        assert_eq!(found(tx, &only("P2"), NOW + 160)?, [parent.id.clone()], "taken for its subtask's severity");
+        assert_eq!(found(tx, &only("P2"), NOW + 160)?, std::slice::from_ref(&parent.id), "taken for its subtask's severity");
         assert!(found(tx, &only("P3"), NOW + 160)?.is_empty());
         ops::link(tx, HUMAN, &child.id, Some("tmux:local:t:%9"), NOW + 100)?;
         assert!(found(tx, &setting(tx), NOW + 160)?.is_empty(), "a session holds its subtask");
         ops::link(tx, HUMAN, &child.id, None, NOW + 100)?;
         ops::move_to(tx, HUMAN, &parent.id, "DONE", NOW + 100)?;
-        assert_eq!(found(tx, &setting(tx), NOW + 160)?, [child.id.clone()], "its main task DONE, a subtask left is a candidate itself");
+        assert_eq!(found(tx, &setting(tx), NOW + 160)?, std::slice::from_ref(&child.id), "its main task DONE, a subtask left is a candidate itself");
         // what its agent is told: terminum's words and the IDs alone
         let prompt = started_prompt(&[ops::get(tx, &parent.id)?, ops::get(tx, &child.id)?], "English");
         assert!(prompt.starts_with(&format!("Auto-Dispatcher, which a human turned on for this project, started main task {} with its subtask still to do: {}; no human started this run or watches it now.", parent.id, child.id)), "{prompt}");

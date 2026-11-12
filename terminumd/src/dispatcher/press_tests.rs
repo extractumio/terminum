@@ -297,7 +297,7 @@ fn ac185_a_main_task_goes_with_its_subtasks_still_to_do() {
         let tasks = members(tx, &main.id, &[])?;
         assert_eq!(ids(&tasks), [main.id.clone(), a.id.clone(), failed.id.clone()], "what is DONE or in Archived stays out; a failed one runs again");
         assert_eq!(members(tx, &main.id, std::slice::from_ref(&a.id))?.len(), 3, "one chosen with it goes once");
-        assert_eq!(ids(&members(tx, &a.id, &[])?), [a.id.clone()], "a subtask runs alone");
+        assert_eq!(ids(&members(tx, &a.id, &[])?), std::slice::from_ref(&a.id), "a subtask runs alone");
         let prompt = prompt_of(tx, &tasks, Some("mind the API"))?;
         assert!(prompt.starts_with(&format!("The human ran main task {} with its 2 subtasks still to do: {}, {}. Read each with", main.id, a.id, failed.id)), "{prompt}");
         assert!(prompt.contains("in the order you decide") && prompt.contains("a main task goes last") && prompt.contains("can be DONE only when each of them is"));

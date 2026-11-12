@@ -114,12 +114,12 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
     if let Some(r) = &run {
         runs::change(tx, &r.id, |r| r.asked = waits)?;
     }
-    Ok(match (waits, run.is_some()) {
+    Ok(match (waits, run.map(|r| r.ids.len() > 1)) {
         (false, _) => "",
         // several tasks: the session stays while one of them is in progress, and their next RUN may start anew (AC-185)
-        (true, true) if run.as_ref().is_some_and(|r| r.ids.len() > 1) => " End your turn now, with no more tool calls: once no task of this session is in progress Dispatcher closes it, and the human's RUN brings the answers.",
-        (true, true) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
-        (true, false) => " Wait for the answer in this session.",
+        (true, Some(true)) => " End your turn now, with no more tool calls: once no task of this session is in progress Dispatcher closes it, and the human's RUN brings the answers.",
+        (true, Some(false)) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
+        (true, None) => " Wait for the answer in this session.",
     })
 }
 
