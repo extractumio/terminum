@@ -146,10 +146,15 @@ fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent
     }
 }
 
-/// A human's setting, kept as `new` says: on needs an agent that picks and a severity to take. Turned on, it starts
-/// anew: why it was off is forgotten, and what it started before does not count against it; kept off, why stays.
+/// A human's setting, kept as `new` says: on needs the project's folder (AC-140), an agent that picks and a severity
+/// to take. Turned on, it starts anew: why it was off is forgotten, and what it started before does not count against
+/// it; kept off, why stays.
 pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<(), String> {
     ops::check_project(tx, project)?;
+    if new.on {
+        let (name, _, dir) = ops::project_place(tx, project)?;
+        ops::no_folder(&name, &dir)?;
+    }
     let (agent, default) = (in_pool(tx, new.agent.as_deref())?.map(|a| a.id), in_pool(tx, new.default.as_deref())?.map(|a| a.id));
     if new.on && agent.is_none() && !new.by_order() {
         return Err("Choose the agent that picks first: its settings.".to_string());
