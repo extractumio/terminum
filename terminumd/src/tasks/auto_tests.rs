@@ -33,6 +33,12 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         assert_eq!(put(json!({"day_most": 1001}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
         assert_eq!(put(json!({"day_most": null}), 5).unwrap_err(), "Tasks a day: 1 to 1000");
         assert_eq!(put(json!({"on": true, "agent": "p", "severities": []}), 5).unwrap_err(), "Tick a severity it takes first: with none it starts nothing.");
+        // a project with no folder starts nothing: on is refused with AC-140's words, off and its settings are kept
+        tx.execute("UPDATE projects SET dir = '' WHERE id = 'api'", []).map_err(sql)?;
+        assert_eq!(put(json!({"on": true, "agent": "p"}), 5).unwrap_err(), "api has no folder: set it in its window.");
+        assert_eq!(put(json!({"on": true, "mode": "order"}), 5).unwrap_err(), "api has no folder: set it in its window.", "by the board's order too");
+        assert_eq!(setting(tx, "api")?, made, "nothing saved");
+        tx.execute("UPDATE projects SET dir = '/srv' WHERE id = 'api'", []).map_err(sql)?;
         // its agents chosen while off; the switch then sends "on" alone and keeps the rest
         put(json!({"agent": "p", "default": "a", "severities": ["P2", "P0"], "wait_minutes": 0, "day_most": 3}), 5)?;
         let chosen = Setting { agent: Some("p".into()), default: Some("a".into()), severities: vec!["P0".into(), "P2".into()], wait: 0, day_most: 3, ..made };
