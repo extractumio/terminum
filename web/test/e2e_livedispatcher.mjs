@@ -147,9 +147,10 @@ export async function liveDispatcher(page, opts) {
   const liveRun = await run(stillOpen);
   await hasStatus(stillOpen, "IN PROGRESS", 15000);
   const livePane = await paneOf(stillOpen);
+  const liveConversation = (await j(`/api/tasks/${stillOpen}`)).agent?.conversation;
   tool(livePane, "execute_tool", { name: "ask_human", arguments: { id: stillOpen, questions: "Which API? Options: v1, v2. Recommended: v2." } });
   // Give browser actions the human's unscaled minute; only this private run's quiet clock changes.
-  hook(livePane, "Stop");
+  hook(livePane, "Stop", { session_id: liveConversation });
   intoStore(app, `UPDATE runs SET closing_for = -18000 WHERE id = '${liveRun.run}'`);
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector(card(stillOpen));
