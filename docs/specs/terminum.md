@@ -104,7 +104,7 @@ Open questions:
 | AC-167 | [MUST / P0] | One switcher of the sections (Sessions, Kanban, Dashboard, Messages) stands first in every page's top left corner, the shown one marked, any other one press away; words where they fit, icons where not; the session list's filter folds to a key beside it. |
 | AC-171 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
-| AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling. |
+| AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling; every dialog's buttons stay in sight at its foot while its content scrolls. |
 | AC-184 | [SHOULD / P1] | Every box to read or type in a text (a task's, a comment's, a schedule's, a prompt, a quoted screen or selection, Paste, Ask, a bookmark's note) has a key in its bottom-right corner that shows it over the whole window; the key or Esc gives it back, with what was typed, its window still open. |
 | AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
 | AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
@@ -1026,7 +1026,8 @@ Scenario: AC-173 happy path — each kind its own size
     | a text to type | RUN, New task, a schedule (640 px high at least), Ask and a bookmark's note (560 px high at most), Paste | 520–960 px | 80%, 480–880 px; the text field takes the rest |
     | a list to pick from | a folder, the archived tasks | 480–720 px | 80%, 360–760 px; the list takes the rest |
     | a document | a task, the bookmarks (960 px wide at most), a session's last lines (1280) | 560–920 px for a task | 80%, 420 px at least |
-  And a dialog that takes 80% of the height keeps its buttons at its foot, also when what is above them is short or empty, and in sight when it scrolls
+  And a dialog that takes 80% of the height keeps its buttons at its foot, also when what is above them is short or empty
+  And every dialog's buttons stay at its foot, in sight while what is above them scrolls: a task's window's Archive, Close and Run under its scrolling task, a form's Save on a window shorter than its fields
 Scenario: AC-173 edge — a phone or a narrow window
   Given a phone, or a window 860 px wide or narrower
   Then every dialog is a sheet as wide as the screen less 16 px a side (AC-18); one to type in, to pick from or to read is as tall as what is in sight above the on-screen keyboard less 16 px a side, its buttons in sight; a question or a form stays as tall as its content
@@ -1471,7 +1472,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-167 — `web/test/e2e_sections.mjs` (in `e2e_all.mjs`), `web/test/e2e_livehistory.mjs`, `web/test/e2e_liveboardsession.mjs`, `cargo test page_tests`
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
-- [x] AC-173 — `web/test/e2e_dlgsize.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`
+- [x] AC-173 — `web/test/e2e_dlgsize.mjs` (a form's buttons held at its foot on a short window), `web/test/e2e_taskwin.mjs` (a task's window's keys outside what scrolls), `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`
 - [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`

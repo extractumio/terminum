@@ -263,7 +263,7 @@ function send(m) {
 }
 const openSession = (key) => { location.href = sessionUrl(key); };
 const folds = foldedCards((id) => openTask(id));
-const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow });
+const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: () => newSession(projectOf(filters().project[0])) });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession, readings: () => readings, openTask });
@@ -403,7 +403,6 @@ async function newSession(p) {
     location.href = sessionUrl(key);
   } catch (e) { say(e.message); }
 }
-$("adhocsession").addEventListener("click", () => newSession(projectOf(filters().project[0])));
 
 /** A project with no folder starts nothing: said, and its window opens at the folder (terminum-dispatcher.md AC-140). */
 function askFolder(id, words) {
