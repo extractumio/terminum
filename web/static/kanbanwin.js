@@ -8,8 +8,10 @@ import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSele
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
+import { expandable } from "./expand.js";
 
 const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
+const HELD = `${EDITS}, .xbox.full`;                     // or a box over the window (AC-184): nothing redraws under it
 
 export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }) {
   taskBoxes();
@@ -148,7 +150,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       takesFiles(area, kept);
       const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(true); });
       keys.remove();
-      wrap.replaceChildren(head, area, row(button(null, "Cancel", () => refresh(true)), save));
+      wrap.replaceChildren(head, expandable(area), row(button(null, "Cancel", () => refresh(true)), save));
       area.focus();
       addFiles(files, area, kept);
     };
@@ -159,7 +161,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
     keys.append(edit);
     if (t.text) keys.append(purge);
-    wrap.append(head, shownText);
+    wrap.append(head, t.text ? expandable(shownText) : shownText);
     return wrap;
   }
 
@@ -217,7 +219,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     shelve.classList.add("evenleft");
-    wrap.append(area, row(t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run));
+    wrap.append(expandable(area), row(t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run));
     return wrap;
   }
 
@@ -274,7 +276,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
    *  of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
   async function refresh(saved = false, news = false) {
     if (!box.open || !shown) return;
-    const editing = () => !saved && body.querySelector(EDITS);
+    const editing = () => !saved && body.querySelector(HELD);
     if (editing()) return;
     try {
       const t = await api(`/api/tasks/${shown.id}`);

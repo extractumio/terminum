@@ -11,5 +11,7 @@
     translate: -50% -50% !important; margin: 0 !important; z-index: 40 !important;
     width: calc(100vw - 32px) !important; max-width: none !important; max-height: calc(var(--app-h, 100dvh) - 32px) !important;
     overflow: auto; box-sizing: border-box; box-shadow: var(--dialog-shadow) !important; }
+  /* a box over the whole window (expand.css): the window holds it, not the sheet (a translate would) */
+  :is([data-sheet], dialog.dlg, #marksdlg):has(.xbox.full) { translate: none !important; }
 }
 #sheetscrim { position: fixed; inset: 0; z-index: 39; background: var(--scrim); }
