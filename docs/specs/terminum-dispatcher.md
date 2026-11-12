@@ -380,10 +380,10 @@ Scenario: AC-124 edge — no time limit on a wait
   Given API-12 waits for an answer for 3 days, read from the event and the screen, past the hook state's lease
   Then the session stays, no time runs out, and the count on the Kanban tab stands
 
-Scenario: AC-124 edge — the agent's own move
-  When the agent calls move_task {to: "WAIT FOR HUMAN"}
+Scenario: AC-124 edge — the agent's own ask
+  When the agent calls ask_human (AC-157)
   Then the budget stops until a human's comment with RUN, or the agent's own move back
-  And it is an agent asking a human: AC-157 closes its session once its turn is over
+  And AC-157 closes its session once its turn is over
 ```
 
 ### AC-125 — Closing, and what is written [MUST / P0]
@@ -973,10 +973,14 @@ Scenario: AC-157 edge — what keeps it open
   When the agent waits at a question in its window (AC-124) or before its box (AC-121)
   Then its window stays: the question lives there
 
-Scenario: AC-157 edge — the agent's own move
-  When the agent calls move_task {to: "WAIT FOR HUMAN"}
-  Then it asked as ask_human does, with no questions kept, and the tool's answer says to end its turn
-  When the agent moves it back before its turn ends
+Scenario: AC-157 failure — a wait with no question
+  When an agent calls move_task {id: "API-12", to: "WAIT FOR HUMAN"}, its own task or another
+  Then it is refused and API-12 stays where it was: a card in WAIT FOR HUMAN always shows what it asks
+  And on its own task the refusal names ask_human, and a wait for another task is said there: "RUN API-12 again once API-9 is DONE"
+  And Dispatcher's own move after a question in the window (AC-124) and a human's move stay as they are
+
+Scenario: AC-157 edge — the agent goes on
+  When the agent that asked moves API-12 back to IN PROGRESS before its turn ends
   Then nothing closes
 
 Scenario: AC-157 failure — not Dispatcher's session
@@ -1446,7 +1450,7 @@ CREATE TABLE runs (id TEXT PRIMARY KEY, task TEXT NOT NULL REFERENCES tasks, age
   wait_moved INTEGER NOT NULL DEFAULT 0, result INTEGER NOT NULL DEFAULT 0, again_said INTEGER NOT NULL DEFAULT 0, close_tried INTEGER NOT NULL DEFAULT 0, last_walk INTEGER NOT NULL DEFAULT 0);
 ```
 
-`asked` (AC-157): its agent asked a human itself (`ask_human`, `move_task` to WAIT FOR HUMAN), set in that call's transaction, cleared by its own move off it and by new work.
+`asked` (AC-157): its agent asked a human itself (`ask_human`), set in that call's transaction, cleared by its own move off it and by new work.
 
 **Waits** (AC-158, AC-169): a press at a slot's limit that agreed to the queue (`"queue": true`), one a task, its place in the line kept when it is pressed anew:
 

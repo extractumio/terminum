@@ -29,7 +29,7 @@ const TOOLS: [Tool; 12] = [
     Tool { name: "update_task", read_only: false, description: "Changes a task of your project: severity (priority), parent (a subtask of it; \"none\": out of it); title, text (create_task's rules) of an agents' task; archive \"yes\": an agents' task off the board. reason: required for archive or a human's task, kept as a comment.",
         fields: &[ID, ("severity", false, 2), ("parent", false, 24), ("title", false, 800), ("text", false, TEXT_MOST), ("archive", false, 3), ("reason", false, COMMENT_MOST)] },
     Tool { name: "take_task", read_only: false, description: "Takes a free task of your project: it becomes this session's, in its column.", fields: &[ID] },
-    Tool { name: "move_task", read_only: false, description: "Moves a task of your project to another column (status): yours, or one no human's RUN holds elsewhere. WAIT FOR HUMAN when only a person can go on.", fields: &[ID, ("to", true, 20)] },
+    Tool { name: "move_task", read_only: false, description: "Moves a task of your project to another column (status): yours, or one no human's RUN holds elsewhere. To wait for a human, call ask_human instead.", fields: &[ID, ("to", true, 20)] },
     Tool { name: "ask_human", read_only: false, description: "Asks the human what only a person decides: questions on your task, each with options and the one you recommend. Then end your turn.", fields: &[ID, ("questions", true, COMMENT_MOST)] },
     Tool { name: "add_comment", read_only: false, description: "Adds a Markdown comment to a task you can reach.", fields: &[ID, ("text", true, COMMENT_MOST)] },
     Tool { name: "attach_file", read_only: false, description: "Attaches a file to a task: path in this session's folder; from a host name and text.", fields: &[TASK, ("path", false, 4096), ("name", false, 300), ("text", false, TEXT_FILE_MOST)] },
@@ -38,8 +38,11 @@ const TOOLS: [Tool; 12] = [
     Tool { name: "dispatch_task", read_only: false, description: "Auto-Dispatcher's round only: starts one of the round's candidate tasks on its agent. why: its RICE score and reason, one line.", fields: &[ID, ("why", false, 600)] },
 ];
 
+/// Fields whose value is a whole number: an agent may send it as a number or as its digits.
+const NUMBERS: [&str; 5] = ["page", "lines", "at_once", "once_at", "budget_minutes"];
+
 /// `tool`'s known string fields of `args`, each within its limit; what is wrong goes to `faults`
-/// (a page's number may come as a number).
+/// (a number's field may come as a number).
 pub(super) fn fields_of(tools: &[Tool], tool: &str, args: &Value, faults: &mut Vec<String>) -> Map<String, Value> {
     let mut out = Map::new();
     let fields = tools.iter().find(|t| t.name == tool).map_or(&[][..], |t| t.fields);
@@ -50,7 +53,7 @@ pub(super) fn fields_of(tools: &[Tool], tool: &str, args: &Value, faults: &mut V
             Some(Value::String(s)) if s.len() > *most => faults.push(format!("{field} is over {most} bytes")),
             Some(Value::String(s)) if *required && s.trim().is_empty() => faults.push(format!("{field} is required")),
             Some(v @ Value::String(_)) => { out.insert((*field).to_string(), v.clone()); }
-            Some(Value::Number(n)) if *field == "page" => { out.insert("page".into(), Value::from(n.to_string())); }
+            Some(Value::Number(n)) if NUMBERS.contains(field) => { out.insert((*field).to_string(), Value::from(n.to_string())); }
             Some(_) => faults.push(format!("{field} must be a string")),
         }
     }
@@ -132,6 +135,11 @@ mod tests {
         // a page's number may come as a number
         assert_eq!(checked("get_task", &json!({"id": "T-1", "page": 2})).unwrap(), json!({"id": "T-1", "page": "2"}));
         assert_eq!(checked("get_task", &json!({"id": "T-1", "page": "2"})).unwrap(), json!({"id": "T-1", "page": "2"}));
+        // so may get_session's lines (TERM-160); an ID never
+        let mut faults = Vec::new();
+        let out = fields_of(&super::super::mcp_manager::TOOLS, "get_session", &json!({"session": "s", "lines": 80}), &mut faults);
+        assert!(faults.is_empty(), "{faults:?}");
+        assert_eq!(out["lines"], json!("80"));
         assert_eq!(tools().iter().find(|t| t["name"] == "create_task").unwrap()["inputSchema"]["required"], json!(["title", "text", "severity"]));
         assert_eq!(checked("attach_file", &json!({"task": "T-1"})).unwrap_err(), "give path, or name and text");
         assert!(checked("attach_file", &json!({"task": "T-1", "name": "a", "text": "b"})).is_ok());
