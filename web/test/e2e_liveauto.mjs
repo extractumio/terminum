@@ -115,21 +115,21 @@ export async function liveAuto(page, live) {
   await j(`/api/tasks/${capped}/give-up`, "POST");
   await put({ severities: ["P0", "P1", "P2", "P3"], wait_minutes: 0, off_why: null });
 
-  // the other way of picking: by the board's order, terminumd itself, no agent and no round
+  // the other way of picking: by priority and saved order, terminumd itself, no agent and no round
   await page.click("#autocog");
   await page.waitForSelector("#autobox[open]");
   check("AC-170 its window offers the two ways of picking, an agent's first", (await page.$$eval("#automode button", (l) => l.map((b) => `${b.value}:${b.getAttribute("aria-pressed")}`))).join() === "agent:true,order:false" && await page.locator("#autoagentrow").isVisible());
   await page.click('#automode button[value="order"]');
-  check("AC-170 by the board's order no agent is chosen, and its words say what that means", await page.locator("#autoagentrow").isHidden() && await page.locator("#autorules .byorder").isVisible() && await page.locator("#autorules .byagent").isHidden()
+  check("AC-170 by priority and saved order no agent is chosen, and its words say what that means", await page.locator("#autoagentrow").isHidden() && await page.locator("#autorules .byorder").isVisible() && await page.locator("#autorules .byagent").isHidden()
     && /No agent reads the tasks/.test(await page.textContent("#autorules .byorder")));
   await shot("auto-order");
   await page.click("#autook");
-  check("AC-170 the way of picking is kept, said on the switch", await until(async () => (await setting()).mode === "order" && /Autos's TODO tasks start by the board's order/.test(await page.getAttribute("#autoswitch", "title"))), await page.getAttribute("#autoswitch", "title"));
+  check("AC-170 the way of picking is kept, said on the switch", await until(async () => (await setting()).mode === "order" && /Autos's TODO tasks start by priority and saved order/.test(await page.getAttribute("#autoswitch", "title"))), await page.getAttribute("#autoswitch", "title"));
   check("AC-170 another way is refused", /mode: agent or order/.test((await put({ mode: "dice", off_why: null })).error ?? ""));
   const [later, sooner] = [await made("Auto later: P1, by order", { severity: "P1", agent: spare }), await made("Auto sooner: P0, by order", { severity: "P0", agent: spare })];
-  check("AC-170 by the board's order the P0 starts first on its agent's one slot", await until(async () => (await task(sooner)).status === "IN PROGRESS", 30000) && (await task(later)).status === "TODO", `${(await task(sooner)).status} ${(await task(later)).status}`);
+  check("AC-170 by priority and saved order the P0 starts first on its agent's one slot", await until(async () => (await task(sooner)).status === "IN PROGRESS", 30000) && (await task(later)).status === "TODO", `${(await task(sooner)).status} ${(await task(later)).status}`);
   const byOrder = (await task(sooner)).history.map((h) => h.text ?? "");
-  check("AC-170 it says so in Dispatcher's words, and no round was made for it", byOrder.some((t) => /^Auto-Dispatcher started it on Auto spare, by the board's order\.$/.test(t)) && !byOrder.some((t) => /round/.test(t)), JSON.stringify(byOrder));
+  check("AC-170 it says so in Dispatcher's words, and no round was made for it", byOrder.some((t) => /^Auto-Dispatcher started it on Auto spare, by priority and saved order\.$/.test(t)) && !byOrder.some((t) => /round/.test(t)), JSON.stringify(byOrder));
   await j(`/api/tasks/${sooner}/give-up`, "POST");
   check("AC-170 its slot free again, the next in order starts", await until(async () => (await task(later)).status === "IN PROGRESS", 30000), (await task(later)).status);
   await j(`/api/tasks/${later}/give-up`, "POST");

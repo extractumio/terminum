@@ -121,6 +121,10 @@ fn csv(q: &HashMap<String, String>, key: &str) -> Vec<String> {
 
 /// A page of cards under the board's filters; with `counts=1`, each column's count too.
 async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, String>>) -> Response {
+    let sort = match query::Sort::parse(q.get("sort").map(String::as_str)) {
+        Ok(sort) => sort,
+        Err(e) => return refuse(StatusCode::BAD_REQUEST, e),
+    };
     let filter = Query {
         projects: csv(&q, "project"),
         severities: csv(&q, "severity"),
@@ -132,6 +136,7 @@ async fn board(State(app): State<Shared>, Params(q): Params<HashMap<String, Stri
         made_in: q.get("made_in").filter(|m| !m.is_empty()).cloned(),
         with_subtasks: q.get("subtasks").is_some_and(|c| c == "1"),
         archived: q.get("archived").is_some_and(|c| c == "1"),
+        sort,
         after: q.get("after").and_then(|a| a.parse().ok()).unwrap_or(0),
         limit: q.get("limit").and_then(|l| l.parse().ok()).unwrap_or(0),
     };

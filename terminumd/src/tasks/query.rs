@@ -6,6 +6,26 @@ use serde_json::{json, Value};
 
 use super::ops::{rows, sql, task_of, Task, COLUMNS, TASK};
 
+/// Display order (AC-105); tools and Dispatcher keep the saved rank when none is requested.
+#[derive(Default, Clone, Copy)]
+pub enum Sort {
+    #[default]
+    Ranked,
+    Recent,
+    Priority,
+}
+
+impl Sort {
+    pub fn parse(value: Option<&str>) -> Result<Self, String> {
+        match value {
+            None => Ok(Self::Ranked),
+            Some("recent") => Ok(Self::Recent),
+            Some("priority") => Ok(Self::Priority),
+            _ => Err("Sort: one of recent, priority".into()),
+        }
+    }
+}
+
 /// A page of the board's cards.
 #[derive(Default, Clone)]
 pub struct Query {
@@ -23,6 +43,7 @@ pub struct Query {
     pub with_subtasks: bool,
     /// the archived ones instead of the board's (AC-118)
     pub archived: bool,
+    pub sort: Sort,
     pub after: i64,
     pub limit: i64,
 }
@@ -95,11 +116,15 @@ fn filter_of(q: &Query) -> (String, Vec<String>) {
 /// The most a list holds.
 pub(crate) const LIST_MOST: i64 = 200;
 
-/// In severity order, then by hand. `limit` at most LIST_MOST.
+/// In the requested display order, before pagination. `limit` at most LIST_MOST.
 pub fn list(tx: &Transaction, q: &Query) -> Result<Vec<Task>, String> {
     let (filter, args) = filter_of(q);
     let limit = if q.limit <= 0 { LIST_MOST } else { q.limit.min(LIST_MOST) };
-    let order = if q.archived { "t.archived_at DESC" } else { "t.severity, t.rank" };   // Archived: newest first (AC-118)
+    let order = if q.archived { "t.archived_at DESC" } else { match q.sort {
+        Sort::Ranked => "t.severity, t.rank",
+        Sort::Recent => "t.updated_at DESC, t.number DESC",
+        Sort::Priority => "t.severity, t.updated_at DESC, t.number DESC",
+    } };   // Archived: newest first (AC-118)
     rows(tx, &format!("{TASK}{filter} ORDER BY {order} LIMIT {limit} OFFSET {}", q.after.max(0)), rusqlite::params_from_iter(args.iter()), task_of)
 }
 
@@ -128,3 +153,7 @@ pub fn repeat_of(tx: &Transaction, project: &str, title: &str) -> Result<Option<
 fn plain(title: &str) -> String {
     title.split_whitespace().collect::<Vec<_>>().join(" ").trim_end_matches(['.', '!', '?', ':', ';', ',']).to_lowercase()
 }
+
+#[cfg(test)]
+#[path = "query_tests.rs"]
+mod tests;

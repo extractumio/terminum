@@ -34,6 +34,7 @@ import { livePrograms } from "./e2e_liveprogs.mjs";
 import { liveKeys } from "./e2e_livekeys.mjs";
 import { livePlans } from "./e2e_liveplans.mjs";
 import { liveNotes } from "./e2e_livenotes.mjs";
+import { liveBoardSort } from "./e2e_liveboardsort.mjs";
 import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
@@ -147,6 +148,7 @@ const signIn = async (page) => {
   // a debug build checks the password at PBKDF2's 600,000 rounds in about a second, longer on a busy Mac
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
 };
+const SORT_ALONE = process.argv.includes("boardsort");
 const BOARD_ALONE = process.argv.includes("board");
 const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
@@ -185,12 +187,16 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
+    return ctx;
+  }
+  if (SORT_ALONE) {
+    await boards([liveBoardSort]);
     return ctx;
   }
   if (AUTO_ALONE) {
@@ -389,6 +395,11 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
+  if (SORT_ALONE) {
+    await liveBoardSort(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await ctx.close();
+    return;
+  }
   if (HISTORY_ALONE) {
     await liveHistoryPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
     await ctx.close();

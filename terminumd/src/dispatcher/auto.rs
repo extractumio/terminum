@@ -86,7 +86,7 @@ pub(super) enum Due {
     Off(String),
     /// a round made: its ID
     Round(String),
-    /// by the board's order, no agent picking: the tasks to start, each with its agent, their slots of the day taken
+    /// by priority and saved order, no agent picking: the tasks to start, each with its agent, their slots of the day taken
     Start(Vec<Candidate>),
 }
 
@@ -97,7 +97,7 @@ fn offer(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Re
     Ok((free.into_iter().take((n * FOR_A_SLOT) as usize).collect(), n))
 }
 
-/// Every candidate whose agent can start one now, in the board's order; the slots that may be filled; each such
+/// Every candidate whose agent can start one now, in priority and saved order; the slots that may be filled; each such
 /// agent's free slots.
 type Room = (Vec<Candidate>, i64, BTreeMap<String, i64>);
 
@@ -119,7 +119,7 @@ fn room_for(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
     Ok((free, n, room))
 }
 
-/// By the board's order (AC-170): the first candidates, top down, each while its agent still has a free slot, as many
+/// By priority and saved order (AC-170): the first candidates, top down, each while its agent still has a free slot, as many
 /// as may start; each takes its slot of the day here, before its press.
 fn in_order(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<Vec<Candidate>, String> {
     let (free, n, mut room) = room_for(tx, project, s, now)?;
@@ -136,7 +136,7 @@ fn in_order(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
 }
 
 /// Decides one project's setting, in one transaction: its ended rounds leave the board (off too); on, its breaker is
-/// read, and when there is room and something to start: by the board's order the tasks to start are taken, top down;
+/// read, and when there is room and something to start: by priority and saved order the tasks to start are taken, top down;
 /// else a round is made. What a round was given and left is no candidate for a day (tasks/auto.rs), so the next round
 /// is given the tasks below: it goes down the board.
 pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) -> Result<Due, String> {
@@ -230,7 +230,7 @@ pub async fn due(app: &Shared) {
     }
 }
 
-/// Starts one task picked by the board's order, as RUN's route would, never queued. No room now: its slot of the day
+/// Starts one task picked by priority and saved order, as RUN's route would, never queued. No room now: its slot of the day
 /// is given back and a later walk tries again. A press that fails (no folder, a command that does not start) would
 /// fail at every walk: it turns itself off instead, and answers why.
 async fn start_in_order(app: &Shared, project: &str, c: &Candidate) -> Option<String> {
@@ -241,7 +241,7 @@ async fn start_in_order(app: &Shared, project: &str, c: &Candidate) -> Option<St
     let done = store(app, move |tx| {
         if ran {
             let name = agents::by_id(tx, &agent)?.map_or(agent, |a| a.name);
-            return ops::log(tx, &task, DISPATCHER, "why", &format!("Auto-Dispatcher started it on {name}, by the board's order."), None, ops::now()).map(drop);
+            return ops::log(tx, &task, DISPATCHER, "why", &format!("Auto-Dispatcher started it on {name}, by priority and saved order."), None, ops::now()).map(drop);
         }
         auto::not_started(tx, &task, None)?;
         off.map_or(Ok(()), |why| auto::turn_off(tx, &p, &why))
@@ -274,7 +274,7 @@ fn chosen(tx: &rusqlite::Transaction, pane: &str, id: &str, now: i64) -> Result<
         return Err(format!("Auto-Dispatch was turned off for this project meanwhile: start no more, and finish {}.", own.id));
     }
     if s.by_order() {
-        return Err(format!("Auto-Dispatch was set to the board's order for this project meanwhile: start no more, and finish {}.", own.id));
+        return Err(format!("Auto-Dispatch was set to priority and saved order for this project meanwhile: start no more, and finish {}.", own.id));
     }
     if auto::started_in_day(tx, &round.project, now)? >= s.day_most {
         return Err(format!("This project's {} tasks a day are started: start no more, and finish {}.", s.day_most, own.id));

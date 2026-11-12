@@ -21,28 +21,9 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
   const isOpen = (sel) => page.evaluate((s) => document.querySelector(s).open, sel);
   const drag = (id, column) => page.dragAndDrop(card(id), `.col[data-status="${column}"]`);
-  /** Within its column: `id` dropped just over `other`; a read of the column may be rebuilding it. */
-  const before = async (id, other) => { await nap(300); await page.dragAndDrop(card(id), card(other), { targetPosition: { x: 20, y: 3 } }); };
   const colIds = () => page.evaluate(() => [...document.querySelectorAll('.col[data-status="TODO"] .card')].map((c) => c.dataset.id).join());
   const above = async (a, b) => { const ids = (await colIds()).split(","); return ids.includes(a) && ids.includes(b) && ids.indexOf(a) < ids.indexOf(b); };
   const probes = {
-    async rapid_order_and_back() {
-      const a = await make("drag and back"), b = await make("the other one"); await open();   // new on top: b over a
-      let first = true;
-      await page.route("**/api/tasks/*", async (r) => { if (r.request().method() === "PATCH" && first) { first = false; await nap(700); } await r.continue(); });
-      await before(a, b); await before(b, a);
-      await nap(1600); await page.unroute("**/api/tasks/*");
-      check("user orders a card and straight back: the last drop stands", await until(async () => await above(b, a)), await colIds());
-      await open();
-      check("  and terminumd has it so", await above(b, a), await colIds());
-    },
-    async optimistic_order() {
-      const a = await make("seen at once"), b = await make("over it"); await open();
-      await page.route("**/api/tasks/*", async (r) => { if (r.request().method() === "PATCH") await nap(900); await r.continue(); });
-      await before(a, b);
-      check("a dropped card stands in its new place at once, not after terminumd answers", await until(() => above(a, b), 300), await colIds());
-      await nap(1300); await page.unroute("**/api/tasks/*");
-    },
     async no_move_by_a_drag() {
       const id = await make("dropped on another column"); await open();
       await drag(id, "DONE"); await nap(300);
@@ -59,24 +40,8 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
         const col = document.querySelector('.col[data-status="TODO"]'), r = document.querySelector(s).getBoundingClientRect(), at = { bubbles: true, cancelable: true, dataTransfer: window.dt, clientX: r.left + 40, clientY: r.top + 2 };
         col.dispatchEvent(new DragEvent("dragover", at)); col.dispatchEvent(new DragEvent("drop", at)); window.held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: window.dt }));
       }, card(stay));
-      check("  and the drag goes on to its drop", await until(() => above(id, stay)), await colIds());
+      check("  and its drop keeps the fixed sort", await until(() => above(stay, id)), await colIds());
       check("  and what changed meanwhile shows after it", await until(async () => await colOf(other) === "FAILED"), await colOf(other));
-    },
-    async refused_order_comes_back() {
-      const a = await make("refused its place"), b = await make("stands over it"); await open();
-      await page.route("**/api/tasks/*", (r) => (r.request().method() === "PATCH" ? r.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ error: "Refused for this check." }) }) : r.continue()));
-      await before(a, b);
-      check("a refused order says why", await until(async () => /Refused for this check/.test(await page.textContent("#toast"))), await page.textContent("#toast"));
-      check("  and the card is back in its place", await until(() => above(b, a)), await colIds());
-      await page.unroute("**/api/tasks/*");
-    },
-    async network_drop_on_order() {
-      const a = await make("net drop"), b = await make("over the net drop"); await open();
-      await page.route("**/api/tasks/*", (r) => (r.request().method() === "PATCH" ? r.abort() : r.continue()));
-      await before(a, b);
-      check("an order lost to the network is said", await until(async () => (await page.isVisible("#toast")) && (await page.textContent("#toast")).length > 0), "no toast");
-      check("  and the card is back", await until(() => above(b, a)), await colIds());
-      await page.unroute("**/api/tasks/*");
     },
     async server_restart() {
       const id = await make("over a restart"); await open();

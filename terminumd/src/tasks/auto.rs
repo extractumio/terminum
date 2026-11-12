@@ -16,7 +16,7 @@ use super::ops::{self, rows, sql};
 use super::store::HUMAN;
 use crate::app::Shared;
 
-/// The most candidates a round is given: the first of TODO, in the board's order.
+/// The most candidates a round is given: the first of TODO, in priority and saved order.
 pub const CANDIDATES_MOST: usize = 30;
 
 pub fn routes() -> Router<Shared> {
@@ -225,7 +225,7 @@ pub fn rounds_shown(tx: &Transaction, project: &str) -> Result<Vec<(String, Stri
     rows(tx, "SELECT t.id, t.slug, t.status FROM auto_rounds a JOIN tasks t ON t.id = a.task WHERE a.project = ?1 AND t.archived_at IS NULL ORDER BY a.at, a.rowid", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
 }
 
-/// It starts `task` in `project`, by round `round` or, with none, by the board's order: written before its press, so
+/// It starts `task` in `project`, by round `round` or, with none, by priority and saved order: written before its press, so
 /// two calls at once never both find a slot of the round, and its cap counts it.
 pub fn started(tx: &Transaction, task: &str, round: Option<&str>, project: &str, at: i64) -> Result<(), String> {
     tx.execute("INSERT INTO auto_starts (task, round, project, at) VALUES (?1, ?2, ?3, ?4)", (task, round, project, at)).map(drop).map_err(sql)
@@ -305,7 +305,7 @@ pub struct Candidate {
 ///   moved or edited it since: what a round judged and left does not hold up the tasks below it, and an agent's own
 ///   edit does not bring it back; one that filled its slots left the rest for want of room, and they are offered again.
 ///
-/// In the board's order; CANDIDATES_MOST at most are looked at for an agent with room. `only`: that task alone, by its ID.
+/// In priority and saved order; CANDIDATES_MOST at most are looked at for an agent with room. `only`: that task alone, by its ID.
 pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: Option<&str>) -> Result<Vec<Candidate>, String> {
     let scale = crate::dispatcher::scale();
     let found: Vec<Candidate> = rows(tx, "WITH passed AS MATERIALIZED (SELECT g.value AS slug, max(r.at) AS at FROM auto_rounds r JOIN tasks rt ON rt.id = r.task, json_each(r.candidates) g

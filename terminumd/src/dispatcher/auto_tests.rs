@@ -55,7 +55,7 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         running(tx, "a", &held);
         ops::move_to(tx, HUMAN, &held.id, "IN PROGRESS", NOW)?;
         let (id, r) = round(tx);
-        assert_eq!((r.slots, &r.candidates), (1, &vec![high.id.clone(), low.id.clone()]), "Smith runs 2 at once, one is held; the board's order");
+        assert_eq!((r.slots, &r.candidates), (1, &vec![high.id.clone(), low.id.clone()]), "Smith runs 2 at once, one is held; priority and saved order");
         let t = ops::get(tx, &id)?;
         assert_eq!((t.status.as_str(), t.budget_seconds, t.owner.as_str()), ("IN PROGRESS", Some(600), DISPATCHER));
         // its run takes no slot of its agent or project, and is shown as a round
@@ -165,7 +165,7 @@ fn ac170_by_the_boards_order_terminumd_starts_them_itself_top_down() {
         let (id, r) = round(tx);
         let pane = format!("tmux:local:t:%{}", running(tx, "p", &ops::get(tx, &id)?));
         tx.execute("UPDATE projects SET auto_mode = 'order' WHERE id = 'api'", []).map_err(sql)?;
-        assert!(chosen(tx, &pane, &r.candidates[0], NOW).err().unwrap().starts_with("Auto-Dispatch was set to the board's order"));
+        assert!(chosen(tx, &pane, &r.candidates[0], NOW).err().unwrap().starts_with("Auto-Dispatch was set to priority and saved order"));
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "its round is still open");
         Ok(())
     }).unwrap();

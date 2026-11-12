@@ -23,7 +23,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
   function next() {
     const all = projects(), on = all.filter((p) => p.auto?.on), one = all.length === 1 ? all[0] : null;
     const full = on.filter((p) => p.auto.started_day >= p.auto.day_most).map((p) => `${p.name}'s ${p.auto.day_most} tasks of 24 hours are started: it waits. `).join("");
-    const how = (p) => (p.auto.mode === "order" ? `${p.name}'s TODO tasks start by the board's order on the free slots` : `${agentLabel(getMeta().agents.find((a) => a.id === p.auto.agent))} picks ${p.name}'s TODO tasks for the free slots and starts them`);
+    const how = (p) => (p.auto.mode === "order" ? `${p.name}'s TODO tasks start by priority and saved order on the free slots` : `${agentLabel(getMeta().agents.find((a) => a.id === p.auto.agent))} picks ${p.name}'s TODO tasks for the free slots and starts them`);
     if (on.length) return { all, on, act: "off", says: full + (one ? `${how(one)}. Press to turn it off` : `On for ${on.map((p) => p.name).join(", ")}. Press to turn it off for them`) };
     if ((one?.auto?.agent || one?.auto?.mode === "order") && !one.auto.off_why) return { all, on, act: "on", says: `No task of ${one.name} starts by itself. Press to turn Auto-Dispatch on` };
     return { all, on, act: "open", says: one ? `No task of ${one.name} starts by itself. Press for its settings, to turn Auto-Dispatch on` : "No task starts by itself. Press to choose a project and turn it on" };
@@ -38,7 +38,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
     key.title = [...stopped.map((p) => `It turned itself off for ${p.name}: ${p.auto.off_why}`), says].join(" ");
   }
 
-  /** The way of picking the window shows: by the board's order no agent picks, and its words say so. */
+  /** The way of picking the window shows: by priority and saved order no agent picks, and its words say so. */
   const modes = [...$("automode").querySelectorAll("button")];
   const setMode = (mode) => { box.dataset.mode = mode; for (const m of modes) m.setAttribute("aria-pressed", String(m.value === mode)); };
 
