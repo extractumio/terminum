@@ -71,8 +71,9 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
     return r;
   };
   const panes = [];
-  const newPane = (name) => {
-    const pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", name).trim();
+  /** A new window's pane; `dir`: its folder (tmux's own otherwise: the checkout, a long path on a runner). */
+  const newPane = (name, dir) => {
+    const pane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", name, ...(dir ? ["-c", dir] : [])).trim();
     panes.push(pane);
     return pane;
   };

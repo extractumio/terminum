@@ -21,7 +21,8 @@ export async function liveHistory(page, opts) {
   intoStore(app, `INSERT INTO messages (at, sender, via, agent, pane, host, cwd, text) VALUES (CAST(strftime('%s','now') AS INTEGER) * 1000, 'dispatcher', 'hook', 'claude', '${key}', 'local', '${work}', 'T-0007: the board task for Dispatcher')`);
   // a shell's command, typed in the page: what stood after the prompt, with its line. In a pane of its own: the
   // list's first row is whatever the suites before left there, and a row an agent's mark stands on sends prompts
-  const shell = newPane("histshell"), shellKey = await keyOf(shell);
+  // (in the test's short folder: a prompt with the runner's checkout in it wraps the typed line)
+  const shell = newPane("histshell", work), shellKey = await keyOf(shell);
   await page.goto(`${base}/sessions/`);
   await page.waitForSelector(`#sessions .item[data-id="${shellKey}"]`, { timeout: 15000 });
   await page.click(`#sessions .item[data-id="${shellKey}"]`);
