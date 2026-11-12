@@ -178,11 +178,12 @@ pub fn stack_key(stacked: &[String], id: &str) -> String {
     if stacked.iter().any(|s| s == id) { id.to_string() } else { "other".into() }
 }
 
-pub fn median(mut v: Vec<i64>) -> Option<i64> {
+/// The upper median of `v`: of counts, times or rates.
+pub fn median<T: Copy + PartialOrd>(mut v: Vec<T>) -> Option<T> {
     if v.is_empty() {
         return None;
     }
-    v.sort_unstable();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     Some(v[v.len() / 2])
 }
 

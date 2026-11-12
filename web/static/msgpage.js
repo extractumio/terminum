@@ -39,12 +39,13 @@ export function dotOf(color) {
 /** The single choice menu of a `.pick`: rows {label, on, pick, color?}; a choice closes it. */
 export function menu(details, rows) {
   const box = details.querySelector(".box > .rows") ?? details.querySelector(".box");
+  const dots = rows.some((r) => r.color);
   box.replaceChildren(...rows.map(({ label, on, pick, color }) => {
     const b = el("button");
     b.type = "button";
     b.setAttribute("role", "menuitemradio");
     b.setAttribute("aria-checked", String(on));
-    if (color) b.append(dotOf(color));
+    if (dots) b.append(dotOf(color || "transparent"));   // a row with no dot keeps the dots' column: the labels line up
     b.append(el("span", "pname", label));
     b.addEventListener("click", () => { details.open = false; pick(); });
     return b;
