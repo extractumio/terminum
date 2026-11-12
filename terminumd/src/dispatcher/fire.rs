@@ -43,7 +43,7 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool) ->
 enum Next {
     /// a task made: its ID, its firing
     Run(String, i64),
-    /// an idle session of its holds its slot: closed first, then decided again
+    /// an idle session of the schedule holds its slot: closed first, then decided again
     Close(String),
     /// written as skipped, with why
     Skipped,
@@ -89,7 +89,7 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
 }
 
 /// The session a run of `s` would wait behind: the one standing in its kept slot, of any task of it, else its last
-/// task's while it holds a slot (a paused schedule keeps none) (AC-162).
+/// task's while it holds any slot: a paused schedule keeps none, a run of several tasks stands in none (AC-162).
 fn holder(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run>, String> {
     if let Some(r) = pool::in_kept_of(tx, &s.id)? {
         return Ok(Some(r));
@@ -131,7 +131,7 @@ pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
         }).await?;
         match next {
             Ok(made) => break made,
-            // an idle session of its holds its slot: closed first, as a due firing does
+            // an idle session of the schedule holds its slot: closed first, as a due firing does
             Err((run, key)) => {
                 closed = true;
                 if let Err(why) = super::api::close_idle(app, &run, &key).await {
