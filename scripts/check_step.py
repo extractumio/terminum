@@ -17,6 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from worktree import working_in  # noqa: E402
+import owned_children  # noqa: E402
 
 SETTLE_S = 15   # what ends by itself gets this long: terminumd's tmutil takes seconds on a busy Mac
 LEFT = 3   # the exit status of a check that passed but left something
@@ -35,7 +36,8 @@ def listing():
 def own_processes(folder, group):
     """(pid, command) of each process of our private group or working in our private folder."""
     inside = working_in(folder)
-    return [(pid, text[:120]) for pid, pgid, text in listing() if pgid == str(group) or pid in inside]
+    registered = owned_children.active(owned_children.path(folder))
+    return [(pid, text[:120]) for pid, pgid, text in listing() if pgid == str(group) or pid in inside or pid in registered]
 
 
 def send(pid, number):
@@ -51,16 +53,21 @@ def alive(pid):
     return send(pid, 0)
 
 
-def end_pids(pids):
+def end_pids(pids, expected=None):
     """SIGTERM to each, then SIGKILL to those still there KILL_AFTER_S later: an interactive shell
     ignores SIGTERM; one spinning on a terminal gone, SIGHUP too."""
-    stays = [pid for pid in pids if send(pid, signal.SIGTERM)]
+    expected = expected or {}
+    def signal_owned(pid, number):
+        if pid in expected and owned_children.identity(pid) != expected[pid]:
+            return False
+        return send(pid, number)
+    stays = [pid for pid in pids if signal_owned(pid, signal.SIGTERM)]
     end = time.monotonic() + KILL_AFTER_S
     while stays and time.monotonic() < end:
         time.sleep(0.1)
         stays = [pid for pid in stays if alive(pid)]
     for pid in stays:
-        send(pid, signal.SIGKILL)
+        signal_owned(pid, signal.SIGKILL)
     end = time.monotonic() + KILL_AFTER_S
     while stays and time.monotonic() < end:
         listed = subprocess.run(["ps", "-p", ",".join(map(str, stays)), "-o", "pid=,stat="], capture_output=True, text=True)
@@ -80,12 +87,12 @@ def files_in(folder):
         pass
     return sorted(os.path.relpath(os.path.join(parent, name), folder)
                   for parent, _, names in os.walk(folder) for name in names or [""]
-                  if parent != folder or names)
+                  if (parent != folder or names) and os.path.relpath(os.path.join(parent, name), folder) != owned_children.NAME)
 
 
 def run(command, folder):
     """The check's (exit status, process group), in a group of its own; a signal here ends it too."""
-    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1"}
+    env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1", "TM_TEST_CHILDREN_FILE": owned_children.path(folder)}
     child = subprocess.Popen(command, env=env, start_new_session=True)
 
     def forward(number, _frame):
@@ -109,7 +116,7 @@ def main(command):
         left = len(processes)
         for pid, name in processes:
             print(f"LEFT process {pid}: {name}", file=sys.stderr)
-        end_pids([pid for pid, _ in processes])
+        end_pids([pid for pid, _ in processes], owned_children.records(owned_children.path(folder)))
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)
