@@ -213,7 +213,8 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let t = movable(tx, who, id)?;
                 // a wait for a human always says what it waits for: only ask_human puts a task there (AC-157)
                 if to == "WAIT FOR HUMAN" {
-                    return Err(if t.session.as_deref() == Some(&who.key) { not_without_questions(id) } else { format!("Only {id}'s own agent asks a human on it, by ask_human. You can comment.") });
+                    own(tx, who, id)?;
+                    return Err(not_without_questions(id));
                 }
                 if to == "TODO" && crate::dispatcher::runs::holding(tx, &t.key)?.is_some() {
                     return Err(format!("{id} is what the human ran: finish it, fail it, or ask."));

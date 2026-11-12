@@ -487,7 +487,7 @@ Scenario: AC-104 edge — a tree that lost the race once
   When two tries again
   Then it says "lost the race once: holding the landing turn through this merge's checks", and holds the turn from its merge to its push and install, so no other landing pushes before it and it loses no second race
   And a landing waiting for that turn says "land: two's landing has its turn (its checks, push and install can take half an hour): waiting"
-  And a smoke set still running after 90 minutes (TM_LAND_HELD_SMOKE_MINUTES) is ended with its processes, said, and fails as "smoke checks failed", freeing the turn
+  And a smoke set still running after 90 minutes is ended with its processes, said, and fails as "smoke checks failed", freeing the turn
 
 Scenario: AC-104 failure — others' code breaks the merged build
   Given one tree renamed a function and another, touching other files, added a caller of it

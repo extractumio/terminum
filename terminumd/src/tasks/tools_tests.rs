@@ -81,7 +81,7 @@ fn ac115_a_task_of_the_project_is_moved_and_finished_whatever_session_holds_it()
     assert!(call(&s, &dir, &w, "get_task", json!({"id": held})).is_ok());
     assert!(call(&s, &dir, &w, "add_comment", json!({"id": held, "text": "seen"})).is_ok());
     assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "IN PROGRESS"})).unwrap(), format!("{held} is in IN PROGRESS."), "another session's: moved");
-    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "WAIT FOR HUMAN"})).unwrap_err(), format!("Only {held}'s own agent asks a human on it, by ask_human. You can comment."), "nor parked for a human with no question (AC-157)");
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "WAIT FOR HUMAN"})).unwrap_err(), format!("{held} belongs to session %8: only its agent asks on it. You can comment."), "nor parked for a human with no question (AC-157)");
     assert_eq!(status(&s, &held), "IN PROGRESS");
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": held, "result": "did it"})).unwrap(), format!("{held} is DONE, with your result."));
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": free, "result": "and this"})).unwrap(), format!("{free} is DONE, with your result."), "a free one, with no take_task");

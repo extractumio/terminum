@@ -7,14 +7,14 @@ on the merged result when none is recorded or origin/main changed the same files
 once: each tests alone, and only the last look and the push take turns. A tree is merged with what
 others landed meanwhile, its smoke set run again on each merge; a tree that lost that race once holds
 the turn from its next merge to its push, so it never loses twice (a smoke set under the turn ends
-after HELD_SMOKE_MINUTES). During a release the primary checkout
+after SMOKE_MOST_MINUTES). During a release the primary checkout
 stays where it is (scripts/release_turn.py), and the smoke set yields to it (nice).
 
   land.py <slug>    from the primary checkout (`make land SLUG=<slug>`), the work committed;
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
 Exit: 0 landed; 1 checks failed or refused (the tree stays); 2 a merge conflict, left in the tree
 to resolve and commit before running this again. No force, ever."""
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 import json
 import os
 from pathlib import Path
@@ -29,9 +29,9 @@ from worktree import primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E
 
 BASE = "origin/main"
 TRIES = 8
-# a smoke set takes about 25 minutes on a busy Mac; one held this long under the turn is stuck, and every
-# other landing waits for it
-HELD_SMOKE_MINUTES = int(os.environ.get("TM_LAND_HELD_SMOKE_MINUTES", "90"))
+# a smoke set takes about 25 minutes on a busy Mac; one running this long is stuck, and under a held turn
+# every other landing would wait for it
+SMOKE_MOST_MINUTES = 90
 
 
 class Stop(Exception):
@@ -67,10 +67,9 @@ class Turn(TreeTurn):
     def __enter__(self):
         super().__enter__()
         if not self.take():
-            try:
-                who = self.holder.read_text().strip() or "another tree"
-            except OSError:
-                who = "another tree"
+            who = "another tree"
+            with suppress(OSError):
+                who = self.holder.read_text().strip() or who
             print(f"land: {who}'s landing has its turn (its checks, push and install can take half an hour): waiting", flush=True)
             self.take(wait=True)
         self.holder.write_text(self.slug)
@@ -144,14 +143,14 @@ def checks_of(tree, *flags, minutes=None):
         end_group(run)
 
 
-def end_group(run, grace=120):
-    """SIGTERM to `run`'s group while it lives, SIGKILL `grace` seconds later."""
+def end_group(run):
+    """SIGTERM to `run`'s group while it lives, SIGKILL 2 minutes later."""
     for number in (signal.SIGTERM, signal.SIGKILL):
         if run.poll() is not None:
             return
         try:
             os.killpg(run.pid, number)
-            run.wait(timeout=grace)
+            run.wait(timeout=120)
         except (ProcessLookupError, subprocess.TimeoutExpired):
             pass
 
@@ -160,7 +159,7 @@ def has_code(files):
     return any(not is_doc(f) for f in files)
 
 
-def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", minutes=HELD_SMOKE_MINUTES),
+def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", minutes=SMOKE_MOST_MINUTES),
          passed=lambda tree: checks_of(tree, "--passed"), say=print, after=lambda files: None):
     """Returns the commit landed. Stop if it did not land. `after(its files)` runs still in turn."""
     if git("status", "--porcelain", cwd=tree).stdout.strip():
@@ -168,52 +167,55 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", min
     git("fetch", "--quiet", "origin", cwd=tree)
     if git("merge-base", "--is-ancestor", "HEAD", BASE, cwd=tree, check=False).returncode == 0:
         return git("rev-parse", "HEAD", cwd=tree).stdout.strip()  # nothing of its own to land
-    checked = [passed(tree)]   # the tree's own content, before the merge
+    checked = passed(tree)   # the tree's own content, before the merge
     own_files = files_between(BASE, "HEAD", tree)
+
+    def once(held):
+        """One merge, its checks and the push: the commit landed, or None when origin/main moved meanwhile."""
+        nonlocal checked
+        git("fetch", "--quiet", "origin", cwd=tree)
+        base_now = git("rev-parse", BASE, cwd=tree).stdout.strip()
+        ours = files_between(BASE, "HEAD", tree)
+        others = files_between("HEAD", BASE, tree)
+        if not has_base(tree):
+            merge_base_in(tree)
+            say(f"merged {BASE} ({base_now[:9]})")
+        if not checked or ours & others:
+            if not check(tree):
+                raise Stop(1, f"targeted checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
+            checked = True
+        # each pass follows a merge: a renamed function, a new caller, what others landed meets this tree's code
+        if not smoke(tree):
+            raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
+        with nullcontext() if held else Turn(tree):   # a second flock of the same file would wait for itself
+            git("fetch", "--quiet", "origin", cwd=tree)
+            if not has_base(tree):
+                say(f"{BASE} moved while this tree was checked")
+                return None
+            pushed = git("push", "--quiet", "origin", "HEAD:main", cwd=tree, check=False)
+            if pushed.returncode == 0:
+                git("fetch", "--quiet", "origin", cwd=tree)
+                commit = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
+                after(own_files)  # minutes, when it installs: a sweep may take the tree, merged now
+                return commit
+            git("fetch", "--quiet", "origin", cwd=tree)
+            if has_base(tree):
+                raise Stop(1, f"push refused, and {BASE} has not moved: {pushed.stderr.strip()}")
+            say(f"{BASE} moved during the push")
+            return None
+
     for tried in range(TRIES):
         # the first try checks beside the other trees and takes the turn only to push; a later one holds it from
         # its merge to its push: every push makes the others' smoke sets moot, and a tree lost once loses no more
-        if tried:
+        if not tried:
+            commit = once(held=False)
+        else:
             say("lost the race once: holding the landing turn through this merge's checks")
-        with Turn(tree) if tried else nullcontext():
-            commit = try_once(tree, tried > 0, checked, own_files, check, smoke, say, after)
+            with Turn(tree):
+                commit = once(held=True)
         if commit:
             return commit
     raise Stop(1, f"{BASE} kept moving: {TRIES} tries; land again")
-
-
-def try_once(tree, held, checked, own_files, check, smoke, say, after):
-    """One merge, its checks and the push: the commit landed, or None when origin/main moved meanwhile."""
-    git("fetch", "--quiet", "origin", cwd=tree)
-    base_now = git("rev-parse", BASE, cwd=tree).stdout.strip()
-    ours = files_between(BASE, "HEAD", tree)
-    others = files_between("HEAD", BASE, tree)
-    if not has_base(tree):
-        merge_base_in(tree)
-        say(f"merged {BASE} ({base_now[:9]})")
-    if not checked[0] or ours & others:
-        if not check(tree):
-            raise Stop(1, f"targeted checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
-        checked[0] = True
-    # each pass follows a merge: a renamed function, a new caller, what others landed meets this tree's code
-    if not smoke(tree):
-        raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
-    with nullcontext() if held else Turn(tree):   # a second flock of the same file would wait for itself
-        git("fetch", "--quiet", "origin", cwd=tree)
-        if not has_base(tree):
-            say(f"{BASE} moved while this tree was checked")
-            return None
-        pushed = git("push", "--quiet", "origin", "HEAD:main", cwd=tree, check=False)
-        if pushed.returncode == 0:
-            git("fetch", "--quiet", "origin", cwd=tree)
-            commit = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
-            after(own_files)  # minutes, when it installs: a sweep may take the tree, merged now
-            return commit
-        git("fetch", "--quiet", "origin", cwd=tree)
-        if has_base(tree):
-            raise Stop(1, f"push refused, and {BASE} has not moved: {pushed.stderr.strip()}")
-        say(f"{BASE} moved during the push")
-        return None
 
 
 def after_push(primary):
