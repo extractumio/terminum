@@ -3,6 +3,7 @@
 // 100 at a time: when, the schedule, its task and agent, the task's status, when it went IN PROGRESS and ended;
 // a row opens to what went in and what came out, or says why nothing ran. terminumd reads; the page draws.
 import { el, plural } from "./listparts.js";
+import { expandable } from "./expand.js";
 import { statusBox } from "./kanbanutil.js";
 import { taskUrl } from "./tasklink.js";
 import { $, api, loadMeta, menu, readQuery, writeQuery } from "./msgpage.js";
@@ -31,8 +32,8 @@ function row(f) {
   r.append(line);
   const body = el("div", "firebody");
   if (f.why) body.append(el("p", "fwhy", f.why));
-  if (f.prompt) body.append(el("h3", null, "In"), el("pre", "fio", f.prompt));
-  if (f.result) body.append(el("h3", null, "Out"), el("pre", "fio", f.result));
+  if (f.prompt) body.append(el("h3", null, "In"), expandable(el("pre", "fio", f.prompt)));
+  if (f.result) body.append(el("h3", null, "Out"), expandable(el("pre", "fio", f.result)));
   if (!body.children.length) body.append(el("p", "msay", "Nothing went in: no task was made."));
   r.append(body);
   return r;

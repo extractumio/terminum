@@ -23,6 +23,7 @@
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="dialogsize.css">
+<link rel="stylesheet" href="expand.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
 <link rel="stylesheet" href="grain.css">
@@ -167,8 +168,8 @@
         <button id="newpreview" type="button" role="tab" aria-selected="false">Preview</button>
       </div>
     </div>
-    <textarea id="newtext" class="field droparea" data-grow rows="9" aria-label="Text, Markdown" placeholder="Markdown. Drop or paste files here."></textarea>
-    <div id="newshown" class="markdown" data-grow hidden></div>
+    <div class="xbox" data-grow><textarea id="newtext" class="field droparea" rows="9" aria-label="Text, Markdown" placeholder="Markdown. Drop or paste files here."></textarea>
+      <div id="newshown" class="markdown" data-grow hidden></div></div>
     <ul id="newfiles" class="filelist"></ul>
     <div class="fieldgrid three">
       <label class="fieldrow">Project <select id="newproj" class="field"></select></label>
@@ -202,8 +203,8 @@
         <button id="schedpreview" type="button" role="tab" aria-selected="false">Preview</button>
       </div>
     </div>
-    <textarea id="schedtext" class="field" data-grow style="--grow-min: 8em" rows="7" aria-label="Text, Markdown" placeholder="Markdown: what the agent does each time."></textarea>
-    <div id="schedshown" class="markdown" data-grow style="--grow-min: 8em" hidden></div>
+    <div class="xbox" data-grow style="--grow-min: 8em"><textarea id="schedtext" class="field" rows="7" aria-label="Text, Markdown" placeholder="Markdown: what the agent does each time."></textarea>
+      <div id="schedshown" class="markdown" data-grow hidden></div></div>
     <div class="fieldgrid three">
       <label class="fieldrow">Project <select id="schedproj" class="field"></select></label>
       <label class="fieldrow">Severity <select id="schedsev" class="field"><option>P0</option><option>P1</option><option selected>P2</option><option>P3</option></select></label>
@@ -228,7 +229,7 @@
     </div>
     <details id="schedwhat" class="more" open><summary>What the agent gets</summary>
       <dl class="runfacts"><dt>Runs in</dt><dd id="schedplace"></dd><dt>Command</dt><dd id="schedline"></dd></dl>
-      <pre id="schedprompt" class="runprompt field" tabindex="0" aria-label="What the agent gets"></pre>
+      <div class="xbox"><pre id="schedprompt" class="runprompt field" tabindex="0" aria-label="What the agent gets"></pre></div>
     </details>
     <p id="schedby" class="colempty" hidden></p>
     <p id="schederror" role="alert" hidden></p>
@@ -281,7 +282,7 @@
       <p class="colempty">Its tasks are named by them, as TERM-7. Changed, its tasks keep their numbers and their old IDs still find them.</p>
       <details id="projecttemplatebox" class="more"><summary>Template for agents' tasks</summary>
         <div class="fieldrow"><label for="projecttemplate">An agent's create_task writes its text by this; each "## " heading without "(optional)" must stand in it.</label>
-          <textarea id="projecttemplate" class="field" rows="12" spellcheck="false"></textarea>
+          <div class="xbox"><textarea id="projecttemplate" class="field" rows="12" spellcheck="false"></textarea></div>
           <div class="actions"><button id="projecttemplatereset" class="textkey" type="button">Default</button></div>
         </div>
       </details>

@@ -30,6 +30,7 @@
 <link rel="stylesheet" href="markdown.css">
 <link rel="stylesheet" href="taskwin.css">
 <link rel="stylesheet" href="dialogsize.css">
+<link rel="stylesheet" href="expand.css">
 <link rel="stylesheet" href="panewin.css">
 <link rel="stylesheet" href="sheets.css">
 <link rel="stylesheet" href="motion.css">
@@ -246,7 +247,7 @@
         <button id="mbclose" class="icon" type="button" aria-label="Close the bookmark"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
       </div>
       <p id="mbwhy" hidden></p>
-      <div id="mbtext" hidden></div>
+      <div class="xbox"><div id="mbtext" hidden></div></div>
     </div>
     <p id="paused" role="status" hidden>Paused while you select. Clear the selection to catch up.</p>
     <button id="bottom" type="button" hidden aria-label="Scroll to the bottom">
@@ -332,7 +333,7 @@
   <form method="dialog">
     <div class="dhead"><h2 id="pastetitle">Paste</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <label for="pastetext">Paste here, then send it to the terminal</label>
-    <textarea id="pastetext" class="field" data-grow rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <div class="xbox" data-grow><textarea id="pastetext" class="field" rows="5" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false"></textarea></div>
     <div class="actions">
       <button value="cancel" type="submit">Cancel</button>
       <button value="send" type="submit" class="primary" title="Send it to the terminal (⌘Enter)">Send</button>
@@ -362,8 +363,8 @@
 <dialog id="askbox" data-size="write" data-parent="term" class="box dlg" aria-labelledby="asktitle">
   <form method="dialog">
     <div class="dhead"><h2 id="asktitle">Ask about the selection</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
-    <div id="asktext"></div>
-    <textarea id="askq" class="field" data-grow rows="4" maxlength="4000" autocapitalize="sentences" placeholder="Your comment or task about it" aria-label="Your comment or task about the selection"></textarea>
+    <div class="xbox"><div id="asktext"></div></div>
+    <div class="xbox" data-grow><textarea id="askq" class="field" rows="4" maxlength="4000" autocapitalize="sentences" placeholder="Your comment or task about it" aria-label="Your comment or task about the selection"></textarea></div>
     <p id="askerr" role="alert" hidden></p>
     <div class="actions">
       <button value="cancel" type="submit" formnovalidate>Cancel</button>
@@ -379,9 +380,9 @@
       <button type="button" data-kind="bookmark" aria-pressed="true">Bookmark</button>
       <button type="button" data-kind="reminder" aria-pressed="false" title="Comes up each time this session's agent ends a turn, until resolved">Reminder</button>
     </div>
-    <div id="marktext"></div>
+    <div class="xbox"><div id="marktext"></div></div>
     <label for="marknote">Note</label>
-    <textarea id="marknote" class="field" data-grow rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea>
+    <div class="xbox" data-grow><textarea id="marknote" class="field" rows="3" maxlength="1000" autocapitalize="sentences" placeholder="Why come back to this?"></textarea></div>
     <p id="markerr" role="alert" hidden></p>
     <div class="actions">
       <button id="marktask" type="button" title="Open the board's new-task window with this text">New task from selection</button>

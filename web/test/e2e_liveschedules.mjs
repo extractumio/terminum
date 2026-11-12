@@ -233,6 +233,12 @@ export async function liveSchedules(page, live) {
   check("AC-164 the Scheduled page lists the firing with its task and status", await until(async () => /DONE/.test(await page.textContent("#fires").catch(() => "")) && (await page.textContent("#fires")).includes(task)), await page.textContent("#fires").catch(() => ""));
   await page.click("#fires .fireline");
   check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent("#fires .firebody"); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent("#fires .firebody"));
+  // a firing's In, its key pressed, covers the window; Esc gives it back (terminum.md AC-184)
+  await page.click("#fires .firebody .xbox:has(> .fio) > .xkey");
+  const inFull = await page.evaluate(() => { const r = document.querySelector("#fires .xbox.full")?.getBoundingClientRect();
+    return r && !r.x && !r.y && Math.abs(r.width - innerWidth) <= 1 && Math.abs(r.height - innerHeight) <= 1; });
+  await page.keyboard.press("Escape");
+  check("AC-184 a firing's In covers the window by its key, Esc gives it back", inFull && !(await page.$(".xbox.full")));
   check("AC-164 the head has its key pressed", await page.getAttribute('.mpages a[href="/scheduled/"]', "aria-current") === "page");
   await shot("scheduled-page");
 
