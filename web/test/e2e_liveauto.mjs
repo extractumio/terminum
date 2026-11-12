@@ -14,6 +14,8 @@ const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../s
 export async function liveAuto(page, live) {
   const { j, card, open, cli, newPane, keyOf, tool, endPanes } = boardKit(page, live);
   const shot = (name) => live.shots && page.screenshot({ path: path.join(live.shots, `${name}.png`) });
+  const paneIds = () => live.tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").filter(Boolean);
+  const before = new Set(paneIds());
   const project = (await j("/api/task-projects", "POST", { name: "Autos", dir: live.work })).id;
   const agent = async (name, more = "", at_once = 1) => (await j("/api/task-agents", "POST", { name, kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude ${more}`.trim(), at_once })).id;
   const picker = await agent("Auto picker"), runner = await agent("Auto runner", "", 2), broken = await agent("Auto broken", "--start fast"), spare = await agent("Auto spare");
@@ -196,4 +198,7 @@ export async function liveAuto(page, live) {
 
   // the sessions it started are given up, so no slot stays held for the suites after
   for (const id of [a, b]) await j(`/api/tasks/${id}/give-up`, "POST");
+  // and their panes end with the suite: a window a later check opens without a target would land in their session
+  const own = () => paneIds().filter((id) => !before.has(id));
+  check("the suite leaves no pane of the sessions it started", await until(() => { for (const id of own()) live.tmux("kill-pane", "-t", id); return own().length === 0; }), own().join());
 }

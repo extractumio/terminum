@@ -46,6 +46,18 @@ fn ac01_a_named_window_and_its_second_pane() {
 }
 
 #[test]
+fn ac39_a_window_named_after_an_agent_is_one_only_while_no_shell_is_in_front() {
+    for name in ["claude", "codex"] {
+        let wrapped = item(&pane(name, false, "mac.example", "node", "/Users/alex/p"), 1, 1, HOME);
+        assert_eq!((wrapped.agent, wrapped.shell), (Some(name), false), "its program is a wrapper's");
+        for sh in ["zsh", "bash"] {
+            let shell = item(&pane(name, false, "mac.example", sh, "/Users/alex/p"), 1, 1, HOME);
+            assert_eq!((shell.agent, shell.shell, shell.title.as_str()), (None, true, name), "{name} over {sh}: a shell the user named");
+        }
+    }
+}
+
+#[test]
 fn ac01_a_subagents_pane_shows_its_own_name_and_keeps_its_type() {
     let lead = pane("2.1.319", true, "\u{2733} Fix the list", "2.1.319", "/Users/alex/p");
     let sub = PaneFields { pane_id: "%4".into(), pane_index: 1, pane_title: "\u{2733} general-purpose".into(),

@@ -149,6 +149,12 @@ pub fn agent_of(command: &str) -> Option<&'static str> {
     AGENTS.iter().copied().find(|a| name == *a)
 }
 
+/// The coding agent a window's name says its pane runs (a wrapper's program is `node`), never
+/// while only a shell (`command`) is in front: what is typed there is a command, not a prompt.
+pub fn agent_of_window(window_name: &str, command: &str) -> Option<&'static str> {
+    AGENTS.iter().copied().find(|a| *a == window_name).filter(|_| !SHELLS.contains(&command.trim()))
+}
+
 /// "1.2.3": three numbers and two dots, nothing else.
 pub fn is_version(s: &str) -> bool {
     let parts: Vec<&str> = s.split('.').collect();
@@ -206,7 +212,7 @@ pub fn item(p: &PaneFields, pane_no: usize, panes_in_window: usize, home: &str) 
         job = window_name.to_string();            // tmux names a window after its program
     }
     let agent = agent_of(&job)
-        .or_else(|| AGENTS.iter().copied().find(|a| *a == window_name))
+        .or_else(|| agent_of_window(window_name, &job))
         .or_else(|| claude_marked(&p.pane_title).then_some("claude"));
     // a subagent in its own pane: Claude Code's title says only its type, the same for all of them
     let shown = if agent == Some("claude") && !p.agent_name.is_empty() { p.agent_name.as_str() } else { program_title.as_str() };

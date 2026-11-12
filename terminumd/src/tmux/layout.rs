@@ -216,7 +216,7 @@ pub fn attach_command(server: &Server, session: &str) -> String {
 /// Whether pane `p` runs a coding agent by its program, title or window's name.
 fn named_agent(p: &PaneFields) -> bool {
     titles::agent_of(&p.command).is_some() || agentstate::claude_marked(&p.pane_title)
-        || titles::AGENTS.contains(&p.window_name.as_str())
+        || titles::agent_of_window(&p.window_name, &p.command).is_some()
 }
 
 /// Whether pane `p` may run Codex installed with npm (its program is `node`): its screen says.

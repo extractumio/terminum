@@ -79,7 +79,7 @@ Open questions: none.
 
 ```gherkin
 Scenario: AC-39 happy path — states
-  Given panes run Claude Code and Codex (by #{pane_current_command}, the window's name, Claude Code's title marks, or Codex's words on the screen of a pane whose program is `node`)
+  Given panes run Claude Code and Codex (by #{pane_current_command}, the window's name while no shell is in front, Claude Code's title marks, or Codex's words on the screen of a pane whose program is `node`)
   Then each shows, in the list and the header: its bar pulsing while it works, no other mark (a spinner in the title, "✻ Doing… (…)" on screen, "esc to interrupt"); before its title a flashing amber question mark while it waits for the user (a question, a permission prompt, "Esc to cancel", Codex's "[ ! ] Action Required" title or "enter to submit answer"; its words read as one line, so a narrow pane that breaks them over rows, "Esc to" / "cancel", still says so), a red alert sign when it stopped on an error ("API Error", overloaded, a usage limit, out of credits, a retry limit, high load), no mark when done; only the screen's last 25 rows count, read by terminumd when the title changed or 6 s passed
   And Claude Code's turn line "✻ Waiting for 2 background agents to finish" ("1 background agent and 1 dynamic workflow") is working: its subagents still run; the newest turn line counts (a later "✻ Worked for 3m 2s" is done)
   And Claude Code whose footer, under its input box, counts work in the background ("⏵⏵ bypass permissions on · 1 shell, 1 monitor"; also local agents, teams, dynamic workflows, cloud sessions, MCP tasks, "N background tasks") is working until that count goes: its session goes on; a turn line's "· 1 shell still running" alone is not (it stays after the shell ended), nor an Artifact comment monitor; only the rows right under Claude Code's input box (a rule, "❯", a rule) count, each item a number and its word ("1 shell script added" is not one); with hooks, a Stop's turn waits while that footer, read for that pane only then, counts work (the row shows working), and ends once the count has gone
@@ -121,7 +121,7 @@ Scenario: AC-39 edge — a question's words in the transcript
   Then the session is not waiting: a question of Claude Code's replaces its input box, so words above the box are the transcript
 
 Scenario: AC-39 edge — a named pane, a shell
-  Then a pane or window the user named hides the title marks, so the screen decides; a pane at a shell prompt shows no state; "shell" in the layout says a tap may move the cursor along the line (not in htop, less, mc)
+  Then a pane or window the user named hides the title marks, so the screen decides; a pane at a shell prompt shows no state; a shell in a window named "claude" or "codex" is no agent, and what is typed there is kept as a command, not a prompt (AC-90); "shell" in the layout says a tap may move the cursor along the line (not in htop, less, mc)
 
 Scenario: AC-39 edge — Codex
   Given Codex, which keeps its title while it works and marks it "[ ! ] Action Required | " (blinking "[ . ]") only when it asks
