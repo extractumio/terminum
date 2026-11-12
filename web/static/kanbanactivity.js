@@ -4,6 +4,7 @@
 // and changed, a line of history muted.
 import { el, iconButton, read, write } from "./listparts.js";
 import { api, button, renderInto, row, say, stamp } from "./kanbanutil.js";
+import { expandable } from "./expand.js";
 
 const OPENS = "\n\n```\n", CLOSES = "\n```";   // round a screen quoted in a line of history
 const ORDER = "tm.activity.oldest";                 // this browser's choice: oldest first
@@ -29,7 +30,7 @@ export function activity(t, { refresh, confirmed }) {
           refresh(true);
         } catch (err) { say(err.message); }
       });
-      said.replaceChildren(area, row(save));
+      said.replaceChildren(expandable(area), row(save));
       area.focus();
     });
     const del = iconButton("icon", "x", "Delete", "Delete this comment", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));
@@ -59,9 +60,7 @@ export function activity(t, { refresh, confirmed }) {
       const quoted = at >= 0 && text.endsWith(CLOSES) && end >= at + OPENS.length;
       li.append(el("span", "evtext", quoted ? text.slice(0, at) : text));
       if (quoted) {
-        const screen = el("pre", "evscreen", text.slice(at + OPENS.length, end));
-        screen.tabIndex = 0;                         // scrolled by the keyboard too
-        li.append(screen);
+        li.append(expandable(el("pre", "evscreen", text.slice(at + OPENS.length, end))));   // scrolled by the keys too (expand.js)
       }
     }
     return li;

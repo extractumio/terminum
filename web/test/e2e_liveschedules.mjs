@@ -2,7 +2,7 @@
 // The board's folded cards and its rows on the columns' tracks against a real private terminumd
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
-import { check, until } from "./check.mjs";
+import { check, coversWindow, until } from "./check.mjs";
 import { boardKit, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
@@ -65,7 +65,8 @@ export async function liveFolded(page, live) {
   // a task card's play key, pressed, takes no focus: its RUN window closed or a key typed after lights no ring; Tab
   // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus")
   const run = `${card(a)} .crun`;
-  for (const [how, close] of [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')], ["Esc", () => page.keyboard.press("Escape")]]) {
+  for (const [how, close] of [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')], ["×, pressed,", () => page.click("#runbox .dhead .x")],
+    ["Esc", () => page.keyboard.press("Escape")]]) {
     await page.click(run);
     const opened = await until(() => page.isVisible("#runbox[open]"));
     await close();
@@ -249,6 +250,11 @@ export async function liveSchedules(page, live) {
   check("AC-164 the Scheduled page lists the firing with its task and status", await until(async () => /DONE/.test(await page.textContent("#fires").catch(() => "")) && (await page.textContent("#fires")).includes(task)), await page.textContent("#fires").catch(() => ""));
   await page.click("#fires .fireline");
   check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent("#fires .firebody"); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent("#fires .firebody"));
+  // a firing's In, its key pressed, covers the window; Esc gives it back (terminum.md AC-184)
+  await page.click("#fires .firebody .xbox:has(> .fio) > .xkey");
+  const inFull = (await coversWindow(page, "#fires .xbox.full")).covers;
+  await page.keyboard.press("Escape");
+  check("AC-184 a firing's In covers the window by its key, Esc gives it back", inFull && !(await page.$(".xbox.full")));
   check("AC-164 the head has its key pressed", await page.getAttribute('.mpages a[href="/scheduled/"]', "aria-current") === "page");
   await shot("scheduled-page");
 

@@ -187,12 +187,13 @@ Scenario: AC-162 edge — a task of it still in progress
   And a task whose wait for room is called off with no run of it live is FAILED with the words that called it off
   And a task left IN PROGRESS with no run of it live and no wait skips nothing
 
-Scenario: AC-162 edge — its last session still holds the slot
-  Given S_TERM-41 DONE, its session open and idle (terminum-dispatcher.md AC-141's idle holder)
+Scenario: AC-162 edge — a session of it still holds the slot
+  Given S_TERM-41 DONE, or any task of SCH-1 a human ran again and DONE, its session open and idle in SCH-1's kept slot (AC-161; terminum-dispatcher.md AC-141's idle holder)
   When SCH-1 is due
-  Then that session closes as AC-141 closes an idle holder, its screen kept, and S_TERM-42 starts in the slot
+  Then that session closes as AC-141 closes an idle holder, its screen kept, and S_TERM-42 starts in the slot at once
   When that session is not idle (its agent works on, a draft stands in its box, a subagent runs)
-  Then nothing closes, no task is made, and the firing is written "Skipped: S_TERM-41's session is still busy."
+  Then nothing closes, no task is made, and the firing is written "Skipped: S_TERM-41's session is still busy." naming the task in the slot
+  And a paused schedule, which keeps no slot, looks at its last task's session the same way (AC-182)
 
 Scenario: AC-162 edge — a sleeping Mac
   Given SCH-1 daily at 03:00 and the Mac asleep from 01:00 to 08:12, or terminumd stopped
@@ -300,7 +301,7 @@ Scenario: AC-182 edge — paused, once
 Scenario: AC-182 failure
   When a task of it is IN PROGRESS, running or waiting for room
   Then nothing is made: "Not run: S_TERM-41 is still in progress."
-  When its last task's session still holds its slot and is not idle a minute (terminum-dispatcher.md AC-141)
+  When a session of it still holds its slot, as a firing finds it (AC-162), and is not idle a minute (terminum-dispatcher.md AC-141)
   Then nothing is made: "Not run: S_TERM-41's session is still busy."; an idle one is closed for the slot first
   When its start fails (no folder, agent gone)
   Then its task is FAILED saying why, as a firing's (AC-162)
@@ -385,7 +386,7 @@ Single stage.
 
 - [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered)
 - [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
-- [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
+- [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; with long columns every card over them whole)
 - [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
 - [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`

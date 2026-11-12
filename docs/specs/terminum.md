@@ -105,6 +105,7 @@ Open questions:
 | AC-171 | [SHOULD / P1] | The Dashboard's System tab shows the sessions Dispatcher started and how their tasks ended, the failures by reason (tasks, writes, schedules' firings), the agents' load, a session's length, the schedules' firings. |
 | AC-172 | [SHOULD / P1] | The Dashboard's Costs tab shows what the sessions Dispatcher started spent: dollars at list prices and tokens by agent, project and model, a task's cost, and each agent's use against its limits. |
 | AC-173 | [SHOULD / P1] | Every dialog has the size its use needs: one to type in or to read takes 80% of the width and height of the window it opens over (the dialog under it, the terminal, else the browser's window), its text field taking the rest; a question or a form stays as tall as its content; each kind between a floor and a ceiling. |
+| AC-184 | [SHOULD / P1] | Every box to read or type in a text (a task's, a comment's, a schedule's, a prompt, a quoted screen or selection, Paste, Ask, a bookmark's note) has a key in its bottom-right corner that shows it over the whole window; the key or Esc gives it back, with what was typed, its window still open. |
 | AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
 | AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
 
@@ -1005,6 +1006,30 @@ Scenario: AC-173 edge — a phone or a narrow window
   Then every dialog is a sheet as wide as the screen less 16 px a side (AC-18); one to type in, to pick from or to read is as tall as what is in sight above the on-screen keyboard less 16 px a side, its buttons in sight; a question or a form stays as tall as its content
 ```
 
+### AC-184 — A box to read or type in over the whole window [SHOULD / P1]
+
+```gherkin
+Scenario: AC-184 happy path — a schedule's prompt read over the whole window
+  Given a schedule's window open, its "What the agent gets" longer than its box
+  When the user presses the key in the box's bottom-right corner ("Full window")
+  Then the box covers the whole window, its text scrolling inside it, the schedule's window still open under it, and the key becomes "Back to its window (Esc)"
+  When the user presses Esc, or the key
+  Then the box stands back in its window, which stays open; a second Esc closes the window as before
+Scenario: AC-184 happy path — a text typed over the whole window
+  Given a new task's window, its Text field shown over the whole window by its key
+  When the user types, then presses the key
+  Then the field stands back in its window with every word typed, the focus in it, its undo and its draft as they were; Save, ⌘Enter, files dropped act on it as always
+Scenario: AC-184 happy path — every such box
+  Then each of these has the key: on the board a new task's and a schedule's Text (Write and Preview), a schedule's "What the agent gets", a project's template for agents' tasks, a task's Text and its editor, the comment field and a comment's editor, a screen quoted in a line of history, RUN's message and "What will be sent"; on the session page Paste, Ask's question and its quote, a bookmark's note and its quote, the bookmark bar's quote; on the schedules' page a firing's In and Out
+  And a one-line field, a project's folder, the Files panel and a window that is itself a document (the bookmarks, a session's last lines) have none
+Scenario: AC-184 edge — a window over it, a phone, a board update
+  Given a box shown over the whole window
+  When a question opens over it (a conflict on Save), the user's Esc answers the question, the box stays over the window
+  And on a phone or a narrow window the box covers what is in sight above the on-screen keyboard, and its key is a finger's size (44 px)
+  And while a box in a task's window covers the window, a board update redraws nothing under it
+  And prose read so stands in a column at most 920 px wide in the middle; a text field and lines take the whole width
+```
+
 ### AC-171 — The Dashboard's System tab [SHOULD / P1]
 
 ```gherkin
@@ -1419,5 +1444,6 @@ All cases are shipped; nothing is staged.
 - [x] AC-171 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-172 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-173 — `web/test/e2e_dlgsize.mjs`, `web/test/e2e_dialogcenter.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_ask.mjs`
+- [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
