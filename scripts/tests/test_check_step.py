@@ -15,13 +15,16 @@ import time
 import unittest
 
 GUARD = str(Path(__file__).resolve().parents[1] / "check_step.py")
+# Settling takes 15 s; a cwd probe may take another 15 s and shutdown up to 4 s.
+# Leave scheduling headroom while still asserting the resulting cleanup, never a deadline pass.
+GUARD_DEADLINE = 60
 
 
 def guarded(script, **kwargs):
     """Runs `script` under the guard; (exit status, its stderr, the folder it was given)."""
     with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
         done = subprocess.run([sys.executable, "-I", GUARD, "sh", "-c", f'echo "$TMPDIR" > {where.name}; {script}'],
-                              capture_output=True, text=True, timeout=30, **kwargs)
+                              capture_output=True, text=True, timeout=GUARD_DEADLINE, **kwargs)
         return done.returncode, done.stderr, where.read().strip()
 
 
@@ -100,6 +103,19 @@ class Guard(unittest.TestCase):
         pid = int(err.split("LEFT process ")[1].split(":")[0])
         self.assertTrue(gone(pid), f"detached process {pid} still runs")
 
+    def test_registered_detached_child_outside_the_folder_is_ended(self):
+        code = ("import os, subprocess, sys; "
+                f"sys.path.insert(0, {str(Path(GUARD).parent)!r}); import owned_children; "
+                "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+                "cwd='/', start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+                "owned_children.register(os.environ['TM_TEST_CHILDREN_FILE'], p.pid)")
+        status, err, _ = guarded(shlex.join([sys.executable, "-c", code]))
+        self.assertEqual(status, 3)
+        self.assertIn("LEFT process", err)
+        self.assertNotIn("LEFT .owned-children", err)
+        pid = int(err.split("LEFT process ")[1].split(":")[0])
+        self.assertTrue(gone(pid), f"registered child {pid} still runs")
+
     def test_another_runs_folder_never_counts(self):
         with tempfile.TemporaryDirectory(prefix="tm-other-", dir="/tmp") as other:
             status, err, _ = guarded(f'touch "{other}/theirs"')
@@ -118,7 +134,7 @@ class Guard(unittest.TestCase):
                 time.sleep(0.05)
             self.assertTrue(folder, "the step never started")
             run.send_signal(signal.SIGTERM)
-            _, err = run.communicate(timeout=20)
+            _, err = run.communicate(timeout=GUARD_DEADLINE)
             self.assertNotEqual(run.returncode, 0)
             self.assertIn("LEFT x", err)
             self.assertFalse(os.path.exists(folder))
