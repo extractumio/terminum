@@ -81,6 +81,8 @@ def main():
         box()
         if kind == "claude":
             hook("SessionStart", source="resume" if "--resume" in args else "startup")
+        if start == "quits":
+            return                    # its session opened, its box shown, it ends before any prompt (an update's restart)
         while True:
             data = os.read(fd, 65536).decode("utf8", "replace")
             if not data:
