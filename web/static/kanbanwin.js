@@ -17,6 +17,14 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   taskBoxes();
   const box = $("taskbox"), body = $("taskbody");
   let shown = null, drawn = "", opening = 0;
+  let commentClose = null, commentId = null, pendingKeys = null;
+
+  const flushKeys = () => { const paint = pendingKeys; pendingKeys = null; paint?.(); };
+  // A release outside the key (or a cancelled touch) sends no click; give the footer its latest keys too.
+  const released = () => {
+    if (pendingKeys) requestAnimationFrame(() => { if (!commentClose?.matches(":active")) flushKeys(); });
+  };
+  for (const type of ["pointerup", "pointercancel", "keyup"]) document.addEventListener(type, released);
 
   /** A change of a field: whether terminumd took it. The window shows what stands; a text being
    *  typed stays (refresh). The board hears of it from terminumd. */
@@ -189,7 +197,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // the files of a comment being written: kept with its text, or the sweep would take them
     const dropped = () => read(filesKey) ?? [];
     takesFiles(area, (file) => write(filesKey, [...dropped(), file.id]));
-    const close = button(t.run_holds ? "primary" : null, "Close", async () => {
+    // A refresh keeps the key under the press; a different task gets a key of its own.
+    if (commentId !== t.id) {
+      commentClose = button(null, "Close");
+      commentClose.addEventListener("click", flushKeys);   // after the target is chosen, before its save handler
+      commentId = t.id;
+    }
+    const close = commentClose;
+    close.classList.toggle("primary", Boolean(t.run_holds));
+    close.onclick = async () => {
       if (area.value.trim()) {
         try {
           await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: dropped() } });
@@ -198,7 +214,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
         write(filesKey, null);
       }
       tryClose();
-    });
+    };
     // Run: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
     const run = button(t.run_holds ? null : "primary", "Run", async () => {
       try {
@@ -221,7 +237,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     shelve.classList.add("evenleft");
     wrap.append(expandable(area));
     // its keys at the window's foot, in sight while the task scrolls above them
-    $("taskacts").replaceChildren(...[t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run].filter(Boolean));
+    const acts = $("taskacts"), paint = () => {
+      for (const key of [...acts.children]) if (key !== close) key.remove();
+      if (close.parentNode !== acts) acts.append(close);
+      close.before(...[t.run_holds ? null : shelve, giveUp, stopWaiting].filter(Boolean));
+      if (!t.run_holds && !t.waits) close.after(run);
+    };
+    // Removing Run would move Close out from under the release. Keep its slot until the click or cancellation.
+    pendingKeys = close.matches(":active") ? () => { if (close.isConnected && box.open) paint(); } : null;
+    if (!pendingKeys) paint();
     return wrap;
   }
 
@@ -264,6 +288,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       throw e;
     }
     if (mine !== opening) return false;
+    if (!box.open) commentId = null;              // reopening is a new press target, even for the same task
     draw(t);
     if (!box.open) box.showModal();
     return true;
@@ -276,6 +301,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   async function tryClose() {
     if (box.open && edited() && !await askConfirm("Discard your edit? It is not saved.", "Discard")) return false;
     opening++;                                  // a read still waiting cannot reopen what the user closed
+    pendingKeys = null;
     box.close();
     return true;
   }
@@ -295,5 +321,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
 
   $("taskclose").addEventListener("click", tryClose);
   box.addEventListener("cancel", (e) => { e.preventDefault(); tryClose(); });
+  box.addEventListener("close", () => { if (!box.open) pendingKeys = null; });
   return { open, refresh, tryClose, shows: (id) => box.open && shown?.id === id, shownId: () => shown?.id };
 }

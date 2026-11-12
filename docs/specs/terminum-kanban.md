@@ -750,6 +750,14 @@ Scenario: AC-133 edge — closing while a task is being read
   Then that new open stands, even before the close's own Back is heard
   And the canceled read's success or failure changes neither its address nor its error message
 
+Scenario: AC-133 edge — a refresh during a Close press
+  Given a task's window open with a comment draft
+  When a changed task read arrives between pressing and releasing CLOSE
+  Then that press keeps the current draft once and closes the window, including when the available actions change
+  And a refused save keeps the draft and window; a retry keeps the current draft once
+  When another task opens between that press and release
+  Then the release sends neither task's draft and leaves the new task open
+
 Scenario: AC-133 edge — nothing typed is lost by a slip
   When Discard is pressed on a window with text, or Esc, × or Back on an edit not saved
   Then it asks; Cancel keeps it

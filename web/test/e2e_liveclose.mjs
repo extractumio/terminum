@@ -41,4 +41,19 @@ export async function liveTaskClose(page, opts) {
       await page.unroute(route, handler);
     }
   }
+  await open(`?project=${project}`);
+  await pressCard(page, parent);
+  await page.waitForSelector("#taskbox[open]");
+  const key = page.getByRole("button", { name: "Close", exact: true }).last(), rect = await key.boundingBox();
+  await key.evaluate((b) => { window.pressedClose = b; });
+  await page.mouse.move(rect.x + rect.width / 2, rect.y + rect.height / 2);
+  await page.mouse.down();
+  let changed;
+  try {
+    changed = await j(`/api/tasks/${parent}`, "PATCH", { text: "A live change while Close is pressed." });
+    await page.waitForFunction(() => document.querySelector("#taskbody .tasktext")?.textContent.includes("A live change while Close is pressed."));
+  } finally { await page.mouse.up(); }
+  await page.waitForSelector("#taskbox[open]", { state: "hidden" });
+  check("AC-133 live a real task change during a Close press keeps its key and closes the window",
+    changed.code === 200 && await page.evaluate(() => window.pressedClose.isConnected) && !await page.$eval("#taskbox", (b) => b.open));
 }
