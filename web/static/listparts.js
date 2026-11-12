@@ -28,6 +28,10 @@ export function iconButton(cls, name, label, title, onClick) {
   return b;
 }
 
+/** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring;
+ *  Tab still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"). */
+export const pointerKey = (b) => { b.addEventListener("mousedown", (e) => e.preventDefault()); return b; };
+
 // Projects' colors (AC-92): ten hues far apart, in pastel (tokens.css), so two projects never read as one
 export const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
 export const hueColor = (h) => `oklch(var(--proj-l) var(--proj-c) ${h})`;

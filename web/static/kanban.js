@@ -25,7 +25,7 @@ import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
 import { choose } from "./dialogs.js";
-import { el, iconButton, plural, projectInk } from "./listparts.js";
+import { el, iconButton, plural, pointerKey, projectInk } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 signInElsewhere();                                 // with no sign-in the board goes to /sessions/, whose form signs in
@@ -156,7 +156,7 @@ function card(t, under = "") {
   if (t.agent) head.append(agentChip(t.agent));
   c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
   // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
-  if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])));
+  if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(pointerKey(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t]))));
   const foot = el("div", "cfoot"), one = filters().project.length === 1;
   const p = projectOf(t.project);
   if (!one) {                                      // its project is said once: by the head when one is shown

@@ -3,7 +3,7 @@
 // (terminum-kanban.md AC-159, terminum-dispatcher.md AC-138), and schedules (terminum-schedules.md AC-160 to
 // AC-164): `node web/test/e2e_live.mjs schedules chromium`.
 import { check, until } from "./check.mjs";
-import { boardKit, intoStore, nap, startOf } from "./boardkit.mjs";
+import { boardKit, intoStore, nap, ring, startOf, tabKey } from "./boardkit.mjs";
 
 export async function liveFolded(page, live) {
   const { j, card, open } = boardKit(page, live);
@@ -61,6 +61,24 @@ export async function liveFolded(page, live) {
     check("AC-138 a phone keeps one row of agents that scrolls", agents.every(([, , y]) => y === agents[0][2]), JSON.stringify(agents));
   }
   await shot("agents");
+
+  // a task card's play key, pressed, takes no focus: its RUN window closed or a key typed after lights no ring; Tab
+  // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus")
+  const run = `${card(a)} .crun`;
+  for (const [how, close] of [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')], ["Esc", () => page.keyboard.press("Escape")]]) {
+    await page.click(run);
+    const opened = await until(() => page.isVisible("#runbox[open]"));
+    await close();
+    const shut = await until(async () => !(await page.isVisible("#runbox[open]")));
+    await page.keyboard.press("Shift+ArrowRight");   // a key after the press: Chrome lights a focused key's ring by it
+    const r = await ring(page, run);
+    check(`AC-138 ${how} on RUN's window, a key typed after, leaves no focus ring on the card's play key`, opened && shut && !r.lit && !r.focused, JSON.stringify(r));
+  }
+  await page.focus(card(a));
+  await tabKey(page);
+  const r = await ring(page, run);
+  check("AC-138 Tab still reaches the card's play key and rings it", r.focused && r.lit, JSON.stringify(r));
+  await page.evaluate(() => document.activeElement?.blur());
   for (const id of ids) await j(`/api/task-agents/${id}`, "DELETE");
   for (const id of [a, b]) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 }
@@ -140,9 +158,8 @@ export async function liveSchedules(page, live) {
   check("AC-163 the head counts it", await until(async () => await page.textContent(toggle) === "Scheduled 1"));
   await page.click(toggle);
   // a press with the pointer leaves no focus ring round the key it pressed: the ring is the keyboard's (docs/UI-GUIDELINES.md "Focus")
-  const ring = (sel) => page.$eval(sel, (b) => ({ lit: getComputedStyle(b).outlineStyle !== "none", focused: document.activeElement === b, visible: b.matches(":focus-visible") }));
   await page.keyboard.press("Shift+ArrowRight");     // a key after the press: Chrome lights a focused key's ring by it
-  let r = await ring(toggle);
+  let r = await ring(page, toggle);
   check("AC-163 the pressed Scheduled key, then a key typed, draws no focus ring", !r.lit, JSON.stringify(r));
   const sched = "#schedgrid .schedcard";
   check("AC-163 open, its card: key, title, cadence, next run, agent", await until(async () => {
@@ -166,13 +183,13 @@ export async function liveSchedules(page, live) {
     if (!(await page.isVisible("#confirmbox[open]"))) { await page.click(run); await until(() => page.isVisible("#confirmbox[open]")); }
     await close();
     const shut = await until(async () => !(await page.isVisible("#confirmbox[open]")));
-    r = await ring(run);
+    r = await ring(page, run);
     check(`AC-182 ${how} leaves no focus ring on the play key`, shut && !r.lit, JSON.stringify(r));
   }
   check("AC-182 Cancel runs nothing", !(await j("/api/schedules")).schedules[0].last);
   await page.focus(toggle);
-  await page.keyboard.press(page.context().browser().browserType().name() === "webkit" ? "Alt+Tab" : "Tab");   // a Mac's WebKit tabs to keys with Option, as Safari
-  r = await ring("#newschedule");
+  await tabKey(page);
+  r = await ring(page, "#newschedule");
   check("AC-163 Tab still reaches + Schedule and rings it", r.focused && r.lit, JSON.stringify(r));
   await page.evaluate(() => document.activeElement?.blur());
   const cols =await page.evaluate(() => [...document.querySelectorAll("#board .col")].map((c) => Math.round(c.getBoundingClientRect().width)));
