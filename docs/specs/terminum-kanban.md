@@ -456,6 +456,7 @@ Scenario: AC-115 edge — limits and scope
   Then create_task is refused: "This project holds 200 open tasks by agents. Ask the user to close some."
   Given a session in Default
   Then list_tasks and get_task reach only its own tasks and tasks it made
+  And list_tasks says so on its first line, "In no project (Default): the list holds only the caller's own tasks and those it made, never a board's.", the array still its second line
   And an agent's title, text and comments are cleaned and redacted as AC-98's records were, before they are kept
 
 Scenario: AC-115 failure — no store or no pane

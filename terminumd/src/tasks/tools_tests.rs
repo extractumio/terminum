@@ -151,6 +151,11 @@ fn ac115_a_session_in_default_reaches_only_its_own_and_what_it_made() {
         assert_eq!(listed.contains(&format!("\"{id}\"")), seen, "{id} in {listed}");
     }
     assert!(call(&s, &dir, &w, "get_task", json!({"id": others})).is_err());
+    let (first, array) = listed.split_once('\n').unwrap();
+    assert_eq!(first, format!("{DATA}{NO_PROJECT}"), "its first line says the list is its own, no board's");
+    assert!(array.starts_with('['), "the array stays the second line: {array}");
+    let shared = call(&s, &dir, &who(Some("api")), "list_tasks", json!({})).unwrap();
+    assert_eq!(shared.lines().next(), Some(DATA), "a project's session is told nothing more");
 }
 
 #[test]

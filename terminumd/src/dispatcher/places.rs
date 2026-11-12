@@ -16,13 +16,9 @@ use crate::app::Shared;
 use crate::tasks::agents::{self, Agent};
 use crate::tasks::api::answer;
 use crate::tasks::ops;
+pub(super) use crate::tasks::ops::no_folder;
 use crate::tasks::store::DEFAULT_PROJECT;
 use crate::tmux::Server;
-
-/// A project with no folder starts nothing: no one knows where (AC-140).
-pub(super) fn no_folder(project: &str, dir: &str) -> Result<(), String> {
-    if dir.is_empty() { Err(format!("{project} has no folder: set it in its window.")) } else { Ok(()) }
-}
 
 /// Whether terminum's hooks are in place for `kind` on this Mac (AC-121).
 pub(super) fn hooks_there(kind: &str) -> bool {

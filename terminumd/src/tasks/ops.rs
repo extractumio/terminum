@@ -322,6 +322,11 @@ pub(crate) fn project_place(tx: &Transaction, project: &str) -> Result<(String, 
     tx.query_row("SELECT name, host, dir FROM projects WHERE id = ?1", [project], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).map_err(sql)
 }
 
+/// A project with no folder starts nothing: no one knows where (terminum-dispatcher.md AC-140).
+pub(crate) fn no_folder(project: &str, dir: &str) -> Result<(), String> {
+    if dir.is_empty() { Err(format!("{project} has no folder: set it in its window.")) } else { Ok(()) }
+}
+
 /// Its owner, with no line in its history: Dispatcher's run says who took it.
 pub(crate) fn set_owner(tx: &Transaction, key: &str, owner: &str, at: i64) -> Result<(), String> {
     tx.execute("UPDATE tasks SET owner = ?1, updated_at = ?2 WHERE id = ?3", (owner, at, key)).map(|_| ()).map_err(sql)

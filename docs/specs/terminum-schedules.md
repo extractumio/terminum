@@ -88,6 +88,9 @@ Scenario: AC-160 edge — a choice clears what it answered
 
 Scenario: AC-160 happy path — what will go
   Then "What the agent gets", open, shows the prompt of AC-162 as terminumd makes it, and the agent's command line in full (AC-156), before Save
+  And "Runs in" says, in terminumd's words, the project's server and folder and whose board the agent reaches: "/Users/alex/billing, with the board of Billing"
+  And for a project with no folder it says what a firing there is refused with, "Billing has no folder: set it in its window." (terminum-dispatcher.md AC-140)
+  And with Default chosen it says "~, in no project: the agent reaches only this run's own task, no board. Choose a project for work on its board or folder." (terminum-kanban.md AC-110)
   And the command stands as RUN's window's "Command" line, the prompt in a field's well, its text as far in as a field's
   And every label and field of the window, When's and the prompt among them, stands on the form's one edge, When's fields as tall as the others, Paused on its field's middle (`docs/UI-GUIDELINES.md` §2.4)
 
@@ -363,7 +366,7 @@ A schedule is shown as `SCH-<number>`. Times are unix seconds. `cron` or `once_a
 GET    /api/schedules → {"schedules": [{"id", "key": "SCH-1", "project", "title", "body", "severity", "agent", "cron", "once_at", "budget_seconds", "paused", "paused_why", "next": [s…3], "next_words": ["Tue 10 Nov 03:00", …], "words": "Every day at 03:00", "last": {"task": "S_TERM-41", "status": "DONE"}, "skipped": 0, "failed_why": null, "author_name", "updated_at"}]}
 POST   /api/schedules {title, body, project, severity, agent, cron | once_at, budget_seconds, paused} → {"id", "key"}
 PATCH  /api/schedules/{id} {same}        DELETE /api/schedules/{id}
-POST   /api/schedules/preview {same} → {"next": [s…3], "next_words": ["Tue 10 Nov 03:00", …], "prompt": "…", "line": "claude --effort high …"} or 400 with the field's words
+POST   /api/schedules/preview {same} → {"next": [s…3], "next_words": ["Tue 10 Nov 03:00", …], "prompt": "…", "line": "claude --effort high …", "place": "/Users/alex/billing, with the board of Billing"} or 400 with the field's words
 POST   /api/schedules/{id}/run → {"task": "S_TERM-42"} or 400 with why not (AC-182)
 GET    /api/schedule-fires?schedule=SCH-1&before=<id> → {"fires": [{"id", "schedule": "SCH-1", "title", "due_at", "at", "task", "status", "agent", "started_at", "ended_at", "state", "missed", "why", "prompt", "result"}], "more": true}
 ```

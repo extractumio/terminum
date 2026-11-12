@@ -198,6 +198,24 @@ fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), S
     Ok(())
 }
 
+/// Where a schedule of `project` runs and what its agent reaches there, for its window (AC-160).
+pub fn place_words(tx: &Transaction, project: &str) -> Result<String, String> {
+    let (name, host, dir) = ops::project_place(tx, project)?;
+    // what its firing would be refused with (terminum-dispatcher.md AC-140)
+    if let Err(none) = ops::no_folder(&name, &dir) {
+        return Ok(none);
+    }
+    let at = match host {
+        Some(h) => format!("{h}: {dir}"),
+        None => dir,
+    };
+    Ok(if project == super::store::DEFAULT_PROJECT {
+        format!("{at}, in no project: the agent reaches only this run's own task, no board. Choose a project for work on its board or folder.")
+    } else {
+        format!("{at}, with the board of {name}")
+    })
+}
+
 pub fn by_id(tx: &Transaction, id: &str) -> Result<Schedule, String> {
     tx.query_row(&format!("{SELECT} WHERE s.id = ?1 AND s.deleted_at IS NULL"), [id], of_row).optional().map_err(sql)?.ok_or_else(|| "That schedule is gone.".into())
 }

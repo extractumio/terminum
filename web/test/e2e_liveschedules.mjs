@@ -95,6 +95,12 @@ export async function liveSchedules(page, live) {
   check("AC-160 the picker writes cron fields and terminumd says the next runs", await until(async () => await page.textContent("#schedfields") === "*/15 * * * *" && /^Every 15 minutes\. Next: .+, .+, .+/.test(await page.textContent("#schednext"))), await page.textContent("#schednext"));
   check("AC-160 what the agent gets stands open before Save", await page.evaluate(() => document.getElementById("schedwhat").open));
   check("AC-160 what the agent gets: the prompt and its command", (await page.textContent("#schedprompt")).includes("A scheduled run of terminum's schedule SCH-? \"Nightly deps check\" (every 15 minutes)") && (await page.textContent("#schedline")).includes("fake_agent.py"), await page.textContent("#schedprompt"));
+  // where it runs, in terminumd's words: a schedule left in Default is said to reach no board before Save
+  const place = () => page.textContent("#schedplace");
+  check("AC-160 where it runs: the project's folder and board", await until(async () => await place() === `${live.work}, with the board of Nightly`), await place());
+  await page.selectOption("#schedproj", "default");
+  check("AC-160 in Default it says the agent reaches no board", await until(async () => (await place()).includes("in no project: the agent reaches only this run's own task, no board.")), await place());
+  await page.selectOption("#schedproj", project);
   await page.selectOption("#schedkind", "cron");
   await page.fill("#schedcron", "0 24 * * *");
   check("AC-160 a field out of its range is refused in the window", await until(async () => await page.textContent("#schederror") === "The hour \"24\" is not 0 to 23."), await page.textContent("#schederror"));

@@ -253,7 +253,8 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   N hours, every day, weekdays, chosen days of the week, a day of the month, once, or five cron
   fields, in the Mac's local time, the next three runs said under it),
   a time budget (required: no one watches the run) and Paused; What the agent gets shows the
-  prompt and the agent's command. Each schedule keeps one slot of its agent while not paused. When
+  prompt, the agent's command and where it runs: the project's folder and board. A schedule left
+  in Default runs in no project: its agent reaches only the run's own task, never a board. Each schedule keeps one slot of its agent while not paused. When
   it is due, Dispatcher makes a task from it as it is then, IN PROGRESS and named S_TERM-8 (S_
   before its project's next ID), in the project's folder, and runs it on that agent, telling it it
   is a scheduled run and to give its result as Outcome, Summary, Details and For the human, or ask

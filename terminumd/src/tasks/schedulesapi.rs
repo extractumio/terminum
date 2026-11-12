@@ -81,8 +81,8 @@ async fn run_now(State(app): State<Shared>, Path(id): Path<String>) -> Response 
     answer(crate::dispatcher::fire::now(&app, &id, &who).await.map(|task| json!({"task": task})))
 }
 
-/// What a schedule's window shows as it is typed (AC-160): its next three runs, the prompt and the agent's line,
-/// or the field's words.
+/// What a schedule's window shows as it is typed (AC-160): its next three runs, the prompt, the agent's line and
+/// where it runs, or the field's words.
 async fn preview(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
     answer(store(&app, move |tx| {
         let now = ops::now();
@@ -91,7 +91,8 @@ async fn preview(State(app): State<Shared>, Json(body): Json<Value>) -> Response
         let next = s.when()?.upcoming(now, 3);
         let line = super::agents::by_id(tx, &s.agent)?.map(|a| a.line).unwrap_or_default();
         let next_words: Vec<String> = next.iter().map(|at| super::cron::when_words(*at)).collect();
-        Ok(json!({"next": next, "next_words": next_words, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body, false), "line": line}))
+        Ok(json!({"next": next, "next_words": next_words, "words": s.words(), "prompt": crate::dispatcher::fire::prompt(&s, "<its new task>", &s.title, &s.body, false), "line": line,
+            "place": schedules::place_words(tx, &s.project)?}))
     }).await)
 }
 

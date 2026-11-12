@@ -110,3 +110,16 @@ fn ac162_due_by_the_wall_clock_and_missed_firings_come_once() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac160_where_it_runs_and_what_its_agent_reaches() {
+    open("sched-place").with(|tx| {
+        tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('b', 'Billing', 0, '/srv/billing', 0), ('r', 'Remote', 1, '~/api', 1), ('n', 'Nowhere', 2, '', 2)", []).map_err(sql)?;
+        tx.execute("UPDATE projects SET host = 'devbox.example' WHERE id = 'r'", []).map_err(sql)?;
+        assert_eq!(place_words(tx, "b")?, "/srv/billing, with the board of Billing");
+        assert_eq!(place_words(tx, "n")?, "Nowhere has no folder: set it in its window.", "as its firing would be refused");
+        assert_eq!(place_words(tx, "r")?, "devbox.example: ~/api, with the board of Remote");
+        assert_eq!(place_words(tx, crate::tasks::store::DEFAULT_PROJECT)?, "~, in no project: the agent reaches only this run's own task, no board. Choose a project for work on its board or folder.");
+        Ok(())
+    }).unwrap();
+}

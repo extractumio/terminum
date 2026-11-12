@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A schedule's window (terminum-schedules.md AC-160): its title, text, project, severity, agent, When, time budget
-// and Paused; terminumd says its next runs, the prompt that will go and the agent's command as it is typed, and
+// and Paused; terminumd says its next runs, the prompt that will go, where it runs and the agent's command as it is typed, and
 // refuses what is wrong in the field's words. What was typed is not lost by a slip of Esc (terminum-kanban.md AC-133).
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, plural } from "./listparts.js";
@@ -56,6 +56,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
       $("schednext").textContent = `${v.words}. Next: ${v.next_words.join(", ")}`;   // the Mac's clock, terminumd's words
       $("schedprompt").textContent = v.prompt;
       $("schedline").textContent = v.line;
+      $("schedplace").textContent = v.place;
       showError(error, "");
     } catch (e) {
       if (n !== asked) return;
