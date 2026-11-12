@@ -205,7 +205,10 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   deleted, with Undo for 5 seconds; Esc closes the window. The bar over the terminal has the same
   Resolve.
 - **Tasks** (Kanban among the sections, `/kanban/`; ⌘Enter in a text keeps it, a file dropped on the board starts a task; a card carries its session's row, a press opens the session, and says what became of its agent; the project key in the head chooses the project, a pencil on its row or its menu's New project… opens its window; the session page's list stands left of the columns, as wide as there, and its agents over them, each with two stripes of its subscription's use (below, "Subscription limits on the board"); a press on an agent opens its window: its stripes with their reset times, its tokens of 7 and 30 days, and each live session with its tasks as links, those it works on and those finished while the session stays open; drop a task on a free agent, or ⌘+press several and drop them, write a short message and press Run, or press Run in the new-task window: a task moves only by running; Dispatcher opens the window, types the task once the agent's box is empty, moves the card as the session lives and closes the session 5 minutes after it ended; a task's Budget gives the agent that many minutes, told at the start and at the end, and it is ended at the limit; a card shows its session's CPU, memory, running time and tokens, and a project's memory limits warn and end it (4 and 8 GiB unless set, `dispatcher` in settings.json or Memory limits… in its project's window); WAIT FOR HUMAN and FAILED say so in a line on both pages and in a count on Kanban; Codex needs terminum's hooks trusted in its /hooks): tasks in TODO, IN PROGRESS, WAIT FOR HUMAN,
-  FAILED and DONE, with a severity, an owner, a project, Markdown comments and files; + Task
+  FAILED and DONE, with a severity, an owner, a project, Markdown comments and files. Each column
+  has two icons before its count: recently updated first, or priority then recently updated (the default).
+  Each project keeps its column choices in this browser; All projects and selections of several projects
+  share a separate choice. Sorting replaces dragging cards into order; drops on agents still run tasks. + Task
   takes files dropped or pasted in, also from a session's menu or a terminal's selection (the
   bookmark dialog's New task from selection). A task can be linked to a session: its row shows the
   task, and when you move the task its agent hears of it at its next tool call. Agents use
@@ -224,8 +227,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   severities it takes (as made: P0 and P1), the minutes a task stands in TODO before it is taken (10) and the
   tasks it starts in 24 hours at most (10); the switch
   then turns it on or off in one press (with several projects shown a press turns it off for them, and turning on is
-  each project's own in the window); "How tasks are picked" chooses between an agent's scoring and the board's order (P0 first, then the cards'
-  order, started by terminum itself with no agent); with an agent, when slots are free it starts one more session of the picking agent, which
+  each project's own in the window); "How tasks are picked" chooses between an agent's scoring and priority and saved order (P0 first, then saved rank, started by terminum itself with no agent); with an agent, when slots are free it starts one more session of the picking agent, which
   scores the first such tasks by RICE and starts the best, each on the agent named in the task's window (Agent),
   else the default; what a round leaves is passed over for a day and the next takes the tasks below; a task it
   started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its

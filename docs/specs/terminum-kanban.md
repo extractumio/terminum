@@ -54,7 +54,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, in severity order and by hand within a severity; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity and title; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
@@ -95,14 +95,31 @@ Scenario: AC-105 happy path — the two pages
   And Sessions in its head loads "/sessions/" again; "/kanban/API-12" opens the board with API-12's window open
 
 Scenario: AC-105 happy path — columns and order
-  Given P1 tasks API-3 and API-7 in TODO, API-7 dragged above API-3, and P0 task API-9 in TODO
-  Then TODO reads API-9, API-7, API-3 and each column's head shows its count
-  When a new P1 task API-12 is made
-  Then TODO reads API-9, API-12, API-7, API-3
-  When the user drags API-3 above API-7
-  Then that order is kept for every page within 2 s
-  When the user drops API-3 among P0 cards
-  Then it stays P1 and returns to the top of the P1 cards; severity changes only in the task's window or its menu
+  Given P1 tasks API-3 and API-7 in TODO, API-7 updated after API-3, and an older P0 task API-9 in TODO
+  Then TODO reads API-9, API-7, API-3: priority then recently updated is the default
+  And every column's head has two icon keys just before its count, labelled "Recently updated first" and "Priority, then recently updated", the chosen one pressed
+  When the user chooses recently updated first in TODO
+  Then TODO reads API-7, API-3, API-9; the other columns keep their choices
+  And the server sorts before taking each page of 200; equal update times use the newest task number first
+  And subtasks still stand under their parent in the same column (AC-112)
+  And a drop within a column changes no task's order; a drop on an agent still runs it (AC-138)
+
+Scenario: AC-105 happy path — a project's sort choices
+  Given Billing's TODO is set to recently updated first and Web's TODO to priority then recently updated
+  When the user switches between those projects or reloads
+  Then each column keeps that project's choice in this browser
+  And All projects and any selection of several projects share a separate set of column choices
+  And a phone's column head keeps the two keys and count, with touch targets at least 44px
+  And these display choices change no Auto-Dispatcher picking order (terminum-dispatcher.md AC-170)
+  And when the browser cannot save preferences the choices still work for this page's lifetime
+
+Scenario: AC-105 failure — a sort read fails or answers late
+  When a changed sort cannot be read
+  Then the current cards stay and the board's banner says it is out of date with the server's message
+  And Show more stays disabled until cards for the chosen project and sort arrive
+  When an older read or Show more answers after the project or sort changed
+  Then it adds no cards and clears no newer error
+  And an unknown API sort is refused with "Sort: one of recent, priority"
 
 Scenario: AC-105 happy path — a card
   Then a card shows its ID, title, severity, owner, project in the project's color, subtask progress and its session (AC-134), or "session closed"
@@ -182,10 +199,10 @@ Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
 
 Scenario: AC-106 happy path — from TODO's head
-  Then TODO's head always shows a [+] key just before its count, in the look of the session list's group-header [+]
+  Then TODO's head always shows a [+] key before the sort keys and count, in the look of the session list's group-header [+]
   When the user presses it
   Then the same window opens as + Task's, the draft with it
-  And a phone, which hides the column heads, keeps + Task in the board's head
+  And a phone keeps + Task in the board's head as well
 
 Scenario: AC-106 happy path — from a session and from a terminal's selection
   When the user picks New task in a session's menu
@@ -211,7 +228,7 @@ Scenario: AC-107 happy path — a task moves by running
   When the user runs API-12 (terminum-dispatcher.md AC-121, AC-138)
   Then Dispatcher moves it as its agent goes, every page shows it within 2 s and its history adds "Dispatcher moved it from TODO to IN PROGRESS" with the time
   And a drag to another column does nothing: the column does not light and the card stays
-  And the human's way to take a task off the board is Archive (AC-118); within its column they may still set its place (AC-105)
+  And the human's way to take a task off the board is Archive (AC-118); its display order follows the column's sort (AC-105)
 
 Scenario: AC-107 failure — a route with a column
   When a page sends PATCH /api/tasks/API-12 {"status": "DONE"}
@@ -351,7 +368,7 @@ Scenario: AC-112 happy path — one level
   Then the new-task window says "New subtask of API-12", its project fixed, with a draft of its own
   And API-13 is a full task of API-12's project with its own status, owner, severity and session, and API-12's card shows "0/1"
   And API-12's window lists its subtasks, a press opening each, and API-13's says "Subtask of API-12"
-  And Show subtasks in the head, a key that looks pressed as a filter that is on, makes subtasks cards of their own, each saying "in API-12"; in API-12's column each stands right under API-12, shifted right, whatever its severity; in another column it keeps its place, unshifted; a task dropped into API-12's group lands after it; off, they show only in their parent's window
+  And Show subtasks in the head, a key that looks pressed as a filter that is on, makes subtasks cards of their own, each saying "in API-12"; in API-12's column each stands right under API-12, shifted right, whatever its severity; in another column it keeps its place, unshifted; a drop within a column changes no order (AC-105); off, they show only in their parent's window
 
 Scenario: AC-112 edge — the parent
   When API-12 ends in DONE with API-13 open
@@ -515,7 +532,7 @@ Scenario: AC-145 edge — a human's
 Scenario: AC-154 happy path — severity and parent
   Given API-31 and API-12 of project api, made by agents, and an agent in a session of api
   When it calls update_task {id: "API-12", severity: "P1", parent: "API-31"}
-  Then API-12 is P1, on top of the P1 cards (AC-105), and a subtask of API-31 (AC-112), each change in its history by that agent, and both cards change on every page
+  Then API-12 is P1, placed by its column's sort (AC-105), and a subtask of API-31 (AC-112), each change in its history by that agent, and both cards change on every page
   When it calls update_task {id: "API-12", parent: "none"}
   Then API-12 leaves API-31; AC-112's rules hold: one level, one project
 
@@ -703,17 +720,9 @@ Scenario: AC-136 edge — no more than a move
 ### AC-133 — A flow that holds [MUST / P0]
 
 ```gherkin
-Scenario: AC-133 edge — dragged and straight back
-  When a card goes to DONE and back to TODO before terminumd answered the first
-  Then its changes reach terminumd one after another, TODO stands, and its history has both
-
-Scenario: AC-133 happy path — a move shows at once
-  When a card is dropped
-  Then it stands in its column before terminumd answers, on top of its severity's cards
-
-Scenario: AC-133 failure — a move refused or lost
-  When terminumd refuses it, or the network or terminumd is gone
-  Then the card goes back, the toast says why, over an open window too; the board's banner says when it is out of date, and goes by itself once terminumd is back
+Scenario: AC-133 failure — a read refused or lost
+  When the network or terminumd is gone
+  Then the current cards stay; the board's banner says when it is out of date, and goes by itself once terminumd is back; a changed sort follows AC-105
 
 Scenario: AC-133 edge — answers out of order, a drag under a change
   When an older read answers after a newer, or two windows are opened with the first slower
@@ -1112,14 +1121,14 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 | Route | Does |
 |---|---|
 | `GET /`, `/sessions/`, `/kanban/`, `/kanban/API-12` | redirect keeping the query (`?trace=1`); the session page; the board |
-| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&after=&limit=&counts=1` | a page of 200 at most, each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's count under the same filters; with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
+| `GET /api/tasks?project=&severity=&owner=&status=&q=&id=&made_in=&sort=&after=&limit=&counts=1` | a page of 200 at most; `sort=recent` orders by updated time descending, `sort=priority` by severity then updated time descending, both breaking ties by task number descending; omitted, severity then saved rank for tool callers; archived tasks keep archive-time order; each card with its subtasks' `boxes` (AC-112); with `counts=1`, each column's count under the same filters; with `id=API-12`, whether they show that task; with `made_in=<key>`, the tasks made in that pane, subtasks too (AC-150) |
 | `POST /api/tasks`, `PATCH /api/tasks/API-12`, `POST /api/tasks/API-12/comments`, `/files` | changes; the answer is the new state or `{"error": "<message>"}`; `PATCH {parent: "API-3" \| null}` puts it under a task or takes it out (AC-112); `POST {made_in, record}` counts it as made in that pane and lets the record go, 409 when it went already (AC-116) |
 | `PATCH /api/task-projects/<id> {prefix?, template?}` | a project's ID letters (AC-148) and its template (AC-145), besides its name and folder |
 | `GET /api/task-files/<id>` | header sign-in only, never an address (terminum.md AC-09): the page fetches and shows a blob, as `web/static/shown.js` does; `Content-Disposition: attachment` and `X-Content-Type-Options: nosniff`; inline only for PNG, JPEG, GIF, WebP |
 
 `PATCH` takes `text_rev`, as a task's window gave it, for the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
 
-Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135).
+Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts}` when the open tasks by session or the tasks by project change, for the session list; the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
 
 **MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
@@ -1147,7 +1156,7 @@ Depends on: nothing more.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-105 — `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
+- [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
 - [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone)
 - [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`

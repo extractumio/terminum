@@ -18,6 +18,7 @@ import { filterBar, filters, hasFilter, narrowed, query } from "./kanbanfilters.
 import { boardSessions, sessionStrip } from "./kanbanside.js";
 import { agentsSection } from "./kanbanagents.js";
 import { foldedCards } from "./kanbanfold.js";
+import { columnSort } from "./kanbansort.js";
 import { scheduledSection } from "./kanbansched.js";
 import { projectWindow } from "./kanbanproject.js";
 import { autoDispatcher } from "./kanbanauto.js";
@@ -43,9 +44,19 @@ let slots = { agents: {}, full: [], full_projects: [] };   // what each agent's 
 let readings = {};                                 // each kind's subscription windows (terminum-dispatcher.md AC-168)
 let liveRows = new Map();                          // the session list's rows by key (AC-134)
 let usage = {};                                    // what each task's session uses, by terminumd's walk
-let loading = 0, changing = 0, chain = Promise.resolve();
+let loading = 0;
+let cardQueries = new Map();                       // the filters and sort that produced the shown cards
 const failed = { meta: "", tasks: "" };          // why the last read of each failed: said until one comes (AC-105)
 let metaWait = 0;
+const sorting = columnSort(() => filters().project, () => load(true));
+const columnQuery = (column) => query({ status: column, sort: sorting.mode(column), limit: PAGE });
+
+function moreState() {
+  for (const [column, { list }] of columns) {
+    const key = list.querySelector(".colmore");
+    if (key) key.disabled = cardQueries.get(column) !== columnQuery(column);
+  }
+}
 
 /** Above the board: a read that failed, else the store's problem; a store set aside offers its way on, and only then
  *  is an empty one made (AC-119). */
@@ -65,18 +76,21 @@ function banner() {
 }
 
 /** Each column's pages as shown; a failure keeps what is shown and says so (AC-105). The newest read
- *  stands, whichever answers last, and none over a change on its way: its end reads again (AC-133). */
-async function load() {
-  if (changing) return;
+ *  stands, whichever answers last (AC-133); a changed project or sort starts at the first page. */
+async function load(reset = false) {
   const mine = ++loading;
+  sorting.draw();
+  moreState();
+  const queries = new Map(COLUMNS.map((c) => [c, columnQuery(c)]));
   try {
     const parts = await Promise.all(COLUMNS.map(async (c, i) => {
-      const pages = Math.max(1, Math.ceil(cards.get(c).length / PAGE));
-      const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${query({ status: c, limit: PAGE, after: n ? n * PAGE : undefined, counts: i === 0 && !n ? 1 : undefined })}`)));
+      const pages = reset ? 1 : Math.max(1, Math.ceil(cards.get(c).length / PAGE));
+      const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${queries.get(c)}&after=${n * PAGE}${i === 0 && !n ? "&counts=1" : ""}`)));
       return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, slots: got[0].slots, readings: got[0].subscriptions };
     }));
-    if (mine !== loading || changing) return;
+    if (mine !== loading) return;
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
+    cardQueries = queries;
     counts = parts[0].counts;
     slots = parts[0].slots ?? slots;
     readings = parts[0].readings ?? readings;
@@ -84,19 +98,28 @@ async function load() {
     failed.tasks = "";
     banner();
     draw();
+    moreState();
   } catch (e) {
+    if (mine !== loading) return;
     failed.tasks = e.message;
     banner();
   }
 }
 
 async function more(column) {
-  const have = cards.get(column);
+  const have = cards.get(column), mine = loading;
+  const selected = columnQuery(column);
+  if (cardQueries.get(column) !== selected) return;
+  const button = columns.get(column).list.querySelector(".colmore");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
   try {
-    const page = await api(`/api/tasks?${query({ status: column, limit: PAGE, after: have.length })}`);
+    const page = await api(`/api/tasks?${selected}&after=${have.length}`);
+    if (mine !== loading || have !== cards.get(column)) return;
     cards.set(column, [...have, ...page.tasks]);
     draw();
-  } catch (e) { say(e.message); }
+  } catch (e) { if (mine === loading) say(e.message); }
+  finally { moreState(); }
 }
 
 const projectOf = (id) => meta.projects.find((p) => p.id === id);
@@ -182,7 +205,6 @@ function card(t, under = "") {
     dragging = null;
     document.querySelectorAll(".card.lifted").forEach((x) => x.classList.remove("lifted"));
     document.body.classList.remove("dragtask");
-    for (const { col } of columns.values()) col.classList.remove("over");
     draw();
     agents.draw();
   });
@@ -216,25 +238,6 @@ async function runThem(tasks, agent) {
   } catch (e) { say(e.message); }
 }
 
-/** The board's changes go one after another, as made, so the last drop stands; when none is left
- *  the columns are read again: a refused one's card goes back, and the toast says why (AC-133). */
-function change(t, body) {
-  changing++;
-  chain = chain
-    .then(() => api(`/api/tasks/${t.id}`, { method: "PATCH", body }))
-    .catch((e) => say(e.message))
-    .finally(() => { if (!--changing) readSoon(); });
-}
-
-/** Within its column a task's place is the human's; to another it goes only by running (AC-138). */
-function dropOn(before) {
-  const t = dragging[0], list = cards.get(t.status);
-  list.splice(list.indexOf(t), 1);
-  const at = before ? list.findIndex((c) => c.id === before) : -1;
-  list.splice(at >= 0 ? at : list.length, 0, t);
-  change(t, before ? { before } : { order_end: true });
-}
-
 function tabFor(name) {
   const tab = button(null, name, () => showColumn(name));
   tab.dataset.status = name;
@@ -246,18 +249,10 @@ function tabFor(name) {
 const columns = new Map(COLUMNS.map((column) => {
   const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
   col.dataset.status = column;
-  head.append(el("span", null, column), count);
-  if (column === "TODO") count.before(iconButton("icon new", "plus", "New task", "A new task in TODO", () => form.open()));   // AC-106
+  const keys = sorting.keys(column);
+  head.append(el("span", "colname", column), keys, count);
+  if (column === "TODO") keys.before(iconButton("icon new", "plus", "New task", "A new task in TODO", () => form.open()));   // AC-106
   col.append(head, list);
-  col.addEventListener("dragover", (e) => { if (dragging?.length === 1 && dragging[0].status === column) { e.preventDefault(); col.classList.add("over"); } });
-  col.addEventListener("dragleave", (e) => { if (!col.contains(e.relatedTarget)) col.classList.remove("over"); });
-  col.addEventListener("drop", (e) => {
-    e.preventDefault();
-    col.classList.remove("over");
-    // into another parent's group it goes after the group: its subtasks are drawn there, not ranked there (AC-112)
-    const next = [...list.querySelectorAll(".card")].find((c) => { const r = c.getBoundingClientRect(), up = c.dataset.under; return e.clientY < r.top + r.height / 2 && c.dataset.id !== dragging[0].id && (!up || up === dragging[0].parent); });
-    dropOn(next?.dataset.id);
-  });
   return [column, { col, count, list, tab: tabFor(column), drawn: "" }];
 }));
 let socket = null;
@@ -368,7 +363,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const bar = filterBar({ getMeta: () => meta, changed: () => { load(); side.draw(); drawPool(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
+const bar = filterBar({ getMeta: () => meta, changed: () => { load(true); side.draw(); drawPool(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
 const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 /** What goes by the pool and the projects shown. */
 const drawPool = () => { agents.draw(); scheduled.draw(); project.refresh(); auto.draw(); };

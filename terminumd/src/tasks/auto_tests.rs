@@ -58,7 +58,7 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         put(json!({"on": true}), 12)?;
         assert_eq!(due_for(tx)?.len(), 1);
         assert_eq!(setting(tx, "api")?, Setting { on: true, on_at: 12, default: None, ..chosen.clone() }, "on again: no why");
-        // by the board's order no agent picks: on needs none
+        // by priority and saved order no agent picks: on needs none
         put(json!({"on": false, "agent": null}), 13)?;
         assert_eq!(put(json!({"on": true}), 13).unwrap_err(), "Choose the agent that picks first: its settings.");
         put(json!({"on": true, "mode": "order"}), 13)?;

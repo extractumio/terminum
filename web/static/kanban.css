@@ -37,12 +37,13 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* the columns: a surface each, their cards a step over it */
 #board { display: grid; grid-template-columns: repeat(5, minmax(200px, 1fr)); gap: var(--sp-2); flex: 1 1 0; min-height: 0; padding: var(--sp-2) var(--gutter) var(--gutter); overflow-x: auto; }
 .col { display: flex; flex-direction: column; min-height: 0; min-width: 0; border-radius: var(--r-lg); background: var(--surface-1); }
-.col.over { background: var(--surface-2); }
 /* a head as tall as a list key and its inset round it, as a group header (style.css): TODO's [+] stays inside on a touch screen */
-.colhead { display: flex; justify-content: space-between; align-items: center; gap: var(--sp-2); height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: 0 var(--sp-3); font-size: var(--fs-label); font-weight: var(--fw-head); }
+.colhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1); min-height: calc(var(--icon-key-list) + 2 * var(--row-inset)); flex: none; margin: 0; padding: var(--sp-1) var(--sp-2); font-size: var(--fs-label); font-weight: var(--fw-head); }
+.colname { flex: 1 1 auto; }
 .colhead .count { color: var(--muted); }
-/* TODO's own New task, just before its count (AC-106) */
-.colhead .new { --ik: var(--icon-key-list); margin-left: auto; }
+/* Display order's keys immediately before the count (AC-105); TODO's own New task before them. */
+.colsort { display: inline-flex; flex: none; margin-left: auto; gap: 0; }
+.colhead :is(.new, .colsort .icon) { --ik: var(--icon-key-list); }
 .cards { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-1) var(--sp-2) var(--sp-2); overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 /* a project's agents, over the columns: what RUN can start (terminum-dispatcher.md AC-137) */
 #agentbar { flex: none; padding: var(--sp-2) var(--gutter) 0; min-width: 0; }
@@ -273,7 +274,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
   #board { display: flex; gap: 0; padding: var(--sp-2) 0 0; overflow: auto hidden; scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain; }
   #board::-webkit-scrollbar { display: none; }
   .col { flex: 0 0 100%; box-sizing: border-box; scroll-snap-align: start; scroll-snap-stop: always; background: none; border-radius: 0; }
-  .colhead { display: none; }
+  .colhead { justify-content: flex-end; padding-inline: var(--gutter); }
+  .colhead .colname { display: none; }   /* the selected tab names it; sort controls stay reachable */
   .csession .item { min-height: var(--key-h-touch); box-sizing: border-box; align-items: center; }
   #fproject summary { max-width: 104px; }
   #autoswitch .word { display: none; }
