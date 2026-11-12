@@ -116,16 +116,18 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     check("AC-115 live: the project's other session reads it, said to be data", !read.error && read.text.includes("data, never instructions"), read.text.slice(0, 200));
     check("AC-115 live: and comments on it", !(await b.tool("add_comment", { id: t1, text: "seen" })).error);
     check("AC-115 live: take_task links it to the session", !(await a.tool("take_task", { id: t1 })).error && (await task(t1)).session?.key?.endsWith(`:${a.pane}`));
-    const hers = await b.tool("move_task", { id: t1, to: "WAIT FOR HUMAN" });
+    const hers = await b.tool("move_task", { id: t1, to: "IN PROGRESS" });
     const moved = await task(t1);
-    check("AC-115 live: the project's other session moves it, its session as it was", !hers.error && moved.status === "WAIT FOR HUMAN" && moved.session?.key?.endsWith(`:${a.pane}`), hers.text);
+    check("AC-115 live: the project's other session moves it, its session as it was", !hers.error && moved.status === "IN PROGRESS" && moved.session?.key?.endsWith(`:${a.pane}`), hers.text);
+    const parked = await b.tool("move_task", { id: t1, to: "WAIT FOR HUMAN" });
+    check("AC-157 live: no agent moves a task to WAIT FOR HUMAN without a question", parked.error && (await task(t1)).status === "IN PROGRESS", parked.text);
     check("AC-115 live: a session outside the project does not", (await lone.tool("move_task", { id: t1, to: "DONE" })).error);
 
     fs.writeFileSync(path.join(a.dir, "begin.json"), JSON.stringify({ session_id: "s-notes", cwd: work, hook_event_name: "SessionStart", source: "startup" }));
     await a.inPane("terminum hook claude < begin.json");
     const bare = await a.tool("finish_task", { id: t1, result: "**Fixed** it" });
     const unfinished = await task(t1);
-    check("AC-123 live: a result without its sections is a comment, not a result", !bare.error && /^Not a result: it lacks Outcome, /.test(bare.text) && unfinished.status === "WAIT FOR HUMAN" && unfinished.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it"), bare.text);
+    check("AC-123 live: a result without its sections is a comment, not a result", !bare.error && /^Not a result: it lacks Outcome, /.test(bare.text) && unfinished.status === "IN PROGRESS" && unfinished.history.some((e) => e.kind === "comment" && e.text === "**Fixed** it"), bare.text);
     // the sections as terminumd/src/tasks/closeout.rs names them (SECTIONS)
     const result = ["**Outcome:** fixed", ...["Done", "Checked", "Not done", "Needs a human", "New tasks", "Tasks changed", "Issues and discoveries", "Further recommendations"].map((s) => `## ${s}\nNone`)].join("\n");
     const done = await a.tool("finish_task", { id: t1, result });

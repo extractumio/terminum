@@ -47,6 +47,7 @@ import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
+import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -157,6 +158,7 @@ const HISTORY_ALONE = process.argv.includes("history");   // while working on th
 const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
 const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
+const ICONS_ALONE = process.argv.includes("iconkeys");    // while working on icon keys' focus
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -187,7 +189,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveIconKeys]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -209,6 +211,10 @@ async function wide(browser, name) {
   }
   if (HISTORY_ALONE) {
     await boards([liveHistory]);
+    return ctx;
+  }
+  if (ICONS_ALONE) {
+    await boards([liveIconKeys]);
     return ctx;
   }
   if (SCHEDULES_ALONE) {
@@ -395,8 +401,14 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
+  const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP };
   if (SORT_ALONE) {
-    await liveBoardSort(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await liveBoardSort(page, live);
+    await ctx.close();
+    return;
+  }
+  if (ICONS_ALONE) {
+    await liveIconKeys(page, live, true);
     await ctx.close();
     return;
   }
@@ -406,9 +418,9 @@ async function phone(browser, name) {
     return;
   }
   if (SCHEDULES_ALONE) {
-    const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
-    await liveFolded(page, live);
-    await liveQueue(page, live);
+    const shots = { ...live, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
+    await liveFolded(page, shots);
+    await liveQueue(page, shots);
     await ctx.close();
     return;
   }
@@ -416,6 +428,7 @@ async function phone(browser, name) {
     await liveBoardPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
     await liveBoardSessionsPhone(page, { base: BASE });
     await liveBoardScale(page, { base: BASE, app: APP });
+    await liveIconKeys(page, live, true);
     await ctx.close();
     return;
   }
