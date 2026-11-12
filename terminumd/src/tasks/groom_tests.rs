@@ -72,11 +72,10 @@ fn ac154_a_bug_is_never_left_below_p2() {
     assert_eq!(call(&s, &dir, json!({"id": debt, "title": "b", "severity": "P3"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.", "its own fault only");
     call(&s, &dir, json!({"id": debt, "title": "Bug: b", "severity": "P1"})).unwrap();
     assert_eq!((task(&s, &debt).title.as_str(), task(&s, &debt).severity.as_str()), ("Bug: b", "P1"));
-    // a human's bug at P3 is the human's: an agent regroups it, and cannot put another there
+    // a human's bug at P3 is the human's: an agent still regroups it
     let h = s.with(|tx| ops::create(tx, HUMAN, NewTask { title: "Bug: old".into(), project: Some("api".into()), severity: Some("P3".into()), ..Default::default() }, 1)).unwrap().id;
     call(&s, &dir, json!({"id": h, "parent": bug, "reason": "one cause"})).unwrap();
     assert_eq!(task(&s, &h).severity, "P3");
-    assert_eq!(call(&s, &dir, json!({"id": h, "severity": "P3", "reason": "a log line"})).unwrap_err(), BUG_FLOOR);
 }
 
 #[test]

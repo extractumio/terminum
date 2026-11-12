@@ -67,7 +67,7 @@ Open questions: none.
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
-| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; no change leaves a bug below P2. |
+| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
@@ -560,7 +560,7 @@ Scenario Outline: AC-154 failure — refused with what to do
     | archive with no reason | Give the reason it leaves the board. |
     | archive with another field | archive goes alone, with its reason. |
     | nothing to change | Give severity, parent, title, text or archive. |
-    | severity P3 for a task titled Bug:, or a title starting Bug: for a P3 task | A Bug: is never below P2: P1 or above when it has impact (lost or blocked work, a wrong result, a red main), else P2. |
+    | severity P3 for a task titled Bug:, or a title starting Bug: for a P3 task | AC-145's words for a bug below P2 |
 
 Scenario: AC-154 edge — a human's task
   Given API-7 made by a human
