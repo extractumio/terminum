@@ -42,6 +42,10 @@ impl Minutes {
                "share": (self.acting + self.reading) as f64 / self.active as f64})
     }
 }
+/// A bucket's switches an active hour are counted from this many active minutes on: a few minutes cannot spike.
+const RATED_MINUTES: i64 = 30;
+/// A bucket switching more than this many times its usual rate stands out.
+const OVER_USUAL: f64 = 1.5;
 /// What the human does on the board, as the events' kinds say it.
 const BOARD: [&str; 5] = ["made", "move", "comment", "edit", "archive"];
 /// The pane of what is done on the board: none.
@@ -94,6 +98,8 @@ pub fn numbers(tx: &Transaction, ask: &Ask) -> Result<Value, String> {
     let before = ask.before.filter(|b| read.measured.is_none_or(|m| m <= b.lo()));
     now["before"] = before.map_or(Value::Null, |b| summarize(&read, b, ask)["tiles"].take());
     now["measured_from"] = json!(read.measured.map(|m| civil(m.div_euclid(DAY))));
+    // the rules the page draws and words by
+    now["rules"] = json!({"night": NIGHT, "rated_minutes": RATED_MINUTES, "over_usual": OVER_USUAL});
     Ok(now)
 }
 
@@ -163,9 +169,12 @@ fn read(tx: &Transaction, ask: &Ask) -> Result<Read, String> {
     Ok(Read { events, projects: projects.list, board, waits, names, front, measured })
 }
 
-/// Whether an hour of weekday `wd` (0: Sunday) is outside a working day: a weekend, or 22:00 to 06:00.
+/// The night's hours: from 22:00 to 06:00.
+const NIGHT: [usize; 2] = [22, 6];
+
+/// Whether an hour of weekday `wd` (0: Sunday) is outside a working day: a weekend, or the night.
 fn off_hours(wd: usize, hour: usize) -> bool {
-    wd == 0 || wd == 6 || !(6..22).contains(&hour)
+    wd == 0 || wd == 6 || !(NIGHT[1]..NIGHT[0]).contains(&hour)
 }
 
 /// Every number of `span`.
@@ -178,7 +187,7 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
     let mut per_project: HashMap<u32, i64> = HashMap::new();
     let mut spans: Vec<Vec<[i64; 2]>> = vec![Vec::new(); n];
     let mut heat = [[0i64; 24]; 7];
-    let (mut off, mut longest, mut began) = (0i64, 0i64, None);
+    let (mut off, mut longest, mut began) = (vec![0i64; n], 0i64, None);
     let mut active_units: HashSet<i64> = HashSet::new();
     // from the pages' first count on, the clock minutes: the last one counted active; the one going on with
     // its bucket and whether the human acted in it (else they scrolled)
@@ -224,7 +233,7 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
                 *per_project.entry(e.project).or_default() += len;
                 let (wd, hour) = ((d + 4).rem_euclid(7) as usize, (t.rem_euclid(DAY) / HOUR) as usize);   // 1970-01-01 was a Thursday; 0: Sunday
                 heat[wd][hour] += len;
-                if off_hours(wd, hour) { off += len; }
+                if off_hours(wd, hour) { off[k] += len; }
                 active_units.insert(if span.by_hour() { t.div_euclid(HOUR) } else { d });
                 if span.by_day() {
                     let (a, b) = (t.rem_euclid(DAY) / 60_000, (to - d * DAY) / 60_000);
@@ -242,9 +251,8 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
         weekdays[(d + 4).rem_euclid(7) as usize] += 1;
     }
     let heat: Vec<Vec<i64>> = heat.iter().enumerate().map(|(wd, row)| row.iter().map(|v| v / 60_000 / weekdays[wd].max(1)).collect()).collect();
-    // sessions written to: a bucket's, a day's, the most in one hour; a switch: a send to another pane than the send before it, within a stretch
+    // sessions written to: a bucket's, the most in one hour; a switch: a send to another pane than the send before it, within a stretch
     let mut panes: Vec<HashSet<u32>> = vec![HashSet::new(); n];
-    let mut day_panes: HashMap<i64, HashSet<u32>> = HashMap::new();
     let mut hourly: HashMap<i64, HashSet<u32>> = HashMap::new();
     let mut switches = vec![0i64; n];
     let mut sent = vec![0i64; n];
@@ -252,7 +260,6 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
     for e in evs.iter().filter(|e| e.pane != NO_PANE) {
         let Some(k) = span.index(e.t) else { continue };
         panes[k].insert(e.pane);
-        day_panes.entry(e.t.div_euclid(DAY)).or_default().insert(e.pane);
         hourly.entry(e.t.div_euclid(HOUR)).or_default().insert(e.pane);
         if let Some(p) = e.phone {
             paged += 1;
@@ -290,12 +297,17 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
     }).collect();
     engaged(&mut minutes, going);
     let all = minutes.iter().fold(Minutes::default(), |a, m| Minutes { active: a.active + m.active, acting: a.acting + m.acting, reading: a.reading + m.reading });
+    // switches an active hour, a bucket's with enough active time; the usual: their median, and those over it
+    let rates: Vec<Option<f64>> = (0..n).map(|k| (active[k] >= RATED_MINUTES * MINUTE).then(|| switches[k] as f64 / (active[k] as f64 / HOUR as f64))).collect();
+    let usual_rate = median(rates.iter().flatten().copied().collect());
+    let over: Vec<bool> = rates.iter().map(|r| r.zip(usual_rate).is_some_and(|(r, u)| r > u * OVER_USUAL)).collect();
     let series: Vec<Value> = (0..n).map(|k| {
         let mut parts: BTreeMap<String, i64> = BTreeMap::new();
         for (p, ms) in &by[k] { *parts.entry(stack_key(&stack, id(p))).or_default() += ms; }
         json!({"active_ms": active[k], "by": parts, "sessions": panes[k].len(), "peak": peak[k], "switches": switches[k], "sent": sent[k],
                "board": board[k], "board_n": board[k].values().sum::<i64>(), "spans": span.by_day().then(|| &spans[k]),
-               "engaged": minutes[k].json()})
+               "engaged": minutes[k].json(), "off_ms": off[k], "switches_per_hour": rates[k],
+               "switches_over": over[k]})
     }).collect();
     let total: i64 = active.iter().sum();
     let worked: Vec<&Vec<[i64; 2]>> = spans.iter().filter(|s| !s.is_empty()).collect();
@@ -305,11 +317,14 @@ fn summarize(read: &Read, span: &Span, ask: &Ask) -> Value {
         "active_per_unit_ms": if active_units.is_empty() { 0 } else { total / active_units.len() as i64 },
         "longest_ms": longest,
         "engaged": all.json(),
-        "sessions": median(day_panes.values().map(|s| s.len() as i64).collect()), "peak": peak.iter().max().copied().unwrap_or(0),
+        "sessions": median(panes.iter().map(|p| p.len() as i64).filter(|p| *p > 0).collect()), "peak": peak.iter().max().copied().unwrap_or(0),
         "switches": all_switches, "switches_per_hour": if total > 0 { all_switches as f64 / (total as f64 / HOUR as f64) } else { 0.0 },
         "board": board_by.values().sum::<i64>(), "board_by": board_by,
         "asks": waits.len(), "waiting": waits.iter().filter(|w| w.1.is_none()).count(), "answer_ms": median(waits.iter().filter_map(|w| w.1).collect()),
-        "off": (total > 0).then(|| off as f64 / total as f64),
+        "off": (total > 0).then(|| off.iter().sum::<i64>() as f64 / total as f64),
+        // a usual bucket: the median of those with any, to draw a line at (sessions: above)
+        "usual_active_ms": median(active.iter().copied().filter(|a| *a > 0).collect()),
+        "usual_switches": usual_rate, "rated": rates.iter().flatten().count(), "over": over.iter().filter(|o| **o).count(),
         // a usual working day: the medians of the first and the last minute of the days with any
         "starts": median(worked.iter().map(|s| s[0][0]).collect()), "ends": median(worked.iter().map(|s| s[s.len() - 1][1]).collect()),
         "phone": (paged > 0).then(|| phone as f64 / paged as f64),

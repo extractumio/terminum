@@ -2,17 +2,18 @@
 // The Dashboard's You tab (terminum.md AC-152): how much the user works here, how engaged and how loaded:
 // active time by project, the minutes of it they acted or read in, the working day, the week's hours, the
 // sessions juggled and the switches between them, what they did on the board, how long tasks waited for them. terminumd's numbers; nothing is added up here.
+// Colors by meaning, never a project's but in "Active time" (dashboard.css): the board's kinds, the minutes' blues.
 import { columns } from "./charts.js";
 import { heatMap, workingDays } from "./dashcharts.js";
-import { bands, card, delta, kindWords, legend, percent, rankHue, ranked, shareOf, shareTile, stackCard, tile, was, words } from "./dashkit.js";
+import { bands, card, change, delta, kindWords, legend, percent, rankHue, ranked, shareOf, shareTile, stackCard, tile, was, words } from "./dashkit.js";
 import { plural } from "./listparts.js";
 import { NONE, WEEK, clock, count, dayLabel, hours, inkOf, projectLabel } from "./msgpage.js";
 
 /** What the human does on the board: the events' kinds, their words and colors, in the stack's order. */
-const BOARD = [["made", "made", rankHue(1)], ["move", "moved", rankHue(4)], ["comment", "commented", rankHue(0)], ["edit", "edited", rankHue(2)], ["archive", "archived", "var(--faint)"]];
+const BOARD = [["made", "made", "var(--act-made)"], ["move", "moved", "var(--act-moved)"], ["comment", "commented", "var(--act-commented)"], ["edit", "edited", "var(--act-edited)"], ["archive", "archived", "var(--faint)"]];
 
 /** An active minute by what the user did in it, in the stack's order: the numbers' key, its word, its color. */
-const MINUTES = [["acting", "acting", rankHue(2)], ["reading", "reading", rankHue(1)], ["watching", "watching", "var(--faint)"]];
+const MINUTES = [["acting", "acting", "var(--eng-acting)"], ["reading", "reading", "var(--eng-reading)"], ["watching", "watching", "var(--faint)"]];
 const PAUSE = "A pause ends a stretch when over 5 minutes, or over 15 with a page in front through it; before the pages counted, over 15";
 
 /** A project's color: the session list's; one no longer there takes a hue by its rank, so the stack's
@@ -24,31 +25,37 @@ function stackColor(data, id) {
   return rankHue(i);
 }
 
+/** Which way a figure is better: its trend and its change green that way (dashkit.js tile, change). */
+const UP = { sense: 1 }, DOWN = { sense: -1 };
+/** The night's hours as words: "22:00–06:00". */
+const nightWords = ([dusk, dawn]) => `${clock(dusk * 60)}–${clock(dawn * 60)}`;
+
 function tiles({ data, period }) {
   const a = data.tiles, b = data.before, s = data.series;
-  const d = (now, before, opts) => delta(period, now, before, opts);
+  const d = (now, before, opts) => delta(period, now, before, opts), better = (sense, now, before, opts) => change(sense, period, now, before, opts);
   const time = { small: 7_200_000, fmt: hours }, few = { small: 1000, fmt: String };
   const unit = data.unit === "hour" ? "hour" : "day";
   return [
-    tile("Active time", hours(a.active_ms), words(a.active_units ? `${hours(a.active_per_unit_ms)} an active ${unit}` : "", d(a.active_ms, b?.active_ms, time)), s.map((x) => x.active_ms)),
+    tile("Active time", hours(a.active_ms), [a.active_units ? `${hours(a.active_per_unit_ms)} an active ${unit}` : "", better(1, a.active_ms, b?.active_ms, time)], s.map((x) => x.active_ms), UP),
     tile(`Active ${unit}s`, `${a.active_units} of ${a.units}`, d(a.active_units, b?.active_units, few)),
     tile("Engagement", shareOf(a.engaged?.share),
       a.engaged ? words(`acting or reading in ${count(a.engaged.acting + a.engaged.reading)} of ${count(a.engaged.active)} active minutes`, was(b?.engaged?.share)) : "no active time since the pages count",
-      s.map((x) => x.engaged?.share ?? 0)),
+      s.map((x) => x.engaged?.share ?? null)),
     tile("Longest stretch", a.longest_ms ? hours(a.longest_ms) : "—", words("no long pause", b ? d(a.longest_ms, b.longest_ms, time) : "")),
     tile("Switches an active hour", a.active_ms ? a.switches_per_hour.toFixed(1) : "—",
-      words(`${count(a.switches)} between sessions`, a.peak ? `most sessions in one hour: ${a.peak}` : "", b ? d(Math.round(a.switches_per_hour * 10), Math.round(b.switches_per_hour * 10), { small: 1e9, fmt: (x) => (x / 10).toFixed(1) }) : ""),
-      s.map((x) => x.switches)),
-    tile("Board actions", count(a.board), words(kindWords(BOARD, a.board_by).join(", "), d(a.board, b?.board)), s.map((x) => x.board_n)),
-    tile("Waited for you", count(a.asks), a.asks ? words(a.answer_ms === null ? "" : `moved on after ${hours(a.answer_ms)} (median)`, a.waiting ? `${a.waiting} still wait` : "") : "no task asked for you"),
-    shareTile("Off hours", a.off, b?.off, "no active time", "of active time on weekends or 22:00–06:00"),
+      [`${count(a.switches)} between sessions`, a.peak ? `most sessions in one hour: ${a.peak}` : "", b ? better(-1, Math.round(a.switches_per_hour * 10), Math.round(b.switches_per_hour * 10), { small: 1e9, fmt: (x) => (x / 10).toFixed(1) }) : ""],
+      s.map((x) => x.switches_per_hour), DOWN),
+    tile("Board actions", count(a.board), [kindWords(BOARD, a.board_by).join(", "), better(1, a.board, b?.board)], s.map((x) => x.board_n), UP),
+    tile("Waited for you", count(a.asks), a.asks ? words(a.answer_ms === null ? "" : `moved on after ${hours(a.answer_ms)} (median)`, a.waiting ? `${a.waiting} still wait` : "") : "no task asked for you",
+      null, { warn: a.waiting > 0 }),
+    tile("Off hours", shareOf(a.off), a.off === null ? "no active time" : words(`of active time on weekends or ${nightWords(data.rules.night)}`, was(b?.off)), s.map((x) => x.off_ms), DOWN),
     shareTile("From the phone", a.phone, b?.phone, "nothing sent from a page", "of what the pages sent"),
   ];
 }
 
 function activeCard(ctx) {
   const { data, w } = ctx, s = data.series, stack = [...data.stacked, "other"];
-  const c = card("active", "Active time", { wide: true, hint: "by project", legend: true, go: true, label: "Active time: ← and → choose a column, Enter opens its messages" });
+  const c = card("active", "Active time", { hint: "by project, dashed: your usual", legend: true, go: true, label: "Active time: ← and → choose a column, Enter opens its messages" });
   const open = (i) => ctx.historyUrl(data.buckets[i].from, data.buckets[i].to);
   const say = (i) => {
     c.go.hidden = i < 0 || !s[i].sent;
@@ -60,8 +67,10 @@ function activeCard(ctx) {
   c.draw = () => {
     // in hours, or minutes while no column holds an hour: the axis' steps are round then
     const tall = s.some((d) => d.active_ms >= 3_600_000), per = tall ? 3_600_000 : 60_000;
+    const usual = data.tiles.usual_active_ms;
     columns(c.plot, bands(s, w, (d) => stack.map((id) => ({ value: (d.by[id] ?? 0) / per, color: stackColor(data, id) }))),
-      { height: 220, fmt: (v) => `${v} ${tall ? "h" : "min"}`, xlabels: w.short, select: say, open: (i) => { if (s[i].sent) location.href = open(i); } });
+      { height: 220, fmt: (v) => `${v} ${tall ? "h" : "min"}`, xlabels: w.short, select: say, open: (i) => { if (s[i].sent) location.href = open(i); },
+        line: usual ? { value: usual / per, label: `usual ${hours(usual)}` } : null });
     say(-1);
   };
   legend(c.legend, data.stacked.map((id) => data.projects.find((p) => p.id === id)).filter(Boolean)
@@ -94,7 +103,7 @@ function daysCard({ data, w }) {
     c.say.textContent = i < 0 ? (t.starts === null ? "No active day in this period" : `Usually ${clock(t.starts)} to ${clock(t.ends)}`)
       : d.spans.length ? words(w.long(i), `${clock(d.spans[0][0])}–${clock(d.spans.at(-1)[1])}`, `${hours(d.active_ms)} active`) : words(w.long(i), "nothing");
   };
-  c.draw = () => { workingDays(c.plot, s, { label: w.short, select: say }); say(-1); };
+  c.draw = () => { workingDays(c.plot, s, { label: w.short, select: say, night: data.rules.night }); say(-1); };
   return c;
 }
 
@@ -108,16 +117,42 @@ function heatCard({ data }) {
 }
 
 const switches = (n) => (n === 1 ? "1 switch" : `${count(n)} switches`);
+/** "Sessions at once": a column and the bar inside it, their words and colors (dashboard.css). */
+const JUGGLING = [["sessions written to", "color-mix(in srgb, var(--load-bar) 38%, transparent)"], ["most in one hour", "var(--eng-acting)"]];
+
+/** Switches an active hour by column, against the usual (their median): a column over terminumd's factor of it in amber. */
+function switchCard({ data, w }) {
+  const s = data.series, t = data.tiles, unit = data.unit, { rated_minutes: least, over_usual: factor } = data.rules;
+  const c = card("load", "Context switching", { hint: "switches an active hour", label: "Context switching: ← and → choose a column",
+    hintTitle: `A switch: a send into another session than the send before it, within a stretch. A ${unit} with under ${least} active minutes is not rated; amber: over ${factor} times your usual` });
+  const rate = (x) => x.toFixed(1);
+  const say = (i) => {
+    if (i < 0) {
+      c.say.textContent = t.usual_switches === null ? `No ${unit} with ${least} active minutes` : words(`usual ${rate(t.usual_switches)}`, `${t.over} of ${t.rated} ${unit}s over ${factor}× it`);
+      return;
+    }
+    const r = s[i].switches_per_hour;
+    c.say.textContent = r === null ? words(w.long(i), `under ${least} active minutes`) : words(w.long(i), `${rate(r)} an active hour`, switches(s[i].switches), s[i].switches_over ? `over ${factor}× your usual` : "");
+  };
+  c.draw = () => {
+    columns(c.plot, bands(s, w, (d) => (d.switches_per_hour === null ? [] : [{ value: d.switches_per_hour, color: d.switches_over ? "var(--over-bar)" : "var(--load-bar)" }])),
+      { height: 220, fmt: String, xlabels: w.short, select: say, line: t.usual_switches ? { value: t.usual_switches, label: `usual ${rate(t.usual_switches)}` } : null });
+    say(-1);
+  };
+  return c;
+}
 
 function jugglingCard({ data, w }) {
   const s = data.series, t = data.tiles;
-  const c = card("juggling", "Sessions at once", { hint: "columns: sessions, dots: most in an hour", hintTitle: "Columns: the sessions you wrote to in that column's time; dots: the most in one hour of it" });
+  const c = card("juggling", "Sessions at once", { hint: "dashed: your usual", legend: true, hintTitle: "The sessions you wrote to in that column's time, and inside it the most of them in one hour" });
+  legend(c.legend, JUGGLING.map(([name, color]) => ({ color, name })));
   const say = (i) => {
-    c.say.textContent = i < 0 ? words(`Median ${t.sessions ?? 0} a day`, `most in an hour ${t.peak}`, switches(t.switches))
+    c.say.textContent = i < 0 ? words(`usual ${t.sessions ?? 0} a ${data.unit}`, `most in an hour ${t.peak}`, switches(t.switches))
       : words(w.long(i), plural(s[i].sessions, "session"), `most in an hour ${s[i].peak}`, switches(s[i].switches));
   };
   c.draw = () => {
-    columns(c.plot, bands(s, w, (d) => [{ value: d.sessions, color: "color-mix(in srgb, var(--ring) 45%, transparent)" }], (d) => d.peak), { height: 150, xlabels: w.short, select: say });
+    columns(c.plot, bands(s, w, (d) => [{ value: d.sessions, color: JUGGLING[0][1] }], (d) => ({ value: d.peak, color: JUGGLING[1][1] })),
+      { height: 150, xlabels: w.short, select: say, line: t.sessions ? { value: t.sessions, label: `usual ${t.sessions}` } : null });
     say(-1);
   };
   return c;
@@ -138,6 +173,6 @@ export function you(ctx) {
   // what the pages count begins inside the period: the figures before that day are measured from less
   const from = data.measured_from;
   const measured = !from ? " Engagement shows once a page has counted what you do." : from > data.buckets[0].from ? ` Presses, keys and scrolling are counted from ${dayLabel(from)}: engagement starts there, and nothing is compared across it.` : "";
-  return { tiles: tiles(ctx), cards: [activeCard(ctx), engagedCard(ctx), data.unit === "day" ? daysCard(ctx) : null, data.unit === "hour" ? null : heatCard(ctx), projectsCard(ctx), jugglingCard(ctx), board].filter(Boolean),
+  return { tiles: tiles(ctx), cards: [activeCard(ctx), switchCard(ctx), engagedCard(ctx), data.unit === "day" ? daysCard(ctx) : null, data.unit === "hour" ? null : heatCard(ctx), projectsCard(ctx), jugglingCard(ctx), board].filter(Boolean),
     note: `You only: what Dispatcher and the agents do is not counted. This Mac's time.${measured}`, kept: "typing counted from" };
 }

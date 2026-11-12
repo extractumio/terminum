@@ -1,6 +1,22 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* The Dashboard (terminum.md AC-152, AC-171, AC-172): its tabs, period and project over figures in tiles, then cards of charts, the output widget's look (a surface a
    step over the page, its light edge, no grain: it scrolls). Marks take the theme's colors (msgpage.css). */
+/* colors by meaning, apart from the projects' pastels (tokens.css --proj-*): deeper and more saturated */
+:root {
+  --act-made: oklch(.76 .13 80); --act-moved: oklch(.68 .15 40); --act-commented: oklch(.62 .17 355); --act-edited: oklch(.6 .15 295);
+  --eng-acting: oklch(.62 .13 255); --eng-reading: oklch(.8 .08 230);
+  --load-bar: oklch(.7 .07 255); --over-bar: var(--waiting);
+  --trend-good: oklch(.74 .08 150); --trend-bad: oklch(.7 .1 25);
+  --day-early: oklch(.88 .07 220); --day-late: oklch(.48 .15 265);   /* the working day: morning to night; night stays seen on a dark surface */
+  --warn-text: color-mix(in srgb, var(--waiting) 85%, var(--t-fg));
+}
+:root.light {
+  --act-made: oklch(.68 .14 75); --act-moved: oklch(.6 .16 40); --act-commented: oklch(.54 .18 355); --act-edited: oklch(.5 .16 295);
+  --eng-acting: oklch(.5 .14 255); --eng-reading: oklch(.72 .09 230); --load-bar: oklch(.62 .08 255);
+  --trend-good: oklch(.52 .1 150); --trend-bad: oklch(.52 .13 25);
+  --day-early: oklch(.82 .08 220); --day-late: oklch(.32 .13 265);
+  --warn-text: color-mix(in srgb, var(--waiting) 45%, var(--t-fg));
+}
 #dtabs, #dperiod, #dproject { flex: none; }
 #dproject summary { max-width: 220px; }
 #dproject .box { min-width: min(280px, calc(100vw - var(--sp-6) * 2)); }
@@ -12,6 +28,13 @@
 .tvalue { font-size: var(--fs-display); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.15; white-space: nowrap; }
 .tsub { font-size: var(--fs-meta); color: var(--muted-text); }
 .tspark { margin-top: auto; padding-top: var(--sp-1); }
+.tsub .good { color: var(--trend-good); }
+.tsub .bad { color: var(--trend-bad); }
+.tile.warn .tvalue { color: var(--warn-text); }
+.spark .trend { stroke-width: 2; stroke-dasharray: 2 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.spark .trend.good { stroke: var(--trend-good); }
+.spark .trend.bad { stroke: var(--trend-bad); }
+.spark .trend.flat { stroke: var(--muted); }
 #cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--sp-3); padding: var(--sp-3) var(--gutter) var(--sp-6); }
 #cards.busy { opacity: .6; }
 .card { margin: 0; min-width: 0; padding: var(--sp-3); border-radius: var(--r-lg); background: var(--surface-1); box-shadow: var(--m-edge); }
@@ -27,7 +50,7 @@
 .chip .rnum { color: var(--muted-text); }
 .plot { margin-top: var(--sp-1); }
 .chart .span { stroke: color-mix(in srgb, var(--t-fg) 25%, transparent); stroke-width: 1.5; }
-.chart .stretch { fill: var(--ring); }
+.chart .night { fill: color-mix(in srgb, var(--day-late) 7%, transparent); }
 .chart.heat .cell { fill: var(--surface-2); }
 .chart.heat .cell.l1 { fill: color-mix(in srgb, var(--ring) 22%, var(--surface-1)); }
 .chart.heat .cell.l2 { fill: color-mix(in srgb, var(--ring) 42%, var(--surface-1)); }

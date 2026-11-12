@@ -9,7 +9,7 @@ import { WEEK, clock, count, dayDate, dayLabel, dotOf, monthOf, shortDay } from 
 /** The span before, in the period's words. */
 const BEFORE = { day: "the day before", "2w": "the 2 weeks before", month: "the 30 days before", quarter: "the 13 weeks before", year: "the year before" };
 
-/** "▲ 12% vs the 30 days before"; small or missing earlier numbers say so plainly. No color for better or worse. */
+/** "▲ 12% vs the 30 days before"; small or missing earlier numbers say so plainly. No color: `change` adds it. */
 export function delta(period, now, before, { small = 20, fmt = count } = {}) {
   if (before === null || before === undefined) return "no earlier data";
   if (now === before) return `same as ${BEFORE[period]}`;
@@ -18,12 +18,23 @@ export function delta(period, now, before, { small = 20, fmt = count } = {}) {
   return `${arrow} ${Math.round(Math.abs(now / before - 1) * 100)}% vs ${BEFORE[period]}`;
 }
 
-/** A figure: its label, value, a line under it, a sparkline of `line`. */
-export function tile(label, value, sub, line) {
-  const t = el("div", "tile");
+/** `delta`'s words, green when the figure moved the way `sense` says is better (1: up, -1: down), red the other. */
+export function change(sense, period, now, before, opts) {
+  const text = delta(period, now, before, opts);
+  const way = before === null || before === undefined ? 0 : Math.sign(now - before) * sense;
+  return way ? el("span", way > 0 ? "good" : "bad", text) : text;
+}
+
+/** A figure: its label, value, a line under it (words, or parts of words and `change`s joined by a middle dot),
+ *  a sparkline of `line` whose trend is green the way `sense` says is better; `warn` marks the value as asking
+ *  for a look. */
+export function tile(label, value, sub, line, { sense = 0, warn = false } = {}) {
+  const t = el("div", `tile${warn ? " warn" : ""}`);
   t.append(el("div", "tlabel", label), el("div", "tvalue", value));
-  if (sub) t.append(el("div", "tsub", sub));
-  if (line) { const s = el("div", "tspark"); spark(s, line); t.append(s); }
+  const parts = [sub].flat().filter(Boolean);
+  if (parts.length) t.append(el("div", "tsub"));
+  parts.forEach((p, i) => t.lastChild.append(...(i ? [" · ", p] : [p])));
+  if (line) { const s = el("div", "tspark"); spark(s, line, sense); t.append(s); }
   return t;
 }
 
@@ -109,9 +120,9 @@ export function bucketWords(data) {
   return { short, long, faint: (i) => i === last, band: (i) => unit === "day" && [0, 6].includes(dayDate(b[i].from).getDay()) };
 }
 
-/** A column a bucket for charts.js: `parts(d, i)` its stack, `dot(d)` its dot. */
-export function bands(series, w, parts, dot = () => undefined) {
-  return series.map((d, i) => ({ parts: parts(d, i), dot: dot(d), band: w.band(i), faint: w.faint(i) }));
+/** A column a bucket for charts.js: `parts(d, i)` its stack, `inner(d)` a bar inside it ({value, color}). */
+export function bands(series, w, parts, inner = () => undefined) {
+  return series.map((d, i) => ({ parts: parts(d, i), inner: inner(d), band: w.band(i), faint: w.faint(i) }));
 }
 
 /** A card of columns stacked by `kinds` ([key, word, color]) over each bucket's counts `of(d)`: the legend says

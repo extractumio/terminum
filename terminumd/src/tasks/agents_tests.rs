@@ -85,7 +85,7 @@ fn ac137_a_project_deleted_leaves_the_pool() {
 }
 
 const CLAUDE_INLINE: &str = r#"--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#;
-const CODEX_INLINE: &str = "-c tui.alternate_screen=never";
+const CODEX_INLINE: &str = "-c tui.alternate_screen=never -c check_for_update_on_startup=false";
 
 /// terminum-dispatcher.md AC-156 "inline and in its own process", §9.
 #[test]
