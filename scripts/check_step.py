@@ -3,7 +3,7 @@
 """Runs one check with its own short TMPDIR and TMUX_TMPDIR and fails if it leaves anything there
 (spec AC-102): check_all.sh's guard, so a test's leftover fails the run with no false alarm from
 another session's. A leftover is a file in the folder, or a process of the check's process group
-or with the folder in its environment (a Mac hides the environment of Apple's own programs).
+or working in that folder. Process environments are never queried.
 Whatever is left is named, and goes: by its pid, the folder on every exit.
 
   python3 scripts/check_step.py <command…>"""
@@ -15,17 +15,17 @@ import sys
 import tempfile
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from worktree import working_in  # noqa: E402
+
 SETTLE_S = 15   # what ends by itself gets this long: terminumd's tmutil takes seconds on a busy Mac
 LEFT = 3   # the exit status of a check that passed but left something
 KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
 
 
 def listing():
-    """(pid, pgid, command and environment) of each process but zombies and this one; a Mac hides
-    the environment of Apple's own programs. scripts/testrun.py reads processes through it too."""
-    # Linux's procps refuses `-ax` mixed with BSD's `e`; a failed ps fails the step, never "nothing left"
-    flags = ["-ax", "-E", "-ww"] if sys.platform == "darwin" else ["axeww"]
-    listed = subprocess.run(["ps", *flags, "-o", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True).stdout
+    """(pid, pgid, command) of each process but zombies and this one, without environments."""
+    listed = subprocess.run(["ps", "-axo", "pid=,pgid=,stat=,command="], capture_output=True, text=True, errors="replace", check=True).stdout
     for line in listed.splitlines():
         fields = line.split(None, 3)
         if len(fields) == 4 and fields[0].isdigit() and not fields[2].startswith("Z") and int(fields[0]) != os.getpid():
@@ -33,8 +33,9 @@ def listing():
 
 
 def own_processes(folder, group):
-    """(pid, command) of each process of `group` or whose environment names `folder`."""
-    return [(pid, text.split(" TMPDIR=")[0][:120]) for pid, pgid, text in listing() if pgid == str(group) or f"TMPDIR={folder}" in text]
+    """(pid, command) of each process of our private group or working in our private folder."""
+    inside = working_in(folder)
+    return [(pid, text[:120]) for pid, pgid, text in listing() if pgid == str(group) or pid in inside]
 
 
 def send(pid, number):
@@ -60,6 +61,15 @@ def end_pids(pids):
         stays = [pid for pid in stays if alive(pid)]
     for pid in stays:
         send(pid, signal.SIGKILL)
+    end = time.monotonic() + KILL_AFTER_S
+    while stays and time.monotonic() < end:
+        listed = subprocess.run(["ps", "-p", ",".join(map(str, stays)), "-o", "pid=,stat="], capture_output=True, text=True)
+        if listed.returncode not in (0, 1):   # 1: none of those pids remains
+            listed.check_returncode()
+        stays = [int(fields[0]) for line in listed.stdout.splitlines()
+                 if len(fields := line.split()) == 2 and not fields[1].startswith("Z")]
+        if stays:
+            time.sleep(0.1)
 
 
 def files_in(folder):
@@ -92,7 +102,7 @@ def main(command):
     try:
         status, group = run(command, folder)
         end = time.monotonic() + SETTLE_S
-        processes = own_processes(folder, group)   # it reads every process's environment: once for a clean step
+        processes = own_processes(folder, group)
         while (files_in(folder) or processes) and time.monotonic() < end:
             time.sleep(1)
             processes = own_processes(folder, group)
