@@ -8,7 +8,7 @@ const $ = (id) => document.getElementById(id);
 // The bookmarks' windows close their own way (marks.js, markdoc.js). On the document, so a dialog put in the
 // page later (RUN's, taskboxes.js) has it too.
 document.addEventListener("click", (e) => {
-  const d = e.target.closest?.("dialog.dlg .dhead .x:not([id])")?.closest("dialog");
+  const d = e.target.closest("dialog.dlg .dhead .x:not([id])")?.closest("dialog");
   if (d && d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel");
 });
 
