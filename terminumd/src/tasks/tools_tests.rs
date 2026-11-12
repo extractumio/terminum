@@ -421,3 +421,27 @@ fn ac170_a_rounds_pane_makes_takes_and_moves_nothing() {
     assert!(call(&s, &dir, &w, "get_task", json!({"id": other})).is_ok());
     assert!(call(&s, &dir, &who(Some("api")), "list_tasks", json!({})).is_ok());
 }
+
+#[test]
+fn ac166_follow_ups_that_name_no_task_are_reminded() {
+    let (s, dir) = fresh("tt-untracked");
+    let w = who(Some("api"));
+    let finish = |id: &str, head: &str| call(&s, &dir, &w, "finish_task", json!({"id": id, "result": head})).unwrap();
+    let started = || {
+        let id = task(&s, "api", None);
+        call(&s, &dir, &w, "take_task", json!({"id": id})).unwrap();
+        call(&s, &dir, &w, "move_task", json!({"id": id, "to": "IN PROGRESS"})).unwrap();
+        id
+    };
+    let id = started();
+    let said = finish(&id, "Further recommendations: replay the steps on the live board");
+    assert_eq!(said, format!("{id} is DONE, with your result. {}", closeout::untracked_words(&["Further recommendations"])), "DONE all the same: a reminder");
+    let id = started();
+    let said = finish(&id, "Not done:\n- the live replay\nFurther recommendations:\n- also docs");
+    assert!(said.ends_with(&closeout::untracked_words(&["Not done", "Further recommendations"])), "{said}");
+    let id = started();
+    let other = task(&s, "api", None);
+    assert_eq!(finish(&id, &format!("Further recommendations: replay it, {other}")), format!("{id} is DONE, with your result."), "one that names its task");
+    let id = started();
+    assert_eq!(finish(&id, "Outcome: done"), format!("{id} is DONE, with your result."), "every follow-up None");
+}

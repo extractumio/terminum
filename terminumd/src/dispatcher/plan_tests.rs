@@ -14,18 +14,18 @@ fn moved(acts: &[Act]) -> Option<(&'static str, String)> {
 }
 
 #[test]
-fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
+fn ac123_a_turn_with_no_result_gets_a_request_then_an_hour_then_failed() {
     let mut r = run("IN PROGRESS");
     r.turn_ended = true;
     assert!(step(&mut r, &up(299)).is_empty());
     assert_eq!(step(&mut r, &up(1)), vec![Act::Nudge]);
-    assert!(!r.nudged && r.nudge_turn, "`nudged` is written once it went (acts.rs)");
+    assert!(r.nudged == 0 && r.nudge_turn, "`nudged` is written once it went (acts.rs)");
     assert_eq!(step(&mut r, &up(30)), vec![Act::Nudge], "not gone yet (a restart came between): asked again");
-    (r.nudged, r.idle_for) = (true, 0);                 // as acts.rs writes it once it went
-    assert!(step(&mut r, &up(30)).is_empty(), "once a run");
+    (r.nudged, r.idle_for) = (1, 0);                    // as acts.rs writes it once it went
+    assert!(step(&mut r, &up(300)).is_empty(), "its turn has not ended: no second request");
     // the turn's tokens come after its Stop, from the same hook, and a closed pane drops them (sock.rs, AC-129):
     // up to the hour nothing closes or ends it, however late the agent's next event is
-    let acts = step(&mut r, &up(3600 - 31));
+    let acts = step(&mut r, &up(3600 - 301));
     assert!(!acts.iter().any(|a| matches!(a, Act::Close { .. } | Act::End)), "{acts:?}");
     assert_eq!(moved(&acts), None, "no WAIT FOR HUMAN and no DONE before the hour after the request");
     let (to, words) = moved(&step(&mut r, &up(1))).unwrap();
@@ -35,8 +35,9 @@ fn ac123_a_turn_with_no_result_gets_one_request_then_an_hour_then_failed() {
 #[test]
 fn ac123_the_request_asks_whether_it_is_finished_and_says_the_hour() {
     let w = nudge_words("API-12");
-    assert!(w.starts_with("[terminum Dispatcher] API-12 is still open and you stopped. Is it finished? Call execute_tool(\"finish_task\", {id, result}) with its result in the sections"), "{w}");
-    assert!(w.contains("execute_tool(\"ask_human\", {id, questions})") && w.ends_with("it is FAILED after an hour."), "{w}");
+    assert!(w.starts_with("[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool(\"finish_task\", {id, result}) with its result in the sections"), "{w}");
+    assert!(w.contains("If a human must decide or approve something, ask by execute_tool(\"ask_human\", {id, questions})"), "a decision or an approval goes to the human, never to Dispatcher: {w}");
+    assert!(w.contains("update_session_plan") && w.ends_with("it is FAILED after an hour."), "{w}");
     assert!(!w.chars().any(char::is_control), "typed through the gate: one line, no control characters");
 }
 
@@ -44,7 +45,7 @@ fn ac123_the_request_asks_whether_it_is_finished_and_says_the_hour() {
 fn ac123_activity_after_the_request_starts_its_hour_anew() {
     let mut r = run("IN PROGRESS");
     r.turn_ended = true;
-    r.nudged = true;
+    r.nudged = 1;
     step(&mut r, &up(3000));
     step(&mut r, &Facts { active: true, ..up(30) });
     assert_eq!(moved(&step(&mut r, &up(3599))), None, "the agent worked after the request: its hour counts from then");
@@ -391,4 +392,23 @@ fn ac123_a_request_that_never_goes_holds_no_task_past_the_hour() {
     assert_eq!(step(&mut r, &up(300)), vec![Act::Nudge]);
     assert_eq!(step(&mut r, &up(3299)), vec![Act::Nudge], "a new turn met it: asked again");
     assert_eq!(moved(&step(&mut r, &up(1))).unwrap().1, "No activity for 60 minutes and no result from the agent.");
+}
+
+#[test]
+fn ac123_each_quiet_stop_gets_a_request_three_a_run_at_most() {
+    let mut r = run("IN PROGRESS");
+    r.turn_ended = true;
+    for n in 1..=NUDGES {
+        assert_eq!(step(&mut r, &up(300)), vec![Act::Nudge], "request {n}");
+        (r.nudged, r.idle_for) = (n, 0);                // it went (acts.rs); its turn runs
+        assert!(step(&mut r, &up(600)).is_empty(), "no other before its turn's Stop");
+        r.nudge_turn = false;                           // its Stop (hooks.rs)
+        step(&mut r, &Facts { active: true, ..up(30) }); // the agent went back to work, then stopped again
+    }
+    assert!(step(&mut r, &up(3599)).is_empty(), "three went: the hour of nothing alone is left");
+    assert_eq!(moved(&step(&mut r, &up(1))).unwrap().1, "No result from the agent within an hour of Dispatcher's request.");
+    let mut fresh = run("IN PROGRESS");
+    (fresh.turn_ended, fresh.nudged) = (true, NUDGES);
+    fresh.new_work();
+    assert_eq!(step(&mut fresh, &up(300)), vec![Act::Nudge], "a human's prompt or RUN counts them anew");
 }
