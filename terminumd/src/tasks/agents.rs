@@ -51,12 +51,17 @@ fn effort_flag(kind: &str) -> &'static str {
 /// What ends one program's command and starts another's: an effort after it would go to the last program.
 const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
 
-/// What every run's agent takes after its command (terminum-dispatcher.md AC-156, §9 "Inline and in its pane"):
-/// its inline TUI, which the gate reads, and, for Codex, its own process: an option Codex takes once and more, so an
-/// alias that names one already still starts. A Codex attached to its shared app-server runs its MCP servers and
-/// hooks there, without the pane's `TMUX_PANE`: no terminum tools, no hook; any `-c` keeps it in its own process.
-pub(crate) fn inline_words(kind: &str) -> &'static str {
-    if kind == "codex" { "-c tui.alternate_screen=never" } else { r#"--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"# }
+/// What a run's agent takes after its command (terminum-dispatcher.md AC-156, §9 "Inline and in its pane"): its
+/// inline TUI, which the gate reads, and, for Codex, its own process. A Codex attached to its shared app-server runs
+/// its MCP servers and hooks there, without the pane's `TMUX_PANE`: no terminum tools, no hook; any `-c` keeps it in
+/// its own process, and Codex takes `-c` again after an alias's. Claude Code keeps only its last `--settings`: a
+/// command that names one keeps it whole, and its settings choose the TUI.
+pub(crate) fn inline_words(kind: &str, command: &str) -> &'static str {
+    match kind {
+        "codex" => " -c tui.alternate_screen=never",
+        _ if command.contains("--settings") => "",
+        _ => r#" --settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#,
+    }
 }
 
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
@@ -69,7 +74,7 @@ fn command_line(kind: &str, command: &str, effort: &str) -> String {
         ("codex", e) => format!(" -c {}={e}", effort_flag(kind)),
         (_, e) => format!(" {} {e}", effort_flag(kind)),
     };
-    format!("{command} {}{effort}", inline_words(kind))
+    format!("{command}{}{effort}", inline_words(kind, command))
 }
 
 /// What a page keeps, trimmed.

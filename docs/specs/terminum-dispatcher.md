@@ -44,7 +44,7 @@ Assumptions (each "to be measured" is measured on the real programs before the c
 | AS-125 | The gate's screen reading (§9) tells an empty input box from a draft, ghost text and any dialog, for Claude Code's two TUIs and Codex, by `capture-pane -e`: Claude Code's `❯` between two rules with nothing at full strength after it (its cursor's reverse cell or a suggestion in dim), Codex's `›` then its placeholder in dim; an unknown screen reads as not empty. | Claude | measured on Claude Code 2.1 and Codex 0.166; again at a version bump |
 | AS-126 | A subagent may run inside the agent's process or as its own process in a tmux pane of its own, a child of the tmux server and outside the agent's process tree. | Claude | measured once: a Claude Code 2.1 teammate ran in its own pane; other kinds and Codex to be measured |
 | AS-127 | SessionEnd says `clear` on /clear, a new ID coming in the next SessionStart, and `other` on SIGTERM as on a clean end, so only the exit code tells them; Claude Code's SessionStart comes after its box shows, so the gate waits for it; an idle agent's tree uses 0.72 s (Claude Code) and 0.11 s (Codex) of CPU a minute. | Claude | measured on Claude Code 2.1 and Codex 0.166; Codex's SessionStart before its first prompt is not known, so the gate's first prompt there rests on the screen read twice |
-| AS-128 | Codex 0.167 started with any `-c` override runs in the TUI's own process, not in a shared app-server it would otherwise attach to: its MCP servers and hooks are the pane's children, with its `TMUX_PANE`; an older Codex ignores the unknown `tui.alternate_screen`. | Claude | measured on Codex 0.167.2: no `-c`, terminum's MCP server ran under the app-server; with `-c tui.alternate_screen=never`, under the pane's Codex, inline; older versions not measured |
+| AS-128 | Codex 0.167 started with any `-c` override runs in the TUI's own process, not in a shared app-server it would otherwise attach to: its MCP servers and hooks are the pane's children, with its `TMUX_PANE`; an older Codex ignores the unknown `tui.alternate_screen` (not with `--strict-config`). | Claude | measured on Codex 0.167.2: no `-c`, terminum's MCP server ran under the app-server; with `-c tui.alternate_screen=never`, under the pane's Codex, inline; older versions not measured; measured again at Codex's next minor version |
 
 Dependencies:
 
@@ -142,7 +142,7 @@ Scenario: AC-121 edge — a paste shown late
 Scenario: AC-121 failure — did not start
   When the program is not found, the box does not come in 60 s, or the prompt is not taken in 30 s
   Then API-12 is FAILED and its comment says "Session did not start: <reason>" with the screen's last 20 rows, redacted (`sent::redact`) as a Markdown block
-  And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex"; the agent left running is named, and Dispatcher does not watch it
+  And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex, or Codex runs in a shared app-server (AC-156)"; the agent left running is named, and Dispatcher does not watch it
   And the window stays for AC-125 to close
 
 Scenario: AC-121 edge — the window still opening
@@ -908,8 +908,10 @@ Scenario: AC-156 happy path — inline and in its own process
   Given Codex's command "codsp", a function of the user's shell for codex --no-alt-screen, and a Codex app's shared app-server running
   When a run of it starts
   Then its line is "codsp -c tui.alternate_screen=never": Codex draws inline and runs in the pane's own process, where terminum's MCP server and hooks know their pane, so the agent reads its task by get_task and its prompt's hook is heard
+  And Codex takes `-c` again after one the command names, so an alias that names one already still starts
   And a Claude Code agent's line ends in --settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}': its inline TUI over the user's tui setting and that variable
-  And both are options their agent takes again after one the command names, so an alias that names one already still starts
+  When a Claude Code agent's command names --settings
+  Then none is added: Claude Code keeps only its last --settings, so the operator's stand whole and choose the TUI
 
 Scenario: AC-156 edge — a command of several programs
   Given an agent's command "codex; notify"
@@ -1509,7 +1511,7 @@ new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/s
 
 Exit -1 is the folder's: no process exits with it. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.
 
-**Inline and in its pane (AC-156).** After the operator's command, before the effort: Codex `-c tui.alternate_screen=never`; Claude Code `--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'` (later `--settings` win over earlier ones and over the user's settings, the `env` over the variable). The gate reads both agents inline (AS-125). A Codex 0.167 attaches by itself to a shared `codex app-server` (one a Codex app or editor started), which starts the MCP servers and runs the hooks in its own environment, without the pane's `TMUX_PANE`: the agent has no terminum tools and its prompt's hook is never heard; a `-c` override keeps it in its own process (AS-128). `--no-daemon` would say it in words, but a Codex older than its daemon refuses an option it does not know, and Codex refuses a flag given twice, as an alias may have it. A command with `;`, `|`, `&` or `#` gets none of these.
+**Inline and in its pane (AC-156).** After the operator's command, before the effort: Codex `-c tui.alternate_screen=never`; Claude Code `--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'` (over the user's settings, its `env` over the variable), none when the command names `--settings`: Claude Code keeps only the last one given, so an operator's would be lost; one inside an alias is not seen, and ours replaces it. The gate reads both agents inline (AS-125). A Codex 0.167 attaches by itself to a shared `codex app-server` (one a Codex app or editor started), which starts the MCP servers and runs the hooks in its own environment, without the pane's `TMUX_PANE`: the agent has no terminum tools and its prompt's hook is never heard; a `-c` override keeps it in its own process (AS-128). `--no-daemon` would say it in words, but a Codex older than its daemon refuses an option it does not know, and Codex refuses a flag given twice, as an alias may have it. A command with `;`, `|`, `&` or `#` gets none of these.
 
 **Resume.** The run's own command (another agent's of its kind when dropped on it, AC-138) then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9][A-Za-z0-9-]{0,99}`, so it is no flag and no shell word: a hook's field can be posted by any process of the user or a broken host.
 

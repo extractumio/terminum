@@ -92,7 +92,8 @@ const CODEX_INLINE: &str = "-c tui.alternate_screen=never";
 fn ac156_a_run_s_agent_is_inline_and_in_its_own_process() {
     assert_eq!(command_line("codex", "codsp", ""), format!("codsp {CODEX_INLINE}"));
     assert_eq!(command_line("codex", "codex --no-alt-screen", "high"), format!("codex --no-alt-screen {CODEX_INLINE} -c model_reasoning_effort=high"));
-    assert_eq!(command_line("claude", r#"claude --settings '{"model":"opus"}'"#, ""), format!(r#"claude --settings '{{"model":"opus"}}' {CLAUDE_INLINE}"#), "the last --settings takes the tui");
+    // Claude Code keeps only its last --settings: the operator's stand whole, theirs choose the TUI
+    assert_eq!(command_line("claude", "claude --settings ~/work.json", "high"), "claude --settings ~/work.json --effort high");
     // after a separator the words would go to the next program: the operator's line alone, as with an effort
     assert_eq!(command_line("codex", "codex; notify", ""), "codex; notify");
     assert_eq!(command_line("claude", "claude # mine", ""), "claude # mine");

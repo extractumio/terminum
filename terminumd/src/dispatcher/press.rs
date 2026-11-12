@@ -202,7 +202,7 @@ pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, Strin
         Some(r) if r.state == Phase::Ending => return Err("Its agent is being ended at its limit: run it again in a moment.".to_string()),
         _ if fresh => Way::First,
         None => Way::First,
-        Some(r) if r.state == Phase::Gone && r.pane_key.is_some() => if r.agent_session.is_some() { Way::Shell(r) } else { Way::Anew(r) },
+        Some(r) if r.state == Phase::Gone && r.pane_key.is_some() => if super::start::resume_command(&r).is_ok() { Way::Shell(r) } else { Way::Anew(r) },
         Some(r) if r.pane_key.is_some() && !r.is_over() => Way::Live(r),
         Some(r) if r.agent_session.is_some() => Way::Resume(r),
         Some(_) => Way::First,

@@ -264,7 +264,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
             // the walk may not have read yet that its agent ended
             if start::exit_of(&server, &pane).await.is_some() {
                 // with no conversation its next press is a first run's, the words shown (AC-122)
-                if r.agent_session.is_none() {
+                if start::resume_command(&r).is_err() {
                     return Err("Its agent has just ended: run it again.".to_string());
                 }
                 return from_shell(app, &r, &server, &pane, again, &t, kept).await;

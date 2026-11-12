@@ -175,16 +175,18 @@ export async function liveDispatcher(page, opts) {
   check("AC-122 only the shell remains: it starts there anew", !!shell.run && await hasStatus(dead, "DONE", 20000), JSON.stringify(shell) + await history(dead));
 
   // AC-122 its agent ended before its task went in: no conversation to go on, so its shell's agent hears the task whole
-  const flaky = (await j("/api/task-agents", "POST", { name: "Flaky", kind: "claude", command: "true" })).id;
+  const flaky = (await j("/api/task-agents", "POST", { name: "Flaky", kind: "claude", command: fake("claude", "--start quits") })).id;
   const unsaid = await task("never heard FINISHES", "The whole text.");
   await run(unsaid, { agent: flaky });
-  check("AC-121 an agent that ends before its box: FAILED", await hasStatus(unsaid, "FAILED", 15000), await history(unsaid));
+  check("AC-121 an agent that ends once its session opened, before its prompt: FAILED", await hasStatus(unsaid, "FAILED", 15000), await history(unsaid));
+  const firstPane = await paneOf(unsaid);
   await j(`/api/task-agents/${flaky}`, "PATCH", { name: "Flaky", kind: "claude", command: fake("claude") });
   // the fake finishes only on a prompt holding FINISHES: the task's title has it, the comment and "go on" words do not
   const offered = await j(`/api/tasks/${unsaid}/run?agent=${flaky}`);
   check("AC-122 with no conversation RUN's window shows a first run's words", offered.first === true && /never heard FINISHES/.test(offered.prompt ?? ""), JSON.stringify(offered).slice(0, 400));
   const whole = await run(unsaid, { agent: flaky, comment: "Mind the tests", prompt_rev: offered.prompt_rev });
   check("AC-122 from its shell with no conversation: the task's own words go in, and it ends", !!whole.run && await hasStatus(unsaid, "DONE", 20000), JSON.stringify(whole) + await history(unsaid));
+  check("AC-122 in the pane it had", !!firstPane && await paneOf(unsaid) === firstPane, `${firstPane} ${await paneOf(unsaid)}`);
 
   // AC-122 RUN right after its agent exits: its last screen still shows a box, nothing is pasted into the shell
   const justEnded = await task("again at once CLEAN");
