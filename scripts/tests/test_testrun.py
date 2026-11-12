@@ -78,16 +78,18 @@ class Servers(unittest.TestCase):
                     os.kill(pid, 9)
                 os.environ.pop("TMUX_TMPDIR") if saved is None else os.environ.update(TMUX_TMPDIR=saved)
 
-# A parent starts Python detached in the private folder, as fake_ssh starts a remote shell.
-ORPHAN = ("import os, subprocess, sys, time; subprocess.Popen([sys.executable, '-c', "
+# The child keeps a fake HOME but leaves both the parent's group and the private cwd.
+ORPHAN = ("import os, subprocess, sys, time; sys.path.insert(0, sys.argv[3]); import owned_children; "
+          "child = subprocess.Popen([sys.executable, '-c', "
           "'import os, time\\nwhile os.getppid() != 1: time.sleep(0.05)\\n' + sys.argv[1], sys.argv[2]], "
-          "cwd=sys.argv[2], start_new_session=True); time.sleep(60)")
+          "env={**os.environ, 'HOME': sys.argv[2]}, cwd='/', start_new_session=True); "
+          "owned_children.register(owned_children.path(sys.argv[2]), child.pid); time.sleep(60)")
 
 
 class WithItsFolder(unittest.TestCase):
     def orphan(self, code, folder):
         """The orphan's parent ended, as terminumd drops a host operation's ssh."""
-        root = subprocess.Popen([sys.executable, "-c", ORPHAN, code, folder])
+        root = subprocess.Popen([sys.executable, "-c", ORPHAN, code, folder, str(Path(__file__).resolve().parents[1])])
         self.addCleanup(lambda: (root.kill(), root.wait()))
         end = time.monotonic() + 5
         while not testrun.naming(folder) and time.monotonic() < end:

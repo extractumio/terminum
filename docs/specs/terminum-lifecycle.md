@@ -370,6 +370,15 @@ Scenario: AC-102 edge — what a fake host still runs ends before its test's fol
   When the test's cleanup runs
   Then it ends its fake host's tmux server, waits up to 15 s for every process working in the test's folder or a folder under it, and only then removes the folder; one still there is ended by its pid (SIGTERM, then SIGKILL) and fails the run, its command named
 
+Scenario: AC-102 edge — a registered child leaves the private working directory
+  Given a test or fake ssh records its Popen child's PID and start time in a private registry before its parent ends
+  And that child starts a separate session and changes its working directory outside the private folder
+  When cleanup runs
+  Then it waits for the same child to finish its delayed write, or ends it by its recorded identity
+  And a PID with another start time receives no signal
+  And the guard's own registry is metadata, not a leftover file
+  And an unregistered descendant that leaves both the private group and folder cannot be discovered portably; its spawner must explicitly record and end it
+
 Scenario: AC-102 edge — cleanup never reads process environments
   Given an unrelated process with credentials in its environment, whose command mentions the test's folder
   When the guard or a private terminumd's cleanup looks for leftover processes on macOS or Linux
@@ -489,6 +498,13 @@ Scenario: AC-104 edge — several worktrees land at once
   When one lands while two's checks run
   Then two merges what one landed; its targeted checks run again only if both changed the same file, its smoke set on every merge
   And only the last look at origin/main and the push take turns, so neither waits for the other's tests
+
+Scenario: AC-104 edge — a tree that lost the race once
+  Given worktree two's smoke set passed, and one landed while it ran
+  When two tries again
+  Then it says "lost the race once: holding the landing turn through this merge's checks", and holds the turn from its merge to its push and install, so no other landing pushes before it and it loses no second race
+  And a landing waiting for that turn says "land: two's landing has its turn (its checks, push and install can take half an hour): waiting"
+  And a smoke set still running after 90 minutes is ended with its processes, said, and fails as "smoke checks failed", freeing the turn
 
 Scenario: AC-104 failure — others' code breaks the merged build
   Given one tree renamed a function and another, touching other files, added a caller of it

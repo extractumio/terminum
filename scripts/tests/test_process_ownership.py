@@ -25,7 +25,8 @@ class Ownership(unittest.TestCase):
     def test_ownership_uses_group_and_directory_not_command_mentions(self):
         with mock.patch.object(check_step, "listing", return_value=[
                 (42, "7", "sleep 60"), (43, "8", "program /tmp/private"), (44, "8", "detached")]), \
-                mock.patch.object(check_step, "working_in", return_value={44: "detached"}, create=True):
+                mock.patch.object(check_step, "working_in", return_value={44: "detached"}, create=True), \
+                mock.patch.object(check_step.owned_children, "active", return_value={}):
             self.assertEqual(dict(check_step.own_processes("/tmp/private", 7)), {42: "sleep 60", 44: "detached"})
 
     def test_a_failed_process_query_is_not_a_clean_run(self):
