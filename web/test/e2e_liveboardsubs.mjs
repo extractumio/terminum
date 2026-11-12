@@ -56,9 +56,9 @@ async function usageCommand(page, { pool, home }) {
     set(`printf '%s' ${quoted(usage)}`);
     let t = "";
     check("AC-168 the usage command set in settings.json fills its week", await until(async () => /week\s*61%/.test(t = await stripes()), 15000), t);
-    check("AC-168 its window says the usage command read it", /by Claude Code's usage command/.test(t = await view()), t);
+    check("AC-168 its window says the usage command read it", /Read \w+ \d\d:\d\d by Claude Code's usage command/.test(t = await view()), t);
     set("echo 'not logged in' >&2; exit 3");
-    check("AC-168 a failing usage command says why in its window", await until(async () => /usage command failed .*exit 3: not logged in/.test(t = await view()), 15000), t);
+    check("AC-168 a failing usage command says why in its window", await until(async () => /usage command failed .*exit 3: not logged in\./.test(t = await view()), 15000), t);
     check("AC-168 and its last reading stands", /week\s*61%/.test(await stripes()), await stripes());
   } finally {
     if (was === null) fs.rmSync(file, { force: true });

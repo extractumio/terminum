@@ -14,9 +14,19 @@ pub const CODEX_ASK: &str = concat!(
     r#"{"jsonrpc":"2.0","id":2,"method":"account/rateLimits/read"}"#, "\n",
 );
 
-/// A window as a command says it, judged as an event's (subscriptions.rs `of_event`).
+/// A window as a command says it, judged as an event's; a use past its limit is 100%.
 fn window(minutes: u64, used: Option<f64>, resets_at: Option<i64>) -> Option<Window> {
-    super::subscriptions::of_event(&serde_json::json!({"windows": [{"minutes": minutes, "used": used, "resets_at": resets_at}]}))?.pop()
+    super::subscriptions::window(Some(minutes), used.map(|u| u.min(100.0)), &resets_at.into())
+}
+
+/// The first line of `text` that is not blank, without what would hide or act in it, cut to `most` characters.
+pub fn first_line(text: &str, most: usize) -> Option<String> {
+    text.lines().find(|l| !l.trim().is_empty()).map(|l| crate::termtext::clean(l, false).chars().take(most).collect())
+}
+
+/// A meter's `resets_at`: null is not known; a time not read leaves the meter out, as an event's would be.
+fn resets(v: &Value) -> Option<Option<i64>> {
+    if v.is_null() { Some(None) } else { v.as_str().and_then(iso_seconds).map(Some) }
 }
 
 /// Claude Code's meters by kind: `session` is the five hours, `weekly_all` the week of every model. A model's own
@@ -44,7 +54,7 @@ pub fn of_claude(out: &str) -> Result<Vec<Window>, String> {
         let Some(limits) = v["usage_report"]["rate_limits"]["limits"].as_array() else { continue };
         let found: Vec<Window> = limits.iter()
             .filter(|l| l["scope"].is_null())
-            .filter_map(|l| window(meter(l["kind"].as_str()?)?, l["percent"].as_f64(), l["resets_at"].as_str().and_then(iso_seconds)))
+            .filter_map(|l| window(meter(l["kind"].as_str()?)?, l["percent"].as_f64(), resets(&l["resets_at"])?))
             .collect();
         if !found.is_empty() {
             return Ok(found);
@@ -52,8 +62,8 @@ pub fn of_claude(out: &str) -> Result<Vec<Window>, String> {
     }
     // an API key, Bedrock or Vertex: /usage has no subscription to say
     let said = values.iter().find_map(|v| v["result"].as_str().or(v["message"]["content"][0]["text"].as_str())).unwrap_or("");
-    Err(match said.lines().find(|l| !l.trim().is_empty()) {
-        Some(line) => format!("no subscription limits in its answer: {}", line.chars().take(120).collect::<String>()),
+    Err(match first_line(said, 120) {
+        Some(line) => format!("no subscription limits in its answer: {line}"),
         None => "no subscription limits in its answer".into(),
     })
 }
@@ -62,7 +72,7 @@ pub fn of_claude(out: &str) -> Result<Vec<Window>, String> {
 /// `secondary`, each `usedPercent`, `windowDurationMins`, `resetsAt`.
 pub fn of_codex(answer: &Value) -> Result<Vec<Window>, String> {
     if let Some(e) = answer["error"]["message"].as_str() {
-        return Err(format!("codex app-server: {}", e.chars().take(120).collect::<String>()));
+        return Err(format!("codex app-server: {}", first_line(e, 120).unwrap_or_default()));
     }
     let limits = &answer["result"]["rateLimits"];
     let found: Vec<Window> = ["primary", "secondary"].iter()
@@ -96,14 +106,7 @@ pub fn iso_seconds(s: &str) -> Option<i64> {
         }
         _ => return None,
     };
-    // days from 1970-01-01 of a civil date (Howard Hinnant's days_from_civil)
-    let y = if mo <= 2 { y - 1 } else { y };
-    let era = y.div_euclid(400);
-    let yoe = y - era * 400;
-    let doy = (153 * ((mo + 9) % 12) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    let days = era * 146097 + doe - 719468;
-    Some(days * 86400 + h * 3600 + mi * 60 + sec - offset)
+    Some(crate::dashboard::days_of(y, mo, d) * 86400 + h * 3600 + mi * 60 + sec - offset)
 }
 
 #[cfg(test)]
@@ -145,7 +148,10 @@ mod tests {
     fn ac168_claude_s_usage_command_with_no_subscription() {
         let api_key = json!([{"type": "result", "result": "You are using an API key\nno limits"}]).to_string();
         assert_eq!(of_claude(&api_key).unwrap_err(), "no subscription limits in its answer: You are using an API key");
-        assert!(of_claude(&claude_out(json!([{"kind": "weekly_all", "percent": 140, "scope": null}]))).is_err(), "out of range");
+        let over = of_claude(&claude_out(json!([{"kind": "weekly_all", "percent": 104, "resets_at": null, "scope": null}]))).unwrap();
+        assert_eq!(over[0].used, 100.0, "past its limit: full, not left out");
+        assert!(of_claude(&claude_out(json!([{"kind": "weekly_all", "percent": -1, "scope": null}]))).is_err(), "out of range");
+        assert!(of_claude(&claude_out(json!([{"kind": "weekly_all", "percent": 5, "resets_at": "Monday", "scope": null}]))).is_err(), "a reset time not read: left out, said");
         assert_eq!(of_claude("Error: not logged in").unwrap_err(), "its output is not JSON");
         assert_eq!(of_claude("").unwrap_err(), "its output is not JSON");
     }

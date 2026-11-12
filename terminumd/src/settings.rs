@@ -27,11 +27,19 @@ const FILE: &str = "settings.json";
 /// The most days of agentExitDays (AC-153): ten years.
 pub const MAX_EXIT_DAYS: i64 = 3650;
 
-/// The usage commands by default (AC-168): neither is a model call, so neither spends tokens.
-pub const USAGE_CLAUDE: &str = "claude -p /usage --output-format json --no-session-persistence --strict-mcp-config";
+/// The usage commands by default (AC-168): neither is a model call, so neither spends tokens; Claude Code's loads
+/// none of the user's settings (hooks, plugins) and keeps no session.
+pub const USAGE_CLAUDE: &str = "claude -p /usage --output-format json --no-session-persistence --strict-mcp-config --setting-sources local";
 pub const USAGE_CODEX: &str = "codex app-server";
 /// The longest usage command kept.
 const MOST_USAGE_COMMAND: usize = 1000;
+
+/// The usage commands of a file that names none: a test's private store (`config::test_store`) runs only what its
+/// settings.json names, never the agents' own programs.
+fn default_usage_commands() -> BTreeMap<String, String> {
+    let (claude, codex) = if crate::config::test_store() { ("", "") } else { (USAGE_CLAUDE, USAGE_CODEX) };
+    BTreeMap::from([("claude".to_string(), claude.to_string()), ("codex".to_string(), codex.to_string())])
+}
 
 /// What settings.json of an earlier version may hold that no longer does anything (AC-04).
 const NO_LONGER: &str = "size, page.lines and page.screenMode are no longer used: the active page sizes the pane";
@@ -105,7 +113,7 @@ impl Default for Settings {
             memory_end_gib: 8.0,
             midi_soundfont: None,
             agent_exit_days: 0,
-            usage_commands: BTreeMap::from([("claude".to_string(), USAGE_CLAUDE.to_string()), ("codex".to_string(), USAGE_CODEX.to_string())]),
+            usage_commands: default_usage_commands(),
             messages: Vec::new(),
         }
     }
@@ -216,12 +224,13 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
 /// `dispatcher.usageCommands`: a line per agent kind, `""` for none; a kind left out keeps its default.
 fn usage_commands(s: &mut Settings, v: &Value, m: &mut Msgs) {
     for (kind, line) in members(v, "dispatcher.usageCommands", m) {
-        match (kind, line.as_str()) {
-            ("claude" | "codex", Some(l)) if l.len() <= MOST_USAGE_COMMAND && !l.chars().any(char::is_control) => {
-                s.usage_commands.insert(kind.to_string(), l.trim().to_string());
-            }
-            ("claude" | "codex", _) => m.bad(format!("dispatcher.usageCommands.{kind} must be one line of up to {MOST_USAGE_COMMAND} characters, \"\" for none")),
-            _ => m.bad(format!("unknown key dispatcher.usageCommands.{kind}: claude or codex")),
+        if !s.usage_commands.contains_key(kind) {
+            m.bad(format!("unknown key dispatcher.usageCommands.{kind}: claude or codex"));
+            continue;
+        }
+        match line.as_str().filter(|l| l.len() <= MOST_USAGE_COMMAND && !crate::termtext::has_control(l)) {
+            Some(l) => _ = s.usage_commands.insert(kind.to_string(), l.trim().to_string()),
+            None => m.bad(format!("dispatcher.usageCommands.{kind} must be one line of up to {MOST_USAGE_COMMAND} characters, \"\" for none")),
         }
     }
 }

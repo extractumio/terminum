@@ -13,14 +13,60 @@ fn ac168_when_a_kind_is_asked() {
     assert!(!due(Some(1000), 1000 + LEAST_GAP - 1, true, true), "tasks ending one after another: one ask");
 }
 
+fn open(v: &[(&str, usize)]) -> HashMap<String, usize> {
+    v.iter().map(|(k, n)| (k.to_string(), *n)).collect()
+}
+
 #[test]
 fn ac168_a_task_ended_when_a_run_has_fewer_open_or_is_gone() {
-    let m = |v: &[(&str, usize)]| v.iter().map(|(k, n)| (k.to_string(), *n)).collect::<HashMap<_, _>>();
+    let m = open;
     assert!(!ended(&m(&[]), &m(&[("r1", 1)])), "a run started");
     assert!(!ended(&m(&[("r1", 1)]), &m(&[("r1", 1)])));
     assert!(!ended(&m(&[("r1", 1)]), &m(&[("r1", 2)])), "a task added");
     assert!(ended(&m(&[("r1", 2)]), &m(&[("r1", 1)])), "one of two finished");
     assert!(ended(&m(&[("r1", 1)]), &m(&[])), "its run closed");
+    assert!(!ended(&m(&[("r0", 0)]), &m(&[])), "a session with no task closed: no task ended");
+}
+
+/// An ask that ended, as Busy's drop says it.
+fn done(k: &mut Kind) {
+    k.busy = false;
+}
+
+#[test]
+fn ac168_a_task_ending_too_soon_after_an_ask_is_asked_for_later() {
+    let (mut k, line) = (Kind::default(), Some("u"));
+    assert!(k.step(open(&[("r1", 1)]), line, false, 0), "the first beat asks");
+    assert!(!k.step(open(&[("r1", 1)]), line, false, 10), "busy");
+    done(&mut k);
+    assert!(!k.step(open(&[("r1", 0)]), line, false, 30), "its task ended 30 s after the ask: not yet");
+    assert!(!k.step(open(&[("r1", 0)]), line, false, 45));
+    assert!(k.step(open(&[("r1", 0)]), line, false, 60), "a minute after the ask: that end is asked for");
+    done(&mut k);
+    assert!(!k.step(open(&[("r1", 0)]), line, false, 200), "then idle: hourly");
+    assert!(k.step(open(&[]), line, false, 60 + IDLE_EVERY));
+}
+
+#[test]
+fn ac168_a_task_ending_during_an_ask_is_asked_for_after_it() {
+    let (mut k, line) = (Kind::default(), Some("u"));
+    assert!(k.step(open(&[("r1", 2)]), line, false, 0));
+    assert!(!k.step(open(&[("r1", 1)]), line, false, 70), "a task ended while it is asked: busy");
+    done(&mut k);
+    assert!(k.step(open(&[("r1", 1)]), line, false, 100), "asked once that ask is over");
+}
+
+#[test]
+fn ac168_a_failed_ask_is_tried_again_in_ten_minutes_and_a_changed_line_at_once() {
+    let mut k = Kind::default();
+    assert!(k.step(open(&[]), Some("u"), false, 0));
+    done(&mut k);
+    assert!(!k.step(open(&[]), Some("u"), true, RUNNING_EVERY - 1));
+    assert!(k.step(open(&[]), Some("u"), true, RUNNING_EVERY), "failed: as often as while working");
+    done(&mut k);
+    assert!(k.step(open(&[]), Some("v"), false, RUNNING_EVERY + 5), "its line changed: at once");
+    done(&mut k);
+    assert!(!k.step(open(&[("r1", 1)]), None, false, IDLE_EVERY * 9), "no line: never");
 }
 
 /// A folder of its own for one test's command.
@@ -62,6 +108,27 @@ async fn ac168_a_failing_command_says_why() {
     assert_eq!(why("echo '[{\"type\":\"result\",\"result\":\"API key\"}]'").await, "no subscription limits in its answer: API key");
     let codex = ask("codex", "exit 0", &d, Duration::from_secs(10)).await.unwrap_err();
     assert_eq!(codex, "it ended without an answer");
+}
+
+#[tokio::test]
+async fn ac168_a_command_saying_much_on_its_error_output_still_answers() {
+    let out = json!([{"usage_report": {"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 7, "resets_at": null, "scope": null}]}}}]).to_string();
+    let line = format!("head -c 300000 /dev/zero | tr '\\0' x >&2; printf '%s' {}", quoted(&out));
+    let got = ask("claude", &line, &dir("loud"), Duration::from_secs(10)).await.unwrap();
+    assert_eq!(got[0].used, 7.0);
+}
+
+#[tokio::test]
+async fn ac168_what_a_command_leaves_running_ends_with_its_group() {
+    let d = dir("leaves");
+    let pidfile = d.join("left.pid");
+    let out = json!([{"usage_report": {"rate_limits": {"limits": [{"kind": "weekly_all", "percent": 7, "resets_at": null, "scope": null}]}}}]).to_string();
+    let line = format!("sh -c 'trap \"\" TERM; sleep 30' </dev/null >/dev/null 2>&1 & echo $! > {}; printf '%s' {}", quoted(&pidfile.display().to_string()), quoted(&out));
+    assert!(ask("claude", &line, &d, Duration::from_secs(10)).await.is_ok());
+    let pid: i32 = std::fs::read_to_string(&pidfile).unwrap().trim().parse().unwrap();
+    std::thread::sleep(Duration::from_millis(200));
+    // SAFETY: signal 0 only asks whether the pid is there
+    assert_ne!(unsafe { libc::kill(pid, 0) }, 0, "one that ignores SIGTERM ends too");
 }
 
 #[tokio::test]

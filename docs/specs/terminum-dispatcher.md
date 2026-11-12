@@ -823,10 +823,10 @@ Scenario: AC-168 happy path — Codex's
 Scenario: AC-168 happy path — its usage command
   Given the pool has a Claude Code agent and a Codex agent, and settings.json names no usage command of its own
   When terminumd starts
-  Then within a walk it runs `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config` and asks `codex app-server` `account/rateLimits/read`, neither a model call, no tokens spent
+  Then within a walk it runs `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config --setting-sources local` (none of the user's hooks or plugins, no session kept) and asks `codex app-server` `account/rateLimits/read`, neither a model call, no tokens spent
   And each agent's stripes show what its kind's command said, Claude Code's week at 52% as "week 52%", and its window says "read Thu 09:00 by Claude Code's usage command"
   When a run of Claude Code works on a task
-  Then Claude Code's usage command runs every 10 minutes; when that task is DONE or FAILED, or its run closes, once more within a minute
+  Then Claude Code's usage command runs every 10 minutes; when that task is DONE or FAILED, or its run closes, once more within a minute, also when it ended during an ask or less than a minute after one
   When no run of a kind works on a task
   Then its usage command runs hourly
   When the user sets `dispatcher.usageCommands.claude` in settings.json to another line, or `""` to ask none
@@ -835,20 +835,20 @@ Scenario: AC-168 happy path — its usage command
 Scenario: AC-168 failure — its usage command fails
   When the usage command is not found, ends with an error, answers no limits (an API key) or takes over 60 s
   Then its process group is ended, the stripes keep the last reading, and the agent's window says in the danger color "its usage command failed 09:00: it ended with exit 1: Error: not logged in"
-  And terminumd's log says it once per ask
+  And terminumd's log says it once per ask, and it is asked again in 10 minutes, not an hour
 
 Scenario: AC-168 edge — a restart
   Given Claude Code's last reading was at 09:00
   When terminumd restarts at 09:30
-  Then the stripes show that reading from the state file at once, and the usage command reads anew within a walk
-  And a test's private terminumd (its own `TM_APP_DIR`) runs only the usage commands its settings.json names, never the agents' own
+  Then the stripes show that reading, kept in the store, at once, and the usage command reads anew within a walk
+  And a test's private store (`TM_TEST_HOOKS` with its own `TM_APP_DIR`) runs only the usage commands its settings.json names, never the agents' own
 
 Scenario: AC-168 happy path — in its window
   When the user opens the agent's window
   Then each stripe says its percent and when it resets, and the window when it was read
 
 Scenario: AC-168 edge — not known, reset, old
-  Given no reading of its kind, from its usage command, a session or the state file
+  Given no reading of its kind, from its usage command, a session or the store
   Then both stripes are empty and say "not known", and its window says how one comes: its usage command, `terminum statusline` in Claude Code's status line, a Codex turn's end
   When a window's reset time passes
   Then its stripe is empty and says "reset", not 0%
@@ -1521,9 +1521,9 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 
 **Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
-**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time and its source (`session`, `usage`), from panes it lists and from the usage commands, in `subscriptions.json` of the state folder: the same numbers move its time at most every 10 minutes; a change of either, or a failed usage command (kept in memory, cleared by its next reading), tells pages (`subscriptions`: per kind `{at, windows, via, failed: {at, why}}`), and `/api/tasks?counts=1` carries them.
+**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time and its source (`session`, `usage`), from panes it lists and from the usage commands, in the store (`meta` key `subscriptions`): the same numbers move its time at most every 10 minutes; a change of either, or a failed usage command (kept in memory, cleared by its next reading), tells pages (`subscriptions`: per kind `{at, windows, via, failed: {at, why}}`), and `/api/tasks?counts=1` carries them.
 
-**Usage commands (AC-168).** `dispatcher.usageCommands` in settings.json holds a line per kind (default: Claude Code's `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config`, Codex's `codex app-server`; `""`: none). Each walk's beat (`dispatcher/usageask.rs`) asks a kind the pool has when due: never asked or its line changed; a task of it ended (a live run has fewer open tasks, or is gone) and a minute passed since the last ask; every 10 minutes while a live run of it has an open task; else hourly; one ask per kind at a time, not awaited by the walk. Claude Code's output is its messages as JSON; the first `usage_report.rate_limits.limits` read, its unscoped meters only: `session` five hours, `weekly_all` a week, `percent`, `resets_at` an ISO time. Codex's app-server is written its `initialize`, `initialized` and `account/rateLimits/read` (id 2) and read up to that answer (`rateLimits.primary`, `secondary`: `usedPercent`, `windowDurationMins`, `resetsAt`), then its input closed. Both are judged as an event's windows. `--bare` is no option: it skips the login.
+**Usage commands (AC-168).** `dispatcher.usageCommands` in settings.json holds a line per kind (default: Claude Code's `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config --setting-sources local`, Codex's `codex app-server`; `""`: none). Each walk's beat (`dispatcher/usageask.rs`) asks a kind the pool has when due: never asked or its line changed; a task of it ended (a live run that had open tasks has fewer, or is gone; kept until an ask starts) and a minute passed since the last ask; every 10 minutes while a live run of it has an open task or its last ask failed; else hourly; one ask per kind at a time, not awaited by the walk. Its error output is read all along (its first 4 KB kept); once it answered it has 2 s to end, then its process group is sent SIGKILL, as at its 60 s limit. Claude Code's output is its messages as JSON; the first `usage_report.rate_limits.limits` read, its unscoped meters only: `session` five hours, `weekly_all` a week, `percent` (past 100: 100), `resets_at` an ISO time or null (another text leaves the meter out). Codex's app-server is written its `initialize`, `initialized` and `account/rateLimits/read` (id 2) and read up to that answer (`rateLimits.primary`, `secondary`: `usedPercent`, `windowDurationMins`, `resetsAt`; the line with id 2 and no method), then its input closed. Both are judged as an event's windows. `--bare` is no option: it skips the login.
 
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 

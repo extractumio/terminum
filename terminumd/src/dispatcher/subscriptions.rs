@@ -3,7 +3,7 @@
 //! its agent's account has used, as a session of that kind last read them. Claude Code says them only to a
 //! status line command (`terminum statusline`), Codex in its log's token counts (`terminum hook`); both send
 //! numbers alone, as a `Limits` event. Each kind's usage command also says them (usageask.rs). Kept per kind,
-//! in a file of the state folder: a restart shows the last reading, faded once old.
+//! in the store: a restart shows the last reading, faded once old.
 
 use std::collections::BTreeMap;
 
@@ -42,7 +42,7 @@ fn seconds(v: &Value) -> Option<i64> {
 }
 
 /// A window as an event says it; None when any number is out of its range.
-fn window(minutes: Option<u64>, used: Option<f64>, resets: &Value) -> Option<Window> {
+pub(super) fn window(minutes: Option<u64>, used: Option<f64>, resets: &Value) -> Option<Window> {
     let (minutes, used) = (minutes.filter(|m| (1..=LONGEST).contains(m))?, used.filter(|u| u.is_finite() && (0.0..=100.0).contains(u))?);
     let resets_at = if resets.is_null() { None } else { Some(seconds(resets)?) };
     Some(Window { minutes, used, resets_at })
@@ -73,66 +73,80 @@ pub fn of_codex(limits: &Value) -> Option<Vec<Window>> {
     some(["primary", "secondary"].iter().map(|k| window(limits[*k]["window_minutes"].as_u64(), limits[*k]["used_percent"].as_f64(), &limits[*k]["resets_at"])))
 }
 
-/// One kind's last reading: when it came, its windows, and what said it: `session` or `usage` (its usage command).
-#[derive(Clone, Debug, PartialEq)]
-struct Reading {
-    at: i64,
-    windows: Vec<Window>,
-    via: String,
+/// What said a reading: a session (its status line, its hook) or its kind's usage command.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Via {
+    Session,
+    Usage,
 }
 
-/// The last reading of each kind, and why its usage command last failed, if it did: by kind, with when.
+/// One kind's last reading, when it came and what said it; and when and why its usage command last failed.
 #[derive(Default)]
-pub struct Readings {
-    last: Mutex<BTreeMap<String, Reading>>,
-    failed: Mutex<BTreeMap<String, (i64, String)>>,
+struct Entry {
+    reading: Option<(i64, Vec<Window>, Via)>,
+    failed: Option<(i64, String)>,
+}
+
+/// What is known of each kind's windows.
+#[derive(Default)]
+pub struct Readings(Mutex<BTreeMap<String, Entry>>);
+
+/// A reading as pages and the store have it.
+fn row(at: i64, windows: &[Window], via: Via) -> Value {
+    json!({"at": at, "windows": windows, "via": via})
 }
 
 impl Readings {
     /// A reading of `kind` came at `at` from `via`: it replaces the last when its numbers differ or the last is
-    /// `FRESH` old. Whether it did: pages are told then. A usage command's reading clears its failure.
-    pub fn heard(&self, kind: &str, windows: Vec<Window>, at: i64, via: &str) -> bool {
-        let cleared = via == "usage" && self.failed.lock().remove(kind).is_some();
-        let mut all = self.last.lock();
-        if all.get(kind).is_some_and(|r| r.windows == windows && at - r.at < FRESH) {
+    /// `FRESH` old. Whether it did: pages are told then. A usage command's reading also ends its failure, which is news.
+    pub fn heard(&self, kind: &str, windows: Vec<Window>, at: i64, via: Via) -> bool {
+        let mut all = self.0.lock();
+        let e = all.entry(kind.to_string()).or_default();
+        let cleared = via == Via::Usage && e.failed.take().is_some();
+        if e.reading.as_ref().is_some_and(|(was_at, was, _)| *was == windows && at - was_at < FRESH) {
             return cleared;
         }
-        all.insert(kind.to_string(), Reading { at, windows, via: via.to_string() });
+        e.reading = Some((at, windows, via));
         true
     }
 
     /// `kind`'s usage command failed at `at`, for `why`: the last reading stands, and its window says why.
     pub fn failed(&self, kind: &str, why: String, at: i64) {
-        self.failed.lock().insert(kind.to_string(), (at, why));
+        self.0.lock().entry(kind.to_string()).or_default().failed = Some((at, why));
     }
 
-    /// As pages show them: by kind, `{at, windows, via}`, and `{failed: {at, why}}` when its usage command failed.
-    pub fn shown(&self) -> Value {
-        let mut out = serde_json::Map::new();
-        for (k, r) in self.last.lock().iter() {
-            out.insert(k.clone(), json!({"at": r.at, "windows": r.windows, "via": r.via}));
-        }
-        for (k, (at, why)) in self.failed.lock().iter() {
-            let e = out.entry(k.clone()).or_insert_with(|| json!({}));
-            e["failed"] = json!({"at": at, "why": why});
-        }
-        out.into()
+    /// Whether `kind`'s usage command failed last.
+    pub fn has_failed(&self, kind: &str) -> bool {
+        self.0.lock().get(kind).is_some_and(|e| e.failed.is_some())
     }
 
-    /// The readings as the state file keeps them: failures are not kept.
+    /// The readings as the store keeps them, by kind `{at, windows, via}`: failures are not kept.
     pub fn kept(&self) -> Value {
-        self.last.lock().iter().map(|(k, r)| (k.clone(), json!({"at": r.at, "windows": r.windows, "via": r.via}))).collect::<serde_json::Map<_, _>>().into()
+        let all = self.0.lock();
+        all.iter().filter_map(|(k, e)| e.reading.as_ref().map(|(at, w, via)| (k.clone(), row(*at, w, *via)))).collect::<serde_json::Map<_, _>>().into()
     }
 
-    /// The readings of a state file (`kept`), each judged as an event's: one out of range, or of a kind terminum
-    /// does not know, is left out.
-    pub fn load(&self, file: &Value) {
-        let Some(all) = file.as_object() else { return };
-        let mut last = self.last.lock();
+    /// As pages show them: `kept`, with `{failed: {at, why}}` where a usage command failed.
+    pub fn shown(&self) -> Value {
+        let mut out = self.kept();
+        for (k, e) in self.0.lock().iter() {
+            if let Some((at, why)) = &e.failed {
+                out[k.as_str()]["failed"] = json!({"at": at, "why": why});
+            }
+        }
+        out
+    }
+
+    /// The readings the store kept (`kept`), each judged as an event's: one out of range, or of a kind terminum
+    /// does not know, is left out; a reading heard since stands.
+    pub fn load(&self, kept: &Value) {
+        let Some(all) = kept.as_object() else { return };
+        let mut entries = self.0.lock();
         for (kind, r) in all.iter().filter(|(k, _)| crate::tmux::hookstate::agent(k).is_some()) {
             let (Some(at), Some(windows)) = (r["at"].as_i64().filter(|a| *a > 0), of_event(r)) else { continue };
-            let via = if r["via"] == "usage" { "usage" } else { "session" };
-            last.entry(kind.clone()).or_insert(Reading { at, windows, via: via.into() });
+            let via = if r["via"] == "usage" { Via::Usage } else { Via::Session };
+            entries.entry(kind.clone()).or_default().reading.get_or_insert((at, windows, via));
         }
     }
 }
@@ -186,9 +200,9 @@ mod tests {
     #[test]
     fn ac168_the_same_numbers_move_its_time_only_when_old() {
         let (r, w) = (Readings::default(), vec![Window { minutes: WEEK, used: 1.0, resets_at: None }]);
-        assert!(r.heard("claude", w.clone(), 1000, "session"));
-        assert!(!r.heard("claude", w.clone(), 1000 + FRESH - 1, "session"));
-        assert!(r.heard("claude", w, 1000 + FRESH, "session"), "an old reading's time moves: its stripes do not fade while it is said");
+        assert!(r.heard("claude", w.clone(), 1000, Via::Session));
+        assert!(!r.heard("claude", w.clone(), 1000 + FRESH - 1, Via::Session));
+        assert!(r.heard("claude", w, 1000 + FRESH, Via::Session), "an old reading's time moves: its stripes do not fade while it is said");
         assert_eq!(r.shown()["claude"]["at"], 1000 + FRESH);
     }
 
@@ -210,10 +224,10 @@ mod tests {
     #[test]
     fn ac168_the_last_reading_of_each_kind_stands() {
         let r = Readings::default();
-        assert!(r.heard("claude", vec![Window { minutes: 300, used: 10.0, resets_at: None }], 100, "session"), "the first: news");
-        assert!(r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 110, "usage"));
-        assert!(!r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 115, "usage"), "the same numbers soon after: no news");
-        assert!(r.heard("claude", vec![Window { minutes: 300, used: 12.0, resets_at: None }], 120, "session"));
+        assert!(r.heard("claude", vec![Window { minutes: 300, used: 10.0, resets_at: None }], 100, Via::Session), "the first: news");
+        assert!(r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 110, Via::Usage));
+        assert!(!r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 115, Via::Usage), "the same numbers soon after: no news");
+        assert!(r.heard("claude", vec![Window { minutes: 300, used: 12.0, resets_at: None }], 120, Via::Session));
         assert_eq!(r.shown(), json!({"claude": {"at": 120, "windows": [{"minutes": 300, "used": 12.0, "resets_at": null}], "via": "session"},
                                      "codex": {"at": 110, "windows": [{"minutes": 10080, "used": 21.0, "resets_at": 5}], "via": "usage"}}));
     }
@@ -221,21 +235,23 @@ mod tests {
     #[test]
     fn ac168_a_failed_usage_command_is_said_and_the_last_reading_stands() {
         let (r, w) = (Readings::default(), vec![Window { minutes: WEEK, used: 52.0, resets_at: None }]);
+        assert!(!r.has_failed("codex"));
         r.failed("codex", "codex: not found".into(), 50);
         assert_eq!(r.shown(), json!({"codex": {"failed": {"at": 50, "why": "codex: not found"}}}), "never a made-up 0%");
-        assert!(r.heard("claude", w.clone(), 100, "usage"));
+        assert!(r.has_failed("codex"));
+        assert!(r.heard("claude", w.clone(), 100, Via::Usage));
         r.failed("claude", "timed out".into(), 200);
         assert_eq!(r.shown()["claude"]["windows"][0]["used"], 52.0, "the last reading stands");
         assert_eq!(r.shown()["claude"]["failed"]["why"], "timed out");
-        assert!(r.heard("claude", w, 210, "usage"), "the same numbers that clear a failure are news");
+        assert!(r.heard("claude", w, 210, Via::Usage), "the same numbers that clear a failure are news");
         assert!(r.shown()["claude"]["failed"].is_null());
         assert_eq!(r.kept().get("codex"), None, "a failure is not kept");
     }
 
     #[test]
-    fn ac168_the_state_file_brings_back_the_last_readings() {
+    fn ac168_the_store_brings_back_the_last_readings() {
         let r = Readings::default();
-        r.heard("claude", vec![Window { minutes: WEEK, used: 52.0, resets_at: Some(1795000000) }], 100, "usage");
+        r.heard("claude", vec![Window { minutes: WEEK, used: 52.0, resets_at: Some(1795000000) }], 100, Via::Usage);
         let again = Readings::default();
         again.load(&r.kept());
         assert_eq!(again.shown(), r.shown());

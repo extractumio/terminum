@@ -370,8 +370,8 @@ read over an hour ago. 90% or more is drawn in the danger color. Its window says
 - **Its usage command** reads them for each kind in the pool, without a model call (no tokens spent):
   when terminumd starts, every 10 minutes while a run of that kind works on a task, as soon as one of
   its tasks ends, and hourly otherwise. The last reading is kept across restarts. By default Claude
-  Code's is `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config` and
-  Codex's is `codex app-server` (terminum asks it `account/rateLimits/read`). Change or turn one off
+  Code's is `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config
+  --setting-sources local` (none of your hooks run for it) and Codex's is `codex app-server` (terminum asks it `account/rateLimits/read`). Change or turn one off
   (`""`) in `~/.terminum/settings.json`, for example when the program is not on terminumd's PATH:
 
   ```json
