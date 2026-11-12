@@ -65,7 +65,8 @@ export async function liveFolded(page, live) {
   // a task card's play key, pressed, takes no focus: its RUN window closed or a key typed after lights no ring; Tab
   // still reaches it, ringed (docs/UI-GUIDELINES.md "Focus")
   const run = `${card(a)} .crun`;
-  for (const [how, close] of [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')], ["Esc", () => page.keyboard.press("Escape")]]) {
+  for (const [how, close] of [["Cancel, pressed,", () => page.click('#runbox button[value="cancel"]')], ["×, pressed,", () => page.click("#runbox .dhead .x")],
+    ["Esc", () => page.keyboard.press("Escape")]]) {
     await page.click(run);
     const opened = await until(() => page.isVisible("#runbox[open]"));
     await close();
