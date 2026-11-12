@@ -1212,7 +1212,10 @@ Scenario: AC-170 edge — a restart
   Given a round open, or ended, when terminumd restarts
   Then the first walk goes on from the store: no second round while one is open, and what a round left stays passed over
   Given a round made whose session never opened, terminumd having ended between
-  Then the first walk fails it, "It did not start: terminumd stopped before its session opened.", and the breaker reads that
+  Then the first walk fails it into Archived, "It did not start: terminumd stopped before its session opened.", and it is no round any more: nothing of its agent's failed, so the breaker and the rest after a round that started nothing do not read it
+  And Auto-Dispatch stays on, and that walk may make a new round, offered what the dropped one was given
+  Given a round whose press failed by its own agent or command, no session opened either
+  Then it is FAILED, "It did not start: <why>", and the breaker reads that
 ```
 
 ### AC-166 — An agent closes its task out [SHOULD / P1]

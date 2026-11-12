@@ -143,9 +143,12 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
     let mut open = false;
     for (key, id, status) in auto::rounds_shown(tx, project)? {
         if !super::plan::finished(&status) && runs::last_of(tx, &key)?.is_none() {
-            // made, and terminumd ended before its press: no run would ever move it, and it would hold the project's rounds
+            // made, and terminumd ended before its press: no run would ever move it, and nothing of its agent's failed.
+            // It fails into Archived and is no round any more: neither the breaker nor the rest after a round that
+            // started nothing reads it, and a new round may be made at once.
             super::move_one(tx, &id, "FAILED", "It did not start: terminumd stopped before its session opened.")?;
-            open = true;
+            ops::archive(tx, DISPATCHER, &id, true, now)?;
+            auto::drop_round(tx, &key)?;
         } else if !super::plan::finished(&status) || runs::holding(tx, &key)?.is_some() {
             open = true;
         } else {

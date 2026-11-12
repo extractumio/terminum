@@ -250,10 +250,18 @@ fn ac170_a_new_task_a_round_with_no_run_and_a_picker_past_its_limit() {
     store("auto-news").with(|tx| {
         let old = task(tx, "old", "P1");
         let (id, _) = round(tx);
-        // terminumd ended before its press: no run would ever move it
-        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing);
-        assert_eq!(ops::get(tx, &id)?.status, "FAILED");
-        assert!(matches!(decide(tx, "api", &setting(tx), NOW)?, Due::Off(why) if why == format!("its round {id} failed: see it in Archived.")), "a round that never started trips the breaker");
+        // terminumd ended before its press: it fails into Archived, said why, and a new round is made at once
+        let (fresh, again) = round(tx);
+        let gone = ops::get(tx, &id)?;
+        assert_eq!((gone.status.as_str(), gone.archived_at.is_some()), ("FAILED", true));
+        let why: String = tx.query_row("SELECT text FROM events WHERE task = ?1 AND kind = 'why'", [&gone.key], |r| r.get(0)).map_err(sql)?;
+        assert_eq!(why, "It did not start: terminumd stopped before its session opened.");
+        assert_eq!(auto::round_of(tx, &gone.key)?, None, "no round any more: the breaker does not read it");
+        assert!(setting(tx).on, "it stays on: nothing is wrong");
+        assert_eq!(again.candidates, std::slice::from_ref(&old.id), "what it was given is offered again");
+        // a press that failed for the picker's own fault, with no run either, still trips it
+        ops::move_to(tx, DISPATCHER, &fresh, "FAILED", NOW)?;
+        assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Off(format!("its round {fresh} failed: see it in Archived.")));
         turn_on(tx, Some("a"), NOW + 1)?;
         tx.execute("UPDATE auto_rounds SET at = ?1", [NOW - 1]).map_err(sql)?;
         // a new task is news, at once
