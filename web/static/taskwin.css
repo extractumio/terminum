@@ -64,6 +64,7 @@ dialog .markdown img { max-width: 100%; }
 .cagent::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--ag); }
 .cstate { --sev: var(--faint); }
 .cstate.working { --sev: var(--accent); }
+.cstate.background { --sev: var(--muted); }   /* as the session list's mark (style.css): quiet */
 .cstate:is(.waiting, .stopped) { --sev: var(--waiting); }
 .cstate:is(.failed, .closed) { --sev: var(--danger); color: var(--danger-text); }
 

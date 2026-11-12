@@ -201,7 +201,7 @@ pub(super) async fn do_later(app: &Shared, l: Later) {
             // its hour starts once it went; a miss (a draft, a mode, a turn begun) is asked again by a later walk, and
             // an hour of nothing ends it all the same (AC-123)
             let mark: fn(&mut Run) = if gate::deliver(app, &l.run, &server, &pane, &text, false).await.is_ok() {
-                |r| if r.idle_for >= plan::NUDGE { (r.nudged, r.idle_for) = (true, 0) }
+                |r| if r.idle_for >= plan::NUDGE { (r.nudged, r.idle_for) = (r.nudged + 1, 0) }
             } else {
                 |r| r.nudge_turn = false
             };

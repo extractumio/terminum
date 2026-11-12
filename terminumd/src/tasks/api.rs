@@ -98,7 +98,7 @@ fn with_session(t: &Task, row: Option<&Value>) -> Value {
     let mut v = serde_json::to_value(t).unwrap_or_default();
     if let Some(key) = &t.session {
         v["session"] = match row {
-            Some(it) => json!({"key": key, "state": it["state"], "agent": it["agent"], "why": it["why"], "closed": false}),
+            Some(it) => json!({"key": key, "state": it["state"], "agent": it["agent"], "why": it["why"], "background": it["background"].as_bool().unwrap_or(false), "closed": false}),
             None => json!({"key": key, "closed": true}),
         };
     }
