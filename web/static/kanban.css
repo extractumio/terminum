@@ -130,16 +130,11 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agkept { border: 1.5px dashed var(--ag); }
 /* Auto-Dispatcher's round (AC-170): a session that takes no slot: its dot a square */
 .agdot.round { border-radius: 2px; }
-/* Auto-Dispatch in the bar: a switch (its track and knob drawn; on in the accent, having turned itself off its state
-   in the danger color) and the cog of its settings; in its window the severities' ticks in a row, its rules a list */
+/* Auto-Dispatch in the bar: a switch (its track: controls.css; having turned itself off, its state in the danger color) and the cog of its settings; in its window the severities' ticks in a row, its rules a list */
 #autokeys { display: inline-flex; align-items: center; gap: var(--sp-1); }
 #autoswitch { gap: var(--sp-2); }
 #autostate { color: var(--muted); font-variant-numeric: tabular-nums; }
 #autoswitch.stopped #autostate { color: var(--danger-text); }
-#autoswitch .track { position: relative; flex: none; width: 26px; height: 14px; border-radius: 7px; background: var(--field-fill); box-shadow: var(--m-well); transition: background var(--dur-hover); }
-#autoswitch .track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform var(--dur-hover); }
-#autoswitch[aria-checked="true"] .track { background: var(--accent); }
-#autoswitch[aria-checked="true"] .track::after { transform: translateX(12px); background: var(--surface-0); }
 .autoticks { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); min-width: 0; margin: 0; padding: 0; border: 0; }
 #autobox .checkrow { align-self: start; }
 #automode { display: flex; flex-wrap: wrap; }
@@ -149,7 +144,6 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 #autorules dt { margin-top: var(--sp-2); color: var(--muted); }
 #autorules dd { margin: 0; }
 #autobox[data-mode="order"] :is(.byagent, #autoagentrow), #autobox[data-mode="agent"] .byorder { display: none; }
-@media (prefers-reduced-motion: reduce) { #autoswitch .track, #autoswitch .track::after { transition: none; } }
 .agfree { border: 1.5px solid color-mix(in srgb, var(--muted) 60%, transparent); }
 .agwait { background: color-mix(in srgb, var(--muted) 45%, transparent); }
 .agqueue { display: inline-flex; align-items: center; gap: var(--sp-1); min-height: 20px; margin-left: var(--sp-1); padding: 0 var(--sp-1); border-radius: var(--r-xs); }

@@ -152,7 +152,18 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 :is(.plnow, .ev-comment) { position: relative; padding-left: calc(var(--sp-3) + 10px);
   &::before { content: ""; position: absolute; left: 7px; top: 7px; bottom: 7px; width: 4px; border-radius: 2px; background: var(--lbar, var(--muted)); } }
 
-/* a tick, drawn: a recess, its check in the accent (as todobem's list marks its value); a switch keeps its own */
+/* a switch: turns a feature on or off (a tick says what is included): a track, its knob; on, the track in the
+   accent and the knob at its right. One look for a switch input (Settings, a window's On, Paused) and a key
+   that is one (Auto-Dispatch in the board's bar: its .track) */
+:is(input[type="checkbox"][role="switch"], [role="switch"] > .track) { appearance: none; -webkit-appearance: none; position: relative; flex: none; display: inline-block;
+  width: 26px; height: 14px; margin: 0; padding: 0; border-radius: 7px; background: var(--field-fill); box-shadow: var(--m-well); cursor: pointer; transition: background var(--dur-hover);
+  &::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--muted); transition: transform var(--dur-hover); } }
+:is(input[type="checkbox"][role="switch"]:checked, [role="switch"][aria-checked="true"] > .track) { background: var(--accent);
+  &::after { transform: translateX(12px); background: var(--surface-0); } }
+input[type="checkbox"][role="switch"] { &:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; } &:disabled { cursor: default; opacity: var(--key-disabled); } }
+@media (prefers-reduced-motion: reduce) { :is(input[type="checkbox"][role="switch"], [role="switch"] > .track), :is(input[type="checkbox"][role="switch"], [role="switch"] > .track)::after { transition: none; } }
+
+/* a tick, drawn: a recess, its check in the accent (as todobem's list marks its value): what is included */
 input[type="checkbox"]:not([role="switch"]) { appearance: none; -webkit-appearance: none; flex: none; display: inline-grid; place-content: center; width: 16px; height: 16px; margin: 0; padding: 0;
   border-radius: var(--r-xs); background: var(--field-fill); box-shadow: var(--m-well); cursor: pointer;
   &:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }

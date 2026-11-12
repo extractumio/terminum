@@ -225,7 +225,7 @@
     </fieldset>
     <div class="fieldgrid">
       <label class="fieldrow">Time budget, minutes <input id="schedbudget" class="field" type="number" min="1" max="1440" step="1"></label>
-      <label class="fieldrow checkrow"><input id="schedpaused" type="checkbox"> Paused</label>
+      <label class="fieldrow checkrow">Paused <input id="schedpaused" type="checkbox" role="switch"></label>
     </div>
     <details id="schedwhat" class="more" open><summary>What the agent gets</summary>
       <dl class="runfacts"><dt>Runs in</dt><dd id="schedplace"></dd><dt>Command</dt><dd id="schedline"></dd></dl>
@@ -333,7 +333,7 @@
     <p id="autotext">While it is on, tasks of this project start with no one pressing Run, a text an agent wrote too.</p>
     <label id="autoprojectrow" class="fieldrow">Project <select id="autoproject" class="field"></select></label>
     <p id="autowhy" role="status" hidden></p>
-    <label class="fieldrow checkrow"><input id="autoon" type="checkbox"> On: it starts this project's tasks</label>
+    <label class="fieldrow checkrow">On: it starts this project's tasks <input id="autoon" type="checkbox" role="switch"></label>
     <div class="fieldrow"><span id="automodelabel">How tasks are picked</span><div id="automode" class="seg" role="group" aria-labelledby="automodelabel"><button type="button" value="agent" aria-pressed="true">An agent scores them by RICE</button><button type="button" value="order" aria-pressed="false">By the board's order, no agent</button></div></div>
     <div class="fieldgrid">
       <label id="autoagentrow" class="fieldrow">The agent that picks: it scores the tasks by RICE <select id="autoagent" class="field"></select></label>
