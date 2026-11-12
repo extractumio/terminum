@@ -76,11 +76,11 @@ fn section(result: &str, name: &str) -> String {
     let mut inside = false;
     for line in result.lines() {
         let h = head(line);
-        if let Some(rest) = after_name(&h, name) {
+        if let Some(rest) = after_name(h, name) {
             inside = true;
             out.push_str(rest);
             out.push('\n');
-        } else if SECTIONS.iter().any(|(other, _)| after_name(&h, other).is_some()) {
+        } else if SECTIONS.iter().any(|(other, _)| after_name(h, other).is_some()) {
             inside = false;
         } else if inside {
             out.push_str(line);
