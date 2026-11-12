@@ -17,9 +17,15 @@ export function el(tag, cls, text) {
   return e;
 }
 
-/** A small icon button: its class, icon, label for a screen reader, tooltip. */
+/** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring, and a
+ *  menu it opens gives the focus back to what had it (the terminal's keys); Tab still reaches it, ringed
+ *  (docs/UI-GUIDELINES.md "Focus"). */
+export const pointerKey = (b) => { b.addEventListener("mousedown", (e) => e.preventDefault()); return b; };
+
+/** A small icon button: its class, icon, label for a screen reader, tooltip; a pointer's press leaves it unfocused
+ *  (pointerKey). Inside a draggable it starts no drag. */
 export function iconButton(cls, name, label, title, onClick) {
-  const b = el("button", cls);
+  const b = pointerKey(el("button", cls));
   b.type = "button";
   b.title = title;
   b.setAttribute("aria-label", label);
@@ -27,10 +33,6 @@ export function iconButton(cls, name, label, title, onClick) {
   b.addEventListener("click", (e) => { e.stopPropagation(); onClick(b); });
   return b;
 }
-
-/** A pointer's press leaves the key unfocused: no later key (Esc in Chrome) or closing window lights its ring;
- *  Tab still reaches it, ringed (docs/UI-GUIDELINES.md "Focus"). */
-export const pointerKey = (b) => { b.addEventListener("mousedown", (e) => e.preventDefault()); return b; };
 
 // Projects' colors (AC-92): ten hues far apart, in pastel (tokens.css), so two projects never read as one
 export const PROJECT_HUES = [25, 145, 265, 85, 205, 325, 55, 175, 295, 115];
