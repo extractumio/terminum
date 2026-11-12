@@ -157,8 +157,8 @@ const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
 const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
-const NOTES_ALONE = process.argv.includes("notes");
-const ICONS_ALONE = process.argv.includes("iconkeys");   // while working on icon keys' focus       // while working on bookmarks, reminders and their tasks
+const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
+const ICONS_ALONE = process.argv.includes("iconkeys");    // while working on icon keys' focus
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
