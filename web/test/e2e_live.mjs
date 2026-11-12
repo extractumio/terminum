@@ -21,6 +21,7 @@ import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
+import { liveRequests } from "./e2e_liverequests.mjs";
 import { liveFolds } from "./e2e_livefolds.mjs";
 import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
@@ -153,6 +154,7 @@ const BOARD_ALONE = process.argv.includes("board");
 const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
 const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
 const SMOKE = process.argv.includes("smoke");
+const REQUESTS_ALONE = process.argv.includes("requests");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
 const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
@@ -191,6 +193,7 @@ async function wide(browser, name) {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
+  if (REQUESTS_ALONE) { await liveRequests(page, live); return ctx; }
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
     return ctx;
@@ -395,6 +398,7 @@ async function phone(browser, name) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: name === "chromium", hasTouch: true, reducedMotion: "reduce" });
   const page = await ctx.newPage();
   await signIn(page);
+  if (REQUESTS_ALONE) { await liveRequests(page, { base: BASE, tmux, work: WORK }); await ctx.close(); return; }
   if (SORT_ALONE) {
     await liveBoardSort(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
     await ctx.close();

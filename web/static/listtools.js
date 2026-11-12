@@ -3,6 +3,7 @@
 // its width, "New session", "Add host" and "Attach tmux sessions" (addtmux.js), "New session" also as
 // [+] in its head (its form then under the head), a host group's menu (retry, off, on, remove, attach
 // its tmux sessions) and an attached session's (detach).
+import { Requests } from "./requests.js";
 import { addTmux } from "./addtmux.js";
 import { hostAgents } from "./hostagents.js";
 import { inside, placeModal } from "./fabpane.js";
@@ -11,7 +12,7 @@ import { askConfirm } from "./dialogs.js";
 const $ = (id) => document.getElementById(id);
 
 /** Wires them; `groups()`: the layout's; `onResize()` after the width changed. */
-export function listTools({ send, store, groups, onResize = () => {} }) {
+export function listTools({ send, store, groups, onResize = () => {}, onCreated = () => {} }) {
   // The session list's width, dragged at its border (wide screens), remembered per browser.
   const NAV_MIN = 200, NAV_MAX = 640;
   function setNavWidth(px, save) {
@@ -55,33 +56,34 @@ export function listTools({ send, store, groups, onResize = () => {} }) {
   // form waits for terminumd: its error shows in the form, a new session closes it.
   let pending = null;                              // the form whose request is on its way
   const FORMS = ["newsess", "addhost", "addtmux"];
-  function openForm(id, button) {
+  function openForm(id) {
     for (const [f, b] of FORMS.map((f) => [f, `${f}btn`])) {
       const on = f === id && $(f).hidden;
       $(f).hidden = !on;
       $(b).setAttribute("aria-expanded", String(on));
       if (on) { placeModal($(f), () => closeForm(f)); $(`${f}err`).textContent = ""; $(f).querySelector("input").focus(); }
     }
-    if (button && $(id).hidden) pending = null;
+    if (pending && $(pending.id).hidden) { pending.reads.cancel(); pending = null; }
   }
   const closeForm = (id) => {
     $(id).hidden = true;
     $(`${id}btn`).setAttribute("aria-expanded", "false");
     if (id === "newsess") $("navnew").setAttribute("aria-expanded", "false");
-    if (pending === id) pending = null;
+    if (pending?.id === id) { pending.reads.cancel(); pending = null; }
+    if (id === "addtmux") tmux.cancel();
   };
   // New session opens its form by the button pressed: under the list's head for [+], above the foot for the foot's
   const spot = $("newsess").nextElementSibling;
-  $("newsessbtn").onclick = () => { if ($("newsess").hidden) spot.before($("newsess")); openForm("newsess", true); };
+  $("newsessbtn").onclick = () => { if ($("newsess").hidden) spot.before($("newsess")); openForm("newsess"); };
   $("navnew").onclick = () => {
     if ($("newsess").hidden) $("sessions").before($("newsess"));
-    openForm("newsess", true);
+    openForm("newsess");
     $("newsessbtn").setAttribute("aria-expanded", "false");   // the foot stays folded (foot.css)
     $("navnew").setAttribute("aria-expanded", String(!$("newsess").hidden));
   };
-  $("addhostbtn").onclick = () => openForm("addhost", true);
+  $("addhostbtn").onclick = () => openForm("addhost");
   const agents = hostAgents(send);
-  const tmux = addTmux({ send, groups, openForm, closeForm, setPending: (f) => { pending = f; } });
+  const tmux = addTmux({ send, groups, openForm, closeForm, submit: (msg) => submit("addtmux", msg, () => tmux.added()) });
   $("addtmuxbtn").onclick = () => { if ($("addtmux").hidden) tmux.open(); else closeForm("addtmux"); };
   for (const f of FORMS) {
     $(f).addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); closeForm(f); } });
@@ -91,41 +93,38 @@ export function listTools({ send, store, groups, onResize = () => {} }) {
     e.preventDefault();
     const name = $("newsessname").value.trim();
     $("newsesserr").textContent = "";
-    pending = "newsess";
-    send({ t: "newsession", name });
+    submit("newsess", { t: "newsession", name }, (m) => { closeForm("newsess"); $("newsessname").value = ""; onCreated(m); });
   });
   $("addhost").addEventListener("submit", (e) => {
     e.preventDefault();
     $("addhosterr").textContent = "";
-    pending = "addhost";
-    send({ t: "addhost", name: $("addhostname").value.trim(), recipe: $("addhostssh").value.trim() });
+    submit("addhost", { t: "addhost", name: $("addhostname").value.trim(), recipe: $("addhostssh").value.trim() }, (m) => hostAdded(m.name), 180000);
   });
-  /** An `error` from terminumd: true when it answers a form's request (shown there). */
-  function formError(msg) {
-    if (!pending) return false;
-    $(`${pending}err`).textContent = msg;
-    pending = null;
-    return true;
+  async function submit(id, msg, done, ms = 15000) {
+    if (pending?.id === id) return;
+    pending?.reads.cancel();
+    const op = pending = { id, reads: new Requests(send) };
+    const button = $(id).querySelector('[type="submit"]');
+    if (button) button.disabled = true;
+    try {
+      const m = await op.reads.ask(msg, { ms });
+      if (pending === op && !$(id).hidden) done(m);
+    } catch (e) {
+      if (pending === op && e.name !== "AbortError") $(`${id}err`).textContent = e.message;
+    } finally {
+      if (pending === op) pending = null;
+      if (!pending || pending.id !== id) { if (button) button.disabled = false; }
+    }
   }
-  /** A new layout: the session or host asked for is there, and its form closes. */
-  function layoutCame(gs) {
-    const has = (name) => gs.some((g) => g.wid === name || g.label === name || g.host === name);
-    if (pending === "newsess" && has($("newsessname").value.trim())) { closeForm("newsess"); $("newsessname").value = ""; }
-    tmux.layoutCame(gs);
-  }
+  function layoutCame(gs) { tmux.layoutCame(gs); }
   /** terminumd added the host (its group follows in a layout): the form closes; once the host
    *  is attached its other tmux sessions are offered (AC-89). */
   function hostAdded(name) {
-    if (pending !== "addhost") return;
+    if (pending?.id !== "addhost") return;
     closeForm("addhost");
     $("addhostname").value = $("addhostssh").value = "";
     tmux.hostAdded(name);
   }
-  /** terminumd attached the sessions: the form closes. */
-  function tmuxAdded() {
-    if (pending === "addtmux") tmux.added();
-  }
-
   // A host group's menu (AC-81): retry now, off or on, remove (asked first); an attached
   // session's (AC-89): detach, which leaves the session running.
   function hostMenu(g, button) {
@@ -171,10 +170,7 @@ export function listTools({ send, store, groups, onResize = () => {} }) {
 
   /** terminumd's answers to its forms. */
   function seen(m) {
-    if (m.t === "hostadded") hostAdded(m.name);
-    else if (m.t === "hostagents") agents.answered(m);
-    else if (m.t === "tmuxadded") tmuxAdded();
-    else if (m.t === "tmuxsessions") tmux.choices(m);
+    if (m.t === "hostagents") agents.answered(m);
   }
-  return { reconnect: (g) => send({ t: "hostaction", name: g.host, action: "retry" }), formError, layoutCame, seen, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu };
+  return { reconnect: (g) => send({ t: "hostaction", name: g.host, action: "retry" }), layoutCame, seen, importTmux: (g) => tmux.open(`${g.host}:default`), hostMenu };
 }

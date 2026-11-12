@@ -9,6 +9,7 @@
 // (or Delete, ⌫) settles it at once in the list, a reminder resolved and a bookmark deleted, with
 // Undo for 5 s: only then terminumd is told. The bar after a jump has the same Resolve. The
 // reminders' button's pane is the same navigator of the open reminders only, those up first (AC-91).
+import { Requests } from "./requests.js";
 import { icon } from "./icons.js";
 import { openReminder, when } from "./listparts.js";
 import { chatText, el, INSERT } from "./marks.js";
@@ -55,6 +56,7 @@ export class MarkNav {
     this.pane = $(pane);
     this.pending = peer?.pending ?? new Map();    // id -> timer: settled in the list, terminumd told when it fires
     this.sends = peer?.sends ?? new Map();        // id -> what terminumd is told when its Undo runs out
+    this.failures = peer?.failures ?? new Map();
     this.navs = peer?.navs ?? new Set();          // the navigators sharing them: drawn again with a change of it
     this.navs.add(this);
     // what it lists, while this page is open: reloaded, a session's own again; the reminders' pane: its session's reminders
@@ -70,7 +72,15 @@ export class MarkNav {
     if (peer) return;
     $("mbdone").onclick = () => { const s = this.m.shown; if (s) (this.pending.has(s.id) ? this.undo(s.id) : this.done(s)); };
     // the page closing or reloading within the Undo's 5 s: what was done is told at once, never lost
-    addEventListener("pagehide", () => { for (const [id, msg] of this.sends) { clearTimeout(this.pending.get(id)); this.m.send(msg); } this.sends.clear(); });
+    addEventListener("pagehide", () => {
+      for (const [id, op] of this.sends) {
+        clearTimeout(this.pending.get(id)); this.pending.delete(id);
+        if (op.state === "undo") this.commit(id);
+        op.state = "offline";
+      }
+      for (const op of this.sends.values()) op.reads?.cancel();
+    });
+    addEventListener("pageshow", (e) => { if (e.persisted) this.flush(); });
   }
 
   /** The scope in force: Project is the session's own for a session in no project. */
@@ -111,7 +121,7 @@ export class MarkNav {
     if (!all.length) return void (this.listed = "");
     // drawn again only when what it shows changed (the layout comes often while agents work: a scroll and a press kept)
     // (the records' own changes counted by Marks.changed, so their texts are not compared)
-    const key = JSON.stringify([heading.textContent, this.chosen, others, this.m.rev, all.map((b) => [b.id, this.pending.has(b.id), this.m.alive(b.sid)])]);
+    const key = JSON.stringify([heading.textContent, this.chosen, others, this.m.rev, all.map((b) => [b.id, this.pending.has(b.id), this.sends.get(b.id)?.state, this.failures.get(b.id), this.m.alive(b.sid)])]);
     if (key === this.listed) return;
     this.listed = key;
     list.replaceChildren(...all.map((item, i) => this.row(item, others, `${i + 1} / ${all.length}`)));
@@ -257,6 +267,9 @@ export class MarkNav {
     line.append(meta, el("span", "mkpos", place));
     b.append(line, title);
     if (item.note && words) b.append(el("span", "snip", words));
+    if (this.failures.has(item.id)) li.append(el("span", "err", this.failures.get(item.id)));
+    const op = this.sends.get(item.id);
+    if (op && !pending) li.append(el("span", "mkhint", op.state === "offline" ? "Waiting for connection…" : "Saving…"));
     b.onclick = () => this.choose(item);
     li.append(b);
     if (pending) {
@@ -275,22 +288,47 @@ export class MarkNav {
     if (MOUSE?.matches && !this.pane.hidden) this.pane.focus({ preventScroll: true });
   }
 
-  /** Settled in the list at once; terminumd told after UNDO unless undone. */
+  /** Undo keeps its timer; committed intent remains until acknowledgement or visible failure. */
   done(item) {
-    if (this.pending.has(item.id)) return;
+    if (this.sends.has(item.id)) return;
     const msg = item.remind ? { t: "remind", id: item.id, action: "resolve" } : { t: "unmark", id: item.id };
-    this.sends.set(item.id, msg);
-    this.pending.set(item.id, setTimeout(() => {
-      this.pending.delete(item.id);
-      this.sends.delete(item.id);
-      this.m.send(msg);
-      if (this.m.shown?.id === item.id) this.m.hideBar();
-      for (const n of this.navs) n.draw();
-    }, UNDO));
+    this.failures.delete(item.id);
+    this.sends.set(item.id, { msg, state: "undo" });
+    this.pending.set(item.id, setTimeout(() => this.commit(item.id), UNDO));
     this.sync(item.id);
   }
 
+  flush() { for (const [id, op] of this.sends) if (op.state === "offline") this.commit(id); }
+
+  async commit(id) {
+    const op = this.sends.get(id);
+    if (!op || op.state === "sending") return;
+    clearTimeout(this.pending.get(id)); this.pending.delete(id);
+    op.state = "sending";
+    this.sync(id);
+    try {
+      // A disconnected send keeps the intent, without replaying anything typed into a terminal.
+      const reads = new Requests(this.m.send);
+      op.reads = reads;
+      await reads.ask(op.msg);
+      if (this.sends.get(id) !== op) return;
+      this.sends.delete(id);
+      if (this.m.shown?.id === id) this.m.hideBar();
+    } catch (e) {
+      if (this.sends.get(id) !== op || e.name === "AbortError") return;
+      if (e.unsent) {
+        op.state = "offline";
+        this.m.toast("Resolve or delete is waiting for the connection.", 5000);
+      } else {
+        this.sends.delete(id);
+        this.failures.set(id, e.message);
+        this.m.toast(`Resolve or delete failed: ${e.message}`, 5000);
+      }
+    } finally { this.sync(id); }
+  }
+
   undo(id) {
+    if (!this.pending.has(id)) return;
     clearTimeout(this.pending.get(id));
     this.pending.delete(id);
     this.sends.delete(id);

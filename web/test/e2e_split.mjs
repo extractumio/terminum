@@ -88,7 +88,7 @@ export async function webSplit(browser, name) {
   const opened = p.sent.slice(from).filter((m) => m.t === "quick").map((m) => m.id);
   check("split on a phone: the button under the magnifier (finger-sized) opens the pane's quick shell, shown alone",
     fab.shown && /Quick shell/.test(fab.label) && opened.join() === SID, JSON.stringify({ fab, opened }));
-  p.say({ t: "quickmade", id: QUICK });                                   // terminumd made it (or found it): the phone shows it
+  p.say({ t: "quickmade", id: QUICK, for: SID, ref: p.sent.filter((m) => m.t === "quick").at(-1)?.ref });                                   // terminumd made it (or found it): the phone shows it
   await p.page.waitForFunction((id) => document.querySelector(`#sessions .item.on[data-id="${id}"]`), QUICK, { timeout: 3000 }).catch(() => {});
   const onQuick = await p.page.evaluate(() => document.getElementById("splitfab").getAttribute("aria-label"));
   await pressFab(p.page, "#splitfab");

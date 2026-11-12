@@ -106,6 +106,7 @@ export class Marks {
 
   /** Every message from the bridge (after app.js dropped those of another pane). */
   seen(m) {
+    if (m.t === "marks") this.nav.flush();
     this.jumper.seen(m);
     this.search.seen(m);
     switch (m.t) {
@@ -168,6 +169,7 @@ export class Marks {
     // one ref per dialog: a save sent again after no answer is kept once (bookmarks.py)
     // what is kept: terminumd's `most` characters (a program's copy can be 1 MB), never half an emoji
     const most = this.most ?? 2000, chars = item ? null : Array.from(sel.text.slice(0, 2 * most + 2)), text = chars?.slice(0, most).join("");
+    this.saving = false;
     this.editing = { ref: Math.random().toString(36).slice(2), ...(item ? { id: item.id } : { sid: this.sid(), ...sel, text }) };
     this.setKind(item?.remind ? "reminder" : "bookmark");
     $("marktext").textContent = item ? item.text : text + (chars.length > most ? `\n… (the first ${most.toLocaleString("en")} characters are kept)` : "");
@@ -195,15 +197,18 @@ export class Marks {
   async submit(e) {
     if (e.submitter?.value !== "save" || !this.editing) return;   // Cancel closes it
     e.preventDefault();
+    if (this.saving) return;
     const save = $("markbox").querySelector(".primary"), ed = this.editing, ref = ed.ref, note = $("marknote").value;
     save.disabled = true; this.saving = true;
     const reply = await new Promise((resolve) => {
       const timer = setTimeout(() => resolve({ error: "The Mac did not answer: is the connection back?" }), ANSWER);
       this.replies.set(ref, (m) => { clearTimeout(timer); resolve(m); });
       const remind = this.kind === "reminder";
-      this.send(ed.id ? { t: "mark", ref, id: ed.id, note, remind } : { t: "mark", ref, sid: ed.sid, n: ed.n, text: ed.text, note, remind });
+      const sent = this.send(ed.id ? { t: "mark", ref, id: ed.id, note, remind } : { t: "mark", ref, sid: ed.sid, n: ed.n, text: ed.text, note, remind });
+      if (sent === false) { clearTimeout(timer); resolve({ error: "Not connected: try Save again when the connection is back." }); }
     });
     this.replies.delete(ref);
+    if (this.editing !== ed) return;
     save.disabled = false; this.saving = false;
     if (reply.error) { $("markerr").textContent = reply.error; $("markerr").hidden = false; return; }
     $("markbox").close();

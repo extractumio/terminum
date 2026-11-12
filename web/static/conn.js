@@ -12,6 +12,7 @@ const QUIET = 3000;          // ms down before the page says so: a restart takes
 /** onOpen(ws): a connection is up; onMessage(m): a message from terminumd; status(text): the
  *  status line; busy(): a Files or View frame has unsaved edits (no reload then). */
 export function connection({ onOpen, onMessage, status, busy, parse }) {
+  let authGeneration = 0, loginPending = false;
   let ws = null, timer = 0, quiet = 0, downSince = 0, stopped = false, connecting = false, unproven = RETRY;
 
   function lost(text = "terminum's server is not running") {
@@ -30,11 +31,13 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
     clearTimeout(timer);
     if (stopped || connecting || ws?.readyState === 0 || ws?.readyState === 1) return;
     connecting = true;
+    const attempt = authGeneration;
     let p;
     try {
       signin.invalidate();
       p = await signin.prove();
     } finally { connecting = false; }
+    if (attempt !== authGeneration) { if (!stopped) connect(); return; }
     if (stopped) return;
     const waited = signin.unanswered();
     if (p === "down") return lost(waited ? `No answer from terminum's server within ${waited / 1000} s` : undefined);
@@ -47,7 +50,7 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
     }
     unproven = RETRY;
     const sock = ws = new WebSocket(signin.socketUrl(), signin.protocols());
-    sock.onopen = () => { downSince = 0; clearTimeout(quiet); status(""); signedIn(); onOpen(sock); };
+    sock.onopen = () => { if (ws !== sock || stopped || attempt !== authGeneration) return sock.close(); downSince = 0; clearTimeout(quiet); status(""); signedIn(); onOpen(sock); };
     sock.onmessage = (ev) => onMessage(parse(ev.data));
     sock.onclose = async () => {
       if (ws !== sock || stopped) return;
@@ -60,10 +63,12 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
   /** Signed out (or never signed in): the password form, or how to set a password while
    *  none is set. False when signed in or terminumd does not answer. */
   async function askSignIn() {
+    const attempt = authGeneration;
     const signal = deadline();                     // an answer that never ends counts as none
     const r = await fetch("/auth/check", { signal }).catch(() => null);
     if (r?.status !== 401) return false;
     const m = await r.json().catch(() => (signal.aborted ? null : {}));
+    if (attempt !== authGeneration) return true;
     if (!m) return false;
     const had = signin.held();
     signin.forget();                               // refused: never sent again
@@ -92,6 +97,7 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
 
   /** The password form with `message`; `none`: no password is set, so the form waits. */
   function showLogin(message = "", none = false) {
+    authGeneration++; loginPending = false;
     stopped = true;
     $("app").hidden = true; $("login").hidden = false;
     $("loginerr").textContent = message;
@@ -108,11 +114,24 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
 
   $("login").addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (loginPending || $("password").disabled) return;
+    const attempt = ++authGeneration;
+    loginPending = true;
+    $("login").querySelector("button").disabled = true;
     $("loginerr").textContent = "";
-    const r = await fetch("/auth/login", { method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password: $("password").value }) }).catch(() => null);
-    if (!r) return showLogin("terminum's server does not answer.");
-    const m = await r.json().catch(() => ({}));
+    const signal = deadline(15000);
+    let r, m;
+    try {
+      r = await fetch("/auth/login", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: $("password").value }), signal });
+      m = await r.json();
+    } catch {
+      if (attempt === authGeneration) showLogin(signal.aborted ? "Sign-in did not answer within 15 s. Try again." : "terminum's server does not answer.");
+      return;
+    }
+    if (attempt !== authGeneration) return;
+    loginPending = false;
+    $("login").querySelector("button").disabled = false;
     if (r.ok && m.secret) { $("password").value = ""; signin.adopt(m.secret); stopped = false; return connect(); }
     if (m.reason === "no_password") return showLogin(m.message, true);
     const why = { wrong: "Wrong password.", locked: "Too many wrong passwords." }[m.reason] ?? (m.message || "Sign-in failed.");
@@ -121,6 +140,7 @@ export function connection({ onOpen, onMessage, status, busy, parse }) {
 
   // The sign-in ends here whatever terminumd answers; what it could not do is said on the form.
   async function signOut() {
+    authGeneration++; loginPending = false; stopped = true;
     const was = ws; ws = null; was?.close();
     const r = await fetch("/auth/logout", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }).catch(() => null);
     const m = r && !r.ok && r.status !== 401 ? await r.json().catch(() => ({})) : {};

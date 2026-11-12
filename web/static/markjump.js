@@ -135,9 +135,7 @@ export class Jumper {
         if (step > STEPS) return { why: "The lines did not come: try again." };
         const v = this.view, first = v.hist.length ? v.hist[0].n : v.top;
         if (at.n < first && first > v.oldest) {          // older lines first, in one page
-          v.loading = true;
-          this.send({ t: "more", before: first, to: at.n - CONTEXT });
-          await this.wait((m) => m.t === "hist" && m.mode === "prepend");
+          await v.older(first, at.n - CONTEXT);
           continue;
         }
         if (!v.recordAt(at.n)) return { why: "These lines are no longer in this session's history.", gone: true };
@@ -145,9 +143,7 @@ export class Jumper {
         if (!f) break;
         const folds = this.widgets.folds;
         if (folds.records(f).some((r) => r.gone)) {     // its lines were never sent: asked for
-          folds.ask(f, "show");
-          const m = await this.wait((x) => x.t === "lines");
-          if (m.error) return { why: m.error };
+          await folds.ask(f, "show");
         } else {
           folds.open.add(f.n);
           this.widgets.keepPlace(() => folds.apply());
@@ -159,7 +155,6 @@ export class Jumper {
       return shown instanceof Range || !needle ? { ok: true } : { ok: true, note: "Its text was not found there: this is the line it was on." };
     } finally {
       this.view.holding = Math.max(0, (this.view.holding || 0) - 1);
-      this.view.loading = false;
     }
   }
 
