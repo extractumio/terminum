@@ -166,7 +166,9 @@ class Fresh(Repo):
                         "git clean -fd", "git switch -c x", "git pull", "git checkout .", "git restore .", "git merge x",
                         f"cat <<EOF > {tracked}\nbody\nEOF", f"cd {self.primary} && rm {tracked}", f"git -C {self.primary} stash",
                         "TM_EDIT_PRIMARY=1 echo hi", "export TM_EDIT_PRIMARY=1", f'echo "n: $(echo x > {tracked})"',
-                        f'echo "$(cd /tmp && echo "$(touch {self.primary}/{tracked})")"', f'echo "$(printf ")") $(rm {tracked})"'):
+                        f'echo "$(cd /tmp && echo "$(touch {self.primary}/{tracked})")"', f'echo "$(printf ")") $(rm {tracked})"',
+                        f'echo "$(touch {tracked})"; cd /tmp', f'echo "$(cd /tmp)" && touch {tracked}',
+                        f'v="$(cd /tmp && pwd)"; rm {tracked}', f'echo "$(cd /tmp) $(rm {tracked})"'):
             self.assertTrue(self.shell_refused(command, self.primary), command)
         for command in (f"cat {tracked}", f"grep '>' {tracked}", f'grep ">" {tracked}', f"grep -n sed {tracked}", "git status",
                         "git log -3", "git diff", "git fetch origin", "git stash list", "git worktree list", "make land SLUG=x",
@@ -176,7 +178,9 @@ class Fresh(Repo):
                         "sed -i '' 's/a/b/' /tmp/x", "perl -pi -e 's/a/b/' /tmp/x", "sed -i.bak -e s/a/b/ /tmp/x", "(( n > 1 )) && echo y",
                         "[[ a > b ]] && echo y", 'cd "$WORK" && rm f && git add x', 'pushd "$WORK" && touch g',
                         # a $( ) in double quotes keeps its own quotes: the > is Python's, not a redirection
-                        'echo "$s $(python3 -c "print(L[2] if len(L)>2 else \'\')")"', 'echo "$((1 > 2)) $(echo \')\' > /tmp/x)"'):
+                        'echo "$s $(python3 -c "print(L[2] if len(L)>2 else \'\')")"', 'echo "$((1 > 2)) $(echo \')\' > /tmp/x)"',
+                        'cd "$(mktemp -d)" && touch f', 'echo "$(cd /tmp && touch f)"', 'echo hi > "$(mktemp)"',
+                        f'echo "\\$(rm {tracked})"', f'cd /tmp && echo "$(cd {self.primary}) $(rm f)"'):
             self.assertFalse(self.shell_refused(command, self.primary), command)
         for command in (f"echo x > {tracked}", "git add x", "git commit -m x", "rm x", "echo x > project-memory/log.md", "rm project-memory"):
             self.assertFalse(self.shell_refused(command, tree), command)
