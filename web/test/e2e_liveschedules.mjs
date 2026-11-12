@@ -78,7 +78,6 @@ export async function liveFolded(page, live) {
   await tabKey(page);
   const r = await ring(page, run);
   check("AC-138 Tab still reaches the card's play key and rings it", r.focused && r.lit, JSON.stringify(r));
-  await page.evaluate(() => document.activeElement?.blur());
   for (const id of ids) await j(`/api/task-agents/${id}`, "DELETE");
   for (const id of [a, b]) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 }
