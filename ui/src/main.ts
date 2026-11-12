@@ -13,6 +13,7 @@ import { contextMenu } from "./context-menu";
 import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
+import { initSplitter } from "./splitter";
 import { Tree, type EditMode } from "./tree";
 import { bindDrag, bindHold } from "./tree-drag";
 import { bindDrop } from "./tree-drop";
@@ -95,16 +96,17 @@ function failed(kind: string, text: string) {
 
 /** One workspace PUT at a time, each taking the snapshot when it starts: terminumd gets this
  *  panel's writes in order, and `ambiguous` always belongs to the PUT that is current. */
-let saving: Promise<void> = Promise.resolve();
-function saveNow(): Promise<void> {
+let saving: Promise<boolean> = Promise.resolve(true);
+/** Resolves false when this panel's state is not on terminumd yet (said, sent again later). */
+function saveNow(): Promise<boolean> {
   clearTimeout(saveTimer);
   saving = saving.then(saveOnce, saveOnce);
   return saving;
 }
 
-async function saveOnce() {
+async function saveOnce(): Promise<boolean> {
   const snap = snapshot(), k = key;
-  if (!snap || !k || content(snap) === content(ws!)) return;
+  if (!snap || !k || content(snap) === content(ws!)) return true;
   const previous = ws, run = workspaceRun;
   const current = () => key === k && ws === previous && run === workspaceRun;
   try {
@@ -112,20 +114,22 @@ async function saveOnce() {
     ambiguous = null;
     warned.delete("workspace");
     if (current()) { workspaceRun++; ws = { ...snap, rev: r.rev }; }
+    return true;
   } catch (e) {
     if (e instanceof ApiError && e.code === "stale_rev" && current()) {
       workspaceRun++;
       const theirs = e.body.current as Pane;
       // our own earlier write landed although its answer was lost: keep what changed since, on its rev
-      if (ambiguous?.key === k && content(theirs) === ambiguous.content) { ambiguous = null; ws = theirs; scheduleSave(); return; }
+      if (ambiguous?.key === k && content(theirs) === ambiguous.content) { ambiguous = null; ws = theirs; scheduleSave(); return false; }
       ambiguous = null;
       // another page showing this pane, or a cd, won the race: take the server's version
       await applyWorkspace(theirs);
-      return;
+      return true;
     }
     // fail loud; the snapshot stays unsaved (ws unchanged): the next change or reconnect retries
     if (!(e instanceof ApiError) || e.code === "network") ambiguous = { key: k, content: content(snap) };   // api() wraps a network error
     failed("workspace", `Panel state not saved: ${(e as Error).message}`);
+    return false;
   }
 }
 
@@ -332,19 +336,6 @@ function setSplit(r: number) {
   $("app").style.setProperty("--split", `${prefs.split * 100}%`);
 }
 
-function initSplitter() {
-  const sp = $("splitter");
-  sp.addEventListener("pointerdown", (e) => {
-    sp.setPointerCapture(e.pointerId);
-    const app = $("app").getBoundingClientRect(), top = $("tree").getBoundingClientRect().top;
-    const move = (ev: PointerEvent) => setSplit((ev.clientY - top) / (app.bottom - top));
-    const up = () => { sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up); savePrefs(); };
-    sp.addEventListener("pointermove", move);
-    sp.addEventListener("pointerup", up);
-  });
-  sp.addEventListener("dblclick", () => { setSplit(0.5); savePrefs(); });
-}
-
 // ── wiring ───────────────────────────────────────────────────────────────────
 
 // ⌘-click asks the page for a window of its own (AC-70); without a page around, a tab here
@@ -479,7 +470,8 @@ if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page
 
 (async () => {
   if (VIEW) return startViewer(VIEW);
-  initSplitter();
+  initSplitter($("splitter"), () => ({ top: $("tree").getBoundingClientRect().top, bottom: $("app").getBoundingClientRect().bottom }),
+    setSplit, savePrefs);
   renderHeader(term);
   // this panel starts from the latest layout; changing it later updates the default only
   let denied = "";

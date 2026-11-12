@@ -44,12 +44,14 @@ export class Pager {
     }
   }
 
-  /** Re-find expanded children after their folder was re-read; drop the ones that are gone. */
+  /** Re-find expanded children after their folder was re-read; drop the ones that are gone.
+   *  A newer read of the folder (a refresh, another listing) starts its own and ends this one. */
   private async relocate(n: DirNode) {
-    const epoch = this.host.epoch;
+    const epoch = this.host.epoch, read = n.read, gen = n.gen;
     for (const [name, c] of [...n.children]) {
       const idx = await this.locate(n, name).catch(() => null);
-      if (epoch !== this.host.epoch) return;
+      if (epoch !== this.host.epoch || read !== n.read || gen !== n.gen) return;
+      if (n.children.get(name) !== c) continue;     // collapsed or opened again meanwhile
       if (idx == null || idx >= n.total) this.host.collapse(join(n.path, name));
       else c.idx = idx;
     }

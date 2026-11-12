@@ -176,7 +176,7 @@ Scenario: AC-53 error — gone or not a regular file
 Scenario: AC-54 happy path — rendered by default, source on a click
   When the user clicks "README.md"
   Then the tab opens Rendered: proportional text, headings, tables, task lists, footnotes, fenced ```rust highlighted (as the editor highlights it), relative images shown
-  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it
+  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it; Mermaid's code that did not load (a gap, a restart) is loaded again at the document's next render; a theme changed twice while diagrams are drawn leaves them drawn for the last one
   When the user clicks "Source"
   Then Markdown source with Markdown highlighting; the choice is remembered for the tab
 
@@ -231,6 +231,7 @@ Scenario: AC-56 edge — closing, competing saves, renames, size
   And of two pages saving the same etag (symlink aliases included) exactly one succeeds and the other sees the conflict; a save pending across a rename retries on the current path and a stale old-path reply cannot mark it clean
   And a 9 MB file saves; a body over 6 × the text limit answers 413 as JSON; a 255-byte basename saves with no temp file left; a conflict dialog of one host's file is discarded only for that document when the pane switches hosts
   And a change by another program while the copy is written is seen just before it replaces the file ("app.py changed on disk"); Overwrite of a file deleted on disk never writes over one another program made there meanwhile ("app.py was made on disk meanwhile"); the copies a stopped terminumd left in a folder (`.fb-*.tmp`, `.tm-upload-*.part`, an hour old) go at its first save or upload
+  And a save that recreates a file deleted on disk (Overwrite) takes its "Deleted on disk" banner away
 ```
 
 ### AC-57 — Create [SHOULD / P1]
@@ -335,7 +336,8 @@ Scenario: AC-61 edge — a failed watch, bursts and stale listings
   When the same folder is requested again after the cause clears
   Then the watch is retried and only successfully installed subscriptions count as watched
   When "npm install" writes 40,000 files into an expanded "node_modules"
-  Then the tree updates at most twice a second; an older listing page arriving after a fresh one cannot replace it
+  Then the tree updates at most twice a second; an older listing page arriving after a fresh one cannot replace it, nor an older re-finding of an expanded folder's children collapse one a newer read found
+  And of two re-checks of an open file, or a re-check sent before a save, the older answer arriving last is dropped: the tab keeps the newer content
 
 Scenario: AC-61 failure — a lagged remote stream
   Given a host's event stream falls behind and reconnects
@@ -363,7 +365,7 @@ Scenario Outline: AC-62 happy path — shortcuts in the tree
     | ⌥→ / ⌥←   | expand all / collapse all below (AC-68)         |
 
 Scenario: AC-62 edge — shortcuts stay in the panel
-  Then keys pressed in the panel never reach the terminal, and ⌘N, ⌘W, ⌘T are left to the browser; End or PageDown on an unloaded page selects the loaded target row and Delete cannot delete the previous one
+  Then keys pressed in the panel never reach the terminal, and ⌘N, ⌘W, ⌘T are left to the browser; End or PageDown on an unloaded page selects the loaded target row and Delete cannot delete the previous one; ← on a file selects its folder only if the tree still shows that folder's root and no other selection came meanwhile
 ```
 
 ### AC-63 — Filter [SHOULD / P1]
@@ -784,17 +786,17 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 ## 11. Checklist with Definition of Done
 
 - [x] AC-51 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `ui/test/e2e_layout.mjs`, `web/test/e2e_header.mjs`, `scripts/e2e_hooks.py`
-- [x] AC-52 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `cargo test listing`, `scripts/bench_ls.sh`
+- [x] AC-52 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_more.mjs`, `ui/test/e2e_layout.mjs` (the splitter), `cargo test listing`, `scripts/bench_ls.sh`
 - [x] AC-53 — `ui/test/e2e_panel.mjs`, `cargo test files`
 - [x] AC-54 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_docs.mjs`, `ui/test/e2e_panel_more.mjs`, `ui/test/markdown.test.mjs`
 - [x] AC-55 — `ui/test/e2e_panel.mjs`, `cargo test workspace`
-- [x] AC-56 — `ui/test/e2e_panel.mjs`, `cargo test ops` (a stop's leftover copies swept)
+- [x] AC-56 — `ui/test/e2e_panel.mjs`, `ui/test/viewer-save.test.mjs`, `cargo test ops` (a stop's leftover copies swept)
 - [x] AC-57 — `ui/test/e2e_panel.mjs`, `ui/test/tree-cancel.test.mjs`, `web/test/e2e_live.mjs`, `cargo test ops`
 - [x] AC-58 — `ui/test/e2e_panel.mjs`, `cargo test ops`
 - [x] AC-59 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`
 - [x] AC-60 — `ui/test/e2e_panel.mjs`, `cargo test termtext`
-- [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `cargo test watcher`
-- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
+- [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `ui/test/viewer-save.test.mjs`, `ui/test/tree-load.test.mjs`, `cargo test watcher`
+- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/tree-input.test.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
 - [x] AC-63 — `ui/test/e2e_panel.mjs`, `cargo test listing`
 - [x] AC-64 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/pcm.test.mjs`, `web/test/e2e_liveview.mjs`, `cargo test midi`, `cargo test raw_body`
 - [x] AC-65 — `ui/test/e2e_panel.mjs`

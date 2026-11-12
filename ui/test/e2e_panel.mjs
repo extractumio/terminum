@@ -13,7 +13,7 @@ import http from "node:http";
 import path from "node:path";
 import { slack } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
-import { layoutTools } from "./e2e_layout.mjs";
+import { layoutTools, splitterCancel } from "./e2e_layout.mjs";
 import { panelReview } from "./e2e_panel_review.mjs";
 import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
 import {
@@ -169,6 +169,7 @@ try {
   await page.waitForTimeout(900); // its own fs event and re-check come and go
   check("AC-56 … with its text, and the 'Deleted on disk' banner is gone", fs.readFileSync(`${SB}/app.py`, "utf8") === kept && !(await page.$('.banner:has-text("Deleted on disk")')),
     JSON.stringify(await page.evaluate(() => document.querySelector(".banner")?.textContent)));
+  await splitterCancel(page);
 
   await panelDocs(page, { row, SECRET, outside, blocked });   // AC-54, AC-67: Markdown and HTML documents
 

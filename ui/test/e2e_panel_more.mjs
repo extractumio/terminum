@@ -50,6 +50,18 @@ export async function diagrams(context, base, SB, errors) {
   await vp.waitForTimeout(300);
   check("AC-54 nothing in a diagram runs: no dialog, no element of its label in the page", !errors.some((e) => e.startsWith("diagram dialog")) && !(await vp.$(".md-body img[src='x']")), errors.join(" | "));
   await vp.close();
+
+  // Mermaid's code failed to load once (a gap, a restart): the next render of the document loads it again
+  const gp = await context.newPage();
+  let refused = 0;
+  await gp.route("**/chunks/mermaid.core-*.js", (route) => refused++ ? route.fallback() : route.abort("connectionreset"));
+  await gp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
+  await within("AC-54 Mermaid's code that did not load says so at the fence", (ms) => gp.waitForSelector(".md-diagram-error", { timeout: ms }));
+  const now = new Date();
+  fs.utimesSync(`${SB}/docs/diagram.md`, now, now);   // changed on disk: the clean document is drawn again
+  await within("AC-54 … and the next render loads it and draws the diagrams", (ms) =>
+    gp.waitForFunction(() => document.querySelectorAll(".md-diagram img.diagram").length === 2, null, { timeout: ms }), 10000);
+  await gp.close();
 }
 
 /** AC-70 in a page around it (same origin), a file opens in the page's View: the panel posts

@@ -112,8 +112,13 @@ export class TreeInput {
       case "ArrowLeft":
         if (cur?.isDir && this.t.expanded.has(cur.p)) this.t.collapse(cur.p);
         else if (cur && cur.d.dir !== this.t.root) {
-          const parent = cur.d.dir.path;
-          void this.t.reveal(parent).then(() => { this.t.selected = new Set([parent]); this.t.cb.changed(); this.t.queue(); });
+          // the parent is selected only if it was found under the same root and no other
+          // selection came meanwhile
+          const parent = cur.d.dir.path, run = ++this.t.selectionRun;
+          void this.t.reveal(parent).then((found) => {
+            if (!found || run !== this.t.selectionRun) return;
+            this.t.selected = new Set([parent]); this.t.cb.changed(); this.t.queue();
+          });
         }
         break;
       case "Enter": if (cur) cur.isDir ? this.t.toggle(cur.p) : this.t.cb.open(cur.p); break;

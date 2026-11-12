@@ -88,8 +88,8 @@ export class InlineEdit {
     const e = this.edit;
     if (!e || e.busy) return;
     e.busy = true;
-    const error = await this.hooks.commit(e.mode, e.dir, this.input.value.trim(), e.path);
-    e.busy = false;
+    let error: string | null;
+    try { error = await this.hooks.commit(e.mode, e.dir, this.input.value.trim(), e.path); } finally { e.busy = false; }
     if (this.edit !== e) return;
     if (error) {
       e.error = error;

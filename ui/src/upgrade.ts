@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Working through a terminumd restart or an upgrade (AC-16). A short gap shows only an amber
 // dot; when terminumd is back the panel re-reads what it shows; a panel of another build
-// (state.build) reloads itself in place once nothing is unsaved or in progress: its URL names
-// the pane, terminumd keeps its workspace. A lazy chunk that is gone means the same: this
-// page is old.
+// (state.build) reloads itself in place once nothing is unsaved or in progress and its
+// workspace is saved: its URL names the pane, terminumd keeps its workspace. A lazy chunk that
+// is gone means the same: this page is old.
 
 import { session } from "./api";
 
@@ -12,7 +12,7 @@ const RELOADED = "fb.reloaded-for";
 
 export interface UpgradeHost {
   busy(): boolean;                 // unsaved tabs, a dialog, an inline edit or a save running
-  beforeReload(): Promise<void>;   // persist the workspace
+  beforeReload(): Promise<boolean>; // persist the workspace; false: not saved (said), try later
   waiting(text: string): void;     // tell the user an update is waiting for them
 }
 
@@ -53,11 +53,18 @@ export class Upgrade {
     if (this.ready) return;
     this.ready = true;
     if (session.get(RELOADED) === build) return this.host.waiting("Reload the panel to update"); // no loop
+    let saving = false;
     const attempt = async () => {
+      if (saving) return;
       if (this.host.busy()) return this.host.waiting("Update ready — reloads after you save");
+      saving = true;
+      const saved = await this.host.beforeReload().catch(() => false);
+      saving = false;
+      // a reload now would lose the panel's state: held until a later attempt saves it
+      if (!saved) return this.host.waiting("Update ready — reloads once the panel state is saved");
+      if (this.host.busy()) return;  // an edit or a dialog began meanwhile
       clearInterval(timer);
       session.set(RELOADED, build);
-      await this.host.beforeReload().catch(() => {});
       location.reload();
     };
     const timer = window.setInterval(() => void attempt(), 1000);

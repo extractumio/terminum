@@ -5,11 +5,13 @@
 let mermaidLib: Promise<typeof import("mermaid").default> | null = null;
 let shownTheme = "";
 let seq = 0;
+let redraws = 0;   // the newest theme redraw: an older one stops
 
 /** A Mermaid diagram's SVG markup. Strict: no click handlers, no HTML labels (the SVG is shown
  *  as an image, where HTML inside it would not draw). Throws Mermaid's message on bad source. */
 export async function mermaidSvg(source: string, dark: boolean): Promise<string> {
-  mermaidLib ??= import("mermaid").then((m) => m.default);
+  // a failed import (a gap, an upgrade) is tried again by the next diagram, not kept
+  mermaidLib ??= import("mermaid").then((m) => m.default, (e) => { mermaidLib = null; throw e; });
   const mermaid = await mermaidLib;
   const theme = dark ? "dark" : "default";
   if (theme !== shownTheme) {
@@ -53,10 +55,11 @@ function darkPanel(): boolean {
 /** The theme changed: the documents' diagrams drawn for the other darkness are drawn again
  *  (each image keeps its fence's source and darkness). */
 export async function redrawDiagrams(): Promise<void> {
-  const dark = darkPanel();
+  const dark = darkPanel(), run = ++redraws;
   for (const img of document.querySelectorAll<HTMLImageElement>(".md-diagram img.diagram")) {
     if ((img.dataset.dark === "1") === dark) continue;
     const fresh = await diagramImage(img.dataset.source ?? "", dark).catch(() => null);
+    if (run !== redraws) return;                   // the theme changed again: that redraw goes on
     if (!fresh || !img.isConnected) continue;
     Object.assign(fresh.dataset, { source: img.dataset.source, dark: dark ? "1" : "0" });
     fresh.hidden = img.hidden;
@@ -89,4 +92,5 @@ export async function drawFence(pre: HTMLElement, source: string): Promise<void>
     shown.hidden = !source; pre.hidden = source;
     toggle.textContent = source ? "Source" : "Diagram";
   });
+  if (darkPanel() !== dark) void redrawDiagrams();   // the theme changed while it was drawn
 }
