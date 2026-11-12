@@ -1108,6 +1108,8 @@ Scenario: AC-170 happy path — the switch and its settings
   And a project is made off, taking P0 and P1 after 10 minutes, 10 tasks in 24 hours at most
   When On is saved with no agent that picks, or with no severity ticked
   Then it is refused: "Choose the agent that picks first: its settings.", "Tick a severity it takes first: with none it starts nothing."
+  When the switch is pressed, or On saved, for a project with no folder
+  Then it is refused, said where it was pressed, and stays off: "api has no folder: set it in its window." (AC-140), never a round made to fail
 
 Scenario: AC-170 happy path — several projects shown
   Given the board showing 3 projects, it on for api alone
