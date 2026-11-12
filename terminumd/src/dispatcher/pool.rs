@@ -151,6 +151,12 @@ fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, String>, St
     Ok(found.into_iter().filter(|(_, s)| seen.insert(s.clone())).collect())
 }
 
+/// The run standing in schedule `schedule`'s kept slot, of whichever of its tasks, if one (AC-161, AC-162).
+pub fn in_kept_of(tx: &Transaction, schedule: &str) -> Result<Option<Run>, String> {
+    let Slots { holding, in_kept, .. } = Slots::read(tx)?;
+    Ok(in_kept.into_iter().find(|(_, of)| of == schedule).and_then(|(run, _)| holding.into_iter().find(|r| r.id == run)))
+}
+
 /// `check` of one agent, read now.
 pub fn check(tx: &Transaction, agent: Option<&Agent>, project: &str, but: Option<&str>) -> Result<Option<Full>, String> {
     Slots::read(tx)?.check(tx, agent, project, but)

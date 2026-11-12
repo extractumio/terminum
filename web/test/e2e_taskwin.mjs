@@ -4,7 +4,7 @@
 // apart, its fields alike, three to a line, two on a phone), its status whole on a line, the three parts a section
 // break apart, a screen quoted in a line of history as it stood, nothing past the window's edge.
 
-import { check, runningIn } from "./check.mjs";
+import { check, coversWindow, runningIn } from "./check.mjs";
 import { drawn, openPage, PHONE, SIZES } from "./fake.mjs";
 
 const AT = 1794435120, FILE = "0123456789abcdef0123456789abcdef";
@@ -26,7 +26,8 @@ const META = { projects: [{ id: "default", name: "Default" }], users: [{ id: "al
 /** Opens the window on TASK and measures it: every box as [left, top, right, bottom], rounded. */
 const measure = (page) => page.evaluate(async (meta) => {
   const { taskWindow } = await import("/kanbanwin.js");
-  await taskWindow({ getMeta: () => meta, runs: { open: async () => false }, openTask() {}, newSubtask() {}, openSchedule() {} }).open("API-12");
+  window.taskwin = taskWindow({ getMeta: () => meta, runs: { open: async () => false }, openTask() {}, newSubtask() {}, openSchedule() {} });
+  await window.taskwin.open("API-12");
   const box = (e) => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
   const body = document.getElementById("taskbody"), own = body.querySelector(".taskown"), q = (s) => own.querySelector(s);
   const frame = own.getBoundingClientRect(), pad = getComputedStyle(own), pre = body.querySelector(".evscreen");
@@ -74,6 +75,18 @@ export async function webTaskWin(browser, name) {
       const word = top(".tasktext .edithead span"), grid = top(".taskown .fieldgrid"), area = top(".tasktext textarea");
       return { over: Math.round(word.top - grid.bottom), under: Math.round(area.top - word.bottom), keys: document.querySelectorAll("#taskbody .tasktext .seckeys").length }; });
     check("AC-149 a text being edited keeps Text 12 px under the fields and 4 px over its field, its keys gone", edit.over === 12 && edit.under === 4 && edit.keys === 0, JSON.stringify(edit));
+    // its boxes to read or type in, each with its key to the whole window (terminum.md AC-184)
+    const keyed = await f.page.evaluate(() => [".tasktext", ".newcomment", ".history"].map((s) => !!document.querySelector(`#taskbody ${s} .xbox:has(> :is(textarea, .evscreen)) > .xkey`)));
+    await f.page.click("#taskbody .xbox:has(> .evscreen) > .xkey");
+    const screen = await coversWindow(f.page, ".xbox.full:has(> .evscreen)");
+    // a board update while it covers the window redraws nothing under it
+    const held = await f.page.evaluate(async () => { const pre = document.querySelector("#taskbody .evscreen");
+      await window.taskwin.refresh();
+      return pre.isConnected && pre.closest(".xbox").classList.contains("full"); });
+    await f.page.keyboard.press("Escape");
+    const back = await f.page.evaluate(() => ({ full: !!document.querySelector(".xbox.full"), open: document.getElementById("taskbox").open }));
+    check("AC-184 its text being edited, the comment field and a quoted screen have their key; the screen's covers the window, Esc gives it back",
+      keyed.every(Boolean) && held && screen.covers && !back.full && back.open, JSON.stringify({ keyed, held, screen, back }));
     check("no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();
   }

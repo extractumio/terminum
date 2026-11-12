@@ -1,0 +1,16 @@
+/* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
+/* A box to read or type in, with its key to the whole window (expand.js, terminum.md AC-184); after dialogsize.css.
+   The key stands in the box's bottom-right corner, over the field, left of a text field's resize grip; pressed,
+   the box covers the window (on a phone what is in sight above the keyboard: --app-h), its prose in a column
+   as wide as a task's window, a text field and lines across. sheets.css lets a phone's sheet hold it. */
+.xbox { position: relative; display: flex; flex-direction: column; min-width: 0; }
+.xbox > * { flex: 1 1 auto; }                    /* the key stands apart (absolute): no flex item */
+.xbox:not(:has(> :not(.xkey, [hidden]))) { display: none; }   /* nothing shown in it (the bookmark bar's quote, closed) */
+.xkey { --ik: var(--icon-key-sm); position: absolute; right: 6px; bottom: 6px; z-index: 1; }
+.xbox:not(.full) > textarea:not([hidden]) ~ .xkey { right: 20px; }   /* the grip keeps its corner */
+.xbox.full { position: fixed; inset: 0 0 auto; height: var(--app-h, 100dvh); z-index: 60; box-sizing: border-box; margin: 0 !important;
+  padding: var(--sp-4); background: var(--fill, var(--chrome)); }
+.xbox.full > :not(.xkey) { flex: 1 1 0; min-height: 0; max-height: none !important; margin: 0 !important; overflow: auto; resize: none; }   /* the boxes' own caps and margins (#runprompt, .evscreen, #mbtext…) */
+.xbox.full > .markdown { padding-inline: max(var(--sp-3), calc((100% - 920px) / 2)); }
+.xbox.full > .xkey { right: calc(var(--sp-4) + 6px); bottom: calc(var(--sp-4) + 6px); }
+@media (max-width: 860px), (pointer: coarse) { .xkey { --ik: var(--icon-key); } }   /* a finger's size (tokens.css: 44) */

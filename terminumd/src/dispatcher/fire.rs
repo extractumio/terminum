@@ -43,7 +43,7 @@ pub fn prompt(s: &Schedule, task: &str, title: &str, body: &str, again: bool) ->
 enum Next {
     /// a task made: its ID, its firing
     Run(String, i64),
-    /// its last run's idle session holds its slot: closed first, then decided again
+    /// an idle session of the schedule holds its slot: closed first, then decided again
     Close(String),
     /// written as skipped, with why
     Skipped,
@@ -70,11 +70,11 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
     if let Some(running) = schedules::running_task(tx, s)? {
         return skip(tx, format!("Skipped: {running} is still in progress."));
     }
-    if let Some(last) = schedules::last_task(tx, s)? && let Some(r) = runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot) {
+    if let Some(r) = holder(tx, s)? {
         if !closed && pool::closable(tx, &r)? {
             return Ok(Next::Close(r.id));
         }
-        return skip(tx, format!("Skipped: {}'s session is still busy.", last.id));
+        return skip(tx, format!("Skipped: {}'s session is still busy.", r.names()));
     }
     advance(tx)?;
     // a start that fails at each firing leaves one card, the last: the one before it never ran
@@ -86,6 +86,16 @@ fn decide(tx: &rusqlite::Transaction, s: &Schedule, now: i64, closed: bool) -> R
         schedules::pause(tx, &s.id, "ran once", now)?;
     }
     Ok(Next::Run(task, fire))
+}
+
+/// The session a run of `s` would wait behind: the one standing in its kept slot, of any task of it, else its last
+/// task's while it holds any slot: a paused schedule keeps none, a run of several tasks stands in none (AC-162).
+fn holder(tx: &rusqlite::Transaction, s: &Schedule) -> Result<Option<runs::Run>, String> {
+    if let Some(r) = pool::in_kept_of(tx, &s.id)? {
+        return Ok(Some(r));
+    }
+    let Some(last) = schedules::last_task(tx, s)? else { return Ok(None) };
+    Ok(runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot))
 }
 
 /// A firing's task, made from the schedule as it is now, `why` in its history: its ID and its firing.
@@ -109,11 +119,11 @@ pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
             if let Some(running) = schedules::running_task(tx, &s)? {
                 return Err(format!("Not run: {running} is still in progress."));
             }
-            if let Some(last) = schedules::last_task(tx, &s)? && let Some(r) = runs::last_of(tx, &last.key)?.filter(runs::Run::holds_slot) {
+            if let Some(r) = holder(tx, &s)? {
                 if !closed && pool::closable(tx, &r)? {
                     return Ok(Err((r.id, s.key)));
                 }
-                return Err(format!("Not run: {}'s session is still busy.{why}", last.id));
+                return Err(format!("Not run: {}'s session is still busy.{why}", r.names()));
             }
             let now = ops::now();
             let (task, fire) = made(tx, &s, (now, 0), &format!("{by} ran schedule {} now.", s.key), now)?;
@@ -121,7 +131,7 @@ pub async fn now(app: &Shared, id: &str, who: &str) -> Result<String, String> {
         }).await?;
         match next {
             Ok(made) => break made,
-            // its last run's idle session holds its slot: closed first, as a due firing does
+            // an idle session of the schedule holds its slot: closed first, as a due firing does
             Err((run, key)) => {
                 closed = true;
                 if let Err(why) = super::api::close_idle(app, &run, &key).await {

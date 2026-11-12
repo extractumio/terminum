@@ -167,7 +167,17 @@ pub(super) enum Way {
     First,
     Live(Run),
     Shell(Run),
+    /// only its shell remains and no conversation of its agent is known: the agent starts there anew and hears a
+    /// first run's words, which RUN's window shows (AC-122)
+    Anew(Run),
     Resume(Run),
+}
+
+impl Way {
+    /// Its agent hears the task as a first run's (AC-121): RUN's window shows the words.
+    pub(super) fn first_words(&self) -> bool {
+        matches!(self, Way::First | Way::Anew(_))
+    }
 }
 
 pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, String> {
@@ -192,7 +202,7 @@ pub(super) fn way(t: &Task, last: Option<Run>, fresh: bool) -> Result<Way, Strin
         Some(r) if r.state == Phase::Ending => return Err("Its agent is being ended at its limit: run it again in a moment.".to_string()),
         _ if fresh => Way::First,
         None => Way::First,
-        Some(r) if r.state == Phase::Gone && r.pane_key.is_some() => Way::Shell(r),
+        Some(r) if r.state == Phase::Gone && r.pane_key.is_some() => if super::start::resume_command(&r).is_ok() { Way::Shell(r) } else { Way::Anew(r) },
         Some(r) if r.pane_key.is_some() && !r.is_over() => Way::Live(r),
         Some(r) if r.agent_session.is_some() => Way::Resume(r),
         Some(_) => Way::First,

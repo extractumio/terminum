@@ -4,6 +4,7 @@
 use super::*;
 use crate::dispatcher::api::has_stray;
 use crate::dispatcher::runs;
+use crate::tasks::agents::inline_words;
 use crate::tasks::ops::NewTask;
 use crate::tasks::store::{Store, HUMAN};
 
@@ -108,7 +109,11 @@ fn ac126_run_waits_while_its_agent_is_being_ended() {
             assert!(refused.contains("being ended"), "fresh {fresh}: {refused}");
         }
         runs::change(tx, &id, |r| r.state = Phase::Gone)?;
-        assert!(matches!(way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false), Ok(Way::Shell(_))), "ended: from its shell");
+        let gone = way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false);
+        assert!(matches!(&gone, Ok(Way::Anew(_))) && gone.as_ref().is_ok_and(Way::first_words), "ended with no conversation: anew from its shell, a first run's words (AC-122)");
+        runs::change(tx, &id, |r| r.agent_session = Some("abc-1".into()))?;
+        let gone = way(&ops::get(tx, &a.id)?, runs::last_of(tx, &a.key)?, false);
+        assert!(matches!(&gone, Ok(Way::Shell(_))) && !gone.as_ref().is_ok_and(Way::first_words), "ended with its conversation: from its shell, it goes on");
         Ok(())
     }).unwrap();
 }
@@ -209,7 +214,7 @@ fn ac138_dropped_on_another_agent_of_its_kind_its_ended_conversation_goes_on_the
         let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         let r = runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;
         let moved = moved_to(tx, std::slice::from_ref(&t), Some(&r), Some("b"), false)?.expect("same kind, conversation known, its agent ended");
-        assert_eq!((moved.agent_name.as_str(), moved.command.as_str(), moved.folder.as_str(), moved.agent_session.as_deref()), ("Jones", "claude --model sonnet", "/srv/api", Some("c0ffee")), "its folder and conversation, the new agent's line");
+        assert_eq!((moved.agent_name.as_str(), moved.command.as_str(), moved.folder.as_str(), moved.agent_session.as_deref()), ("Jones", format!("claude --model sonnet{}", inline_words("claude", "")).as_str(), "/srv/api", Some("c0ffee")), "its folder and conversation, the new agent's line");
         assert_eq!(moved_to(tx, std::slice::from_ref(&t), Some(&r), Some("x"), false)?, None, "another kind starts anew");
         assert_eq!(moved_to(tx, std::slice::from_ref(&t), Some(&r), Some("b"), true)?, None, "Run from scratch");
         let live = Run { state: Phase::Working, ..r.clone() };
@@ -249,7 +254,7 @@ fn ac156_going_on_starts_the_agent_s_command_as_the_pool_has_it_now() {
         let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;
         let (_, w, from) = ways(tx, &t.id, &[], None, false)?;
-        assert!(matches!(&w, Ok(Way::Resume(r)) if r.command == "myclaude --effort high" && r.agent_session.as_deref() == Some("c0ffee")), "the operator changed claude to myclaude: the resume starts that");
+        assert!(matches!(&w, Ok(Way::Resume(r)) if r.command == format!("myclaude{} --effort high", inline_words("claude", "")) && r.agent_session.as_deref() == Some("c0ffee")), "the operator changed claude to myclaude: the resume starts that");
         assert_eq!(from, None, "its own agent: nothing moves");
         tx.execute("DELETE FROM agents WHERE id = 'a'", []).map_err(ops::sql)?;
         let (_, w, _) = ways(tx, &t.id, &[], None, false)?;
