@@ -4,7 +4,7 @@
 // a row is dragged to another place (reorder.js: a mouse at once, a finger after a rest) or moved by its arrows,
 // and taken out by its cross. A row is a press: Run on several tasks waits as one. terminumd keeps the order and says
 // what it refuses; every page hears.
-import { el, iconButton } from "./listparts.js";
+import { el, iconButton, pointerKey } from "./listparts.js";
 import { bindReorder } from "./reorder.js";
 import { api } from "./kanbanutil.js";
 
@@ -14,7 +14,7 @@ const names = (t) => [t.id, ...(t.also ?? [])].join(", ");
 
 /** The key on an agent's rectangle: a pale dot for each task of `queue`, and how many; a press opens the queue. */
 export function queueKey(a, queue, open) {
-  const key = el("button", "agqueue");
+  const key = pointerKey(el("button", "agqueue"));
   key.type = "button";
   key.title = `Queue: ${queue.map(names).join("; ")}. Press to change its order or take a task out`;
   key.setAttribute("aria-label", `${a.name}'s queue: ${queue.length} waiting`);
