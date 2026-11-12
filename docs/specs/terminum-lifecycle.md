@@ -371,6 +371,15 @@ Scenario: AC-102 edge — what a fake host still runs ends before its test's fol
   When the test's cleanup runs
   Then it ends its fake host's tmux server, waits up to 15 s for every process working in the test's folder or a folder under it, and only then removes the folder; one still there is ended by its pid (SIGTERM, then SIGKILL) and fails the run, its command named
 
+Scenario: AC-102 edge — a registered child leaves the private working directory
+  Given a test or fake ssh records its Popen child's PID and start time in a private registry before its parent ends
+  And that child starts a separate session and changes its working directory outside the private folder
+  When cleanup runs
+  Then it waits for the same child to finish its delayed write, or ends it by its recorded identity
+  And a PID with another start time receives no signal
+  And the guard's own registry is metadata, not a leftover file
+  And an unregistered descendant that leaves both the private group and folder cannot be discovered portably; its spawner must explicitly record and end it
+
 Scenario: AC-102 edge — cleanup never reads process environments
   Given an unrelated process with credentials in its environment, whose command mentions the test's folder
   When the guard or a private terminumd's cleanup looks for leftover processes on macOS or Linux
