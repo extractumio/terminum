@@ -269,10 +269,10 @@ addEventListener("focus", syncActive);
 addEventListener("blur", () => setTimeout(syncActive, 0));   // the focus may have gone into the Files frame
 
 function onMessage(m) {
-  if (answer(m)) return;
-  if (m.sid && m.sid !== st.sid) return;            // a frame from the session we just left
+  if (m.sid && m.sid !== st.sid) return void answer({ ...m, error: "The pane shown changed.", cancelled: true });
   if (gate.take(m)) return;                         // the pane just opened, until its first frame
   trace.received(m);
+  if (answer(m)) return;
   bookmarks.seen(m);
   rail?.seen(m);
   asked.seen(m); rowMenu.seen(m); tools.seen(m);
@@ -369,7 +369,6 @@ function toggleGroup(key) {
   drawNav();
 }
 
-// The header (header.js): the title, then the folder with its Copy, the window, what runs there.
 const showCurrent = pageHeader({ narrow, copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
   send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast, onShown: tools.sayStalls });
 
@@ -377,6 +376,8 @@ function select(id, force = false) {
   if (id) tasks.address(id);
   if (id === st.sid && !force && view.screen.length) return;
   st.sid = id; document.body.dataset.sid = id ?? ""; store.set("sid", id); place.note(); seeWaits(st.groups, id);
+  view.pages.cancel();
+  widgets.folds.cancel();
   recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane

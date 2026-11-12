@@ -10,13 +10,14 @@ const mark = { id: "A", sid: SID, n: 1001, text: "row 1001", note: "Retry me", t
 export async function webRequests(browser, name) {
   for (const [size, device] of SIZES) {
     runningIn(`${name} ${size}`);
-    let online = true, deleted = false, restored = false;
+    let online = true, deleted = false, restored = false, holdPane = false;
     const f = await openPage(browser, { device, layout, available: () => online,
       onSub: (m, say) => {
+        if (holdPane && m.id === OTHER) return true;
         say({ t: "theme", sid: m.id, theme: THEME });
         say({ t: "hist", mode: "reset", sid: m.id, first: 1000, oldest: 0, truncated: false,
           lines: Array.from({ length: 100 }, (_, i) => line(`row ${1000 + i}`)) });
-        say({ t: "screen", sid: m.id, full: true, n: 1, cols: 80, rows: 1, ch: [[0, line("ready")]] });
+        say({ t: "screen", sid: m.id, full: true, n: 1, cols: 80, rows: 1, ch: [[0, line(`ready ${m.id}`)]] });
         return true;
       }, hook: (m, say) => {
         if (m.t === "sub") say({ t: "marks", items: deleted ? [] : [mark] });
@@ -97,6 +98,23 @@ export async function webRequests(browser, name) {
     await pause(page);
     check("AC-88 a quick-shell completion cannot navigate after a pane change", last("sub").id === OTHER);
     await page.locator(`#sessions .item[data-id="${SID}"]`).evaluate((el) => el.click());
+    await until(() => last("sub").id === SID);
+    await page.waitForFunction((id) => document.getElementById("screen").textContent.includes(id), SID);
+    const transitionCount = count("more");
+    await scroll();
+    await until(() => count("more") > transitionCount);
+    const transitionRead = last("more");
+    await page.clock.pauseAt(new Date(await page.evaluate(() => Date.now() + 5000)));
+    holdPane = true;
+    await page.locator(`#sessions .item[data-id="${OTHER}"]`).evaluate((el) => el.click());
+    await until(() => last("sub").id === OTHER);
+    const retained = await page.locator("#screen .ln").count();
+    f.say({ t: "hist", ref: transitionRead.ref, sid: SID, mode: "prepend", first: 999, oldest: 0, truncated: false, lines: [line("STALE TRANSITION HISTORY")] });
+    await pause(page);
+    check("AC-02 changing pane cancels history before the new pane's first frame", retained > 0 && !(await page.textContent("#hist")).includes("STALE TRANSITION"));
+    holdPane = false;
+    await page.locator(`#sessions .item[data-id="${SID}"]`).evaluate((el) => el.click());
+    await page.clock.resume();
     await until(() => last("sub").id === SID);
     const zoom = await page.evaluate(async () => {
       const z = await import("./zoom.js");

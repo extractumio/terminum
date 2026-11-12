@@ -20,10 +20,14 @@ export class Folds {
     this.reset();
   }
 
-  /** Another pane, or its scrollback cleared (its line numbers mean other lines now). */
-  reset() {
+  cancel() {
     for (const pending of this.waiting?.values() ?? []) pending.finish(Object.assign(new Error("The fold request was cancelled."), { name: "AbortError" }));
     this.reads.cancel();
+  }
+
+  /** Another pane, or its scrollback cleared (its line numbers mean other lines now). */
+  reset() {
+    this.cancel();
     for (const [anchor, b] of this.hosts ?? []) this.drop(anchor, b);
     this.items = new Map();      // first line -> {n, to, label}, as the bridge told
     this.open = new Set();       // first lines of folds the user opened
@@ -165,7 +169,7 @@ export class Folds {
     if (window.isSecureContext && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
       const text = this.ask(f, "copy");
       navigator.clipboard.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })])
-        .then(() => this.notify("Copied."), () => this.notify("The lines are here now: press Copy again."));
+        .then(() => this.notify("Copied."), (e) => { if (e?.name !== "AbortError") this.notify("Copy failed: press Copy again."); });
       return;
     }
     this.ask(f, "again");
