@@ -7,6 +7,7 @@ import io
 import os
 from pathlib import Path
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -90,6 +91,14 @@ class Guard(unittest.TestCase):
             time.sleep(0.1)
         else:
             self.fail(f"{pid} still runs")
+
+    def test_a_detached_process_in_the_private_folder_is_ended(self):
+        code = "import subprocess; subprocess.Popen(['sleep', '64'], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
+        status, err, _ = guarded(f'cd "$TMPDIR"; {shlex.quote(sys.executable)} -c {shlex.quote(code)}')
+        self.assertEqual(status, 3)
+        self.assertIn("LEFT process", err)
+        pid = int(err.split("LEFT process ")[1].split(":")[0])
+        self.assertTrue(gone(pid), f"detached process {pid} still runs")
 
     def test_another_runs_folder_never_counts(self):
         with tempfile.TemporaryDirectory(prefix="tm-other-", dir="/tmp") as other:
