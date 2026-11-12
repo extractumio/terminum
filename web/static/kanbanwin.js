@@ -253,13 +253,18 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     body.scrollTop = scroll;
   }
 
-  /** The newest asked is the one that shows, whichever answers last. */
+  /** The newest asked is the one that shows, whichever answers last; whether this read opened it. */
   async function open(id) {
     const mine = ++opening;
-    const t = await api(`/api/tasks/${id}`);
-    if (mine !== opening) return;
+    let t;
+    try { t = await api(`/api/tasks/${id}`); } catch (e) {
+      if (mine !== opening) return false;
+      throw e;
+    }
+    if (mine !== opening) return false;
     draw(t);
     if (!box.open) box.showModal();
+    return true;
   }
 
   /** A text being edited, changed from what shows. */
@@ -267,7 +272,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
 
   /** Closes it; an edit not saved is asked about first. Whether it closed. */
   async function tryClose() {
-    if (edited() && !await askConfirm("Discard your edit? It is not saved.", "Discard")) return false;
+    if (box.open && edited() && !await askConfirm("Discard your edit? It is not saved.", "Discard")) return false;
+    opening++;                                  // a read still waiting cannot reopen what the user closed
     box.close();
     return true;
   }
@@ -286,6 +292,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   }
 
   $("taskclose").addEventListener("click", tryClose);
-  box.addEventListener("cancel", (e) => { if (edited()) { e.preventDefault(); tryClose(); } });
+  box.addEventListener("cancel", (e) => { e.preventDefault(); tryClose(); });
   return { open, refresh, tryClose, shows: (id) => box.open && shown?.id === id, shownId: () => shown?.id };
 }
