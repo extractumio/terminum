@@ -6,8 +6,9 @@ use super::runs::{Phase, Run};
 
 /// WAIT FOR HUMAN after an agent's question stands this long.
 pub const WAIT: i64 = 120;
-/// The request after a turn with no result, and how many a run gets at most.
+/// The request after a turn with no result.
 pub const NUDGE: i64 = 300;
+/// How many requests a run gets at most.
 pub const NUDGES: i64 = 3;
 /// FAILED, with no result, after this long with no activity: counted from that request once it went.
 pub const NOTHING: i64 = 3600;
@@ -87,8 +88,7 @@ pub enum Act {
     Close { words: String, keep: bool },
 }
 
-/// The request for a result (AC-123): fixed words and the task's ID, typed through the gate (§9). The agent, with its
-/// whole context, says which way it ended: Dispatcher approves nothing for a human.
+/// The request for a result (AC-123): fixed words and the task's ID, typed through the gate (§9).
 pub fn nudge_words(task: &str) -> String {
     format!("[terminum Dispatcher] {task} is still open and your turn ended; no human watches this run now. If it is finished, call {} with its result in the sections you were asked for. If a human must decide or approve something, ask by {}: the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour.", super::press::FINISH, super::press::ASK_HUMAN)
 }
@@ -190,8 +190,7 @@ pub fn step(run: &mut Run, f: &Facts) -> Vec<Act> {
     // no result: a request at each quiet stop, NUDGES at most, then an hour of nothing is FAILED, never DONE (AC-123)
     if alive && f.waiting.is_none() && run.status == "IN PROGRESS" {
         // the hour first, so a request that keeps missing never holds a task open; once a request went, `nudged` counts
-        // it and the hour counts from it (acts.rs): a restart before then asks again. The next is for a later quiet stop:
-        // `nudge_turn` stands from a request that went until its turn's Stop (hooks.rs)
+        // it and the hour counts from it (acts.rs): a restart before then asks again; the next waits for its turn's Stop
         if run.idle_for >= NOTHING {
             let words = if run.nudged > 0 { "No result from the agent within an hour of Dispatcher's request." } else { "No activity for 60 minutes and no result from the agent." };
             acts.push(Act::Move { to: "FAILED", words: words.into() });

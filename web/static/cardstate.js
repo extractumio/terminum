@@ -2,6 +2,10 @@
 // What a card's foot says of its session's agent (terminum-kanban.md AC-136): its class, words and title;
 // null: nothing to say (it works, or the task is done).
 
+/** A card's session from its live row in the session list: the fields terminumd's card gives it (tasks/api.rs
+ *  `with_session`), so a live update drops none of them. */
+export const liveSession = (it) => ({ key: it.id, state: it.state, agent: it.agent, why: it.why, background: !!it.background, closed: false });
+
 /** The card's state line for task `t`, as {cls, words, why}, or null. */
 export function cardState(t) {
   const s = t.session;

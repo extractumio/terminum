@@ -58,8 +58,8 @@ fn head(l: &str) -> &str {
 /// What follows section `name` (ASCII) in a heading `h` (as `head` reads it), its name in any case: the line's rest
 /// past its `:`, `*` or `_`; None when `h` is no heading of it.
 fn after_name<'a>(h: &'a str, name: &str) -> Option<&'a str> {
-    let rest = h.get(..name.len()).filter(|n| n.eq_ignore_ascii_case(name)).map(|_| &h[name.len()..])?;
-    (rest.is_empty() || rest.starts_with([':', '*', '_'])).then(|| rest.trim_start_matches([':', '*', '_', ' ']))
+    let (start, rest) = h.split_at_checked(name.len())?;
+    (start.eq_ignore_ascii_case(name) && (rest.is_empty() || rest.starts_with([':', '*', '_']))).then(|| rest.trim_start_matches([':', '*', '_', ' ']))
 }
 
 /// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
@@ -93,8 +93,7 @@ fn section(result: &str, name: &str) -> String {
 /// Whether a section's words say there is nothing: none at all, "None", a dash, or one short word (its language's "None").
 fn says_nothing(words: &str) -> bool {
     let w = words.trim().trim_end_matches('.').trim_matches(['*', '_']);
-    w.is_empty() || w.eq_ignore_ascii_case("none") || w.eq_ignore_ascii_case("n/a") || matches!(w, "-" | "\u{2014}")
-        || (!w.contains(char::is_whitespace) && w.chars().count() <= 7 && w.chars().all(char::is_alphabetic))
+    w.eq_ignore_ascii_case("n/a") || matches!(w, "-" | "\u{2014}") || (w.chars().count() <= 7 && w.chars().all(char::is_alphabetic))
 }
 
 /// The close-out's sections whose follow-ups are to name their tasks (AC-166 step 3).
@@ -103,11 +102,12 @@ const TRACKED: [&str; 2] = ["Not done", "Further recommendations"];
 /// Those of TRACKED that `result` fills with words naming no task ID, in order: what a human would plan from them is
 /// in no task yet (AC-166).
 pub fn untracked(tx: &Transaction, result: &str) -> Result<Vec<&'static str>, String> {
+    let filled: Vec<(&'static str, String)> = TRACKED.into_iter().map(|name| (name, section(result, name))).filter(|(_, w)| !says_nothing(w)).collect();
+    if filled.is_empty() {
+        return Ok(Vec::new());
+    }
     let prefixes = prefixes(tx)?;
-    Ok(TRACKED.into_iter().filter(|name| {
-        let words = section(result, name);
-        !says_nothing(&words) && named(&prefixes, &words).is_empty()
-    }).collect())
+    Ok(filled.into_iter().filter(|(_, w)| named(&prefixes, w).is_empty()).map(|(name, _)| name).collect())
 }
 
 /// What finishing answers on such sections: the agent's turn goes on, so it can still make them.

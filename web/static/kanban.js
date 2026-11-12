@@ -24,7 +24,7 @@ import { autoDispatcher } from "./kanbanauto.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
-import { cardState } from "./cardstate.js";
+import { cardState, liveSession } from "./cardstate.js";
 import { choose } from "./dialogs.js";
 import { el, iconButton, plural, pointerKey, projectInk } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
@@ -106,7 +106,7 @@ function sessionLine(t) {
   const st = cardState(t);
   if (!st) return null;
   const e = el("span", `cstate ${st.cls}`, st.words);
-  if (st.why) e.title = st.why;
+  e.title = st.why ? `${st.words}: ${st.why}` : st.words;
   return e;
 }
 
@@ -331,7 +331,7 @@ function sessionsCame(groups) {
   for (const t of [...cards.values()].flat()) {
     const it = t.session && liveRows.get(t.session.key);
     if (!t.session || (!it && t.session.closed)) continue;
-    const now = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
+    const now = it ? liveSession(it) : { key: t.session.key, closed: true };
     const c = shown.get(t.id);
     if (JSON.stringify(now) !== JSON.stringify(t.session)) {
       t.session = now;

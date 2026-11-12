@@ -2,7 +2,7 @@
 // What a card says of its session's agent (terminum-kanban.md AC-136).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cardState } from "../static/cardstate.js";
+import { cardState, liveSession } from "../static/cardstate.js";
 
 const task = (session, more = {}) => ({ status: "IN PROGRESS", session: { key: "k", closed: false, agent: "claude", ...session }, ...more });
 
@@ -27,4 +27,11 @@ test("AC-136 working, a finished task, a wait and a failure", () => {
   assert.equal(cardState(task({ state: "failed", why: "rate_limit" })).words, "failed: rate limit");
   assert.equal(cardState({ status: "IN PROGRESS", session: { key: "k", closed: true } }).words, "session closed");
   assert.equal(cardState({ status: "TODO" }), null);
+});
+
+test("AC-136 a live update of the session list keeps its background mark", () => {
+  const row = { id: "tmux:local:terminum:%2", state: "done", agent: "claude", why: null, background: true, title: "t" };
+  assert.deepEqual(liveSession(row), { key: row.id, state: "done", agent: "claude", why: null, background: true, closed: false });
+  assert.equal(cardState({ status: "IN PROGRESS", session: liveSession(row) }).words, "background work runs");
+  assert.equal(liveSession({ ...row, background: undefined }).background, false);
 });
