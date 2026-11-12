@@ -10,7 +10,8 @@ import { arranged, bindReorder, listOrderer, ordered } from "./reorder.js";
 import { rowMenus, saveOrder } from "./rowmenu.js";
 import { sessionUrl } from "./tasklink.js";
 import { copyText } from "./touchcopy.js";
-import { $, DEFAULT, say } from "./kanbanutil.js";
+import { icon } from "./icons.js";
+import { $, DEFAULT, button, say } from "./kanbanutil.js";
 
 let opened = null;                                 // the session a press last opened
 const openSession = (key) => { opened = key; location.href = sessionUrl(key); };
@@ -18,8 +19,9 @@ const store = { get: (k, d) => read(k) ?? d, set: write };
 
 const copy = async (got) => say((await copyText(got)).said);
 
-/** `chosen()`: the projects shown; a task's mark opens its window by `openTask`; `send(m)`: to terminumd. */
-export function boardSessions({ chosen, openTask, send, narrow }) {
+/** `chosen()`: the projects shown; a task's mark opens its window by `openTask`; `send(m)`: to terminumd;
+ *  `newSession()`: + Session, a session of an agent in the one project shown (terminum-dispatcher.md AC-142). */
+export function boardSessions({ chosen, openTask, send, narrow, newSession }) {
   const st = { groups: [], projects: [], listOrder: [] };
   const list = $("sessions"), collapsed = new Set(store.get("collapsed", []));   // the session page's: one list, one memory
   const marks = new Map();
@@ -32,6 +34,11 @@ export function boardSessions({ chosen, openTask, send, narrow }) {
   const menus = rowMenus({ list, send, item, projects: () => st.projects, clone, orderList, lastLines: () => lastLines, copy, say,
     groups: () => st.groups,
     keepFolded: (from, to) => { if (collapsed.has(from)) { collapsed.add(to); store.set("collapsed", [...collapsed]); } } });
+  // + Session: under the project's sessions, while it is the one project shown
+  const adhoc = button("textkey adhoc", "Session", newSession);
+  Object.assign(adhoc, { id: "adhocsession", title: "A session of an agent in this project, no task" });
+  adhoc.setAttribute("aria-label", "New session");
+  adhoc.prepend(icon("plus", 14));
   const reorder = bindReorder(list, (kind, parent, ids) => {
     if (kind === "part") orderList(ids);
     else saveOrder(send, parent, ids);
@@ -48,6 +55,8 @@ export function boardSessions({ chosen, openTask, send, narrow }) {
       onGroupNew: (g, last) => (last ? clone(last) : send({ t: "new", group: g.wid })), onProjectMenu: menus.headMenu, onProjectRename: menus.rename,
       onGroupMenu: menus.groupMenu, onReconnect: tools.reconnect, onTask: openTask, empty: "No sessions here.",
       show: (project) => !picked.length || picked.includes(project ? project.id : DEFAULT) });
+    adhoc.hidden = picked.length !== 1;
+    list.append(adhoc);
   }
 
   function toggle(key) {

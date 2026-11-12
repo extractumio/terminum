@@ -349,7 +349,9 @@ async function agentPool(page, opts) {
 
   // + Session: the agent in the project's place, nothing typed, a dot of its own, let go by the human (AC-142)
   await shown();
-  check("AC-142 one project shown: + Session in the head", await page.isVisible("#adhocsession"));
+  const under = await page.evaluate(() => { const k = document.getElementById("adhocsession"), rows = [...document.querySelectorAll("#sessions .item")];
+    return { inList: k?.parentElement?.id === "sessions" && k === k.parentElement.lastElementChild, below: rows.every((r) => r.getBoundingClientRect().bottom <= k.getBoundingClientRect().top), rows: rows.length }; });
+  check("AC-142 one project shown: + Session under its sessions in the list", await page.isVisible("#adhocsession") && under.inList && under.below && !(await page.$("#boardacts #adhocsession")), JSON.stringify(under));
   await page.click("#adhocsession");
   check("AC-142 with several agents it asks which, the last used first", await until(() => page.$("#confirmbox[open]")) && /Fast fixer/.test(await page.textContent("#confirmacts")), await page.textContent("#confirmacts").catch(() => ""));
   await pressAt(page, '#confirmacts button:has-text("Fast fixer")');

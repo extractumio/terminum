@@ -7,6 +7,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .board-page :is(.nav-foot, #tip) { display: none; }
 .board-page #bar { flex: none; padding-left: var(--gutter); padding-right: var(--gutter); }   /* on the columns' edges */
 .board-page #sessions { padding-bottom: var(--gutter); }
+/* + Session under the one project's sessions shown, a key of its own width (terminum-dispatcher.md AC-142) */
+#sessions > #adhocsession { align-self: flex-start; }
 /* keys that do not fit go to a line of their own, never under the board's keys on the right */
 #filters { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); flex: 1 1 auto; min-width: 0; }
 #filters .search { flex: 1 1 110px; min-width: 110px; max-width: 220px; height: var(--key-h); }   /* the field gives way first: a line breaks only past its least */

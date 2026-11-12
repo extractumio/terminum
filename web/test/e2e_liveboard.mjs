@@ -256,7 +256,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.reload();
   await page.waitForSelector("#board .col");
   check("AC-111 a reload keeps it", await until(async () => (await inColumn("DONE")).join() === urgent));
-  // every key of the head shown, a filter on, one project's + Session too: none stands over another as the board narrows
+  // every key of the head shown, a filter on: none stands over another as the board narrows
   const over = [];
   for (const width of [1100, 1200, 1300, 1400]) {   // the last the run's own size
     await page.setViewportSize({ width, height: 900 });
