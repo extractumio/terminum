@@ -47,6 +47,7 @@ import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
+import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -156,7 +157,8 @@ const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
 const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
-const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
+const NOTES_ALONE = process.argv.includes("notes");
+const ICONS_ALONE = process.argv.includes("iconkeys");   // while working on icon keys' focus       // while working on bookmarks, reminders and their tasks
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
@@ -209,6 +211,10 @@ async function wide(browser, name) {
   }
   if (HISTORY_ALONE) {
     await boards([liveHistory]);
+    return ctx;
+  }
+  if (ICONS_ALONE) {
+    await boards([liveIconKeys]);
     return ctx;
   }
   if (SCHEDULES_ALONE) {
@@ -397,6 +403,11 @@ async function phone(browser, name) {
   await signIn(page);
   if (SORT_ALONE) {
     await liveBoardSort(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP });
+    await ctx.close();
+    return;
+  }
+  if (ICONS_ALONE) {
+    await liveIconKeys(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP }, true);
     await ctx.close();
     return;
   }
