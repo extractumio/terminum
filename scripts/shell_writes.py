@@ -27,9 +27,43 @@ def strip_text(command):
     return ARITHMETIC_OR_TEST.sub(" ", HEREDOC.sub(lambda m: m.group(0).split("\n", 1)[0] + "\n", command))
 
 
+def quoted_end(command, i):
+    """The index past the `"` closing the double quote opened at `i`; a `$( )` in it keeps its own quotes."""
+    i, n = i + 1, len(command)
+    while i < n and command[i] != '"':
+        if command.startswith("$(", i):
+            i = substitution_end(command, i)
+        else:
+            i += 2 if command[i] == "\\" else 1
+    return i + 1
+
+
+def substitution_end(command, i):
+    """The index past the `)` closing the `$(` at `i`, read as bash reads it: its own quotes, nested ( )."""
+    depth, i, n = 1, i + 2, len(command)
+    while i < n:
+        c = command[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == "'":
+            end = command.find("'", i + 1)
+            i = n if end < 0 else end + 1
+            continue
+        if c == '"':
+            i = quoted_end(command, i)
+            continue
+        depth += {"(": 1, ")": -1}.get(c, 0)
+        i += 1
+        if depth == 0:
+            break
+    return i
+
+
 def tokens(command):
-    """[(text, quoted)] of the command's words and operators; an operator is unquoted."""
-    out, word, quoted, i, n = [], "", False, 0, len(command)
+    """[(text, quoted)] of the command's words and operators; an operator is unquoted. A `$( )` inside double
+    quotes is a word's text and, after the line, a command of its own, as bash runs it."""
+    out, inner, word, quoted, i, n = [], [], "", False, 0, len(command)
 
     def flush():
         nonlocal word, quoted
@@ -49,6 +83,12 @@ def tokens(command):
         elif c == '"':
             i += 1
             while i < n and command[i] != '"':
+                if command.startswith("$(", i):
+                    end = substitution_end(command, i)
+                    inner += [("\n", False)] + tokens(command[i + 2:end - 1])
+                    word += command[i:end]
+                    i = end
+                    continue
                 if command[i] == "\\" and i + 1 < n:
                     i += 1
                 word += command[i]
@@ -72,7 +112,7 @@ def tokens(command):
             out.append((op, False))
             i += len(op)
     flush()
-    return out
+    return out + inner
 
 
 def simple_commands(words):
