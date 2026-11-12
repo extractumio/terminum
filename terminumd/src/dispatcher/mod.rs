@@ -16,6 +16,8 @@ mod hooks;
 pub mod plan;
 pub mod pool;
 pub mod usage;
+pub mod usageask;
+mod usageread;
 pub mod procs;
 pub mod runs;
 pub mod screen;
@@ -78,6 +80,8 @@ pub struct Dispatcher {
     counted_in: Mutex<HashMap<String, String>>,
     /// each kind's last subscription reading (AC-168)
     pub subscriptions: subscriptions::Readings,
+    /// asking each kind's usage command (AC-168)
+    asking: usageask::Asking,
 }
 
 /// What is known of a watched pane beyond the store; a restart learns it anew.

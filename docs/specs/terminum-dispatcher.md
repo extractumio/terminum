@@ -79,7 +79,7 @@ Open questions:
 | AC-141 | [MUST / P0] | Starting a session takes a slot of its agent and of its project; at a limit RUN starts nothing, names what holds it and offers the queue (AC-169), and an idle holder can be closed with one press; a human typing in a session is never refused. |
 | AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it or closes it, and it counts against both limits. |
 | AC-143 | [SHOULD / P1] | An agent's window shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
-| AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as a session of that kind last read them; a window not known, reset since, or read long ago says so, never a made-up 0%. |
+| AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as its kind's usage command or a session of that kind last read them; the usage command, a line in settings.json that spends no tokens, runs at terminumd's start, every 10 minutes while a run of its kind works on a task, as one of its tasks ends, else hourly; the last reading outlives a restart; a window not known, reset since, or read long ago, and a failed usage command, say so, never a made-up 0%. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
 | AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, with options and its recommended answers, stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
@@ -820,13 +820,36 @@ Scenario: AC-168 happy path — Codex's
   When a Codex session's turn ends, its log's last token count saying its week at 21% and no five-hour window
   Then every Codex agent's rectangle shows "week 21%", and its five-hour stripe says "none reported"
 
+Scenario: AC-168 happy path — its usage command
+  Given the pool has a Claude Code agent and a Codex agent, and settings.json names no usage command of its own
+  When terminumd starts
+  Then within a walk it runs `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config` and asks `codex app-server` `account/rateLimits/read`, neither a model call, no tokens spent
+  And each agent's stripes show what its kind's command said, Claude Code's week at 52% as "week 52%", and its window says "read Thu 09:00 by Claude Code's usage command"
+  When a run of Claude Code works on a task
+  Then Claude Code's usage command runs every 10 minutes; when that task is DONE or FAILED, or its run closes, once more within a minute
+  When no run of a kind works on a task
+  Then its usage command runs hourly
+  When the user sets `dispatcher.usageCommands.claude` in settings.json to another line, or `""` to ask none
+  Then that line runs at the next walk, through `sh -c`, in a folder of its own in the state folder, outside tmux, with the agents' installers' folders on its PATH
+
+Scenario: AC-168 failure — its usage command fails
+  When the usage command is not found, ends with an error, answers no limits (an API key) or takes over 60 s
+  Then its process group is ended, the stripes keep the last reading, and the agent's window says in the danger color "its usage command failed 09:00: it ended with exit 1: Error: not logged in"
+  And terminumd's log says it once per ask
+
+Scenario: AC-168 edge — a restart
+  Given Claude Code's last reading was at 09:00
+  When terminumd restarts at 09:30
+  Then the stripes show that reading from the state file at once, and the usage command reads anew within a walk
+  And a test's private terminumd (its own `TM_APP_DIR`) runs only the usage commands its settings.json names, never the agents' own
+
 Scenario: AC-168 happy path — in its window
   When the user opens the agent's window
   Then each stripe says its percent and when it resets, and the window when it was read
 
 Scenario: AC-168 edge — not known, reset, old
-  Given no reading of its kind since terminumd started
-  Then both stripes are empty and say "not known", and its window says how one comes: `terminum statusline` in Claude Code's status line, a Codex turn's end
+  Given no reading of its kind, from its usage command, a session or the state file
+  Then both stripes are empty and say "not known", and its window says how one comes: its usage command, `terminum statusline` in Claude Code's status line, a Codex turn's end
   When a window's reset time passes
   Then its stripe is empty and says "reset", not 0%
   When the last reading is over an hour old
@@ -1349,7 +1372,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 | AC-130 | A real host: `scripts/e2e_remote_tasks.py` runs on a stand-in for ssh; a host's `~` folder is not checked before the window opens. | `terminumd/src/dispatcher/procs.rs` |
 
 | AC-141 | A dot does not say a host is out of reach. | `web/static/kanbanagents.js` |
-| AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last. Readings are kept in memory: after a restart Codex's is not known until a turn ends. | `terminumd/src/dispatcher/subscriptions.rs` |
+| AC-168 | One reading per kind: two accounts of one kind (another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` in an agent's command) show whichever read last; the usage command reads the account of this Mac's user. A model's own week (Claude Code's `weekly_scoped`, e.g. Fable's) is not shown: the stripes are the account's. The usage command runs on this Mac only, not on an agent's remote host. | `terminumd/src/dispatcher/subscriptions.rs` |
 | AC-129 | A Codex session is priced as a whole at its last turn's model, and a request over 272K input tokens at the lower price. | `terminumd/src/cli/hooktokens.rs`, `terminumd/src/dispatcher/usage.rs` |
 | AC-183 | A press that was waiting for room when this record began says `run`, the human's, a schedule's too. | `terminumd/src/dispatcher/api.rs` |
 
@@ -1498,7 +1521,9 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 
 **Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
-**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time, in memory, from panes it lists: the same numbers move its time at most every 10 minutes; a change of either tells pages (`subscriptions`), and `/api/tasks?counts=1` carries them.
+**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time and its source (`session`, `usage`), from panes it lists and from the usage commands, in `subscriptions.json` of the state folder: the same numbers move its time at most every 10 minutes; a change of either, or a failed usage command (kept in memory, cleared by its next reading), tells pages (`subscriptions`: per kind `{at, windows, via, failed: {at, why}}`), and `/api/tasks?counts=1` carries them.
+
+**Usage commands (AC-168).** `dispatcher.usageCommands` in settings.json holds a line per kind (default: Claude Code's `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config`, Codex's `codex app-server`; `""`: none). Each walk's beat (`dispatcher/usageask.rs`) asks a kind the pool has when due: never asked or its line changed; a task of it ended (a live run has fewer open tasks, or is gone) and a minute passed since the last ask; every 10 minutes while a live run of it has an open task; else hourly; one ask per kind at a time, not awaited by the walk. Claude Code's output is its messages as JSON; the first `usage_report.rate_limits.limits` read, its unscoped meters only: `session` five hours, `weekly_all` a week, `percent`, `resets_at` an ISO time. Codex's app-server is written its `initialize`, `initialized` and `account/rateLimits/read` (id 2) and read up to that answer (`rateLimits.primary`, `secondary`: `usedPercent`, `windowDurationMins`, `resetsAt`), then its input closed. Both are judged as an event's windows. `--bare` is no option: it skips the login.
 
 **Limits.** `settings.json`: `"dispatcher": {"memoryWarnGiB": 4, "memoryEndGiB": 8}`; a project's in the store (`project_limits`, `PUT /api/task-projects/<id>/limits` `{"warn": 6, "end": 12}`, nulls go back to the global ones); 0 is off. Summed resident memory counts shared pages many times, so a limit needs 2 walks in a row.
 
@@ -1552,7 +1577,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-141 — `cargo test dispatcher::pool`, `cargo test dispatcher::plan`, `cargo test tasks::limits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-168 — `cargo test subscriptions`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs`
+- [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs`
 - [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`

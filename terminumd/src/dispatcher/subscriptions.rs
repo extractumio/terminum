@@ -2,7 +2,8 @@
 //! A subscription's windows (`terminum-dispatcher.md` AC-168): how much of each, five hours and a week,
 //! its agent's account has used, as a session of that kind last read them. Claude Code says them only to a
 //! status line command (`terminum statusline`), Codex in its log's token counts (`terminum hook`); both send
-//! numbers alone, as a `Limits` event. Kept per kind, in memory: the next reading comes with the next session.
+//! numbers alone, as a `Limits` event. Each kind's usage command also says them (usageask.rs). Kept per kind,
+//! in a file of the state folder: a restart shows the last reading, faded once old.
 
 use std::collections::BTreeMap;
 
@@ -72,25 +73,67 @@ pub fn of_codex(limits: &Value) -> Option<Vec<Window>> {
     some(["primary", "secondary"].iter().map(|k| window(limits[*k]["window_minutes"].as_u64(), limits[*k]["used_percent"].as_f64(), &limits[*k]["resets_at"])))
 }
 
-/// The last reading of each kind, and when it came.
+/// One kind's last reading: when it came, its windows, and what said it: `session` or `usage` (its usage command).
+#[derive(Clone, Debug, PartialEq)]
+struct Reading {
+    at: i64,
+    windows: Vec<Window>,
+    via: String,
+}
+
+/// The last reading of each kind, and why its usage command last failed, if it did: by kind, with when.
 #[derive(Default)]
-pub struct Readings(Mutex<BTreeMap<String, (i64, Vec<Window>)>>);
+pub struct Readings {
+    last: Mutex<BTreeMap<String, Reading>>,
+    failed: Mutex<BTreeMap<String, (i64, String)>>,
+}
 
 impl Readings {
-    /// A reading of `kind` came at `at`: it replaces the last when its numbers differ or the last is `FRESH` old.
-    /// Whether it did: pages are told then.
-    pub fn heard(&self, kind: &str, windows: Vec<Window>, at: i64) -> bool {
-        let mut all = self.0.lock();
-        if all.get(kind).is_some_and(|(was_at, was)| *was == windows && at - was_at < FRESH) {
-            return false;
+    /// A reading of `kind` came at `at` from `via`: it replaces the last when its numbers differ or the last is
+    /// `FRESH` old. Whether it did: pages are told then. A usage command's reading clears its failure.
+    pub fn heard(&self, kind: &str, windows: Vec<Window>, at: i64, via: &str) -> bool {
+        let cleared = via == "usage" && self.failed.lock().remove(kind).is_some();
+        let mut all = self.last.lock();
+        if all.get(kind).is_some_and(|r| r.windows == windows && at - r.at < FRESH) {
+            return cleared;
         }
-        all.insert(kind.to_string(), (at, windows));
+        all.insert(kind.to_string(), Reading { at, windows, via: via.to_string() });
         true
     }
 
-    /// As pages show them: by kind, `{at, windows}`.
+    /// `kind`'s usage command failed at `at`, for `why`: the last reading stands, and its window says why.
+    pub fn failed(&self, kind: &str, why: String, at: i64) {
+        self.failed.lock().insert(kind.to_string(), (at, why));
+    }
+
+    /// As pages show them: by kind, `{at, windows, via}`, and `{failed: {at, why}}` when its usage command failed.
     pub fn shown(&self) -> Value {
-        self.0.lock().iter().map(|(k, (at, w))| (k.clone(), json!({"at": at, "windows": w}))).collect::<serde_json::Map<_, _>>().into()
+        let mut out = serde_json::Map::new();
+        for (k, r) in self.last.lock().iter() {
+            out.insert(k.clone(), json!({"at": r.at, "windows": r.windows, "via": r.via}));
+        }
+        for (k, (at, why)) in self.failed.lock().iter() {
+            let e = out.entry(k.clone()).or_insert_with(|| json!({}));
+            e["failed"] = json!({"at": at, "why": why});
+        }
+        out.into()
+    }
+
+    /// The readings as the state file keeps them: failures are not kept.
+    pub fn kept(&self) -> Value {
+        self.last.lock().iter().map(|(k, r)| (k.clone(), json!({"at": r.at, "windows": r.windows, "via": r.via}))).collect::<serde_json::Map<_, _>>().into()
+    }
+
+    /// The readings of a state file (`kept`), each judged as an event's: one out of range, or of a kind terminum
+    /// does not know, is left out.
+    pub fn load(&self, file: &Value) {
+        let Some(all) = file.as_object() else { return };
+        let mut last = self.last.lock();
+        for (kind, r) in all.iter().filter(|(k, _)| crate::tmux::hookstate::agent(k).is_some()) {
+            let (Some(at), Some(windows)) = (r["at"].as_i64().filter(|a| *a > 0), of_event(r)) else { continue };
+            let via = if r["via"] == "usage" { "usage" } else { "session" };
+            last.entry(kind.clone()).or_insert(Reading { at, windows, via: via.into() });
+        }
     }
 }
 
@@ -143,9 +186,9 @@ mod tests {
     #[test]
     fn ac168_the_same_numbers_move_its_time_only_when_old() {
         let (r, w) = (Readings::default(), vec![Window { minutes: WEEK, used: 1.0, resets_at: None }]);
-        assert!(r.heard("claude", w.clone(), 1000));
-        assert!(!r.heard("claude", w.clone(), 1000 + FRESH - 1));
-        assert!(r.heard("claude", w, 1000 + FRESH), "an old reading's time moves: its stripes do not fade while it is said");
+        assert!(r.heard("claude", w.clone(), 1000, "session"));
+        assert!(!r.heard("claude", w.clone(), 1000 + FRESH - 1, "session"));
+        assert!(r.heard("claude", w, 1000 + FRESH, "session"), "an old reading's time moves: its stripes do not fade while it is said");
         assert_eq!(r.shown()["claude"]["at"], 1000 + FRESH);
     }
 
@@ -167,11 +210,40 @@ mod tests {
     #[test]
     fn ac168_the_last_reading_of_each_kind_stands() {
         let r = Readings::default();
-        assert!(r.heard("claude", vec![Window { minutes: 300, used: 10.0, resets_at: None }], 100), "the first: news");
-        assert!(r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 110));
-        assert!(!r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 115), "the same numbers soon after: no news");
-        assert!(r.heard("claude", vec![Window { minutes: 300, used: 12.0, resets_at: None }], 120));
-        assert_eq!(r.shown(), json!({"claude": {"at": 120, "windows": [{"minutes": 300, "used": 12.0, "resets_at": null}]},
-                                     "codex": {"at": 110, "windows": [{"minutes": 10080, "used": 21.0, "resets_at": 5}]}}));
+        assert!(r.heard("claude", vec![Window { minutes: 300, used: 10.0, resets_at: None }], 100, "session"), "the first: news");
+        assert!(r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 110, "usage"));
+        assert!(!r.heard("codex", vec![Window { minutes: 10080, used: 21.0, resets_at: Some(5) }], 115, "usage"), "the same numbers soon after: no news");
+        assert!(r.heard("claude", vec![Window { minutes: 300, used: 12.0, resets_at: None }], 120, "session"));
+        assert_eq!(r.shown(), json!({"claude": {"at": 120, "windows": [{"minutes": 300, "used": 12.0, "resets_at": null}], "via": "session"},
+                                     "codex": {"at": 110, "windows": [{"minutes": 10080, "used": 21.0, "resets_at": 5}], "via": "usage"}}));
+    }
+
+    #[test]
+    fn ac168_a_failed_usage_command_is_said_and_the_last_reading_stands() {
+        let (r, w) = (Readings::default(), vec![Window { minutes: WEEK, used: 52.0, resets_at: None }]);
+        r.failed("codex", "codex: not found".into(), 50);
+        assert_eq!(r.shown(), json!({"codex": {"failed": {"at": 50, "why": "codex: not found"}}}), "never a made-up 0%");
+        assert!(r.heard("claude", w.clone(), 100, "usage"));
+        r.failed("claude", "timed out".into(), 200);
+        assert_eq!(r.shown()["claude"]["windows"][0]["used"], 52.0, "the last reading stands");
+        assert_eq!(r.shown()["claude"]["failed"]["why"], "timed out");
+        assert!(r.heard("claude", w, 210, "usage"), "the same numbers that clear a failure are news");
+        assert!(r.shown()["claude"]["failed"].is_null());
+        assert_eq!(r.kept().get("codex"), None, "a failure is not kept");
+    }
+
+    #[test]
+    fn ac168_the_state_file_brings_back_the_last_readings() {
+        let r = Readings::default();
+        r.heard("claude", vec![Window { minutes: WEEK, used: 52.0, resets_at: Some(1795000000) }], 100, "usage");
+        let again = Readings::default();
+        again.load(&r.kept());
+        assert_eq!(again.shown(), r.shown());
+        let bad = json!({"claude": {"at": 5, "windows": [{"minutes": 300, "used": 140}]}, "gemini": {"at": 5, "windows": [{"minutes": 300, "used": 1}]},
+                         "codex": {"at": -1, "windows": [{"minutes": 300, "used": 1}]}});
+        let none = Readings::default();
+        none.load(&bad);
+        none.load(&json!("not an object"));
+        assert_eq!(none.shown(), json!({}), "out of range, an unknown kind, no time: left out");
     }
 }

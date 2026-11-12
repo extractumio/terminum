@@ -254,3 +254,16 @@ fn ac153_the_menus_days_are_saved_as_one_top_level_key_the_rest_kept() {
     assert_eq!(std::fs::read_to_string(&p).unwrap(), "{\n  \"port\": 47901,\n  \"agentExitDays\": 0\n}\n", "replaced in place");
     assert_eq!(load(&p).0.agent_exit_days, 0);
 }
+
+#[test]
+fn ac168_usage_commands_by_default_changed_turned_off_and_a_wrong_one_said() {
+    let s = parse("").0;
+    assert_eq!((s.usage_commands["claude"].as_str(), s.usage_commands["codex"].as_str()), (USAGE_CLAUDE, USAGE_CODEX), "both by default");
+    let (s, m) = parse(r#"{"dispatcher": {"usageCommands": {"claude": " ~/bin/claude -p /usage --output-format json ", "codex": ""}}}"#);
+    assert!(m.is_empty(), "{m:?}");
+    assert_eq!((s.usage_commands["claude"].as_str(), s.usage_commands["codex"].as_str()), ("~/bin/claude -p /usage --output-format json", ""), "trimmed; empty: off");
+    for (bad, said) in [(r#"{"codex": 3}"#, "usageCommands.codex must be"), (r#"{"claude": "a\nb"}"#, "usageCommands.claude must be"), (r#"{"gemini": "g"}"#, "unknown key dispatcher.usageCommands.gemini"), ("[]", "dispatcher.usageCommands must be an object")] {
+        let (s, m) = parse(&format!(r#"{{"dispatcher": {{"usageCommands": {bad}}}}}"#));
+        assert!(m.iter().any(|t| t.contains(said)) && s.usage_commands["codex"] == USAGE_CODEX, "{bad}: the default kept, said: {m:?}");
+    }
+}

@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // An agent's subscription stripes on the board, against a real private terminumd (terminum-dispatcher.md AC-168):
-// not known until Claude Code's status line, through the real `terminum statusline` in a pane terminumd lists, says them.
+// not known until Claude Code's status line, through the real `terminum statusline` in a pane terminumd lists, says them;
+// then a usage command set in settings.json (a stand-in printing /usage's JSON) reads them, and one that fails says why.
 import { execFileSync } from "node:child_process";
+import fs from "node:fs";
 import path from "node:path";
 import { check, until } from "./check.mjs";
 
 /** terminum-dispatcher.md AC-168: the stripes of a Claude Code agent, not known until its status line says them. */
-export async function subscriptionStripes(page, { pool, cli, newPane, envOf, tmux, shots }) {
+export async function subscriptionStripes(page, { pool, cli, newPane, envOf, tmux, shots, home }) {
   const stripes = () => page.textContent(`${pool} .agsubs`);
   check("AC-168 no reading yet: two stripes, each not known", (await stripes()).match(/not known/g)?.length === 2, await stripes());
   const pane = newPane("status"), now = Math.floor(Date.now() / 1000);
@@ -31,4 +33,35 @@ export async function subscriptionStripes(page, { pool, cli, newPane, envOf, tmu
   check("AC-168 its window says each window's reset and when it was read", /34% · resets/.test(view) && /Read \w+ \d\d:\d\d/.test(view), view);
   await page.click('#agentbox button[value="cancel"]');
   tmux("kill-pane", "-t", pane);
+  await usageCommand(page, { pool, home });
+}
+
+/** A shell word: `s` in single quotes. */
+const quoted = (s) => `'${s.replaceAll("'", `'\\''`)}'`;
+
+/** AC-168: Claude Code's usage command, as settings.json names it, read on a beat; a failing one says why, its last reading kept. */
+async function usageCommand(page, { pool, home }) {
+  const file = path.join(home, "settings.json"), was = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : null;
+  const set = (claude) => fs.writeFileSync(file, JSON.stringify({ dispatcher: { usageCommands: { claude } } }));
+  const usage = JSON.stringify([{ type: "system", subtype: "init" }, { type: "assistant", usage_report: { rate_limits: { limits: [{ kind: "weekly_all", percent: 61, resets_at: null, scope: null }] } } }, { type: "result", total_cost_usd: 0 }]);
+  const stripes = () => page.textContent(`${pool} .agsubs`);
+  const view = async () => {
+    await page.click(pool, { position: { x: 60, y: 8 } });
+    await page.waitForSelector("#agentbox[open]");
+    const t = await page.textContent("#agentview");
+    await page.click('#agentbox button[value="cancel"]');
+    return t;
+  };
+  try {
+    set(`printf '%s' ${quoted(usage)}`);
+    let t = "";
+    check("AC-168 the usage command set in settings.json fills its week", await until(async () => /week\s*61%/.test(t = await stripes()), 15000), t);
+    check("AC-168 its window says the usage command read it", /by Claude Code's usage command/.test(t = await view()), t);
+    set("echo 'not logged in' >&2; exit 3");
+    check("AC-168 a failing usage command says why in its window", await until(async () => /usage command failed .*exit 3: not logged in/.test(t = await view()), 15000), t);
+    check("AC-168 and its last reading stands", /week\s*61%/.test(await stripes()), await stripes());
+  } finally {
+    if (was === null) fs.rmSync(file, { force: true });
+    else fs.writeFileSync(file, was);
+  }
 }

@@ -363,12 +363,24 @@ where it is:
 
 Each agent over the board's columns shows two stripes: how much of its subscription's five-hour
 window and week is used, as the last session of its kind said it, one reading for every agent of
-that kind. "not known": none said it since terminumd started; "reset": the window started anew
+that kind. "not known": nothing said it yet; "reset": the window started anew
 since; "none reported": the account has no such window (a Codex plan with a week alone); faded:
 read over an hour ago. 90% or more is drawn in the danger color. Its window says when each resets.
 
-- **Codex** says its limits in its session log: terminum's hook reads them at each turn's end.
-- **Claude Code** says them only to its status line. terminum never edits Claude Code's settings,
+- **Its usage command** reads them for each kind in the pool, without a model call (no tokens spent):
+  when terminumd starts, every 10 minutes while a run of that kind works on a task, as soon as one of
+  its tasks ends, and hourly otherwise. The last reading is kept across restarts. By default Claude
+  Code's is `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config` and
+  Codex's is `codex app-server` (terminum asks it `account/rateLimits/read`). Change or turn one off
+  (`""`) in `~/.terminum/settings.json`, for example when the program is not on terminumd's PATH:
+
+  ```json
+  "dispatcher": { "usageCommands": { "claude": "/Users/alex/.local/bin/claude -p /usage --output-format json", "codex": "" } }
+  ```
+
+  When one fails, the agent's window says why, and the stripes keep the last reading.
+- **Codex** also says its limits in its session log: terminum's hook reads them at each turn's end.
+- **Claude Code** also says them to its status line, between usage commands. terminum never edits Claude Code's settings,
   so add it yourself in `~/.claude/settings.json`; your own status line command, if you have one,
   goes after it as one argument and prints as before, with the same input:
 

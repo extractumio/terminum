@@ -27,6 +27,12 @@ const FILE: &str = "settings.json";
 /// The most days of agentExitDays (AC-153): ten years.
 pub const MAX_EXIT_DAYS: i64 = 3650;
 
+/// The usage commands by default (AC-168): neither is a model call, so neither spends tokens.
+pub const USAGE_CLAUDE: &str = "claude -p /usage --output-format json --no-session-persistence --strict-mcp-config";
+pub const USAGE_CODEX: &str = "codex app-server";
+/// The longest usage command kept.
+const MOST_USAGE_COMMAND: usize = 1000;
+
 /// What settings.json of an earlier version may hold that no longer does anything (AC-04).
 const NO_LONGER: &str = "size, page.lines and page.screenMode are no longer used: the active page sizes the pane";
 
@@ -73,6 +79,8 @@ pub struct Settings {
     pub midi_soundfont: Option<String>,
     /// Days a coding agent's pane may stay unopened before its agent is asked to exit (AC-153); 0: off.
     pub agent_exit_days: u32,
+    /// Each agent kind's usage command, a line for `sh -c` (terminum-dispatcher.md AC-168); empty: not asked.
+    pub usage_commands: BTreeMap<String, String>,
     /// The messages of the last parse, for the page (`page_json`).
     pub messages: Vec<String>,
 }
@@ -97,6 +105,7 @@ impl Default for Settings {
             memory_end_gib: 8.0,
             midi_soundfont: None,
             agent_exit_days: 0,
+            usage_commands: BTreeMap::from([("claude".to_string(), USAGE_CLAUDE.to_string()), ("codex".to_string(), USAGE_CODEX.to_string())]),
             messages: Vec::new(),
         }
     }
@@ -204,6 +213,19 @@ pub fn parse(text: &str) -> (Settings, Vec<String>) {
     (s, m.0)
 }
 
+/// `dispatcher.usageCommands`: a line per agent kind, `""` for none; a kind left out keeps its default.
+fn usage_commands(s: &mut Settings, v: &Value, m: &mut Msgs) {
+    for (kind, line) in members(v, "dispatcher.usageCommands", m) {
+        match (kind, line.as_str()) {
+            ("claude" | "codex", Some(l)) if l.len() <= MOST_USAGE_COMMAND && !l.chars().any(char::is_control) => {
+                s.usage_commands.insert(kind.to_string(), l.trim().to_string());
+            }
+            ("claude" | "codex", _) => m.bad(format!("dispatcher.usageCommands.{kind} must be one line of up to {MOST_USAGE_COMMAND} characters, \"\" for none")),
+            _ => m.bad(format!("unknown key dispatcher.usageCommands.{kind}: claude or codex")),
+        }
+    }
+}
+
 fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
     match key {
         "port" => match v.as_u64() {
@@ -241,6 +263,10 @@ fn apply(s: &mut Settings, key: &str, v: &Value, m: &mut Msgs) {
         "dispatcher" => {
             let (mut warn, mut end) = (s.memory_warn_gib, s.memory_end_gib);
             for (k, v) in members(v, "dispatcher", m) {
+                if k == "usageCommands" {
+                    usage_commands(s, v, m);
+                    continue;
+                }
                 match (k, v.as_f64().filter(|n| *n >= 0.0)) {
                     ("memoryWarnGiB", Some(n)) => warn = n,
                     ("memoryEndGiB", Some(n)) => end = n,

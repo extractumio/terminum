@@ -21,7 +21,7 @@ const dayTime = (s) => DAY_TIME.format(s * 1000);
 /** The rows its stripes show at `now` (seconds): its windows, and a five-hour and a week row when the reading lacks one. */
 function rows(reading, now) {
   const got = (reading?.windows ?? []).slice().sort((a, b) => a.minutes - b.minutes);
-  const missing = reading ? "none reported" : "not known";
+  const missing = reading?.windows ? "none reported" : "not known";
   const out = got.map((w) => {
     const reset = w.resets_at != null && w.resets_at <= now;
     return { label: label(w.minutes), used: reset ? null : w.used, note: reset ? "reset" : `${Math.round(w.used)}%`, resets: reset ? null : w.resets_at };
@@ -31,11 +31,19 @@ function rows(reading, now) {
   return out;
 }
 
+/** Where its reading came from and when, and why its usage command last failed (AC-168). */
+function whence(kind, reading) {
+  const by = reading?.via === "usage" ? `by ${agentName(kind)}'s usage command` : `from a ${agentName(kind)} session`;
+  const read = reading?.at != null ? `read ${dayTime(reading.at)} ${by}` : `not read yet`;
+  const failed = reading?.failed ? `; its usage command failed ${dayTime(reading.failed.at)}: ${reading.failed.why}` : "";
+  return read + failed;
+}
+
 /** Its stripes: on its rectangle, or `full` in its window with when each resets. */
 export function stripes(kind, reading, now, full = false) {
-  const old = reading && now - reading.at > HOUR;    // over an hour: its stripes fade
+  const old = reading?.at != null && now - reading.at > HOUR;    // over an hour: its stripes fade
   const box = el("span", `agsubs${old ? " stale" : ""}${full ? " full" : ""}`);
-  const from = reading ? `read ${dayTime(reading.at)} from a ${agentName(kind)} session` : `no ${agentName(kind)} session has said it yet`;
+  const from = whence(kind, reading);
   for (const r of rows(reading, now)) {
     const line = el("span", "agsub"), track = el("span", "agtrack"), fill = el("span", "agfill"), pct = r.used ?? 0;
     fill.style.width = `${Math.min(100, pct)}%`;
@@ -59,7 +67,7 @@ function spent(a) {
 }
 
 /** How a reading comes, when none has. */
-const howTo = (kind) => (kind === "codex" ? "Codex's limits come when one of its turns ends." : "Claude Code says its limits only to its status line: put terminum statusline there, before your own command if you have one (docs/USAGE.md).");
+const howTo = (kind) => `${agentName(kind)}'s limits come from its usage command (dispatcher.usageCommands in settings.json), hourly and as its tasks run and end${kind === "codex" ? ", and when one of its turns ends" : ", and from a session's status line running terminum statusline"} (docs/USAGE.md).`;
 
 /** A task as a link: its status and ID, then its title; a press opens its window. */
 function taskLink(t, openTask) {
@@ -91,7 +99,8 @@ function session(s, { projectName, doing, openTask, openSession, letGo }) {
 export function agentView(a, reading, sessions, ctx) {
   const now = Date.now() / 1000, box = el("div", "agview");
   box.append(el("h3", null, `${agentName(a.kind)} subscription`), stripes(a.kind, reading, now, true));
-  box.append(el("p", "hint", reading ? `Read ${dayTime(reading.at)}; one reading for every ${agentName(a.kind)} agent.` : howTo(a.kind)));
+  const said = reading?.at != null ? `${whence(a.kind, reading)}; one reading for every ${agentName(a.kind)} agent.` : `${howTo(a.kind)}${reading?.failed ? ` Its usage command failed ${dayTime(reading.failed.at)}: ${reading.failed.why}` : ""}`;
+  box.append(el("p", `hint${reading?.failed ? " agsubfail" : ""}`, said.charAt(0).toUpperCase() + said.slice(1)));
   box.append(spent(a), el("h3", null, "Sessions"));
   if (!sessions.length) box.append(el("p", "hint", "No live session."));
   else {

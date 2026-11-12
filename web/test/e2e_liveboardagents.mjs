@@ -164,7 +164,7 @@ async function agentPool(page, opts) {
   const said = await page.textContent(pool);
   check("AC-138 a rectangle shows the agent's name, kind and effort", /Fast fixer/.test(said) && /Claude Code/.test(said) && /high/.test(said), said);
   check("AC-138 and no dot: nothing of it runs", (await dots()).length === 0, JSON.stringify(await dots()));
-  await subscriptionStripes(page, { pool, cli, newPane, envOf, tmux, shots });
+  await subscriptionStripes(page, { pool, cli, newPane, envOf, tmux, shots, home: opts.home });
   check("AC-138 a card names no project when one is chosen", !(await page.$(`${card(a)} .cproj`)));
   await page.click(`${card(a)} .ctitle`);           // a folded TODO card shown whole (terminum-kanban.md AC-159)
   check("AC-138 a task on no agent shows its owner", await page.isVisible(`${card(a)} .cowner`) && !(await page.$(`${card(a)} .cagent`)));
