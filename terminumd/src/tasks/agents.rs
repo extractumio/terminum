@@ -54,11 +54,12 @@ const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
 /// What a run's agent takes after its command (terminum-dispatcher.md AC-156, §9 "Inline and in its pane"): its
 /// inline TUI, which the gate reads, and, for Codex, its own process. A Codex attached to its shared app-server runs
 /// its MCP servers and hooks there, without the pane's `TMUX_PANE`: no terminum tools, no hook; any `-c` keeps it in
-/// its own process, and Codex takes `-c` again after an alias's. Claude Code keeps only its last `--settings`: a
-/// command that names one keeps it whole, and its settings choose the TUI.
+/// its own process, and Codex takes `-c` again after an alias's. Codex's startup menu of a new version stands
+/// before its box, where no one answers it: off. Claude Code keeps only its last `--settings`: a command that
+/// names one keeps it whole, and its settings choose the TUI.
 pub(crate) fn inline_words(kind: &str, command: &str) -> &'static str {
     match kind {
-        "codex" => " -c tui.alternate_screen=never",
+        "codex" => " -c tui.alternate_screen=never -c check_for_update_on_startup=false",
         _ if command.contains("--settings") => "",
         _ => r#" --settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#,
     }

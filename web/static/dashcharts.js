@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The Dashboard's own charts (terminum.md AC-152), inline SVG as charts.js's: the working day (a day a
 // column, midnight on top as a calendar's, a thin line from the first to the last event and the
-// active stretches solid on it), the hour × weekday heat map.
+// active stretches solid on it, light blue in the morning to dark blue at night), the hour × weekday heat map.
 import { pointer, svg } from "./charts.js";
 import { WEEK } from "./msgpage.js";
 
-/** Working days: `series` [{spans: [[from, to] minutes]}], `label(i)` under a column; select(i) as charts.js's. */
-export function workingDays(box, series, { label = () => "", select = () => {} } = {}) {
+/** Working days: `series` [{spans: [[from, to] minutes]}], `label(i)` under a column, `night` [from, to] hours
+ *  (terminumd's: shaded, and the morning starts at its end); select(i) as charts.js's. */
+export function workingDays(box, series, { label = () => "", select = () => {}, night: [dusk, dawn] = [22, 6] } = {}) {
+  // how late a minute is: 0 when the night ends, 100 at midnight and through the night after it
+  const morning = dawn * 60, lateness = (m) => (m < morning ? 100 : Math.round(((m - morning) / (1440 - morning)) * 100));
   const width = Math.max(160, box.clientWidth || 600), height = 220, left = 34, bottom = 18, top = 4;
   const plotW = width - left, plotH = height - top - bottom, y = (min) => top + (min / 1440) * plotH;
   const s = svg("svg", { viewBox: `0 0 ${width} ${height}`, width: "100%", height, class: "chart", "aria-hidden": "true" });
@@ -14,6 +17,8 @@ export function workingDays(box, series, { label = () => "", select = () => {} }
     svg("line", { x1: left, x2: width, y1: y(h * 60), y2: y(h * 60), class: "grid" }, s);
     svg("text", { x: left - 6, y: y(h * 60) + 3, class: "ylab", "text-anchor": "end" }, s).textContent = `${String(h).padStart(2, "0")}:00`;
   }
+  // the night (the Off hours tile's), shaded
+  for (const [a, b] of [[0, morning], [dusk * 60, 1440]]) svg("rect", { x: left, y: y(a), width: plotW, height: y(b) - y(a), class: "night" }, s);
   const band = plotW / Math.max(1, series.length), w = Math.max(2, Math.min(10, band * 0.6));
   const marks = [];
   let lastLabel = -Infinity;
@@ -22,7 +27,15 @@ export function workingDays(box, series, { label = () => "", select = () => {} }
     if (d.spans.length) {
       const first = d.spans[0][0], last = d.spans.at(-1)[1];
       svg("line", { x1: cx, x2: cx, y1: y(first), y2: y(Math.min(1440, last)), class: "span" }, s);
-      for (const [a, b] of d.spans) svg("rect", { x: cx - w / 2, y: y(a), width: w, height: Math.max(1.5, y(Math.min(1440, b)) - y(a)), rx: 1, class: "stretch" }, s);
+      // a stretch an hour a piece, each the blue of its hour
+      for (const [a, b] of d.spans) {
+        const end = Math.min(1440, Math.max(b, a + 1));
+        for (let m = a, to; m < end; m = to) {
+          to = Math.min(end, (Math.floor(m / 60) + 1) * 60);
+          svg("rect", { x: cx - w / 2, y: y(m), width: w, height: Math.max(1.5, y(to) - y(m)), rx: 1, class: "stretch",
+            style: `fill:color-mix(in oklch, var(--day-late) ${lateness(m)}%, var(--day-early))` }, s);
+        }
+      }
     }
     const t = label(i);
     if (t && cx - lastLabel >= 44) { svg("text", { x: cx, y: height - 4, class: "xlab", "text-anchor": "middle" }, s).textContent = t; lastLabel = cx; }
