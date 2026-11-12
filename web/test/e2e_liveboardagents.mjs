@@ -211,6 +211,9 @@ async function agentPool(page, opts) {
   const waits = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 terminumd keeps it waiting, naming what holds the slot", /It waits for Fast fixer: Fast fixer is at its limit of 1/.test(waits.waits) && waits.waits.includes(a), JSON.stringify(waits));
   check("AC-158 its card says what it waits for", await until(async () => /waits for Fast fixer/.test(await page.textContent(card(c)).catch(() => ""))));
+  const folded = await page.$eval(card(c), (k) => { const s = k.querySelector(".cstate.waiting"), r = s?.getBoundingClientRect();
+    return { folded: k.matches(".compact:not(.open)"), dot: !!r && r.width >= 7 && r.width < 20, title: s?.title ?? "" }; });
+  check("AC-159 a folded card shows the waiting dot, its words on hover", folded.folded && folded.dot && /waits for Fast fixer/.test(folded.title), JSON.stringify(folded));
   const again = await j(`/api/tasks/${c}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a press again on that agent waits on, in its place", /It waits for Fast fixer/.test(again.waits), JSON.stringify(again));
   await j(`/api/tasks/${c}/give-up`, "POST");
@@ -295,20 +298,20 @@ async function agentPool(page, opts) {
   await page.waitForSelector(card(shelved), { timeout: 5000 });
   await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
-  await page.click('#taskbody .newcomment button:has-text("Archive")');
-  check("AC-118 Archive turns its key to Bring back", await until(() => page.isVisible('#taskbody .newcomment button:has-text("Bring back")'), 2000));
+  await page.click('#taskacts button:has-text("Archive")');
+  check("AC-118 Archive turns its key to Bring back", await until(() => page.isVisible('#taskacts button:has-text("Bring back")'), 2000));
   await page.click("#taskclose");
   check("AC-118 an archived task leaves the board", await until(async () => !(await page.$(card(shelved)))));
   await page.click("#farchived");
   check("AC-118 Archived shows it, in the address", await until(() => page.isVisible(card(shelved))) && new URL(page.url()).searchParams.get("archived") === "1", page.url());
   await pressCard(page, shelved);
   await page.waitForSelector("#taskbox[open]");
-  const back = await until(() => page.isVisible('#taskbody .newcomment button:has-text("Bring back")'), 2000);
+  const back = await until(() => page.isVisible('#taskacts button:has-text("Bring back")'), 2000);
   check("AC-118 an archived task's window offers Bring back", back);
   // with no such key the route brings it back, so what follows still runs
-  if (back) await page.click('#taskbody .newcomment button:has-text("Bring back")');
+  if (back) await page.click('#taskacts button:has-text("Bring back")');
   else await j(`/api/tasks/${shelved}/archive`, "POST", { on: false });
-  await until(() => page.isVisible('#taskbody .newcomment button:has-text("Archive")'));
+  await until(() => page.isVisible('#taskacts button:has-text("Archive")'));
   await page.click("#taskclose");
   await page.waitForFunction(() => /^\/kanban\/$/.test(location.pathname));
   await page.click("#farchived");
@@ -335,8 +338,8 @@ async function agentPool(page, opts) {
   await shown();
   await pressCard(page, held);
   await page.waitForSelector("#taskbox[open]");
-  check("AC-138 a task its run holds offers Give up, not Run", await until(() => page.isVisible('#taskbody .newcomment button:has-text("Give up")')) && !(await page.isVisible('#taskbody .newcomment button:has-text("Run")')));
-  await page.click('#taskbody .newcomment button:has-text("Give up")');
+  check("AC-138 a task its run holds offers Give up, not Run", await until(() => page.isVisible('#taskacts button:has-text("Give up")')) && !(await page.isVisible('#taskacts button:has-text("Run")')));
+  await page.click('#taskacts button:has-text("Give up")');
   await pressAt(page, "#confirmok");
   check("AC-138 Give up fails its open tasks", await hasStatus(held, "FAILED") && await hasStatus(held2, "FAILED"), `${await status(held)} ${await status(held2)}`);
   check("AC-138 its window stays", paneAlive(tmux, heldPane));
@@ -346,7 +349,9 @@ async function agentPool(page, opts) {
 
   // + Session: the agent in the project's place, nothing typed, a dot of its own, let go by the human (AC-142)
   await shown();
-  check("AC-142 one project shown: + Session in the head", await page.isVisible("#adhocsession"));
+  const under = await page.evaluate(() => { const k = document.getElementById("adhocsession"), rows = [...document.querySelectorAll("#sessions .item")];
+    return { inList: k?.parentElement?.id === "sessions" && k === k.parentElement.lastElementChild, below: rows.every((r) => r.getBoundingClientRect().bottom <= k.getBoundingClientRect().top), rows: rows.length }; });
+  check("AC-142 one project shown: + Session under its sessions in the list", await page.isVisible("#adhocsession") && under.inList && under.below && !(await page.$("#boardacts #adhocsession")), JSON.stringify(under));
   await page.click("#adhocsession");
   check("AC-142 with several agents it asks which, the last used first", await until(() => page.$("#confirmbox[open]")) && /Fast fixer/.test(await page.textContent("#confirmacts")), await page.textContent("#confirmacts").catch(() => ""));
   await pressAt(page, '#confirmacts button:has-text("Fast fixer")');
@@ -452,7 +457,7 @@ async function projectWindowChecks(page, opts) {
   check("AC-140 terminumd refuses it too, and nothing starts", /Fresh has no folder: set it in its window/.test(refusedRun.error) && (await j(`/api/tasks/${homeless}`)).status === "TODO", JSON.stringify(refusedRun));
   await pressCard(page, homeless);
   await page.waitForSelector("#taskbox[open]");
-  await page.click('#taskbody .newcomment button:has-text("Archive")');
+  await page.click('#taskacts button:has-text("Archive")');
   await page.click("#taskclose");
 
   const pencil = async (name) => {
