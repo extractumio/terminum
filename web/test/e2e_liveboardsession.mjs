@@ -13,6 +13,7 @@ export async function liveBoardSessions(page, opts) {
   const { base, shots } = opts;
   const { j, newPane, keyOf, hook, tool, endPanes, card, open, backToSessions } = boardKit(page, opts);
   /** The project key's menu, and a press in it. */
+  const KANBAN = '.nav-head .sections a[href^="/kanban/"]';   // its address names the shown session's project (AC-135)
   const inProjects = async (what) => { await page.click("#fproject summary"); await page.click(`#fproject ${what}`); };
   await open();
   const a = newPane("cardrow"), b = newPane("cardother"), key = await keyOf(a), other = await keyOf(b);
@@ -68,13 +69,13 @@ export async function liveBoardSessions(page, opts) {
   await page.click(`#sessions .item[data-id="${other}"]`);
   check("AC-134 a press on a row changes the address", await until(() => new URL(page.url()).hash === hashOf(other)), page.url());
   check("AC-134 and shows that session", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, other)));
-  check("AC-134 Kanban stays in the list's head", await page.isVisible('.nav-head .sections a[href^="/kanban/"]'));
-  check("AC-135 from a session in no project, Kanban opens the board as it was left", await page.getAttribute('.nav-head .sections a[href^="/kanban/"]', "href") === "/kanban/");
+  check("AC-134 Kanban stays in the list's head", await page.isVisible(KANBAN));
+  check("AC-135 from a session in no project, Kanban opens the board as it was left", await page.getAttribute(KANBAN, "href") === "/kanban/");
   await page.evaluate(() => history.back());       // within the page: Playwright's goBack waits for a load that never comes
   check("AC-134 Back returns to the session before", await until(() => new URL(page.url()).hash === hashOf(key)), page.url());
   check("AC-134 and shows it", await until(() => page.evaluate((k) => document.querySelector("#sessions .item.on")?.dataset.id === k, key)));
-  check("AC-134 Kanban still in the list's head", await page.isVisible('.nav-head .sections a[href^="/kanban/"]'));
-  check("AC-135 from a session of Billing, Kanban opens Billing's board", await until(async () => await page.getAttribute('.nav-head .sections a[href^="/kanban/"]', "href") === `/kanban/?project=${project}`), await page.getAttribute('.nav-head .sections a[href^="/kanban/"]', "href"));
+  check("AC-134 Kanban still in the list's head", await page.isVisible(KANBAN));
+  check("AC-135 from a session of Billing, Kanban opens Billing's board", await until(async () => await page.getAttribute(KANBAN, "href") === `/kanban/?project=${project}`), await page.getAttribute(KANBAN, "href"));
   await page.evaluate(() => history.back());
   const home = await until(() => new URL(page.url()).pathname === "/kanban/", 3000);
   check("AC-134 Back again returns to the board", home, page.url());

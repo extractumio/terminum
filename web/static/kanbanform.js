@@ -18,8 +18,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const canCreate = (busy = false) => { $("newcreate").disabled = $("newrun").disabled = busy || uploads > 0; };
 
   const error = (text) => showError($("newerror"), text);
-  /** terminumd's words for a task with no project chosen (tasks/api.rs NO_PROJECT): said as the window opens. */
-  const NO_PROJECT = "Choose the project to make it in.";
+  /** Said as the window opens with no project chosen, terminumd's words for it (tasks/ops.rs TASK_NEEDS_PROJECT). */
+  let unchosen = false;
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
   const keep = () => write(draftKey(), draft());
 
@@ -91,7 +91,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     files = saved.files ?? [];
     showFiles();
     view(false);
-    error(project ? null : NO_PROJECT);
+    unchosen = !project;
+    error(unchosen ? "Choose the project to make it in." : null);
     box.showModal();
     $("newtitle").focus();
   }
@@ -125,7 +126,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   $("newclose").addEventListener("click", () => { keep(); box.close(); });
   box.addEventListener("cancel", keep);
   box.querySelector("form").addEventListener("input", keep);
-  $("newproj").addEventListener("change", () => { if ($("newproj").value && $("newerror").textContent === NO_PROJECT) error(null); showAgents(); });
+  $("newproj").addEventListener("change", () => { if (unchosen && $("newproj").value) { unchosen = false; error(null); } showAgents(); });
   $("newagent").addEventListener("change", () => { chose = $("newagent").value; });
   $("newadd").addEventListener("click", () => $("newpick").click());
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });

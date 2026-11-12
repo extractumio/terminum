@@ -15,7 +15,7 @@ const AGENT = new Set(["agent_stops_with_task_open", "agent_out_of_limits", "age
 export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, stop, start, part }) {
   let tag = "AC-133";
   const check = (name, ok, extra) => report(`${tag} ${name}`, ok, extra);
-  const { j, newPane, keyOf, hook, endPanes, card, open } = boardKit(page, { base, tmux, work, bin, home, app });
+  const { j, newPane, keyOf, hook, endPanes, card, open, newTask } = boardKit(page, { base, tmux, work, bin, home, app });
   const make = async (title, more = {}) => (await j("/api/tasks", "POST", { title, ...more })).id;
   const st = async (id) => (await j(`/api/tasks/${id}`)).status;
   const colOf = (id) => page.evaluate((s) => document.querySelector(s)?.closest(".col")?.dataset.status ?? null, card(id));
@@ -147,14 +147,14 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await page.click("#taskclose");
     },
     async enter_in_title() {
-      await open(); await page.click("#newtask"); await page.fill("#newtitle", "made by Enter"); await page.press("#newtitle", "Enter");
+      await open(); await newTask(); await page.fill("#newtitle", "made by Enter"); await page.press("#newtitle", "Enter");
       await nap(500);
       const made = await until(async () => (await j("/api/tasks?q=made%20by%20Enter")).tasks?.length === 1, 1500);
       check("Enter in the title creates the task", made, `box open: ${await isOpen("#newbox")}`);
       if (await isOpen("#newbox")) await page.click("#newdiscard");
     },
     async double_create() {
-      await open(); await page.click("#newtask"); await page.fill("#newtitle", "double create");
+      await open(); await newTask(); await page.fill("#newtitle", "double create");
       await page.evaluate(() => { const b = document.querySelector("#newcreate"); b.click(); b.click(); }); await nap(800);
       check("a double press makes one task", (await j("/api/tasks?q=double%20create")).tasks?.length === 1);
     },
@@ -166,7 +166,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       if (await isOpen("#newbox")) { await page.fill("#newtitle", ""); await page.click("#newdiscard"); await nap(200); if (await isOpen("#confirmbox")) await page.click("#confirmok"); }
     },
     async create_during_upload() {
-      await open(); await page.click("#newtask"); await page.fill("#newtitle", "while it uploads");
+      await open(); await newTask(); await page.fill("#newtitle", "while it uploads");
       await page.route("**/api/task-files*", async (r) => { await nap(900); await r.continue(); });
       await page.setInputFiles("#newpick", { name: "late.txt", mimeType: "text/plain", buffer: Buffer.from("late") });
       await nap(100);
@@ -294,7 +294,7 @@ ${"z".repeat(400)}
     },
     async huge_text() {
       // 1 MiB + 1 byte in lines of 1 KiB: one unbreakable line cost Linux WebKit 100 MB to lay out
-      await open(); await page.click("#newtask"); await page.fill("#newtitle", "too long a text");
+      await open(); await newTask(); await page.fill("#newtitle", "too long a text");
       await page.evaluate(() => { const t = document.querySelector("#newtext"); t.value = `${"x".repeat(1023)}\n`.repeat(1024) + "x"; t.dispatchEvent(new Event("input", { bubbles: true })); });
       await page.click("#newcreate"); await nap(800);
       check("over 1 MiB is refused in place, the window stays", (await page.textContent("#newerror")).includes("1 MiB") && await isOpen("#newbox"), await page.textContent("#newerror"));
@@ -325,7 +325,7 @@ ${"z".repeat(400)}
     },
     async made_under_filter() {
       await open("?severity=P0");
-      await page.click("#newtask"); await page.fill("#newtitle", "hidden by the filter"); await page.selectOption("#newsev", "P3"); await page.click("#newcreate"); await nap(600);
+      await newTask(); await page.fill("#newtitle", "hidden by the filter"); await page.selectOption("#newsev", "P3"); await page.click("#newcreate"); await nap(600);
       check("a task a filter hides is said when made", /filter/i.test(await page.textContent("#toast")), await page.textContent("#toast"));
     },
     async comment_refused_keeps() {

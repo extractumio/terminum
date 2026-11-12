@@ -105,5 +105,11 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
     await page.click("#sessions .item");
     await page.waitForSelector("#term", { state: "visible", timeout: 5000 });
   };
-  return { j, newPane, keyOf, envOf, hook, tool, endPanes, card, open, backToSessions, cli };
+  /** The new task's window, in Default when the board leaves none chosen: other suites' projects stand on it (AC-106). */
+  const newTask = async () => {
+    await page.click("#newtask");
+    await page.waitForSelector("#newbox[open]");
+    if (await page.inputValue("#newproj") === "") await page.selectOption("#newproj", "default");
+  };
+  return { j, newPane, keyOf, envOf, hook, tool, endPanes, card, open, backToSessions, cli, newTask };
 }

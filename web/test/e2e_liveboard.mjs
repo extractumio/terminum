@@ -12,9 +12,12 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await sameKinds(page, base, false);
   const card = (id) => `.card[data-id="${id}"]`;
   const inColumn = (status) => page.evaluate((s) => [...document.querySelectorAll(`.col[data-status="${s}"] .card`)].map((c) => c.dataset.id), status);
+  // other suites' projects on the board: none is chosen for a new task (AC-106), so these checks choose Default
+  const defaultIfNone = async () => { if (await page.inputValue("#newproj") === "") await page.selectOption("#newproj", "default"); };
   const make = async (title, { severity, text } = {}) => {
     await page.click("#newtask");
     await page.waitForSelector("#newbox[open]");
+    await defaultIfNone();
     await page.fill("#newtitle", title);
     if (text !== undefined) await page.fill("#newtext", text);
     if (severity) await page.selectOption("#newsev", severity);
@@ -55,6 +58,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.waitForSelector("#board .col");
   await page.click("#newtask");
   check("AC-106 a draft survives closing and a reload", await page.inputValue("#newtitle") === "Fix the retry loop", await page.inputValue("#newtitle"));
+  await defaultIfNone();
   check("AC-106 with its files", (await page.textContent("#newfiles")).includes("shot.png"));
   await page.fill("#newtitle", "");
   await page.click("#newcreate");

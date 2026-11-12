@@ -14,7 +14,7 @@ use super::ops::{self, rows, sql};
 /// The most schedules a store keeps (§9 Limits).
 const MOST: i64 = 200;
 /// A schedule's window with no project chosen (AC-160).
-pub const NO_PROJECT: &str = "Choose the project it runs in.";
+pub const SCHEDULE_NEEDS_PROJECT: &str = "Choose the project it runs in.";
 /// The most minutes of a scheduled run's budget.
 const BUDGET_MOST: i64 = 24 * 60;
 
@@ -139,11 +139,7 @@ impl Given {
         let or = |k: &str, default: &str| Some(text(k)).filter(|v| !v.is_empty()).unwrap_or_else(|| default.into());
         let severity = or("severity", "P2");
         ops::check_severity(&severity)?;
-        // a window sends the field: empty there is a choice not made, never Default (AC-160)
-        let project = match body["project"].as_str() {
-            Some("") => return Err(NO_PROJECT.into()),
-            p => p.unwrap_or(super::store::DEFAULT_PROJECT).to_string(),
-        };
+        let project = ops::chosen_project(body["project"].as_str(), SCHEDULE_NEEDS_PROJECT)?;
         ops::check_project(tx, &project)?;
         let agent = text("agent");
         if agent.is_empty() {

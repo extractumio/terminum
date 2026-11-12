@@ -55,7 +55,7 @@ fn ac160_refused_in_the_field_s_words() {
         assert_eq!(says(body("", "0 3 * * *")), "Choose the agent that runs it.");
         let mut b = body("a", "0 3 * * *");
         b["project"] = json!("");
-        assert_eq!(says(b), NO_PROJECT, "a window's project not chosen is never Default");
+        assert_eq!(says(b), SCHEDULE_NEEDS_PROJECT, "a window's project not chosen is never Default");
         let mut b = body("a", "0 3 * * *");
         b.as_object_mut().unwrap().remove("budget_minutes");
         assert_eq!(says(b), "A scheduled run needs a time budget: no human watches it.");

@@ -142,7 +142,7 @@ const pressAt = async (page, sel) => {
 /** AC-138: tasks chosen and dropped on a free agent, one session; busy refuses more; it stays on their cards. */
 async function agentPool(page, opts) {
   const { base, work, tmux, shots } = opts;
-  const { j, card, cli, newPane, envOf } = boardKit(page, opts);
+  const { j, card, cli, newPane, envOf, newTask } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Pool", dir: work })).id;
   const fixer = (await j("/api/task-agents", "POST", { name: "Fast fixer", kind: "claude", effort: "high", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   const task = async (title) => (await j("/api/tasks", "POST", { title, project })).id;
@@ -267,7 +267,7 @@ async function agentPool(page, opts) {
   check("AC-138 closing a session frees its slot", await dotted((d) => d.length === 0), JSON.stringify(await dots()));
 
   // made and run at once: the new-task window's Run
-  await page.click("#newtask");
+  await newTask();
   await page.waitForSelector("#newbox[open]");
   check("AC-138 a new task offers a free agent", await page.inputValue("#newagent") === fixer, await page.inputValue("#newagent"));
   await page.fill("#newtitle", "made and run FINISHES");
@@ -279,7 +279,7 @@ async function agentPool(page, opts) {
   check("AC-183 the new-task window's Run keeps the human and its way", startOf(opts.app, made) === "human new", startOf(opts.app, made));
   tmux("kill-pane", "-t", await paneOf(made));
   await dotted((d) => d.length === 0);
-  await page.click("#newtask");
+  await newTask();
   await page.waitForSelector("#newbox[open]");
   await page.fill("#newtitle", "made, its agent not chosen");
   await page.selectOption("#newagent", "");

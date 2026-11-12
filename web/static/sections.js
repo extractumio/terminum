@@ -4,6 +4,7 @@
 // A new section is a line here: its `id` is its address's first part, `pages` those of its further pages.
 import { icon } from "./icons.js";
 import { el } from "./listparts.js";
+import { boardUrl } from "./tasklink.js";
 
 /** In the switcher's order: `id` its address (`/<id>/`), `label` on its key, `title` what it holds (the key's tooltip). */
 const SECTIONS = [
@@ -33,10 +34,11 @@ function mountSections() {
 
 mountSections();
 
+/** The switcher's Kanban keys, whatever project their address names. */
+export const kanbanLinks = () => [...document.querySelectorAll("nav.sections a")].filter((a) => a.pathname === "/kanban/");
+
 /** The switcher's Kanban opens the board of `project` (an id; none: the board as this browser left it), the project
  *  of the session shown (terminum-kanban.md AC-135). */
 export function boardFor(project) {
-  for (const a of document.querySelectorAll("nav.sections a")) {
-    if (a.pathname === "/kanban/") a.setAttribute("href", project ? `/kanban/?project=${encodeURIComponent(project)}` : "/kanban/");
-  }
+  for (const a of kanbanLinks()) a.setAttribute("href", boardUrl(project));
 }

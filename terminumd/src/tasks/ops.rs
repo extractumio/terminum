@@ -200,6 +200,19 @@ pub struct NewTask {
     pub scheduled: bool,
 }
 
+/// A new task's window with no project chosen (terminum-kanban.md AC-106).
+const TASK_NEEDS_PROJECT: &str = "Choose the project to make it in.";
+
+/// The project a request names: none named, Default; named empty, a window's choice not made, refused in
+/// `refusal`'s words, never Default (AC-106, terminum-schedules.md AC-160).
+pub fn chosen_project(named: Option<&str>, refusal: &str) -> Result<String, String> {
+    match named {
+        None => Ok(DEFAULT_PROJECT.to_string()),
+        Some("") => Err(refusal.to_string()),
+        Some(p) => Ok(p.to_string()),
+    }
+}
+
 pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<Task, String> {
     let title = check_title(&new.title)?;
     check_text(&new.text)?;
@@ -216,7 +229,10 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         None => None,
     };
     // a subtask stands in its parent's project, whatever was asked
-    let project = parent.as_ref().map(|(_, p)| p.clone()).or(new.project).unwrap_or_else(|| DEFAULT_PROJECT.to_string());
+    let project = match parent.as_ref() {
+        Some((_, p)) => p.clone(),
+        None => chosen_project(new.project.as_deref(), TASK_NEEDS_PROJECT)?,
+    };
     check_project(tx, &project)?;
     if new.by_agent {
         let open: i64 = tx.query_row("SELECT count(*) FROM tasks WHERE project = ?1 AND by_agent = 1 AND archived_at IS NULL AND status <> 'DONE'", [&project], |r| r.get(0)).map_err(sql)?;
