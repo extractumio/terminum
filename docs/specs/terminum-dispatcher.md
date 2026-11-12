@@ -44,6 +44,7 @@ Assumptions (each "to be measured" is measured on the real programs before the c
 | AS-125 | The gate's screen reading (§9) tells an empty input box from a draft, ghost text and any dialog, for Claude Code's two TUIs and Codex, by `capture-pane -e`: Claude Code's `❯` between two rules with nothing at full strength after it (its cursor's reverse cell or a suggestion in dim), Codex's `›` then its placeholder in dim; an unknown screen reads as not empty. | Claude | measured on Claude Code 2.1 and Codex 0.166; again at a version bump |
 | AS-126 | A subagent may run inside the agent's process or as its own process in a tmux pane of its own, a child of the tmux server and outside the agent's process tree. | Claude | measured once: a Claude Code 2.1 teammate ran in its own pane; other kinds and Codex to be measured |
 | AS-127 | SessionEnd says `clear` on /clear, a new ID coming in the next SessionStart, and `other` on SIGTERM as on a clean end, so only the exit code tells them; Claude Code's SessionStart comes after its box shows, so the gate waits for it; an idle agent's tree uses 0.72 s (Claude Code) and 0.11 s (Codex) of CPU a minute. | Claude | measured on Claude Code 2.1 and Codex 0.166; Codex's SessionStart before its first prompt is not known, so the gate's first prompt there rests on the screen read twice |
+| AS-128 | Codex 0.167 started with any `-c` override runs in the TUI's own process, not in a shared app-server it would otherwise attach to: its MCP servers and hooks are the pane's children, with its `TMUX_PANE`; an older Codex ignores the unknown `tui.alternate_screen` (not with `--strict-config`). | Claude | measured on Codex 0.167.2: no `-c`, terminum's MCP server ran under the app-server; with `-c tui.alternate_screen=never`, under the pane's Codex, inline; older versions not measured; measured again at Codex's next minor version |
 
 Dependencies:
 
@@ -81,7 +82,7 @@ Open questions:
 | AC-143 | [SHOULD / P1] | An agent's window shows what it spent in the last 7 and 30 days, against its limits if it has them; a limit is shown, it stops nothing. |
 | AC-168 | [SHOULD / P1] | An agent's rectangle shows two stripes, its kind's subscription windows (five hours and a week) in percent as its kind's usage command or a session of that kind last read them; the usage command, a line in settings.json that spends no tokens, runs at terminumd's start, every 10 minutes while a run of its kind works on a task, as one of its tasks ends, else hourly; the last reading outlives a restart; a window not known, reset since, or read long ago, and a failed usage command, say so, never a made-up 0%. |
 | AC-144 | [MUST / P0] | Task, project, agent, a run's process and its tmux pane each live their own life: each outlives the others' restart or deletion as the table says, and what is lost is said. |
-| AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
+| AC-156 | [MUST / P0] | A run starts its agent's command as the operator wrote it, its permissions and model included; Dispatcher adds only the inline TUI in the agent's own process (§9), the effort and, going on, the resume of its conversation; going on starts the agent's command as the pool has it then. |
 | AC-157 | [MUST / P0] | An agent that needs a human asks by `ask_human`: its questions, with options and its recommended answers, stay on the task, the task waits for the human, and once the agent's turn is over its session closes; the task keeps its agent and conversation, and RUN resumes that conversation with the human's answers. |
 | AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169) waits for room, in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
@@ -141,7 +142,7 @@ Scenario: AC-121 edge — a paste shown late
 Scenario: AC-121 failure — did not start
   When the program is not found, the box does not come in 60 s, or the prompt is not taken in 30 s
   Then API-12 is FAILED and its comment says "Session did not start: <reason>" with the screen's last 20 rows, redacted (`sent::redact`) as a Markdown block
-  And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex"; the agent left running is named, and Dispatcher does not watch it
+  And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex, or Codex runs in a shared app-server (AC-156)"; the agent left running is named, and Dispatcher does not watch it
   And the window stays for AC-125 to close
 
 Scenario: AC-121 edge — the window still opening
@@ -237,6 +238,11 @@ Scenario: AC-122 happy path — only the shell remains
   Given the agent is gone and the pane stands at its shell, nothing typed there since
   When the user presses RUN
   Then the agent starts there by `respawn-pane -k` with the window command and the resume of §9, and the prompt goes in as above
+  When no conversation of its agent is known: it ended before its prompt was taken, as an agent that updated itself and exited
+  Then RUN's window shows the text that will be sent, as a first run's (AC-121), and the agent starts there by its command alone with that prompt, the comment as the human's message: an agent with no conversation has nothing to go on with
+  And a task's text changed since the window opened is asked again, as AC-121's
+  When RUN finds the live agent has just ended and no conversation is known
+  Then it starts nothing and says "Its agent has just ended: run it again."; the next RUN goes as above
 
 Scenario: AC-122 edge — the same pane
   When RUN goes on in a pane of this task's last run
@@ -895,9 +901,23 @@ Scenario: AC-144 edge — a project on another server
 Scenario: AC-156 happy path — what a run starts
   Given Opus reviewer's command "myclaude", a function of the user's shell for claude --dangerously-skip-permissions, effort high
   When a run of it starts
-  Then its line is "myclaude --effort high": the permissions, model and settings are the operator's words, and RUN's window shows the line in full
+  Then its line is "myclaude <inline words> --effort high": the permissions, model and settings are the operator's words, and RUN's window shows the line in full
   When it goes on from its shell or resumes a closed session
-  Then the line is "myclaude --effort high --resume <its conversation>"
+  Then the line is "myclaude <inline words> --effort high --resume <its conversation>"
+
+Scenario: AC-156 happy path — inline and in its own process
+  Given Codex's command "codsp", a function of the user's shell for codex --no-alt-screen, and a Codex app's shared app-server running
+  When a run of it starts
+  Then its line is "codsp -c tui.alternate_screen=never": Codex draws inline and runs in the pane's own process, where terminum's MCP server and hooks know their pane, so the agent reads its task by get_task and its prompt's hook is heard
+  And Codex takes `-c` again after one the command names, so an alias that names one already still starts
+  And a Claude Code agent's line ends in --settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}': its inline TUI over the user's tui setting and that variable
+  When a Claude Code agent's command names --settings
+  Then none is added: Claude Code keeps only its last --settings, so the operator's stand whole and choose the TUI
+
+Scenario: AC-156 edge — a command of several programs
+  Given an agent's command "codex; notify"
+  When a run of it starts
+  Then its line is the command alone: words after it would go to notify (an effort is refused there, AC-137)
 
 Scenario: AC-156 happy path — the operator changes it
   Given API-12's session started with "claude" and is closed, its conversation known
@@ -1492,6 +1512,8 @@ new-window -d -a -t @7 -P -F '#{pane_id} #{session_name}:#{window_index}' /bin/s
 
 Exit -1 is the folder's: no process exits with it. The target names the pane: `tmux set -p` without `-t` writes to the session's current pane.
 
+**Inline and in its pane (AC-156).** After the operator's command, before the effort: Codex `-c tui.alternate_screen=never`; Claude Code `--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'` (over the user's settings, its `env` over the variable), none when the command names `--settings`: Claude Code keeps only the last one given, so an operator's would be lost; one inside an alias is not seen, and ours replaces it. The gate reads both agents inline (AS-125). A Codex 0.167 attaches by itself to a shared `codex app-server` (one a Codex app or editor started), which starts the MCP servers and runs the hooks in its own environment, without the pane's `TMUX_PANE`: the agent has no terminum tools and its prompt's hook is never heard; a `-c` override keeps it in its own process (AS-128). `--no-daemon` would say it in words, but a Codex older than its daemon refuses an option it does not know, and Codex refuses a flag given twice, as an alias may have it. A command with `;`, `|`, `&` or `#` gets none of these.
+
 **Resume.** The run's own command (another agent's of its kind when dropped on it, AC-138) then `--resume <id>` (Claude Code) or `resume <id>` (Codex), in the run's first folder; `<id>` must match `[A-Za-z0-9][A-Za-z0-9-]{0,99}`, so it is no flag and no shell word: a hook's field can be posted by any process of the user or a broken host.
 
 **The typing gate.** All in order, on the pane's typing queue so a human's keys cannot interleave; any miss types nothing, or no Enter, and the task says "Not delivered: <which>", but a miss of the request for a result says nothing: a later walk asks again (AC-123):
@@ -1522,7 +1544,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 
 **Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
-**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no flag (AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time and its source (`session`, `usage`), from panes it lists and from the usage commands, in the store (`meta` key `subscriptions`): the same numbers move its time at most every 10 minutes; a change of either, or a failed usage command (kept in memory, cleared by its next reading), tells pages (`subscriptions`: per kind `{at, windows, via, failed: {at, why}}`), and `/api/tasks?counts=1` carries them.
+**Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no status line (its `--settings` name only the TUI, AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time and its source (`session`, `usage`), from panes it lists and from the usage commands, in the store (`meta` key `subscriptions`): the same numbers move its time at most every 10 minutes; a change of either, or a failed usage command (kept in memory, cleared by its next reading), tells pages (`subscriptions`: per kind `{at, windows, via, failed: {at, why}}`), and `/api/tasks?counts=1` carries them.
 
 **Usage commands (AC-168).** `dispatcher.usageCommands` in settings.json holds a line per kind (default: Claude Code's `claude -p /usage --output-format json --no-session-persistence --strict-mcp-config --setting-sources local`, Codex's `codex app-server`; `""`: none). Each walk's beat (`dispatcher/usageask.rs`) asks a kind the pool has when due: never asked or its line changed; a task of it ended (a live run that had open tasks has fewer, or is gone; kept until an ask starts) and a minute passed since the last ask; every 10 minutes while a live run of it has an open task or its last ask failed; else hourly; one ask per kind at a time, not awaited by the walk. Its error output is read all along (its first 4 KB kept); once it answered it has 2 s to end, then its process group is sent SIGKILL, as at its 60 s limit. Claude Code's output is its messages as JSON; the first `usage_report.rate_limits.limits` read, its unscoped meters only: `session` five hours, `weekly_all` a week, `percent` (past 100: 100), `resets_at` an ISO time or null (another text leaves the meter out). Codex's app-server is written its `initialize`, `initialized` and `account/rateLimits/read` (id 2) and read up to that answer (`rateLimits.primary`, `secondary`: `usedPercent`, `windowDurationMins`, `resetsAt`; the line with id 2 and no method), then its input closed. Both are judged as an event's windows. `--bare` is no option: it skips the login.
 
@@ -1579,7 +1601,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-142 — `cargo test dispatcher::runs`, `cargo test dispatcher::plan`, `cargo test tasks::tools`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-143 — `cargo test dispatcher::usage`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-168 — `cargo test subscriptions`, `cargo test usageask`, `cargo test usageread`, `cargo test settings::tests::ac168`, `cargo test cli::statusline`, `cargo test cli::hooktokens`, `scripts/e2e_hooks.py`, `web/test/e2e_liveboardsubs.mjs` (a stripe under 40% green, over 90% red)
-- [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `SECURITY.md` carries the operator's command
+- [ ] AC-156 — `cargo test tasks::agents`, `cargo test dispatcher::press`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livedispatcher.mjs` (the inline words), `SECURITY.md` carries the operator's command
 - [ ] AC-157 — `cargo test dispatcher::plan`, `cargo test dispatcher::press`, `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livedispatcher.mjs`
 - [ ] AC-158 — `cargo test dispatcher::waits`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-169 — `cargo test dispatcher::waits`, `web/test/e2e_livequeue.mjs` (a wide and a phone size), `web/test/e2e_liveboardagents.mjs`

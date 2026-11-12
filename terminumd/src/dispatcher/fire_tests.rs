@@ -252,3 +252,28 @@ fn ac162_any_task_of_it_in_progress_skips_the_firing() {
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac162_an_older_task_s_idle_session_in_the_kept_slot_is_closed_for_the_firing() {
+    open("fire-older-idle").with(|tx| {
+        let s = schedule(tx, 1, every_15());
+        let (old, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        ops::move_to(tx, DISPATCHER, &old, "DONE", NOW + 11 * 60)?;
+        let (new, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);
+        ops::move_to(tx, DISPATCHER, &new, "DONE", NOW + 26 * 60)?;   // its session closed: no run of it holds a slot
+        // a human ran the older one again; it finished, its session stays open in the kept slot
+        let run = working(tx, &ops::get(tx, &old)?);
+        assert!(matches!(decide(tx, &s, NOW + 40 * 60, false)?, Next::Skipped), "working: skipped");
+        let fires = crate::tasks::schedulesapi::fires_of(tx, Some("SCH-1"), None, 10)?;
+        assert_eq!(fires[0]["why"].as_str(), Some(format!("Skipped: {old}'s session is still busy.").as_str()), "named by the task in the slot, not the last one");
+        runs::change(tx, &run, |r| { r.turn_ended = true; r.closing_for = 60; })?;
+        match decide(tx, &s, NOW + 55 * 60, false)? {
+            Next::Close(r) => assert_eq!(r, run, "the older task's idle session is closed for the slot"),
+            _ => panic!("its idle session was not closed"),
+        }
+        assert!(matches!(decide(tx, &s, NOW + 55 * 60, true)?, Next::Skipped), "closed once and still standing there: skipped, nothing closed again");
+        runs::change(tx, &run, |r| r.state = runs::Phase::Gone)?;
+        made(decide(tx, &s, NOW + 70 * 60, false)?);
+        Ok(())
+    }).unwrap();
+}
