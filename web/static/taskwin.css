@@ -63,7 +63,7 @@ dialog .markdown img { max-width: 100%; }
 .cagent { display: inline-flex; align-items: center; gap: var(--sp-1); color: color-mix(in srgb, var(--ag) 75%, var(--t-fg)); }
 .cagent::before { content: ""; width: 7px; height: 7px; border-radius: 2px; background: var(--ag); }
 .cstate { --sev: var(--faint); }
-.cstate.working { --sev: var(--accent); }
+.cstate:is(.working, .background) { --sev: var(--accent); }
 .cstate:is(.waiting, .stopped) { --sev: var(--waiting); }
 .cstate:is(.failed, .closed) { --sev: var(--danger); color: var(--danger-text); }
 
