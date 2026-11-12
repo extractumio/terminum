@@ -98,6 +98,7 @@ pub fn links_restored(tx: &Transaction, prefix: &str, panes: &[(String, String)]
         let new = panes.iter().find(|(o, _)| o == old).map(|(_, n)| format!("{prefix}{n}"));
         tx.execute("UPDATE tasks SET made_in = ?1 WHERE id = ?2", (new, &task)).map_err(sql)?;
     }
+    runs_follow(tx, prefix, Some(panes))?;
     let linked = on_server(tx, "session_key", prefix)?;
     let mut changed = 0;
     for (task, key) in linked {
@@ -123,11 +124,26 @@ pub fn links_dropped(tx: &Transaction, prefix: &str, now: i64) -> Result<usize, 
     for (task, _) in on_server(tx, "made_in", prefix)? {
         tx.execute("UPDATE tasks SET made_in = NULL WHERE id = ?1", [&task]).map_err(sql)?;
     }
+    runs_follow(tx, prefix, None)?;
     let linked = on_server(tx, "session_key", prefix)?;
     for (task, _) in &linked {
         drop_link(tx, task, now)?;
     }
     Ok(linked.len())
+}
+
+/// Dispatcher's runs on the server whose keys start with `prefix` follow their panes too (`panes`: old id, new id;
+/// none: started anew): a pane of a reused number is never taken for a run's, a worker's, nor a run's pane for a
+/// human's (terminum-agents.md AC-174).
+fn runs_follow(tx: &Transaction, prefix: &str, panes: Option<&[(String, String)]>) -> Result<(), String> {
+    let like = format!("{}%", super::query::like_escaped(prefix));
+    let named: Vec<(String, String)> = rows(tx, "SELECT id, pane_key FROM runs WHERE pane_key LIKE ?1 ESCAPE '\\'", [like], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    for (run, key) in named {
+        let old = key.strip_prefix(prefix).unwrap_or(&key);
+        let new = panes.and_then(|p| p.iter().find(|(o, _)| o == old)).map(|(_, n)| format!("{prefix}{n}"));
+        tx.execute("UPDATE runs SET pane_key = ?1 WHERE id = ?2", (new, &run)).map_err(sql)?;
+    }
+    Ok(())
 }
 
 /// Tasks whose `column` (`session_key` or `made_in`) names a pane of the server whose keys start with `prefix`.

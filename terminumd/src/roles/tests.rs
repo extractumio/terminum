@@ -226,3 +226,37 @@ async fn ac174_the_list_s_rows_say_which_sessions_are_managers() {
     assert_eq!(rows(), json!([{"id": BOSS}, {"id": WORKER}, {"id": PLAIN}]), "let go, its row has no mark");
     assert!(app.dispatcher.managers_changed());
 }
+
+/// Pane `key` a member of `project`, as the human's + in the list or Add to Project leaves it.
+fn member(app: &crate::app::Shared, key: &str, project: &str) {
+    app.tasks.with(|tx| tx.execute("INSERT INTO project_members (project, pane_key, place) VALUES (?1, ?2, 0)", (project, key)).map(drop).map_err(sql)).unwrap();
+}
+
+#[tokio::test]
+async fn ac174_a_session_the_human_opened_in_a_project_is_its_manager() {
+    let (app, _) = app("roles-opened");
+    let role = |key: &'static str| app.tasks.with(move |tx| Ok(boss(tx, key)?.map(|b| (b.project, b.name)))).unwrap();
+    const DEFAULTS: &str = "tmux:local:t:%4";
+    member(&app, PLAIN, "api");
+    member(&app, WORKER, "api");
+    member(&app, DEFAULTS, "default");
+    assert_eq!(role(PLAIN), Some(("api".into(), "api · manager".into())), "a member no run named: the human's, its project's manager");
+    assert_eq!(role(WORKER), None, "Dispatcher's pane stays a worker in its project");
+    assert_eq!(role(DEFAULTS), None, "Default is no project: no manager there");
+    app.tasks.with(|tx| { let r = runs::in_pane(tx, WORKER)?.unwrap(); runs::let_go(tx, &r.id).map(drop) }).unwrap();
+    assert_eq!(role(WORKER), None, "and stays one when its run ends");
+    let mut groups = vec![json!({"items": [{"id": PLAIN}, {"id": WORKER}, {"id": DEFAULTS}]})];
+    app.tasks.with(|tx| app.dispatcher.read_runs(tx).map(drop)).unwrap();
+    mark(&app, &mut groups);
+    assert_eq!(groups[0]["items"], json!([{"id": PLAIN, "manager": true}, {"id": WORKER}, {"id": DEFAULTS}]), "its row has the crown");
+}
+
+#[tokio::test]
+async fn ac179_a_manager_never_types_into_nor_closes_another_manager_s_session() {
+    let (app, _) = app("roles-guard");
+    member(&app, PLAIN, "api");
+    for tool in ["send_to_session", "close_session"] {
+        let said = call(&app, BOSS, tool, json!({"session": PLAIN, "text": "hello"})).await.unwrap_err();
+        assert!(said.starts_with(&format!("{PLAIN} is a manager's session, the human's: you cannot ")), "{tool}: {said}");
+    }
+}

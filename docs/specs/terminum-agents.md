@@ -66,9 +66,9 @@ Open questions: none.
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
 | AC-155 | [SHOULD / P1] | `terminum mcp` lists search_tools, get_tool_info, execute_tool and update_session_plan; an agent finds any other tool of the catalog by the action it needs, synonyms counted, and runs it through execute_tool, as terminum's own words write each call. |
-| AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started is its project's manager; every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
+| AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started, and a session the human opened in a project, are its project's managers; every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
 | AC-178 | [SHOULD / P1] | A manager's call is run only when it comes from under the pane it names, and what writes only from that pane's main agent. |
-| AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions; its words reach an agent as the manager's, never as a human's. |
+| AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions, never another manager's; its words reach an agent as the manager's, never as a human's. |
 | AC-180 | [MUST / P0] | A manager adds, changes and removes the pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
 | AC-181 | [MUST / P0] | Every tool of `terminum mcp` runs from a shell by `terminum tool`, as the session of the pane it runs in or, outside a pane, as a token's role and project; a token is made and removed only outside terminum's panes and kept as its hash. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay, and the pane says which agent ended and how to resume it. |
@@ -365,9 +365,16 @@ Scenario: AC-174 happy path — who is a manager
   And on a host's project the same holds for the session + Session started there
   And its row in the session list, and its card's row on the board, shows a small grey crown at its right, "Manager: it runs its project by terminum's tools" on hover; a worker's row shows none, and a manager's let go loses it within a walk
 
+Scenario: AC-174 happy path — a session the human opened in a project
+  Given project Billing
+  When the human opens a window in Billing from the session list (its group's +, Clone, Add to Project…) and starts an agent there
+  Then that session is Billing's manager, as + Session's is, named "Billing · manager", and its row shows the crown within a second of joining
+  And Dispatcher's own window of a run is a member only once its run names it, so a worker is never taken for one meanwhile
+  And a pane's run follows its pane across a tmux restore and is forgotten when the server starts anew, so a pane of a reused number is neither a worker by mistake nor a manager by mistake
+
 Scenario: AC-174 happy path — who is a worker
   Given a session Dispatcher started for a task (a human's RUN, a schedule's firing, the queue, Auto-Dispatcher, a manager's run_task)
-  Or a session opened by hand, a pane a tmux command made, a + Session's session the human let go
+  Or a session in no project (Default), a pane a tmux command made, a + Session's session the human let go
   Then it is a worker: its tools, instructions and search are those of AC-155 and terminum-kanban.md AC-115, and name no manager's tool or area
   And it stays a worker when its task ends
 
@@ -445,6 +452,8 @@ Scenario: AC-179 failure — outside its reach
   Then it answers "BILL-12 is outside your project." or "Your project has no session …: list_sessions shows them."
   When send_to_session or close_session names the manager's own session
   Then it answers "That is your own session: type into another one." (or "close another one.")
+  When it names another manager's session, one the human opened or another + Session's
+  Then it answers "%7 is a manager's session, the human's: you cannot type into it. Read it with get_session; run_task starts a worker you can." (or "close it.") and does nothing
   When the text holds a control or invisible character other than a tab or a line end, or the pane is in a tmux mode
   Then nothing is typed and the answer says why
   And a manager starts no session but a task's: it has no tool that makes a manager
@@ -738,7 +747,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`
 - [x] AC-155 — `cargo test cli::mcp` (`terminumd/src/cli/mcp_meta_tests.rs`, `mcp_search.rs`, `mcp_tests.rs`, `mcp_tasks.rs`), `cargo test tasks::tools` (`ac145_an_agent_s_text_follows_its_project_s_template`), `web/test/e2e_liveplans.mjs`
-- [x] AC-174 — `cargo test roles`, `cargo test cli::mcp` (`mcp_tests.rs`, `mcp_manager.rs`), `scripts/e2e_roles.py`
+- [x] AC-174 — `cargo test roles`, `cargo test tasks::ops` (a run's pane across a restore), `cargo test cli::mcp` (`mcp_tests.rs`, `mcp_manager.rs`), `scripts/e2e_roles.py`
 - [x] AC-178 — `cargo test roles`, `scripts/e2e_roles.py` (a pane naming the manager's)
 - [x] AC-179 — `cargo test roles`, `cargo test dispatcher::press`, `scripts/e2e_roles.py`
 - [x] AC-180 — `cargo test roles`, `scripts/e2e_roles.py`

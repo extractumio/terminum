@@ -174,7 +174,8 @@ impl Dispatcher {
     pub(crate) fn read_runs(&self, tx: &rusqlite::Transaction) -> Result<Vec<runs::Run>, String> {
         let all = runs::live(tx)?;
         *self.panes.lock() = all.iter().filter_map(|r| r.pane_key.clone()).collect();
-        let managers: HashSet<String> = all.iter().filter(|r| r.ad_hoc() && r.holds_slot()).filter_map(|r| r.pane_key.clone()).collect();
+        let mut managers: HashSet<String> = all.iter().filter(|r| r.ad_hoc() && r.holds_slot()).filter_map(|r| r.pane_key.clone()).collect();
+        managers.extend(crate::roles::opened(tx)?);          // and the sessions the human opened in a project (AC-174)
         let mut held = self.managers.lock();
         if *held != managers {
             *held = managers;

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Who a caller of terminum's tools is (`terminum-agents.md` AC-174 to AC-181). A worker: any session, with its
-//! project's tasks (tasks/tools.rs). A manager: the session a human's + Session started for a project, or a
-//! manager's token: it runs its project as the human would, through the tools here alone. terminumd decides the
+//! project's tasks (tasks/tools.rs). A manager: the session a human's + Session started for a project, a session
+//! the human opened in a project, or a manager's token: it runs its project as the human would, through the tools
+//! here alone. terminumd decides the
 //! role from its own records at every call, never from the caller's word; a guard against an agent that errs, no
 //! boundary against a process of the same user (SECURITY.md).
 
@@ -24,7 +25,7 @@ pub const MANAGER_TOOLS: [&str; 17] = ["list_runs", "run_task", "stop_task", "li
     "list_schedules", "create_schedule", "update_schedule", "delete_schedule", "run_schedule", "list_sessions", "get_session", "send_to_session", "close_session", "get_dashboard"];
 /// What a worker is told of a manager's tool: as of a name that is no tool.
 pub fn not_yours(tool: &str) -> String {
-    format!("No tool is named {tool:?} for this session: it is a worker's. A project's manager, the session a human started with + Session, has it.")
+    format!("No tool is named {tool:?} for this session: it is a worker's. A project's manager, a session the human started in the project, has it.")
 }
 /// A manager's write from another session than its pane's main agent.
 pub const SUBAGENT: &str = "Not done: only the manager's main agent acts on the project, not a subagent. Report to it instead.";
@@ -41,18 +42,36 @@ pub struct Boss {
     pub name: String,
 }
 
-/// The project pane `key`'s session manages: the one of its + Session's run, while Dispatcher holds it (AC-174).
-/// A run with a task makes a worker, whoever started it, and so does a pane with no run.
-pub fn manages(tx: &Transaction, key: &str) -> Result<Option<runs::Run>, String> {
-    Ok(runs::in_pane(tx, key)?.filter(|r| r.ad_hoc() && r.holds_slot()))
+/// Sessions the human opened in a project (AC-174): its members no run of Dispatcher's ever named, whatever became
+/// of that run; Default is no project. Their panes and projects.
+const OPENED: &str = "SELECT m.pane_key, m.project FROM project_members m
+                      WHERE m.project <> 'default' AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.pane_key = m.pane_key)";
+
+/// The panes of every session the human opened in a project: managers, for the list's crown.
+pub fn opened(tx: &Transaction) -> Result<Vec<String>, String> {
+    crate::tasks::ops::rows(tx, OPENED, [], |r| r.get(0))
 }
 
-/// Pane `key`'s manager, if its session is one.
+/// The project pane `key`'s session manages, and the + Session's run that makes it so (AC-174): a run with no task
+/// while Dispatcher holds it, or a session the human opened in that project. A run with a task makes a worker,
+/// whoever started it, and so does a pane in no project.
+pub fn manages(tx: &Transaction, key: &str) -> Result<Option<(String, Option<runs::Run>)>, String> {
+    if let Some(r) = runs::in_pane(tx, key)? {
+        return Ok((r.ad_hoc() && r.holds_slot()).then(|| (r.project.clone(), Some(r))));
+    }
+    let found: Vec<String> = crate::tasks::ops::rows(tx, &format!("{OPENED} AND m.pane_key = ?1"), [key], |r| r.get(1))?;
+    Ok(found.into_iter().next().map(|project| (project, None)))
+}
+
+/// Pane `key`'s manager, if its session is one: named by its run's agent, or, opened by the human, by its project.
 pub fn boss(tx: &Transaction, key: &str) -> Result<Option<Boss>, String> {
-    let Some(r) = manages(tx, key)? else { return Ok(None) };
+    let Some((project, run)) = manages(tx, key)? else { return Ok(None) };
     agent_named(tx, crate::inputs::MANAGER.into(), "Manager")?;           // whom the input log names for what a manager typed
-    let name = format!("{} · manager", r.agent_name);
-    Ok(Some(Boss { key: key.to_string(), user: agent_named(tx, format!("manager:{}:{}", r.project, r.agent_id), &name)?, project: r.project, name }))
+    let (id, name) = match run {
+        Some(r) => (format!("manager:{project}:{}", r.agent_id), format!("{} · manager", r.agent_name)),
+        None => (format!("manager:{project}:session"), format!("{} · manager", crate::tasks::ops::project_place(tx, &project)?.0)),
+    };
+    Ok(Some(Boss { key: key.to_string(), user: agent_named(tx, id, &name)?, project, name }))
 }
 
 /// A manager token's caller (AC-181).

@@ -274,3 +274,19 @@ fn ac150_where_a_task_was_made_follows_a_restore_and_is_forgotten_when_the_serve
     s.with(|tx| links_dropped(tx, "tmux:local:terminum:", 3)).unwrap();
     assert!(of("%7").is_empty(), "a new pane of an old number counts none of them");
 }
+
+#[test]
+fn ac174_a_run_s_pane_follows_a_restore_and_is_forgotten_when_the_server_starts_anew() {
+    use crate::tasks::projects::{links_dropped, links_restored};
+    let s = store("t-run-panes");
+    let run = |id: &str, pane: &str| s.with(|tx| tx.execute("INSERT INTO runs (id, agent_id, kind, command, folder, pane_key, state) VALUES (?1, 'a', 'claude', 'claude', '/w', ?2, 'left')", (id, pane)).map(drop).map_err(sql)).unwrap();
+    run("r1", "tmux:local:terminum:%1");
+    run("r2", "tmux:local:terminum:%2");
+    run("r3", "tmux:devbox:default:%1");
+    let pane = |id: &str| s.with(|tx| tx.query_row("SELECT pane_key FROM runs WHERE id = ?1", [id], |r| r.get::<_, Option<String>>(0)).map_err(sql)).unwrap();
+    s.with(|tx| links_restored(tx, "tmux:local:terminum:", &[("%1".into(), "%7".into())], 2)).unwrap();
+    assert_eq!((pane("r1").as_deref(), pane("r2"), pane("r3").as_deref()), (Some("tmux:local:terminum:%7"), None, Some("tmux:devbox:default:%1")),
+               "a worker's pane stays its run's; one not made again names none, so a human's pane of its number is no worker");
+    s.with(|tx| links_dropped(tx, "tmux:local:terminum:", 3)).unwrap();
+    assert_eq!((pane("r1"), pane("r3").as_deref()), (None, Some("tmux:devbox:default:%1")), "started anew: its numbers name other panes");
+}

@@ -85,6 +85,15 @@ def main():
         rows = {it["id"]: it for g in wait_layout(ws, marked, 10) for it in g["items"]}
         check("AC-174 the list's rows say which sessions are managers", rows[boss_key].get("manager") is True and rows[other_key].get("manager") is True and "manager" not in rows[plain_key], [(k, v.get("manager")) for k, v in rows.items()])
 
+        # a session the human opens in the project from the list: its manager too, the crown on its row
+        signed = t.page(secret)
+        signed.send({"t": "projectwindow", "project": project, "dir": ""})
+        made = signed.until(lambda m: m["t"] in ("created", "error"), 15) or {}
+        opened_key = made.get("id")
+        crowned = wait_layout(signed, lambda gs: any(it["id"] == opened_key and it.get("manager") for g in gs for it in g["items"]), 10)
+        check("AC-174 a session the human opens in a project is its manager, its row crowned", made.get("t") == "created" and crowned is not None, made)
+        signed.close()
+
         # who is who
         out, rc = typed(boss, f"{shlex.quote(BIN)} tools")
         check("AC-174 a + Session's session calls as a manager and is shown the manager's tools", rc == "0" and "You call as a manager." in out and "run_task" in out and "create_agent" in out, out)
@@ -143,9 +152,20 @@ def main():
         out, rc = typed(boss, tool("list_runs"))
         check("AC-179 list_runs shows the project's runs", rc == "0" and '"kind":"session"' in out, out)
 
-        # the project's sessions: read, typed into, closed; never its own, never another project's
+        # the project's sessions: read, typed into, closed; never its own, another manager's, another project's
         out, rc = typed(boss, tool("list_sessions"))
         check("AC-179 list_sessions names the project's sessions, its own marked", rc == "0" and other_key in out and '"you":true' in out and plain_key not in out, out)
+        check("AC-179 and says which are managers", '"role":"manager"' in out, out)
+        for name, tool_args in (("send_to_session", {"text": "echo no"}), ("close_session", {})):
+            out, rc = typed(boss, tool(name, session=other_key, **tool_args))
+            check(f"AC-179 {name} refuses another manager's session", rc == "1" and "is a manager's session, the human's" in out, out)
+        out, rc = typed(boss, tool("close_session", session=opened_key))
+        check("AC-179 nor closes the session the human opened in the project", rc == "1" and "is a manager's session, the human's" in out, out)
+        worked = call("/api/tasks", "POST", {"title": "a worker to type into", "project": project})[1]["id"]
+        out, rc = typed(boss, tool("run_task", id=worked, agent="Shell"), 40)
+        other_key = (wait_for(lambda: call(f"/api/tasks/{worked}")[1].get("session"), bool, 20, 0.3, last=True) or {}).get("key")
+        check("setup: run_task opens a worker's session to type into", rc == "0" and other_key, out)
+        other = other_key.rsplit(":", 1)[1]
         mark = os.path.join(work, "typed-by-manager")
         out, rc = typed(boss, tool("send_to_session", session=other_key, text=f"echo sent > {mark}"))
         check("AC-179 send_to_session types into another session of the project, with Enter", rc == "0" and wait_for(lambda: os.path.exists(mark), bool, 10, 0.2), out)

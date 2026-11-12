@@ -113,11 +113,6 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
     }
     let key = o.server.key(&pane);
     app.dispatcher.panes.lock().insert(key.clone());    // its agent's first hooks
-    if let Some((project, _)) = o.project {
-        let (a, k, project) = (app.clone(), key.clone(), project.to_string());
-        let _ = crate::http::off(move || a.projects.lock().add_to(&k, &project, None)).await;
-        crate::page::projects::tell(app);
-    }
     let on = if o.server.is_local() { "on this Mac".to_string() } else { format!("on {}", o.server.name) };
     let (a, run, tasks, words, k) = (app.clone(), o.run.to_string(), o.tasks.to_vec(), format!("Session started: {} in window {place}, {on}.", o.program), key.clone());
     store(app, move |tx| {
@@ -127,6 +122,12 @@ pub async fn open(app: &Shared, o: Opening<'_>) -> Result<String, String> {
         let r = a.dispatcher.pane_opened(tx, &run, &k)?;
         say(tx, &r, &words)
     }).await?;
+    // a member only once its run names it: a project's pane no run names is a human's, its manager (AC-174)
+    if let Some((project, _)) = o.project {
+        let (a, k, project) = (app.clone(), key.clone(), project.to_string());
+        let _ = crate::http::off(move || a.projects.lock().add_to(&k, &project, None)).await;
+        crate::page::projects::tell(app);
+    }
     Ok(key)
 }
 

@@ -42,7 +42,7 @@ page: plain JavaScript, ES modules, !bundler
 | Project memory | `project-memory/`: agents' local long-term memory, indexed, !committed ("Project memory" below) |
 | Task | a card on the board at `/kanban/`, in the SQLite store: status, severity, owner, project, session (`terminum-kanban.md`) |
 | Dispatcher | terminum's system user: starts a task's session, watches it, keeps its budget, ends it (`terminum-dispatcher.md`) |
-| Manager, worker | a tool caller's role, terminumd's word at each call (`terminum-agents.md` AC-174): manager: the session a human's + Session started, for its project, or a manager's token; worker: every other session; a manager's tools are !found, !run by a worker |
+| Manager, worker | a tool caller's role, terminumd's word at each call (`terminum-agents.md` AC-174): manager: the session a human's + Session started, or a session the human opened in a project, for that project, or a manager's token; worker: every other session; a manager's tools are !found, !run by a worker |
 | Spec | `docs/specs/`: `terminum.md` (core), `terminum-lifecycle.md`, `terminum-terminal.md`, `terminum-agents.md`, `terminum-kanban.md`, `terminum-dispatcher.md`, `terminum-schedules.md`, `terminum-files.md`, `terminum-remote.md`: cases `AC-nn` (unique across them), BDD scenarios, design, limits, the test proving each case |
 
 ## Product
