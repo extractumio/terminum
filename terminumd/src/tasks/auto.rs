@@ -303,13 +303,14 @@ pub struct Candidate {
 
 
 /// What a round may start in `project` at `now`, by setting `s`: its TODO tasks
-/// - of the severities it takes;
+/// - of the severities it takes, or with a subtask still to do of one: a main task goes for its subtasks' sake;
 /// - that stand for its wait: made, moved or edited no later than that ago (a comment, a new place among the cards or
 ///   a subtask does not start the wait anew), so one still being written is not taken;
 /// - that no session, run, wait, schedule or round holds;
 /// - that are no subtask of a main task not DONE: it goes with its main task (AC-185);
 /// - whose subtasks still to do all stand in TODO, free as it is: they go with it, and its wait counts from the last
-///   of them made, moved or edited; a failed or waiting one is the human's to run or move first;
+///   of them made, moved or edited; a failed or waiting one is the human's to run or move first, and a human's move
+///   or edit of one counts as the main task's own;
 /// - whose agent (the task's own, else the setting's default) is in the pool: one naming an agent deleted since is
 ///   none, never the default's;
 /// - that it did not start before, unless a human moved or edited it since: one its agent put back is not run again;
@@ -325,10 +326,12 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                  c AS (SELECT t.slug, t.id, t.severity, t.rank, a.id AS agent,
                    COALESCE((SELECT max(e.at) FROM events e WHERE (e.task = t.id OR e.task IN (SELECT k.id FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'))
                      AND e.kind IN ('made', 'move', 'edit')), 0) AS changed,
-                   COALESCE((SELECT max(e.at) FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND u.kind = 'human' AND e.kind IN ('move', 'edit')), 0) AS by_human
+                   COALESCE((SELECT max(e.at) FROM events e JOIN users u ON u.id = e.author WHERE (e.task = t.id OR e.task IN (SELECT k.id FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE'))
+                     AND u.kind = 'human' AND e.kind IN ('move', 'edit')), 0) AS by_human
                  FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
-                   AND t.severity IN (SELECT value FROM json_each(?5))
+                   AND (t.severity IN (SELECT value FROM json_each(?5))
+                     OR EXISTS (SELECT 1 FROM tasks k WHERE k.parent = t.id AND k.archived_at IS NULL AND k.status <> 'DONE' AND k.severity IN (SELECT value FROM json_each(?5))))
                    AND NOT EXISTS (SELECT 1 FROM run_waits w WHERE w.task = t.id) AND NOT EXISTS (SELECT 1 FROM auto_rounds r WHERE r.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM schedule_fires f WHERE f.task = t.id)
                    AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.archived_at IS NULL AND p.status <> 'DONE')

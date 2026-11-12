@@ -96,6 +96,15 @@ pub(super) fn not_run_elsewhere(tx: &Transaction, who: &Who, t: &Task) -> Result
     }
 }
 
+/// A main task ends last: refused while a subtask its run took is not DONE (terminum-dispatcher.md AC-185).
+fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
+    let open = crate::dispatcher::runs::subtasks_open(tx, &t.key)?;
+    if open.is_empty() {
+        return Ok(());
+    }
+    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first, or move {0} to FAILED with a comment saying why.", t.id, open.join(", ")))
+}
+
 /// The agent's own word that its task waits for a human, or no longer does, kept on its run; what it does next
 /// (terminum-dispatcher.md AC-157): in a session Dispatcher started and holds, it ends its turn and the session
 /// closes; elsewhere it waits there.
@@ -107,6 +116,8 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
     }
     Ok(match (waits, run.is_some()) {
         (false, _) => "",
+        // several tasks: the session stays while one of them is in progress, and their next RUN may start anew (AC-185)
+        (true, true) if run.as_ref().is_some_and(|r| r.ids.len() > 1) => " End your turn now, with no more tool calls: once no task of this session is in progress Dispatcher closes it, and the human's RUN brings the answers.",
         (true, true) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
         (true, false) => " Wait for the answer in this session.",
     })
@@ -209,9 +220,14 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if to == "TODO" && crate::dispatcher::runs::holding(tx, &t.key)?.is_some() {
                     return Err(format!("{id} is what the human ran: finish it, fail it, or ask."));
                 }
+                if to == "DONE" {
+                    after_its_subtasks(tx, &t)?;
+                }
                 ops::move_to(tx, &me()?, id, to, at)?;
-                // the wait is this session's run's only for the task it holds
-                let then = if t.session.as_deref() == Some(&who.key) { asked(tx, who, to == "WAIT FOR HUMAN")? } else { "" };
+                // the wait is this session's run's only for the task it holds; a move of another task of the run, neither
+                // into the wait nor out of it, leaves what its agent asked standing
+                let waits = to == "WAIT FOR HUMAN";
+                let then = if t.session.as_deref() == Some(&who.key) && (waits || t.status == "WAIT FOR HUMAN") { asked(tx, who, waits)? } else { "" };
                 Ok((format!("{id} is in {to}.{then}"), vec![id.to_string()]))
             }
             "ask_human" => {
@@ -231,11 +247,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "finish_task" => {
                 let id = arg(args, "id")?;
                 let t = movable(tx, who, id)?;
-                // a main task ends last: its run's subtasks first (terminum-dispatcher.md AC-185)
-                let open = crate::dispatcher::runs::subtasks_open(tx, &t.key)?;
-                if !open.is_empty() {
-                    return Err(format!("{id} is a main task: its subtasks of this run are not DONE: {}. Finish them first, or move {id} to FAILED with a comment saying why.", open.join(", ")));
-                }
+                after_its_subtasks(tx, &t)?;
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
                 ops::comment(tx, &me, id, &result, at)?;

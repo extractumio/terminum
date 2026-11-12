@@ -461,7 +461,10 @@ fn ac185_a_main_task_is_finished_after_the_subtasks_of_its_run() {
     }).unwrap();
     let refused = call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap_err();
     assert_eq!(refused, format!("{main} is a main task: its subtasks of this run are not DONE: {kid}. Finish them first, or move {main} to FAILED with a comment saying why."));
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": main, "to": "DONE"})).unwrap_err(), refused, "nor by a move");
     call(&s, &dir, &w, "move_task", json!({"id": kid, "to": "FAILED"})).unwrap();
+    // its run over, a session going on with the subtask alone ends no main task
+    s.with(|tx| runs::change(tx, &runs::last_of(tx, &ops::key_of(tx, &main)?)?.unwrap().id, |r| { r.state = Phase::Closed; r.pane_key = None; })).unwrap();
     assert!(call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).is_err(), "a failed subtask fails its main task: it is not DONE");
     call(&s, &dir, &w, "finish_task", json!({"id": kid, "result": "the subtask"})).unwrap();
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap(), format!("{main} is DONE, with your result."), "{later} is none of the run's");

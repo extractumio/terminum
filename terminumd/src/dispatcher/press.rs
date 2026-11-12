@@ -115,8 +115,8 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts,
         None => None,
     };
     let mut answers = Vec::new();
-    if named(tasks).1 {
-        for t in tasks.iter().filter(|t| t.status == "WAIT FOR HUMAN") {
+    if !mains(tasks).is_empty() {
+        for t in tasks {
             if let Some(said) = ops::answers(tx, &t.id)?.filter(|said| !said.is_empty()) {
                 answers.push((t.id.clone(), said));
             }
@@ -201,7 +201,12 @@ impl Facts {
     pub(super) fn rev(&self) -> String {
         let tasks: Vec<_> = self.tasks.iter().zip(&self.texts).map(|(t, text)| (&t.id, &t.title, text, t.by_agent, &t.parent, t.budget_seconds)).collect();
         let schedule = self.schedule.as_ref().map(|(s, again)| (&s.key, &s.title, &s.cron, s.once_at, s.budget_seconds, again));
-        crate::auth::crypto::sha256_hex(serde_json::json!([tasks, self.files, schedule, self.language]).to_string().as_bytes())
+        let mut facts = serde_json::json!([tasks, self.files, schedule, self.language]);
+        // the answers a main task's run brings are shown too (AC-185)
+        if let (Some(all), false) = (facts.as_array_mut(), self.answers.is_empty()) {
+            all.push(serde_json::json!(self.answers));
+        }
+        crate::auth::crypto::sha256_hex(facts.to_string().as_bytes())
     }
 }
 

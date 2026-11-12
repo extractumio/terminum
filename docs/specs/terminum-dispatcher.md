@@ -1248,20 +1248,28 @@ Scenario: AC-185 happy path — Auto-Dispatcher
   When a round, or the board's order, starts API-12
   Then one session runs the three, one start of the day's cap, and the prompt is terminum's words and their IDs alone: "Auto-Dispatcher, which a human turned on for this project, started main task API-12 with its 2 subtasks still to do: API-13, API-14; no human started this run or watches it now.", then the same rules
   And API-13 and API-14 are no candidates by themselves while API-12 is not DONE: they go with it
-  And API-12 is a candidate only when each subtask not DONE stands in TODO with no session, run or wait, its wait counted from the last one of them made, moved or edited: a FAILED or waiting subtask is the human's to run or move first
+  And API-12 is a candidate only when each subtask not DONE stands in TODO with no session, run or wait, its wait counted from the last one of them made, moved or edited: a FAILED or waiting subtask is the human's to run or move first, and the human's move or edit of a subtask counts as API-12's own (AC-170)
+  And API-12 of a severity not taken is a candidate when a subtask still to do is of one that is taken
+  And a main task that is itself no candidate (a session holds it, it is not in TODO, its agent is gone) keeps its subtasks waiting: a human runs them
 
 Scenario: AC-185 edge — the main task ends last
   Given API-12 and its subtask API-14 IN PROGRESS in one run
   When the agent calls finish_task on API-12
   Then it is refused: "API-12 is a main task: its subtasks of this run are not DONE: API-14. Finish them first, or move API-12 to FAILED with a comment saying why."
+  And move_task {id: "API-12", to: "DONE"} is refused in the same words
   And a subtask made or put under API-12 after the run started is none of the run's: it does not hold API-12 open, and its next RUN takes it
+  When that run is over and an agent, in the conversation a subtask's own RUN resumed too, finishes API-12 with API-14 not DONE
+  Then it is refused as well: what API-12's newest run took holds it until it is DONE; a human moves a card as they will
 
 Scenario: AC-185 edge — asking a human
   Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then move each other task that waits for the answer, its main task among them, to WAIT FOR HUMAN by execute_tool("move_task", {id, to}), call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window."
+  And ask_human and move_task to WAIT FOR HUMAN answer, in a run of several tasks, "End your turn now, with no more tool calls: once no task of this session is in progress Dispatcher closes it, and the human's RUN brings the answers."
+  And a move of another task of the run, neither into the wait nor out of it, leaves the agent's question standing
   When every open task of the run waits and the agent's turn is over
   Then the session closes as AC-157 says
   When the human answers in comments and presses Run on API-12
-  Then a new session starts for what is not DONE, and its prompt carries, after the rules, each human comment since the questions on a task of the run, under its task's ID; an agent's comment is never in it
+  Then a new session starts for what is not DONE, and its prompt carries, after the rules, each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
+  And RUN's window shows them: one written or changed after it was read is "The task's text changed: look at it again." (AC-121)
   When the human presses Run on the subtask that asked instead
   Then AC-157 holds for it alone: its conversation resumes
 
@@ -1272,6 +1280,8 @@ Scenario: AC-185 edge — every way a main task runs
   Then the wait is API-12's alone, and its subtasks are read anew when it goes: a subtask made, finished or changed since is "The task's text changed: look at it again." (AC-158's failure)
   When API-12 is chosen with API-20, a task of its own (AC-138)
   Then the session runs API-12, API-20 and API-12's subtasks, the prompt naming all and saying "API-12 is a main task; its subtasks still to do: API-13, API-14."
+  When API-12 is DONE and a subtask of it is not
+  Then RUN on API-12 runs both: the press says what the human wants done
   When API-12 ran before, alone or with them
   Then a RUN that takes a subtask starts a new session, as several tasks do (AC-138); with every subtask DONE it is one task again and AC-122 holds
 

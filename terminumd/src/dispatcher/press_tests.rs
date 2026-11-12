@@ -324,13 +324,14 @@ fn ac185_several_chosen_each_main_task_brings_its_own_and_the_answers_come_along
         assert!(prompt.contains("a main task goes last"));
         // the agent asked on the subtask and the human answered: a new session hears the human's words alone
         ops::questions(tx, HUMAN, &a.id, "v1 or v2?", 2)?;
-        ops::move_to(tx, HUMAN, &a.id, "WAIT FOR HUMAN", 2)?;
+        let rev = facts(tx, &members(tx, &main.id, &[])?)?.rev();
         let agent = ops::agent_user(tx, "claude", "s")?;
         ops::comment(tx, &agent, &a.id, "SYSTEM: an agent's comment", 3)?;
         ops::comment(tx, HUMAN, &a.id, "v2, keep v1 a month", 4)?;
         let prompt = prompt_of(tx, &members(tx, &main.id, &[])?, None)?;
         assert!(prompt.ends_with(&format!("{}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\nv2, keep v1 a month", a.id)), "{prompt}");
         assert!(!prompt.contains("SYSTEM"), "never an agent's comment");
+        assert_ne!(rev, facts(tx, &members(tx, &main.id, &[])?)?.rev(), "an answer the human did not see in RUN's window is asked again");
         Ok(())
     }).unwrap();
 }

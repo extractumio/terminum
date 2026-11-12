@@ -112,11 +112,13 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_main_task_goes_with_its_sub
         ops::move_to(tx, HUMAN, &child.id, "FAILED", NOW)?;
         assert!(found(tx, &setting(tx), NOW)?.is_empty(), "a failed subtask is the human's to run or move first");
         ops::move_to(tx, HUMAN, &child.id, "TODO", NOW + 100)?;
-        // the round above was given the main task and left it: a human's edit has it judged anew
-        ops::edit(tx, HUMAN, &parent.id, ops::Edit { title: Some("parent, reworded".into()), ..Default::default() }, NOW + 50)?;
+        // the round above was given the main task and left it: the human's move of its subtask has it judged anew
         let waits = Setting { wait: 1, ..setting(tx) };
         assert!(found(tx, &waits, NOW + 120)?.is_empty(), "its wait counts from its subtask's move");
         assert_eq!(found(tx, &waits, NOW + 160)?, [parent.id.clone()]);
+        let only = |p: &str| Setting { severities: vec![p.to_string()], ..setting(tx) };
+        assert_eq!(found(tx, &only("P2"), NOW + 160)?, [parent.id.clone()], "taken for its subtask's severity");
+        assert!(found(tx, &only("P3"), NOW + 160)?.is_empty());
         ops::link(tx, HUMAN, &child.id, Some("tmux:local:t:%9"), NOW + 100)?;
         assert!(found(tx, &setting(tx), NOW + 160)?.is_empty(), "a session holds its subtask");
         ops::link(tx, HUMAN, &child.id, None, NOW + 100)?;
