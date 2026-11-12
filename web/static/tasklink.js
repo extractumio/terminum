@@ -6,6 +6,8 @@ import { foundBy } from "./marktext.js";
 const SELECTION = "tm.taskselection";
 
 export const taskUrl = (id) => `/kanban/${id}`;
+/** The board, on `project` when one is named. */
+export const boardUrl = (project) => (project ? `/kanban/?project=${encodeURIComponent(project)}` : "/kanban/");
 
 /** The board's new-task window, for a session and its project (AC-106), a subtask of `parent` (AC-112). */
 export const newTaskUrl = (session, project, parent) => `/kanban/?new=1&session=${encodeURIComponent(session)}${project ? `&for=${encodeURIComponent(project)}` : ""}${parent ? `&parent=${encodeURIComponent(parent)}` : ""}`;

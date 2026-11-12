@@ -10,6 +10,7 @@ import { taskWindow } from "./kanbanwin.js";
 import { runWindow } from "./kanbanrun.js";
 import { newTaskUrl, taskUrl } from "./tasklink.js";
 import { recordTasks } from "./converttask.js";
+import { boardFor } from "./sections.js";
 
 const SEEN = "tm.sessiontasks.seen";     // the keys of tasks this browser was told of: a new ID never tells again
 const SEEN_MOST = 2000;
@@ -22,6 +23,9 @@ export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
   const fab = $("tasksfab");
   let list = [], of = null, asked = 0, timer = 0, windowed = null, meta = null, failed = "", drawn = "";
   const records = recordTasks({ sid, name, panes, projects, made: (t) => { seenNow([t]); toast(`${t.id} is in TODO: ${t.title.slice(0, TITLE_MOST)}`, SAY_FOR); load(); } });
+  /** Kanban opens the shown session's project, followed as the session or its project changes. */
+  const pointBoard = () => boardFor(projects().find((p) => p.members?.includes(sid()))?.id);
+  document.addEventListener("marks", pointBoard);
   const pane = fabPane({ fab, pane: $("taskspane"), close: $("tpclose"), onToggle: (on) => { if (on) draw(); } });
 
   async function load() {
@@ -114,7 +118,7 @@ export function sessionTasks({ sid, name, toast, placed, panes, projects }) {
 
   return {
     /** Another session shown. */
-    changed() { if (sid() !== of) load(); },
+    changed() { pointBoard(); if (sid() !== of) load(); },
     /** A task changed somewhere: the list read again once a burst ends; an open window reads its task. */
     heard(m) {
       clearTimeout(timer);

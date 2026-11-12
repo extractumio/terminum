@@ -3,6 +3,7 @@
 // and how many on Kanban in the page's head. terminumd says which; a closed line stays closed here.
 import { icon } from "./icons.js";
 import { el, iconButton, plural, read, write } from "./listparts.js";
+import { kanbanLinks } from "./sections.js";
 
 const SEEN = "tm.taskseen";
 
@@ -47,7 +48,7 @@ export function taskLines(box, open) {
       seen = new Set([...seen].filter((s) => now.has(s)));   // asks anew: said anew
       if (seen.size !== was) keep();
       draw();
-      for (const a of document.querySelectorAll('a[href="/kanban/"]')) {
+      for (const a of kanbanLinks()) {
         a.querySelector(".taskneed")?.remove();
         if (!m.need) continue;
         const n = el("span", "taskneed", m.need);

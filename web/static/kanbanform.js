@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, AT_LIMIT, DEFAULT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
+import { $, AT_LIMIT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -18,6 +18,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const canCreate = (busy = false) => { $("newcreate").disabled = $("newrun").disabled = busy || uploads > 0; };
 
   const error = (text) => showError($("newerror"), text);
+  /** Said as the window opens with no project chosen, terminumd's words for it (tasks/ops.rs TASK_NEEDS_PROJECT). */
+  let unchosen = false;
   const draft = () => ({ title: $("newtitle").value, text: $("newtext").value, project: $("newproj").value, severity: $("newsev").value, owner: $("newowner").value, session: $("newsession").value, files });
   const keep = () => write(draftKey(), draft());
 
@@ -77,7 +79,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     $("newhead").textContent = parent ? `New subtask of ${parent}` : "New task";
     $("newproj").disabled = !!parent;
     const filter = getFilter().project;   // a draft with nothing typed says nothing of where it goes
-    fillSelect($("newproj"), meta.projects.map((p) => [p.id, p.name]), given.project ?? (saved.title || saved.text ? saved.project : null) ?? (filter.length === 1 ? filter[0] : DEFAULT));
+    const project = given.project ?? (saved.title || saved.text ? saved.project : null) ?? onlyProject(filter, meta);
+    fillSelect($("newproj"), projectOptions(meta, project), project);
     chose = null;
     showAgents();
     fillSelect($("newsession"), sessionOptions(meta), given.session ?? saved.session ?? "");
@@ -88,7 +91,8 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     files = saved.files ?? [];
     showFiles();
     view(false);
-    error(null);
+    unchosen = !project;
+    error(unchosen ? "Choose the project to make it in." : null);
     box.showModal();
     $("newtitle").focus();
   }
@@ -122,7 +126,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   $("newclose").addEventListener("click", () => { keep(); box.close(); });
   box.addEventListener("cancel", keep);
   box.querySelector("form").addEventListener("input", keep);
-  $("newproj").addEventListener("change", showAgents);
+  $("newproj").addEventListener("change", () => { if (unchosen && $("newproj").value) { unchosen = false; error(null); } showAgents(); });
   $("newagent").addEventListener("change", () => { chose = $("newagent").value; });
   $("newadd").addEventListener("click", () => $("newpick").click());
   $("newpick").addEventListener("change", (e) => { add([...e.target.files]); e.target.value = ""; });
@@ -131,7 +135,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   /** The pickers follow the projects and sessions while the window is open; a chosen one gone is said. */
   function refresh() {
     if (!box.open) return;
-    const meta = getMeta(), projects = meta.projects.map((p) => [p.id, p.name]), sessions = sessionOptions(meta), now = JSON.stringify([projects, sessions]);
+    const meta = getMeta(), projects = projectOptions(meta, $("newproj").value), sessions = sessionOptions(meta), now = JSON.stringify([projects, sessions]);
     showAgents();
     if (now === offered) return;
     offered = now;

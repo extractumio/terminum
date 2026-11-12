@@ -12,9 +12,12 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await sameKinds(page, base, false);
   const card = (id) => `.card[data-id="${id}"]`;
   const inColumn = (status) => page.evaluate((s) => [...document.querySelectorAll(`.col[data-status="${s}"] .card`)].map((c) => c.dataset.id), status);
+  // other suites' projects on the board: none is chosen for a new task (AC-106), so these checks choose Default
+  const defaultIfNone = async () => { if (await page.inputValue("#newproj") === "") await page.selectOption("#newproj", "default"); };
   const make = async (title, { severity, text } = {}) => {
     await page.click("#newtask");
     await page.waitForSelector("#newbox[open]");
+    await defaultIfNone();
     await page.fill("#newtitle", title);
     if (text !== undefined) await page.fill("#newtext", text);
     if (severity) await page.selectOption("#newsev", severity);
@@ -30,7 +33,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
 
   await page.goto(`${base}/`);
   check("AC-105 / leads to /sessions/", new URL(page.url()).pathname === "/sessions/", page.url());
-  await page.click('.nav-head .sections a[href="/kanban/"]');
+  await page.click('.nav-head .sections a[href^="/kanban/"]');
   await page.waitForSelector("#board .col", { timeout: 5000 });
   check("AC-105 Kanban in the sections' switcher loads /kanban/ (AC-167)", new URL(page.url()).pathname === "/kanban/", page.url());
   const heads = await page.evaluate(() => [...document.querySelectorAll('.col .colhead span:first-child')].map((h) => h.textContent));
@@ -55,6 +58,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.waitForSelector("#board .col");
   await page.click("#newtask");
   check("AC-106 a draft survives closing and a reload", await page.inputValue("#newtitle") === "Fix the retry loop", await page.inputValue("#newtitle"));
+  await defaultIfNone();
   check("AC-106 with its files", (await page.textContent("#newfiles")).includes("shot.png"));
   await page.fill("#newtitle", "");
   await page.click("#newcreate");
@@ -221,6 +225,18 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-111 a picker floats on its own background, never its text over a column's", await page.evaluate(() => { const c = getComputedStyle(document.querySelector("#fproject > div")).backgroundColor; return c !== "rgba(0, 0, 0, 0)" && c !== "transparent"; }));
   check("AC-92 a project's color on the board is the session list's: its tokens are here too", await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue("--proj-l").trim() !== ""));
   await page.keyboard.press("Escape");
+  // two projects shown: the new task's goes nowhere unasked, Default least of all
+  const NO_PROJECT = "Choose the project to make it in.";
+  await page.click("#fproject summary"); await page.click('#fproject button:has-text("All projects")');
+  await page.click("#newtask");
+  check("AC-106 with several projects shown none is chosen, and the window says so", await until(async () => await page.inputValue("#newproj") === "" && await page.textContent("#newerror") === NO_PROJECT), await page.textContent("#newerror"));
+  await page.fill("#newtitle", "where does it go");
+  await page.click("#newcreate");
+  check("AC-106 Create with no project is refused in terminumd's words, the window kept", await until(async () => await page.textContent("#newerror") === NO_PROJECT) && await page.isVisible("#newtitle"));
+  await page.selectOption("#newproj", { label: "Billing" });
+  check("AC-106 a project chosen clears the warning", await until(async () => !(await page.isVisible("#newerror"))));
+  await page.fill("#newtitle", "");
+  await page.click("#newdiscard");
   await page.click("#fproject summary"); await page.click("#newproject");
   await page.fill("#projectname", "Billing");
   await page.press("#projectname", "Enter");

@@ -101,6 +101,13 @@ export function button(cls, text, onClick) {
   return b;
 }
 
+/** A window's project when none is given: the board's only project shown, else the only one there is, else none. */
+export const onlyProject = (shown, meta) => (shown.length === 1 ? shown[0] : meta.projects.length === 1 ? meta.projects[0].id : "");
+
+/** The projects for a window's Project field: a choice of none first while none is chosen, so a task or schedule
+ *  never lands in Default unasked (terminum-kanban.md AC-106, terminum-schedules.md AC-160). */
+export const projectOptions = (meta, chosen) => [...(chosen ? [] : [["", "Choose a project"]]), ...meta.projects.map((p) => [p.id, p.name])];
+
 /** `select`'s options, each [value, label]; `chosen` if it is one of them, else the first. */
 export function fillSelect(select, options, chosen) {
   select.replaceChildren(...options.map(([value, label]) => { const o = el("option", null, label); o.value = value; return o; }));

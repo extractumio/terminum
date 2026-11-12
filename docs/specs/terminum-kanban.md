@@ -155,11 +155,20 @@ Scenario: AC-159 edge — what stays
 ```gherkin
 Scenario: AC-106 happy path — the window
   When the user presses + Task in the board's head, a key as its neighbours, not a primary one
-  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else Default), Severity P2, Owner the user, Session none, Parent none, Budget none
+  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
   And the text says it takes files in its placeholder, no frame round it, and lights under a drag (a dashed edge only then); the text of an open task takes them the same way, its editor opening as they drop
+
+Scenario: AC-106 failure — no project chosen
+  Given the board shows Default and Billing
+  When the user presses + Task
+  Then Project says "Choose a project", none chosen, and the window says "Choose the project to make it in." at once
+  When the user presses Create all the same
+  Then terminumd refuses it in those words, nothing is kept and the window stays with what was typed
+  When the user chooses Billing
+  Then the words go, and Create makes the task in Billing
 
 Scenario: AC-106 happy path — Run
   Given Billing has a free agent, the one Run last started in it picked in the window's Agent field
@@ -808,6 +817,11 @@ Scenario: AC-135 happy path — choosing the project
   Then both are shown and the key says "Billing +1"
   When the user presses All projects
   Then every task shows and the key says All projects
+
+Scenario: AC-135 happy path — from a session of a project
+  Given the session page shows a session of Billing
+  When the user presses Kanban in the section switcher
+  Then the board opens on Billing, "/kanban/?project=billing-id"; from a session in no project it opens as this browser last left it
 
 Scenario: AC-135 happy path — remembered
   Given Billing chosen
