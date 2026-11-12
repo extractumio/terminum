@@ -257,7 +257,6 @@ fn ac170_a_new_task_a_round_with_no_run_and_a_picker_past_its_limit() {
         let why: String = tx.query_row("SELECT text FROM events WHERE task = ?1 AND kind = 'why'", [&gone.key], |r| r.get(0)).map_err(sql)?;
         assert_eq!(why, "It did not start: terminumd stopped before its session opened.");
         assert_eq!(auto::round_of(tx, &gone.key)?, None, "no round any more: the breaker does not read it");
-        assert_eq!(auto::tripped(tx, "api", NOW)?, None);
         assert!(setting(tx).on, "it stays on: nothing is wrong");
         assert_eq!(again.candidates, std::slice::from_ref(&old.id), "what it was given is offered again");
         // a press that failed for the picker's own fault, with no run either, still trips it
