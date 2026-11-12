@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -54,11 +55,12 @@ class Landing(unittest.TestCase):
         git("push", "-q", "origin", "main", cwd=self.primary)
         self.checks, self.smokes = [], []
 
-        def checks_of(tree, *flags):   # no scripts here: the smoke set passes, no targeted pass is recorded
+        def checks_of(tree, *flags, minutes=None):   # no scripts here: the smoke set passes, no targeted pass is recorded
             if flags == ("--land",):
                 self.smokes.append(tree.name)
                 return True
             return False
+        self._checks_of = land.checks_of
         self.addCleanup(setattr, land, "checks_of", land.checks_of)
         land.checks_of = checks_of
 
@@ -224,6 +226,62 @@ class Landing(unittest.TestCase):
             return True
         land.land(one, check=self.green, smoke=smoke_landing_other_first, say=lambda _: None)
         self.assertEqual((self.checks, self.smokes), (["one"], ["one", "one"]))
+
+    def test_a_tree_that_lost_the_race_once_holds_the_turn_until_it_lands(self):  # AC-104
+        one, other = self.tree("one"), self.tree("other")
+        self.commit(one, "one.txt", "x\n")
+        self.commit(other, "other.txt", "x\n")
+        held = []
+        def smoke(tree):
+            held.append(not self.turn_is_free())
+            if len(held) == 1:
+                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
+            return True
+        said = []
+        land.land(one, check=self.green, smoke=smoke, say=said.append)
+        self.assertEqual(held, [False, True], "the first smoke set runs beside the others, the second in the turn")
+        self.assertIn("lost the race once: holding the landing turn through this merge's checks", said)
+        self.assertIn("one.txt", git("ls-tree", "--name-only", "main", cwd=self.origin).split())
+        self.assertTrue(self.turn_is_free(), "and lets it go once landed")
+
+    def test_a_red_check_in_the_held_turn_frees_it(self):  # AC-104
+        one, other = self.tree("one"), self.tree("other")
+        self.commit(one, "one.txt", "x\n")
+        self.commit(other, "other.txt", "x\n")
+        def smoke(tree):
+            self.smokes.append(tree.name)
+            if len(self.smokes) == 1:
+                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
+                return True
+            return False
+        with self.assertRaises(land.Stop):
+            land.land(one, check=self.green, smoke=smoke, say=lambda _: None)
+        self.assertTrue(self.turn_is_free())
+
+    def test_the_turn_names_its_holder_for_those_who_wait(self):  # AC-104
+        with land.Turn(self.tree("one")):
+            self.assertEqual((git_dir(self.primary) / "terminum-land.holder").read_text(), "one")
+
+    def test_checks_over_their_time_are_ended_with_their_group_and_fail(self):  # AC-104
+        tree = Path(self.home.name) / "slow"
+        (tree / "scripts").mkdir(parents=True)
+        child = tree / "child.pid"
+        (tree / "scripts" / "check_changed.py").write_text(
+            "import subprocess, sys, time\n"
+            f"kid = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
+            f"open({str(child)!r}, 'w').write(str(kid.pid))\n"
+            "time.sleep(60)\n")
+        real = self._checks_of
+        self.assertFalse(real(tree, "--land", minutes=0.05))
+        pid = int(child.read_text())
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("the checks' own child outlived them")
 
     def test_a_refused_push_with_an_unmoved_base_says_why_at_once(self):
         tree = self.tree("one")

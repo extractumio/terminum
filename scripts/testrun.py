@@ -15,6 +15,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import check_step  # noqa: E402
+import owned_children  # noqa: E402
 
 _sockets = set()
 
@@ -78,7 +79,7 @@ def remove_dead_sockets():
 def naming(folder):
     """Pids working inside a run's private folder, even after a fake host's ssh parent ended.
     fake_ssh.py starts its remote shell in the fake home; no process environment is read."""
-    return list(check_step.working_in(folder))
+    return sorted(set(check_step.working_in(folder)) | owned_children.active(owned_children.path(folder)))
 
 
 def end_naming(folder, settle=check_step.SETTLE_S):
@@ -88,10 +89,12 @@ def end_naming(folder, settle=check_step.SETTLE_S):
     end = time.monotonic() + settle
     while (left := naming(folder)) and time.monotonic() < end:
         time.sleep(0.5)
-    if not left:
-        return []
-    said = subprocess.run(["ps", "-o", "command=", "-p", ",".join(map(str, left))], capture_output=True, text=True).stdout
-    check_step.end_pids(left)
+    said = ""
+    if left:
+        said = subprocess.run(["ps", "-o", "command=", "-p", ",".join(map(str, left))], capture_output=True, text=True).stdout
+        check_step.end_pids(left, owned_children.records(owned_children.path(folder)))
+    try: os.unlink(owned_children.path(folder))
+    except FileNotFoundError: pass
     return [line.strip()[:120] for line in said.splitlines()]
 
 

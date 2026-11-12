@@ -70,7 +70,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
       b.disabled = false;
     });
     b.addEventListener("keydown", (e) => e.stopPropagation());
-    return pointerKey(b);
+    return b;
   }
 
   /** Anew only when what it shows changed. */
