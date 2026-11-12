@@ -80,9 +80,9 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
     root.setProperty("--icon-key-list", "40px"); root.setProperty("--row-inset", "8px");   // a touch screen's sizes, as tokens.css sets them
     const touch = fits();
     root.removeProperty("--icon-key-list"); root.removeProperty("--row-inset");
-    return { beforeCount: b.nextElementSibling?.classList.contains("count"), label: b.getAttribute("aria-label"), others: document.querySelectorAll(".colhead .new").length, atRest, touch };
+    return { beforeCount: b.nextElementSibling?.classList.contains("colsort"), label: b.getAttribute("aria-label"), others: document.querySelectorAll(".colhead .new").length, atRest, touch };
   });
-  check("AC-106 TODO's head holds a [+] just before its count", plus.beforeCount && plus.label === "New task", JSON.stringify(plus));
+  check("AC-106 TODO's head holds a [+] before its sort keys and count", plus.beforeCount && plus.label === "New task", JSON.stringify(plus));
   check("AC-106 the [+] stands inside its head, a touch screen's size too", plus.atRest && plus.touch, JSON.stringify(plus));
   check("AC-106 only TODO's head has one", plus.others === 1, String(plus.others));
   await page.click('.col[data-status="TODO"] .colhead .new');
@@ -104,7 +104,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await until(async () => (await ours()).split(",").length === 3);
   check("AC-105 a column reads by severity, new on top of its own", await ours() === [urgent, second, first].join(), await ours());
   await page.dragAndDrop(card(first), card(second), { targetPosition: { x: 20, y: 3 } });
-  check("AC-105 a drag orders within a severity", await until(async () => await ours() === [urgent, first, second].join()), await ours());
+  check("AC-105 fixed sorting ignores an in-column drop", await ours() === [urgent, second, first].join(), await ours());
 
   // a human moves a task by running it: a drag across columns moves nothing (AC-138); the test places it by the route
   await page.waitForTimeout(300);   // the order's own read is in: a drag begun on a column being rebuilt is lost

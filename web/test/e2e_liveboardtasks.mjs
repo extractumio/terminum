@@ -53,8 +53,8 @@ export async function liveBoardTasks(page, opts) {
   const dropper = (await j("/api/tasks", "POST", { title: "dropped into the group", project })).id;
   await until(async () => (await todo()).some((c) => c[0] === dropper));
   await page.dragAndDrop(card(dropper), card(kid), { targetPosition: { x: 20, y: 3 } });
-  const after = [parent, kid, dropper, loner].join();
-  check("AC-112 a task dropped into a parent's group lands after it", await until(async () => (await todo()).map((c) => c[0]).join() === after), JSON.stringify(await todo()));
+  const after = [dropper, loner, parent, kid].join();
+  check("AC-112 a drop into a parent's group keeps the fixed sort and grouping", await until(async () => (await todo()).map((c) => c[0]).join() === after), JSON.stringify(await todo()));
   // its parent in another column: it keeps its place there, unshifted
   await j(`/api/tasks/${kid}`, "PATCH", { status: "FAILED" });
   check("AC-112 a subtask away from its parent's column is not shifted", await until(async () => (await page.$eval(card(kid), (c) => !c.classList.contains("sub") && c.closest(".col").dataset.status === "FAILED").catch(() => false))));
