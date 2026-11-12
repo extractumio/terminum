@@ -189,7 +189,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveIconKeys]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -427,6 +427,7 @@ async function phone(browser, name) {
     await liveBoardPhone(page, { base: BASE, shots: process.env.TM_TEST_SHOTS });
     await liveBoardSessionsPhone(page, { base: BASE });
     await liveBoardScale(page, { base: BASE, app: APP });
+    await liveIconKeys(page, { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP }, true);
     await ctx.close();
     return;
   }
