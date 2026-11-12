@@ -69,6 +69,7 @@ Selected list row: `color-mix(in srgb, var(--accent) 16%, var(--chrome))`. Press
 | Danger / error | `--danger: #ff6b5e` (a dot or icon), `--danger-text` (= danger 80% into `--t-fg`, 45% on a light theme for 4.5:1: every error text), `--danger-fill: #b3372e` (fills), `--danger-ink: #ffffff` (text on those fills) | Remove/Close/Sign out, error lines, a failed host's state, `#status`, confirm primary, armed delete. |
 | Done / ok | `--ok-fill: #2f7d4f` | `#restored`, update chip. |
 | Warning / waiting | `--warn-fill: #9a6a12`; `--waiting: #ffb020` (a dot or edge, never text) | `#stall`, `#sized`, waiting cards. |
+| The Dashboard's kinds and verdicts | `--act-*` (the board's kinds), `--eng-*` (engaged minutes, blues), `--load-bar`, `--over-bar` (= `--waiting`), `--trend-good`, `--trend-bad` (desaturated), `--day-early` → `--day-late` (the working day's hours), `--warn-text` (dashboard.css; deeper and more saturated than the projects' pastels, light-theme values of their own) | Never a project's color for what is no project (AC-152). Columns: rounded top, a light catch on it, at most 28px wide, the others dimmed while one is chosen; a usual as a dashed line with its label (charts.js). |
 | Text on the bookmark color | `#1b1200` | `#markbox .primary`. |
 | Picture viewer, find highlight | fixed white on black | `#zoom`, find marks: they sit over any theme. |
 | A terminal's icon | `--term-tile: #3a3a3c`, `--term-tile-ink: #ffffff` (style.css) | `.agmark.term`: a shell's row and header, white on a dark gray tile with small round corners, on every theme. |

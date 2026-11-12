@@ -113,7 +113,26 @@ export async function liveHistory(page, opts) {
   check("AC-152 the first tab is You, its figures the human's time and load", await page.getAttribute('#dtabs [data-tab="you"]', "aria-selected") === "true" && await tileOf("Active time") !== "0 min"
     && await labels() === "Active time,Active days,Engagement,Longest stretch,Switches an active hour,Board actions,Waited for you,Off hours,From the phone", await page.textContent("#tiles"));
   check("AC-152 every card of You draws: a month by the day", (await page.$$("#active rect.hit")).length === 30 && (await page.$$("#engaged rect.hit")).length === 30 && (await page.$$("#days rect.hit")).length === 30 && (await page.$$("#heat rect.cell")).length === 7 * 24
-    && await page.isVisible("#projects .rrow") && (await page.$$("#juggling rect.hit")).length === 30 && (await page.$$("#board rect.hit")).length === 30);
+    && await page.isVisible("#projects .rrow") && (await page.$$("#juggling rect.hit")).length === 30 && (await page.$$("#board rect.hit")).length === 30 && (await page.$$("#load rect.hit")).length === 30);
+  const look = await page.evaluate(() => {
+    const tile = [...document.querySelectorAll("#tiles .tile")].find((t) => t.querySelector(".tlabel").textContent === "Active time");
+    const dots = (sel) => [...document.querySelectorAll(`${sel} .legend .pdot`)].map((d) => d.style.getPropertyValue("--proj"));
+    const [active, load] = ["#cactive", "#cload"].map((id) => document.querySelector(id).getBoundingClientRect());
+    return { trend: tile.querySelector(".spark .trend")?.getAttribute("class"), board: dots("#cboard"), juggle: document.querySelectorAll("#cjuggling .legend .chip").length,
+      inner: document.querySelectorAll("#juggling .inner").length, cols: document.querySelectorAll("#juggling .col:has(path:not(.inner):not(.sheen))").length,
+      beside: Math.abs(active.top - load.top) < 1 && load.left > active.right, stretch: document.querySelector("#days .stretch")?.style.fill ?? "" };
+  });
+  check("AC-152 the tiles' sparklines draw their trend; Sessions at once a bar inside each column and a legend; the board's kinds no project's colors; Context switching beside Active time; the working day blue by its hour",
+    /^trend (good|bad|flat)$/.test(look.trend ?? "") && look.juggle === 2 && look.inner > 0 && look.inner === look.cols && look.board.length > 0 && look.board.every((c) => /--act-|--faint/.test(c))
+    && look.beside && /--day-late/.test(look.stretch), JSON.stringify(look));
+  await page.click("#dproject summary");
+  const menu = await page.evaluate(() => {
+    const box = document.querySelector("#dproject .box"), r = box.getBoundingClientRect();
+    const under = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    return { bg: getComputedStyle(box).backgroundColor, over: box.contains(under), lefts: [...box.querySelectorAll(".pname")].map((n) => Math.round(n.getBoundingClientRect().left)) };
+  });
+  check("AC-152 the project's menu stands opaque over the tiles, its names in one column", !/rgba\(0, 0, 0, 0\)|transparent/.test(menu.bg) && menu.over && menu.lefts.length > 1 && new Set(menu.lefts).size === 1, JSON.stringify(menu));
+  await page.click("#dproject summary");
   // the document scrolls: the cards under the window's end are reached
   const size = page.viewportSize();
   await page.setViewportSize({ width: size.width, height: 500 });

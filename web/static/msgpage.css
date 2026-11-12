@@ -32,7 +32,11 @@ body.msg-page { margin: 0; height: auto; min-height: 100dvh; overflow: visible; 
 .chart .hit { fill: transparent; cursor: pointer; }
 .chart .hit.on { fill: color-mix(in srgb, var(--t-fg) 7%, transparent); }
 .chart .col.faint { opacity: .55; }
-.chart .dot { fill: var(--t-bg); stroke: var(--ring); stroke-width: 1.5; }
+.chart .col { transition: opacity var(--dur-hover); }
+.chart:has(.col .hit.on) .col:not(:has(.hit.on)) { opacity: .45; }   /* a chosen column: the others dim */
+.chart .sheen { fill: rgb(255 255 255 / .22); }
+.chart .usual { stroke: color-mix(in srgb, var(--t-fg) 50%, transparent); stroke-width: 1; stroke-dasharray: 4 3; }
+.chart .usuallab { fill: var(--muted-text); stroke: var(--surface-1); stroke-width: 3px; paint-order: stroke; stroke-linejoin: round; font-size: 10px; font-family: var(--ui); font-variant-numeric: tabular-nums; }
 .spark { display: block; width: 100%; height: 28px; overflow: visible; }
 .sparkline { fill: none; stroke: var(--ring); stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
 .sparkdot { fill: var(--ring); }

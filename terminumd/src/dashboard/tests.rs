@@ -123,6 +123,32 @@ fn ac152_the_human_s_time_and_load_only() {
     assert_eq!((none["tiles"]["active_ms"].clone(), none["tiles"]["board"].clone()), (json!(7 * M), json!(2)), "no project: the default project's tasks");
 }
 
+#[test]
+fn ac152_switches_an_active_hour_against_the_usual() {
+    let s = store("dashboard-switches");
+    let noon = noon(&s);
+    // each day sends every 5 minutes from noon to 12:35 (37 active minutes), into these panes; 3 days ago one send; 23:00 yesterday one more
+    let days = [(2, ["k1", "k2", "k1", "k2", "k1", "k2", "k1", "k2"]), (1, ["k1", "k1", "k1", "k1", "k1", "k1", "k1", "k2"]), (0, ["k1", "k1", "k2", "k2", "k1", "k1", "k2", "k2"])];
+    s.with(|tx| {
+        for (ago, panes) in days {
+            for (i, pane) in panes.iter().enumerate() { insert(tx, &msg(noon - ago * DAY + i as i64 * 5 * M, pane, None))?; }
+        }
+        insert(tx, &msg(noon - 3 * DAY, "k1", None))?;
+        insert(tx, &msg(noon - DAY + 11 * HOUR, "k1", None))
+    }).unwrap();
+    let d = ask(&s, noon + 50 * M, "you", Period::TwoWeeks, None);
+    let (tiles, series) = (&d["tiles"], d["series"].as_array().unwrap());
+    let cents = |v: &Value| v.as_f64().map(|r| (r * 100.0).round() / 100.0);
+    let rate = |k: usize| cents(&series[k]["switches_per_hour"]);
+    assert_eq!((rate(10), rate(11), rate(12), rate(13)), (None, Some(11.35), Some(1.54), Some(4.86)), "7, 1 and 3 switches in 37 minutes (yesterday 39: its 23:00); a day of 2 minutes has no rate");
+    assert_eq!((cents(&tiles["usual_switches"]), tiles["over"].clone()), (Some(4.86), json!(1)), "the median of the rated days; one over 1.5 times it");
+    assert_eq!((tiles["rated"].clone(), series[11]["switches_over"].clone(), series[13]["switches_over"].clone(), series[10]["switches_over"].clone()), (json!(3), json!(true), json!(false), json!(false)));
+    assert_eq!((tiles["usual_active_ms"].clone(), tiles["sessions"].clone(), d["rules"].clone()), (json!(37 * M), json!(2), json!({"night": [22, 6], "rated_minutes": 30, "over_usual": 1.5})), "the medians of the days with any: 2, 37, 37, 39 minutes; 1, 2, 2, 2 sessions");
+    assert!(series[12]["off_ms"].as_i64().unwrap() >= 2 * M, "23:00 is off hours");
+    let off: i64 = series.iter().map(|x| x["off_ms"].as_i64().unwrap()).sum();
+    assert_eq!(tiles["off"].as_f64().unwrap(), off as f64 / tiles["active_ms"].as_f64().unwrap(), "the days' off hours make the share");
+}
+
 /// A run of `agent` for a new task in `project`, launched at unix ms `at`; closed after `minutes` when given.
 fn run(tx: &rusqlite::Transaction, agent: &str, project: &str, at: i64, minutes: Option<i64>) -> (String, String) {
     let task = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, at / 1000).unwrap();

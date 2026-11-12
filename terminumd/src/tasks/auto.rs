@@ -213,6 +213,11 @@ pub fn add_round(tx: &Transaction, round: &Round, at: i64) -> Result<(), String>
     tx.execute("INSERT INTO auto_rounds (task, project, slots, candidates, at) VALUES (?1, ?2, ?3, ?4, ?5)", (&round.task, &round.project, round.slots, json!(round.candidates).to_string(), at)).map(drop).map_err(sql)
 }
 
+/// Task `key` is no round any more: one terminumd made and never pressed (dispatcher/auto.rs).
+pub fn drop_round(tx: &Transaction, key: &str) -> Result<(), String> {
+    tx.execute("DELETE FROM auto_rounds WHERE task = ?1", [key]).map(drop).map_err(sql)
+}
+
 /// The round whose run is in pane `pane`, with its task: the session Dispatcher started for it, while it stands.
 pub fn round_in_pane(tx: &Transaction, pane: &str) -> Result<Option<(Round, ops::Task)>, String> {
     let Some(run) = crate::dispatcher::runs::in_pane(tx, pane)?.filter(|r| r.ids.len() == 1) else { return Ok(None) };
