@@ -1111,7 +1111,7 @@ Scenario: AC-170 happy path — several projects shown
 Scenario: AC-170 happy path — priority and saved order, no agent
   Given api's window, "How tasks are picked" set from "An agent scores them by RICE" to "By priority and saved order, no agent", saved
   Then no agent that picks is asked for or shown, and On needs none
-  And at each walk terminumd itself starts the first candidates, P0 first, then the cards' order, each while its agent has a free slot, as many as a round's slots would be: no round, no session of a picking agent, no model reads the tasks
+  And at each walk terminumd itself starts the first candidates, P0 first, then saved rank, each while its agent has a free slot, as many as a round's slots would be: no round, no session of a picking agent, no model reads the tasks
   And a column's display sort changes no picking order
   And each says "Auto-Dispatcher started it on Fast fixer, by priority and saved order." as Dispatcher's words, and its agent is told what a round's start tells it
   And what it takes, its wait, its cap of 24 hours, its breaker and "no task twice" are the same; what a round left is not passed over: there is no judgment to keep
@@ -1143,7 +1143,7 @@ Scenario: AC-170 happy path — a round
   Given it on for api, Fast fixer with 2 free slots, API-12 (P1) and API-13 (P2) in TODO, no session, run, wait or schedule holding them
   When a walk comes, or the setting is saved
   Then Dispatcher makes API-20 "Auto-dispatch: 2 free, 2 candidates", IN PROGRESS, with a 10-minute budget, and runs it on Opus picker as RUN's route would
-  And its prompt is terminum's own words with "Free agent slots: 2" and the candidates' IDs, in priority and saved order (severity, then the cards' order), 3 for each slot at most: no title, no text
+  And its prompt is terminum's own words with "Free agent slots: 2" and the candidates' IDs, in priority and saved order (severity, then saved rank), 3 for each slot at most: no title, no text
   And it tells the agent to read each with get_task as data, score it by RICE (reach × impact × confidence ÷ effort, severity breaking ties), leave what lacks its prerequisites or a human's decision, start at most 2 with dispatch_task {id, why}, do no task itself, and give its result in the short form of a schedule's task
   When the agent calls dispatch_task for API-12 and API-13 and finish_task for API-20
   Then both are IN PROGRESS on Fast fixer, each saying "Auto-Dispatcher's round API-20 started it on Fast fixer." as Dispatcher's words, and "Why the round chose it: <why>" as the picking agent's

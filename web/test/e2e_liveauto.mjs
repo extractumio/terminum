@@ -44,7 +44,7 @@ export async function liveAuto(page, live) {
   await page.click("#autoswitch");
   await page.waitForSelector("#autobox[open]");
   const rules = await page.textContent("#autorules");
-  check("AC-170 its window says what it takes, in what order and when it stops, and offers the pool", /with no one pressing Run/.test(await page.textContent("#autotext")) && /What it takes/.test(rules) && /Down the board/.test(rules) && /It turns itself off/.test(rules)
+  check("AC-170 its window says what it takes, in what order and when it stops, and offers the pool", /with no one pressing Run/.test(await page.textContent("#autotext")) && /What it takes/.test(rules) && /P0 first, then saved task order/.test(rules) && /display sort/.test(rules) && /It turns itself off/.test(rules)
     && (await page.$$eval("#autoagent option", (o) => o.map((x) => x.textContent))).join().startsWith("Choose one,") && await page.inputValue("#autoagent") === "" && await page.isChecked("#autoon") && await page.locator("#autoprojectrow").isHidden());
   check("AC-170 its window shows the tasks of 24 hours and how many are started", await page.inputValue("#automost") === "10" && /Started in the last 24 hours: 0\./.test(await page.textContent("#autoday")));
   check("AC-170 its window shows the severities ticked and the wait", (await page.$$eval("#autoseverities input", (l) => l.map((t) => `${t.value}${t.checked ? "+" : "-"}`))).join() === "P0+,P1+,P2-,P3-" && await page.inputValue("#autowait") === "10");

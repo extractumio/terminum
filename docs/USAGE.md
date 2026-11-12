@@ -227,8 +227,7 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   severities it takes (as made: P0 and P1), the minutes a task stands in TODO before it is taken (10) and the
   tasks it starts in 24 hours at most (10); the switch
   then turns it on or off in one press (with several projects shown a press turns it off for them, and turning on is
-  each project's own in the window); "How tasks are picked" chooses between an agent's scoring and priority and saved order (P0 first, then the cards'
-  order, started by terminum itself with no agent); with an agent, when slots are free it starts one more session of the picking agent, which
+  each project's own in the window); "How tasks are picked" chooses between an agent's scoring and priority and saved order (P0 first, then saved rank, started by terminum itself with no agent); with an agent, when slots are free it starts one more session of the picking agent, which
   scores the first such tasks by RICE and starts the best, each on the agent named in the task's window (Agent),
   else the default; what a round leaves is passed over for a day and the next takes the tasks below; a task it
   started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its
