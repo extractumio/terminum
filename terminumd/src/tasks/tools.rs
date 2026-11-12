@@ -126,6 +126,14 @@ pub(super) fn title_of(raw: &str) -> Result<String, String> {
     if LEFT_TO_DO.iter().any(|w| title.starts_with(w)) { Ok(title) } else { Err("Start the title with Bug:, Feat: or Debt:.".into()) }
 }
 
+/// What refuses an agent's bug below P2 (AC-145, AC-154).
+pub(super) const BUG_FLOOR: &str = "A Bug: is never below P2: P1 or above when it has impact (lost or blocked work, a wrong result, a red main), else P2.";
+
+/// Whether a task so titled, at that severity, is a bug below P2.
+pub(super) fn below_floor(title: &str, severity: &str) -> bool {
+    title.starts_with("Bug:") && severity == "P3"
+}
+
 /// An agent's title and text, each checked when given; every fault of both goes to `faults`, so
 /// one refusal says them all (AC-145, AC-155).
 pub(super) fn words_of(tx: &Transaction, project: &str, title: Option<&str>, text: Option<&str>, faults: &mut Vec<String>) -> (Option<String>, Option<String>) {
@@ -164,6 +172,9 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                     faults.push("Give it a severity: P0, P1, P2 or P3.".to_string());
                 }
                 let words = words_of(tx, &project, Some(arg(args, "title")?), Some(args["text"].as_str().unwrap_or_default()), &mut faults);
+                if below_floor(words.0.as_deref().unwrap_or_default(), args["severity"].as_str().unwrap_or_default()) {
+                    faults.push(BUG_FLOOR.to_string());
+                }
                 let ((Some(title), Some(text)), true) = (words, faults.is_empty()) else { return Err(faults.join("\n")) };
                 if let Some(same) = super::query::repeat_of(tx, &project, &title)? {
                     return Err(format!("Not kept: {same} already says this. Read it with execute_tool(\"get_task\", {{id}}), and comment if you have more."));

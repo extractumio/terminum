@@ -253,6 +253,7 @@ fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
     let ((s, dir), w) = (fresh("tools-left"), who(Some("api")));
     assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "a gap", "severity": "P2"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.");
     assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Feat: a gap"})).unwrap_err(), "Give it a severity: P0, P1, P2 or P3.");
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: a small gap", "severity": "P3"})).unwrap_err(), BUG_FLOOR);
     for title in ["Bug: drops a BOM", "Feat: paging", "Debt: two copies of a rule"] {
         assert!(call(&s, &dir, &w, "create_task", json!({"title": title, "severity": "P2"})).unwrap().starts_with("Kept as"), "{title}");
     }
