@@ -98,6 +98,7 @@ export async function liveBoardBusy(page, opts) {
 
   await newTaskOnce(page, { base, j, project });
   await commentOnce(page, { base, j, id: await make("commented once") });
+  await commentWaitsForFiles(page, { base, j, id: await make("commented with a file") });
   await lateFile(page, { base, project });
   const runs = (await j("/api/task-projects", "POST", { name: "Run once", dir: work })).id;
   await runOnce(page, { base, project: runs, id: (await j("/api/tasks", "POST", { title: "run once", project: runs })).id });
@@ -155,6 +156,36 @@ async function commentOnce(page, { base, j, id }) {
       await until(async () => !(await page.$("#taskbox[open]")) && (await said()).length === 1) && (await said())[0].text === "said once"
         && await page.evaluate((k) => localStorage.getItem(k) === null, `tm.comment.${id}`), JSON.stringify(await said()));
   } finally { held.release(); await held.end(); }
+}
+
+/** A comment's ⌘Enter while its file is on its way, after the window was drawn anew: nothing is sent; once the file
+ *  is kept, the comment goes with it. */
+async function commentWaitsForFiles(page, { base, j, id }) {
+  await page.goto(`${base}/kanban/${id}`);
+  await page.waitForSelector("#taskbox[open] .newcomment textarea");
+  await page.fill(".newcomment textarea", "with a file");
+  const upload = await hold(page, /\/api\/task-files\?/, "POST"), posts = await hold(page, `**/api/tasks/${id}/comments`, "POST");
+  posts.release();
+  const said = async () => (await j(`/api/tasks/${id}`)).history.filter((h) => h.kind === "comment");
+  try {
+    await page.evaluate(() => {
+      const dt = new DataTransfer(), area = document.querySelector(".newcomment textarea");
+      dt.items.add(new File(["kept"], "note.txt", { type: "text/plain" }));
+      area.dispatchEvent(new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }));
+    });
+    await until(() => upload.sent() > 0);
+    await j(`/api/tasks/${id}`, "PATCH", { severity: "P0" });   // the window is drawn anew
+    await until(() => page.evaluate(() => [...document.querySelectorAll("#taskbody select")].some((s) => s.value === "P0")));
+    await page.press(".newcomment textarea", "ControlOrMeta+Enter");
+    await nap(400);
+    check("AC-133 a comment's ⌘Enter while its file is on its way, the window drawn anew: nothing is sent, it stays",
+      posts.sent() === 0 && !!(await page.$("#taskbox[open]")), `posts=${posts.sent()}`);
+    upload.release();
+    await until(async () => (await page.inputValue(".newcomment textarea")).includes("note.txt"));
+    await page.press(".newcomment textarea", "ControlOrMeta+Enter");
+    check("AC-133 once the file is kept, the comment goes once, with it", await until(async () => (await said()).length === 1) && posts.sent() === 1
+      && (await said())[0].files?.length === 1, JSON.stringify(await said()));
+  } finally { upload.release(); await upload.end(); await posts.end(); }
 }
 
 /** A file on its way when its draft is discarded: Create waits for it, and once it lands it is in no other draft. */

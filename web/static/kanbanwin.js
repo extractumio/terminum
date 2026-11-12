@@ -20,6 +20,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   /** The comment being written: one field per task shown, kept through the window's redraws, with its files on
    *  their way; Close and Run wait for them (AC-133). */
   let note = null;
+  const leftWaiting = new Map();                   // the comments of tasks left while their files were on their way
 
   /** A change of a field: whether terminumd took it. The window shows what stands; a text being
    *  typed stays (refresh). The board hears of it from terminumd. */
@@ -186,6 +187,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   /** Task `id`'s comment field, kept as typed (its draft) with its files: the one already written in, else a new one. */
   function noteFor(id) {
     if (note?.id === id) return note;
+    if (note?.uploads) leftWaiting.set(note.id, note);
+    if (leftWaiting.has(id)) { note = leftWaiting.get(id); leftWaiting.delete(id); return note; }
     const draft = `tm.comment.${id}`, filesKey = `tm.commentfiles.${id}`;
     const area = editor(read(draft) ?? "", "Comment");
     area.rows = 4;
@@ -200,8 +203,13 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       if (box.dataset.busy) return say("Wait until the comment is kept, then add the files.");
       n.uploads += list.length;
       n.wait();
-      await addFiles(list, area, (file) => write(filesKey, [...n.dropped(), file.id]), () => { n.uploads--; n.wait(); });
+      await addFiles(list, area, (file) => write(filesKey, [...n.dropped(), file.id]), () => {
+        n.uploads--;
+        n.wait();
+        if (!n.uploads) leftWaiting.delete(n.id);
+      });
     });
+    onSend(area, () => n.keys[0]?.click());        // the Close shown now: off while its files are on their way
     return n;
   }
 
@@ -214,7 +222,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       } catch (e) { say(e.message); return; }
       n.sent();
     }
-    shut();
+    await tryClose();                              // an edit of its text or of a comment not saved is asked about
   });
 
   function commentForm(t) {
@@ -230,7 +238,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     });
     n.keys = [close, run];
     n.wait();
-    onSend(area, () => { if (box.contains(area)) close.click(); });   // the Close of the window it is in
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
     // its run cannot be reached or is no longer wanted: its tasks fail, the window stays (terminum-dispatcher.md AC-138)
     const giveUp = t.run_holds ? button(null, "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
