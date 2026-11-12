@@ -45,6 +45,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-121 the dialog offers the pool", await page.$eval("#runagent", (e, id) => [...e.options].some((o) => o.value === id), plain));
   await page.selectOption("#runagent", plain);
   check("AC-121 it shows the command in full", (await page.textContent("#runcommand")).includes("fake_agent.py"), await page.textContent("#runcommand"));
+  check("AC-156 with the inline TUI Dispatcher adds", (await page.textContent("#runcommand")).includes(`--settings '{"tui":"default"`), await page.textContent("#runcommand"));
   check("AC-121 and the server and the folder", await page.textContent("#runserver") === "This Mac" && await page.textContent("#runfolder") === work, await page.textContent("#runfolder"));
   const prompt = await page.textContent("#runprompt");
   check("AC-121 and the text that will be sent, in its order", /^The human ran task [A-Z][A-Z0-9]*-\d+: Fix the retry loop FINISHES\n\nIts text\.\n\nBefore you call execute_tool\("finish_task", \{id, result\}\), close the task out[\s\S]*\nOutcome: [\s\S]*\n\nWhen it is done, call execute_tool\("finish_task", \{id, result\}\)/.test(prompt), prompt);
@@ -170,6 +171,16 @@ export async function liveDispatcher(page, opts) {
   await hasStatus(dead, "FAILED", 15000);
   const shell = await run(dead, { comment: "Once more FINISHES" });
   check("AC-122 only the shell remains: it starts there anew", !!shell.run && await hasStatus(dead, "DONE", 20000), JSON.stringify(shell) + await history(dead));
+
+  // AC-122 its agent ended before its task went in: no conversation to go on, so its shell's agent hears the task whole
+  const flaky = (await j("/api/task-agents", "POST", { name: "Flaky", kind: "claude", command: "true" })).id;
+  const unsaid = await task("never heard FINISHES", "The whole text.");
+  await run(unsaid, { agent: flaky });
+  check("AC-121 an agent that ends before its box: FAILED", await hasStatus(unsaid, "FAILED", 15000), await history(unsaid));
+  await j(`/api/task-agents/${flaky}`, "PATCH", { name: "Flaky", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` });
+  // the fake finishes only on a prompt holding FINISHES: the task's title has it, the comment and "go on" words do not
+  const whole = await run(unsaid, { agent: flaky, comment: "Mind the tests" });
+  check("AC-122 from its shell with no conversation: the task's own words go in, and it ends", !!whole.run && await hasStatus(unsaid, "DONE", 20000), JSON.stringify(whole) + await history(unsaid));
 
   // AC-122 RUN right after its agent exits: its last screen still shows a box, nothing is pasted into the shell
   const justEnded = await task("again at once CLEAN");

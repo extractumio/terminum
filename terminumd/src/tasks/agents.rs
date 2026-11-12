@@ -51,11 +51,24 @@ fn effort_flag(kind: &str) -> &'static str {
 /// What ends one program's command and starts another's: an effort after it would go to the last program.
 const SEPARATORS: [char; 4] = [';', '|', '&', '#'];
 
+/// What every run's agent takes after its command (terminum-dispatcher.md AC-156, §9 "Inline and in its pane"):
+/// its inline TUI, which the gate reads, and, for Codex, its own process: an option Codex takes once and more, so an
+/// alias that names one already still starts. A Codex attached to its shared app-server runs its MCP servers and
+/// hooks there, without the pane's `TMUX_PANE`: no terminum tools, no hook; any `-c` keeps it in its own process.
+fn inline_words(kind: &str) -> &'static str {
+    if kind == "codex" { "-c tui.alternate_screen=never" } else { r#"--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"# }
+}
+
 fn command_line(kind: &str, command: &str, effort: &str) -> String {
+    // after a `;` the words would go to another program: the operator's line alone
+    if command.contains(SEPARATORS) {
+        return command.to_string();
+    }
+    let line = format!("{command} {}", inline_words(kind));
     match (kind, effort) {
-        (_, "") => command.to_string(),
-        ("codex", e) => format!("{command} -c {}={e}", effort_flag(kind)),
-        (_, e) => format!("{command} {} {e}", effort_flag(kind)),
+        (_, "") => line,
+        ("codex", e) => format!("{line} -c {}={e}", effort_flag(kind)),
+        (_, e) => format!("{line} {} {e}", effort_flag(kind)),
     }
 }
 

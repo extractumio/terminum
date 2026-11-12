@@ -84,11 +84,27 @@ fn ac137_a_project_deleted_leaves_the_pool() {
     assert_eq!(s.with(list).unwrap().len(), 1);
 }
 
+const CLAUDE_INLINE: &str = r#"--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#;
+const CODEX_INLINE: &str = "-c tui.alternate_screen=never";
+
+/// Every run's agent in its inline TUI, the gate's to read, and a Codex in its own process, where its MCP server and
+/// hooks know their pane (terminum-dispatcher.md AC-156, §9): options either agent takes twice, so an alias naming
+/// one already still starts.
+#[test]
+fn ac156_a_run_s_agent_is_inline_and_in_its_own_process() {
+    assert_eq!(command_line("codex", "codsp", ""), format!("codsp {CODEX_INLINE}"));
+    assert_eq!(command_line("codex", "codex --no-alt-screen", "high"), format!("codex --no-alt-screen {CODEX_INLINE} -c model_reasoning_effort=high"));
+    assert_eq!(command_line("claude", r#"claude --settings '{"model":"opus"}'"#, ""), format!(r#"claude --settings '{{"model":"opus"}}' {CLAUDE_INLINE}"#), "the last --settings takes the tui");
+    // after a separator the words would go to the next program: the operator's line alone, as with an effort
+    assert_eq!(command_line("codex", "codex; notify", ""), "codex; notify");
+    assert_eq!(command_line("claude", "claude # mine", ""), "claude # mine");
+}
+
 #[test]
 fn ac138_an_effort_goes_on_its_kind_s_command_line() {
-    assert_eq!(command_line("claude", "claude", ""), "claude");
-    assert_eq!(command_line("claude", "claude --model opus", "high"), "claude --model opus --effort high");
-    assert_eq!(command_line("codex", "codex", "low"), "codex -c model_reasoning_effort=low");
+    assert_eq!(command_line("claude", "claude", ""), format!("claude {CLAUDE_INLINE}"));
+    assert_eq!(command_line("claude", "claude --model opus", "high"), format!("claude --model opus {CLAUDE_INLINE} --effort high"));
+    assert_eq!(command_line("codex", "codex", "low"), format!("codex {CODEX_INLINE} -c model_reasoning_effort=low"));
     let with = |kind: &str, command: &str, effort: &str| Given { kind: kind.into(), command: command.into(), effort: effort.into(), ..opus() }.check();
     assert!(with("claude", "claude", "max").is_ok());
     assert_eq!(with("codex", "codex", "max").unwrap_err(), "codex has no effort max.");
@@ -96,8 +112,8 @@ fn ac138_an_effort_goes_on_its_kind_s_command_line() {
     assert!(with("claude", "claude; notify", "high").unwrap_err().contains("; | & or #"), "the flag would go to the other program");
     assert!(with("claude", "claude; notify", "").is_ok(), "a command is the human's own words");
     // the operator's line, its permissions too: Dispatcher adds none (terminum-dispatcher.md AC-156)
-    assert_eq!(command_line("claude", "myclaude", "high"), "myclaude --effort high");
-    assert_eq!(command_line("claude", "claude --dangerously-skip-permissions", ""), "claude --dangerously-skip-permissions");
+    assert_eq!(command_line("claude", "myclaude", "high"), format!("myclaude {CLAUDE_INLINE} --effort high"));
+    assert_eq!(command_line("claude", "claude --dangerously-skip-permissions", ""), format!("claude --dangerously-skip-permissions {CLAUDE_INLINE}"));
     let twice = "The command names an effort already: choose Its own setting, or take it out of the command.";
     assert_eq!(with("claude", "claude --effort high", "max").unwrap_err(), twice);
     assert_eq!(with("codex", "codex -c model_reasoning_effort=high", "low").unwrap_err(), twice);

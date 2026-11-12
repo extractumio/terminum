@@ -220,7 +220,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     }
     let (wanted, said, attached, fresh, also, agent) = (id.to_string(), comment.clone(), body.files.clone(), body.fresh, body.also.clone(), body.agent.clone());
     let (kept, by) = (body.clone(), body.clone());
-    let (tasks, w, who, answers) = store(app, move |tx| {
+    let (tasks, w, who, answers, anew) = store(app, move |tx| {
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
         if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
@@ -233,14 +233,23 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
             a.push(c.clone());
         }
-        Ok((tasks, w, ops::user_name(tx, by.by())?, answers))
+        // its shell starts an agent with no conversation to go on: it hears the task as a first run does (AC-122)
+        let anew = match &w {
+            Ok(Way::Shell(r)) if r.agent_session.is_none() => {
+                let mut goes = facts(tx, &tasks)?;
+                goes.manager = by.manager.is_some();
+                Some(goes.prompt(said.as_deref()))
+            }
+            _ => None,
+        };
+        Ok((tasks, w, ops::user_name(tx, by.by())?, answers, anew))
     }).await?;
     let t = tasks[0].clone();
     let going_on = !matches!(w, Ok(Way::First));
     if comment.is_some() && going_on {
         told(app, id);
     }
-    let again = again_words(&t.id, &who, comment.as_deref(), answers.as_deref(), body.manager.is_some());
+    let again = anew.unwrap_or_else(|| again_words(&t.id, &who, comment.as_deref(), answers.as_deref(), body.manager.is_some()));
     match w? {
         Way::First => first_run(app, &tasks, body, kept, comment).await,
         Way::Live(r) => {
