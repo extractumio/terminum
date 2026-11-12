@@ -5,10 +5,12 @@ import { el } from "./listparts.js";
 const $ = (id) => document.getElementById(id);
 
 // Every dialog's ×, as Esc: a dialog that refuses Esc (the bookmark's while it saves) refuses it too.
-// The bookmarks' windows close their own way (marks.js, markdoc.js).
-for (const x of document.querySelectorAll("dialog.dlg .dhead .x:not([id])")) {
-  x.onclick = () => { const d = x.closest("dialog"); if (d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel"); };
-}
+// The bookmarks' windows close their own way (marks.js, markdoc.js). On the document, so a dialog put in the
+// page later (RUN's, taskboxes.js) has it too.
+document.addEventListener("click", (e) => {
+  const d = e.target.closest?.("dialog.dlg .dhead .x:not([id])")?.closest("dialog");
+  if (d && d.dispatchEvent(new Event("cancel", { cancelable: true }))) d.close("cancel");
+});
 
 // One box shows one question: a second asked while it is open waits for the first's answer (AC-165).
 const queues = new Map();
