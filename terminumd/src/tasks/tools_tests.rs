@@ -50,7 +50,7 @@ fn ac115_an_agent_does_all_on_its_own() {
     let got = call(&s, &dir, &w, "get_task", json!({"id": id})).unwrap();
     assert!(got.starts_with(DATA), "said to be data: {got}");
     assert!(got.contains("\"text\":\"body\""));
-    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{id} is in WAIT FOR HUMAN. Wait for the answer in this session."));
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "IN PROGRESS"})).unwrap(), format!("{id} is in IN PROGRESS."));
     call(&s, &dir, &w, "add_comment", json!({"id": id, "text": "note"})).unwrap();
     call(&s, &dir, &w, "finish_task", json!({"id": id, "result": "**fixed**"})).unwrap();
     let (status, history) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?))).unwrap();
@@ -80,7 +80,9 @@ fn ac115_a_task_of_the_project_is_moved_and_finished_whatever_session_holds_it()
     let (held, free) = (task(&s, "api", Some(OTHER)), task(&s, "api", None));
     assert!(call(&s, &dir, &w, "get_task", json!({"id": held})).is_ok());
     assert!(call(&s, &dir, &w, "add_comment", json!({"id": held, "text": "seen"})).is_ok());
-    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "WAIT FOR HUMAN"})).unwrap(), format!("{held} is in WAIT FOR HUMAN."), "another session's: moved, and this session's own wait is not said");
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "IN PROGRESS"})).unwrap(), format!("{held} is in IN PROGRESS."), "another session's: moved");
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": held, "to": "WAIT FOR HUMAN"})).unwrap_err(), format!("Only {held}'s own agent asks a human on it, by ask_human. You can comment."), "nor parked for a human with no question (AC-157)");
+    assert_eq!(status(&s, &held), "IN PROGRESS");
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": held, "result": "did it"})).unwrap(), format!("{held} is DONE, with your result."));
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": free, "result": "and this"})).unwrap(), format!("{free} is DONE, with your result."), "a free one, with no take_task");
     assert_eq!((status(&s, &held), status(&s, &free)), ("DONE".into(), "DONE".into()));
@@ -119,7 +121,7 @@ fn ac115_what_a_humans_run_runs_in_another_session_is_that_runs() {
     s.with(|tx| { let run = crate::dispatcher::runs::last_of(tx, &ops::key_of(tx, &id)?)?.unwrap(); crate::dispatcher::runs::change(tx, &run.id, |r| r.turn_ended = true).map(drop) }).unwrap();
     assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "DONE"})).unwrap_err(), refused, "its turn ended, the run not closed");
     s.with(|tx| { let run = crate::dispatcher::runs::last_of(tx, &ops::key_of(tx, &id)?)?.unwrap(); crate::dispatcher::runs::change(tx, &run.id, |r| r.state = crate::dispatcher::runs::Phase::Closed).map(drop) }).unwrap();
-    assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).is_ok(), "the run over, it is moved as any other");
+    assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "FAILED"})).is_ok(), "the run over, it is moved as any other");
     let far = task(&s, "web", None);
     assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": far, "result": "x"})).unwrap_err(), format!("{far} is outside this session's project."), "another project stays out of reach");
     assert_eq!(call(&s, &dir, &who(None), "finish_task", json!({"id": id, "result": "x"})).unwrap_err(), format!("{id} is outside this session's project."), "a session in Default shares nothing");
@@ -341,7 +343,12 @@ fn ac157_an_agent_asks_on_its_own_task_and_a_dispatcher_session_is_told_to_end_i
     running(&s, &id, KEY);
     let said = call(&s, &dir, &w, "ask_human", json!({"id": id, "questions": asked})).unwrap();
     assert!(said.contains("End your turn now") && said.contains("resumes this conversation"), "{said}");
-    assert!(call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap().contains("End your turn now"), "its own move waits the same way");
+    call(&s, &dir, &w, "move_task", json!({"id": id, "to": "IN PROGRESS"})).unwrap();
+    let refused = call(&s, &dir, &w, "move_task", json!({"id": id, "to": "WAIT FOR HUMAN"})).unwrap_err();
+    assert!(refused.contains("ask_human") && refused.contains("stays where it was"), "its own move with no question is refused, pointing to ask_human: {refused}");
+    assert_eq!(s.with(|tx| ops::get(tx, &id)).unwrap().status, "IN PROGRESS", "nothing moved");
+    let asked_now = s.with(|tx| crate::dispatcher::runs::in_pane(tx, KEY)).unwrap().unwrap().asked;
+    assert!(!asked_now, "its move back off WAIT FOR HUMAN cleared the run's ask");
 }
 
 #[test]
