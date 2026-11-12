@@ -7,6 +7,7 @@ import io
 import os
 from pathlib import Path
 import signal
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -90,6 +91,27 @@ class Guard(unittest.TestCase):
             time.sleep(0.1)
         else:
             self.fail(f"{pid} still runs")
+
+    def test_a_detached_process_in_the_private_folder_is_ended(self):
+        code = "import subprocess; subprocess.Popen(['sleep', '64'], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
+        status, err, _ = guarded(f'cd "$TMPDIR"; {shlex.quote(sys.executable)} -c {shlex.quote(code)}')
+        self.assertEqual(status, 3)
+        self.assertIn("LEFT process", err)
+        pid = int(err.split("LEFT process ")[1].split(":")[0])
+        self.assertTrue(gone(pid), f"detached process {pid} still runs")
+
+    def test_registered_detached_child_outside_the_folder_is_ended(self):
+        code = ("import os, subprocess, sys; "
+                f"sys.path.insert(0, {str(Path(GUARD).parent)!r}); import owned_children; "
+                "p = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'], "
+                "cwd='/', start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+                "owned_children.register(os.environ['TM_TEST_CHILDREN_FILE'], p.pid)")
+        status, err, _ = guarded(shlex.join([sys.executable, "-c", code]))
+        self.assertEqual(status, 3)
+        self.assertIn("LEFT process", err)
+        self.assertNotIn("LEFT .owned-children", err)
+        pid = int(err.split("LEFT process ")[1].split(":")[0])
+        self.assertTrue(gone(pid), f"registered child {pid} still runs")
 
     def test_another_runs_folder_never_counts(self):
         with tempfile.TemporaryDirectory(prefix="tm-other-", dir="/tmp") as other:

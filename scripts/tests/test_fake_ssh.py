@@ -9,11 +9,13 @@ import os
 import shutil
 import socket
 import socketserver
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -25,6 +27,12 @@ GET = ("import socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(sys.argv[1
        "s.sendall(b'GET /hook HTTP/1.0\\r\\n\\r\\n'); d=b''\n"
        "while (c := s.recv(4096)): d += c\n"
        "print(d.split(b'\\r\\n\\r\\n', 1)[1].decode())")
+
+
+sys.path.insert(0, str(SCRIPT.parent))
+import owned_children
+import check_step
+from testrun import end_naming, short_tmp
 
 
 class Hello(http.server.BaseHTTPRequestHandler):
@@ -41,7 +49,7 @@ class Hello(http.server.BaseHTTPRequestHandler):
 
 class FakeSshTest(unittest.TestCase):
     def setUp(self):
-        self.root = tempfile.mkdtemp(prefix="fssh-t-", dir="/tmp")  # short: Unix socket paths ≤ 104 bytes
+        self.root = tempfile.mkdtemp(prefix="fssh-t-", dir=short_tmp())  # short: Unix socket paths ≤ 104 bytes
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.home = os.path.join(self.root, "home")
         os.makedirs(os.path.join(self.home, ".terminum", "run"), mode=0o700)
@@ -60,6 +68,59 @@ class FakeSshTest(unittest.TestCase):
         e.update(FAKE_SSH_HOME=self.home, FAKE_SSH_TMUX_SOCKET="tm-test-fssh-unit", **(env or {}))
         return subprocess.run([sys.executable, str(SCRIPT), "-T", "-o", "BatchMode=yes", *args], env=e,
                               capture_output=True, text=True, timeout=30)
+
+    def test_registered_remote_child_is_cleaned_after_wrapper_and_cwd_are_gone(self):
+        registry = owned_children.path(self.root)
+        env = {**os.environ, "FAKE_SSH_HOME": self.home, "FAKE_SSH_TMUX_SOCKET": "tm-test-fssh-owned",
+               "FAKE_SSH_CHILDREN_FILE": registry}
+        root = subprocess.Popen([sys.executable, str(SCRIPT), "devbox.example", "cd /; exec sleep 120"],
+                                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        recorded = {}
+        try:
+            until = time.monotonic() + 10
+            while not recorded and time.monotonic() < until:
+                recorded = owned_children.records(registry)
+                time.sleep(0.05)
+            self.assertTrue(recorded, "fake ssh never registered its child")
+            root.kill(); root.wait()
+            left = end_naming(self.root, settle=0.2)
+            self.assertEqual(len(left), 1, left)
+            self.assertEqual(owned_children.active(registry), set())
+        finally:
+            if root.poll() is None:
+                root.kill()
+            root.wait()
+            check_step.end_pids(list(recorded), recorded)
+
+    def test_cancellation_during_registration_ends_the_remote_child(self):
+        bindir = Path(self.root) / "bin"
+        bindir.mkdir()
+        marker = Path(self.root) / "registering"
+        probe = bindir / "ps"
+        probe.write_text(f"#!/bin/sh\necho \"$2\" > '{marker}'\nexec sleep 120\n")
+        probe.chmod(0o755)
+        env = {**os.environ, "FAKE_SSH_HOME": self.home, "FAKE_SSH_TMUX_SOCKET": "tm-test-fssh-cancel",
+               "FAKE_SSH_CHILDREN_FILE": owned_children.path(self.root), "PATH": str(bindir) + os.pathsep + os.environ.get("PATH", "")}
+        root = subprocess.Popen([sys.executable, str(SCRIPT), "devbox.example", "cd /; exec sleep 120"],
+                                env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+        recorded = {}
+        try:
+            until = time.monotonic() + 10
+            while not marker.exists() and time.monotonic() < until:
+                time.sleep(0.05)
+            self.assertTrue(marker.exists(), "registration never reached its metadata probe")
+            child = int(marker.read_text())
+            recorded[child] = owned_children.identity(child)
+            root.terminate(); root.wait(timeout=5)
+            until = time.monotonic() + 5
+            while owned_children.identity(child) is not None and time.monotonic() < until:
+                time.sleep(0.05)
+            self.assertIsNone(owned_children.identity(child), "cancelling registration orphaned the remote child")
+        finally:
+            try: os.killpg(root.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
+            root.wait()
+            check_step.end_pids(list(recorded), recorded)
 
     def reverse(self, eofw="no", cmd=None, env=None):
         cmd = cmd or f"[ -S {self.remote} ] && echo SOCK-FIRST; {sys.executable} -I -c \"$GET\" {self.remote}"

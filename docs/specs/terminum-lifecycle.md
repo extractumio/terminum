@@ -356,7 +356,7 @@ Scenario: AC-102 happy path — a run leaves nothing
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
 
 Scenario: AC-102 failure — a step that leaves something fails
-  Given a step that passes but leaves a file in its folder, or a process in its process group or with that folder in its environment
+  Given a step that passes but leaves a file in its folder, or a process in its private process group or working in that folder or a folder under it
   When it ends
   Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
 
@@ -368,7 +368,24 @@ Scenario: AC-102 edge — a pane's program that ignores SIGHUP does not outlive 
 Scenario: AC-102 edge — what a fake host still runs ends before its test's folder goes
   Given a private terminumd of scripts/e2e_ws.py whose fake host's program runs on in a session of its own after terminumd dropped its ssh, as a host's claude plugin call does, still writing into the fake home
   When the test's cleanup runs
-  Then it ends its fake host's tmux server, waits up to 15 s for every process whose environment names the test's folder, and only then removes the folder; one still there is ended by its pid (SIGTERM, then SIGKILL) and fails the run, its command named but never its environment
+  Then it ends its fake host's tmux server, waits up to 15 s for every process working in the test's folder or a folder under it, and only then removes the folder; one still there is ended by its pid (SIGTERM, then SIGKILL) and fails the run, its command named
+
+Scenario: AC-102 edge — a registered child leaves the private working directory
+  Given a test or fake ssh records its Popen child's PID and start time in a private registry before its parent ends
+  And that child starts a separate session and changes its working directory outside the private folder
+  When cleanup runs
+  Then it waits for the same child to finish its delayed write, or ends it by its recorded identity
+  And a PID with another start time receives no signal
+  And the guard's own registry is metadata, not a leftover file
+  And an unregistered descendant that leaves both the private group and folder cannot be discovered portably; its spawner must explicitly record and end it
+
+Scenario: AC-102 edge — cleanup never reads process environments
+  Given an unrelated process with credentials in its environment, whose command mentions the test's folder
+  When the guard or a private terminumd's cleanup looks for leftover processes on macOS or Linux
+  Then it reads process IDs, groups, commands and working directories only, never environments
+  And the unrelated process and one working in a sibling folder with the same prefix are neither selected nor ended
+  And a failed metadata query fails the check, never counting as no leftovers
+  And each test still ends its recorded tmux servers, browsers and detached children that leave the private folder in its own cleanup
 
 Scenario: AC-102 edge — another session's run is no leftover of this one
   Given another session's test run with folders in the temporary folder and sockets of its own
@@ -822,7 +839,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

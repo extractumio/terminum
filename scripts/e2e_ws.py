@@ -20,7 +20,8 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from testrun import end_naming, own_server_pids, short_tmp  # noqa: E402
+from testrun import end_naming, own_server_pids, short_tmp
+import owned_children  # noqa: E402
 
 
 def _ended(sig, _frame):
@@ -213,7 +214,7 @@ class Terminumd:
 
     def through_fake_ssh(self, home, socket_name, pids, **more):
         """Its ssh is fake_ssh.py: `home` the far side's, `socket_name` its tmux, `pids` the file of its stand-ins; `more`: more of the environment."""
-        self.env.update(TM_SSH=os.path.join(ROOT, "scripts", "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=socket_name, FAKE_SSH_PIDS=pids, **more)
+        self.env.update(TM_SSH=os.path.join(ROOT, "scripts", "fake_ssh.py"), FAKE_SSH_HOME=home, FAKE_SSH_TMUX_SOCKET=socket_name, FAKE_SSH_PIDS=pids, FAKE_SSH_CHILDREN_FILE=owned_children.path(self.root), **more)
 
     @property
     def sock(self):

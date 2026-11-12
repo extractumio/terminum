@@ -78,16 +78,18 @@ class Servers(unittest.TestCase):
                     os.kill(pid, 9)
                 os.environ.pop("TMUX_TMPDIR") if saved is None else os.environ.update(TMUX_TMPDIR=saved)
 
-# a parent that starts this Python in a session of its own with HOME in the folder, running the
-# code in argv[1], then waits to be ended (a Mac hides the environment of Apple's own programs)
-ORPHAN = ("import os, subprocess, sys, time; subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]], "
-          "env={**os.environ, 'HOME': os.path.join(sys.argv[2], 'remote')}, start_new_session=True); time.sleep(60)")
+# The child keeps a fake HOME but leaves both the parent's group and the private cwd.
+ORPHAN = ("import os, subprocess, sys, time; sys.path.insert(0, sys.argv[3]); import owned_children; "
+          "child = subprocess.Popen([sys.executable, '-c', "
+          "'import os, time\\nwhile os.getppid() != 1: time.sleep(0.05)\\n' + sys.argv[1], sys.argv[2]], "
+          "env={**os.environ, 'HOME': sys.argv[2]}, cwd='/', start_new_session=True); "
+          "owned_children.register(owned_children.path(sys.argv[2]), child.pid); time.sleep(60)")
 
 
 class WithItsFolder(unittest.TestCase):
     def orphan(self, code, folder):
         """The orphan's parent ended, as terminumd drops a host operation's ssh."""
-        root = subprocess.Popen([sys.executable, "-c", ORPHAN, code, folder])
+        root = subprocess.Popen([sys.executable, "-c", ORPHAN, code, folder, str(Path(__file__).resolve().parents[1])])
         self.addCleanup(lambda: (root.kill(), root.wait()))
         end = time.monotonic() + 5
         while not testrun.naming(folder) and time.monotonic() < end:
@@ -113,11 +115,14 @@ class WithItsFolder(unittest.TestCase):
 
     def test_a_folder_beside_it_with_the_same_start_is_not_its(self):
         with tempfile.TemporaryDirectory(prefix="ts", dir=testrun.short_tmp()) as folder:
-            child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"], env={**os.environ, "HOME": folder + "x/remote"})
+            sibling = folder + "x"
+            os.mkdir(sibling)
+            self.addCleanup(lambda: os.rmdir(sibling))
+            child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", folder], cwd=sibling)
             self.addCleanup(lambda: (child.kill(), child.wait()))
             time.sleep(0.3)
-            self.assertNotIn(child.pid, testrun.naming(folder))
-            self.assertIn(child.pid, testrun.naming(folder + "x"))
+            self.assertNotIn(child.pid, testrun.naming(folder), "mentioning the folder in argv proves no ownership")
+            self.assertIn(child.pid, testrun.naming(sibling))
 
 
 if __name__ == "__main__":
