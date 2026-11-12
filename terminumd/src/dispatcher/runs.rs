@@ -168,7 +168,8 @@ pub struct Run {
     pub waited_for: i64,
     pub closing_for: i64,
     pub budget_used: i64,
-    pub nudged: bool,
+    /// requests for a result that went this run (AC-123)
+    pub nudged: i64,
     pub nudge_turn: bool,
     pub warned: bool,
     pub wait_moved: bool,
@@ -255,7 +256,7 @@ impl Run {
         if self.state == Phase::Ending {
             self.state = Phase::Working;              // an End decided before it is called off (AC-126)
         }
-        self.nudged = false;
+        self.nudged = 0;
         self.nudge_turn = false;
         self.wait_moved = false;
         self.again_said = false;

@@ -25,6 +25,7 @@ import { autoDispatcher } from "./kanbanauto.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
 import { taskLines } from "./tasklines.js";
+import { cardState, liveSession } from "./cardstate.js";
 import { choose } from "./dialogs.js";
 import { el, iconButton, plural, pointerKey, projectInk } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
@@ -125,18 +126,11 @@ const projectOf = (id) => meta.projects.find((p) => p.id === id);
 
 /** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
 function sessionLine(t) {
-  const s = t.session;
-  const line = (cls, words, why) => { const e = el("span", `cstate ${cls}`, words); if (why) e.title = why; return e; };
-  if (t.waits) return line("waiting", `waits for ${t.waits}`, "Run waits for that agent's room, then starts");
-  if (!s && !t.run) return null;
-  const open = t.status === "IN PROGRESS";
-  if (t.run === "no_result") return line("stopped", "DONE, no result");
-  if (t.run) return line("waiting", t.run === "asking" ? "answer in its window" : "starting");
-  if (s.closed) return line("closed", "session closed");
-  if (s.state === "failed") return line("failed", `failed: ${(s.why || "an error").replaceAll("_", " ")}`);
-  if (s.state === "waiting") return line("waiting", "waits for you", s.why);
-  if (s.state === "working" || !open) return null;
-  return line("stopped", s.agent ? "stopped, task open" : "no agent");
+  const st = cardState(t);
+  if (!st) return null;
+  const e = el("span", `cstate ${st.cls}`, st.words);
+  e.title = st.why ? `${st.words}: ${st.why}` : st.words;
+  return e;
 }
 
 function showUsage(c, id) {
@@ -332,7 +326,7 @@ function sessionsCame(groups) {
   for (const t of [...cards.values()].flat()) {
     const it = t.session && liveRows.get(t.session.key);
     if (!t.session || (!it && t.session.closed)) continue;
-    const now = it ? { key: it.id, state: it.state, agent: it.agent, why: it.why, closed: false } : { key: t.session.key, closed: true };
+    const now = it ? liveSession(it) : { key: t.session.key, closed: true };
     const c = shown.get(t.id);
     if (JSON.stringify(now) !== JSON.stringify(t.session)) {
       t.session = now;

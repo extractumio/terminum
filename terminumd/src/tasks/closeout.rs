@@ -45,22 +45,74 @@ pub fn form_of(tx: &Transaction, task: &str) -> Result<&'static [(&'static str, 
     Ok(if super::schedules::of_task(tx, task)?.is_some() || super::auto::round_of(tx, task)?.is_some() { &SCHEDULED } else { &SECTIONS })
 }
 
-/// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
-/// marks (`#`, `*`, `_`, `-`, `+`, `>`, a number with `.` or `)`) and spaces, with its name in any case, then the
-/// line's end, `:`, `*` or `_`.
-pub fn missing<'a>(result: &str, form: &[(&'a str, &str)]) -> Vec<&'a str> {
+/// A line as a section's heading reads it: past Markdown's marks (`#`, `*`, `_`, `-`, `+`, `>`, a number with `.` or
+/// `)`) and spaces.
+fn head(l: &str) -> &str {
     const MARKS: [char; 8] = ['#', '*', '_', '-', '+', '>', ' ', '\t'];
-    let head = |l: &str| {
-        let l = l.trim_start_matches(MARKS);
-        let numbered = l.trim_start_matches(|c: char| c.is_ascii_digit());
-        let l = if numbered.len() < l.len() && numbered.starts_with(['.', ')']) { numbered[1..].trim_start_matches(MARKS) } else { l };
-        l.trim_end().to_lowercase()
-    };
-    let heads: Vec<String> = result.lines().map(head).collect();
-    form.iter().map(|(name, _)| *name).filter(|name| {
-        let name = name.to_lowercase();
-        !heads.iter().any(|h| h.strip_prefix(&name).is_some_and(|rest| rest.is_empty() || rest.starts_with([':', '*', '_'])))
-    }).collect()
+    let l = l.trim_start_matches(MARKS);
+    let numbered = l.trim_start_matches(|c: char| c.is_ascii_digit());
+    let l = if numbered.len() < l.len() && numbered.starts_with(['.', ')']) { numbered[1..].trim_start_matches(MARKS) } else { l };
+    l.trim_end()
+}
+
+/// What follows section `name` (ASCII) in a heading `h` (as `head` reads it), its name in any case: the line's rest
+/// past its `:`, `*` or `_`; None when `h` is no heading of it.
+fn after_name<'a>(h: &'a str, name: &str) -> Option<&'a str> {
+    let (start, rest) = h.split_at_checked(name.len())?;
+    (start.eq_ignore_ascii_case(name) && (rest.is_empty() || rest.starts_with([':', '*', '_']))).then(|| rest.trim_start_matches([':', '*', '_', ' ']))
+}
+
+/// The sections of `form` that `result` lacks, in order (AC-123, AC-166): a section is a line starting, past Markdown's
+/// marks and spaces, with its name in any case, then the line's end, `:`, `*` or `_`.
+pub fn missing<'a>(result: &str, form: &[(&'a str, &str)]) -> Vec<&'a str> {
+    let heads: Vec<&str> = result.lines().map(head).collect();
+    form.iter().map(|(name, _)| *name).filter(|name| !heads.iter().any(|h| after_name(h, name).is_some())).collect()
+}
+
+/// What `result` says under section `name` of the close-out, every time it is there: the rest of its heading's line and
+/// the lines up to the next section's heading.
+fn section(result: &str, name: &str) -> String {
+    let mut out = String::new();
+    let mut inside = false;
+    for line in result.lines() {
+        let h = head(line);
+        if let Some(rest) = after_name(h, name) {
+            inside = true;
+            out.push_str(rest);
+            out.push('\n');
+        } else if SECTIONS.iter().any(|(other, _)| after_name(h, other).is_some()) {
+            inside = false;
+        } else if inside {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
+}
+
+/// Whether a section's words say there is nothing: none at all, "None", a dash, or one short word (its language's "None").
+fn says_nothing(words: &str) -> bool {
+    let w = words.trim().trim_end_matches('.').trim_matches(['*', '_']);
+    w.eq_ignore_ascii_case("n/a") || matches!(w, "-" | "\u{2014}") || (w.chars().count() <= 7 && w.chars().all(char::is_alphabetic))
+}
+
+/// The close-out's sections whose follow-ups are to name their tasks (AC-166 step 3).
+const TRACKED: [&str; 2] = ["Not done", "Further recommendations"];
+
+/// Those of TRACKED that `result` fills with words naming no task ID, in order: what a human would plan from them is
+/// in no task yet (AC-166).
+pub fn untracked(tx: &Transaction, result: &str) -> Result<Vec<&'static str>, String> {
+    let filled: Vec<(&'static str, String)> = TRACKED.into_iter().map(|name| (name, section(result, name))).filter(|(_, w)| !says_nothing(w)).collect();
+    if filled.is_empty() {
+        return Ok(Vec::new());
+    }
+    let prefixes = prefixes(tx)?;
+    Ok(filled.into_iter().filter(|(_, w)| named(&prefixes, w).is_empty()).map(|(name, _)| name).collect())
+}
+
+/// What finishing answers on such sections: the agent's turn goes on, so it can still make them.
+pub fn untracked_words(names: &[&str]) -> String {
+    format!("{} name no task: give each thing a human would plan from them a task by execute_tool(\"create_task\", {{title, severity, text}}) after execute_tool(\"list_tasks\", {{}}) finds none open on it, and name its ID in a comment by execute_tool(\"add_comment\", {{id, text}}); what is too small for a task belongs in Issues and discoveries.", names.join(" and "))
 }
 
 /// What finishing answers on a result without them: its words stay a comment, the task where it was, and the agent's
@@ -86,15 +138,29 @@ pub fn made_line(tx: &Transaction, task: &Task) -> Result<Option<String>, String
     Ok((!made.is_empty()).then(|| format!("Tasks made in its session: {}.", made.join(", "))))
 }
 
+fn prefixes(tx: &Transaction) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT prefix FROM projects WHERE prefix IS NOT NULL", [], |r| r.get(0))
+}
+
+/// The words of `text` shaped as a task ID of one of `prefixes`: its letters, a hyphen and a number, a schedule's
+/// task's "S_" before them (terminum-schedules.md AC-162). In the order named, each once.
+fn named<'a>(prefixes: &[String], text: &'a str) -> Vec<&'a str> {
+    let mut found: Vec<&str> = Vec::new();
+    for word in text.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
+        let shaped = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p.strip_prefix(super::slugs::SCHEDULED).unwrap_or(p)) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
+        if shaped && !found.contains(&word) {
+            found.push(word);
+        }
+    }
+    found
+}
+
 /// The task IDs `result` names that the board does not hold: a project's ID letters, a hyphen and a number
 /// that no task has or had (AC-166). In the order named, each once.
 pub fn unknown_ids(tx: &Transaction, result: &str) -> Result<Vec<String>, String> {
-    let prefixes: Vec<String> = rows(tx, "SELECT prefix FROM projects WHERE prefix IS NOT NULL", [], |r| r.get(0))?;
-    let mut unknown: Vec<String> = Vec::new();
-    // a schedule's task says "S_" before its project's letters (terminum-schedules.md AC-162): one word, found as it is
-    for word in result.split(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_')) {
-        let named = word.rsplit_once('-').is_some_and(|(p, n)| prefixes.iter().any(|x| x == p.strip_prefix(super::slugs::SCHEDULED).unwrap_or(p)) && !n.is_empty() && n.len() <= 9 && n.chars().all(|c| c.is_ascii_digit()));
-        if named && !unknown.iter().any(|u| u == word) && super::slugs::resolve(tx, word)?.is_none() {
+    let mut unknown = Vec::new();
+    for word in named(&prefixes(tx)?, result) {
+        if super::slugs::resolve(tx, word)?.is_none() {
             unknown.push(word.to_string());
         }
     }
@@ -135,6 +201,25 @@ Write in \"{language}\" also the titles (after Bug:, Feat: or Debt:), texts and 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ac166_a_section_is_read_up_to_the_next_heading_every_time_it_is_there() {
+        let r = "## Not done\nThe live replay.\n\n## Needs a human\nNone\nFurther recommendations: see API-7\nNot done: None";
+        assert_eq!(section(r, "Not done"), "\nThe live replay.\n\nNone\n");
+        assert_eq!(section(r, "Further recommendations"), "see API-7\n");
+        assert_eq!(section(r, "Checked"), "", "absent");
+        assert_eq!(named(&["API".into()], "API-7, S_API-8, API-7 again; UTF-8, AC-125, API-x"), ["API-7", "S_API-8"]);
+    }
+
+    #[test]
+    fn ac166_nothing_is_none_a_dash_or_one_short_word() {
+        for w in ["", " None.", "none", "**None**", "-", "\u{2014}", "N/A", "\u{41d}\u{435}\u{442}"] {
+            assert!(says_nothing(w), "{w:?}");
+        }
+        for w in ["Replay it on the live board.", "Benchmarks", "x1"] {
+            assert!(!says_nothing(w), "{w:?}");
+        }
+    }
 
     #[test]
     fn ac166_the_words_hold_every_section_in_order() {

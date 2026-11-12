@@ -701,6 +701,11 @@ Scenario: AC-136 failure — it stopped with the task open
   When the agent works again
   Then the words go and its row's bar pulses (AC-134)
 
+Scenario: AC-136 edge — its background work runs
+  Given a Stop while Claude Code's footer counts a shell or a monitor it started (its checks, a landing), past the 10 minutes its row shows it working (terminum-agents.md AC-39)
+  Then its card says "background work runs", its title saying the agent goes on when that ends, never "stopped, task open"
+  And once that work ends with the agent idle and the task open, the card says "stopped, task open"
+
 Scenario: AC-136 failure — it died or left
   When its session ends (not /clear), or its process is gone and only the shell remains
   Then its card says "no agent", its history "The agent's session ended with this task open"
@@ -1166,7 +1171,7 @@ Depends on: nothing more.
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
-- [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`
+- [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
 - [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)

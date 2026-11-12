@@ -248,6 +248,10 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if !unknown.is_empty() {
                     said.push(closeout::unknown_words(&unknown));
                 }
+                let untracked = closeout::untracked(tx, &result)?;
+                if !untracked.is_empty() {
+                    said.push(closeout::untracked_words(&untracked));
+                }
                 Ok((said.join(" "), vec![id.to_string()]))
             }
             "get_file" => {
