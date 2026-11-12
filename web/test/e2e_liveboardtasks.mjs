@@ -4,6 +4,7 @@
 // by itself; a project's own Archived, with Find and Return.
 import { boardKit, intoStore, nap, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
+import { liveTaskClose } from "./e2e_liveclose.mjs";
 
 const card = (id) => `.card[data-id="${id}"]`;
 
@@ -114,5 +115,5 @@ export async function liveBoardTasks(page, opts) {
   check("AC-118 an empty list says so", await until(() => page.isVisible("#archivednone"), 4000));
   await page.click('#archivedbox button[value="cancel"]');
   await page.click('#projectbox button[value="cancel"]');
-  await page.goto(`${base}/kanban/`);
+  await liveTaskClose(page, opts);
 }

@@ -1183,7 +1183,7 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after CLOSE, ×, Esc and Back; a deliberate reopen), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after CLOSE, ×, Esc and Back; a deliberate reopen), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes; `node web/test/e2e_live.mjs tasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
