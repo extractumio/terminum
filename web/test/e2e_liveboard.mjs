@@ -131,7 +131,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
     // a folded card's first press shows it whole (terminum-kanban.md AC-159): pressed until it opens
     const press = () => { const c = document.querySelector(sel); if (c.matches(".compact:not(.open)")) c.click(); c.click(); };
     document.getElementById("taskbox").addEventListener("close", () => queueMicrotask(() => { press(); done(); }), { once: true });
-    [...document.querySelectorAll(".newcomment button")].find((b) => b.textContent === "Close").click();
+    [...document.querySelectorAll("#taskacts button")].find((b) => b.textContent === "Close").click();
   }), card(second));
   await page.waitForTimeout(800);
   check("AC-105 a card pressed as its window closes opens and stays, at its address",

@@ -14,8 +14,8 @@
      list   a list to pick from: 80% high, 480–720 px wide, 360–760 px high; the list takes the rest
      read   a document: 80% high, 560–1040 px wide (a task's prose 920, a bookmark's 960, terminal
             lines 1280), 420 px high at least
-   A dialog that fills its height keeps its buttons at its foot, in sight when it scrolls. On a phone
-   it takes all the height in sight above the keyboard. */
+   Every dialog keeps its buttons at its foot, in sight while what is above them scrolls. On a phone
+   one that fills its height takes all the height in sight above the keyboard. */
 
 dialog.dlg { --pw: 100vw; --ph: 100dvh; --w-min: 360px; --w-max: 480px; }
 dialog.dlg[data-size] { width: min(calc(100vw - 32px), clamp(var(--w-min), calc(var(--pw) * .8), var(--w-max)));
@@ -32,14 +32,17 @@ dialog.dlg[data-size="read"] { --w-min: 560px; --w-max: 1040px; --h-min: 420px; 
 #markdoc { --w-max: 960px; }                     /* prose: about 100 characters a line */
 #lastlines { --w-max: 1280px; }                  /* a terminal's lines, as wide as it drew them */
 
+/* every dialog's buttons: held at its foot while what is above them scrolls (a long form on a short window) */
+dialog.dlg > form > .actions { position: sticky; z-index: 1; bottom: calc(-1 * var(--sp-4)); margin-top: 0; padding: var(--sp-3) 0 var(--sp-4);
+  margin-bottom: calc(-1 * var(--sp-4)); background: var(--fill); }
+
 /* a dialog that fills its height: its form a column down to its foot, the part marked data-grow
    (its text field, list or body; --grow-min its floor) taking what is left, its buttons at the foot
-   however little is above them (an empty list) and in sight when it scrolls */
+   however little is above them (an empty list) */
 dialog.dlg:is([data-size="write"], [data-size="list"], [data-size="read"]) {
   height: clamp(var(--h-min), calc(var(--ph) * .8), var(--h-max));
   & > form { min-height: 100%; box-sizing: border-box; }
-  & > form > .actions { margin-top: auto; position: sticky; bottom: calc(-1 * var(--sp-4)); padding: var(--sp-3) 0 var(--sp-4);
-    margin-bottom: calc(-1 * var(--sp-4)); background: var(--fill); }
+  & > form > .actions { margin-top: auto; }
   & [data-grow] { flex: 1 1 0; min-height: var(--grow-min, 0); overflow: auto; }
   & :is(textarea[data-grow], [data-grow] > textarea) { flex: 1 1 0; min-height: var(--grow-min, 6em); resize: none; }
   & :is(.fieldrow, .xbox)[data-grow] { min-height: auto; overflow: visible; }   /* holds its field: as tall as it at least */

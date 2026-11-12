@@ -332,7 +332,7 @@ ${"z".repeat(400)}
       const id = await make("comment kept"); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
       await page.fill(".newcomment textarea", "long thought");
       await page.route(`**/api/tasks/${id}/comments`, (r) => r.abort());
-      await page.click('.newcomment button:has-text("Close")'); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
+      await page.click('#taskacts button:has-text("Close")'); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
       check("a comment lost to the network stays typed, the window open", await isOpen("#taskbox") && await page.inputValue(".newcomment textarea") === "long thought");
       await page.reload(); await page.waitForSelector("#taskbox[open]"); await nap(300);
       check("  and survives a reload", await page.inputValue(".newcomment textarea") === "long thought");

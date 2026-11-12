@@ -50,6 +50,13 @@ export async function webDialogSize(browser, name) {
       return { h: Math.round(r.height), win: innerHeight, gap: Math.round(r.bottom - a.bottom) }; });
     check(`AC-173 the archived list, empty, keeps its Close at its foot, 80% of the window high (${size})`,
       near(list.h, clamp(360, list.win * .8, 760)) && Math.abs(list.gap) <= 1, JSON.stringify(list));
+    // a form taller than a short window: its buttons stay at its foot while its fields scroll
+    await b.page.setViewportSize({ width: 1400, height: 420 });
+    const form = await b.page.evaluate(() => { for (const d of document.querySelectorAll("dialog[open]")) d.close();
+      const d = document.getElementById("projectbox"); d.showModal(); d.scrollTop = 0;
+      const r = d.getBoundingClientRect(), a = d.querySelector(":scope > form > .actions").getBoundingClientRect();
+      return { scrolls: d.scrollHeight > d.clientHeight, gap: Math.round(r.bottom - a.bottom) }; });
+    check(`AC-173 a form taller than the window scrolls, its buttons held at its foot (${size})`, form.scrolls && Math.abs(form.gap) <= 1, JSON.stringify(form));
     await b.close();
   }
   runningIn(`${name} 390×844`);
