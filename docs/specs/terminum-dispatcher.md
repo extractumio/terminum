@@ -65,7 +65,7 @@ Open questions:
 |---|---|---|
 | AC-121 | [MUST / P0] | RUN opens a window at its project's place (AC-140), starts the chosen agent there by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
-| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` with a result in its sections is DONE, one without them stays a comment; a turn with no result gets one request per run asking whether the task is finished, then an hour with no result is FAILED; an hour with no activity while IN PROGRESS is FAILED; a session that ends with no result, a dead agent or a turn's failure is FAILED; no clock makes a task DONE. |
+| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` with a result in its sections is DONE, one without them stays a comment; a turn with no result gets a request at each quiet stop, 3 a run at most, to finish it, ask a human or say what still runs, then an hour with no result is FAILED; an hour with no activity while IN PROGRESS is FAILED; a session that ends with no result, a dead agent or a turn's failure is FAILED; no clock makes a task DONE. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
@@ -301,8 +301,11 @@ Scenario: AC-123 failure — a result without its sections
 
 Scenario: AC-123 happy path — a turn ended with no result
   Given a Stop, or an idle screen after a turn with no Stop (an interrupt), API-12 IN PROGRESS, and no activity (§9) for 5 minutes
-  Then once per run, until a human's prompt or RUN, through the gate: "[terminum Dispatcher] API-12 is still open and you stopped. Is it finished? Call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for, or ask a human by execute_tool("ask_human", {id, questions}) what you need; with neither, it is FAILED after an hour."
+  Then through the gate: "[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for. If a human must decide or approve something, ask by execute_tool("ask_human", {id, questions}): the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour."
+  And the agent, with its whole context, says which way it ended: Dispatcher approves nothing for a human, and a question it asks in words alone is answered by this request, not by Dispatcher
   And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing; its tools are activity
+  When that turn's Stop has come and the agent is again quiet for 5 minutes, the task still IN PROGRESS
+  Then the request goes again, 3 a run at most; a human's prompt or RUN counts them anew; while that turn has not ended, none goes
   When the request cannot be typed (a tmux mode, a draft or a question in its box, a turn begun)
   Then nothing is typed or said and a later walk asks again; the hour of nothing below ends it all the same; a session that cannot be typed into for good (its window closed, its agent ended) is FAILED at once by the scenarios below
   When 60 minutes pass from the request with no activity and no result
@@ -1217,6 +1220,11 @@ Scenario: AC-166 failure — the result names a task the board lacks
   Then the result is kept and API-12 is DONE: nothing is refused
   And the tool's answer says "The result names API-99, not on the board: make each with execute_tool("create_task", {title, severity, text}) and name its ID in a comment by execute_tool("add_comment", {id, text}), or correct it there."
 
+Scenario: AC-166 failure — follow-ups in no task
+  When the result's Not done or Further recommendations hold words, not "None" (nor a dash, nor one short word: its language's "None"), naming no task's ID
+  Then the result is kept and API-12 is DONE: nothing is refused
+  And the tool's answer says "Further recommendations name no task: give each thing a human would plan from them a task by execute_tool("create_task", {title, severity, text}) after execute_tool("list_tasks", {}) finds none open on it, and name its ID in a comment by execute_tool("add_comment", {id, text}); what is too small for a task belongs in Issues and discoveries.", naming the sections so filled
+
 Scenario: AC-166 edge — several tasks, no language
   Given RUN of API-12 and API-13 by number (AC-138), in a project that sets no language
   Then the prompt says "Before each execute_tool("finish_task", {id, result}), close that task out", each step limited to that task's scope, and the result in English
@@ -1564,7 +1572,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
-- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
+- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals

@@ -108,7 +108,7 @@ export async function liveDispatcher(page, opts) {
   // AC-123 a turn with no result: one request through the gate, then FAILED an hour later, never DONE
   const stops = await task("stops midway");
   await run(stops);
-  check("AC-123 a turn with no result gets one request", await until(async () => /still open and you stopped\. Is it finished\?/.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "FAILED", 15000));
+  check("AC-123 a turn with no result gets a request", await until(async () => /still open and your turn ended; no human watches this run now\./.test(tmux("capture-pane", "-p", "-S", "-30", "-t", await paneOf(stops))) || await status(stops) === "FAILED", 15000));
   check("AC-123 no result an hour after the request: FAILED", await hasStatus(stops, "FAILED", 30000) && await said(stops, "No result from the agent within an hour of Dispatcher's request."), await history(stops));
 
   // AC-123 the gate never types on a draft
@@ -118,7 +118,7 @@ export async function liveDispatcher(page, opts) {
   tmux("send-keys", "-t", await paneOf(drafted), "-l", "my own words");
   await nap(4000);                                     // past the request's 5 minutes: each walk meets the draft
   const box = tmux("capture-pane", "-p", "-t", await paneOf(drafted));
-  check("AC-123 a draft in the box is not typed over: it stands, nothing said", /my own words/.test(box) && !/still open and you stopped/.test(box) && await status(drafted) === "IN PROGRESS", box);
+  check("AC-123 a draft in the box is not typed over: it stands, nothing said", /my own words/.test(box) && !/still open and your turn ended/.test(box) && await status(drafted) === "IN PROGRESS", box);
   check("AC-123 then the hour of nothing ends it", await hasStatus(drafted, "FAILED", 30000) && await said(drafted, "No activity for 60 minutes and no result from the agent."), await history(drafted));
 
   // AC-123 failures and ends

@@ -236,12 +236,12 @@ mod tests {
     fn ac122_an_agents_own_turn_starts_a_turn_but_is_no_new_work() {
         let s = Store::open(crate::testutil::fresh_dir("hooks-injected").join("kanban.sqlite"));
         s.with(|tx| {
-            let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: true, ..Default::default() };
+            let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: 1, ..Default::default() };
             let prompt = |p: &str| serde_json::json!({"agent": "claude", "event": "UserPromptSubmit", "prompt": p});
             let (moved, _) = apply(tx, &mut r, &prompt("<task-notification>\n<task-id>b1</task-id>"), false)?;
-            assert_eq!((moved, r.turn_ended, r.nudged), (false, false, true), "its clocks go on");
+            assert_eq!((moved, r.turn_ended, r.nudged), (false, false, 1), "its clocks go on");
             apply(tx, &mut r, &prompt("and now this"), false)?;
-            assert!(!r.nudged, "a human's prompt is new work");
+            assert_eq!(r.nudged, 0, "a human's prompt is new work: its requests count anew");
             Ok(())
         }).unwrap();
     }
@@ -250,12 +250,14 @@ mod tests {
     fn ac123_the_turn_the_request_started_is_activity_once_it_uses_tools() {
         let s = Store::open(crate::testutil::fresh_dir("hooks-nudge").join("kanban.sqlite"));
         s.with(|tx| {
-            let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: true, nudge_turn: true, ..Default::default() };
+            let mut r = runs::Run { state: Phase::Working, turn_ended: true, nudged: 1, nudge_turn: true, ..Default::default() };
             let ev = |event: &str| serde_json::json!({"agent": "claude", "event": event, "tool": "Bash: make"});
             let (_, active) = apply(tx, &mut r, &serde_json::json!({"agent": "claude", "event": "UserPromptSubmit", "prompt": "[terminum Dispatcher] T-1"}), true)?;
             assert!(!active, "the request itself starts no clock anew");
             assert!(apply(tx, &mut r, &ev("PreToolUse"), false)?.1 && apply(tx, &mut r, &ev("PostToolUse"), false)?.1, "it went back to work");
-            assert!(r.nudged, "still asked once a run");
+            assert!(r.nudged == 1 && r.nudge_turn, "its turn goes on: no new request is due before its Stop");
+            apply(tx, &mut r, &ev("Stop"), false)?;
+            assert!(!r.nudge_turn, "its Stop ends the request's turn: the next quiet stop may be asked about (AC-123)");
             Ok(())
         }).unwrap();
     }
