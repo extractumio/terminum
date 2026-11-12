@@ -21,7 +21,8 @@ export async function subscriptionStripes(page, { pool, cli, newPane, envOf, tmu
     return /5h\s*34%/.test(t) && /week\s*95%/.test(t);
   }, 10000);
   check("AC-168 Claude Code's status line fills its stripes", said, t);
-  check("AC-168 a window at 90% or more takes the danger color", !!(await page.$(`${pool} .agtrack.high`)));
+  const hues = await page.$$eval(`${pool} .agtrack`, (ts) => ts.map((t) => [t.className, getComputedStyle(t.firstElementChild).backgroundColor]));
+  check("AC-168 a window over 90% is red, one under 40% green", hues.length === 2 && /\blow\b/.test(hues[0][0]) && /\bhigh\b/.test(hues[1][0]) && hues[0][1] !== hues[1][1], JSON.stringify(hues));
   const width = await page.$eval(`${pool} .agsub .agfill`, (f) => f.getBoundingClientRect().width / f.parentElement.getBoundingClientRect().width);
   check("AC-168 the five-hour stripe filled a third", Math.abs(width - 0.34) < 0.02, width);
   const over = await page.$eval(pool, (card) => card.scrollWidth > card.clientWidth + 1 || [...card.querySelectorAll(".agsub")].some((s) => s.getBoundingClientRect().right > card.getBoundingClientRect().right + 1));
