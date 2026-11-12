@@ -145,6 +145,12 @@ Scenario: AC-121 failure — did not start
   And when a Codex prompt was taken on screen and no hook came, the reason says "hooks not trusted: open /hooks in Codex, or Codex runs in a shared app-server (AC-156)"; the agent left running is named, and Dispatcher does not watch it
   And the window stays for AC-125 to close
 
+Scenario: AC-121 edge — text queued when the agent ends
+  Given the agent is still running with a complete command queued in its tty
+  When the agent ends without reading it
+  Then the wrapper drops that input and the command does not run
+  And the shell left in the window accepts a new command
+
 Scenario: AC-121 edge — the window still opening
   Given a press has made the run and its window opens over a slow link
   When Dispatcher's walk comes first
