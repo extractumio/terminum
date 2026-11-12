@@ -76,17 +76,15 @@ def remove_dead_sockets():
 
 
 def naming(folder):
-    """The pids of the processes whose environment holds a path in `folder` (a private terminumd's
-    TM_HOME, its fake host's HOME): a run's whatever their parent, as a host's `claude plugin …`
-    in a session of its own whose ssh was dropped."""
-    holds = re.compile(rf"=(\S*:)?{re.escape(folder)}(/|:|\s|$)")
-    return [pid for pid, _, text in check_step.listing() if holds.search(text)]
+    """Pids working inside a run's private folder, even after a fake host's ssh parent ended.
+    fake_ssh.py starts its remote shell in the fake home; no process environment is read."""
+    return list(check_step.working_in(folder))
 
 
 def end_naming(folder, settle=check_step.SETTLE_S):
     """Waits `settle` seconds at most for the processes `naming` the folder to end by themselves (one
     may still write into it), then ends those left by pid as check_step.py does; their commands,
-    never their environment."""
+    without reading process environments."""
     end = time.monotonic() + settle
     while (left := naming(folder)) and time.monotonic() < end:
         time.sleep(0.5)
