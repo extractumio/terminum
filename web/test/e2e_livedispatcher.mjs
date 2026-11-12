@@ -222,15 +222,28 @@ export async function liveDispatcher(page, opts) {
   check("AC-122 and it ends", await until(async () => (await history(justEnded)).includes("All done."), 15000), await history(justEnded));
 
   // what the tty holds when its agent has gone never reaches the shell it leaves (§9 Window command)
-  const nothing = path.join(work, "typed-into-the-shell");
-  const sleepy = (await j("/api/task-agents", "POST", { name: "Sleepy", kind: "claude", command: "sleep 2" })).id;
+  const drainWork = fs.mkdtempSync(path.join(work, "drain-"));
+  const nothing = path.join(drainWork, "typed-into-the-shell");
+  const release = path.join(drainWork, "end-sleepy"), shellReady = path.join(drainWork, "shell-ready");
+  // A compound command keeps Claude's inline options off the stand-in (sleep rejects --settings).
+  // Its file barrier keeps it alive until the queued command is visibly in the tty, on any runner.
+  const sleepy = (await j("/api/task-agents", "POST", { name: "Sleepy", kind: "claude", command: `while [ ! -e '${release}' ]; do sleep 0.05; done` })).id;
   const drained = await task("drained");
   await run(drained, { agent: sleepy });
   const drainedPane = await until(() => paneOf(drained)) && await paneOf(drained);
-  tmux("send-keys", "-t", drainedPane, "-l", `touch ${nothing}`);
+  tmux("send-keys", "-t", drainedPane, "-l", `touch '${nothing}'`);
   tmux("send-keys", "-t", drainedPane, "Enter");
+  check("AC-121 the command is queued while the program still runs", await until(() => tmux("capture-pane", "-p", "-t", drainedPane).includes("typed-into-the-shell"))
+    && tmux("display", "-p", "-t", drainedPane, "#{@terminum-exit}") === "");
+  fs.writeFileSync(release, "");
   check("AC-121 an agent's end with text in its tty: FAILED", await hasStatus(drained, "FAILED", 15000));
-  await nap(1000);
+  // The exit option precedes the drain: a fresh command may be drained too, so retry until the shell answers.
+  check("AC-121 its shell accepts a fresh command after the drain", await until(() => {
+    if (fs.existsSync(shellReady)) return true;
+    tmux("send-keys", "-t", drainedPane, "-l", `touch '${shellReady}'`);
+    tmux("send-keys", "-t", drainedPane, "Enter");
+    return false;
+  }));
   check("§9 what was typed for it does not run in its shell", !fs.existsSync(nothing));
 
   // RUN sends what the human saw: an agent may change the task's text meanwhile (AC-121)

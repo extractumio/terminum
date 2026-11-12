@@ -55,7 +55,7 @@ Open questions: none.
 | ID | Priority | Case |
 |---|---|---|
 | AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
-| AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity and title; a press shows one whole, folding the one before; the other columns show cards whole. |
+| AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
 | AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment closes with RUN or CLOSE. |
@@ -150,6 +150,7 @@ Scenario: AC-105 failure — its projects and filters not read
 Scenario: AC-159 happy path — a line a card
   Given API-3 and API-7 in TODO, API-1 in DONE and API-9 IN PROGRESS
   Then API-3, API-7 and API-1 are one line each: the ID, the severity, the title cut to the line; their foot, subtasks, session, agent and parent are not shown
+  And a card whose session or run has a state shows it as its dot after the title, its words on hover, as the card shown whole says them: API-3 waiting for Claude Opus's room the waiting dot, "waits for Claude Opus"
   And API-9's card is whole, as AC-105 says
 
 Scenario: AC-159 happy path — one shown whole
@@ -172,7 +173,7 @@ Scenario: AC-159 edge — what stays
 ```gherkin
 Scenario: AC-106 happy path — the window
   When the user presses + Task in the board's head, a key as its neighbours, not a primary one
-  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Owner the user, Session none, Parent none, Budget none
+  Then a window opens with Title, the text (Markdown editor with Preview, raw HTML off), Files, Project (the filter's only project, else the only project there is, else none chosen), Severity P2, Agent "Choose when it runs" (none specified, even with a last-used agent), Owner the user, Session none, Parent none, Budget none
   When the user types "Fix the retry loop", drops shot.png and presses Create
   Then API-12 stands in TODO with shot.png, every page shows it within 2 s and the window closes
   And a file dropped or pasted into the text puts a link to it at the cursor, an image as an image
@@ -188,12 +189,21 @@ Scenario: AC-106 failure — no project chosen
   Then the words go, and Create makes the task in Billing
 
 Scenario: AC-106 happy path — Run
-  Given Billing has a free agent, the one Run last started in it picked in the window's Agent field
+  Given the user explicitly picked Billing's free agent in the window's Agent field
   When the user types a title and presses Run
   Then API-12 is kept and starts on that agent at once, no other window opening (terminum-dispatcher.md AC-138)
   Given no agent, none free, or a folder it lacks
   Then API-12 is kept and RUN's window opens saying what stands in the way
   And the agent the user picked in the window, or none, stays picked while it is open, as sessions, windows and agents change
+
+Scenario: AC-106 edge — the agent is chosen at assignment
+  Given the new-task window's Agent says "Choose when it runs"
+  When the user presses Create
+  Then the task is kept without a specified agent, and its assignment chooses one when it runs
+  When the user opens another new-task window and presses Run without choosing an agent
+  Then the task is kept without a specified agent and RUN's window opens to choose one (terminum-dispatcher.md AC-138)
+  When an explicitly chosen agent is removed before Create
+  Then Agent returns to "Choose when it runs" and Create sends no removed agent's ID
 
 Scenario: AC-106 happy path — the rest folded
   Then Owner and Session stand under "Owner and session", folded: most tasks are the user's and start with no session
@@ -355,7 +365,7 @@ Scenario: AC-111 edge — a press while tasks change
   Then the menu is not drawn anew: a press on its summary or a row at that moment takes
 
 Scenario: AC-111 edge — a narrow board
-  Given a filter is on and one project is shown, so Clear filters and + Session show
+  Given a filter is on and one project is shown, so Clear filters shows
   When the window narrows from 1400 to 1100 px with the session list open
   Then the filter keys that no longer fit go to a line under the others; no key of the head stands over another
 ```
@@ -1157,8 +1167,8 @@ Depends on: nothing more.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-105 — `cargo test tasks::query`, `web/test/e2e_kanbansort.mjs` (`node web/test/e2e_all.mjs webKanbanSort`), `web/test/e2e_liveboardsort.mjs` (`node web/test/e2e_live.mjs boardsort`), `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board`), a phone's in `liveBoardPhone`, its projects and filters not read in `web/test/e2e_liveboardedge.mjs`
-- [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone)
-- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardagents.mjs`, `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
+- [x] AC-159 — `web/test/e2e_liveschedules.mjs` (`liveFolded`: one line, shown whole, the next folds it, a window on the second press, Esc, kept as the columns are read; wide and phone), `web/test/e2e_liveboardpool.mjs` (a folded card's waiting dot, its words on hover)
+- [x] AC-106 — `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardpool.mjs`, `web/test/e2e_newtask.mjs` (unspecified agent, explicit choice, removal and refusal), `web/test/e2e_livenotes.mjs` (New task from selection), `cargo test tasks::ops`
 - [x] AC-107 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-108 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-109 — `cargo test tasks::files` (a failed purge, a stop's leftovers), `cargo test tasks::tools`, `web/test/e2e_liveboard.mjs`

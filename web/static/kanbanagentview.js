@@ -40,6 +40,9 @@ const failure = (reading) => (reading?.failed ? `Its usage command failed ${dayT
 /** Where its reading came from and when (AC-168). */
 const whence = (kind, reading) => (known(reading) ? `Read ${dayTime(reading.at)} ${reading.via === "usage" ? `by ${agentName(kind)}'s usage command` : `from a ${agentName(kind)} session`}.` : "Not read yet.");
 
+/** A window's use: green under 40%, yellow to 90%, red over it (AC-168). */
+const level = (pct) => (pct > 90 ? "high" : pct >= 40 ? "mid" : "low");
+
 /** Its stripes: on its rectangle, or `full` in its window with when each resets. */
 export function stripes(kind, reading, now, full = false) {
   const old = known(reading) && now - reading.at > HOUR;    // over an hour: its stripes fade
@@ -48,7 +51,7 @@ export function stripes(kind, reading, now, full = false) {
   for (const r of rows(reading, now)) {
     const line = el("span", "agsub"), track = el("span", "agtrack"), fill = el("span", "agfill"), pct = r.used ?? 0;
     fill.style.width = `${Math.min(100, pct)}%`;
-    track.classList.toggle("high", pct >= 90);
+    track.classList.add(level(pct));
     track.append(fill);
     const words = full && r.resets ? `${r.note} · resets ${dayTime(r.resets)}` : r.note;
     line.append(el("span", "agsublabel", r.label), track, el("span", "agsubpct", words));
