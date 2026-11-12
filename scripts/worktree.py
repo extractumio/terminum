@@ -291,10 +291,17 @@ def working_in(tree):
             try:
                 if entry.name.isdigit() and inside(os.readlink(entry / "cwd")):
                     found[int(entry.name)] = (entry / "comm").read_text().strip()
-            except OSError:
+            except (FileNotFoundError, ProcessLookupError):
                 continue
+            except PermissionError:
+                try:
+                    if entry.stat().st_uid != os.getuid():
+                        continue   # another user's protected process cannot belong to this run
+                except FileNotFoundError:
+                    continue
+                raise
     elif shutil.which("lsof"):
-        out = subprocess.run(["lsof", "-a", "-d", "cwd", "-F", "pcn"], capture_output=True, text=True).stdout
+        out = subprocess.run(["lsof", "-a", "-d", "cwd", "-F", "pcn"], capture_output=True, text=True, check=True, timeout=15).stdout
         pid = command = None
         for line in out.splitlines():
             tag, value = line[:1], line[1:]
