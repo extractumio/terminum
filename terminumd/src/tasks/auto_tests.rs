@@ -38,6 +38,8 @@ fn ac170_a_projects_setting_is_off_until_a_human_sets_it() {
         assert_eq!(put(json!({"on": true, "agent": "p"}), 5).unwrap_err(), "api has no folder: set it in its window.");
         assert_eq!(put(json!({"on": true, "mode": "order"}), 5).unwrap_err(), "api has no folder: set it in its window.", "by the board's order too");
         assert_eq!(setting(tx, "api")?, made, "nothing saved");
+        put(json!({"agent": "p"}), 5)?;
+        assert_eq!(setting(tx, "api")?, Setting { agent: Some("p".into()), ..made.clone() }, "off, its settings are saved");
         tx.execute("UPDATE projects SET dir = '/srv' WHERE id = 'api'", []).map_err(sql)?;
         // its agents chosen while off; the switch then sends "on" alone and keeps the rest
         put(json!({"agent": "p", "default": "a", "severities": ["P2", "P0"], "wait_minutes": 0, "day_most": 3}), 5)?;

@@ -147,8 +147,8 @@ fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent
 }
 
 /// A human's setting, kept as `new` says: on needs the project's folder (AC-140), an agent that picks and a severity
-/// to take. Turned on, it starts
-/// anew: why it was off is forgotten, and what it started before does not count against it; kept off, why stays.
+/// to take. Turned on, it starts anew: why it was off is forgotten, and what it started before does not count against
+/// it; kept off, why stays.
 pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<(), String> {
     ops::check_project(tx, project)?;
     if new.on {
