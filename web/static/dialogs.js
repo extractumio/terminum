@@ -20,20 +20,26 @@ function inTurn(id, open) {
   return turn;
 }
 
-// A window that keeps something (AC-165): while terminumd answers, its buttons are off, a second keep sends
-// nothing, Esc waits (× and Cancel are buttons). Capture: a dialog's own cancel listener sees it refused.
+// A window that keeps something (AC-165): while terminumd answers, its buttons are off and its text stands still,
+// so what is sent is what was shown and nothing typed meanwhile is lost (AC-133); a second keep sends nothing, Esc
+// waits (× and Cancel are buttons). Capture: a dialog's own cancel listener sees it refused.
 document.addEventListener("cancel", (e) => { if (e.target.dataset?.busy) e.preventDefault(); }, true);
 
-/** `work` in `box`, one at a time. */
+const TYPED = "textarea, input:not([type]), input[type=text], input[type=number], input[type=search], input[type=url]";
+
+/** `work` in `box`, one at a time; `box.dataset.busy` while it runs. */
 export function oneAtATime(box, work) {
   return async (...args) => {
     if (box.dataset.busy) return;
-    const on = [...box.querySelectorAll("button:not(:disabled)")];
+    const off = [...box.querySelectorAll("button:not(:disabled)")];
+    const still = [...box.querySelectorAll(TYPED)].filter((f) => !f.readOnly);
     box.dataset.busy = "1";
-    for (const b of on) b.disabled = true;
+    for (const b of off) b.disabled = true;
+    for (const f of still) f.readOnly = true;
     try { return await work(...args); } finally {
       delete box.dataset.busy;
-      for (const b of on) b.disabled = false;
+      for (const b of off) b.disabled = false;
+      for (const f of still) f.readOnly = false;
     }
   };
 }

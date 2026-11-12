@@ -39,10 +39,11 @@ export function underParents(tasks) {
  *  there too: terminum-kanban.md AC-150); the board goes to /sessions/, whose form signs in (signInElsewhere). */
 let refused = () => {};
 
-/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/. */
+/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/; what does that. */
 export function signInElsewhere() {
   refused = () => { location.href = "/sessions/"; };
   signin.onRefused(refused);
+  return refused;
 }
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's

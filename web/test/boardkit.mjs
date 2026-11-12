@@ -96,11 +96,10 @@ export function boardKit(page, { base, tmux, work, bin, home, app }) {
   const card = (id) => `.card[data-id="${id}"]`;
   /** The board (`query`: its filters) with its columns' first read drawn, a card or "No tasks" in
    *  each: on CI's runner WebKit's read outlasts any fixed wait, and a check then found no card.
-   *  The nap is the socket's: the board subscribes only after that read. */
+   *  Then its socket is open: the board subscribes only after that read, and says so (kanban.js listen). */
   const open = async (query = "") => {
     await page.goto(`${base}/kanban/${query}`);
-    await page.waitForFunction(() => document.querySelector(".col .cards") && !document.querySelector(".col .cards:empty"));
-    await nap(250);
+    await page.waitForFunction(() => document.querySelector(".col .cards") && !document.querySelector(".col .cards:empty") && document.body.dataset.socket === "open");
   };
   /** Where the live test goes on: a session shown on the session page. */
   const backToSessions = async () => {

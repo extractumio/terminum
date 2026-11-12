@@ -34,8 +34,9 @@ export function taskAddress({ windowed, needs }) {
     }
     const id = addressed();
     if (id) { if (!windowed.shows(id)) openTask(id, false); return; }
-    // Back with an edit not saved: asked; kept, the window keeps its address
-    if ($("taskbox").open && !await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
+    // Back with an edit not saved: asked; kept, the window keeps its address; one still opening never shows
+    if (!$("taskbox").open) windowed.forget();
+    else if (!await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
   }
   addEventListener("popstate", route);
 
