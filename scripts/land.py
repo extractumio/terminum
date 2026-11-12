@@ -5,17 +5,21 @@ smoke set green on that result, pushed, the primary checkout fast-forwarded and 
 targeted checks passed on its own content count (scripts/check_changed.py records it); they run again
 on the merged result when none is recorded or origin/main changed the same files. Several trees land at
 once: each tests alone, and only the last look and the push take turns. A tree is merged with what
-others landed meanwhile, its smoke set run again on each merge. During a release the primary checkout
+others landed meanwhile, its smoke set run again on each merge; a tree that lost that race once holds
+the turn from its next merge to its push, so it never loses twice (a smoke set under the turn ends
+after SMOKE_MOST_MINUTES). During a release the primary checkout
 stays where it is (scripts/release_turn.py), and the smoke set yields to it (nice).
 
   land.py <slug>    from the primary checkout (`make land SLUG=<slug>`), the work committed;
                     TM_LAND_INSTALL=1 (the maintainer's local.mk) also installs a change with code
 Exit: 0 landed; 1 checks failed or refused (the tree stays); 2 a merge conflict, left in the tree
 to resolve and commit before running this again. No force, ever."""
+from contextlib import nullcontext, suppress
 import json
 import os
 from pathlib import Path
 import re
+import signal
 import subprocess
 import sys
 
@@ -25,6 +29,9 @@ from worktree import primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E
 
 BASE = "origin/main"
 TRIES = 8
+# a smoke set takes about 25 minutes on a busy Mac; one running this long is stuck, and under a held turn
+# every other landing would wait for it
+SMOKE_MOST_MINUTES = 90
 
 
 class Stop(Exception):
@@ -49,18 +56,23 @@ def files_between(a, b, cwd):
 
 
 class Turn(TreeTurn):
-    """One tree at a time merges and pushes, however long its install takes."""
+    """One tree at a time merges and pushes, however long its install takes; its holder's name is beside it."""
     def __init__(self, tree):
         try:
             super().__init__(tree, "terminum-land.turn")
         except Refused as refused:
             raise Stop(1, str(refused)) from refused
+        self.slug, self.holder = Path(tree).name, self.path.with_name("terminum-land.holder")
 
     def __enter__(self):
         super().__enter__()
         if not self.take():
-            print("land: another tree's landing has its turn: waiting", flush=True)
+            who = "another tree"
+            with suppress(OSError):
+                who = self.holder.read_text().strip() or who
+            print(f"land: {who}'s landing has its turn (its checks, push and install can take half an hour): waiting", flush=True)
             self.take(wait=True)
+        self.holder.write_text(self.slug)
         return self
 
 
@@ -117,16 +129,38 @@ def ci_status(tree, run=subprocess.run):
     return f"{verdict}{of}: {last['url']}{then}"
 
 
-def checks_of(tree, *flags):
-    return subprocess.run([sys.executable, "scripts/check_changed.py", *flags], cwd=tree).returncode == 0
+def checks_of(tree, *flags, minutes=None):
+    """Whether the checks passed; ones still running after `minutes` are ended and fail. They run in a process
+    group of their own, ended whichever way this returns: each step's scripts/check_step.py takes the signal
+    to its own group and cleans up."""
+    run = subprocess.Popen([sys.executable, "scripts/check_changed.py", *flags], cwd=tree, start_new_session=True)
+    try:
+        return run.wait(timeout=minutes and minutes * 60) == 0
+    except subprocess.TimeoutExpired:
+        print(red(f"land: the checks ran over {minutes} minutes: ended"), flush=True)
+        return False
+    finally:
+        end_group(run)
+
+
+def end_group(run):
+    """SIGTERM to `run`'s group while it lives, SIGKILL 2 minutes later."""
+    for number in (signal.SIGTERM, signal.SIGKILL):
+        if run.poll() is not None:
+            return
+        try:
+            os.killpg(run.pid, number)
+            run.wait(timeout=120)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            pass
 
 
 def has_code(files):
     return any(not is_doc(f) for f in files)
 
 
-def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), passed=lambda tree: checks_of(tree, "--passed"),
-         say=print, after=lambda files: None):
+def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", minutes=SMOKE_MOST_MINUTES),
+         passed=lambda tree: checks_of(tree, "--passed"), say=print, after=lambda files: None):
     """Returns the commit landed. Stop if it did not land. `after(its files)` runs still in turn."""
     if git("status", "--porcelain", cwd=tree).stdout.strip():
         raise Stop(1, f"{tree} has uncommitted changes: commit them first")
@@ -135,7 +169,10 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), pa
         return git("rev-parse", "HEAD", cwd=tree).stdout.strip()  # nothing of its own to land
     checked = passed(tree)   # the tree's own content, before the merge
     own_files = files_between(BASE, "HEAD", tree)
-    for _ in range(TRIES):
+
+    def once(held):
+        """One merge, its checks and the push: the commit landed, or None when origin/main moved meanwhile."""
+        nonlocal checked
         git("fetch", "--quiet", "origin", cwd=tree)
         base_now = git("rev-parse", BASE, cwd=tree).stdout.strip()
         ours = files_between(BASE, "HEAD", tree)
@@ -150,11 +187,11 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), pa
         # each pass follows a merge: a renamed function, a new caller, what others landed meets this tree's code
         if not smoke(tree):
             raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
-        with Turn(tree):
+        with nullcontext() if held else Turn(tree):   # a second flock of the same file would wait for itself
             git("fetch", "--quiet", "origin", cwd=tree)
             if not has_base(tree):
                 say(f"{BASE} moved while this tree was checked")
-                continue
+                return None
             pushed = git("push", "--quiet", "origin", "HEAD:main", cwd=tree, check=False)
             if pushed.returncode == 0:
                 git("fetch", "--quiet", "origin", cwd=tree)
@@ -165,6 +202,19 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land"), pa
             if has_base(tree):
                 raise Stop(1, f"push refused, and {BASE} has not moved: {pushed.stderr.strip()}")
             say(f"{BASE} moved during the push")
+            return None
+
+    for tried in range(TRIES):
+        # the first try checks beside the other trees and takes the turn only to push; a later one holds it from
+        # its merge to its push: every push makes the others' smoke sets moot, and a tree lost once loses no more
+        if not tried:
+            commit = once(held=False)
+        else:
+            say("lost the race once: holding the landing turn through this merge's checks")
+            with Turn(tree):
+                commit = once(held=True)
+        if commit:
+            return commit
     raise Stop(1, f"{BASE} kept moving: {TRIES} tries; land again")
 
 

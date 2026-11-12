@@ -3,7 +3,7 @@
 // signed-in browser (the bridge's bookmarks.py). Here: the dialog that makes or edits one, the
 // marks on the terminal's right edge, the bar that shows the one brought into view, and the list
 // below the sessions of those no session shows (orphaned). Text from the terminal is shown as text only.
-import { iconButton, markedSessions, openReminder, when } from "./listparts.js";
+import { iconButton, markedSessions, openReminder, pointerKey, when } from "./listparts.js";
 import { icon } from "./icons.js";
 import { Jumper } from "./markjump.js";
 import { columnLeft, markPicker } from "./markpick.js";
@@ -362,7 +362,7 @@ export class Marks {
       if (away) meta.append(el("span", "closed", away));
       b.append(meta);
       b.onclick = () => { this.togglePane(false); this.toggleList(false); this.jump(item); };
-      const del = el("button", "mkdel");
+      const del = pointerKey(el("button", "mkdel"));
       del.type = "button";
       del.title = "Delete this bookmark";
       const label = () => [icon("x", 14)];
