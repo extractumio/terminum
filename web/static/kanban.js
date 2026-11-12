@@ -28,7 +28,7 @@ import { sessionStarter } from "./kanbansession.js";
 import { taskLines } from "./tasklines.js";
 import { cardState, liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk } from "./listparts.js";
-import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, hasFiles, placeChildren, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
 
@@ -300,9 +300,9 @@ function draw() {
     if (shown === part.drawn) continue;
     part.drawn = shown;
     const scroll = part.list.scrollTop, keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
-    part.list.replaceChildren(...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)));
-    if (!have.length) part.list.append(el("p", "colempty", filtered ? "No tasks match" : "No tasks"));
-    if (have.length < n) part.list.append(button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column)));
+    placeChildren(part.list, [...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)),
+      !have.length && el("p", "colempty", filtered ? "No tasks match" : "No tasks"),
+      have.length < n && button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column))].filter(Boolean));
     part.list.scrollTop = scroll;
   }
   const onBoard = new Set([...cards.values()].flat().map((t) => t.id));
@@ -444,24 +444,24 @@ function readSoon(columns = true) {
 }
 
 const RETRY = 2000;
-let unproven = RETRY;
+let unproven = RETRY, columnsRead = false;
 /** Every page hears of a task's change; an open window reads again only when it shows that task; a change
  *  to its `history` alone is on no card. The socket follows the sign-in as the session page's does (conn.js): the
  *  server proved first, again after a drop; signed out, the board goes to sign in; a server down or unproved is
- *  asked again, an unproved one less and less often. Once open, what changed before is read (AC-133), and
- *  `body[data-socket=open]` says so. */
-async function listen(retry = false) {
+ *  asked again, an unproved one less and less often. It opens before the columns' first read; one opening after
+ *  it reads what it missed (AC-133). `body[data-socket=open]` says it is open; `tried()` once this try ended. */
+async function listen(retry = false, tried = () => {}) {
   if (retry) signin.invalidate();                  // another program may hold the port now
   const p = await signin.prove();
-  if (p === "unknown") return signIn();
-  if (p !== "ok") return void setTimeout(() => listen(true), p === "bad" ? (unproven = Math.min(unproven * 2, 30000)) : RETRY);
+  if (p === "unknown") { tried(); return signIn(); }
+  if (p !== "ok") { tried(); return void setTimeout(() => listen(true), p === "bad" ? (unproven = Math.min(unproven * 2, 30000)) : RETRY); }
   unproven = RETRY;
   const again = (id, history) => {
     windowToo ||= !id || windowed.shows(id);
     readSoon(!history);
   };
   const ws = socket = new WebSocket(signin.socketUrl(), signin.protocols());
-  ws.onopen = () => { document.body.dataset.socket = "open"; again(); };
+  ws.onopen = () => { document.body.dataset.socket = "open"; if (columnsRead) again(); tried(); };
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     side.seen(m);
@@ -481,15 +481,16 @@ async function listen(retry = false) {
     else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
     else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
   };
-  ws.onclose = () => { delete document.body.dataset.socket; setTimeout(() => listen(true), RETRY); };
+  ws.onclose = () => { tried(); delete document.body.dataset.socket; setTimeout(() => listen(true), RETRY); };
 }
 
 // the user's own stylesheet (terminum.md AC-19): the last one at once, the newest when it comes
 signin.showKeptCss();
 signin.loadCss();
 await loadMeta();
+await Promise.race([new Promise((r) => listen(false, r)), new Promise((r) => setTimeout(r, 3000))]);   // a socket that hangs holds no board
+columnsRead = true;
 await Promise.all([load(), scheduled.load()]);
-listen();
 address.route();
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {

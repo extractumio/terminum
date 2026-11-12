@@ -86,6 +86,14 @@ export function statusBox(t, open) {
   return b;
 }
 
+/** `parent` holding `nodes` in this order, moving only what must move: one that stays is never taken out, as a node
+ *  taken out and put back between a press's down and up loses its click (Chromium). */
+export function placeChildren(parent, nodes) {
+  const kept = new Set(nodes);
+  for (const c of [...parent.children]) if (!kept.has(c)) c.remove();
+  nodes.forEach((n, i) => { if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] ?? null); });
+}
+
 /** A line of keys at a window's foot. */
 export const row = (...kids) => { const r = el("div", "actions"); r.append(...kids.filter(Boolean)); return r; };
 
