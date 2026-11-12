@@ -94,6 +94,13 @@ export const say = (text) => toast(text, 4000);
 /** A text pressed ⌘Enter in goes where its button would. */
 export const onSend = (area, go) => area.addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); go(); } });
 
+/** A queued RUN stays visible, but cannot replace the press already waiting (AC-122, AC-169). */
+export function guardQueuedRun(key, waits) {
+  key.disabled = !!waits;
+  if (waits) key.title = `Already queued for ${waits}: Stop waiting before running it again`;
+  return key;
+}
+
 export function button(cls, text, onClick) {
   const b = el("button", cls, text);
   b.type = "button";

@@ -226,6 +226,27 @@ Scenario: AC-137 failure — the store down
 ### AC-122 — Running again [MUST / P0]
 
 ```gherkin
+Scenario: AC-122 happy path — RUN stays available before the session closes
+  Given a task in any column, with its session open, closed or absent
+  Then its window keeps RUN beside CLOSE, including while WAIT FOR HUMAN still holds its session
+  And its card keeps its Run key under the folding rules of AC-159
+  When the human writes an answer and presses RUN while its agent is idle at an empty box
+  Then the same conversation takes that answer through the gate, the task returns to IN PROGRESS and its pending close is called off
+  When the session closed before RUN was pressed
+  Then RUN resumes the conversation as below
+  When it closes while RUN's window is open
+  Then the press reads its session again and resumes in a new window
+  When closing wins after that read, before delivery reserves its live turn
+  Then nothing is typed into the closed pane, the comment stays and RUN can be retried
+
+Scenario: AC-122 failure — visible RUN does not duplicate work
+  Given the task is IN PROGRESS, its agent still works, its input holds a draft or question, its agent is being ended, or another open task prevents its restart
+  When the human presses RUN
+  Then the existing refusal is said where RUN was pressed; no second run starts and the human's comment stays kept or in its draft
+  Given its run already waits in an agent's queue
+  Then RUN stays visible but disabled, saying "Already queued for <agent>: Stop waiting before running it again"
+  And Stop waiting stays available in its window; these disabled keys cannot replace the queued run's agent or message
+
 Scenario: AC-122 happy path — a live agent
   Given API-12 is DONE, FAILED or WAIT FOR HUMAN and the agent of a session Dispatcher started lives
   When the user writes "Use the v2 API" under Comment and presses RUN
@@ -1600,7 +1621,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-121 — `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
-- [x] AC-122 — `cargo test dispatcher::hooks`, `web/test/e2e_livedispatcher.mjs`, its real run as AC-121's
+- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals), `web/test/e2e_livedispatcher.mjs` (answers before and after closing), its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`

@@ -113,3 +113,20 @@ async fn ac125_a_close_decided_before_a_humans_input_leaves_the_pane() {
     assert!(!s.pane_stands());
     assert_eq!(s.now().state, Phase::Closed);
 }
+
+/// AC-122, AC-157: RUN reserves the live turn before typing, so a previously decided close must recheck it.
+#[tokio::test]
+async fn ac157_run_cancels_a_waiting_close_already_decided() {
+    let s = Stage::new("answer", Phase::Working, "WAIT FOR HUMAN").await.expect("private tmux starts");
+    s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| {
+        r.asked = true;
+        r.agent_session = Some("fake-1".into());
+    }).map(drop)).unwrap();
+    let waiting = s.now();
+    assert!(plan::asked_closes(&waiting), "a close has been decided");
+    let decided = Instant::now();
+    s.app.tasks.with(|tx| runs::change(tx, &s.run.id, |r| r.turn_ended = false).map(drop)).unwrap();
+    let still = |_: &rusqlite::Transaction, r: &Run| Ok(plan::asked_closes(r));
+    assert_eq!(close(&s.app, &waiting, (&s.server, &s.pane), "closed", false, decided, still).await, Ok(Some("it is no longer idle".into())));
+    assert!(s.pane_stands(), "RUN's answer still has its pane");
+}

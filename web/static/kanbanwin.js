@@ -4,7 +4,7 @@
 // CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
 import { askConfirm, choose } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fileMarkdown, fillSelect, guardQueuedRun, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -189,7 +189,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // the files of a comment being written: kept with its text, or the sweep would take them
     const dropped = () => read(filesKey) ?? [];
     takesFiles(area, (file) => write(filesKey, [...dropped(), file.id]));
-    const close = button(t.run_holds ? "primary" : null, "Close", async () => {
+    const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS");
+    const close = button(busy ? "primary" : null, "Close", async () => {
       if (area.value.trim()) {
         try {
           await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: area.value, files: dropped() } });
@@ -200,14 +201,14 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       tryClose();
     });
     // Run: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
-    const run = button(t.run_holds ? null : "primary", "Run", async () => {
+    const run = guardQueuedRun(button(busy ? null : "primary", "Run", async () => {
       try {
         if (await runs.open([t], { words: area.value, files: dropped() }) !== true) return;
       } catch (e) { say(e.message); return; }
       write(draft, null);
       write(filesKey, null);
       tryClose();
-    });
+    }), t.waits);
     onSend(area, () => close.click());
     close.title = "Keep the comment and close: nothing moves, the session hears nothing";
     // its run cannot be reached or is no longer wanted: its tasks fail, the window stays (terminum-dispatcher.md AC-138)
@@ -219,7 +220,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     shelve.classList.add("evenleft");
-    wrap.append(expandable(area), row(t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run));
+    wrap.append(expandable(area), row(t.run_holds ? null : shelve, giveUp, stopWaiting, close, run));
     return wrap;
   }
 

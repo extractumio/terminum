@@ -28,7 +28,7 @@ import { taskLines } from "./tasklines.js";
 import { cardState, liveSession } from "./cardstate.js";
 import { choose } from "./dialogs.js";
 import { el, iconButton, plural, pointerKey, projectInk } from "./listparts.js";
-import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 signInElsewhere();                                 // with no sign-in the board goes to /sessions/, whose form signs in
 
@@ -172,8 +172,8 @@ function card(t, under = "") {
   if (t.schedule) head.append(el("span", "cfrom", t.schedule));   // made by that schedule (terminum-schedules.md AC-163)
   if (t.agent) head.append(agentChip(t.agent));
   c.classList.toggle("onagent", !!t.agent);        // a folded card keeps its Run key only with an agent to run on (AC-159)
-  // on an open session its run has it; with none it can always start: nothing else takes it out of IN PROGRESS
-  if (t.status !== "IN PROGRESS" || !t.session || t.session.closed) head.append(pointerKey(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t]))));
+  // RUN stays in every column; terminumd decides whether its session can take it (AC-122).
+  head.append(pointerKey(guardQueuedRun(iconButton("icon crun", "play", `Run ${t.id}`, "Run: choose the agent that does it", () => runThem([t])), t.waits)));
   const foot = el("div", "cfoot"), one = filters().project.length === 1;
   const p = projectOf(t.project);
   if (!one) {                                      // its project is said once: by the head when one is shown
