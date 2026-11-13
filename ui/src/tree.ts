@@ -46,7 +46,7 @@ export class Tree {
   epoch = 0;                 // bumps on re-root; stale async results are dropped
   private expandRun = 0;             // bumps on expand all and any collapse; cancels a running one
   selectionRun = 0;          // cancels a paged range on another interaction
-  private picks = 0;                 // bumps on each newer selection the user makes (pick); an older reveal yields to it
+  private picks = 0;                 // bumps on each newer selection (pick); an older reveal yields to it
   private spacer = document.createElement("div");
   private layer = document.createElement("div");
   private edit: InlineEdit;
@@ -283,8 +283,8 @@ export class Tree {
     if (this.expanded.has(path)) this.collapse(path); else void this.expand(path);
   }
 
-  /** A newer selection by the user: a paged range and an older reveal yield to it. Returns its
-   *  token for reveal. */
+  /** A newer selection (a click or key, Reveal in tree, a new or renamed item, a pane's selection):
+   *  a paged range and an older reveal yield to it. Returns its token for reveal. */
   pick() { this.selectionRun++; return ++this.picks; }
 
   /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first (Reveal in tree).
