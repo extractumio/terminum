@@ -93,6 +93,13 @@ pub struct Control {
 }
 
 impl Control {
+    #[cfg(test)]
+    pub(crate) fn test_queue() -> (Self, mpsc::UnboundedReceiver<(String, oneshot::Sender<Answer>, bool)>) {
+        let (lines, rx) = mpsc::unbounded_channel();
+        (Self { lines, queued: Arc::default(), alive: Arc::default(), ended: Arc::default(), attached: Arc::default(),
+            clean: Arc::default(), pid: None, pending: Arc::default() }, rx)
+    }
+
     /// Starts `cmd` (stdin, stdout, stderr piped). Notices go to `notices`; when the process
     /// ends, `notices` gets nothing more and `done` is fired with the reason. `notices` stays
     /// unbounded: its reader (notices.rs) never waits on anything but it, so it keeps up, and
@@ -328,12 +335,20 @@ impl Control {
 
     /// Several commands written at once (one round trip), answered in order.
     pub async fn run_all(&self, lines: Vec<String>) -> Vec<Answer> {
+        self.submit_all(lines).await
+    }
+
+    /// Queue now, before the returned future is polled (AC-38): callers can order a trace's
+    /// key registration and capture timestamp with command submission, without awaiting under a lock.
+    pub fn submit_all(&self, lines: Vec<String>) -> impl std::future::Future<Output = Vec<Answer>> + Send + use<> {
         let waiting: Vec<_> = lines.into_iter().map(|l| self.send(l)).collect();
-        let mut out = Vec::with_capacity(waiting.len());
-        for rx in waiting {
-            out.push(answer_of(rx).await);
+        async move {
+            let mut out = Vec::with_capacity(waiting.len());
+            for rx in waiting {
+                out.push(answer_of(rx).await);
+            }
+            out
         }
-        out
     }
 
     /// Ends the client (its process is killed when the last handle goes too).
