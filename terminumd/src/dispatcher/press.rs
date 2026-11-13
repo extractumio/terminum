@@ -11,7 +11,7 @@ use crate::tasks::schedules::Schedule;
 
 /// How an agent of a run gives its result (terminum-agents.md AC-155: not listed, run through execute_tool).
 pub(super) const FINISH: &str = "execute_tool(\"finish_task\", {id, result})";
-const GET_TASK: &str = "execute_tool(\"get_task\", {id})";
+pub(super) const GET_TASK: &str = "execute_tool(\"get_task\", {id})";
 const GET_FILE: &str = "execute_tool(\"get_file\", {task, name})";
 pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})";
 
