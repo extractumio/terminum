@@ -6,7 +6,7 @@
 // the comment field under it, then the task and the rest. The board and the session page open the same one (AC-150).
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -123,7 +123,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       // the agent that runs it when Auto-Dispatcher starts it (terminum-dispatcher.md AC-170); none: its project's default
-      select("Agent", [["", "Auto-Dispatcher's default"], ...meta.agents.map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => refresh(), (e) => say(e.message))),
+      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => refresh(), (e) => say(e.message))),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
       budgetField(t));
@@ -275,7 +275,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   function firstOn(t) {
     if (t.session || t.agent?.conversation) return null;
     const meta = getMeta();
-    return knownAgent(meta.agents, [t.runs_on, meta.last_agents?.[t.project]])?.name ?? null;
+    return knownAgent(agentsOf(meta, t.project), [t.runs_on, meta.last_agents?.[t.project]])?.name ?? null;
   }
 
   /** The window's keys at its foot, for `t` as it stands: what is seldom pressed at the left (Archive, Stop waiting,

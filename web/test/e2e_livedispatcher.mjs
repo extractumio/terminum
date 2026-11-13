@@ -26,7 +26,7 @@ export async function liveDispatcher(page, opts) {
   const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
   const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
-  const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { name, kind, command: fake(kind, more) })).id;
+  const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { project, name, kind, command: fake(kind, more) })).id;
   const plain = await agent("Plain");
   const task = async (title, text = "") => (await j("/api/tasks", "POST", { title, text, project })).id;
   // an agent takes more only when free (AC-138): a run here has its own, so one left open stands in no other's way
@@ -70,7 +70,8 @@ export async function liveDispatcher(page, opts) {
   // refused before starting
   const nowhere = (await j("/api/task-projects", "POST", { name: "Nowhere", dir: "/no/such/folder/at/all" })).id;
   const badDir = (await j("/api/tasks", "POST", { title: "folder gone", project: nowhere })).id;
-  const no = await run(badDir);
+  const there = (await j("/api/task-agents", "POST", { project: nowhere, name: "Nowhere's", kind: "claude", command: fake("claude") })).id;
+  const no = await run(badDir, { agent: there });
   check("AC-121 a folder that does not exist is said and nothing starts", /does not exist on this Mac/.test(no.error) && await status(badDir) === "TODO" && !(await j(`/api/tasks/${badDir}`)).session, JSON.stringify(no));
   const linked = await task("linked by hand");
   const otherPane = tmux("new-window", "-d", "-P", "-F", "#{pane_id}", "-n", "byhand").trim();
@@ -175,7 +176,7 @@ export async function liveDispatcher(page, opts) {
   check("AC-122 only the shell remains: it starts there anew", !!shell.run && await hasStatus(dead, "DONE", 20000), JSON.stringify(shell) + await history(dead));
 
   // AC-122 its agent ended before its task went in: no conversation to go on, so its shell's agent hears the task whole
-  const flaky = (await j("/api/task-agents", "POST", { name: "Flaky", kind: "claude", command: fake("claude", "--start quits") })).id;
+  const flaky = (await j("/api/task-agents", "POST", { project, name: "Flaky", kind: "claude", command: fake("claude", "--start quits") })).id;
   const unsaid = await task("never heard FINISHES", "The whole text.");
   await run(unsaid, { agent: flaky });
   const unsaidFailed = await hasStatus(unsaid, "FAILED", 15000);
@@ -205,7 +206,7 @@ export async function liveDispatcher(page, opts) {
   const release = path.join(drainWork, "end-sleepy"), shellReady = path.join(drainWork, "shell-ready");
   // A compound command keeps Claude's inline options off the stand-in (sleep rejects --settings).
   // Its file barrier keeps it alive until the queued command is visibly in the tty, on any runner.
-  const sleepy = (await j("/api/task-agents", "POST", { name: "Sleepy", kind: "claude", command: `while [ ! -e '${release}' ]; do sleep 0.05; done` })).id;
+  const sleepy = (await j("/api/task-agents", "POST", { project, name: "Sleepy", kind: "claude", command: `while [ ! -e '${release}' ]; do sleep 0.05; done` })).id;
   const drained = await task("drained");
   await run(drained, { agent: sleepy });
   const drainedPane = await until(() => paneOf(drained)) && await paneOf(drained);
@@ -372,7 +373,7 @@ export async function liveDispatcherReal(page, opts) {
   const { work } = opts;
   const { j, card } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "RealRuns", dir: work })).id;
-  const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { name, kind, command })).id;
+  const add = async (name, kind, command) => (await j("/api/task-agents", "POST", { project, name, kind, command })).id;
   const { status, history, paneOf, hasStatus } = taskKit(j);
   const claude = await add("Real Claude", "claude", "claude --allowedTools mcp__plugin_terminum_terminum__execute_tool");
   const t = (await j("/api/tasks", "POST", { title: "Reply with the word ok, then call finish_task with the result in its sections, Outcome: ok", project })).id;

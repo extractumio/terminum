@@ -20,7 +20,7 @@ fn store(name: &str) -> Store {
     let s = Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"));
     s.with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv', 0)", []).map_err(sql)?;
-        tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('p', 'Picker', 'claude', 'claude', 0, 3), ('a', 'Smith', 'claude', 'claude', 1, 2), ('b', 'Jones', 'claude', 'claude', 2, 1)", []).map_err(sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('p', 'api', 'Picker', 'claude', 'claude', 0, 3), ('a', 'api', 'Smith', 'claude', 'claude', 1, 2), ('b', 'api', 'Jones', 'claude', 'claude', 2, 1)", []).map_err(sql)?;
         crate::tasks::slugs::fill(tx)?;
         turn_on(tx, Some("a"), NOW)
     }).unwrap();
@@ -62,9 +62,9 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         let run = running(tx, "p", &t);
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "one round at a time");
         assert_eq!(ops::get(tx, &id)?.status, "IN PROGRESS");
-        let picker = agents::by_id(tx, "p")?.unwrap();
+        let picker = agents::in_project(tx, "p", "api")?.unwrap();
         let slots = pool::Slots::read(tx)?;
-        assert_eq!((slots.free_of(&picker), slots.free_of(&agents::by_id(tx, "a")?.unwrap()), slots.free_in(tx, "api")?), (3, 1, None));
+        assert_eq!((slots.free_of(&picker), slots.free_of(&agents::in_project(tx, "a", "api")?.unwrap()), slots.free_in(tx, "api")?), (3, 1, None));
         let shown = pool::board(tx)?;
         assert_eq!((shown["agents"]["p"][0]["round"].as_bool(), shown["agents"]["a"][0]["round"].as_bool()), (Some(true), Some(false)), "{shown}");
         // ended, it leaves the board; the same candidates with no more room are not judged again
@@ -94,14 +94,15 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_main_task_goes_with_its_sub
     store("auto-shared").with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '/srv', 1)", []).map_err(sql)?;
         crate::tasks::slugs::fill(tx)?;
-        auto::set(tx, "web", &Setting { on_at: 0, ..setting(tx) }, NOW)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('wp', 'web', 'Picker', 'claude', 'claude', 0, 3), ('wa', 'web', 'Smith', 'claude', 'claude', 1, 2)", []).map_err(sql)?;
+        auto::set(tx, "web", &Setting { on_at: 0, agent: Some("wp".into()), default: Some("wa".into()), ..setting(tx) }, NOW)?;
         let parent = task(tx, "parent", "P1");
         let child = ops::create(tx, HUMAN, NewTask { title: "child".into(), parent: Some(parent.id.clone()), project: Some("api".into()), severity: Some("P2".into()), ..Default::default() }, NOW)?;
         ops::create(tx, HUMAN, NewTask { title: "of web".into(), project: Some("web".into()), severity: Some("P1".into()), ..Default::default() }, NOW)?;
         let (id, r) = round(tx);
         assert_eq!(r.candidates, std::slice::from_ref(&parent.id), "AC-185: the subtask is no candidate by itself: it goes with its main task");
         let web = auto::setting(tx, "web")?;
-        assert_eq!(decide(tx, "web", &web, NOW)?, Due::Nothing, "api's round is open: both would count on Smith's free slots");
+        assert_eq!(decide(tx, "web", &web, NOW)?, Due::Nothing, "api's round is open: one round at a time over the projects");
         let run = running(tx, "p", &ops::get(tx, &id)?);
         runs::change(tx, &run, |r| r.state = Phase::Closed)?;
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;

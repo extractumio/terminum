@@ -16,7 +16,7 @@ A snapshot of what terminum must do, not a record of how it came to be: git hold
 
 **Who it affects.** One person running coding agents from a Mac that is often asleep at night.
 
-**Expected outcome.** A schedule holds a title, a text, a project, a severity, an agent of the pool, a cadence and a time budget. When it is due, terminumd makes a new task from it as it is then, IN PROGRESS, and runs it on its agent in the project's folder; that task waits for a human, is done or fails as any other, never standing in TODO, and its result is read on its card. The agent keeps one slot for each schedule, so a schedule is never late for want of room. Every firing is listed in the Message history's Scheduled page with what went in and what came out.
+**Expected outcome.** A schedule holds a title, a text, a project, a severity, an agent of its project's pool, a cadence and a time budget. When it is due, terminumd makes a new task from it as it is then, IN PROGRESS, and runs it on its agent in the project's folder; that task waits for a human, is done or fails as any other, never standing in TODO, and its result is read on its card. The agent keeps one slot for each schedule, so a schedule is never late for want of room. Every firing is listed in the Message history's Scheduled page with what went in and what came out.
 
 **Scenario.** Alex sets "Nightly deps check" in Billing, on Opus reviewer, every day at 03:00, 30 minutes. At 03:00 S_TERM-41 is made, runs, and stands in DONE with "Outcome: attention" and two outdated packages. The next night the Mac sleeps until 08:12: that firing is missed and says so, nothing runs on wake. The night after, S_TERM-44 asks which major version to take and waits in WAIT FOR HUMAN; the schedule goes on, and Alex answers and presses RUN when he reads it.
 
@@ -55,7 +55,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-160 | [MUST / P0] | A human makes a schedule in its window: title, text, project, severity, an agent of the pool, a cadence picked by kind (every N minutes or hours, daily, weekdays, weekly on days, monthly on a day, once, or five cron fields) in the Mac's local time, and a time budget; the window shows its next runs and the prompt that will go; it can be changed, paused or deleted at any time. |
+| AC-160 | [MUST / P0] | A human makes a schedule in its window: title, text, project, severity, an agent of that project's pool (terminum-dispatcher.md AC-137), a cadence picked by kind (every N minutes or hours, daily, weekdays, weekly on days, monthly on a day, once, or five cron fields) in the Mac's local time, and a time budget; the window shows its next runs and the prompt that will go; it can be changed, paused or deleted at any time. |
 | AC-161 | [MUST / P0] | A schedule not paused keeps one slot of its agent: other runs have the rest, every run of its own tasks takes the kept one; an agent with no slot left to keep is refused, as are an at once below its kept slots and deleting an agent with schedules. |
 | AC-162 | [MUST / P0] | When a schedule is due, terminumd makes a task from it as it is then, IN PROGRESS and named S_<its project's next ID>, and runs it on its agent in the project's folder, the agent told it is a scheduled run and how to give its result; such a task never stands in TODO; a firing while a task of it is IN PROGRESS is skipped; a firing over 2 minutes late is missed, never run later; a start that fails fails its task and the next firing tries again; each firing is written. |
 | AC-163 | [MUST / P0] | The board's Scheduled section stands between the pool and the columns, folded to its head by default, a press away; its cards stand four to a row on the columns' tracks, each with its cadence, next run, agent, last task and why that one did not start, every card whole; a schedule's tasks carry its name. |
@@ -70,7 +70,7 @@ Open questions: none.
 Scenario: AC-160 happy path — made
   Given Billing chosen on the board and Opus reviewer in the pool with 2 at once
   When the user presses + Schedule in the board's Scheduled section
-  Then a window opens with Title, Text (the task window's Markdown editor), Project (the board's only project, else the only project there is, else none chosen), Severity P2, Agent (the pool), When, Time budget 60 minutes and Paused off
+  Then a window opens with Title, Text (the task window's Markdown editor), Project (the board's only project, else the only project there is, else none chosen), Severity P2, Agent (the chosen project's pool), When, Time budget 60 minutes and Paused off
   When the user types "Nightly deps check", a text, picks Opus reviewer, Every day at 03:00, 30 minutes, and presses Save
   Then SCH-1 is kept by the user, every page shows it within 2 s and the window closes
 

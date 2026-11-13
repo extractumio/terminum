@@ -9,7 +9,7 @@ fn store(name: &str) -> Store {
     let s = Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"));
     s.with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv', 0)", []).map_err(sql)?;
-        tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('p', 'Picker', 'claude', 'claude', 0, 1), ('a', 'Smith', 'claude', 'claude', 1, 1)", []).map_err(sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('p', 'api', 'Picker', 'claude', 'claude', 0, 1), ('a', 'api', 'Smith', 'claude', 'claude', 1, 1)", []).map_err(sql)?;
         super::super::slugs::fill(tx)
     }).unwrap();
     s
@@ -85,6 +85,24 @@ fn ac170_a_tasks_agent_is_a_humans_choice_kept_in_its_history() {
         set_agent(tx, &t.id, Some("a"), 4)?;
         tx.execute("DELETE FROM agents WHERE id = 'a'", []).map_err(sql)?;
         assert_eq!(agent_of(tx, &t.key)?, None);
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac137_a_task_names_an_agent_of_its_own_project_alone() {
+    store("auto-own").with(|tx| {
+        let here = ops::create(tx, HUMAN, NewTask { title: "t".into(), ..Default::default() }, 1)?;
+        assert_eq!(set_agent(tx, &here.id, Some("a"), 2).unwrap_err(), "Smith is api's agent, not Default's: choose one of its own.");
+        let put = |body: Value| setting(tx, "default")?.with(&body).and_then(|new| set(tx, "default", &new, 5));
+        assert_eq!(put(json!({"agent": "p"})).unwrap_err(), "Picker is api's agent, not Default's: choose one of its own.");
+        // moved to another project, the agent chosen for it is named no more
+        let t = ops::create(tx, HUMAN, NewTask { title: "t".into(), project: Some("api".into()), ..Default::default() }, 1)?;
+        set_agent(tx, &t.id, Some("a"), 2)?;
+        ops::change_project(tx, HUMAN, &t.id, "default", Some("move"), 3)?;
+        assert_eq!(agent_of(tx, &t.key)?, None);
+        let kept: Option<String> = tx.query_row("SELECT agent FROM tasks WHERE id = ?1", [&t.key], |r| r.get(0)).map_err(sql)?;
+        assert_eq!(kept, None, "moved back, it names none");
         Ok(())
     }).unwrap();
 }

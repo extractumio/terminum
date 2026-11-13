@@ -228,6 +228,43 @@ fn ac137_an_older_store_s_agents_join_one_pool_and_its_runs_keep_their_place() {
 }
 
 #[test]
+fn ac137_one_pool_s_agents_each_go_to_a_project() {
+    let path = crate::testutil::fresh_dir("store-schema25").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..24]).unwrap();
+    let run = |id: &str, project: &str, agent: &str| format!("INSERT INTO runs (id, project, agent_id, agent_name, kind, command, folder, state) VALUES ('{id}', '{project}', '{agent}', 'n', 'claude', 'claude', '/srv', 'closed');");
+    conn.execute_batch(&format!("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 0, '/srv/api', 0), ('web', 'web', 1, '/srv/web', 1), ('docs', 'docs', 2, '/srv/docs', 2);
+        INSERT INTO agents (id, name, kind, command, effort, color, at_once, week_limit) VALUES ('opus', 'Opus', 'claude', 'claude --model opus', 'high', 0, 2, 5), ('fast', 'Fast', 'claude', 'claude', '', 1, 1, NULL),
+          ('idle', 'Idle', 'codex', 'codex', '', 2, 1, NULL), ('named', 'Named', 'claude', 'claude', '', 3, 1, NULL);
+        {}{}{}{}{}
+        INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body, agent) VALUES ('k1', 1, 'web', 'TODO', 'P2', 1, 'human', 1, 't', '', 'opus'), ('k2', 2, 'docs', 'TODO', 'P2', 2, 'human', 1, 't', '', 'fast');
+        UPDATE tasks SET archived_at = 1 WHERE id = 'k2';
+        INSERT INTO schedules (id, number, project, title, body, severity, agent_id, cron, budget_seconds, last_due, author, created_at, updated_at) VALUES ('s1', 1, 'docs', 'Nightly', 'x', 'P2', 'named', '0 3 * * *', 60, 0, 'human', 1, 1);
+        UPDATE projects SET auto_agent = 'opus', auto_default = 'named' WHERE id = 'web';",
+        run("r1", "api", "opus"), run("r2", "api", "opus"), run("r3", "web", "opus"), run("r4", "web", "fast"), run("r5", "default", "named"))).unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    let all: Vec<(String, String, String)> = conn.prepare("SELECT project, name, id FROM agents ORDER BY project, name").unwrap().query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().collect::<Result<_, _>>().unwrap();
+    let places: Vec<(&str, &str)> = all.iter().map(|(p, n, _)| (p.as_str(), n.as_str())).collect();
+    // Opus: web's settings name it, api only ran it; Fast ran in web alone; Idle: where most runs were, of two alike the
+    // later; Named: a schedule's
+    assert_eq!(places, [("docs", "Named"), ("web", "Fast"), ("web", "Idle"), ("web", "Named"), ("web", "Opus")]);
+    let id_of = |project: &str, name: &str| all.iter().find(|(p, n, _)| p == project && n == name).map(|(_, _, id)| id.clone()).unwrap();
+    assert_eq!((id_of("web", "Opus").as_str(), id_of("docs", "Named").as_str(), id_of("web", "Fast").as_str()), ("opus", "named", "fast"), "each keeps its id where it stands");
+    let copy = id_of("web", "Named");
+    assert!(copy != "named" && copy.len() == 16, "another project naming it has a copy of its own: {copy}");
+    let auto: (String, String) = conn.query_row("SELECT auto_agent, auto_default FROM projects WHERE id = 'web'", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+    assert_eq!(auto, ("opus".into(), copy), "what a project's settings named, they name in its own pool");
+    let kept: (String, f64, i64) = conn.query_row("SELECT command, week_limit, at_once FROM agents WHERE id = 'opus'", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+    assert_eq!(kept, ("claude --model opus".into(), 5.0, 2));
+    let task = |id: &str| conn.query_row("SELECT agent FROM tasks WHERE id = ?1", [id], |r| r.get::<_, Option<String>>(0)).unwrap();
+    assert_eq!((task("k1"), task("k2")), (Some("opus".into()), None), "an archived task names none of another project");
+    let runs: i64 = conn.query_row("SELECT count(*) FROM runs WHERE agent_id IN ('opus', 'fast', 'named')", [], |r| r.get(0)).unwrap();
+    assert_eq!(runs, 5, "a run keeps the agent it started on");
+    conn.execute("INSERT INTO agents (id, project, name, kind, command, color) VALUES ('x', 'api', 'Opus', 'claude', 'claude', 9)", []).expect("a name stands once in a project, not in all");
+    assert!(conn.execute("INSERT INTO agents (id, project, name, kind, command, color) VALUES ('y', 'api', 'Opus', 'claude', 'claude', 9)", []).is_err());
+}
+
+#[test]
 fn ac119_a_writer_from_outside_waits_for_a_transaction_that_has_read() {
     let path = fresh("tasks-outside");
     let s = Store::open(path.clone());

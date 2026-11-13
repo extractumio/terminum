@@ -13,7 +13,7 @@ const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../s
 export async function liveMain(page, live) {
   const { j, card, open, cli } = boardKit(page, live);
   const project = (await j("/api/task-projects", "POST", { name: "Mains", dir: live.work })).id;
-  const agent = (await j("/api/task-agents", "POST", { name: "Main runner", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
+  const agent = (await j("/api/task-agents", "POST", { project, name: "Main runner", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
   const made = async (title, more = {}) => (await j("/api/tasks", "POST", { title, project, ...more })).id;
   const task = (id) => j(`/api/tasks/${id}`);
   const has = (id, status) => until(async () => (await task(id)).status === status, 20000);

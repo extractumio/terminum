@@ -31,7 +31,7 @@ fn app(tag: &str) -> (crate::app::Shared, String) {
     let task = app.tasks.with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('api', 'api', 1, '', 0), ('web', 'web', 2, '', 1)", []).map_err(sql)?;
         crate::tasks::slugs::fill(tx)?;
-        tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once) VALUES ('a1', 'Opus', 'claude', 'claude', '', 0, 2)", []).map_err(sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, effort, color, at_once) VALUES ('a1', 'api', 'Opus', 'claude', 'claude', '', 0, 2), ('w1', 'web', 'Opus', 'claude', 'claude', '', 0, 2)", []).map_err(sql)?;
         run_in(tx, BOSS, "api", None);
         let task = task_in(tx, "api", "worked on");
         run_in(tx, WORKER, "api", Some(&task));
@@ -75,7 +75,7 @@ async fn ac178_a_manager_s_call_comes_from_its_pane_and_its_main_agent() {
     // a subagent reads, never writes
     assert!(in_pane(&app, BOSS, true, true, "list_agents", &json!({})).await.is_ok());
     assert_eq!(in_pane(&app, BOSS, true, true, "delete_agent", &json!({"agent": "Opus"})).await.unwrap_err(), SUBAGENT);
-    assert!(app.tasks.with(|tx| crate::tasks::agents::by_id(tx, "a1")).unwrap().is_some(), "nothing was done");
+    assert!(app.tasks.with(|tx| crate::tasks::agents::in_project(tx, "a1", "api")).unwrap().is_some(), "nothing was done");
 }
 
 #[tokio::test]
@@ -85,7 +85,7 @@ async fn ac179_a_manager_runs_and_stops_only_its_project_s_tasks() {
     assert_eq!(call(&app, BOSS, "run_task", json!({"id": far, "agent": "Opus"})).await.unwrap_err(), format!("{far} is outside your project."));
     assert_eq!(call(&app, BOSS, "stop_task", json!({"id": far})).await.unwrap_err(), format!("{far} is outside your project."));
     let no_agent = call(&app, BOSS, "run_task", json!({"id": task, "agent": "Nobody"})).await.unwrap_err();
-    assert_eq!(no_agent, "The pool has no agent \"Nobody\": Opus.");
+    assert_eq!(no_agent, "Your project's pool has no agent \"Nobody\": Opus.");
     // what runs in its project, a worker's run and its own session
     let runs = call(&app, BOSS, "list_runs", json!({})).await.unwrap();
     assert!(runs.starts_with(DATA) && runs.contains(&format!("\"tasks\":[\"{task}\"]")) && runs.contains("\"kind\":\"session\""), "{runs}");
@@ -101,7 +101,7 @@ async fn ac179_a_manager_runs_and_stops_only_its_project_s_tasks() {
 async fn ac180_a_manager_keeps_the_pool_by_the_board_s_rules() {
     let (app, _) = app("roles-agents");
     let made = call(&app, BOSS, "create_agent", json!({"name": "Sonnet", "kind": "claude", "command": "claude --model sonnet", "at_once": "3", "week_limit": "5"})).await.unwrap();
-    assert_eq!(made, "Sonnet is in the pool: run_task starts tasks on it.");
+    assert_eq!(made, "Sonnet is in your project's pool: run_task starts tasks on it.");
     for (bad, why) in [(json!({"name": "Sonnet", "kind": "claude", "command": "claude"}), "The pool already has an agent named Sonnet."),
                        (json!({"name": "X", "kind": "claude", "command": "a\u{1b}[0m"}), "An agent's command is one line, with no control or invisible characters."),
                        (json!({"name": "X", "kind": "claude", "command": "claude", "at_once": "0"}), "at_once: a whole number from 1 to 100")] {
@@ -111,9 +111,19 @@ async fn ac180_a_manager_keeps_the_pool_by_the_board_s_rules() {
     call(&app, BOSS, "update_agent", json!({"agent": "Sonnet", "at_once": "4", "week_limit": ""})).await.unwrap();
     let a = app.tasks.with(crate::tasks::agents::list).unwrap().into_iter().find(|a| a.name == "Sonnet").unwrap();
     assert_eq!((a.command.as_str(), a.at_once, a.week_limit), ("claude --model sonnet", 4, None));
-    assert_eq!(call(&app, BOSS, "delete_agent", json!({"agent": "Sonnet"})).await.unwrap(), "Sonnet is out of the pool.");
+    assert_eq!(call(&app, BOSS, "delete_agent", json!({"agent": "Sonnet"})).await.unwrap(), "Sonnet is out of your project's pool.");
     // the agent its own session runs on is held
     assert!(call(&app, BOSS, "delete_agent", json!({"agent": "Opus"})).await.unwrap_err().contains("has a session open"));
+    // AC-137: another project's pool is not its own, by name or by id
+    app.tasks.with(|tx| tx.execute("INSERT INTO agents (id, project, name, kind, command, color) VALUES ('w2', 'web', 'Webby', 'claude', 'claude', 1)", []).map(drop).map_err(sql)).unwrap();
+    let listed = call(&app, BOSS, "list_agents", json!({})).await.unwrap();
+    assert!(listed.contains("\"a1\"") && !listed.contains("Webby") && !listed.contains("\"w1\""), "{listed}");
+    for (tool, named) in [("update_agent", "Webby"), ("delete_agent", "w2"), ("delete_agent", "w1")] {
+        assert!(call(&app, BOSS, tool, json!({"agent": named, "at_once": "9"})).await.unwrap_err().starts_with("Your project's pool has no agent"), "{tool} {named}");
+    }
+    assert_eq!(app.tasks.with(|tx| crate::tasks::agents::of_project(tx, "web")).unwrap().len(), 2, "web's stand as they were");
+    call(&app, BOSS, "create_agent", json!({"name": "Webby", "kind": "claude", "command": "claude"})).await.expect("a name another project has is free here");
+    assert_eq!(app.tasks.with(|tx| crate::tasks::agents::of_project(tx, "api")).unwrap().iter().filter(|a| a.name == "Webby").count(), 1);
 }
 
 #[tokio::test]
@@ -129,7 +139,7 @@ async fn ac180_a_manager_keeps_its_project_s_schedules_and_no_other_s() {
     assert!(call(&app, BOSS, "create_schedule", json!({"title": "No budget", "text": "x", "agent": "Opus", "cron": "0 3 * * *"})).await.unwrap_err().starts_with("A scheduled run needs a time budget"));
     // another project's schedule is not its own
     app.tasks.with(|tx| {
-        let given = crate::tasks::schedules::Given::of(tx, &json!({"title": "Web's", "body": "x", "project": "web", "agent": "a1", "cron": "0 4 * * *", "budget_minutes": 10}), 1)?;
+        let given = crate::tasks::schedules::Given::of(tx, &json!({"title": "Web's", "body": "x", "project": "web", "agent": "w1", "cron": "0 4 * * *", "budget_minutes": 10}), 1)?;
         crate::tasks::schedules::add(tx, HUMAN, &given, 1).map(drop)
     }).unwrap();
     for tool in ["update_schedule", "delete_schedule", "run_schedule"] {

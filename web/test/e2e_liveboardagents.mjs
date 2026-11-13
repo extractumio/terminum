@@ -17,11 +17,11 @@ export async function liveBoardAgents(page, opts) {
   const project = (await j("/api/task-projects", "POST", { name: "AgentsHere" })).id;
   await page.goto(`${base}/kanban/?project=${project}`);
   await page.waitForSelector("#addagent");
-  check("AC-137 an empty pool says so", await until(async () => /No agents yet/.test(await page.textContent(".agents"))), await page.textContent(".agents"));
+  check("AC-137 an empty pool says so", await until(async () => /AgentsHere has no agents yet/.test(await page.textContent(".agents"))), await page.textContent(".agents"));
 
   await page.click("#addagent");
   await page.waitForSelector("#agentbox[open]");
-  check("AC-137 the window asks no project, server or folder", !(await page.$("#agentproject")) && !(await page.$("#agenthost")) && !(await page.$("#agentdir")));
+  check("AC-137 the window asks its project, the one shown, and no server or folder", await page.inputValue("#agentproject") === project && !(await page.$("#agenthost")) && !(await page.$("#agentdir")));
   check("AC-137 its kind fills in name and command", await page.inputValue("#agentname") === "Claude Code" && await page.inputValue("#agentcommand") === "claude");
   await page.selectOption("#agentkind", "codex");
   check("AC-137 another kind changes them", await page.inputValue("#agentname") === "Codex" && await page.inputValue("#agentcommand") === "codex");
@@ -50,9 +50,9 @@ export async function liveBoardAgents(page, opts) {
   await refused("#agentname", "", "An agent needs a name.");
   await refused("#agentcommand", "", "An agent needs a command.");
   await refused("#agentcommand", "x".repeat(1001), "An agent's command is 1000 characters at most.");
-  const said = await j("/api/task-agents", "POST", { name: "line", kind: "claude", command: "claude\nrm -rf x" });
+  const said = await j("/api/task-agents", "POST", { project, name: "line", kind: "claude", command: "claude\nrm -rf x" });
   check("AC-137 refused: a line break in a command", said.code === 400 && /one line/.test(said.error), JSON.stringify(said));
-  check("AC-137 nothing was kept", (await j("/api/tasks/meta")).agents.length === 0);
+  check("AC-137 nothing was kept", (await j("/api/tasks/meta")).agents.filter((a) => a.project === project).length === 0);
 
   // a slip asks, Cancel means it
   await page.keyboard.press("Escape");
@@ -67,14 +67,14 @@ export async function liveBoardAgents(page, opts) {
   const hover = () => page.getAttribute(row, "title");
   check("AC-137 its rectangle says its kind; hovering, its command", await page.isVisible(`${row} .agmark img`) && /Claude Code/.test(await page.textContent(row)) && (await hover()).includes(COMMAND), await hover());
   const stored = (await j("/api/tasks/meta")).agents.find((a) => a.name === "Opus reviewer");
-  check("AC-137 its command is kept as written, and it knows no place", stored?.command === COMMAND && stored.kind === "claude" && !("host" in stored) && !("dir" in stored) && !("project" in stored), JSON.stringify(stored));
+  check("AC-137 its command is kept as written, and it knows its project and no place", stored?.command === COMMAND && stored.kind === "claude" && !("host" in stored) && !("dir" in stored) && stored.project === project, JSON.stringify(stored));
   if (shots) await page.screenshot({ path: path.join(shots, "agents-column.png") });
 
   // every page hears
   const other = await page.context().newPage();
   await other.goto(`${base}/kanban/?project=${project}`);
   await other.waitForSelector(row);
-  await j("/api/task-agents", "POST", { name: "Codex two", kind: "codex", command: "codex" });
+  await j("/api/task-agents", "POST", { project, name: "Codex two", kind: "codex", command: "codex" });
   check("AC-137 every page hears within 2 s", await until(() => other.isVisible('.agents .agentcard:has-text("Codex two")'), 2500));
   await other.close();
   check("AC-137 this one too", await until(() => page.isVisible('.agents .agentcard:has-text("Codex two")'), 2500));
@@ -98,10 +98,38 @@ export async function liveBoardAgents(page, opts) {
   await page.click("#confirmok");
   check("AC-137 Delete, confirmed, takes it", await until(async () => !(await page.isVisible(row))), await page.textContent(".agents"));
 
-  // the pool is the same whichever project is shown
+  // each project has a pool of its own
+  const elsewhere = (await j("/api/task-projects", "POST", { name: "AgentsThere", dir: opts.work })).id;
+  await page.goto(`${base}/kanban/?project=${elsewhere}`);
+  await page.waitForSelector("#addagent");
+  check("AC-137 another project lists none of it", await until(async () => /AgentsThere has no agents yet/.test(await page.textContent(".agents"))) && !(await page.isVisible('.agents .agentcard:has-text("Codex two")')), await page.textContent(".agents"));
+  await page.click("#addagent");
+  check("AC-137 a new one is the shown project's", await page.inputValue("#agentproject") === elsewhere && await page.isEnabled("#agentproject"), await page.inputValue("#agentproject"));
+  await page.fill("#agentname", "Codex two");
+  await page.click("#agentok");
+  check("AC-137 a name another project has is free here", await until(() => page.isVisible('.agents .agentcard:has-text("Codex two")')), await page.textContent("#agenterror"));
+  const pools = (await j("/api/tasks/meta")).agents.filter((a) => a.name === "Codex two");
+  check("AC-137 they are two agents, each its project's", pools.length === 2 && pools.some((a) => a.project === project) && pools.some((a) => a.project === elsewhere), JSON.stringify(pools.map((a) => a.project)));
+  const [mine, theirs] = [pools.find((a) => a.project === project), pools.find((a) => a.project === elsewhere)];
+  await page.click(`.agents .agentcard[data-agent="${theirs.id}"]`);
+  check("AC-137 its window shows its project and does not change it", await page.inputValue("#agentproject") === elsewhere && await page.isDisabled("#agentproject"));
+  await page.click('#agentbox button[value="cancel"]');
+  const foreign = (await j("/api/tasks", "POST", { title: "not theirs to run", project: elsewhere })).id;
+  const ran = await j(`/api/tasks/${foreign}/run`, "POST", { agent: mine.id });
+  const named = await j(`/api/tasks/${foreign}/agent`, "PUT", { agent: mine.id });
+  check("AC-137 another project's agent runs nothing of this one, said", [ran, named].every((r) => /Codex two is AgentsHere's agent, not AgentsThere's: choose one of its own\./.test(r.error ?? "")), JSON.stringify([ran, named]));
+  check("AC-137 an agent needs a project", /An agent needs a project\./.test((await j("/api/task-agents", "POST", { name: "Nowhere", kind: "claude", command: "claude" })).error ?? ""));
   await page.click("#fproject summary");
   await page.click('#fproject button:has-text("All projects")');
-  check("AC-137 with all projects the same pool stands", await until(() => page.isVisible('.agents .agentcard:has-text("Codex two")')), await page.textContent(".agents"));
+  const both = () => page.$$eval('.agents .agentcard:has-text("Codex two")', (cards) => cards.map((c) => c.textContent));
+  check("AC-137 with all projects each says whose it is", await until(async () => { const t = await both(); return t.length === 2 && t.some((x) => x.includes("AgentsHere")) && t.some((x) => x.includes("AgentsThere")); }), JSON.stringify(await both()));
+  await page.click("#addagent");
+  check("AC-137 with several shown a new one's project is the human's to choose", await page.inputValue("#agentproject") === "");
+  await page.click("#agentok");
+  check("AC-137 and none is refused where it was typed", await until(async () => /An agent needs a project/.test(await page.textContent("#agenterror"))), await page.textContent("#agenterror"));
+  await page.click('#agentbox button[value="cancel"]');
+  if (await page.$("#confirmbox[open]")) await page.click("#confirmok");
+  await j(`/api/task-agents/${theirs.id}`, "DELETE");
 
   // a reload finds what stays
   await page.goto(`${base}/kanban/?project=${project}`);

@@ -17,7 +17,7 @@ export async function liveAuto(page, live) {
   const paneIds = () => live.tmux("list-panes", "-a", "-F", "#{pane_id}").split("\n").filter(Boolean);
   const before = new Set(paneIds());
   const project = (await j("/api/task-projects", "POST", { name: "Autos", dir: live.work })).id;
-  const agent = async (name, more = "", at_once = 1) => (await j("/api/task-agents", "POST", { name, kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude ${more}`.trim(), at_once })).id;
+  const agent = async (name, more = "", at_once = 1) => (await j("/api/task-agents", "POST", { project, name, kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude ${more}`.trim(), at_once })).id;
   const picker = await agent("Auto picker"), runner = await agent("Auto runner", "", 2), broken = await agent("Auto broken", "--start fast"), spare = await agent("Auto spare");
   const put = (body) => j(`/api/task-projects/${project}/auto`, "PUT", body);
   const state = () => page.evaluate(() => `${document.querySelector("#autoswitch").getAttribute("aria-checked")} ${document.querySelector("#autostate").textContent}`);

@@ -12,7 +12,7 @@ export async function liveFolded(page, live) {
   const a = await made("Folded first task with a title long enough to be cut at the line's end", "P1"), b = await made("Folded second");
   // three agents and one more: a row of four on the columns' tracks, the fifth starts the next
   const ids = [];
-  for (const n of ["Grid one", "Grid two", "Grid three", "Grid four", "Grid five"]) ids.push((await j("/api/task-agents", "POST", { name: n, kind: "claude", command: "claude" })).id);
+  for (const n of ["Grid one", "Grid two", "Grid three", "Grid four", "Grid five"]) ids.push((await j("/api/task-agents", "POST", { project: "default", name: n, kind: "claude", command: "claude" })).id);
   await open("?project=default");                  // its tasks' project: one an earlier suite chose is remembered
   const box = (sel) => page.evaluate((s) => { const r = document.querySelector(s)?.getBoundingClientRect(); return r && { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) }; }, sel);
   const shown = (sel) => page.evaluate((s) => { const e = document.querySelector(s); return !!e && getComputedStyle(e).display !== "none" && e.getClientRects().length > 0; }, sel);
@@ -92,7 +92,7 @@ export async function liveSchedules(page, live) {
   const { j, card, open, cli } = boardKit(page, live);
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
   const project = (await j("/api/task-projects", "POST", { name: "Nightly", dir: live.work })).id;
-  const agent = (await j("/api/task-agents", "POST", { name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
+  const agent = (await j("/api/task-agents", "POST", { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
   await open(`?project=${project}`);
   const toggle = "#schedbar .schedtoggle";
   check("AC-163 the section is one line, folded, by default", await page.textContent(toggle) === "Scheduled 0" && await page.getAttribute(toggle, "aria-expanded") === "false" && !(await page.isVisible("#schedgrid")));
@@ -199,7 +199,7 @@ export async function liveSchedules(page, live) {
   check("AC-161 its agent shows the kept slot", await until(async () => (await page.$$(`${owl} .agkept`)).length === 1 && /1\/2/.test(await page.textContent(owl))), await page.textContent(owl));
   // more agents than a few rows: the bars scroll, the columns stay
   const crowd = [];
-  for (let i = 0; i < 14; i++) crowd.push((await j("/api/task-agents", "POST", { name: `Crowd ${i}`, kind: "claude", command: "claude" })).id);
+  for (let i = 0; i < 14; i++) crowd.push((await j("/api/task-agents", "POST", { project, name: `Crowd ${i}`, kind: "claude", command: "claude" })).id);
   await page.reload();
   await page.waitForSelector("#board .col", { state: "attached" });
   check("AC-163 this browser remembers it open", await until(() => page.isVisible(sched)));

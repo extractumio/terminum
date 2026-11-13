@@ -7,7 +7,7 @@ fn open(name: &str) -> Store {
 }
 
 fn opus() -> Given {
-    Given { name: "Opus reviewer".into(), kind: "claude".into(), command: "claude --model opus".into(), effort: String::new(), at_once: 1, week_limit: None, month_limit: None }
+    Given { project: DEFAULT_PROJECT.into(), name: "Opus reviewer".into(), kind: "claude".into(), command: "claude --model opus".into(), effort: String::new(), at_once: 1, week_limit: None, month_limit: None }
 }
 
 fn project(tx: &Transaction, id: &str) -> Result<(), String> {
@@ -74,14 +74,42 @@ fn ac137_a_name_stands_once_in_the_pool() {
 }
 
 #[test]
-fn ac137_a_project_deleted_leaves_the_pool() {
-    let s = open("agents-gone");
-    s.with(|tx| {
+fn ac137_each_project_has_a_pool_of_its_own() {
+    open("agents-own").with(|tx| {
+        project(tx, "p1")?;
+        let mine = add(tx, &opus())?;
+        let theirs = add(tx, &Given { project: "p1".into(), ..opus() })?;
+        assert_ne!(mine, theirs, "the same name in two projects is two agents");
+        assert_eq!(add(tx, &Given { project: "p1".into(), ..opus() }).unwrap_err(), "The pool already has an agent named Opus reviewer.");
+        assert_eq!(of_project(tx, "p1")?.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), [theirs.as_str()]);
+        assert_eq!(of_project(tx, DEFAULT_PROJECT)?.iter().map(|a| a.id.as_str()).collect::<Vec<_>>(), [mine.as_str()]);
+        assert!(in_project(tx, &theirs, DEFAULT_PROJECT)?.is_none(), "another project's is none here");
+        assert_eq!(chosen(tx, &theirs, "p1")?.id, theirs);
+        assert_eq!(chosen(tx, &theirs, DEFAULT_PROJECT).map(drop).unwrap_err(), "Opus reviewer is api's agent, not Default's: choose one of its own.");
+        assert_eq!(chosen(tx, "nobody", "p1").map(drop).unwrap_err(), "That agent is gone.");
+        // a change never moves one
+        change(tx, &theirs, &Given { project: DEFAULT_PROJECT.into(), command: "claude --model sonnet".into(), ..opus() })?;
+        assert_eq!(by_id(tx, &theirs)?.map(|a| (a.project, a.command)), Some(("p1".into(), "claude --model sonnet".into())));
+        assert_eq!(add(tx, &Given { project: String::new(), ..opus() }).unwrap_err(), "An agent needs a project.");
+        assert_eq!(add(tx, &Given { project: "nowhere".into(), ..opus() }).unwrap_err(), "That project is gone.");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac137_a_deleted_project_s_agents_stand_in_default() {
+    open("agents-gone").with(|tx| {
         project(tx, "p1")?;
         add(tx, &opus())?;
-        tx.execute("DELETE FROM projects WHERE id = 'p1'", []).map_err(sql)
+        let theirs = add(tx, &Given { project: "p1".into(), ..opus() })?;
+        let other = add(tx, &Given { project: "p1".into(), name: "Fast fixer".into(), ..opus() })?;
+        move_to_default(tx, "p1")?;
+        tx.execute("DELETE FROM projects WHERE id = 'p1'", []).map_err(sql)?;
+        let named = |id: &str| by_id(tx, id).map(|a| a.map(|a| (a.project, a.name)));
+        assert_eq!(named(&theirs)?, Some((DEFAULT_PROJECT.into(), "Opus reviewer (2)".into())), "a name Default has takes a number");
+        assert_eq!(named(&other)?, Some((DEFAULT_PROJECT.into(), "Fast fixer".into())));
+        Ok(())
     }).unwrap();
-    assert_eq!(s.with(list).unwrap().len(), 1);
 }
 
 const CLAUDE_INLINE: &str = r#"--settings '{"tui":"default","env":{"CLAUDE_CODE_NO_FLICKER":"0"}}'"#;
@@ -130,6 +158,9 @@ fn ac138_each_agent_has_its_own_color() {
         add(tx, &Given { name: "d".into(), ..opus() })?;
         let colors: Vec<i64> = list(tx)?.iter().map(|a| a.color).collect();
         assert_eq!(colors, [0, 2, 3]);
+        project(tx, "p1")?;
+        let far = add(tx, &Given { project: "p1".into(), ..opus() })?;
+        assert_eq!(by_id(tx, &far)?.map(|a| a.color), Some(0), "a project's colors start anew");
         Ok(())
     }).unwrap();
 }

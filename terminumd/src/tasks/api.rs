@@ -211,7 +211,7 @@ async fn meta(State(app): State<Shared>) -> Response {
             .chain(a.projects.lock().list().iter().map(|p| json!({"id": p.id, "name": p.name, "color": p.color, "dir": p.dir, "host": p.host}))).collect();
         let (users, agents, limits, last_agents, at_once, own) = a.tasks.with(|tx| Ok((
             ops::rows(tx, "SELECT id, name FROM users WHERE kind = 'human' ORDER BY name", [], |r| Ok(json!({"id": r.get::<_, String>(0)?, "name": r.get::<_, String>(1)?})))?,
-            super::agents::listed(tx, ops::now())?,
+            super::agents::listed(tx, ops::now(), None)?,
             super::limits::limits(tx)?,
             runs::last_agents(tx)?,
             super::limits::agent_limits(tx)?,

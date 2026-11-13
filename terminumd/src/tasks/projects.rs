@@ -82,6 +82,7 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
         log(tx, task, HUMAN, "project", &format!("Project {name} was deleted: moved to Default"), None, now)?;
     }
     tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE project = ?3", (DEFAULT_PROJECT, now, project)).map_err(sql)?;
+    super::agents::move_to_default(tx, project)?;   // its agents too: what names them still finds them (terminum-dispatcher.md AC-137)
     for task in &tasks {
         super::slugs::assign(tx, task, DEFAULT_PROJECT, false)?;   // TASK-n; the ID it had still finds it (AC-148)
     }

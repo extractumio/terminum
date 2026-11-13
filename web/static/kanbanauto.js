@@ -7,7 +7,7 @@
 // itself off it says why, in the switch and in the window, and only a page that showed why turns it on again.
 // terminumd keeps the setting and says what is wrong; every page hears.
 import { oneAtATime } from "./dialogs.js";
-import { $, agentLabel, api, fillSelect, say, showError } from "./kanbanutil.js";
+import { $, agentLabel, agentsOf, api, fillSelect, say, showError } from "./kanbanutil.js";
 
 /** `getMeta()`: terminumd's projects and agents; `chosen()`: the projects the board's filter names, none: all;
  *  `reload()`: read them anew. */
@@ -45,7 +45,7 @@ export function autoDispatcher({ getMeta, chosen, reload }) {
   /** The window's fields as project `p` has them. */
   function fill(p) {
     shown = p;
-    const agents = getMeta().agents.map((a) => [a.id, a.name]), auto = p.auto ?? {};
+    const agents = agentsOf(getMeta(), p.id).map((a) => [a.id, a.name]), auto = p.auto ?? {};
     $("autoproject").value = p.id;
     $("autoon").checked = !!auto.on;
     fillSelect($("autoagent"), [["", "Choose one"], ...agents], auto.agent ?? "");

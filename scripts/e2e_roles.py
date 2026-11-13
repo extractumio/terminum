@@ -72,8 +72,8 @@ def main():
                                                          headers={"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT}"})
         project = call("/api/task-projects", "POST", {"name": "Managed", "dir": work})[1]["id"]
         # a shell standing in for an agent: the words Dispatcher adds after a command (AC-156) go to `sh -c` as its unused arguments
-        shell = call("/api/task-agents", "POST", {"name": "Shell", "kind": "claude", "command": "sh -c 'exec sh' sh", "at_once": 3})[1]["id"]
-        call("/api/task-agents", "POST", {"name": "Fake", "kind": "claude", "command": f"python3 -I {FAKE} {BIN} --kind claude", "at_once": 2})
+        shell = call("/api/task-agents", "POST", {"project": project, "name": "Shell", "kind": "claude", "command": "sh -c 'exec sh' sh", "at_once": 3})[1]["id"]
+        call("/api/task-agents", "POST", {"project": project, "name": "Fake", "kind": "claude", "command": f"python3 -I {FAKE} {BIN} --kind claude", "at_once": 2})
         st, said = call(f"/api/task-projects/{project}/session", "POST", {"agent": shell})
         check("setup: + Session opens the manager's session", st == 200 and said.get("key"), said)
         boss_key = said["key"]

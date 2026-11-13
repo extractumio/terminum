@@ -17,7 +17,7 @@ export async function agentPool(page, opts, pressAt) {
   const { base, work, tmux, shots } = opts;
   const { j, card, cli, newPane, envOf, newTask } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Pool", dir: work })).id;
-  const fixer = (await j("/api/task-agents", "POST", { name: "Fast fixer", kind: "claude", effort: "high", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
+  const fixer = (await j("/api/task-agents", "POST", { project, name: "Fast fixer", kind: "claude", effort: "high", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   const task = async (title) => (await j("/api/tasks", "POST", { title, project })).id;
   const a = await task("first of two"), b = await task("second of two"), c = await task("a third");
   const status = async (id) => (await j(`/api/tasks/${id}`)).status;
@@ -225,10 +225,13 @@ export async function agentPool(page, opts, pressAt) {
   const under = await page.evaluate(() => { const k = document.getElementById("adhocsession"), rows = [...document.querySelectorAll("#sessions .item")];
     return { inList: k?.parentElement?.id === "sessions" && k === k.parentElement.lastElementChild, below: rows.every((r) => r.getBoundingClientRect().bottom <= k.getBoundingClientRect().top), rows: rows.length }; });
   check("AC-142 one project shown: + Session under its sessions in the list", await page.isVisible("#adhocsession") && under.inList && under.below && !(await page.$("#boardacts #adhocsession")), JSON.stringify(under));
+  const spare = (await j("/api/task-agents", "POST", { project, name: "Spare", kind: "claude", command: "claude" })).id;   // a pool of two: it asks which
+  await until(() => page.isVisible('.agents .agentcard:has-text("Spare")'));
   await page.click("#adhocsession");
   check("AC-142 with several agents it asks which, the last used first", await until(() => page.$("#confirmbox[open]")) && /Fast fixer/.test(await page.textContent("#confirmacts")), await page.textContent("#confirmacts").catch(() => ""));
   await pressAt(page, '#confirmacts button:has-text("Fast fixer")');
   check("AC-142 it opens the session, of no task", await until(() => /\/sessions\//.test(page.url()), 15000), page.url());
+  await j(`/api/task-agents/${spare}`, "DELETE");
   let adhoc;
   check("AC-142 its agent shows a dot for it, the pool's slot taken", await until(async () => (adhoc = (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks)), 15000), JSON.stringify(adhoc));
   check("AC-142 nothing is typed: it stands working, the human's", await until(async () => (await j("/api/tasks?counts=1")).slots?.agents?.[fixer]?.find((s) => !s.tasks)?.state === "working", 15000));
@@ -262,7 +265,7 @@ export async function agentPool(page, opts, pressAt) {
   const third = await j(`/api/tasks/${three}/run`, "POST", { agent: fixer, queue: true });
   check("AC-158 a third waits, naming both", /at its limit of 2/.test(third.waits) && third.waits.includes(one) && third.waits.includes(two), JSON.stringify(third));
   await j(`/api/tasks/${three}/give-up`, "POST");
-  const other = (await j("/api/task-agents", "POST", { name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
+  const other = (await j("/api/task-agents", "POST", { project, name: "Other one", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
   check("AC-141 Agents at once takes 1 to 100 or nothing", /1 to 100/.test((await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 0 })).error));
   await j(`/api/task-projects/${project}/agents-at-once`, "PUT", { limit: 2 });
   const limited = await j(`/api/tasks/${three}/run`, "POST", { agent: other, queue: true });

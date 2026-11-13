@@ -43,7 +43,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
   const fit = () => { const f = $("projectdir"); f.style.height = "auto"; f.style.height = `${f.scrollHeight}px`; };
   $("projectdir").addEventListener("input", fit);
   const drawAgents = () => {
-    const rows = agents.rows();
+    const rows = shown ? agents.rows(shown.id) : [];
     $("projectagentlist").replaceChildren(...rows);
     $("projectagentlist").hidden = !rows.length;
   };
@@ -114,7 +114,7 @@ export function projectWindow({ getMeta, reload, agents, archived, deleteProject
     if (e.key === "Enter" && !e.isComposing && e.target.matches("input, #projectdir")) { e.preventDefault(); keep(); }   // a folder is one line; the template has many
   });
   $("projectpick").addEventListener("click", () => picker.open($("projecthost").value, $("projectdir").value, (path) => { $("projectdir").value = path; fit(); }));
-  $("projectaddagent").addEventListener("click", () => agents.add());
+  $("projectaddagent").addEventListener("click", () => agents.add(shown.id));
   $("projecttemplatereset").addEventListener("click", () => { $("projecttemplate").value = templateOf(null); });
   $("projectlimits").addEventListener("click", () => openLimits(shown.id));
   $("projectarchived").addEventListener("click", () => archived.open(shown));
