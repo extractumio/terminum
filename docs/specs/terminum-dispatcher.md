@@ -397,8 +397,10 @@ Scenario: AC-122 edge — CLOSE
   Then the comment is kept, nothing moves and the session hears nothing (terminum-kanban.md AC-108)
 
 Scenario: AC-122 edge — archived
-  When new work comes to an archived task
-  Then it returns to the board
+  Given an archived task whose live session Dispatcher started, DONE or already IN PROGRESS
+  When the human types a new prompt in that session, or presses RUN
+  Then it returns to the board in IN PROGRESS, in the same transaction
+  And a prompt terminum typed or the agent wrote itself leaves it archived
 
 Scenario: AC-122 failure — cannot go on
   When the agent refuses that session ID, none is known, the ID is not of §9's shape, or the first folder is gone
@@ -1624,7 +1626,6 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-122 | A human's own prompt in the session of an archived task does not return it; Run does. | `terminumd/src/dispatcher/hooks.rs` |
 | AC-123 | An agent's move_task to DONE keeps no result: a task goes DONE without one that way (TERM-85). | `terminumd/src/tasks/tools.rs` |
 | AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |

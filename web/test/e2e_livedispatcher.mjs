@@ -23,7 +23,7 @@ const taskKit = (j) => {
 
 export async function liveDispatcher(page, opts) {
   const { base, tmux, work, shots, stop, start } = opts;
-  const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
+  const { j, keyOf, card, open, backToSessions, cli, tool } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
   const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
   const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { project, name, kind, command: fake(kind, more) })).id;
@@ -80,6 +80,21 @@ export async function liveDispatcher(page, opts) {
   const refused = await run(linked);
   check("AC-125 a session it did not start is not run", /Unlink the session/.test(refused.error), JSON.stringify(refused));
   check("AC-125 and never typed in", !/fake_agent|human ran/.test(tmux("capture-pane", "-p", "-t", otherPane)));
+
+  // AC-122: new work brings an archived live task back, including one already IN PROGRESS (TERM-77).
+  const archived = await task("archived WORKS");
+  await run(archived);
+  check("AC-122 setup: its agent works", await hasStatus(archived, "IN PROGRESS", 15000));
+  const archivedPane = await paneOf(archived);
+  for (const was of ["DONE", "IN PROGRESS"]) {
+    if (was === "DONE") tool(archivedPane, "move_task", { id: archived, to: "DONE" });
+    await j(`/api/tasks/${archived}/archive`, "POST", { on: true });
+    check(`AC-122 ${was}: its archived card leaves the board`, await until(async () => !(await page.$(card(archived)))));
+    tmux("send-keys", "-t", archivedPane, "-l", "More work WORKS");
+    tmux("send-keys", "-t", archivedPane, "Enter");
+    check(`AC-122 ${was}: a human's prompt restores it in progress`, await until(async () => { const t = await j(`/api/tasks/${archived}`); return t.status === "IN PROGRESS" && !t.archived_at; }));
+    check(`AC-122 ${was}: its card returns without reloading`, await until(() => page.isVisible(card(archived))));
+  }
 
   // AC-121 failures of the start
   const fast = await agent("Fast", "--start fast");

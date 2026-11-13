@@ -405,11 +405,12 @@ async fn went_on(app: &Shared, r: &Run, t: &Task, manager: bool) -> Result<Value
 }
 
 /// New work on an archived task returns it to the board (AC-122).
-fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
-    if ops::get(tx, id)?.archived_at.is_some() {
+pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<bool, String> {
+    let archived = ops::get(tx, id)?.archived_at.is_some();
+    if archived {
         ops::archive(tx, HUMAN, id, false, ops::now())?;
     }
-    Ok(())
+    Ok(archived)
 }
 
 /// A new run of `t` going on from `r`, which is over: its agent, unless another run took it meanwhile. What
