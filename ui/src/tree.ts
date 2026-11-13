@@ -27,7 +27,7 @@ export interface TreeCallbacks {
 }
 
 /** The members without `private` that are not the Panel's API (cursor, anchor, epoch,
- *  selectionRun, rows, pager, el, cb, load, expand, collapse, descAt, scrollIntoView,
+ *  selectionRun, picks, rows, pager, el, cb, load, expand, collapse, descAt, scrollIntoView,
  *  expandAllFrom) are @internal: shared with TreeInput (tree-input.ts) and Pager (tree-load.ts)
  *  only. Moving the selection state into TreeInput would close them again (Noticed, not fixed). */
 export class Tree {
@@ -46,6 +46,7 @@ export class Tree {
   epoch = 0;                 // bumps on re-root; stale async results are dropped
   private expandRun = 0;             // bumps on expand all and any collapse; cancels a running one
   selectionRun = 0;          // cancels a paged range on another interaction
+  picks = 0;                 // bumps on each newer selection the user makes; an older reveal yields to it
   private spacer = document.createElement("div");
   private layer = document.createElement("div");
   private edit: InlineEdit;
@@ -92,7 +93,7 @@ export class Tree {
     this.cursor = this.anchor = -1;
     this.el.scrollTop = 0;
     this.root = this.node(root);
-    const epoch = this.epoch;
+    const epoch = this.epoch, picks = this.picks;
     await this.load(this.root, 0);
     // restore expanded folders level by level: each is located in its (already open) parent
     const levels = new Map<number, string[]>();
@@ -108,7 +109,7 @@ export class Tree {
     if (epoch !== this.epoch) return;
     this.render();
     if (scroll > 0) this.el.scrollTop = scroll;
-    else if (selected[0]) await this.reveal(selected[0]);
+    else if (selected[0]) await this.reveal(selected[0], false, picks);
     this.queue();
   }
 
@@ -283,17 +284,20 @@ export class Tree {
   }
 
   /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first (Reveal in tree).
-   *  False when it is not under the root, not found or the tree moved meanwhile. */
-  async reveal(path: string, open = false): Promise<boolean> {
+   *  False when it is not under the root or not found; null, the cursor untouched, when the tree was
+   *  re-rooted or the user picked a newer selection than `picks` meanwhile (expanding and refreshing
+   *  folders do not count). */
+  async reveal(path: string, open = false, picks = this.picks): Promise<boolean | null> {
     const epoch = this.epoch, root = this.root?.path;
+    const alive = () => epoch === this.epoch && picks === this.picks;
     if (open && root && isUnder(path, root) && path !== root) {
       const chain: string[] = [];
       for (let d = dirname(path); d !== root && isUnder(d, root); d = dirname(d)) chain.unshift(d);
-      for (const d of chain) if (!this.expanded.has(d) && epoch === this.epoch) await this.expand(d);
+      for (const d of chain) if (!this.expanded.has(d) && alive()) await this.expand(d);
     }
     const parent = this.nodes.get(dirname(path));
-    const idx = parent ? await this.locate(parent, basename(path)) : null;
-    if (epoch !== this.epoch) return false;
+    const idx = parent && alive() ? await this.locate(parent, basename(path)) : null;
+    if (!alive()) return null;
     const at = parent && idx != null ? indexOf(parent, idx, this.rows) : -1;
     if (at < 0) return false;
     this.cursor = this.anchor = at;

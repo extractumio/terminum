@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // ← on a file selects its folder once the tree revealed it, and only then: not when the reveal
-// failed (the tree was re-rooted meanwhile), not when another selection came first.
+// failed. A newer selection meanwhile: tree-reveal.test.mjs, with the real reveal.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { load } from "./bundle.mjs";
@@ -12,7 +12,7 @@ function setup() {
   let finish;
   const t = {
     root, cursor: 3, anchor: 3, rowH: 20, el: { clientHeight: 200 }, expanded: new Set(), selected: new Set(["/r/src/a.rs"]),
-    selectionRun: 0, rows: { version: 0, filter: "", root, nodes: new Map(), creatingIn: () => 0, load() {} },
+    selectionRun: 0, picks: 0, rows: { version: 0, filter: "", root, nodes: new Map(), creatingIn: () => 0, load() {} },
     cb: { changed() {} }, queue() {},
     descAt: () => ({ isDir: false, p: "/r/src/a.rs", d: { dir: { path: "/r/src" } } }),
     reveal: () => new Promise((r) => { finish = r; }),
@@ -35,13 +35,4 @@ test("← does not select the old folder when the reveal failed (a new root mean
   t.selected = new Set(["/other/x"]);        // the new root's own selection
   await finish(false);
   assert.deepEqual([...t.selected], ["/other/x"]);
-});
-
-test("← does not select its folder after another selection came first", async () => {
-  const { t, left, finish } = setup();
-  left();
-  t.selectionRun++;                          // a click or a key selected something else
-  t.selected = new Set(["/r/b.rs"]);
-  await finish(true);
-  assert.deepEqual([...t.selected], ["/r/b.rs"]);
 });
