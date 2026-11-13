@@ -367,6 +367,12 @@ Scenario: AC-99 edge — on and off asked while the other runs
   And one on or off runs at a time per host, the last asked winning: one still waiting when a later one is asked never begins; other hosts' run beside it; removing devbox stops one running and takes the entries out in its turn; the hooks' refresh after a helper update waits for the one running and is stopped by a later one
   And an on or off waits for Files' enable, Files' removal or the helper's update running for devbox and never stops it (AC-83, one operation at a host's helper at a time)
 
+Scenario: AC-99 edge — a plugin command outlives the helper's process group
+  Given an on is waiting for Claude's plugin install, or an off for its uninstall, without a terminal on devbox
+  When the opposite operation takes over and the old ssh's input closes
+  Then the helper ends the plugin command's process group, including its descendants; releasing a held plugin mutation after the newer operation answers cannot undo its plugin state
+  And SIGTERM, SIGHUP and SIGINT end a host helper's plugin command without a terminal; ignored signals stay ignored, and terminumd's own graceful shutdown keeps its handlers
+
 Scenario: AC-99 edge — a host with its own terminum
   Given devbox runs its own terminum whose hooks are installed
   Then the host-mode install skips each agent with "uses devbox's own terminum" and changes nothing; its hooks reach this Mac through the link once that terminum is of this build
@@ -452,6 +458,7 @@ stateDiagram-v2
 | AC-84 | "updating the helper on devbox…" and "Could not update the helper on devbox: <reason>" (AC-82's no-helper case too) never reach the page or `terminum hosts`: a host's note is sent only for a failed ticked enabling. | `terminumd/src/hosts/tunnel.rs:408`, `terminumd/src/hosts/mod.rs:390` |
 | AC-84 | The 10-minute retry after a failed copy has no test. | `terminumd/src/hosts/tunnel.rs:31` |
 | AC-99 | Never run: a macOS host over real sshd, Dropbear, a ForceCommand account, two Macs on one host over real sshd, real Claude Code and Codex on a host. | no run on record |
+| AC-99 | Cancellation after a plugin mutation but before its installation marker changes can leave the newer operation with the wrong plugin state; marker-based install and removal do not reconcile that partial result. | `e2e_remote_cancel.py` with the stub's mutation before its hold (TERM-244) |
 | AC-81 | Key echo over a LAN host and remote file open have targets (§9 Performance) and no measurement: `bench_echo.py` has no host mode. | `scripts/bench_echo.py:30` |
 | AC-81 | The metrics `hosts_attached` and `host_reconnects` do not exist; only the log events of §9 do. | `terminumd/src/hosts/mod.rs:251` |
 
@@ -543,5 +550,5 @@ All cases are shipped; nothing is staged.
 - [x] AC-85 — `scripts/e2e_remote.py`
 - [x] AC-86 — `scripts/tests/test_release.py`, `scripts/tests/test_package.py`
 - [x] AC-87 — `scripts/e2e_remote.py`, `scripts/e2e_review.py host`, `cargo test hosts::`, `cargo test hosts_list`
-- [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_turns.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
+- [x] AC-99 — `scripts/e2e_remote_agents.py`, `scripts/e2e_remote_turns.py`, `scripts/e2e_remote_cancel.py`, `scripts/e2e_remote_sshd_agents.py`, `cargo test hosts::agents`, `cargo test hosts::turns`, `cargo test hosts::link`, `cargo test hosts::bounded`, `cargo test links`, `cargo test runlink`, `cargo test hostmode`
 - [x] AC-132 — `scripts/e2e_isolation.py`, `web/test/e2e_isolation.mjs`, `cargo test tmux::control`, `cargo test lists`, `cargo test page::turns`, `cargo test page::typing`, `cargo test page::reads`, `cargo test tmux::agentstate`
