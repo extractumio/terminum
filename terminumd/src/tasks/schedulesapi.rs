@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! Schedules' routes (`terminum-schedules.md` §9), behind the page's sign-in and write checks: the only way a
+//! Schedules' routes (`terminum-schedules.md` §9, AC-164), behind the page's sign-in and write checks: the only way a
 //! schedule is written. Every page hears `schedules` when one changes or fires.
 
 use axum::extract::{Path, Query, State};
@@ -116,13 +116,16 @@ async fn fires(State(app): State<Shared>, Query(asked): Query<Asked>) -> Respons
 pub(crate) fn fires_of(tx: &Transaction, schedule: Option<&str>, before: Option<i64>, most: i64) -> Result<Vec<Value>, String> {
     let number = schedule.map(|k| k.trim_start_matches("SCH-").parse::<i64>().map_err(|_| format!("No schedule {k}"))).transpose()?;
     // the firing keeps what went in; the task's first run says on which agent; made IN PROGRESS, it ended at its
-    // last move to DONE or FAILED; its last word by an agent or Dispatcher says what came out
+    // last move to DONE or FAILED; Out is the agent's last comment or Dispatcher's failure reason,
+    // never lifecycle messages such as closing the finished session for the next firing.
     rows(tx, "SELECT f.id, 'SCH-' || s.number, s.title, f.due_at, f.at, t.slug, t.status, f.state, f.missed, f.why,
                      (SELECT r.agent_name FROM run_tasks rt JOIN runs r ON r.id = rt.run WHERE rt.task = t.id ORDER BY r.rowid LIMIT 1),
                      f.prompt,
                      CASE WHEN t.id IS NOT NULL THEN f.at END,
                      (SELECT max(e.at) FROM events e WHERE e.task = t.id AND e.kind = 'move' AND json_extract(e.data, '$.to') IN ('DONE', 'FAILED')),
-                     (SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND e.kind IN ('comment', 'told') AND u.kind <> 'human'
+                     (SELECT e.text FROM events e JOIN users u ON u.id = e.author WHERE e.task = t.id AND ((e.kind = 'comment' AND u.kind = 'agent')
+                        OR (e.kind = 'why' AND e.author = 'dispatcher' AND t.status = 'FAILED'
+                            AND e.rowid > (SELECT max(m.rowid) FROM events m WHERE m.task = t.id AND m.kind = 'move')))
                         ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
               FROM schedule_fires f JOIN schedules s ON s.id = f.schedule LEFT JOIN tasks t ON t.id = f.task
               WHERE (?1 IS NULL OR s.number = ?1) AND (?2 IS NULL OR f.id < ?2) ORDER BY f.id DESC LIMIT ?3",

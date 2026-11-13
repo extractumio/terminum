@@ -277,3 +277,35 @@ fn ac162_an_older_task_s_idle_session_in_the_kept_slot_is_closed_for_the_firing(
         Ok(())
     }).unwrap();
 }
+
+#[test]
+fn ac164_out_keeps_agent_comments_and_failure_reasons_past_session_bookkeeping() {
+    open("fire-out").with(|tx| {
+        let s = schedule(tx, 1, every_15());
+        let (id, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
+        let key = ops::key_of(tx, &id)?;
+        let agent = ops::pool_user(tx, "a", "Opus reviewer")?;
+        let out = |tx: &rusqlite::Transaction| -> Result<serde_json::Value, String> {
+            Ok(crate::tasks::schedulesapi::fires_of(tx, Some("SCH-1"), None, 10)?[0]["result"].clone())
+        };
+        assert!(out(tx)?.is_null(), "no agent comment or failure yet");
+        ops::move_to(tx, HUMAN, &id, "FAILED", NOW + 10 * 60 + 1)?;
+        assert!(out(tx)?.is_null(), "the schedule's creation reason is not a failure result");
+        ops::move_to(tx, HUMAN, &id, "IN PROGRESS", NOW + 10 * 60 + 2)?;
+        ops::comment(tx, &agent, &id, "Checking dependencies.", NOW + 11 * 60)?;
+        assert_eq!(out(tx)?, "Checking dependencies.", "the agent's progress is readable");
+        let result = "Outcome: ok\nSummary: All done.\nDetails: None\nFor the human: None";
+        ops::comment(tx, &agent, &id, result, NOW + 12 * 60)?;
+        ops::move_to(tx, &agent, &id, "DONE", NOW + 12 * 60)?;
+        ops::log(tx, &key, DISPATCHER, "told", "Session ended: closed for SCH-1.", None, NOW + 13 * 60)?;
+        ops::comment(tx, HUMAN, &id, "A later human comment", NOW + 14 * 60)?;
+        assert_eq!(out(tx)?, result, "later lifecycle and human events leave the result");
+        // A subsequent RUN fails: the failure reason, not an earlier result or a later close, is Out.
+        ops::move_to(tx, HUMAN, &id, "IN PROGRESS", NOW + 15 * 60)?;
+        ops::move_to(tx, DISPATCHER, &id, "FAILED", NOW + 16 * 60)?;
+        ops::log(tx, &key, DISPATCHER, "why", "Its budget ended.", None, NOW + 16 * 60)?;
+        ops::log(tx, &key, DISPATCHER, "told", "Session ended: closed 5 minutes after FAILED.", None, NOW + 17 * 60)?;
+        assert_eq!(out(tx)?, "Its budget ended.", "the failure reason survives its close");
+        Ok(())
+    }).unwrap();
+}

@@ -93,6 +93,7 @@ export async function liveSchedules(page, live) {
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
   const project = (await j("/api/task-projects", "POST", { name: "Nightly", dir: live.work })).id;
   const agent = (await j("/api/task-agents", "POST", { project, name: "Night owl", kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude`, at_once: 2 })).id;
+  const defaultAgent = (await j("/api/task-agents", "POST", { project: "default", name: "Preview owl", kind: "claude", command: "claude" })).id;
   await open(`?project=${project}`);
   const toggle = "#schedbar .schedtoggle";
   check("AC-163 the section is one line, folded, by default", await page.textContent(toggle) === "Scheduled 0" && await page.getAttribute(toggle, "aria-expanded") === "false" && !(await page.isVisible("#schedgrid")));
@@ -116,9 +117,13 @@ export async function liveSchedules(page, live) {
   // where it runs, in terminumd's words: a schedule left in Default is said to reach no board before Save
   const place = () => page.textContent("#schedplace");
   check("AC-160 where it runs: the project's folder and board", await until(async () => await place() === `${live.work}, with the board of Nightly`), await place());
+  // Each project's preview needs an agent of that project, including Default (AC-137).
   await page.selectOption("#schedproj", "default");
+  await choose(defaultAgent);
   check("AC-160 in Default it says the agent reaches no board", await until(async () => (await place()).includes("in no project: the agent reaches only this run's own task, no board.")), await place());
   await page.selectOption("#schedproj", project);
+  await choose(agent);
+  await j(`/api/task-agents/${defaultAgent}`, "DELETE");
   await page.selectOption("#schedkind", "cron");
   await page.fill("#schedcron", "0 24 * * *");
   check("AC-160 a field out of its range is refused in the window", await until(async () => await page.textContent("#schederror") === "The hour \"24\" is not 0 to 23."), await page.textContent("#schederror"));
@@ -275,14 +280,21 @@ export async function liveSchedules(page, live) {
   await open(`?project=${project}`);
   check("AC-163 its card says the schedule; the schedule's card its last task", await until(async () => (await page.textContent(`${card(task)} .cfrom`).catch(() => "")) === s.key && (await page.textContent(`${sched} .stbox`).catch(() => "")) === task));
 
-  // AC-164: the Scheduled page
+  // AC-164: a later firing closes this finished session before its result is read.
+  let next;
+  const reran = await until(async () => (next = await j(`/api/schedules/${s.id}/run`, "POST")).code === 200, 15000);
+  check("AC-164 a later firing closes the finished session", reran && next.task !== task
+    && (await j(`/api/tasks/${task}`)).history.some((e) => e.kind === "told" && e.text === `Session ended: closed for ${s.key}.`), JSON.stringify(next));
+
+  // AC-164: the Scheduled page, this firing rather than the newer one
+  const fire = `#fires .fire:has(.stbox[aria-label^="${task} · "])`;
   await page.goto(`${live.base}/scheduled/?schedule=${s.key}`);
   check("AC-164 the Scheduled page lists the firing with its task and status", await until(async () => /DONE/.test(await page.textContent("#fires").catch(() => "")) && (await page.textContent("#fires")).includes(task)), await page.textContent("#fires").catch(() => ""));
-  await page.click("#fires .fireline");
-  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent("#fires .firebody"); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent("#fires .firebody"));
+  await page.click(`${fire} .fireline`);
+  check("AC-164 a row opens to what went in and came out", await until(async () => { const b = await page.textContent(`${fire} .firebody`); return b.includes("A scheduled run of terminum's schedule") && b.includes("All done."); }), await page.textContent(`${fire} .firebody`));
   // a firing's In, its key pressed, covers the window; Esc gives it back (terminum.md AC-184)
-  await page.click("#fires .firebody .xbox:has(> .fio) > .xkey");
-  const inFull = (await coversWindow(page, "#fires .xbox.full")).covers;
+  await page.click(`${fire} .firebody .xbox:has(> .fio) > .xkey`);
+  const inFull = (await coversWindow(page, `${fire} .xbox.full`)).covers;
   await page.keyboard.press("Escape");
   check("AC-184 a firing's In covers the window by its key, Esc gives it back", inFull && !(await page.$(".xbox.full")));
   check("AC-164 the head has its key pressed", await page.getAttribute('.mpages a[href="/scheduled/"]', "aria-current") === "page");

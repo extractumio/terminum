@@ -272,6 +272,13 @@ Scenario: AC-164 happy path — every firing
   Then it shows "In": the prompt that went, and "Out": the agent's last comment, its finish_task result, or Dispatcher's words on why it failed
   And a skipped or missed firing's row says why, with no task, and how many firings it stands for
 
+Scenario: AC-164 edge — a finished session closes
+  Given S_TERM-41 is DONE with the agent's finish_task result
+  When Dispatcher closes its idle session for SCH-1 or after its closing delay
+  Then Out keeps the agent's result; session bookkeeping in the task's history does not replace it
+  Given a scheduled task fails before its agent gives a result
+  Then Out shows Dispatcher's reason for the failure, even after its session closes
+
 Scenario: AC-164 happy path — one schedule
   When the user picks SCH-1 in Schedule
   Then only its firings show, and the address says "?schedule=SCH-1"
@@ -388,5 +395,5 @@ Single stage.
 - [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column)
-- [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
+- [x] AC-164 — `cargo test dispatcher::fire` (agent results and failure reasons survive session bookkeeping), `web/test/e2e_liveschedules.mjs` (a real later firing closes the finished session before Out is read)
 - [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`
