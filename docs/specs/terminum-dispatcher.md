@@ -435,12 +435,12 @@ Scenario: AC-123 failure — a result without its sections
 Scenario: AC-123 failure — a result of work not done
   When the agent calls finish_task for API-12 with every section, its Outcome beginning "Partly done" or "Not done" on its heading's line or the next (the form asks those words first, in English)
   Then its words are a comment by the agent and API-12 stays as it was: never DONE
-  And the call answers "Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and API-12 stays IN PROGRESS; give its result again only once its work is done. If a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason, missing access) holds it, ask by execute_tool("ask_human", {id, questions}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool("move_task", {id, to}) with a comment saying why."
+  And the call answers "Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and API-12 stays IN PROGRESS; give its result again only once its work is done. If a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access) holds it, ask by execute_tool("ask_human", {id, questions}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool("move_task", {id, to}) with a comment saying why."
   And a schedule's task and Auto-Dispatcher's round keep their own form, whose Outcome is ok, attention or failed
 
 Scenario: AC-123 happy path — a turn ended with no result
   Given a Stop, or an idle screen after a turn with no Stop (an interrupt), API-12 IN PROGRESS, and no activity (§9) for 5 minutes
-  Then through the gate: "[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for. If a human must decide or approve something, or a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason, missing access) keeps it from being finished, ask by execute_tool("ask_human", {id, questions}): the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour."
+  Then through the gate: "[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for. If a human must decide or approve something, or a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access) keeps it from being finished, ask by execute_tool("ask_human", {id, questions}): the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour."
   And the agent, with its whole context, says which way it ended: Dispatcher approves nothing for a human, and a question it asks in words alone is answered by this request, not by Dispatcher
   And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing; its tools are activity
   When that turn's Stop has come and the agent is again quiet for 5 minutes, the task still IN PROGRESS
@@ -1092,7 +1092,7 @@ Scenario: AC-157 happy path — the human answers
   Then AC-158 holds; dropped on another agent, AC-138's edge "its conversation on another agent"
 
 Scenario: AC-157 happy path — what a prompt says
-  Then RUN's prompt ends with "If you need a human's decision, call execute_tool("ask_human", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. If the task cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason, missing access), ask the same way, saying what is done and committed, what holds it and what you recommend (such as "RUN it again once TERM-9 is DONE"): it waits for a human; give it no result by execute_tool("finish_task", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why."
+  Then RUN's prompt ends with "If you need a human's decision, call execute_tool("ask_human", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. If the task cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access), ask the same way, saying what is done and committed, what holds it and what you recommend (such as "RUN it again once TERM-9 is DONE"): it waits for a human; give it no result by execute_tool("finish_task", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why."
   And terminum mcp's ask_human says the same in its description
 
 Scenario: AC-157 edge — what keeps it open
@@ -1392,12 +1392,13 @@ Scenario: AC-185 happy path — a human's RUN
   And each is finished by finish_task as it is done, the session working on what is still open (AC-138)
 
 Scenario: AC-185 happy path — one cannot be done
-  Then the prompt says: "If one cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason, missing access), give it no result by execute_tool("finish_task", {id, result}) and do not fail it: keep what you did committed, do the rest that does not depend on it, then ask about it as below, saying what is done, what holds it and what you recommend: it waits for a human with the tasks still in progress."
+  Then the prompt says: "If one cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access), give it no result by execute_tool("finish_task", {id, result}) and do not fail it: keep what you did committed, do the rest that does not depend on it, then ask about it as below, saying what is done, what holds it and what you recommend: it waits for a human with the tasks still in progress."
   And: "If one cannot be done at all, say why in a comment on it and move it to FAILED. Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. What is not DONE runs again at the main task's next RUN."
   When the agent finishes API-13, fails API-14 and API-12 so, and ends its turn
   Then API-13 is DONE, API-14 and API-12 are FAILED with the agent's comments, and the session closes as AC-125 says
   When the human removes the cause and presses Run on API-12
-  Then a new session starts for API-12 and its subtasks not DONE, API-14 among them; API-13 stays DONE
+  Then the run's conversation goes on in a new window (AC-122) for API-12 and its subtasks not DONE, API-14 among them, its work and context kept; API-13 stays DONE
+  And a press that names a task its last run did not hold, or another agent, or Run from scratch, starts a new session instead
   And one left in progress at the turn's end is asked for and failed as AC-123 says
 
 Scenario: AC-185 happy path — Auto-Dispatcher
@@ -1412,14 +1413,14 @@ Scenario: AC-185 happy path — Auto-Dispatcher
 Scenario: AC-185 edge — the main task ends last
   Given API-12 and its subtask API-14 IN PROGRESS in one run
   When the agent calls finish_task on API-12
-  Then it is refused: "API-12 is a main task: its subtasks of this run are not DONE: API-14. Finish them first; when a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason, missing access) holds one, ask by execute_tool("ask_human", {id, questions}); when one cannot be done at all, move API-12 to FAILED with a comment saying why."
+  Then it is refused: "API-12 is a main task: its subtasks of this run are not DONE: API-14. Finish them first; when a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access) holds one, ask by execute_tool("ask_human", {id, questions}); when one cannot be done at all, move API-12 to FAILED with a comment saying why."
   And move_task {id: "API-12", to: "DONE"} is refused in the same words
   And a subtask made or put under API-12 after the run started is none of the run's: it does not hold API-12 open, and its next RUN takes it
   When that run is over and an agent, in the conversation a subtask's own RUN resumed too, finishes API-12 with API-14 not DONE
   Then it is refused as well: what API-12's newest run took holds it until it is DONE; a human moves a card as they will
 
 Scenario: AC-185 edge — asking a human
-  Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window."
+  Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task brings the answers back into this conversation. Do not wait for an answer in this window."
   When the agent calls ask_human on API-14, with API-12 and API-15 of its run still IN PROGRESS
   Then API-12 and API-15 are WAIT FOR HUMAN too, by Dispatcher: "It waits with API-14: its session's agent asked the human there."; in any run of several tasks (AC-138)
   And the tool answers "API-14 waits for the human, with your questions. End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."
@@ -1427,9 +1428,9 @@ Scenario: AC-185 edge — asking a human
   When the agent's turn is over
   Then the session closes as AC-157 says
   When the human answers in comments and presses Run on API-12
-  Then a new session starts for what is not DONE, and its prompt carries, after the rules, each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
+  Then the run's conversation goes on for what is not DONE, and its prompt carries each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
   And RUN's window shows them: one written or changed after it was read is "The task's text changed: look at it again." (AC-121)
-  And any run of several tasks carries them so (AC-138): it starts anew too
+  And any run of several tasks carries them so (AC-138): it goes on in its conversation too, unless the press starts a new session as above
   When the human presses Run on the subtask that asked instead
   Then AC-157 holds for it alone: its conversation resumes
 

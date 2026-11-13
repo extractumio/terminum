@@ -139,6 +139,8 @@ fn ac138_a_press_starts_anew_with_several_or_another_agent() {
         assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), None, false));
         assert!(starts_anew(std::slice::from_ref(&t), Some(&on_x), Some("y"), false));
         assert!(starts_anew(&[t.clone(), t.clone()], None, None, false));
+        let held = Run { ids: vec![t.id.clone()], ..on_x.clone() };
+        assert!(!starts_anew(&[t.clone(), t.clone()], Some(&held), None, false), "its own run's tasks go on in its conversation (AC-185)");
         assert!(starts_anew(std::slice::from_ref(&t), None, None, true));
         Ok(())
     }).unwrap();
@@ -304,7 +306,7 @@ fn ac185_a_main_task_goes_with_its_subtasks_still_to_do() {
         assert!(prompt.contains("in the order you decide") && prompt.contains("a main task goes last") && prompt.contains("can be DONE only when each of them is"));
         assert!(prompt.contains("If one cannot be done at all") && prompt.contains("move it to FAILED") && prompt.contains("leave none in progress") && prompt.contains("What is not DONE runs again"));
         assert!(prompt.contains("If one cannot be finished now for a cause that can be removed") && prompt.contains("it waits for a human with the tasks still in progress"), "a removable cause waits (AC-157)");
-        assert!(prompt.contains("starts a new session with the answers") && !prompt.contains("back into this conversation"), "it asks as a run of several does");
+        assert!(prompt.contains("the human's RUN of the main task brings the answers back into this conversation"), "it asks as a run of several does, and goes on there (AC-185)");
         assert!(prompt.contains("The human's message: mind the API") && !prompt.contains("SECRET"), "by their numbers alone");
         assert!(facts(tx, &tasks)?.shown().contains("SECRET of failed"), "the human sees each text before Run");
         // a subtask made since is another press: the human looks again (AC-121)
@@ -359,6 +361,25 @@ fn ac185_a_subtask_held_elsewhere_holds_its_main_tasks_press() {
         assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)));
         ops::move_to(tx, HUMAN, &a.id, "DONE", 5)?;
         assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::Resume(_))), "every subtask DONE: one task again, its conversation goes on (AC-122)");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac185_a_main_tasks_press_of_its_own_runs_tasks_goes_on_in_its_conversation() {
+    store_of("api-main-resume").with(|tx| {
+        let main = made(tx, "main", "");
+        let (a, b) = (subtask(tx, &main, "a"), subtask(tx, &main, "b"));
+        // the run of the three asked a human or failed: its work and context are kept for the next press
+        let run = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("c0ffee".into()), ..Default::default() }, &[main.key.clone(), a.key.clone()], Default::default(), 2)?;
+        runs::change(tx, &run, |r| r.state = Phase::Closed)?;
+        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)), "b was not of that run: a new session");
+        ops::move_to(tx, HUMAN, &b.id, "DONE", 3)?;
+        let (tasks, w, _) = ways(tx, &main.id, &[], None, false)?;
+        assert_eq!(tasks.len(), 2);
+        assert!(matches!(&w, Ok(Way::Resume(r)) if r.agent_session.as_deref() == Some("c0ffee")), "its own run's tasks: its conversation goes on");
+        assert!(matches!(ways(tx, &main.id, &[], Some("y"), false)?.1, Ok(Way::First)), "another agent starts anew");
+        assert!(matches!(ways(tx, &main.id, &[], None, true)?.1, Ok(Way::First)), "Run from scratch starts anew");
         Ok(())
     }).unwrap();
 }

@@ -15,7 +15,7 @@ pub const LANGUAGE_MOST: usize = 40;
 /// A cause that can be removed, as agents are told it (terminum-dispatcher.md AC-157): its task waits for a human,
 /// never DONE or FAILED. A macro, so the prompts' constants (`concat!`) and the answers (`format!`) share its words.
 macro_rules! removable {
-    () => { "(another task or a prerequisite not done, a check that fails for another task's reason, missing access)" };
+    () => { "(another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access)" };
 }
 pub(crate) use removable;
 

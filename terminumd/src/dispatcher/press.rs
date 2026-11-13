@@ -43,7 +43,7 @@ pub(super) const TOGETHER: &str = concat!("Do them all in this session, one afte
 If one cannot be done at all, say why in a comment on it (execute_tool(\"add_comment\", {id, text})) and move it to FAILED (execute_tool(\"move_task\", {id, to})). Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. What is not DONE runs again at the main task's next RUN.");
 
 /// How such an agent asks a human (AC-185): one question, and what is still in progress waits with it (tasks/tools.rs).
-pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window.";
+pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task brings the answers back into this conversation. Do not wait for an answer in this window.";
 
 /// The main tasks among `tasks`, each with its subtasks there (AC-185).
 fn mains(tasks: &[Task]) -> Vec<(&Task, Vec<&str>)> {
@@ -311,9 +311,11 @@ fn chosen(tx: &rusqlite::Transaction, id: &str, also: &[String]) -> Result<Vec<T
     Ok(tasks)
 }
 
-/// A press starts anew: several tasks, or another agent than the one its session had.
+/// A press starts anew: several tasks not all of its last run, or another agent than the one its session had.
 pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, agent: Option<&str>, fresh: bool) -> bool {
-    fresh || tasks.len() > 1 || last.is_some_and(|r| agent.is_some_and(|a| a != r.agent_id))
+    // a main task's press of its own run's tasks goes on in that run's conversation (AC-185): its work is not lost
+    let its_run = last.is_some_and(|r| tasks.iter().all(|t| r.ids.contains(&t.id)));
+    fresh || (tasks.len() > 1 && !its_run) || last.is_some_and(|r| agent.is_some_and(|a| a != r.agent_id))
 }
 
 /// What the agent is told of `id`'s new budget; with several tasks, what the session has now.
@@ -375,6 +377,27 @@ pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent:
         })?;
     }
     Ok((tasks, lead, moved_from))
+}
+
+/// New work on an archived task returns it to the board (AC-122).
+pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
+    if ops::get(tx, id)?.archived_at.is_some() {
+        ops::archive(tx, crate::tasks::store::HUMAN, id, false, ops::now())?;
+    }
+    Ok(())
+}
+
+/// What the humans answered since the press's tasks asked, each task's in turn, under its ID when several go (AC-157,
+/// AC-185); None when none of them asked.
+pub(super) fn answers_of(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Option<Vec<String>>, String> {
+    let mut all: Option<Vec<String>> = None;
+    for t in tasks {
+        if let Some(said) = ops::answers(tx, &t.id)? {
+            let under = |a: String| if tasks.len() > 1 { format!("{}: {a}", t.id) } else { a };
+            all.get_or_insert_with(Vec::new).extend(said.into_iter().map(under));
+        }
+    }
+    Ok(all)
 }
 
 #[derive(Deserialize)]

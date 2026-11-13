@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
-use super::press::{again_words, also_of, facts, way, ways, Asked, Facts, Way};
+use super::press::{again_words, also_of, answers_of, bring_back, facts, way, ways, Asked, Facts, Way};
 use super::pool;
 use super::screen::Screen;
 use super::places::{ad_hoc, folder_there, launch, no_folder, place, project_named, server_of};
@@ -244,7 +244,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                 // its agent asked: what the humans answered since goes, theirs alone (AC-157), and the pressing manager's
                 // own message (terminum-agents.md AC-179), never another agent's comment
                 let asked = matches!(&w, Ok(Way::Live(r) | Way::Shell(r) | Way::Resume(r)) if r.asked);
-                let mut answers = if asked && tasks.len() == 1 { ops::answers(tx, &wanted)? } else { None };
+                let mut answers = if asked { answers_of(tx, &tasks)? } else { None };
                 if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
                     a.push(c.clone());
                 }
@@ -267,7 +267,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                 if start::resume_command(&r).is_err() {
                     return Err("Its agent has just ended: run it again.".to_string());
                 }
-                return from_shell(app, &r, &server, &pane, again, &t, kept).await;
+                return from_shell(app, &r, &server, &pane, again, &tasks, kept).await;
             }
             // its turn is taken for the words about to be typed, so nothing reads it idle meanwhile; no limit stops it:
             // it starts no process (AC-141)
@@ -288,14 +288,16 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
         }
         Way::Shell(r) | Way::Anew(r) => {
             let (server, pane) = pane_of(app, &r)?;
-            from_shell(app, &r, &server, &pane, again, &t, kept).await
+            from_shell(app, &r, &server, &pane, again, &tasks, kept).await
         }
-        Way::Resume(r) => resume(app, r, &t, again, kept).await,
+        Way::Resume(r) => resume(app, r, &tasks, again, kept).await,
     }
 }
 
-/// The conversation goes on in a new window (AC-122), on its agent's slot or waiting for one (AC-158).
-async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Press) -> Result<Value, String> {
+/// The conversation goes on in a new window (AC-122), on its agent's slot or waiting for one (AC-158), with every task
+/// of the press: a main task's subtasks go on with it (AC-185).
+async fn resume(app: &Shared, r: Run, tasks: &[Task], again: String, kept: Press) -> Result<Value, String> {
+    let t = &tasks[0];
     let Ok(line) = start::resume_command(&r) else {
         return could_not_continue(app, &r, "no conversation is known").await;
     };
@@ -303,12 +305,12 @@ async fn resume(app: &Shared, r: Run, t: &Task, again: String, kept: Press) -> R
         return could_not_continue(app, &r, "its first folder is gone").await;
     }
     let server = server_of(app, r.host.as_deref())?;
-    let new = match next_run(app, &r, t, again, kept).await? {
+    let new = match next_run(app, &r, tasks, again, kept).await? {
         Next::Run(new) => new,
         Next::Kept(kept) => return Ok(kept.answer(app, t)),
     };
-    let project = project_named(app, &t.project);
-    start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: std::slice::from_ref(&t.id), program: &r.kind, agent: &r.agent_id }).await?;
+    let (project, ids) = (project_named(app, &t.project), tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>());
+    start::open(app, start::Opening { server: &server, project: project.as_ref().map(|(i, n)| (i.as_str(), n.as_str())), folder: &r.folder, command: &line, run: &new, tasks: &ids, program: &r.kind, agent: &r.agent_id }).await?;
     start::watch(app, &new);
     Ok(json!({"run": new}))
 }
@@ -357,13 +359,14 @@ async fn what_runs(app: &Shared, server: &Server, pane: &str) -> Result<Option<S
 
 /// Only its shell remains: the agent starts there anew, by the resume when a conversation is known;
 /// the pane's queue held from the look to the start, so no key starts anything between (AC-122).
-async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, t: &Task, kept: Press) -> Result<Value, String> {
+async fn from_shell(app: &Shared, r: &Run, server: &Arc<Server>, pane: &str, again: String, tasks: &[Task], kept: Press) -> Result<Value, String> {
+    let t = &tasks[0];
     let _held = server.typing(pane).lock_owned().await;
     if let Some(program) = what_runs(app, server, pane).await? {
         return Err(format!("{program} runs in its pane."));
     }
     let line = start::resume_command(r).unwrap_or_else(|_| r.command.clone());
-    let new = match next_run(app, r, t, again, kept).await? {
+    let new = match next_run(app, r, tasks, again, kept).await? {
         Next::Run(new) => new,
         Next::Kept(kept) => return Ok(kept.answer(app, t)),
     };
@@ -404,18 +407,10 @@ async fn went_on(app: &Shared, r: &Run, t: &Task, manager: bool) -> Result<Value
     Ok(json!({"run": done}))
 }
 
-/// New work on an archived task returns it to the board (AC-122).
-fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
-    if ops::get(tx, id)?.archived_at.is_some() {
-        ops::archive(tx, HUMAN, id, false, ops::now())?;
-    }
-    Ok(())
-}
-
 /// A new run of `t` going on from `r`, which is over: its agent, unless another run took it meanwhile. What
 /// else was in `r` lets go of its session: it stays open to its own Run, and no agent there holds it.
-async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) -> Result<Next, String> {
-    let (old, key, id, task) = (r.clone(), t.key.clone(), t.id.clone(), t.clone());
+async fn next_run(app: &Shared, r: &Run, tasks: &[Task], prompt: String, kept: Press) -> Result<Next, String> {
+    let (old, all, task) = (r.clone(), tasks.to_vec(), tasks[0].clone());
     store(app, move |tx| {
         // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
         let agent = agents::in_project(tx, &old.agent_id, &old.project)?;
@@ -431,12 +426,15 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) 
             say(tx, &old, &format!("{} is no longer in the pool: this goes on with the settings it started with.", old.agent_name))?;
         }
         runs::change(tx, &old.id, |was| { was.state = Phase::Closed; was.pane_key = None; })?;
-        for other in old.ids.iter().filter(|other| **other != id) {
+        for other in old.ids.iter().filter(|other| !all.iter().any(|t| t.id == **other)) {
             ops::link(tx, super::DISPATCHER, other, None, ops::now())?;
         }
-        bring_back(tx, &id)?;
-        super::waits::remove(tx, &key)?;
-        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &[key], kept.started(), ops::now())?);
+        for t in &all {
+            bring_back(tx, &t.id)?;
+            super::waits::remove(tx, &t.key)?;
+        }
+        let keys: Vec<String> = all.iter().map(|t| t.key.clone()).collect();
+        let (from, id) = (old.id.clone(), runs::add(tx, &Run { prompt: Some(prompt), ..old }, &keys, kept.started(), ops::now())?);
         super::usage::carry(tx, &from, &id)?;
         Ok(Next::Run(id))
     }).await
