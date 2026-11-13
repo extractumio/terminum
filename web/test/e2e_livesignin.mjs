@@ -36,18 +36,23 @@ export async function liveBoardSignin(page, opts) {
     page.off("request", record);
   }
 
-  // A genuine server refusal remains a failure, with no helper retry or new login. Restore only
-  // this private page's sign-in so the next suite can reuse its context's storage as usual.
+  // The board redirects when a background read is refused. A scriptless document keeps this
+  // real API refusal about the helper; restore its sign-in for the next context's storage.
   const kept = await page.evaluate(() => localStorage.getItem("tm.session"));
+  const url = `${opts.base}/__test_unsigned_helper`;
+  const empty = (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Unsigned helper check</title>" });
+  await page.route(url, empty);
   posts = [];
   page.on("request", record);
   try {
+    await page.goto(url);
     await page.evaluate(async () => (await import("/signin.js")).forget());
     const why = await j("/api/tasks", "POST", { title: "Must be refused" }).then(() => "", (e) => e.message);
     check("AC-09 a genuinely unsigned live task write is refused once and fails the helper",
       /POST \/api\/tasks refused as signed out: Missing or expired sign-in/.test(why) && posts.length === 1 && !posts[0], `posts=${posts.length}; ${why}`);
   } finally {
     page.off("request", record);
+    await page.unroute(url, empty);
     await page.evaluate(async (s) => (await import("/signin.js")).adopt(s), kept);
   }
 }
