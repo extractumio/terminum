@@ -93,12 +93,23 @@ def files_in(folder):
 def run(command, folder):
     """The check's (exit status, process group), in a group of its own; a signal here ends it too."""
     env = {**os.environ, "TMPDIR": folder, "TMUX_TMPDIR": folder, "NODE_DISABLE_COMPILE_CACHE": "1", "TM_TEST_CHILDREN_FILE": owned_children.path(folder)}
-    child = subprocess.Popen(command, env=env, start_new_session=True)
+    child = None
+    pending = []
 
     def forward(number, _frame):
-        os.killpg(child.pid, number)
+        if child is None:
+            pending.append(number)
+        else:
+            try:
+                os.killpg(child.pid, number)
+            except ProcessLookupError:
+                pass
     for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
         signal.signal(number, forward)
+    # A child can report readiness before Popen returns: forwarding must already be installed.
+    child = subprocess.Popen(command, env=env, start_new_session=True)
+    for number in pending:
+        forward(number, None)
     return child.wait(), child.pid
 
 

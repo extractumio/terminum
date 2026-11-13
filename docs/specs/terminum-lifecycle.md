@@ -356,6 +356,12 @@ Scenario: AC-102 happy path — a run leaves nothing
   When the step passes, fails or gets a signal
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
 
+Scenario: AC-102 edge — a signal while the guarded command starts
+  Given the guarded command starts before its parent has returned from starting it
+  When the guard receives SIGTERM, SIGHUP or SIGINT
+  Then it forwards that signal to the command's own process group once that group is known, waits for the command and performs the same leftover report and cleanup
+  And a process group that has already ended needs no signal
+
 Scenario: AC-102 failure — a step that leaves something fails
   Given a step that passes but leaves a file in its folder, or a process in its private process group or working in that folder or a folder under it
   When it ends

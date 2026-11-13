@@ -13,6 +13,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, call, patch
 
 GUARD = str(Path(__file__).resolve().parents[1] / "check_step.py")
 GUARD_WAIT_S = 60   # 15 s settling, bounded native directory queries, and process termination
@@ -48,6 +49,49 @@ class OwnSockets(unittest.TestCase):
 
     def test_a_live_server_ends_with_its_run_and_its_socket_goes(self):
         self.assertFalse(self.run_child("pass"))
+
+
+class SignalForwarding(unittest.TestCase):
+    """AC-102: a ready child may run before Popen returns its process group to the guard."""
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("check_step_signal", GUARD)
+        self.step = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.step)
+
+    def test_a_signal_during_spawn_reaches_only_the_new_group(self):
+        for ended in (False, True):
+            with self.subTest(group_already_ended=ended):
+                handlers = {}
+                child = Mock(pid=421)
+                child.wait.return_value = -signal.SIGTERM
+                kill = Mock(side_effect=ProcessLookupError if ended else None)
+
+                def spawn(*args, **kwargs):
+                    for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+                        handlers[number](number, None)
+                    kill.assert_not_called()
+                    self.assertTrue(kwargs["start_new_session"])
+                    return child
+
+                with patch.object(self.step.signal, "signal", side_effect=lambda n, h: handlers.__setitem__(n, h)), \
+                     patch.object(self.step.subprocess, "Popen", side_effect=spawn), patch.object(self.step.os, "killpg", kill):
+                    self.assertEqual(self.step.run(["unused"], "unused"), (-signal.SIGTERM, child.pid))
+                self.assertEqual(kill.call_args_list, [call(child.pid, number) for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)])
+                child.wait.assert_called_once_with()
+
+    def test_a_signal_while_waiting_reaches_the_child_group(self):
+        handlers = {}
+        child = Mock(pid=422)
+
+        def wait():
+            handlers[signal.SIGINT](signal.SIGINT, None)
+            return -signal.SIGINT
+
+        child.wait.side_effect = wait
+        with patch.object(self.step.signal, "signal", side_effect=lambda n, h: handlers.__setitem__(n, h)), \
+             patch.object(self.step.subprocess, "Popen", return_value=child), patch.object(self.step.os, "killpg") as kill:
+            self.assertEqual(self.step.run(["unused"], "unused"), (-signal.SIGINT, child.pid))
+        kill.assert_called_once_with(child.pid, signal.SIGINT)
 
 
 class Guard(unittest.TestCase):
