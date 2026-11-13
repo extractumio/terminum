@@ -123,6 +123,10 @@ dialog.dlg > form { display: flex; flex-direction: column; gap: var(--sp-2); }
 :is(dialog.dlg, .footform) [role="alert"] { margin: 0; color: var(--danger-text); font-size: var(--fs-label); }
 #agentslines.bad { color: var(--danger-text); }   /* AC-99: why enabling or turning off failed */
 :is(dialog.dlg, .footform) .actions { display: flex; justify-content: flex-end; gap: var(--key-gap); margin-top: var(--sp-3); }
+/* a row of keys in groups: what is seldom pressed at the left, from .fromright the ways on, the primary last; a key
+   that cannot be undone in the danger color (docs/UI-GUIDELINES.md §3 "Dialog") */
+:is(dialog.dlg, .footform) .actions > .fromright { margin-left: auto; }
+:is(dialog.dlg, .footform) .actions > .danger:not(:disabled) { --kc: var(--danger-text); }
 
 /* popover menus: the host's ⋯, the update chip's, the board's: rows, not keys */
 :is(#hostmenu, #updmenu, .menurows) :is(button, label) { display: flex; align-items: center; gap: var(--sp-2); width: 100%; box-sizing: border-box; height: 34px; padding: 0 10px; border-radius: var(--r-xs); text-align: left; color: var(--t-fg); cursor: pointer; }

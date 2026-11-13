@@ -9,7 +9,6 @@
 /* what goes to the agent (RUN's, a schedule's): a read-only field, its look the fields' (controls.css) */
 .runprompt { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
-#runadd { margin-right: auto; }
 #runmessage { width: 100%; box-sizing: border-box; }
 /* a task's windows (New task, Run, a schedule): their parts 12px apart; Text's head 4px over its text, as a label */
 :is(#newbox, #runbox, #schedbox) > form { gap: var(--sp-3); }
@@ -28,6 +27,15 @@ details.more > :not(summary, [hidden]) ~ :not([hidden]) { margin-top: var(--sp-2
 /* its body scrolls inside the dialog's own padding: the scrollbar stands at the dialog's edge, beside what it scrolls
    and never over it, and a focused field's ring is whole at either side */
 #taskbody { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; margin-inline: calc(-1 * var(--sp-4)); padding: var(--sp-1) var(--sp-4); }
+.more summary { cursor: pointer; font-size: var(--fs-label); color: var(--muted); user-select: none; }
+.more[open] summary { margin-bottom: var(--sp-2); }
+details.more > :not(summary, [hidden]) ~ :not([hidden]) { margin-top: var(--sp-2); }   /* its lines 8px apart */
+.fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+/* its windows */
+/* its body scrolls inside the dialog's own padding: the scrollbar stands at the dialog's edge, beside what it scrolls
+   and never over it, and a focused field's ring is whole at either side */
+#taskbody { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; margin-inline: calc(-1 * var(--sp-4)); padding: var(--sp-1) var(--sp-4); }
 /* a text shown to read takes the keys only to scroll (expand.js): pressed, it shows no ring; reached by Tab, one inside it */
 :is(#taskbox, #runbox) .xbox > :is(.markdown, pre):focus { outline: none; }
 :is(#taskbox, #runbox) .xbox > :is(.markdown, pre):focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-sm); }
@@ -36,10 +44,6 @@ dialog .markdown pre { max-width: 100%; overflow-x: auto; }
 .fieldrow { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; font-size: var(--fs-label); color: var(--muted); }
 .fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-2); }
 .edithead { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-label); color: var(--muted); }
-/* a window's keys (docs/UI-GUIDELINES.md "A dialog's keys"): what is seldom pressed at the left, the ways on at the
-   right, the primary last; one that cannot be undone in the danger color */
-dialog.dlg .actions > .fromright { margin-left: auto; }
-dialog.dlg .actions > .danger:not(:disabled) { --kc: var(--danger-text); }
 /* a text that takes files (its placeholder says so): lit, a dashed edge, only under a drag (AC-106) */
 section.droparea { border-radius: var(--r-sm); }
 .droparea.dropping { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, var(--field-fill)); }
@@ -101,12 +105,12 @@ dialog .markdown img { max-width: 100%; }
 .sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--line); }
 .sechead h3 { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .sechead h3 .linklike { text-transform: none; letter-spacing: 0; }
-.seckeys { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-label); }
-.seckeys .linklike, .sechead > .linklike { color: var(--muted); font-size: var(--fs-label); }
-@media (hover: hover) { :is(.seckeys, .sechead) .linklike:hover { color: var(--t-fg); } }
+.seckeys { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); }
+/* what is seldom done in a part: words to press, muted until pointed at */
+:is(.seckeys, .sechead, .fieldvalue) > .linklike { color: var(--muted); font-size: var(--fs-label); }
+@media (hover: hover) { :is(.seckeys, .sechead, .fieldvalue) > .linklike:hover { color: var(--t-fg); } }
 .seckeys .icon { --ik: var(--icon-key-sm); }
-.fieldvalue .scratch { margin-left: auto; color: var(--muted); font-size: var(--fs-label); }   /* Run from scratch: apart from Run, at the Status line's end */
-@media (hover: hover) { .fieldvalue .scratch:hover { color: var(--t-fg); } }
+.fieldvalue .scratch { margin-left: auto; }   /* Run from scratch: apart from Run, at the Status line's end */
 @media (max-width: 860px), (pointer: coarse) { .seckeys .icon { --ik: var(--icon-key); } :is(.seckeys, .sechead, .fieldvalue) .linklike { min-height: var(--icon-key); } }
 .sublist li { align-items: flex-start; }
 .subtext { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
@@ -116,9 +120,9 @@ dialog .markdown img { max-width: 100%; }
    Dispatcher's muted and near each other, teal and slate; an agent's questions for the human in the waiting color
    (terminum-dispatcher.md AC-157) */
 .ev-comment { --kind: var(--muted); --lbar: var(--kind); }
-.ev-comment.by-human { --kind: cornflowerblue; }
-.ev-comment.by-agent { --kind: #6fa8a1; }
-.ev-comment.by-system { --kind: #8e96b5; }
+.ev-comment.by-human { --kind: var(--said-human); }
+.ev-comment.by-agent { --kind: var(--said-agent); }
+.ev-comment.by-system { --kind: var(--said-system); }
 .ev-comment.ev-questions { --kind: var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
 .ev-comment .evhead strong { color: color-mix(in srgb, var(--kind) 55%, var(--t-fg)); }
 .evasks { color: color-mix(in srgb, var(--waiting) 70%, var(--t-fg)); font-weight: var(--fw-head); }

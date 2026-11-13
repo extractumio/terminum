@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { PROJECT_HUES, el, hueColor, iconButton } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton, when } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
@@ -75,10 +75,11 @@ export async function api(path, { method = "GET", body } = {}) {
 /** A date and time as the windows say them. */
 export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
-/** A time as a conversation says it: today's by its hour, another day's with its date; `stamp` says it in full. */
+/** A time as a conversation says it: today's by its hour, this year's with its day, an older one whole. */
 export function shortStamp(at) {
-  const d = new Date(at * 1000), time = { hour: "2-digit", minute: "2-digit" };
-  return d.toLocaleString(undefined, d.toDateString() === new Date().toDateString() ? time : { month: "short", day: "numeric", ...time });
+  const d = new Date(at * 1000), now = new Date();
+  if (d.toDateString() === now.toDateString()) return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return d.getFullYear() === now.getFullYear() ? when(at) : stamp(at);
 }
 
 /** "made …, changed …": when a task was made and last changed (AC-149). */
@@ -154,6 +155,10 @@ export function fillAgents(select, agents, busy, wanted, none = null) {
   const pick = wanted.find((id) => (id === "" ? none : agents.some((a) => a.id === id))) ?? agents[0]?.id ?? "";
   fillSelect(select, [...(none ? [["", none]] : []), ...agents.map((a) => [a.id, busy(a) ? `${a.name} (${busy(a)})` : a.name])], pick);
 }
+
+/** The agent a first run starts on with nothing asked: the first of `wanted` (ids) in `agents`, else the pool's only
+ *  one; none known: null, and RUN's window asks (terminum-dispatcher.md AC-121). */
+export const knownAgent = (agents, wanted) => wanted.map((id) => agents.find((a) => a.id === id)).find(Boolean) ?? (agents.length === 1 ? agents[0] : null);
 
 /** The agent a task is on, in its color (terminum-dispatcher.md AC-138). */
 export function agentChip(agent) {

@@ -138,8 +138,8 @@ export async function webTaskWin(browser, name) {
     check("AC-149 and the rest of what was said newest first, without the questions", c.asked.rest.join("|") === "Session started.|On it.|Start with v1.|alex made it", told);
     check("AC-149 each kind of comment has its own bar: a human's cornflower blue, an agent's, Dispatcher's, the questions'",
       new Set(c.asked.bars).size === 4 && c.asked.bars[0] === "rgb(100, 149, 237)", told);
-    check("AC-149 a time is short, its date only on another day, whole in its title; a line of history names its author once",
-      c.asked.times.every(([short, whole]) => short.length < whole.length) && !/\d{4}/.test(c.asked.times[0][0]) && /\d{4}/.test(c.asked.times.at(-1)[1]) && c.asked.named === 0, told);
+    check("AC-149 a time is no longer than its whole date and time, which its title holds; a line of history names its author once",
+      c.asked.times.every(([short, whole]) => short.length <= whole.length && /\d{4}/.test(whole)) && c.asked.named === 0, told);
     check("AC-149 with nothing to react to, the task, its subtasks and what was said oldest first, the comment field last",
       c.read.parts.join() === "taskown,subtasks,activity,newcomment" && c.read.first === "Session did not start: no Enter", told);
     check("AC-149 questions asked while the window is open turn nothing round: they stand last, over the comment field",

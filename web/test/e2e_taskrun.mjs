@@ -104,8 +104,8 @@ export async function webTaskRun(browser, name) {
       await page.fill(".newcomment textarea", "Kept only");
       await footerSave.click();
       check("AC-108 Save keeps the comment and nothing runs: the window stays, its field empty, Save off",
-        await until(async () => comments.length === 1 && await page.inputValue(".newcomment textarea") === "") && comments[0].text === "Kept only" && sent.length === 1
-        && await footerSave.isDisabled() && await both() === "false,true");
+        await until(async () => comments.length === 1 && await page.inputValue(".newcomment textarea") === "" && await footerSave.isDisabled()) && comments[0].text === "Kept only" && sent.length === 1
+        && await both() === "false,true", JSON.stringify([comments, sent.length, await both()]));
       await page.fill(".newcomment textarea", "Use v2");
       refused = true;
       holdPreview = true;
@@ -144,13 +144,12 @@ export async function webTaskRun(browser, name) {
       check("AC-122 retry sends the answer and closes the task's window after a start", await until(async () => await both() === "false,false") && sent.length === 3 && sent.slice(1).every((b) => b.comment === "Use v2" && !b.fresh));
       // a first run: at once on the agent known, RUN's window for an agent's words, several tasks, no room, a refusal
       const first = async (what, press = null) => { offer = { first: true, last: "a1", ...what }; full = press; await open("API-7"); await page.fill(".newcomment textarea", "Mind the cache"); await run().click(); };
-      const before = () => sent.length;
-      let n = before();
+      let n = sent.length;
       await first({});
       check("AC-121 a first run of a task a human wrote starts at once on the agent known",
         await until(async () => sent.length === n + 1 && await both() === "false,false") && sent.at(-1).agent === "a1" && sent.at(-1).comment === "Mind the cache" && sent.at(-1).prompt_rev === "r1", JSON.stringify(sent.at(-1)));
       for (const [why, what] of [["a task an agent wrote in", { by_agent: true }], ["a task that brings its subtasks", { ids: ["API-7", "API-9"] }], ["several agents and none known", { last: null, agents: [...META.agents, { id: "a2", name: "Codex", kind: "codex", color: 1, line: "codex" }] }]]) {
-        n = before();
+        n = sent.length;
         await first(what);
         const shown = await until(() => page.isVisible("#runbox[open]"));
         check(`AC-121 RUN's window opens before a first run of ${why}: nothing is sent unread`, shown && sent.length === n && await page.inputValue("#runmessage") === "Mind the cache"
@@ -159,18 +158,18 @@ export async function webTaskRun(browser, name) {
         await close();
       }
       const room = { words: "Claude runs API-1.", close: null, queue: "Add it to Claude's queue?" };
-      n = before();
+      n = sent.length;
       await first({ agents: [{ ...META.agents[0], full: room }] });
       check("AC-169 an agent at its limit: RUN's window offers its queue, nothing waits unasked", await until(() => page.isVisible("#runbox[open]")) && await page.textContent("#rungo") === "Add to queue" && sent.length === n);
       await page.click('#runbox button[value="cancel"]');
       await close();
-      n = before();
+      n = sent.length;
       await first({}, room);
       check("AC-169 a press that finds no room after all opens RUN's window with the queue's offer", await until(() => page.isVisible("#runbox[open]")) && await page.textContent("#rungo") === "Add to queue" && sent.length === n + 1 && !sent.at(-1).queue);
       full = null;
       await page.click("#rungo");
       check("AC-169 and Add to queue is the human's yes", await until(async () => await both() === "false,false") && sent.at(-1).queue === true);
-      n = before();
+      n = sent.length;
       refusedPress = "The task's text changed: look at it again.";
       await first({});
       check("AC-121 a first run refused is said in RUN's window, with what would be sent", await until(() => page.isVisible("#runbox[open]")) && /text changed/.test(await page.textContent("#runerror")) && sent.length === n + 1);
@@ -184,7 +183,7 @@ export async function webTaskRun(browser, name) {
       const scratch = page.locator("#taskbody .taskown .scratch");
       check("AC-138 Run from scratch stands on the task's Status line, not among the window's keys, and not in RUN's window",
         await scratch.isVisible() && await page.locator("#taskacts .scratch").count() === 0 && await page.locator("#runbox").getByText("Run from scratch", { exact: true }).count() === 0);
-      n = before();
+      n = sent.length;
       await scratch.click();
       check("AC-138 it opens RUN's window to choose the agent, the comment as its message", await until(() => page.isVisible("#runbox[open]")) && await page.isVisible("#runagentrow") && await page.inputValue("#runmessage") === "Start over" && sent.length === n);
       await page.click("#rungo");

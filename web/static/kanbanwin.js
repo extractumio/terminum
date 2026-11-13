@@ -6,7 +6,7 @@
 // the comment field under it, then the task and the rest. The board and the session page open the same one (AC-150).
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, SEVERITIES, agentChip, api, button, download, fillSelect, guardQueuedRun, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
+import { $, SEVERITIES, agentChip, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
 import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
@@ -26,7 +26,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   let commentSave = null, commentRun = null, commentId = null, pendingKeys = null;
   /** Whether the window, as opened for its task, shows first what the human reacts to: kept while it stays open, so
    *  a change of the task turns no conversation round under its reader. */
-  let leading = null;
+  let leads = true;
 
   const flushKeys = () => { const paint = pendingKeys; pendingKeys = null; paint?.(); };
   const keyHeld = () => commentSave?.matches(":active") || commentRun?.matches(":active");
@@ -178,7 +178,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       const purge = t.text ? button("danger", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
         () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(true)))) : null;
       keys.remove();
-      wrap.replaceChildren(head, expandable(area), row(purge, button(purge ? "fromright" : null, "Cancel", () => refresh(true)), save));
+      wrap.replaceChildren(head, expandable(area), row(purge, button("fromright", "Cancel", () => refresh(true)), save));
       area.focus();
       addFiles(files, area, kept);
     };
@@ -274,8 +274,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
    *  null for a later run, or with none known: RUN's window asks (kanbanrun.js). */
   function firstOn(t) {
     if (t.session || t.agent?.conversation) return null;
-    const meta = getMeta(), known = [t.runs_on, meta.last_agents?.[t.project]].map((id) => meta.agents.find((a) => a.id === id)).find(Boolean);
-    return (known ?? (meta.agents.length === 1 ? meta.agents[0] : null))?.name ?? null;
+    const meta = getMeta();
+    return knownAgent(meta.agents, [t.runs_on, meta.last_agents?.[t.project]])?.name ?? null;
   }
 
   /** The window's keys at its foot, for `t` as it stands: what is seldom pressed at the left (Archive, Stop waiting,
@@ -289,7 +289,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       commentId = t.id;
     }
     const save = commentSave, run = commentRun;
-    const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS");
+    const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS"), on = firstOn(t);
     save.classList.toggle("primary", Boolean(busy));
     save.onclick = () => commentAction(n, () => keepComment(n, t));
     run.classList.toggle("primary", !busy);
@@ -298,7 +298,6 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
       save.disabled = waiting || !n.area.value.trim();
-      const on = firstOn(t);
       run.title = on ? `Run it on ${on}, with this comment` : "Run it with this comment";
       guardQueuedRun(run, t.waits);
       run.disabled ||= waiting;
@@ -350,9 +349,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const scroll = body.scrollTop, n = noteFor(t.id), kin = family(t, { openTask, newSubtask, patch, send });
-    if (leading?.id !== t.id) leading = { id: t.id, on: true };
-    const { lead, rest } = activity(t, { refresh, confirmed, leads: leading.on });
-    leading.on = Boolean(lead);
+    const { lead, rest } = activity(t, { refresh, confirmed, leads });
+    leads = Boolean(lead);
     n.area.placeholder = `${lead && t.status === "WAIT FOR HUMAN" ? "Your answer" : "Comment"}, Markdown. Drop or paste files here.`;
     // the comment being written stays where it is, never taken out: its focus, cursor and files on their way stay too
     if (n.wrap.parentNode !== body) body.replaceChildren(n.wrap);
@@ -377,9 +375,9 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     }
     if (mine !== opening) return false;
     const anew = !box.open || shown?.id !== t.id;
+    if (anew) leads = true;
     if (!box.open) {                              // reopening is a new press target, even for the same task,
       commentId = null;
-      leading = null;
       if (!note?.uploads) note = null;            // and its comment is read from its draft again, unless files are on their way
     }
     draw(t);

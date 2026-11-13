@@ -28,7 +28,7 @@ const MARKUP = `
     <p id="runerror" role="alert" hidden></p>
     <div class="actions">
       <button id="runadd" type="button" hidden>Add agent</button>
-      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="runqueue" type="button" hidden>Add to queue</button>
       <button id="rungo" type="button" class="primary">Run</button>
     </div>

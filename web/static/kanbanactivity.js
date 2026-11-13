@@ -61,9 +61,9 @@ export function activity(t, { refresh, confirmed, leads = true }) {
     at.title = stamp(e.at);
     at.dateTime = new Date(e.at * 1000).toISOString();
     // a line of history says who did it in its own words ("alex made it"): its time alone before it
-    const named = e.kind === "comment" || !(e.text ?? "").startsWith(e.author_name);
-    const who = named ? [el("strong", null, e.author_name)] : [];
-    head.append(...(e.kind === "comment" ? [...who, at] : [at, ...who]));
+    const who = el("strong", null, e.author_name);
+    if (e.kind === "comment") head.append(who, at);
+    else head.append(at, ...((e.text ?? "").startsWith(e.author_name) ? [] : [who]));
     // an agent's questions for the human: answered in a comment, then Run (terminum-dispatcher.md AC-157)
     if (e.questions) head.append(el("span", "evasks", "asks you"));
     if (e.edited_at) head.append(el("span", "evedited", `edited ${shortStamp(e.edited_at)}`));

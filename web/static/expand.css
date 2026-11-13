@@ -5,6 +5,9 @@
    as wide as a task's window, a text field and lines across. sheets.css lets a phone's sheet hold it. */
 .xbox { position: relative; display: flex; flex-direction: column; min-width: 0; }
 .xbox > * { flex: 1 1 auto; }                    /* the key stands apart (absolute): no flex item */
+/* a text shown to read takes the keys only to scroll (expand.js): pressed, it shows no ring; reached by Tab, one inside it */
+.xbox > :is(.markdown, pre):focus { outline: none; }
+.xbox > :is(.markdown, pre):focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-sm); }
 .xbox:not(:has(> :not(.xkey, [hidden]))) { display: none; }   /* nothing shown in it (the bookmark bar's quote, closed) */
 .xkey { --ik: var(--icon-key-sm); position: absolute; right: 6px; bottom: 6px; z-index: 1; }
 .xbox:not(.full) > textarea:not([hidden]) ~ .xkey { right: 20px; }   /* the grip keeps its corner */

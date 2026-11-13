@@ -5,7 +5,7 @@
 // project's (AC-140), said here; the agent dropped on, or the last chosen, already picked: one press. Several tasks
 // go by their numbers; what each says shows here first. Dropped on another agent, a conversation goes on there.
 // Run in a task's window starts at once, this window unopened, when nothing is left for the human to choose (AC-122).
-import { $, AT_LIMIT, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
+import { $, AT_LIMIT, THIS_MAC, api, fillAgents, knownAgent, onSend, showError } from "./kanbanutil.js";
 import { oneAtATime } from "./dialogs.js";
 import { taskBoxes } from "./taskboxes.js";
 
@@ -82,7 +82,7 @@ export function runWindow({ addAgent, noFolder, done }) {
   const settled = () => {
     const first = fresh || offer.first;
     if (limit() || (!first && offer.moved) || (first && (offer.by_agent || offer.ids.length > 1))) return false;
-    return !first || offer.agents.length === 1 || [preferred, offer.last].some((id) => offer.agents.some((a) => a.id === id));
+    return !first || Boolean(knownAgent(offer.agents, [preferred, offer.last]));
   };
 
   /** Opens it for `list`, on `agent` if chosen: true when a run started, else false; a refusal throws terminumd's
@@ -128,15 +128,16 @@ export function runWindow({ addAgent, noFolder, done }) {
     return new Promise((resolve) => { answer = resolve; });
   }
 
-  /** Run; `toQueue`: Add to queue beside the key that closes an idle holder. A press that finds no room where the
-   *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). Sent once, on
-   *  every path (the key, Enter, ⌘Enter): never while Run is off or terminumd answers (AC-165). */
+  /** The press as terminumd takes it; `toQueue`: the human agreed to the queue. */
   function press(toQueue) {
     const first = fresh || offer.first, full = limit();
     const queue = toQueue || Boolean(full && !full.close);
     // going on, it is its session's agent, or the one it was dropped on (AC-138)
     return api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev, how: way } });
   }
+  /** Run; `toQueue`: Add to queue beside the key that closes an idle holder. A press that finds no room where the
+   *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). Sent once, on
+   *  every path (the key, Enter, ⌘Enter): never while Run is off or terminumd answers (AC-165). */
   const send = oneAtATime(box, async (toQueue) => {
     try {
       const started = await press(toQueue);
