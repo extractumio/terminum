@@ -135,15 +135,12 @@ fn ac138_a_press_starts_anew_with_several_or_another_agent() {
     store_of("api-anew").with(|tx| {
         let t = made(tx, "one", "");
         let on_x = Run { agent_id: "x".into(), ..Default::default() };
-        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), &[], Some("x"), false));
-        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), &[], None, false));
-        assert!(starts_anew(std::slice::from_ref(&t), Some(&on_x), &[], Some("y"), false));
-        assert!(starts_anew(&[t.clone(), t.clone()], None, &[], None, false));
-        let held = Run { id: "r1".into(), ids: vec![t.id.clone()], ..on_x.clone() };
-        let newest = [Some("r1".to_string()), Some("r1".to_string())];
-        assert!(!starts_anew(&[t.clone(), t.clone()], Some(&held), &newest, None, false), "its own run's tasks go on in its conversation (AC-185)");
-        assert!(starts_anew(&[t.clone(), t.clone()], Some(&held), &[Some("r1".into()), Some("r2".into())], None, false), "one run alone since: anew");
-        assert!(starts_anew(std::slice::from_ref(&t), None, &[], None, true));
+        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), false, Some("x"), false));
+        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), false, None, false));
+        assert!(starts_anew(std::slice::from_ref(&t), Some(&on_x), false, Some("y"), false));
+        assert!(starts_anew(&[t.clone(), t.clone()], None, false, None, false));
+        assert!(!starts_anew(&[t.clone(), t.clone()], Some(&on_x), true, None, false), "its own run's tasks go on in its conversation (AC-185)");
+        assert!(starts_anew(std::slice::from_ref(&t), None, false, None, true));
         Ok(())
     }).unwrap();
 }

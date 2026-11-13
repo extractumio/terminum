@@ -73,11 +73,11 @@ impl Marks {
             for (key, id) in rows(tx, "SELECT session_key, slug FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
                 sessions.entry(key).or_default().push(id);
             }
-            let attention = rows(tx, "SELECT t.slug, t.status,
-                    COALESCE((SELECT author != 'human' FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), 0),
-                    COALESCE((SELECT e.text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.rowid > (SELECT max(m.rowid) FROM events m WHERE m.task = t.id AND m.kind = 'move') ORDER BY e.rowid DESC LIMIT 1),
-                        (SELECT e.text FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.rowid DESC LIMIT 1), '')
-                FROM tasks t WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+            // its last move, and why: what was said with it, else the move's own words (who moved it), never an older why
+            let attention = rows(tx, "SELECT t.slug, t.status, COALESCE(mv.author != 'human', 0),
+                    COALESCE((SELECT e.text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.at >= mv.at AND e.rowid > mv.rowid ORDER BY e.at DESC, e.rowid DESC LIMIT 1), mv.text, '')
+                FROM tasks t LEFT JOIN events mv ON mv.rowid = (SELECT e.rowid FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
+                WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
             Ok(Held { counts, sessions, attention })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
@@ -97,12 +97,7 @@ impl Marks {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.2).map(|(id, status, _, why)| {
             let first = why.lines().next().unwrap_or("");
-            // why it failed: what was said with its move there, else who moved it; never what was said of an older move
-            let words = match (status == "FAILED", first.is_empty()) {
-                (true, false) => format!("{id} failed: {first}"),
-                (true, true) => format!("{id} failed"),
-                (false, _) => format!("{id} waits for you"),
-            };
+            let words = if status != "FAILED" { format!("{id} waits for you") } else if first.is_empty() { format!("{id} failed") } else { format!("{id} failed: {first}") };
             json!({"id": id, "failed": status == "FAILED", "words": words})
         }).collect();
         json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "need": held.attention.len(), "lines": lines}).to_string()

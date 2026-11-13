@@ -50,5 +50,6 @@ export async function liveMain(page, live) {
   check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b} again`, again.head);
   check("AC-185 and all are DONE, the same conversation gone on", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 1 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
   const said = async (id) => (await task(id)).history.filter((e) => e.kind === "comment" && e.text === "FINISHES").length;
-  check("AC-185 the press's message is kept on each of its tasks", await said(main) === 1 && await said(b) === 1, `${await said(main)} ${await said(b)}`);
+  const kept = [await said(main), await said(b)];
+  check("AC-185 the press's message is kept on each of its tasks", kept[0] === 1 && kept[1] === 1, kept.join(" "));
 }

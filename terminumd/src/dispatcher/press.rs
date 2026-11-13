@@ -119,7 +119,7 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts,
         None => None,
     };
     let mut answers = Vec::new();
-    // several tasks start anew (starts_anew): what the humans answered rides in the first words
+    // several tasks starting anew (starts_anew): what the humans answered rides in the first words
     if tasks.len() > 1 {
         for t in tasks {
             if let Some(said) = ops::answers(tx, &t.id)?.filter(|said| !said.is_empty()) {
@@ -312,10 +312,9 @@ fn chosen(tx: &rusqlite::Transaction, id: &str, also: &[String]) -> Result<Vec<T
 }
 
 /// A press starts anew: several tasks not all of its last run, or another agent than the one its session had.
-pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, newest: &[Option<String>], agent: Option<&str>, fresh: bool) -> bool {
-    // a main task's press of its own run's tasks goes on in that run's conversation (AC-185): its work is not lost; a
-    // subtask run alone since has newer work than that conversation, and the press starts anew
-    let its_run = last.is_some_and(|r| tasks.iter().all(|t| r.ids.contains(&t.id)) && newest.iter().all(|n| n.as_deref() == Some(r.id.as_str())));
+/// `its_run`: each task's newest run is the first's, so a main task's press of its own run's tasks goes on in that
+/// run's conversation and its work is not lost (AC-185); a subtask run alone since has newer work, and it starts anew.
+pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, its_run: bool, agent: Option<&str>, fresh: bool) -> bool {
     fresh || (tasks.len() > 1 && !its_run) || last.is_some_and(|r| agent.is_some_and(|a| a != r.agent_id))
 }
 
@@ -361,19 +360,20 @@ pub(super) type Ways = (Vec<Task>, Result<Way, String>, Option<String>);
 /// conversation moves from, when it moves (AC-138).
 pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<Ways, String> {
     let tasks = members(tx, id, also)?;
-    let last = runs::last_of(tx, &tasks[0].key)?;
+    let mut lasts = tasks.iter().map(|t| runs::last_of(tx, &t.key)).collect::<Result<Vec<_>, _>>()?;
+    let last = lasts[0].clone();
+    let its_run = last.as_ref().is_some_and(|r| lasts.iter().all(|l| l.as_ref().is_some_and(|l| l.id == r.id)));
     let moved = moved_to(tx, &tasks, last.as_ref(), agent, fresh)?;
-    let newest = tasks.iter().map(|t| runs::last_of(tx, &t.key).map(|r| r.map(|r| r.id))).collect::<Result<Vec<_>, _>>()?;
-    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), &newest, agent, fresh);
+    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), its_run, agent, fresh);
     let moved_from = moved.as_ref().and(last.as_ref()).map(|r| r.agent_name.clone());
     let last = match moved {
         m @ Some(_) => m,
         None => last.map(|r| as_pool_has(tx, r)).transpose()?,
     };
     let lead = way(&tasks[0], last, anew);
-    for other in &tasks[1..] {
+    for (other, its) in tasks[1..].iter().zip(lasts.drain(1..)) {
         // a subtask that cannot go holds its main task's press, said as its own (AC-185)
-        way(other, runs::last_of(tx, &other.key)?, true).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
+        way(other, its, true).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
             Some(main) => format!("{}, a subtask of {main}: {why}", other.id),
             None => why,
         })?;
@@ -393,9 +393,8 @@ pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), Str
 /// agent learns which of them are open again, one a human finished meanwhile not among them.
 pub(super) fn with_open(words: String, tasks: &[Task]) -> String {
     match tasks {
-        [_] => words,
-        [first, rest @ ..] => format!("{words}\n\nIts open tasks: {}, {} (a main task last).", rest.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", "), first.id),
-        [] => words,
+        [first, rest @ ..] if !rest.is_empty() => format!("{words}\n\nIts open tasks: {}, {} (a main task last).", rest.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", "), first.id),
+        _ => words,
     }
 }
 

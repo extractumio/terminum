@@ -91,8 +91,7 @@ fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
     let Some(w) = crate::dispatcher::waits::of_task(tx, &t.key)? else {
         return Ok(());
     };
-    let agent = super::agents::in_project(tx, &w.agent, &w.project)?.map_or(w.agent, |a| a.name);
-    Err(format!("{} waits in {agent}'s queue: it starts when there is room. You can read it and comment.", t.id))
+    Err(format!("{} waits in {}'s queue: it starts when there is room. You can read it and comment.", t.id, super::agents::name_of(tx, &w.agent)?))
 }
 
 /// Refused while a human's RUN holds `t` in another session: from its start, before it has a pane, until
@@ -266,7 +265,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             "ask_human" => {
                 let id = arg(args, "id")?;
-                own(tx, who, id)?;
+                not_queued(tx, &own(tx, who, id)?)?;
                 let me = me()?;
                 ops::questions(tx, &me, id, &rules::clean(arg(args, "questions")?), at)?;
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
