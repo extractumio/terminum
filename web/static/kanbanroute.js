@@ -16,8 +16,8 @@ export function taskAddress({ windowed, needs }) {
     // one step of Back for the window, whichever tasks it showed
     if (push) history[addressed() ? "replaceState" : "pushState"]({ win: true }, "", `/kanban/${id}${location.search}`);
     needs.opened(id);
-    windowed.open(id).then(() => {
-      if (addressed() === id && windowed.shownId() !== id) history.replaceState(history.state, "", `/kanban/${windowed.shownId()}${location.search}`);
+    windowed.open(id).then((applied) => {
+      if (applied && addressed() === id && windowed.shownId() !== id) history.replaceState(history.state, "", `/kanban/${windowed.shownId()}${location.search}`);
     }, (e) => {
       say(e.message);
       history.replaceState(null, "", `/kanban/${location.search}`);
@@ -34,8 +34,8 @@ export function taskAddress({ windowed, needs }) {
     }
     const id = addressed();
     if (id) { if (!windowed.shows(id)) openTask(id, false); return; }
-    // Back with an edit not saved: asked; kept, the window keeps its address
-    if ($("taskbox").open && !await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
+    // Back cancels even an opening read; an edit not saved is asked about and keeps its address if kept.
+    if (!await windowed.tryClose()) history.pushState({ win: true }, "", `/kanban/${windowed.shownId()}${location.search}`);
   }
   addEventListener("popstate", route);
 
