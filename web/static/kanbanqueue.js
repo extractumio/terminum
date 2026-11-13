@@ -35,11 +35,6 @@ export function queueList(box, { projectName, say, refresh }) {
   const states = new Map();                         // outstanding writes keep their agent when its window changes
   const forget = (mine) => { if (mine && mine !== state && !mine.pending && !mine.error) states.delete(mine.id); };
 
-  /** The list as `queue`, drawn anew. */
-  function redraw() {
-    drawn = "";
-    draw();
-  }
   /** A change to terminumd, shown at once as `next`, so a second press counts from it and the board's read finds the
    *  list as it stands; refused, the list goes back and says why. */
   function send(path, body, next) {
@@ -48,7 +43,7 @@ export function queueList(box, { projectName, say, refresh }) {
     say("");
     mine.queue = next;
     mine.pending++;
-    redraw();
+    draw();
     const report = (words) => { mine.error = words; if (state === mine) say(words); };
     // Each intent is shown at once, but the server receives them in click order. A failed earlier write must not
     // roll back a later intent; once the tail drains, a new board read reconciles successes and refusals alike.
@@ -61,7 +56,7 @@ export function queueList(box, { projectName, say, refresh }) {
           if (mine.pending === 1) mine.queue = queue; // an intent made during the read remains optimistic
         }
       } catch (e) { report([mine.error, e.message].filter(Boolean).join(" ")); }
-      finally { mine.pending--; if (state === mine) redraw(); else forget(mine); }
+      finally { mine.pending--; if (state === mine) draw(); else forget(mine); }
     });
     return mine.tail;
   }

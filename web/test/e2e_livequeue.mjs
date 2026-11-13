@@ -55,7 +55,7 @@ export async function liveQueue(page, live) {
   await shot("queue-agent");
   await page.click(`${owl} .agqueue`);
   await page.waitForSelector("#agentbox[open]");
-  const rows = () => page.$$eval("#agentqueue .agqueued:not(.dragghost) .item", (l) => l.map((i) => i.dataset.id));
+  const rows = () => page.evaluate(() => [...document.querySelectorAll("#agentqueue .agqueued:not(.dragghost) .item")].map((i) => i.dataset.id));
   const listed = async (ids) => until(async () => (await rows()).join() === ids.join() && (await queue()).join() === ids.join(), 8000);
   check("AC-169 its key opens the agent's window at its queue", await listed([a, b, c]) && await page.isVisible("#agentqueue .agqueuelist"), JSON.stringify(await rows()));
   const fits = await page.evaluate(() => {
@@ -74,7 +74,8 @@ export async function liveQueue(page, live) {
   check("AC-169 an arrow moves a task one place", await listed([a, c, b]), JSON.stringify(await rows()));
 
   // a drag: a mouse at once; a finger rests on the row first
-  const mid = async (id) => page.$eval(`#agentqueue .item[data-id="${id}"]`, (i) => { const r = i.closest("li").getBoundingClientRect(); return { x: r.left + r.width / 3, y: r.top + r.height / 2, h: r.height }; });
+  // Query and measure together: a read may replace a row between $eval's lookup and its callback.
+  const mid = async (id) => page.evaluate((id) => { const r = document.querySelector(`#agentqueue .item[data-id="${id}"]`).closest("li").getBoundingClientRect(); return { x: r.left + r.width / 3, y: r.top + r.height / 2, h: r.height }; }, id);
   if (narrow) {
     const from = await mid(b), to = await mid(a);
     const finger = (type, at) => page.$eval("#agentqueue .agqueuelist", (list, [type, at, id]) => {

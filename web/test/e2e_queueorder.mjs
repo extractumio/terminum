@@ -55,8 +55,17 @@ export async function webQueueOrder(browser, name) {
       check("AC-169 rapid arrow clicks show both moves immediately and send one write at a time", await rows() === expected && during.calls.length === 1, JSON.stringify(during));
       await page.evaluate(() => queueFixture.show("owl", queueFixture.tasks));
       check("AC-169 a board read during pending writes cannot undo their optimistic order", await rows() === expected, await rows());
+      const focused = await page.getByRole("button", { name: "Move API-3 down", exact: true }).elementHandle();
+      await focused.focus();
       await page.evaluate(() => queueFixture.release());
       check("AC-169 both ordered writes reach the store in click order", await until(async () => (await state()).owl === expected && (await state()).calls.length === 2), JSON.stringify(await state()));
+      await page.waitForFunction(() => queueFixture.reads() > 0);
+      await page.evaluate(() => new Promise(requestAnimationFrame));
+      const confirmed = await focused.evaluate((key) => ({ connected: key.isConnected, oldHeight: key.getBoundingClientRect().height,
+        currentHeight: document.querySelector('#queue-test button[aria-label="Move API-3 down"]').getBoundingClientRect().height,
+        focused: document.activeElement?.getAttribute("aria-label") }));
+      check("AC-169 confirming the visible order keeps keyboard focus on its arrow", confirmed.focused === "Move API-3 down", JSON.stringify(confirmed));
+      await focused.dispose();
 
       // A board update lands after pointerdown. The same key must survive through its click,
       // which acts on the task's ID in the current order, rather than its rendered row index.

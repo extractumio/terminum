@@ -1087,6 +1087,7 @@ Scenario: AC-169 edge — changes while a gesture or write is pending
   When the user presses API-16's up key twice before the first write answers
   Then both moves appear at once and their writes reach terminumd in press order
   And an older board read cannot undo those moves; the list reconciles with terminumd after the writes
+  And when that read confirms the visible order, the focused arrow keeps keyboard focus
   When a board read changes the order between an arrow's press and release
   Then the arrow still clicks and moves its named task within that order
   And a refused write says why, without rolling back later queued intent or changing another agent's window
