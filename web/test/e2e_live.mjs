@@ -39,6 +39,7 @@ import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
+import { liveMain } from "./e2e_livemain.mjs";
 import { liveBoardBusy } from "./e2e_liveboardbusy.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
@@ -157,6 +158,7 @@ const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
 const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
 const QUEUE_ALONE = process.argv.includes("queue");  // the agent queue, without the scheduling suites
+const MAIN_ALONE = process.argv.includes("main");             // while working on a main task's run with its subtasks
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
 const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 const ICONS_ALONE = process.argv.includes("iconkeys");    // while working on icon keys' focus
@@ -190,7 +192,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveIconKeys]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -204,6 +206,10 @@ async function wide(browser, name) {
   }
   if (AUTO_ALONE) {
     await boards([liveAuto]);
+    return ctx;
+  }
+  if (MAIN_ALONE) {
+    await boards([liveMain]);
     return ctx;
   }
   if (POOL_ALONE) {

@@ -374,6 +374,14 @@ fn set_result(tx: &Transaction, task: &str, given: bool) -> Result<(), String> {
     tx.execute(&format!("UPDATE run_tasks SET result = ?2 WHERE task = ?1 AND run IN (SELECT r.id FROM runs r WHERE {STILL})"), (task, given)).map(|_| ()).map_err(sql)
 }
 
+/// The subtasks of task `main` not DONE that its newest run took with it: an agent finishes them first, or fails it
+/// (AC-185). Its run over, they still hold it: a subtask's own RUN going on in that conversation ends no main task.
+pub fn subtasks_open(tx: &Transaction, main: &str) -> Result<Vec<String>, String> {
+    rows(tx, "SELECT s.slug FROM tasks s JOIN run_tasks m ON m.task = s.id
+              WHERE s.parent = ?1 AND s.status <> 'DONE' AND s.archived_at IS NULL
+                AND m.run = (SELECT o.run FROM run_tasks o WHERE o.task = ?1 ORDER BY o.rowid DESC LIMIT 1) ORDER BY s.number", [main], |r| r.get(0))
+}
+
 /// The agent last chosen for a project's run, if any.
 pub fn last_agent(tx: &Transaction, project: &str) -> Result<Option<String>, String> {
     tx.query_row("SELECT agent_id FROM runs WHERE project = ?1 ORDER BY rowid DESC LIMIT 1", [project], |r| r.get(0)).optional().map_err(sql)

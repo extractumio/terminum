@@ -21,11 +21,11 @@ pub(super) const MAX_LINE: usize = 1 << 20;
 const VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-26"];
 const DEFAULT_VERSION: &str = "2025-06-18";
 
-pub const INSTRUCTIONS: &str = "terminum shows the user your plan and holds the task board. Keep a plan with your \
-own plan tool, else update_session_plan; send doing and eta_minutes at each step and every 10 \
+pub const INSTRUCTIONS: &str = "terminum shows the user your plan and task board. Keep a plan with your \
+own plan tool, else update_session_plan; send doing and eta_minutes each step and every 10 \
 minutes. Only the main agent calls update_session_plan; subagents report to it. Other tools: execute_tool(name, \
-arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before you stop. Left to \
-do: execute_tool(\"create_task\", {title, severity, text}). A tool says you are not in terminum: stop calling.";
+arguments), found by search_tools. Your task: execute_tool(\"finish_task\", {id, result}) before stopping. Left to \
+do: execute_tool(\"create_task\", {title, severity, text}), a Bug: never below P2. A tool says not in terminum: stop calling.";
 
 /// What a manager's session is told besides (AC-174): its tools are the way it acts on its project.
 pub const MANAGER_INSTRUCTIONS: &str = " You are this project's manager: search_tools also finds the tools to run its tasks on \
