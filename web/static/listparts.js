@@ -22,6 +22,11 @@ export function el(tag, cls, text) {
  *  (docs/UI-GUIDELINES.md "Focus"). */
 const noFocus = (e) => e.preventDefault();
 export const pointerKey = (b) => { b.addEventListener("mousedown", noFocus); return b; };
+/** A field in focus gives it up to the press, as to a press that takes the focus: its change comes before the key's
+ *  click (WebKit would drop it with a field the click draws anew). */
+const fieldLets = () => { const f = document.activeElement; if (f instanceof HTMLInputElement || f instanceof HTMLTextAreaElement) f.blur(); };
+/** A board's text key (or `summary`): pointerKey's, and a field in focus gives the focus up first. */
+export const textKey = (b) => { b.addEventListener("mousedown", fieldLets); return pointerKey(b); };
 
 /** A small icon button: its class, icon (and its size), label for a screen reader, tooltip; a pointer's press leaves it
  *  unfocused (pointerKey). Inside a draggable it starts no drag. */

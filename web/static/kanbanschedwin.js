@@ -3,7 +3,7 @@
 // and Paused; terminumd says its next runs, the prompt that will go, where it runs and the agent's command as it is typed, and
 // refuses what is wrong in the field's words. What was typed is not lost by a slip of Esc (terminum-kanban.md AC-133).
 import { askConfirm, oneAtATime } from "./dialogs.js";
-import { el, plural } from "./listparts.js";
+import { el, plural, textKey } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
 import { $, agentsOf, api, fillSelect, knownAgent, onlyProject, projectOptions, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
@@ -17,7 +17,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
   let editing = null, snapshot = "", days = new Set([1]), asked = 0;
   fillSelect(f.kind, KINDS, "daily");
   const dayKeys = DAY_NAMES.map((name, i) => {
-    const b = el("button", null, name);
+    const b = textKey(el("button", null, name));
     b.type = "button";
     b.addEventListener("click", () => { if (!days.delete(i)) days.add(i); if (!days.size) days.add(i); shownDays(); changedWhen(); });
     return b;

@@ -6,7 +6,7 @@
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { agentMark, agentName, metaLine } from "./nav.js";
-import { el, iconButton } from "./listparts.js";
+import { el, iconButton, textKey } from "./listparts.js";
 import { agentView, stripes } from "./kanbanagentview.js";
 import { asTyped } from "./astyped.js";
 import { slotState } from "./cardstate.js";
@@ -59,7 +59,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   /** Its rectangle: its color, name, kind, effort, its project when several are shown, and a dot for each session of what is shown; its limit counts them all. */
   function row(a) {
     const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project)), of = whose(a);
-    const b = el("button", `item agentcard${full(a) ? " busy" : ""}`);
+    const b = textKey(el("button", `item agentcard${full(a) ? " busy" : ""}`));
     b.type = "button";
     b.dataset.agent = a.id;
     const bar = el("span", `pbar${slots(a).length ? " busy" : ""}`);

@@ -4,6 +4,7 @@
 // reaches and rings them. `node web/test/e2e_live.mjs iconkeys`.
 import { check, until } from "./check.mjs";
 import { boardKit, nap, ring, tabKey } from "./boardkit.mjs";
+import { liveTextKeys } from "./e2e_livetextkeys.mjs";
 
 /** A press on `sel`, Esc for what it opened, a key typed after: Chrome lights a focused key's ring by either. */
 async function pressed(page, sel) {
@@ -38,6 +39,7 @@ export async function liveIconKeys(page, live, phone = false) {
     await page.evaluate(() => document.activeElement?.blur());
   }
   if (agent) await j(`/api/task-agents/${agent}`, "DELETE");
+  await liveTextKeys(page, live, phone);
   if (!phone) await liveListKeys(page, backToSessions);
 }
 

@@ -3,7 +3,7 @@
 // head by default and remembered by this browser; open, its cards stand on the columns' tracks, four to a row.
 // terminumd owns the schedules and says their next runs and words; every page hears of a change.
 import { askConfirm } from "./dialogs.js";
-import { el, iconButton, pointerKey, read, write } from "./listparts.js";
+import { el, iconButton, read, textKey, write } from "./listparts.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
 import { agentColor, api, button, say, statusBox } from "./kanbanutil.js";
 
@@ -20,7 +20,7 @@ export function scheduledSection({ getMeta, chosen, openTask }) {
   const add = button("textkey", "+ Schedule", () => win.open());
   add.id = "newschedule";
   add.title = "A task that runs on a cadence on one agent";
-  head.append(pointerKey(toggle), pointerKey(add));   // + Schedule stands with the head: the section may be folded
+  head.append(textKey(toggle), add);   // + Schedule stands with the head: the section may be folded
   grid.append(list);
   box.append(head, grid);
   let schedules = [], drawn = "", opened = read(OPEN_KEY) === true;
