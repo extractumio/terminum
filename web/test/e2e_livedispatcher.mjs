@@ -108,6 +108,9 @@ export async function liveDispatcher(page, opts) {
     check(`AC-122 ${was}: a human's prompt restores it in progress`, await until(async () => { const t = await j(`/api/tasks/${archived}`); return t.status === "IN PROGRESS" && !t.archived_at; }));
     check(`AC-122 ${was}: its card returns without reloading`, await until(() => page.isVisible(card(archived))));
   }
+  tmux("send-keys", "-t", archivedPane, "-l", `${archived} FINISHES`);
+  tmux("send-keys", "-t", archivedPane, "Enter");
+  check("AC-115 after restoration its agent finishes normally", await hasStatus(archived, "DONE"));
 
   // AC-121 failures of the start
   const fast = await agent("Fast", "--start fast");
