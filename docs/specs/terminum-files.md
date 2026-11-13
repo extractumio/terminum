@@ -365,7 +365,7 @@ Scenario Outline: AC-62 happy path — shortcuts in the tree
     | ⌥→ / ⌥←   | expand all / collapse all below (AC-68)         |
 
 Scenario: AC-62 edge — shortcuts stay in the panel
-  Then keys pressed in the panel never reach the terminal, and ⌘N, ⌘W, ⌘T are left to the browser; End or PageDown on an unloaded page selects the loaded target row and Delete cannot delete the previous one; ← on a file selects its folder only if the tree still shows that folder's root and no other selection came meanwhile
+  Then keys pressed in the panel never reach the terminal, and ⌘N, ⌘W, ⌘T are left to the browser; End or PageDown on an unloaded page selects the loaded target row and Delete cannot delete the previous one; ← on a file selects its folder only if the tree still shows that folder's root and no other selection came meanwhile; likewise Reveal in tree, a new or renamed item's selection and a re-root's restored cursor never replace a selection or cursor the user picked after they started, while folders opening or refreshing meanwhile do not stop them
 ```
 
 ### AC-63 — Filter [SHOULD / P1]
@@ -796,7 +796,7 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 - [x] AC-59 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`
 - [x] AC-60 — `ui/test/e2e_panel.mjs`, `cargo test termtext`
 - [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `ui/test/viewer-save.test.mjs`, `ui/test/tree-load.test.mjs`, `cargo test watcher`
-- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/tree-input.test.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
+- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/tree-input.test.mjs`, `ui/test/tree-reveal.test.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
 - [x] AC-63 — `ui/test/e2e_panel.mjs`, `cargo test listing`
 - [x] AC-64 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/pcm.test.mjs`, `web/test/e2e_liveview.mjs`, `cargo test midi`, `cargo test raw_body`
 - [x] AC-65 — `ui/test/e2e_panel.mjs`
