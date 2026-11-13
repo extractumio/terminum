@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A main task run with its subtasks, against a real private terminumd (terminum-dispatcher.md AC-185): RUN's window
 // names them all, one session does them, a subtask that cannot be done fails with its main task, and the main task's
-// next RUN runs again what is not DONE. scripts/fake_agent.py works by the real hooks and tools:
+// next RUN goes on in that conversation with what is not DONE. scripts/fake_agent.py works by the real hooks and tools:
 // `node web/test/e2e_live.mjs main chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -44,7 +44,11 @@ export async function liveMain(page, live) {
   check("AC-185 the agent's reason stands on the failed subtask", (await task(b)).history.some((e) => /It cannot be done/.test(e.text ?? "")));
 
   await page.waitForSelector(`${card(main)} .crun`);
+  const offer = await j(`/api/tasks/${main}/run?agent=${agent}`);
+  check("AC-185 run again on the same agent, its run's tasks go on in its conversation", offer.first === false && JSON.stringify(offer.ids) === JSON.stringify([main, b]), JSON.stringify({ first: offer.first, ids: offer.ids }));
   const again = await run("FINISHES");
   check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b}`, again.head);
-  check("AC-185 and all are DONE, in a new session", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 2 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
+  check("AC-185 and all are DONE, the conversation gone on in a new window", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 2 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
+  const said = async (id) => (await task(id)).history.filter((e) => e.kind === "comment" && e.text === "FINISHES").length;
+  check("AC-185 the press's message is kept on each of its tasks", await said(main) === 1 && await said(b) === 1, `${await said(main)} ${await said(b)}`);
 }

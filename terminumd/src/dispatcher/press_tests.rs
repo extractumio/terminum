@@ -135,13 +135,15 @@ fn ac138_a_press_starts_anew_with_several_or_another_agent() {
     store_of("api-anew").with(|tx| {
         let t = made(tx, "one", "");
         let on_x = Run { agent_id: "x".into(), ..Default::default() };
-        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), Some("x"), false));
-        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), None, false));
-        assert!(starts_anew(std::slice::from_ref(&t), Some(&on_x), Some("y"), false));
-        assert!(starts_anew(&[t.clone(), t.clone()], None, None, false));
-        let held = Run { ids: vec![t.id.clone()], ..on_x.clone() };
-        assert!(!starts_anew(&[t.clone(), t.clone()], Some(&held), None, false), "its own run's tasks go on in its conversation (AC-185)");
-        assert!(starts_anew(std::slice::from_ref(&t), None, None, true));
+        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), &[], Some("x"), false));
+        assert!(!starts_anew(std::slice::from_ref(&t), Some(&on_x), &[], None, false));
+        assert!(starts_anew(std::slice::from_ref(&t), Some(&on_x), &[], Some("y"), false));
+        assert!(starts_anew(&[t.clone(), t.clone()], None, &[], None, false));
+        let held = Run { id: "r1".into(), ids: vec![t.id.clone()], ..on_x.clone() };
+        let newest = [Some("r1".to_string()), Some("r1".to_string())];
+        assert!(!starts_anew(&[t.clone(), t.clone()], Some(&held), &newest, None, false), "its own run's tasks go on in its conversation (AC-185)");
+        assert!(starts_anew(&[t.clone(), t.clone()], Some(&held), &[Some("r1".into()), Some("r2".into())], None, false), "one run alone since: anew");
+        assert!(starts_anew(std::slice::from_ref(&t), None, &[], None, true));
         Ok(())
     }).unwrap();
 }
@@ -380,6 +382,9 @@ fn ac185_a_main_tasks_press_of_its_own_runs_tasks_goes_on_in_its_conversation() 
         assert!(matches!(&w, Ok(Way::Resume(r)) if r.agent_session.as_deref() == Some("c0ffee")), "its own run's tasks: its conversation goes on");
         assert!(matches!(ways(tx, &main.id, &[], Some("y"), false)?.1, Ok(Way::First)), "another agent starts anew");
         assert!(matches!(ways(tx, &main.id, &[], None, true)?.1, Ok(Way::First)), "Run from scratch starts anew");
+        let alone = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("beef".into()), ..Default::default() }, std::slice::from_ref(&a.key), Default::default(), 4)?;
+        runs::change(tx, &alone, |r| r.state = Phase::Closed)?;
+        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)), "a subtask run alone since has newer work: anew");
         Ok(())
     }).unwrap();
 }

@@ -312,9 +312,10 @@ fn chosen(tx: &rusqlite::Transaction, id: &str, also: &[String]) -> Result<Vec<T
 }
 
 /// A press starts anew: several tasks not all of its last run, or another agent than the one its session had.
-pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, agent: Option<&str>, fresh: bool) -> bool {
-    // a main task's press of its own run's tasks goes on in that run's conversation (AC-185): its work is not lost
-    let its_run = last.is_some_and(|r| tasks.iter().all(|t| r.ids.contains(&t.id)));
+pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, newest: &[Option<String>], agent: Option<&str>, fresh: bool) -> bool {
+    // a main task's press of its own run's tasks goes on in that run's conversation (AC-185): its work is not lost; a
+    // subtask run alone since has newer work than that conversation, and the press starts anew
+    let its_run = last.is_some_and(|r| tasks.iter().all(|t| r.ids.contains(&t.id)) && newest.iter().all(|n| n.as_deref() == Some(r.id.as_str())));
     fresh || (tasks.len() > 1 && !its_run) || last.is_some_and(|r| agent.is_some_and(|a| a != r.agent_id))
 }
 
@@ -362,7 +363,8 @@ pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent:
     let tasks = members(tx, id, also)?;
     let last = runs::last_of(tx, &tasks[0].key)?;
     let moved = moved_to(tx, &tasks, last.as_ref(), agent, fresh)?;
-    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), agent, fresh);
+    let newest = tasks.iter().map(|t| runs::last_of(tx, &t.key).map(|r| r.map(|r| r.id))).collect::<Result<Vec<_>, _>>()?;
+    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), &newest, agent, fresh);
     let moved_from = moved.as_ref().and(last.as_ref()).map(|r| r.agent_name.clone());
     let last = match moved {
         m @ Some(_) => m,

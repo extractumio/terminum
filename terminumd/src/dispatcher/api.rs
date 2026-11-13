@@ -235,8 +235,10 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
     let (tasks, w, again) = store(app, move |tx| {
         let (tasks, w, _) = ways(tx, &wanted, &also, agent.as_deref(), fresh)?;
         // a run that starts keeps its comment with it, in the transaction that adds it; going on, or refused, it stays, once
-        if tasks.len() == 1 && !matches!(w, Ok(Way::First)) && let Some(c) = &said {
-            by.keep(tx, &wanted, c, &attached)?;
+        if !matches!(w, Ok(Way::First)) && let Some(c) = &said && by.keep(tx, &wanted, c, &attached)?.is_some() {
+            for t in &tasks[1..] {
+                ops::comment(tx, by.by(), &t.id, c, ops::now())?;
+            }
         }
         let again = match &w {
             Ok(Way::Anew(_)) => by.first_words(tx, &tasks)?.prompt(said.as_deref()),
@@ -415,7 +417,7 @@ async fn next_run(app: &Shared, r: &Run, tasks: &[Task], prompt: String, kept: P
         // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
         let agent = agents::in_project(tx, &old.agent_id, &old.project)?;
         match &agent {
-            Some(a) => if let Some(kept) = wait_if_full(tx, a, &old.project, (&task, true), Some(&old.id), (&kept, None, &[]))? {
+            Some(a) => if let Some(kept) = wait_if_full(tx, a, &old.project, (&task, all.len() == 1), Some(&old.id), (&kept, None, &[]))? {
                 return Ok(Next::Kept(kept));
             },
             None => if let Some(full) = pool::check(tx, None, &old.project, Some(&old.id))? {
