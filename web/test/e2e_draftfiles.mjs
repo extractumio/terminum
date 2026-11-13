@@ -21,7 +21,7 @@ export async function webDraftFiles(browser, name) {
     // what terminumd answers of each file: a status, or null for no answer at all
     const files = { [LOG]: 404, [SHOT]: 200, [SLOW]: 500, [ODD]: null, [LATE]: 200 };
     const posts = [], made = [];
-    let refuse = false;
+    let refuse = null;                            // the refusal terminumd answers a save with, if any
     try {
       await page.route("**/api/task-files/*", (r) => {
         const status = files[r.request().url().split("/").pop()];
@@ -30,11 +30,11 @@ export async function webDraftFiles(browser, name) {
       await page.route("**/api/tasks/API-12", (r) => r.fulfill({ json: TASK }));
       await page.route("**/api/tasks/API-12/comments", (r) => {
         posts.push(r.request().postDataJSON());
-        return r.fulfill({ status: refuse ? 400 : 200, json: refuse ? REFUSED : {} });
+        return r.fulfill({ status: refuse ? 400 : 200, json: refuse ?? {} });
       });
       await page.route("**/api/tasks", (r) => {
         made.push(r.request().postDataJSON());
-        return r.fulfill({ status: refuse ? 400 : 200, json: refuse ? REFUSED : { ...TASK, id: "API-13" } });
+        return r.fulfill({ status: refuse ? 400 : 200, json: refuse ?? { ...TASK, id: "API-13" } });
       });
       await drawn(page);
       await page.evaluate(async (meta) => {
@@ -82,31 +82,35 @@ export async function webDraftFiles(browser, name) {
       await open();
       await page.waitForTimeout(300);
       files[LATE] = 404;
-      refuse = true;
+      refuse = { error: "Comment refused." };
+      await save();
+      check("AC-108 a SAVE refused for another reason says that reason and keeps the draft whole",
+        await until(async () => (await toast()).includes("Comment refused.")) && (await draft()).includes(LATE) && posts.length === 2);
+      refuse = REFUSED;
       await save();
       check("AC-108 a SAVE refused as a file went meanwhile names it and drops it",
         await until(async () => (await toast()).includes("late.txt: gone")) && await draft() === "With a note"
-        && JSON.stringify(await stored("tm.commentfiles.API-12")) === "[]" && posts.length === 2);
-      refuse = false;
+        && JSON.stringify(await stored("tm.commentfiles.API-12")) === "[]" && posts.length === 3);
+      refuse = null;
       await save();
-      check("AC-108 the next SAVE keeps the rest", await until(async () => posts.length === 3 && await draft() === "") && posts[2].text === "With a note" && posts[2].files.length === 0);
+      check("AC-108 the next SAVE keeps the rest", await until(async () => posts.length === 4 && await draft() === "") && posts[3].text === "With a note" && posts[3].files.length === 0);
       await close();
 
       files[LATE] = 200;
-      await page.evaluate(([log, shot, late]) => localStorage.setItem("tm.taskdraft", JSON.stringify({ title: "With files", project: "default",
-        text: `[log.txt](/api/task-files/${log})\n![shot.png](/api/task-files/${shot})\n[late.txt](/api/task-files/${late})\n`,
-        files: [{ id: log, name: "log.txt", mime: "text/plain" }, { id: shot, name: "shot.png", mime: "image/png" }, { id: late, name: "late.txt", mime: "text/plain" }] })), [LOG, SHOT, LATE]);
+      await page.evaluate(([log, shot, late, text]) => localStorage.setItem("tm.taskdraft", JSON.stringify({ title: "With files", project: "default", text,
+        files: [{ id: log, name: "log.txt", mime: "text/plain" }, { id: shot, name: "shot.png", mime: "image/png" }, { id: late, name: "late.txt", mime: "text/plain" }] })),
+      [LOG, SHOT, LATE, `${link("log.txt", LOG)}\n${link("shot.png", SHOT, true)}\n${link("late.txt", LATE)}\n`]);
       await page.evaluate(() => window.newform.open());
       const listed = () => page.$$eval("#newfiles li", (all) => all.map((li) => li.firstChild.textContent).join());
       check("AC-106 a new task's draft file gone leaves its Files and text, the window naming it",
         await until(async () => await listed() === "shot.png,late.txt") && await page.textContent("#newerror") === GONE_LOG
         && !(await page.inputValue("#newtext")).includes(LOG) && (await stored("tm.taskdraft")).files.length === 2, await listed());
       files[LATE] = 404;
-      refuse = true;
+      refuse = REFUSED;
       await page.click("#newcreate");
       check("AC-106 a Create refused as a file went meanwhile names it and drops it",
         await until(async () => (await page.textContent("#newerror")).startsWith("late.txt: gone")) && await listed() === "shot.png" && made.length === 1);
-      refuse = false;
+      refuse = null;
       await page.click("#newcreate");
       check("AC-106 the next Create keeps the rest", await until(() => made.length === 2) && JSON.stringify(made[1].files) === JSON.stringify([SHOT]));
       check("no page errors", !f.errors.length, f.errors.join(" | "));

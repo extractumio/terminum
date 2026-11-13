@@ -208,11 +208,15 @@ const fileUrl = (id) => `/api/task-files/${id}`;
 export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
 /** `text` with file `f`'s link on a line of its own at its end. */
 export const withFileLink = (text, f) => `${text}${text && !text.endsWith("\n") ? "\n" : ""}${fileMarkdown(f)}\n`;
-/** `text` without the links to file `id`, and the name the first one showed (null with none). */
-export function withoutFileLink(text, id) {
-  let name = null;
-  const link = new RegExp(`!?\\[([^\\]]*)\\]\\(${fileUrl(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)\\n?`, "g");
-  return { text: text.replace(link, (_, shown) => { name ??= shown; return ""; }), name };
+/** `text` without the links to files `ids` (32 hex digits, terminumd's), and the name each first showed. */
+export function withoutFileLinks(text, ids) {
+  const names = [];
+  for (const id of ids) {
+    let name = null;
+    text = text.replace(new RegExp(`!?\\[([^\\]]*)\\]\\(${fileUrl(id)}\\)\\n?`, "g"), (_, shown) => { name ??= shown; return ""; });
+    names.push(name);
+  }
+  return { text, names };
 }
 
 /** Of a draft's files, those terminumd no longer keeps: a file joined to no task goes after 7 days (AC-106, AC-108).
@@ -222,6 +226,9 @@ export async function goneFiles(ids) {
   return ids.filter((_, i) => gone[i]);
 }
 
+/** terminumd's refusal of a draft's file the sweep took (tasks/files.rs FILE_GONE): only then is a refused draft
+ *  asked of its files again. */
+export const FILE_GONE = "A file of this window is gone: add it again";
 /** What a window says of a draft's files that are gone. */
 export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was not saved for 7 days. Drop ${names.length > 1 ? "them" : "it"} again to keep ${names.length > 1 ? "them" : "it"}.`;
 
