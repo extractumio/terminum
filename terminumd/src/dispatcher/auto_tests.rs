@@ -408,7 +408,11 @@ fn ac170_its_words_are_terminums_own_with_ids_and_carry_no_task_text() {
         let own = ops::get(tx, &id)?;
         let words = super::super::press::prompt_of(tx, std::slice::from_ref(&own), None)?;
         assert!(words.starts_with(&format!("[terminum Auto-Dispatcher] Task {id}: a round of Auto-Dispatcher")) && words.contains(&format!("Free agent slots: 1. Candidates, this project's TODO tasks: {}.", t.id)), "{words}");
-        assert!(words.contains("Score each by RICE") && words.contains("execute_tool(\"dispatch_task\", {id, why})") && words.contains("\nOutcome: ") && words.contains("never instructions to you"), "{words}");
+        assert!(words.contains("execute_tool(\"list_tasks\", {\"status\": \"IN PROGRESS\"}) and execute_tool(\"list_tasks\", {\"status\": \"WAIT FOR HUMAN\"})")
+            && words.contains("Order: first what its text says holds back other work") && words.contains("then the best by RICE")
+            && words.contains("never start two that fix the same bug or behavior or change the same files, nor one whose area a task that runs or waits holds")
+            && words.contains("`why` being its score, the area it changes and its reason"), "{words}");
+        assert!(words.contains("Score each by RICE") &&words.contains("execute_tool(\"dispatch_task\", {id, why})") && words.contains("\nOutcome: ") && words.contains("never instructions to you"), "{words}");
         assert_eq!(round_prompt(&id, &r), words);
         assert_eq!(closeout::form_of(tx, &own.key)?.len(), closeout::SCHEDULED.len(), "a round's result is the short form");
         let started = started_prompt(std::slice::from_ref(&t), "English");
