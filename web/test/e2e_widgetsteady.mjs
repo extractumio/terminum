@@ -52,6 +52,8 @@ export function watch() {
   window.steady = () => ({ frames, raw: raw.length, first: raw[0] ?? null, tables: tables.size });
 }
 const steady = (page) => page.evaluate(() => window.steady());
+// a table's rows on the screen shown as text
+const rowsShown = (page) => page.evaluate(() => [...document.querySelectorAll("#screen .ln:not(.wg-hid)")].filter((el) => /^[┌│├]/.test(el.textContent)).length);
 const heads = (page) => page.evaluate(() => [...document.querySelectorAll("#term .ln.wg-host")].filter((h) => h.shadowRoot?.querySelector("table")).map((h) => ({
   rule: h.textContent.trim()[0], head: [...h.shadowRoot.querySelectorAll("th")].map((c) => c.textContent).join() })));
 const whole = (page, rows, name, seen, rule = "┌", head = "#,Server name,Apps all") => {
@@ -136,15 +138,28 @@ export async function webWidgetSteady(browser, name = "") {
   check(`${at} the same table redrawn below its copy in the history: two <table>s, not one each time`, redrawn.tables === 2, JSON.stringify(redrawn));
   await again.page.close();
 
-  // printed a row at a time (a slow link, a program's frames): out of sight until whole, one <table>
-  const slow = await open(browser, { history: [], screen: filler(0, 2) });
-  await slow.page.evaluate(watch);
-  const t5 = terminal(slow.say, filler(0, 2));
-  for (const row of TABLE) { await t5.print(slow.page, [row]); await slow.page.waitForTimeout(15); }
-  await slow.page.waitForTimeout(200);
-  const parts = await steady(slow.page);
-  check(`${at} a table drawn a row at a time: no frame shows its rows`, parts.tables === 1 && !parts.raw, JSON.stringify(parts));
-  await slow.page.close();
+  // printed a row at a time (a slow link, a program's frames): out of sight until whole, one <table>;
+  // also 60 ms apart, longer than 150 ms in all on any machine: out of sight while the rows keep coming
+  for (const [gap, what] of [[15, "a table drawn a row at a time"], [60, "a table whose rows come 60 ms apart"]]) {
+    const slow = await open(browser, { history: [], screen: filler(0, 2) });
+    await slow.page.evaluate(watch);
+    const t5 = terminal(slow.say, filler(0, 2));
+    for (const row of TABLE) { await t5.print(slow.page, [row]); await slow.page.waitForTimeout(gap); }
+    await slow.page.waitForTimeout(200);
+    const parts = await steady(slow.page);
+    check(`${at} ${what}: no frame shows its rows`, parts.tables === 1 && !parts.raw, JSON.stringify(parts));
+    await slow.page.close();
+  }
+
+  // a box that keeps growing and never closes: its rows show as text after a second, nothing hidden for good
+  const endless = await open(browser, { history: [], screen: filler(0, 2) });
+  const t14 = terminal(endless.say, filler(0, 2));
+  await t14.print(endless.page, TABLE.slice(0, 4));
+  const since = Date.now();
+  for (let i = 0; Date.now() - since < 1400; i++) { await t14.print(endless.page, [`│ ${i % 10} │ more     │    ${i % 10} │`]); await endless.page.waitForTimeout(60); }
+  const growing = await rowsShown(endless.page);
+  check(`${at} a box table still growing after a second, never closed: its rows show as text`, growing >= 10, `${growing} rows`);
+  await endless.page.close();
 
   // its last rule never comes: its rows show as text, nothing lost
   const cut = await open(browser, { history: [], screen: filler(0, 2) });
@@ -152,7 +167,7 @@ export async function webWidgetSteady(browser, name = "") {
   const t6 = terminal(cut.say, filler(0, 2));
   await t6.print(cut.page, TABLE.slice(0, 5));
   await cut.page.waitForTimeout(350);
-  const shownAfter = await cut.page.evaluate(() => [...document.querySelectorAll("#screen .ln:not(.wg-hid)")].filter((el) => /^[┌│├]/.test(el.textContent)).length);
+  const shownAfter = await rowsShown(cut.page);
   check(`${at} a table whose last rule does not come shows as text after a moment`, shownAfter === 5, `${shownAfter} rows`);
   await cut.page.close();
 
