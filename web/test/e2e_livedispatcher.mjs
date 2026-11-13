@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, nap, pressRun } from "./boardkit.mjs";
+import { boardKit, intoStore, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -82,15 +82,21 @@ export async function liveDispatcher(page, opts) {
   check("AC-125 and never typed in", !/fake_agent|human ran/.test(tmux("capture-pane", "-p", "-t", otherPane)));
 
   // AC-122: new work brings an archived live task back, including one already IN PROGRESS (TERM-77).
-  const archived = await task("archived WORKS");
+  const archived = await task("archived FINISHES");
   await run(archived);
-  check("AC-122 setup: its agent works", await hasStatus(archived, "IN PROGRESS", 15000));
+  check("AC-122 setup: its agent finishes and its session stays open", await hasStatus(archived, "DONE", 15000));
   const archivedPane = await paneOf(archived);
   for (const was of ["DONE", "IN PROGRESS"]) {
-    if (was === "DONE") tool(archivedPane, "move_task", { id: archived, to: "DONE" });
-    await j(`/api/tasks/${archived}/archive`, "POST", { on: true });
-    check(`AC-122 ${was}: its archived card leaves the board`, await until(async () => !(await page.$(card(archived)))));
+    if (was === "DONE") {
+      check("AC-122 a human archives the finished task", await until(async () => (await j(`/api/tasks/${archived}/archive`, "POST", { on: true })).ok));
+      await until(async () => !(await page.$(card(archived))));
+    } else {
+      // A persisted archive beside active work: the archive route refuses a held run (AC-138).
+      intoStore(opts.app, `UPDATE tasks SET archived_at = unixepoch() WHERE slug = '${archived}'`);
+      await open(`?project=${project}`);
+    }
     const before = await j(`/api/tasks/${archived}`);
+    check(`AC-122 ${was}: its persisted archive is hidden`, before.archived_at && before.status === was && !(await page.$(card(archived))));
     for (const [name, more] of [["move_task", { to: "IN PROGRESS" }], ["finish_task", { result: "Do not keep this result" }]]) {
       const said = tool(archivedPane, name, { id: archived, ...more });
       check(`AC-115 ${name} refuses an archived task`, said.includes(`${archived} is archived: a human brings it back from the Archived list.`), said);
