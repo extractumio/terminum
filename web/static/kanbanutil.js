@@ -148,6 +148,9 @@ export function fillSelect(select, options, chosen) {
   select.value = options.some(([value]) => value === chosen) ? chosen : options[0]?.[0] ?? "";
 }
 
+/** `project`'s own pool: the agents it can run (terminum-dispatcher.md AC-137). */
+export const agentsOf = (meta, project) => meta.agents.filter((a) => a.project === project);
+
 /** A project's `agents` for `select`, a busy one said so by `busy` and chosen all the same: a run waits for its
  *  room (terminum-dispatcher.md AC-158); the first of `wanted`, else the first. `none`: the label of a choice of
  *  no agent, first; "" in `wanted` picks it. */

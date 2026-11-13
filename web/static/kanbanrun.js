@@ -9,7 +9,7 @@ import { $, AT_LIMIT, THIS_MAC, api, fillAgents, knownAgent, onSend, showError }
 import { oneAtATime } from "./dialogs.js";
 import { taskBoxes } from "./taskboxes.js";
 
-/** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done(waits)`
+/** `addAgent(project)` opens the agents' window for a new one of that project; `noFolder(project, words)`: terminumd says nothing can start there; `done(waits)`
  *  after a run started, or with what it waits for. */
 export function runWindow({ addAgent, noFolder, done }) {
   taskBoxes();
@@ -161,7 +161,7 @@ export function runWindow({ addAgent, noFolder, done }) {
   onSend($("runmessage"), () => go());
   $("runagent").addEventListener("change", () => { offered = null; showAgent(); });
   $("runadd").addEventListener("click", async () => {
-    await addAgent();
+    await addAgent(offer.project);
     if (await read()) draw(true);
   });
   box.addEventListener("close", () => answer(box.returnValue === "run"));

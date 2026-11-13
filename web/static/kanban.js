@@ -256,7 +256,7 @@ function send(m) {
 const openSession = (key) => { location.href = sessionUrl(key); };
 const folds = foldedCards((id) => openTask(id));
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: () => newSession(projectOf(filters().project[0])) });
-const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
+const runs = runWindow({ addAgent: (project) => agents.add(project), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
   refreshQueue: async (id) => { const got = await load(); return got ? (got.queue?.[id] ?? []) : undefined; },
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession, readings: () => readings, openTask });
@@ -373,7 +373,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
-const newSession = sessionStarter({ getMeta: () => meta, slots: () => slots, addAgent: () => agents.add(), askFolder });
+const newSession = sessionStarter({ getMeta: () => meta, slots: () => slots, addAgent: (project) => agents.add(project), askFolder });
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(true); side.draw(); drawPool(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
 const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 /** What goes by the pool and the projects shown. */

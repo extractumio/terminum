@@ -272,9 +272,9 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   project's manager (below); a worker's agent has no tool for them.
   **Managers and workers.** The session + Session starts for a project, and a session you open
   in a project from the session list, is that project's manager (a crown on its row): beside every agent's tools, its `terminum mcp` finds tools to run the project's tasks
-  on the pool's agents (`run_task`: a worker's session does each, by Dispatcher's rules), follow
+  on its pool's agents (`run_task`: a worker's session does each, by Dispatcher's rules), follow
   them (`list_runs`, `get_task`), answer their questions and run them again (`run_task` with a
-  comment), stop them, add, change and remove the pool's agents and the project's schedules, run
+  comment), stop them, add, change and remove its pool's agents and the project's schedules, run
   a schedule now, list, read, type into and close the project's other sessions, and read its
   numbers. Every other session is a worker and neither finds nor runs these: one Dispatcher
   started for a task, one you opened by hand. What a manager makes is in force at once and

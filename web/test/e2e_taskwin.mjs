@@ -33,7 +33,7 @@ const ASKED = { ...TASK, id: "API-14", files: [], history: [
   said("a4", "system", "Dispatcher", AT - 20, "Session started."),
   said("a5", "agent", "Claude Opus", AT - 10, "v1 or v2?", { questions: true }),
 ] };
-const META = { projects: [{ id: "default", name: "Default" }], users: [{ id: "alex", name: "alex" }], sessions: [{ key: "k1", title: "api" }], agents: [{ id: "a1", name: "Claude Opus", color: 0 }], hosts: [], most_bytes: 1e7 };
+const META = { projects: [{ id: "default", name: "Default" }], users: [{ id: "alex", name: "alex" }], sessions: [{ key: "k1", title: "api" }], agents: [{ id: "a1", project: "default", name: "Claude Opus", color: 0 }], hosts: [], most_bytes: 1e7 };
 
 /** Opens the window on TASK and measures it: every box as [left, top, right, bottom], rounded. */
 const measure = (page) => page.evaluate(async (meta) => {

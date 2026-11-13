@@ -74,8 +74,8 @@ Open questions:
 | AC-128 | [SHOULD / P1] | A card shows the session's CPU, memory and running time; memory over 4 GiB warns the agent, over 8 GiB ends the session as FAILED, set globally and per project, and the window that sets them says what is measured and that nothing stops a process between two readings. |
 | AC-129 | [SHOULD / P1] | A card shows the tokens its session used; what a task's session spent stays on the task when it ends, in tokens and, where the price is known, an estimate in dollars. |
 | AC-130 | [SHOULD / P1] | All of the above hold for sessions on remote hosts; a host out of reach is said, and a lost link adds nothing to any clock. |
-| AC-137 | [MUST / P0] | The pool lists the agents terminum can start: a name, Claude Code or Codex, the command that starts it, an effort, how many may run at once, and its week's and month's limits. An agent belongs to no project, server or folder; the board is the only way terminum offers to add, change or delete one. |
-| AC-138 | [MUST / P0] | The pool stands over the board, each agent with its color, kind, effort, its week and month, and one dot per live session, blinking while it works; a task, or several chosen, dropped on an agent runs in one session with a short message; a finished task stays on its agent; a run that cannot be reached can be given up. |
+| AC-137 | [MUST / P0] | Each project has a pool of its own: the agents terminum can start in it, each a name, Claude Code or Codex, the command that starts it, an effort, how many may run at once, and its week's and month's limits. An agent is one project's and is seen, chosen and started in no other; it names no server or folder; the board is the only way terminum offers to add, change or delete one. |
+| AC-138 | [MUST / P0] | The pools of the projects shown stand over the board, each agent with its color, kind, effort, its week and month, and one dot per live session, blinking while it works; a task, or several chosen, dropped on an agent runs in one session with a short message; a finished task stays on its agent; a run that cannot be reached can be given up. |
 | AC-140 | [MUST / P0] | A project is a full path on one server: every agent of it starts there, and with no folder none starts; Default is the home folder of the Mac terminumd runs on. |
 | AC-141 | [MUST / P0] | Starting a session takes a slot of its agent and of its project; at a limit RUN starts nothing, names what holds it and offers the queue (AC-169), and an idle holder can be closed with one press; a human typing in a session is never refused. |
 | AC-142 | [SHOULD / P1] | + Session starts a project's agent with no task; Dispatcher never types in it or closes it, and it counts against both limits. |
@@ -100,7 +100,7 @@ Open questions:
 Scenario: AC-121 happy path — first run
   Given API-12 in TODO of project api, folder ~/work/api, with no session
   When the user presses Run on its card, or drops it on an agent (AC-138), or presses Run in its window where the scenario below starts nothing at once
-  Then a dialog offers the pool (AC-137), the last one chosen for that project already picked, and a press away shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
+  Then a dialog offers its project's pool (AC-137), the last one chosen for that project already picked, and a press away shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
   When the user presses Run
   Then Dispatcher opens a window after the project's last session, in that folder, with the window command of §9, a member of the project, marked with the pane option @terminum-run
   And it writes "Session started: claude in window api:4, on this Mac." on API-12 and links the pane; the card stays in TODO with a "starting" mark
@@ -181,11 +181,24 @@ Scenario: AC-121 failure — refused before starting
 
 ```gherkin
 Scenario: AC-137 happy path — adding one
-  When the user presses the [+] after the agents over the columns, or Add agent in a project's window (terminum-kanban.md AC-139)
-  Then a window asks Name (Claude Code), Kind (Claude Code or Codex), Effort, Command (claude), At once (1), Week's limit and Month's limit, in million tokens, both empty
+  Given project api shown on the board
+  When the user presses the [+] after the agents over the columns, or Add agent in api's window (terminum-kanban.md AC-139)
+  Then a window asks Project (api), Name (Claude Code), Kind (Claude Code or Codex), Effort, Command (claude), At once (1), Week's limit and Month's limit, in million tokens, both empty
   When the user keeps "Opus reviewer", Claude Code, high, "claude --model opus" and 2 at once
-  Then it stands over the columns for every page within 2 s, and across a restart, whichever project is shown
-  And nothing of it says a project, a server or a folder: those are the project's when it starts (AC-140)
+  Then it stands over api's columns for every page within 2 s, and across a restart
+  And it is api's alone: project web, shown, does not list it, and nothing of web runs on it
+  And nothing of it says a server or a folder: those are the project's when it starts (AC-140)
+
+Scenario: AC-137 happy path — the same name in two projects
+  Given api has an agent Opus reviewer
+  When the user adds Opus reviewer to web
+  Then they are two agents: each has its own command, slots, limits, sessions and spending
+
+Scenario: AC-137 edge — whose a new one is
+  Given several projects shown, or All projects
+  When the user presses the [+]
+  Then Project is not chosen, and Add with none says "An agent needs a project."
+  And an agent's window, changing it, shows its project and does not change it
 
 Scenario: AC-137 happy path — changing and deleting
   When the user presses its pencil
@@ -209,12 +222,39 @@ Scenario: AC-137 edge — a command kept as typed
   Then Command holds those characters: no "—" for "--", no “ ” for " "; a paste or a drop stays as it came
 
 Scenario: AC-137 edge — which are listed
-  Given one project or several shown, or All projects
-  Then the whole pool stands, the same list; each agent's dots are the sessions of what is shown, its limit counts all of them (AC-141)
+  Given one project shown
+  Then its pool stands over the columns, no other project's agent among them; with none: "api has no agents yet: add one to run its tasks."
+  Given several shown, or All projects
+  Then their pools stand together, each agent saying its project
+
+Scenario: AC-137 edge — every choice of an agent is of the project's own
+  Then RUN's window, + Session, a task's Agent, a new task's Agent, a schedule's Agent and Auto-Dispatcher's two agents offer the pool of that task's, schedule's or project's project alone
+  And a schedule's window offers the agents of the project chosen in it, anew when that changes
+
+Scenario: AC-137 edge — a task moves to another project
+  Given API-12 with Opus reviewer chosen as its Agent
+  When it moves to project web
+  Then it names no agent
 
 Scenario: AC-137 edge — a project deleted
   When project api is deleted
-  Then the pool does not change; its tasks stand in Default (terminum-kanban.md AC-110)
+  Then its agents stand in Default with its tasks and runs (terminum-kanban.md AC-110), and what named them still does; one whose name Default has takes a number, "Opus reviewer (2)"
+
+Scenario: AC-137 edge — a store of one pool for all projects
+  Given a store made when one pool served every project
+  When terminumd starts
+  Then each agent stands in one project: the one whose settings name it (a task's Agent, a schedule, Auto-Dispatcher's agents, a queue), else where it ran most, of two alike the later; one nothing used, where most runs were, else Default
+  And another project whose settings name it has a copy of it, which they name; a project that only ran it has none
+  And each run keeps the agent it started on, its name, color and command
+
+Scenario Outline: AC-137 failure — another project's agent
+  Given Opus reviewer of project api, and a task, a schedule or Auto-Dispatcher's settings of project web
+  When <what> names it
+  Then nothing starts or is kept, and it says "Opus reviewer is api's agent, not web's: choose one of its own."
+  Examples:
+    | what |
+    | a drop of web's task on its card, with both projects shown |
+    | a request for a run, a + Session, a task's Agent, a schedule or Auto-Dispatcher's agents |
 
 Scenario Outline: AC-137 failure — refused where it was typed
   When the user keeps <what>
@@ -223,7 +263,8 @@ Scenario Outline: AC-137 failure — refused where it was typed
     | what | words |
     | no name | An agent needs a name. |
     | a name of 41 characters | An agent's name is 40 characters at most. |
-    | a name the pool has | The pool already has an agent named Opus reviewer. |
+    | a name its project's pool has | The pool already has an agent named Opus reviewer. |
+    | no project, by a request | An agent needs a project. |
     | no command | An agent needs a command. |
     | a command of 1,001 characters | An agent's command is 1000 characters at most. |
     | a command holding a line break, another control character, or a character that hides what it reads | An agent's command is one line, with no control or invisible characters. |
@@ -966,16 +1007,16 @@ Scenario Outline: AC-144 what each outlives
 
 Scenario: AC-144 happy path — deleting one
   When a project is deleted
-  Then its tasks and runs stand in Default, and the pool does not change
+  Then its tasks, runs and agents stand in Default (AC-137)
   When an agent is deleted, its slots free
   Then tasks and runs keep the name and color they knew
   When a task is archived or its project moves
   Then neither a pane nor an agent changes by that alone
 
 Scenario: AC-144 edge — a project on another server
-  Given an agent of the pool
-  When tasks of two projects on two servers run on it
-  Then each process runs on its project's server; the agent is the same line of the pool and its limit counts both
+  Given two projects on two servers, each with an agent of the same command
+  When a task of each runs
+  Then each process runs on its project's server, on its project's agent, and each agent's limit counts its own
 ```
 
 ### AC-156 — The operator's command [MUST / P0]
@@ -1651,17 +1692,17 @@ CREATE TABLE auto_starts (task TEXT NOT NULL REFERENCES tasks, round TEXT REFERE
 
 `state`: `starting`, `asking` (its own question before the box), `typed` (the prompt is in, not yet taken), `working`, `ending` (a limit's end decided, not yet done: done again after a restart, called off by new work or Give up), `gone` (only the shell remains), `left` (a human's program runs there, or it was given up), `closed`; another label in the store is an error, not a run in a state of its own. Its clocks are seconds seen to pass, added walk by walk, so a gap adds nothing (AC-131). A restart reads them, and every other fact here, from the store. The pane option `@terminum-run <run id>` is read back just before every type, signal and close: a mismatch does nothing, drops the link and says so; a restarted server's pane has none. A run keeps the command it started with, so an agent's later change holds for its next run.
 
-**The pool.** In the store. A row is what the human wrote: the command is kept as it is and reaches tmux only as one quoted argument of the window command, run by the user's login shell. It says nothing of where: that is the project's, and a run keeps a copy of what it started with.
+**The pools.** In the store, one table, each row one project's. A row is what the human wrote: the command is kept as it is and reaches tmux only as one quoted argument of the window command, run by the user's login shell. It says nothing of where: that is its project's, and a run keeps a copy of what it started with. One rule reads an agent for a project (`agents::in_project`, `agents::chosen` for a human's or a manager's choice, which says whose it is): another project's is none, as one deleted is, so a resume goes on with the run's own command and its slot is no one's. A change never moves an agent; a deleted project's go to Default (`agents::move_to_default`).
 
 ```sql
-CREATE TABLE agents (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, kind TEXT NOT NULL CHECK (kind IN ('claude', 'codex')), command TEXT NOT NULL,
-  effort TEXT NOT NULL DEFAULT '', color INTEGER NOT NULL, at_once INTEGER NOT NULL DEFAULT 1, week_limit REAL, month_limit REAL);
+CREATE TABLE agents (id TEXT PRIMARY KEY, project TEXT NOT NULL REFERENCES projects, name TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('claude', 'codex')), command TEXT NOT NULL,
+  effort TEXT NOT NULL DEFAULT '', color INTEGER NOT NULL, at_once INTEGER NOT NULL DEFAULT 1, week_limit REAL, month_limit REAL, UNIQUE (project, name));
 ```
 
 ```text
-POST /api/task-agents {"name": "Opus reviewer", "kind": "claude", "command": "claude --model opus", "effort": "high", "at_once": 2} → {"id": "a81f"}
+POST /api/task-agents {"project": "api-id", "name": "Opus reviewer", "kind": "claude", "command": "claude --model opus", "effort": "high", "at_once": 2} → {"id": "a81f"}
 PATCH /api/task-agents/a81f {same fields}          DELETE /api/task-agents/a81f
-GET /api/tasks/meta → {"agents": [{"id": "a81f", "name": "Opus reviewer", "kind": "claude", "line": "claude --model opus --effort high", "at_once": 2, "week": {"tokens": 4800000, "limit": 40000000}, "month": {...}}], "busy": {"a81f": [{"tasks": "API-12", "state": "working", "key": "tmux:local:terminum:%7", "project": "api-id"}]}, …}
+GET /api/tasks/meta → {"agents": [{"id": "a81f", "project": "api-id", "name": "Opus reviewer", "kind": "claude", "line": "claude --model opus --effort high", "at_once": 2, "week": {"tokens": 4800000, "limit": 40000000}, "month": {...}}], "busy": {"a81f": [{"tasks": "API-12", "state": "working", "key": "tmux:local:terminum:%7", "project": "api-id"}]}, …}
 ```
 
 `kind` says whose screens and hooks the gate reads (§9); the command does not change that. The same `projects` message that tells pages of a project's change tells them of the pool's.
@@ -1770,7 +1811,7 @@ Measure first: AS-122, AS-125, AS-126, AS-127. Stage 1 rests on them; the gate's
 | Stage 1 | AC-138, AC-137, AC-121, AC-122, AC-123, AC-124, AC-125, AC-131, with `terminum-kanban.md` AC-117 | Press RUN and walk away: tasks start, wait, end and close by themselves on this Mac, and a human hears what needs them. |
 | Stage 2 | AC-126 | Time budgets: the one irreversible act on healthy work, once the walk and clocks have run for real. |
 | Stage 3 | AC-127, AC-128, AC-129, AC-130 | Subagents watched, consumption shown and limited, and all of it on remote hosts. |
-| Stage 4 | AC-140, AC-144, AC-141, AC-142, AC-143, AC-168 | A pool independent of projects, limits, sessions with no task, and what each agent spent. |
+| Stage 4 | AC-140, AC-144, AC-141, AC-142, AC-143, AC-168 | A pool for each project, limits, sessions with no task, and what each agent spent. |
 | Stage 5 | AC-158, AC-169 | Queue tasks on a busy agent, see the queue on it, order it and take tasks out. |
 | Stage 6 | AC-170 | Turn Auto-Dispatcher on for a project: TODO tasks start by themselves on free slots, picked by an agent. |
 | Stage 7 | AC-185 | Run a main task: its subtasks go with it, in one session, in the agent's order. |
@@ -1781,7 +1822,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 
 - [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
-- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
+- [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`

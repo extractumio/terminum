@@ -84,7 +84,7 @@ def main():
         call = lambda path, method="GET", body=None: api(t, secret, path, method=method, body=json.dumps(body).encode() if body is not None else None,  # noqa: E731
                                                          headers={"Content-Type": "application/json", "Origin": f"http://127.0.0.1:{PORT}"})
         project = call("/api/task-projects", "POST", {"name": "Logged", "dir": work})[1]["id"]
-        agent = call("/api/task-agents", "POST", {"name": "Fake", "kind": "claude", "command": f"python3 -I {FAKE} {BIN} --kind claude"})[1]["id"]
+        agent = call("/api/task-agents", "POST", {"project": project, "name": "Fake", "kind": "claude", "command": f"python3 -I {FAKE} {BIN} --kind claude"})[1]["id"]
         task = call("/api/tasks", "POST", {"title": "logged FINISHES", "project": project})[1]["id"]
         st, said = call(f"/api/tasks/{task}/run", "POST", {"agent": agent})
         check("setup: the task runs", st == 200, said)

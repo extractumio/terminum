@@ -1095,7 +1095,7 @@ Scenario: AC-172 happy path — what sessions spent
   And the page says that only the sessions Dispatcher started report tokens, and that dollars are an estimate at API list prices, not a subscription's bill
 
 Scenario: AC-172 happy path — the agents' limits
-  Then "Agents' limits" shows each agent of the pool: its tokens of the last 7 and 30 days, of every project, against its week's and month's limit (`terminum-dispatcher.md` AC-143), over a limit in the danger color; it says that it is not the period's
+  Then "Agents' limits" shows each agent of the pools of what is shown: its tokens of the last 7 and 30 days against its week's and month's limit (`terminum-dispatcher.md` AC-143), over a limit in the danger color; it says that it is not the period's
 
 Scenario: AC-172 edge — a model with no price
   When a session reported a model terminum knows no price for

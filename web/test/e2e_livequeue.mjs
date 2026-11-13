@@ -11,8 +11,8 @@ export async function liveQueue(page, live) {
   const shot = (name) => live.shots && page.screenshot({ path: `${live.shots}${live.shots.endsWith("-") ? "" : "/"}${name}.png` });
   const narrow = page.viewportSize().width < 860;
   const project = (await j("/api/task-projects", "POST", { name: `Queued ${narrow ? "phone" : "wide"}`, dir: live.work })).id;
-  const agent = (await j("/api/task-agents", "POST", { name: `Queue owl ${narrow ? "phone" : "wide"}`, kind: "claude", command: "claude", at_once: 1 })).id;
-  const two = (await j("/api/task-agents", "POST", { name: `Roomy ${narrow ? "phone" : "wide"}`, kind: "claude", command: "claude", at_once: 3 })).id;
+  const agent = (await j("/api/task-agents", "POST", { project, name: `Queue owl ${narrow ? "phone" : "wide"}`, kind: "claude", command: "claude", at_once: 1 })).id;
+  const two = (await j("/api/task-agents", "POST", { project, name: `Roomy ${narrow ? "phone" : "wide"}`, kind: "claude", command: "claude", at_once: 3 })).id;
   const kept = await j("/api/schedules", "POST", { title: "Yearly", body: "once a year", project, agent, cron: "0 0 1 1 *", budget_minutes: 5 });
   const made = async (title) => (await j("/api/tasks", "POST", { title, project })).id;
   const [a, b, c] = [await made("Queued first"), await made("Queued second"), await made("Queued third")];
