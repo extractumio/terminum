@@ -49,6 +49,8 @@ import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
 import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
+import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, HISTORY_ALONE,
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -150,17 +152,6 @@ const signIn = async (page) => {
   // a debug build checks the password at PBKDF2's 600,000 rounds in about a second, longer on a busy Mac
   await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
 };
-const SORT_ALONE = process.argv.includes("boardsort");
-const BOARD_ALONE = process.argv.includes("board");
-const TASKS_ALONE = process.argv.includes("boardtasks");   // while working on a task's family and its end
-const WAITING_ALONE = process.argv.includes("waiting");  // RUN before a waiting session closes, with a normal clock
-const POOL_ALONE = process.argv.includes("boardpool");     // while working on the pool and what runs on it
-const SMOKE = process.argv.includes("smoke");
-const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
-const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
-const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
-const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
-const ICONS_ALONE = process.argv.includes("iconkeys");    // while working on icon keys' focus
 const screenText = (page) => page.evaluate(() => document.getElementById("screen").innerText);
 
 async function wide(browser, name) {
