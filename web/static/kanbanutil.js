@@ -75,6 +75,12 @@ export async function api(path, { method = "GET", body } = {}) {
 /** A date and time as the windows say them. */
 export const stamp = (at) => new Date(at * 1000).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 
+/** A time as a conversation says it: today's by its hour, another day's with its date; `stamp` says it in full. */
+export function shortStamp(at) {
+  const d = new Date(at * 1000), time = { hour: "2-digit", minute: "2-digit" };
+  return d.toLocaleString(undefined, d.toDateString() === new Date().toDateString() ? time : { month: "short", day: "numeric", ...time });
+}
+
 /** "made …, changed …": when a task was made and last changed (AC-149). */
 export const madeChanged = (t) => `made ${stamp(t.created_at)}${t.updated_at > t.created_at ? ` · changed ${stamp(t.updated_at)}` : ""}`;
 

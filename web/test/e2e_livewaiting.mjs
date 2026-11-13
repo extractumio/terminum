@@ -30,9 +30,9 @@ export async function liveWaitingRun(page, opts) {
     const run = page.locator("#taskbox").getByRole("button", { name: "Run", exact: true });
     check("AC-122 WAIT FOR HUMAN holds its open session and offers RUN", waiting.status === "WAIT FOR HUMAN" && !!waiting.run_holds && !waiting.session?.closed && await run.isVisible());
     await page.fill(".newcomment textarea", "Use v2 and keep working WORKS");
-    await run.click();
-    await page.waitForSelector("#runbox[open]");
-    await page.click("#rungo");
+    await run.click();                             // at once: RUN's window has nothing to ask (AC-122)
+    await page.waitForSelector("#taskbox", { state: "hidden" });
+    check("AC-122 Run in the task's window starts at once, RUN's window unopened", !(await page.isVisible("#runbox")));
     const took = await until(async () => (await j(`/api/tasks/${id}`)).status === "IN PROGRESS", 15000);
     const continued = await j(`/api/tasks/${id}`);
     check("AC-122 the answer continues in the same open pane and conversation", took && continued.session?.key === key && continued.agent?.conversation === conversation, JSON.stringify(continued.session));

@@ -186,8 +186,8 @@
     <p id="newerror" role="alert" hidden></p>
     <div class="actions">
       <button id="newadd" type="button">Add files…</button>
-      <button id="newdiscard" type="button">Discard</button>
-      <button id="newcreate" type="button">Create</button>
+      <button id="newdiscard" type="button" class="danger">Discard</button>
+      <button id="newcreate" type="button" class="fromright">Create</button>
       <button id="newrun" type="button" class="primary" title="Create it and start it on the agent chosen">Run</button>
     </div>
   </form>
@@ -234,8 +234,8 @@
     <p id="schedby" class="colempty" hidden></p>
     <p id="schederror" role="alert" hidden></p>
     <div class="actions">
-      <button id="scheddrop" type="button" hidden>Delete</button>
-      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="scheddrop" type="button" class="danger" hidden>Delete</button>
+      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="schedok" type="button" class="primary">Save</button>
     </div>
   </form>
@@ -258,8 +258,8 @@
     <p id="agentcommandhint" class="hint">It runs with no one watching: give it the permissions its work needs here, as <code>claude --dangerously-skip-permissions</code> or <code>codex --dangerously-bypass-approvals-and-sandbox</code>. Dispatcher adds only the effort and, going on, its conversation.</p>
     <p id="agenterror" role="alert" hidden></p>
     <div class="actions">
-      <button id="agentdrop" type="button" hidden>Delete</button>
-      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="agentdrop" type="button" class="danger" hidden>Delete</button>
+      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="agentok" type="button" class="primary">Add</button>
     </div>
   </form>
@@ -294,8 +294,8 @@
     </section>
     <p id="projecterror" role="alert" hidden></p>
     <div class="actions">
-      <button id="projectdelete" type="button" hidden>Delete project</button>
-      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button id="projectdelete" type="button" class="danger" hidden>Delete project</button>
+      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="projectok" type="button" class="primary">Create</button>
     </div>
   </form>
@@ -369,7 +369,7 @@
     <p id="limitserror" role="alert" hidden></p>
     <div class="actions">
       <button id="limitsglobal" type="button">Use the global ones</button>
-      <button value="cancel" type="submit" formnovalidate>Cancel</button>
+      <button value="cancel" type="submit" class="fromright" formnovalidate>Cancel</button>
       <button id="limitsok" type="button" class="primary">Save</button>
     </div>
   </form>

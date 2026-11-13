@@ -123,23 +123,25 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   check("AC-107 its status is no field to change", !(await page.$('#taskbody .fieldgrid label:has-text("Status") select')) && /WAIT FOR HUMAN/.test(await page.textContent("#taskbody .fieldvalue")));
   check("AC-107 its history says who moved it", /moved it from TODO to WAIT FOR HUMAN/.test(await page.textContent("#taskbody .history")));
 
-  // a comment: Close keeps it, nothing moves
+  // a comment: Save keeps it, nothing moves
   await page.fill(".newcomment textarea", "Use **v2**");
+  await page.click('#taskacts button:has-text("Save")');
+  check("AC-108 Save keeps the comment, the window open and its field empty", await until(async () => await page.inputValue(".newcomment textarea") === "") && await page.isVisible("#taskbox[open]"));
   // its card pressed again as the window closes, before the close's Back lands (a popstate, later):
   // the window it opens stays, at its address
   await page.evaluate((sel) => new Promise((done) => {
     // a folded card's first press shows it whole (terminum-kanban.md AC-159): pressed until it opens
     const press = () => { const c = document.querySelector(sel); if (c.matches(".compact:not(.open)")) c.click(); c.click(); };
     document.getElementById("taskbox").addEventListener("close", () => queueMicrotask(() => { press(); done(); }), { once: true });
-    [...document.querySelectorAll("#taskacts button")].find((b) => b.textContent === "Close").click();
+    document.getElementById("taskclose").click();
   }), card(second));
   await page.waitForTimeout(800);
   check("AC-105 a card pressed as its window closes opens and stays, at its address",
     (await page.isVisible("#taskbox[open]")) && new URL(page.url()).pathname === `/kanban/${second}`, page.url());
   await within("AC-108 a comment shows as Markdown", () => page.waitForSelector("#taskbody .ev-comment .markdown strong", { timeout: 5000 }));
-  check("AC-108 Close moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
+  check("AC-108 Save moves nothing", (await inColumn("WAIT FOR HUMAN")).includes(second));
   // an edit of the text
-  await page.click('.tasktext button:has-text("Edit")');
+  await page.click('.tasktext button[aria-label="Edit"]');
   await page.fill(".tasktext textarea", "typed and not saved");
   await page.selectOption("#taskbody .fieldgrid label:has-text(\"Severity\") select", "P3");
   await page.waitForTimeout(500);
@@ -152,6 +154,7 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click("#confirmok");
   check("AC-108 a comment is deleted", await until(() => page.evaluate(() => !document.querySelector("#taskbody .ev-comment"))));
   check("AC-108 and the history says who did it", /deleted a comment/.test(await page.textContent("#taskbody .history")));
+  await page.click('.tasktext button[aria-label="Edit"]');   // Purge text stands by the text being edited
   await page.click('.tasktext button:has-text("Purge text")');
   await page.click("#confirmok");
   check("AC-109 a text is purged", await until(async () => /purged its text/.test(await page.textContent("#taskbody .history"))));

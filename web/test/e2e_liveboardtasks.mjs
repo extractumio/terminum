@@ -25,7 +25,7 @@ export async function liveBoardTasks(page, opts) {
   await page.waitForSelector(card(parent), { timeout: 8000 });
   await pressCard(page, parent);
   await page.waitForSelector("#taskbox[open]");
-  await page.click('#taskbody .subtasks button:has-text("New subtask")');
+  await page.click('#taskbody .subtasks button[aria-label="New subtask"]');
   await page.waitForSelector("#newbox[open]");
   check("AC-112 the new-task window says whose subtask it makes", await page.textContent("#newhead") === `New subtask of ${parent}`);
   check("AC-112 its project is its parent's, fixed", await page.inputValue("#newproj") === project && await page.isDisabled("#newproj"));
@@ -63,7 +63,7 @@ export async function liveBoardTasks(page, opts) {
   await until(async () => (await todo()).some((c) => c[0] === kid));
   await pressCard(page, kid);
   await page.waitForSelector("#taskbox[open]");
-  check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subtasks h3 .linklike")) && !(await page.$('#taskbody .subtasks button:has-text("New subtask")')));
+  check("AC-112 a subtask's window says its parent and offers no New subtask", await until(() => page.isVisible("#taskbody .subtasks h3 .linklike")) && !(await page.$('#taskbody .subtasks button[aria-label="New subtask"]')));
   // the subtask's window reading itself again, its answer held until its parent has opened: it draws nothing over the parent
   let release;
   const held = new Promise((r) => { release = r; }), mine = (r) => r.method() === "GET" && r.url().endsWith(`/api/tasks/${kid}`);

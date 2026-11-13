@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A task's window (AC-107, AC-108, AC-109, AC-113, AC-149): the task itself (its fields, when it was made and
-// changed, text, files), its subtasks, then its comments and history apart. A comment by a human closes with
-// CLOSE; RUN comes with Dispatcher. The board and the session page open the same one (AC-150).
+// changed, text, files), its subtasks, then its comments and history as a conversation, the comment field last,
+// its keys at the window's foot: Save keeps the comment, Run starts its agent with it at once (terminum-dispatcher.md
+// AC-122). A task that waits for its human to react (its agent's questions, a result, a failure) shows that first,
+// the comment field under it, then the task and the rest. The board and the session page open the same one (AC-150).
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
 import { $, SEVERITIES, agentChip, api, button, download, fillSelect, guardQueuedRun, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink } from "./kanbanutil.js";
@@ -18,13 +20,16 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   const box = $("taskbox"), body = $("taskbody");
   let shown = null, drawn = "", opening = 0, reading = 0;
   /** The comment being written: one field per task shown, kept through the window's redraws, with its files on
-   *  their way; Close and Run wait for them (AC-133). */
+   *  their way; Save and Run wait for them (AC-133). */
   let note = null;
   const leftWaiting = new Map();                   // the comments of tasks left while their files were on their way
-  let commentClose = null, commentRun = null, commentId = null, pendingKeys = null;
+  let commentSave = null, commentRun = null, commentId = null, pendingKeys = null;
+  /** Whether the window, as opened for its task, shows first what the human reacts to: kept while it stays open, so
+   *  a change of the task turns no conversation round under its reader. */
+  let leading = null;
 
   const flushKeys = () => { const paint = pendingKeys; pendingKeys = null; paint?.(); };
-  const keyHeld = () => commentClose?.matches(":active") || commentRun?.matches(":active");
+  const keyHeld = () => commentSave?.matches(":active") || commentRun?.matches(":active");
   // A release outside the key (or a cancelled touch) sends no click; give the footer its latest keys too.
   const released = () => {
     if (pendingKeys) requestAnimationFrame(() => { if (!keyHeld()) flushKeys(); });
@@ -96,6 +101,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     else if (t.session?.closed) value.append(el("span", "cstate closed", "session closed"));
     // the conversation RUN resumes, by its ID (terminum-dispatcher.md AC-157)
     if (t.agent?.conversation) value.append(el("span", "cconv", `conversation ${t.agent.conversation}`));
+    // a new conversation on an agent chosen in RUN's window, apart from Run: seldom wanted (terminum-dispatcher.md AC-138)
+    if ((t.session || t.agent?.conversation) && !t.waits && !t.run_holds) {
+      const anew = button("linklike scratch", "Run from scratch", () => runTask(t, true));
+      anew.title = "Start it anew on an agent you choose: its conversation is left, your comment goes with it";
+      value.append(anew);
+    }
     line.append(value);
     return line;
   }
@@ -163,18 +174,18 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       const dropped = [], kept = (file) => dropped.push(file.id);
       takesFiles(area, (list) => addFiles(list, area, kept));
       const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(true); });
+      // a secret pasted by mistake leaves the store for good by this (AC-109): seldom wanted, so only here
+      const purge = t.text ? button("danger", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
+        () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(true)))) : null;
       keys.remove();
-      wrap.replaceChildren(head, expandable(area), row(button(null, "Cancel", () => refresh(true)), save));
+      wrap.replaceChildren(head, expandable(area), row(purge, button(purge ? "fromright" : null, "Cancel", () => refresh(true)), save));
       area.focus();
       addFiles(files, area, kept);
     };
-    const edit = button("textkey", "Edit", () => startEdit());
+    const edit = iconButton("icon", "pencil", "Edit", "Edit the text", () => startEdit());
     wrap.classList.add("droparea");
     onFiles(wrap, wrap, (list) => { if (!editing) startEdit(list); }, (on) => wrap.classList.toggle("dropping", on && !editing));
-    const purge = button("textkey", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
-      () => api(`/api/tasks/${t.id}/purge`, { method: "POST" })));
     keys.append(edit);
-    if (t.text) keys.append(purge);
     wrap.append(head, t.text ? expandable(shownText) : shownText);
     return wrap;
   }
@@ -201,14 +212,13 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const draft = `tm.comment.${id}`, filesKey = `tm.commentfiles.${id}`;
     const area = editor(read(draft) ?? "", "Comment");
     area.rows = 4;
-    area.placeholder = "Comment, Markdown. Drop or paste files here.";
-    area.addEventListener("input", () => write(draft, area.value));
+    area.addEventListener("input", () => { write(draft, area.value); n.wait?.(); });   // Save: only with something to keep
     // the files of a comment being written: kept with its text, or the sweep would take them
     const wrap = el("section", "newcomment");
     wrap.append(expandable(area));
     const n = note = { id, area, wrap, uploads: 0, keys: [], dropped: () => read(filesKey) ?? [] };
     /** What was sent goes: the field is empty, the draft and its files too. */
-    n.sent = () => { write(draft, null); write(filesKey, null); area.value = area.defaultValue = ""; if (note === n) note = null; };
+    n.sent = () => { write(draft, null); write(filesKey, null); area.value = area.defaultValue = ""; };
     takesFiles(area, async (list) => {
       if (box.dataset.busy) return say("Wait until this action finishes, then add the files.");
       n.uploads += list.length;
@@ -219,20 +229,18 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
         if (!n.uploads) leftWaiting.delete(n.id);
       });
     });
-    onSend(area, () => n.keys[0]?.click());        // the Close shown now: off while its files are on their way
+    onSend(area, () => n.keys[0]?.click());        // the Save shown now: off while its files are on their way
     return n;
   }
 
-  /** Close keeps the comment once: while terminumd answers, Close and ⌘Enter send nothing more, Esc waits and the
-   *  text stands still (AC-165); refused, it stays as it was. */
-  async function keepComment(n, t, current) {
-    if (n.area.value.trim()) {
-      try {
-        await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: n.area.value, files: n.dropped() } });
-      } catch (e) { say(e.message); return; }
-      n.sent();
-    }
-    if (current()) await tryClose();               // a completed save must not close a different task opened meanwhile
+  /** Save keeps the comment once: while terminumd answers, Save and ⌘Enter send nothing more, Esc waits and the
+   *  text stands still (AC-165); refused, it stays as it was. The window stays, the comment in its conversation. */
+  async function keepComment(n, t) {
+    if (!n.area.value.trim()) return;
+    try {
+      await api(`/api/tasks/${t.id}/comments`, { method: "POST", body: { text: n.area.value, files: n.dropped() } });
+    } catch (e) { say(e.message); return; }
+    n.sent();
   }
 
   const commentWork = oneAtATime(box, (work) => work());
@@ -248,57 +256,72 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     }
   }
 
-  /** The comment's keys at the window's foot, for `t` as it stands. */
-  function commentKeys(t, n) {
-    const area = n.area;
-    // A refresh keeps the keys under the press; a different task gets keys of its own.
-    if (commentId !== t.id) {
-      commentClose = button(null, "Close");
-      commentRun = button(null, "Run");
-      for (const key of [commentClose, commentRun]) key.addEventListener("click", flushKeys); // before its action handler
-      commentId = t.id;
-    }
-    const close = commentClose, run = commentRun;
-    const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS");
-    close.classList.toggle("primary", Boolean(busy));
-    close.onclick = () => commentAction(n, (current) => keepComment(n, t, current));
-    // Run: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
-    run.classList.toggle("primary", !busy);
-    run.onclick = () => commentAction(n, async (current) => {
+  /** Run with the comment being written: on in its session or its conversation, or a first run on its agent, at
+   *  once; RUN's window opens only for what is left to choose (terminum-dispatcher.md AC-122). `scratch`: a new
+   *  conversation on an agent chosen there. Started, the comment is sent and the window closes. */
+  function runTask(t, scratch = false) {
+    const n = noteFor(t.id);
+    return commentAction(n, async (current) => {
       try {
-        if (await runs.open([t], { words: area.value, files: n.dropped(), current }) !== true) return;
+        if (await runs.open([t], { words: n.area.value, files: n.dropped(), current, scratch, prefer: t.runs_on, atOnce: !scratch }) !== true) return;
       } catch (e) { say(e.message); return; }
       n.sent();
       if (current()) await tryClose();
     });
-    n.keys = [close, run];
+  }
+
+  /** The agent a first Run of `t` starts on at once, by name: its own, its project's last, the pool's only one;
+   *  null for a later run, or with none known: RUN's window asks (kanbanrun.js). */
+  function firstOn(t) {
+    if (t.session || t.agent?.conversation) return null;
+    const meta = getMeta(), known = [t.runs_on, meta.last_agents?.[t.project]].map((id) => meta.agents.find((a) => a.id === id)).find(Boolean);
+    return (known ?? (meta.agents.length === 1 ? meta.agents[0] : null))?.name ?? null;
+  }
+
+  /** The window's keys at its foot, for `t` as it stands: what is seldom pressed at the left (Archive, Stop waiting,
+   *  Give up in the danger color), Save and Run at the right. */
+  function commentKeys(t, n) {
+    // A refresh keeps the keys under the press; a different task gets keys of its own.
+    if (commentId !== t.id) {
+      commentSave = button("fromright", "Save");
+      commentRun = button(null, "Run");
+      for (const key of [commentSave, commentRun]) key.addEventListener("click", flushKeys); // before its action handler
+      commentId = t.id;
+    }
+    const save = commentSave, run = commentRun;
+    const busy = t.waits || (t.run_holds && t.status === "IN PROGRESS");
+    save.classList.toggle("primary", Boolean(busy));
+    save.onclick = () => commentAction(n, () => keepComment(n, t));
+    run.classList.toggle("primary", !busy);
+    run.onclick = () => runTask(t);
+    n.keys = [save, run];
     n.wait = () => {
       const waiting = n.uploads > 0 || Boolean(box.dataset.busy);
-      close.disabled = waiting;
-      run.title = "";
+      save.disabled = waiting || !n.area.value.trim();
+      const on = firstOn(t);
+      run.title = on ? `Run it on ${on}, with this comment` : "Run it with this comment";
       guardQueuedRun(run, t.waits);
       run.disabled ||= waiting;
     };
     n.wait();
-    close.title = "Keep the comment and close: nothing moves, the session hears nothing";
+    save.title = "Keep the comment: nothing moves, the session hears nothing";
     // its run cannot be reached or is no longer wanted: its tasks fail, the window stays (terminum-dispatcher.md AC-138)
-    const giveUp = t.run_holds ? button(null, "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
+    const giveUp = t.run_holds ? button("danger", "Give up", () => confirmed(`Give up on this run? ${t.run_holds} go to FAILED. Dispatcher lets go of its window, which stays open, and an agent in it may go on.`, "Give up",
       () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }))) : null;
     // a RUN waiting for its agent's room is called off by this; the task stays where it is (AC-158)
     const stopWaiting = t.waits ? button(null, "Stop waiting", () => api(`/api/tasks/${t.id}/give-up`, { method: "POST" }).then(() => refresh(), (e) => say(e.message))) : null;
     if (stopWaiting) stopWaiting.title = `Run waits for ${t.waits}: call it off, nothing starts`;
     // a task nobody needs leaves the board by this (AC-118); it stands where it stood when it comes back
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
-    shelve.classList.add("evenleft");
     // its keys at the window's foot, in sight while the task scrolls above them
     const acts = $("taskacts"), paint = () => {
-      for (const key of [...acts.children]) if (key !== close && key !== run) key.remove();
-      if (close.parentNode !== acts) acts.append(close);
-      close.before(...[t.run_holds ? null : shelve, giveUp, stopWaiting].filter(Boolean));
-      if (close.nextElementSibling !== run) close.after(run);
+      for (const key of [...acts.children]) if (key !== save && key !== run) key.remove();
+      if (save.parentNode !== acts) acts.append(save);
+      save.before(...[t.run_holds ? null : shelve, stopWaiting, giveUp].filter(Boolean));
+      if (save.nextElementSibling !== run) save.after(run);
     };
     // A pressed footer key keeps its place until the click or cancellation.
-    pendingKeys = keyHeld() ? () => { if (close.isConnected && box.open) paint(); } : null;
+    pendingKeys = keyHeld() ? () => { if (save.isConnected && box.open) paint(); } : null;
     if (!pendingKeys) paint();
   }
 
@@ -327,10 +350,18 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     drawn = JSON.stringify(t);
     $("tasktitle").textContent = `${t.id} ${t.title}`;
     const scroll = body.scrollTop, n = noteFor(t.id), kin = family(t, { openTask, newSubtask, patch, send });
+    if (leading?.id !== t.id) leading = { id: t.id, on: true };
+    const { lead, rest } = activity(t, { refresh, confirmed, leads: leading.on });
+    leading.on = Boolean(lead);
+    n.area.placeholder = `${lead && t.status === "WAIT FOR HUMAN" ? "Your answer" : "Comment"}, Markdown. Drop or paste files here.`;
     // the comment being written stays where it is, never taken out: its focus, cursor and files on their way stay too
     if (n.wrap.parentNode !== body) body.replaceChildren(n.wrap);
     for (const c of [...body.children]) if (c !== n.wrap) c.remove();
-    n.wrap.before(own(t), kin, activity(t, { refresh, confirmed }));
+    // what the human reacts to first and the field to answer in under it, then the task and the rest; else read in order
+    if (lead) {
+      n.wrap.before(lead);
+      n.wrap.after(own(t), rest, kin);
+    } else n.wrap.before(own(t), kin, rest);
     commentKeys(t, n);
     body.scrollTop = scroll;
   }
@@ -345,12 +376,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       throw e;
     }
     if (mine !== opening) return false;
+    const anew = !box.open || shown?.id !== t.id;
     if (!box.open) {                              // reopening is a new press target, even for the same task,
       commentId = null;
+      leading = null;
       if (!note?.uploads) note = null;            // and its comment is read from its draft again, unless files are on their way
     }
     draw(t);
     if (!box.open) box.showModal();
+    if (anew) body.scrollTop = 0;                 // a task opened is read from its start
     return true;
   }
 

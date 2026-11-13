@@ -287,9 +287,13 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   program of yours (SECURITY.md).
   A task's ID is its project's letters and number, TERM-7: the letters come from the project's
   folder and can be changed in its window; an old ID (T-12) and the 8 characters its window shows
-  beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,
-  Add existing, Make it a subtask, × to take one out), then its comments and history, newest first
-  (press Newest first to turn them); a card shows its subtasks as boxes in their status's color.
+  beside its dates still find it. A task's window shows the task, then its subtasks (+ for a new
+  one, Add existing, Make it a subtask, × to take one out), then its comments and history as a
+  conversation, oldest first, each comment's bar in the color of who wrote it, and the comment
+  field last. Save keeps your comment; Run starts the agent with it at once (RUN's window opens
+  only when something is left to choose); Run from scratch stands on the Status line. A task that
+  waits for you (its agent's questions, a result, a failure) shows that first, with the field to
+  answer under it; a card shows its subtasks as boxes in their status's color.
   Run on a task with subtasks takes those not DONE into the same session: its agent does them one
   after another in the order it decides, the main task last; one that cannot be done fails with
   its main task, and Run on the main task again runs what is not DONE. Auto-Dispatch does the same.

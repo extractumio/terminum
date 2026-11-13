@@ -159,7 +159,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
     },
     async edit_conflict() {
       const id = await make("two editors", { text: "first words" }); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
-      await page.click('.tasktext button:has-text("Edit")'); await page.fill(".tasktext textarea", "my long edit");
+      await page.click('.tasktext button[aria-label="Edit"]'); await page.fill(".tasktext textarea", "my long edit");
       await j(`/api/tasks/${id}`, "PATCH", { text: "someone else's words" });
       await page.click('.tasktext button:has-text("Save")'); await nap(500);
       const text = (await j(`/api/tasks/${id}`)).text;
@@ -169,7 +169,7 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
     },
     async unsaved_edit_asks() {
       const id = await make("an edit not saved", { text: "words" }); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
-      await page.click('.tasktext button:has-text("Edit")'); await page.fill(".tasktext textarea", "half a thought");
+      await page.click('.tasktext button[aria-label="Edit"]'); await page.fill(".tasktext textarea", "half a thought");
       await page.keyboard.press("Escape"); await nap(300);
       check("Esc with an edit not saved asks", await isOpen("#confirmbox"));
       await page.keyboard.press("Escape"); await nap(300);
@@ -312,7 +312,7 @@ ${"z".repeat(400)}
       const id = await make("comment kept"); await page.goto(`${base}/kanban/${id}`); await page.waitForSelector("#taskbox[open]"); await nap(300);
       await page.fill(".newcomment textarea", "long thought");
       await page.route(`**/api/tasks/${id}/comments`, (r) => r.abort());
-      await page.click('#taskacts button:has-text("Close")'); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
+      await page.click('#taskacts button:has-text("Save")'); await nap(400); await page.unroute(`**/api/tasks/${id}/comments`);
       check("a comment lost to the network stays typed, the window open", await isOpen("#taskbox") && await page.inputValue(".newcomment textarea") === "long thought");
       await page.reload(); await page.waitForSelector("#taskbox[open]"); await nap(300);
       check("  and survives a reload", await page.inputValue(".newcomment textarea") === "long thought");

@@ -45,7 +45,7 @@ export async function liveBoardIds(page, opts) {
   await page.goto(`${base}/kanban/${now.id}`);
   await page.waitForSelector("#taskbox[open]");
 
-  // AC-149: the task, its subtasks, what was said of it: apart; comments newest first, turned by a key
+  // AC-149: the task, its subtasks, what was said of it: apart; with nothing to react to, oldest first
   await j(`/api/tasks/${now.id}/comments`, "POST", { text: "older word" });
   await nap(1100);                                  // a second apart: their times differ
   const said = await j(`/api/tasks/${now.id}/comments`, "POST", { text: "newer word" });
@@ -58,11 +58,9 @@ export async function liveBoardIds(page, opts) {
   check("AC-149 the task says its key's start, when it was made and changed", new RegExp(`^${now.uid} · made .+ · changed `).test(await page.textContent("#taskbody .taskstamps")), await page.textContent("#taskbody .taskstamps"));
   const order = () => page.$$eval("#taskbody .history > li", (l) => l.map((x) => x.textContent));
   const comments = () => page.$$eval("#taskbody .history > li.ev-comment", (l) => l.map((x) => x.textContent));
-  check("AC-149 newest first", await until(async () => (await comments())[0]?.includes("newer word") && /changed a comment/.test((await order())[0])), JSON.stringify((await order()).slice(0, 2)));
+  check("AC-149 oldest first, as it was said", await until(async () => (await comments()).at(-1)?.includes("newer word") && /made it/.test((await order())[0]) && /changed a comment/.test((await order()).at(-1))), JSON.stringify(await order()));
   check("AC-149 a changed comment says when it was edited", (await order()).some((t) => t.includes("older word, changed") && /edited /.test(t)));
-  await page.click('#taskbody .activity button:has-text("Newest first")');
-  check("AC-149 the key turns the order, and says it", await until(async () => /made it/.test((await order())[0] ?? "")) && await page.isVisible('#taskbody .activity button:has-text("Oldest first")'));
-  await page.click('#taskbody .activity button:has-text("Oldest first")');
+  check("AC-149 no key turns the order", await page.locator("#taskbody .activity .sechead button").count() === 0);
   if (shots) await page.screenshot({ path: path.join(shots, "task-parts.png") });
   await page.click("#taskclose");
 

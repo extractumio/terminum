@@ -4,6 +4,7 @@
 // for room only once the human agrees (AC-169, AC-158); where is the
 // project's (AC-140), said here; the agent dropped on, or the last chosen, already picked: one press. Several tasks
 // go by their numbers; what each says shows here first. Dropped on another agent, a conversation goes on there.
+// Run in a task's window starts at once, this window unopened, when nothing is left for the human to choose (AC-122).
 import { $, AT_LIMIT, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
 import { oneAtATime } from "./dialogs.js";
 import { taskBoxes } from "./taskboxes.js";
@@ -13,7 +14,7 @@ import { taskBoxes } from "./taskboxes.js";
 export function runWindow({ addAgent, noFolder, done }) {
   taskBoxes();
   const box = $("runbox");
-  let tasks = [], offer = null, attached = [], fresh = false, dropped = null, way = "run", answer = () => {}, opened = 0;
+  let tasks = [], offer = null, attached = [], fresh = false, dropped = null, preferred = null, way = "run", answer = () => {}, opened = 0;
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
@@ -47,7 +48,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     // what goes is terminumd's word: a main task brings its subtasks still to do (AC-185)
     const names = offer.ids.join(", "), on = offer.agents.find((a) => a.id === dropped);
     $("runhead").textContent = moved ? `Continue ${names} on ${moved.to}` : !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
-    const words = none ? "No agents yet." : moved ? `Its conversation ${moved.conversation} with ${moved.from} goes on on ${moved.to}, with what you write. Run from scratch starts anew.`
+    const words = none ? "No agents yet." : moved ? `Its conversation ${moved.conversation} with ${moved.from} goes on on ${moved.to}, with what you write. Run from scratch, in its window, starts anew.`
       : first ? "" : "It goes on in its session, with what you write.";
     said = words;
     // the agent it was dropped on is said by the title; what a person checks only sometimes stays folded
@@ -57,10 +58,9 @@ export function runWindow({ addAgent, noFolder, done }) {
     $("runwhat").open = offer.by_agent || offer.ids.length > 1;   // several, or an agent's words: read before they go (AC-121)
     $("runmarked").hidden = !offer.by_agent;
     $("runadd").hidden = !none;
-    $("runfresh").hidden = first;
     $("rungo").disabled = none;
     if (first) {
-      fillAgents($("runagent"), offer.agents, busy, [dropped, offer.last]);
+      fillAgents($("runagent"), offer.agents, busy, [dropped, preferred, offer.last]);
       $("runprompt").textContent = offer.prompt;
     }
     showAgent();
@@ -76,16 +76,28 @@ export function runWindow({ addAgent, noFolder, done }) {
     return true;
   };
 
+  /** Whether a press can go with nothing more asked: a later run, where only the human's comment goes; or a first
+   *  one of a single task no agent wrote in (an agent's words are read here before they go: AC-121), whose agent is
+   *  known (the task's own, the project's last, the pool's only one) and has room; nothing moves to another agent. */
+  const settled = () => {
+    const first = fresh || offer.first;
+    if (limit() || (!first && offer.moved) || (first && (offer.by_agent || offer.ids.length > 1))) return false;
+    return !first || offer.agents.length === 1 || [preferred, offer.last].some((id) => offer.agents.some((a) => a.id === id));
+  };
+
   /** Opens it for `list`, on `agent` if chosen: true when a run started, else false; a refusal throws terminumd's
    *  words. `words`, `files`: the comment that goes with it; `why`: what a press already found wrong; `how`: the
    *  way it was asked for, kept with its run (terminum-dispatcher.md AC-183): a card dropped on an agent unless said.
-   *  `current`: whether the caller still wants the window after its preview answers. */
-  async function open(list, { words = "", files = [], agent = null, why = "", how = agent ? "drop" : "run", current = () => true } = {}) {
+   *  `current`: whether the caller still wants the window after its preview answers. `scratch`: a new conversation,
+   *  whatever it had; `prefer`: the agent picked when none was dropped on; `atOnce`: started here, the window
+   *  unopened, when nothing is left to choose (AC-122). */
+  async function open(list, { words = "", files = [], agent = null, why = "", how = agent ? "drop" : "run", current = () => true, scratch = false, prefer = null, atOnce = false } = {}) {
     opened++;
     answer(false);                                 // one opened before it is answered: nothing ran from it
     answer = () => {};
     tasks = list;
     dropped = agent;
+    preferred = prefer;
     way = how;
     attached = files;
     $("runmessage").value = words;
@@ -94,7 +106,21 @@ export function runWindow({ addAgent, noFolder, done }) {
       noFolder(offer.project, offer.no_folder);
       return false;
     }
-    draw(false);
+    draw(scratch);
+    if (atOnce && settled()) {
+      try {
+        const started = await press(false);
+        if (!started?.full) {
+          done(started?.waits);
+          return true;
+        }
+        offered = started.full;                    // no room after all: the window offers its queue (AC-169)
+        showAgent();
+      } catch (e) {
+        if (!offer.first) throw e;                 // going on: said where Run was pressed, its comment kept there
+        why = e.message;                           // a first run refused: said here, with what would be sent
+      }
+    }
     say(why);
     box.returnValue = "";
     box.showModal();
@@ -105,12 +131,15 @@ export function runWindow({ addAgent, noFolder, done }) {
   /** Run; `toQueue`: Add to queue beside the key that closes an idle holder. A press that finds no room where the
    *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). Sent once, on
    *  every path (the key, Enter, ⌘Enter): never while Run is off or terminumd answers (AC-165). */
+  function press(toQueue) {
+    const first = fresh || offer.first, full = limit();
+    const queue = toQueue || Boolean(full && !full.close);
+    // going on, it is its session's agent, or the one it was dropped on (AC-138)
+    return api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev, how: way } });
+  }
   const send = oneAtATime(box, async (toQueue) => {
     try {
-      const first = fresh || offer.first, full = limit();
-      const queue = toQueue || Boolean(full && !full.close);
-      // going on, it is its session's agent, or the one it was dropped on (AC-138)
-      const started = await api(`/api/tasks/${tasks[0].id}/run`, { method: "POST", body: { agent: first ? $("runagent").value : dropped, close: queue ? undefined : full?.close?.run, queue, comment: $("runmessage").value, files: attached, fresh, also: others(), prompt_rev: offer.prompt_rev, how: way } });
+      const started = await press(toQueue);
       if (started?.full) {
         offered = started.full;
         showAgent();
@@ -130,7 +159,6 @@ export function runWindow({ addAgent, noFolder, done }) {
   $("runqueue").addEventListener("click", () => go(true));
   onSend($("runmessage"), () => go());
   $("runagent").addEventListener("change", () => { offered = null; showAgent(); });
-  $("runfresh").addEventListener("click", () => draw(true));
   $("runadd").addEventListener("click", async () => {
     await addAgent();
     if (await read()) draw(true);

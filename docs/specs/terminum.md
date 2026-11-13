@@ -1029,7 +1029,9 @@ Scenario: AC-173 happy path — each kind its own size
     | a list to pick from | a folder, the archived tasks | 480–720 px | 80%, 360–760 px; the list takes the rest |
     | a document | a task, the bookmarks (960 px wide at most), a session's last lines (1280) | 560–920 px for a task | 80%, 420 px at least |
   And a dialog that takes 80% of the height keeps its buttons at its foot, also when what is above them is short or empty
-  And every dialog's buttons stay at its foot, in sight while what is above them scrolls: a task's window's Archive, Close and Run under its scrolling task, a form's Save on a window shorter than its fields
+  And every dialog's buttons stay at its foot, in sight while what is above them scrolls: a task's window's Archive, Save and Run under its scrolling task, a form's Save on a window shorter than its fields
+  And a dialog's buttons are its ways on, grouped: what is seldom pressed at the left (Archive, Stop waiting, Add files, Delete), Cancel and the ways on at the right, the primary last; a button whose action cannot be undone (Delete, Discard, Give up, Purge text) is in the danger color and asks first
+  And what scrolls in a task's window keeps clear of its scrollbar: the bar stands in the window's own edge, over no key and no field; a text shown to read, pressed, shows no focus ring
 Scenario: AC-173 edge — a phone or a narrow window
   Given a phone, or a window 860 px wide or narrower
   Then every dialog is a sheet as wide as the screen less 16 px a side (AC-18); one to type in, to pick from or to read is as tall as what is in sight above the on-screen keyboard less 16 px a side, its buttons in sight; a question or a form stays as tall as its content

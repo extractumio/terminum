@@ -58,7 +58,7 @@ Open questions: none.
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
-| AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment closes with RUN or CLOSE. |
+| AC-108 | [MUST / P0] | A task holds Markdown comments with files, by humans, agents and Dispatcher; a human's comment is kept by SAVE or goes with RUN. |
 | AC-109 | [MUST / P0] | Files up to 100 MB each stay with their task: images shown, other files downloaded, nothing run; a human can purge a file or a text. |
 | AC-110 | [MUST / P0] | The session list and the board share projects; a project needs no session, its last session closing leaves it; Default holds what has no project and is no real project; deleting a project moves its sessions and tasks to Default. |
 | AC-111 | [SHOULD / P1] | Filters by severity, owner and text, and the projects chosen (AC-135), kept in the URL. |
@@ -79,7 +79,7 @@ Open questions: none.
 | AC-139 | [MUST / P0] | New project…, the last row of the project's menu, makes an empty project on its server, in a window with its name, its full folder path, a picker for it and Agents at once; a project's pencil opens the same window, with the pool's keys beside. |
 | AC-120 | [SHOULD / P1] | An agent on a remote host sees and works with its whole project through the Mac's link. |
 | AC-148 | [MUST / P0] | A task's ID is its project's letters and the project's own count (TERM-7), "S_" before them for a task a schedule made (S_TERM-8): the letters come from the project's folder and can be set; every ID a task had, and its key's start, still find it. |
-| AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history; tasks, subtasks and comments say when they were made and changed; comments come newest first, a key turns the order. |
+| AC-149 | [MUST / P0] | A task's window sets the task apart from its subtasks and from its comments and history, read as a conversation: a comment's kind shows by its bar, oldest first, the comment field last; what the human must react to (questions, a result, a failure) stands first, the field under it; tasks, subtasks and comments say when they were made and changed. |
 | AC-150 | [SHOULD / P1] | The session page counts the tasks made in the shown session, says new ones as reminders are said, lists them and opens the board's own task window. |
 
 ## 5. BDD scenarios
@@ -257,11 +257,14 @@ Scenario: AC-107 failure — refused
 ```gherkin
 Scenario: AC-108 happy path — a human's comment
   Given API-12 with the window open
-  When the user writes Markdown under Comment, drops log.txt and presses CLOSE
+  When the user writes Markdown under Comment, drops log.txt and presses SAVE
   Then the comment and file are kept, the status does not change and the session is told nothing
+  And the window stays open, its field empty, the comment in its conversation
   When the user writes "Use the v2 API" and presses RUN
   Then the comment is kept and terminum-dispatcher.md AC-122 goes on with it
-  And RUN stands only where the task can be run; CLOSE with an empty comment only closes the window
+  And RUN stands only where the task can be run; SAVE is off while the field is empty
+  When the window is closed by ×, Esc or Back with a comment not saved
+  Then nothing is kept on the task: the comment stays in this browser as that task's draft
 
 Scenario: AC-108 happy path — shown
   Then a comment shows as the Panel's Markdown (raw HTML off, javascript: links dropped, remote images not loaded), an agent's marked as the agent's and Dispatcher's as Dispatcher's
@@ -291,6 +294,7 @@ Scenario: AC-109 happy path — an agent's file
 Scenario: AC-109 happy path — a secret pasted by mistake
   When a human picks Delete on a file, or Purge on the task's text or a comment
   Then it asks, then its bytes leave the store and the folder for good, and the history keeps who did it when and the file's name
+  And Purge text stands only beside a text being edited: at the left of its Cancel and Save, in the danger color
 
 Scenario: AC-109 edge — files stay with the task
   When API-12 moves to another project or the archive
@@ -755,7 +759,7 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
 
 Scenario: AC-133 edge — closing while a task is being read
   Given a task's window open, with another read to open a task still waiting
-  When the user closes it with CLOSE, ×, Esc or Back, confirming any edit to discard
+  When the user closes it with ×, Esc or Back, confirming any edit to discard
   Then the window stays closed when that read answers
   And Back before the first read answers keeps the board without opening the window
   And Cancel on the discard question keeps the window and its edit
@@ -763,10 +767,10 @@ Scenario: AC-133 edge — closing while a task is being read
   Then that new open stands, even before the close's own Back is heard
   And the canceled read's success or failure changes neither its address nor its error message
 
-Scenario: AC-133 edge — a refresh during a Close press
+Scenario: AC-133 edge — a refresh during a Save press
   Given a task's window open with a comment draft
-  When a changed task read arrives between pressing and releasing CLOSE
-  Then that press keeps the current draft once and closes the window, including when the available actions change
+  When a changed task read arrives between pressing and releasing SAVE
+  Then that press keeps the current draft once and the window stays open, including when the available actions change
   And a refused save keeps the draft and window; a retry keeps the current draft once
   When another task opens between that press and release
   Then the release sends neither task's draft and leaves the new task open
@@ -775,9 +779,9 @@ Scenario: AC-133 edge — nothing typed is lost by a slip
   When Discard is pressed on a window with text, or Esc, × or Back on an edit not saved
   Then it asks; Cancel keeps it
   When Enter is pressed in the title
-  Then it is Create; ⌘Enter in a text is Create or CLOSE
+  Then it is Create; ⌘Enter in a text is Create or SAVE
   When Create is pressed while a file is on its way
-  Then it waits for the file; a comment's Close and Run wait for its files the same way
+  Then it waits for the file; a comment's Save and Run wait for its files the same way
   When a file lands after its draft was sent or discarded, or after another draft opened in the window
   Then it is in no other draft: a draft closed only, not ended, gets it
 
@@ -1026,18 +1030,33 @@ Scenario: AC-148 failure — a name of nothing
 ```gherkin
 Scenario: AC-149 happy path — three parts
   When the user opens API-12's window
-  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID, unbroken where it fits), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget), then Text with its keys Edit and Purge text beside the word, then Files
-  And its groups (when, status, fields, text, files) stand on one left edge, 12 px apart, each label 4 px over what it names; its fields are alike in width and height, three to a line, two on a phone; the three parts and the comment field stand a section break (24 px) apart
-  And under it SUBTASKS with its keys (AC-112), then COMMENTS · HISTORY with its own heading, the comment field and the window's keys last
-  And a comment is a card marked at its left edge, with its author, when it was written and "edited <when>" once changed (AC-108); a line of history is muted, a screen quoted in it (between ``` lines) shown as the terminal drew it, scrolling in a box of its own
+  Then the task itself stands first in a framed part: "abfed14f · made Nov 7, 2026, 4:39 PM · changed Nov 8, 2026, 9:01 PM", then Status on a line of its own (read only: the status in its color, the agent on it, what it waits for or "session closed", its conversation's ID, unbroken where it fits; at its end Run from scratch, terminum-dispatcher.md AC-122), then its fields in the new-task window's order (Project, Severity, Agent, Owner, Session, Budget), then Text, then Files
+  And Text's keys are icons in its top right corner, on the line of the word: the key to the whole window (terminum.md AC-184), then Edit; Purge text stands by the text being edited (AC-109)
+  And its groups (when, status, fields, text, files) stand on one left edge, 12 px apart, each label 4 px over what it names; its fields are alike in width and height, three to a line, two on a phone; the window's parts and the comment field stand a section break (24 px) apart
+  And under it SUBTASKS (AC-112): a + key for a new one, Add existing and Make it a subtask as words to press; then CONVERSATION with its own heading, the comment field, and the window's keys at its foot (terminum.md AC-173)
 
-Scenario: AC-149 happy path — the order
-  Then comments and history come newest first
-  When the user presses Newest first
-  Then they come oldest first and the key says Oldest first; this browser keeps the choice for every task
+Scenario: AC-149 happy path — a conversation
+  Then comments and history read oldest first, the comment field after the last of them; no key turns the order
+  And a comment is a card with a bar inside its left edge and its author's name in the color of its kind: a human's cornflower blue; an agent's and Dispatcher's muted and near each other (teal, slate); an agent's questions for the human in the waiting color, marked "asks you" (terminum-dispatcher.md AC-157)
+  And a comment says its author, when it was written and "edited <when>" once changed (AC-108): today's time alone ("10:16"), another day's with its date ("Nov 12, 10:16"), the whole date and time in its title
+  And a line of history is one muted line between the cards: its time, then its words, its author named once; a screen quoted in it (between ``` lines) is shown as the terminal drew it, scrolling in a box of its own
+  And a task opened is shown from its start
+
+Scenario: AC-149 happy path — what the human reacts to stands first
+  Given API-12 waits for its human: WAIT FOR HUMAN with its agent's questions, DONE with its agent's last comment (its result), or FAILED with the last comment of its agent or Dispatcher (why)
+  When the user opens its window
+  Then that comment stands first under its heading (Asks you, Result, Why it failed), the comment field right under it (for questions: "Your answer…"), the window's keys at its foot
+  And then the task itself, then the rest of the conversation newest first under "Earlier", then its subtasks
+  When it has no such comment, or stands in TODO or IN PROGRESS
+  Then it reads as a conversation, above
+
+Scenario: AC-149 edge — a task that changes while its window is open
+  Given API-12's window open, read as a conversation
+  When its agent asks, finishes or fails meanwhile
+  Then nothing is turned round under the reader: the new comment stands last, over the comment field; the window opened again shows it first
 
 Scenario: AC-149 edge — a subtask's window
-  Then its subtasks part says "Subtask of API-12" with Take out, and no keys that make a second level
+  Then its subtasks part says "Subtask of API-12" with Take out, words to press, and no keys that make a second level
 ```
 
 ### AC-150 — The tasks a session made [SHOULD / P1]
@@ -1216,12 +1235,12 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after CLOSE, ×, Esc and Back; a deliberate reopen), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
 - [x] AC-148 — `cargo test tasks::slugs`, `cargo test tasks::store` (an older store), `web/test/e2e_liveboardids.mjs`
-- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs`
+- [x] AC-149 — `web/test/e2e_liveboardids.mjs`, `web/test/e2e_taskwin.mjs` (the parts, the kinds' bars, what leads, a change while open)
 - [x] AC-150 — `web/test/e2e_livenotes.mjs` (counted, listed, the task window on the session page), `cargo test tasks::ops` (a restore, a server started anew)
 - [x] AC-120 — `cargo test tasks::tools` (pages, a host's file), `scripts/e2e_remote_agents.py` (get_file on a host, with files off), `scripts/e2e_remote_sshd_agents.py`
 - [x] AC-145 — `cargo test tasks::tools` (refused with what to do, the template), `cargo test tasks::template`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`

@@ -9,7 +9,7 @@
 /* what goes to the agent (RUN's, a schedule's): a read-only field, its look the fields' (controls.css) */
 .runprompt { margin: 0; max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .runmarked { margin: 0; font-size: var(--fs-label); color: var(--waiting); }
-#runadd, #runfresh { margin-right: auto; }
+#runadd { margin-right: auto; }
 #runmessage { width: 100%; box-sizing: border-box; }
 /* a task's windows (New task, Run, a schedule): their parts 12px apart; Text's head 4px over its text, as a label */
 :is(#newbox, #runbox, #schedbox) > form { gap: var(--sp-3); }
@@ -25,13 +25,21 @@ details.more > :not(summary, [hidden]) ~ :not([hidden]) { margin-top: var(--sp-2
 .fieldgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
 /* its windows */
-#taskbody { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; }
+/* its body scrolls inside the dialog's own padding: the scrollbar stands at the dialog's edge, beside what it scrolls
+   and never over it, and a focused field's ring is whole at either side */
+#taskbody { display: flex; flex-direction: column; gap: var(--sp-3); overflow-y: auto; margin-inline: calc(-1 * var(--sp-4)); padding: var(--sp-1) var(--sp-4); }
+/* a text shown to read takes the keys only to scroll (expand.js): pressed, it shows no ring; reached by Tab, one inside it */
+:is(#taskbox, #runbox) .xbox > :is(.markdown, pre):focus { outline: none; }
+:is(#taskbox, #runbox) .xbox > :is(.markdown, pre):focus-visible { outline: 2px solid var(--ring); outline-offset: -2px; border-radius: var(--r-sm); }
 #taskbody > * { min-width: 0; }
 dialog .markdown pre { max-width: 100%; overflow-x: auto; }
 .fieldrow { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; font-size: var(--fs-label); color: var(--muted); }
 .fieldgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--sp-2); }
 .edithead { display: flex; justify-content: space-between; align-items: center; font-size: var(--fs-label); color: var(--muted); }
-#newadd, .evenleft { margin-right: auto; }
+/* a window's keys (docs/UI-GUIDELINES.md "A dialog's keys"): what is seldom pressed at the left, the ways on at the
+   right, the primary last; one that cannot be undone in the danger color */
+dialog.dlg .actions > .fromright { margin-left: auto; }
+dialog.dlg .actions > .danger:not(:disabled) { --kc: var(--danger-text); }
 /* a text that takes files (its placeholder says so): lit, a dashed edge, only under a drag (AC-106) */
 section.droparea { border-radius: var(--r-sm); }
 .droparea.dropping { outline: 2px dashed var(--accent); outline-offset: -2px; background: color-mix(in srgb, var(--accent) 8%, var(--field-fill)); }
@@ -49,12 +57,15 @@ dialog .markdown img { max-width: 100%; }
 .history { display: flex; flex-direction: column; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
 .ev { font-family: var(--ui); font-size: var(--fs-label); min-width: 0; }
 .ev-comment { padding-block: var(--sp-2); padding-right: var(--sp-3); border-radius: var(--r-sm); background: var(--surface-2); }   /* its left: the left bar's (controls.css) */
-.evhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); }
+/* a line of history: one muted line between the comments, its time first, on the comments' text edge */
+.ev:not(.ev-comment) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--sp-2); padding-left: calc(var(--sp-3) + 10px); }
+.ev:not(.ev-comment) > .evhead { min-height: 0; }
+.ev:not(.ev-comment) > .xbox { flex: 1 0 100%; }
+.evhead { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); min-height: var(--icon-key-sm); font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .evhead strong { color: var(--t-fg); font-weight: var(--fw-head); }
 .evtext { color: var(--muted); }
 /* what a screen showed, quoted in a line of history: its lines as they stood, in the terminal's type */
 .evscreen { margin: var(--sp-1) 0 0; max-height: 240px; overflow: auto; padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm); background: var(--surface-0); color: var(--muted); font: var(--fs-meta)/var(--lh-ui) var(--term-font); }
-.by-system .evhead strong { color: var(--accent); }
 .evacts { display: flex; gap: var(--icon-gap); margin-left: auto; }
 .evacts .icon { --ik: var(--icon-key-list); }
 .newcomment { display: flex; flex-direction: column; gap: var(--sp-2); }
@@ -81,18 +92,38 @@ dialog .markdown img { max-width: 100%; }
 .fieldvalue { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); min-height: var(--key-h); font-size: var(--fs-body); color: var(--t-fg); }
 .tasktext { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
 .tasktext .edithead { align-items: flex-end; }   /* Text 4px over its text, its keys beside it */
+/* the text's keys in its top right corner, on its head's line: the key to the whole window, then Edit; a finger's size on a touch screen */
+.tasktext { --tk: var(--icon-key-sm); }
+.tasktext .edithead:has(.seckeys) { min-height: var(--tk); }
+.tasktext .edithead .icon, .tasktext .xbox:has(> .markdown) > .xkey { --ik: var(--tk); }
+.tasktext .xbox:not(.full):has(> .markdown) > .xkey { bottom: auto; top: calc(-1 * (var(--tk) + var(--sp-1))); right: calc(var(--tk) + var(--icon-gap)); }
+@media (max-width: 860px), (pointer: coarse) { .tasktext { --tk: var(--icon-key); } }
 .sechead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--sp-2); padding-bottom: var(--sp-1); border-bottom: 1px solid var(--line); }
 .sechead h3 { margin: 0; font-size: var(--fs-label); font-weight: var(--fw-head); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
 .sechead h3 .linklike { text-transform: none; letter-spacing: 0; }
-.seckeys { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.seckeys { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-3); font-size: var(--fs-label); }
+.seckeys .linklike, .sechead > .linklike { color: var(--muted); font-size: var(--fs-label); }
+@media (hover: hover) { :is(.seckeys, .sechead) .linklike:hover { color: var(--t-fg); } }
+.seckeys .icon { --ik: var(--icon-key-sm); }
+.fieldvalue .scratch { margin-left: auto; color: var(--muted); font-size: var(--fs-label); }   /* Run from scratch: apart from Run, at the Status line's end */
+@media (hover: hover) { .fieldvalue .scratch:hover { color: var(--t-fg); } }
+@media (max-width: 860px), (pointer: coarse) { .seckeys .icon { --ik: var(--icon-key); } :is(.seckeys, .sechead, .fieldvalue) .linklike { min-height: var(--icon-key); } }
 .sublist li { align-items: flex-start; }
 .subtext { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .sublist .icon { --ik: var(--icon-key-list); flex: none; }
 .evedited { font-style: italic; }
-.ev-comment { --lbar: var(--accent); }
-/* an agent's questions for the human (terminum-dispatcher.md AC-157): set apart in the waiting color */
-.ev-questions { --lbar: var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
+/* a comment's kind, by the bar at its left and its author's name (AC-149): a human's cornflower blue; an agent's and
+   Dispatcher's muted and near each other, teal and slate; an agent's questions for the human in the waiting color
+   (terminum-dispatcher.md AC-157) */
+.ev-comment { --kind: var(--muted); --lbar: var(--kind); }
+.ev-comment.by-human { --kind: cornflowerblue; }
+.ev-comment.by-agent { --kind: #6fa8a1; }
+.ev-comment.by-system { --kind: #8e96b5; }
+.ev-comment.ev-questions { --kind: var(--waiting); background: color-mix(in srgb, var(--waiting) 8%, var(--surface-2)); }
+.ev-comment .evhead strong { color: color-mix(in srgb, var(--kind) 55%, var(--t-fg)); }
 .evasks { color: color-mix(in srgb, var(--waiting) 70%, var(--t-fg)); font-weight: var(--fw-head); }
+/* what the human reacts to, first in the window: its heading stands out of the muted ones */
+.leads .sechead h3 { color: var(--t-fg); }
 .cconv { font: var(--fs-meta) ui-monospace, Menlo, monospace; color: var(--muted); overflow-wrap: anywhere; }
 
 .stbox { display: inline-flex; align-items: center; min-height: 20px; padding: 0 var(--sp-1); border-radius: var(--r-xs); font: 600 var(--fs-micro)/1 var(--ui); font-variant-numeric: tabular-nums; white-space: nowrap; flex: none;

@@ -99,7 +99,7 @@ Open questions:
 ```gherkin
 Scenario: AC-121 happy path — first run
   Given API-12 in TODO of project api, folder ~/work/api, with no session
-  When the user presses Run on its card or in its window, or drops it on an agent (AC-138)
+  When the user presses Run on its card, or drops it on an agent (AC-138), or presses Run in its window where the scenario below starts nothing at once
   Then a dialog offers the pool (AC-137), the last one chosen for that project already picked, and a press away shows its folder, its server, its command in full and the text that will be sent, a part written by an agent or a host marked so
   When the user presses Run
   Then Dispatcher opens a window after the project's last session, in that folder, with the window command of §9, a member of the project, marked with the pane option @terminum-run
@@ -108,6 +108,16 @@ Scenario: AC-121 happy path — first run
   Then it pastes the prompt and sends it with Enter, through the gate
   When the agent's hook says that prompt was taken (UserPromptSubmit), within 30 s
   Then API-12 is IN PROGRESS, its owner the pool's agent that runs it, "Opus reviewer"
+
+Scenario: AC-121 happy path — Run in the task's window
+  Given API-12 in TODO with no session: a human wrote all of its text and it brings no subtask (AC-185)
+  And its agent is known and has room: the task's Agent, else the last one chosen for its project, else the pool's only one
+  When the user presses Run in its window
+  Then the run starts at once on that agent, named in Run's title, the comment being written as the human's message; no dialog opens and the task's window closes
+  When an agent wrote part of its text, or it brings subtasks, or no agent is known, or the agent is at its limit (AC-169)
+  Then the dialog above opens, nothing sent: an agent's words are read before they go
+  When terminumd refuses the start, or finds no room after all
+  Then the dialog opens saying so, with what would be sent, or with the queue's offer
 
 Scenario: AC-121 happy path — the prompt
   Then the prompt is, in this order: "The human ran task API-12: Fix the retry loop", its text, its files' names and how to get them, its parent's ID, the budget (AC-126), and "When it is done, call execute_tool("finish_task", {id, result}) with the result." with the words of AC-157 on asking a human (finish_task, get_task, get_file and ask_human are not listed: terminum-agents.md AC-155)
@@ -235,7 +245,7 @@ Scenario: AC-137 failure — the store down
 ```gherkin
 Scenario: AC-122 happy path — RUN stays available before the session closes
   Given a task in any column, with its session open, closed or absent
-  Then its window keeps RUN beside CLOSE, including while WAIT FOR HUMAN still holds its session
+  Then its window keeps RUN beside SAVE, including while WAIT FOR HUMAN still holds its session
   And its card keeps its Run key under the folding rules of AC-159
   When the human writes an answer and presses RUN while its agent is idle at an empty box
   Then the same conversation takes that answer through the gate, the task returns to IN PROGRESS and its pending close is called off
@@ -245,6 +255,21 @@ Scenario: AC-122 happy path — RUN stays available before the session closes
   Then the press reads its session again and resumes in a new window
   When closing wins after that read, before delivery reserves its live turn
   Then nothing is typed into the closed pane, the comment stays and RUN can be retried
+
+Scenario: AC-122 happy path — one press in the task's window
+  Given API-12 ran before: its session or its conversation goes on
+  When the user writes a comment in its window and presses RUN
+  Then the comment is kept and the run goes on at once, as the scenarios below say; RUN's window does not open and the task's window closes
+  When terminumd refuses
+  Then the refusal is said in the task's window, which stays with what was written
+  And a card's Run key and a card dropped on an agent open RUN's window, where the human adds a message (AC-138)
+
+Scenario: AC-122 edge — Run from scratch
+  Given API-12 has a session or a conversation, and no run holds it or waits for room
+  Then its window's Status line offers Run from scratch at its end, apart from the window's keys; RUN's window has no such key
+  When the user presses it
+  Then RUN's window opens as a first run's, to choose the agent, the comment being written as its message
+  And Run there starts a new conversation with the task's text and that message
 
 Scenario: AC-122 failure — visible RUN does not duplicate work
   Given the task is IN PROGRESS, its agent still works, its input holds a draft or question, its agent is being ended, or another open task prevents its restart
@@ -256,16 +281,16 @@ Scenario: AC-122 failure — visible RUN does not duplicate work
 
 Scenario: AC-122 edge — comment files and queue state
   Given a comment file is uploading in the task's window
-  Then RUN stays visible and both RUN and CLOSE wait for the file
+  Then RUN stays visible and both RUN and SAVE wait for the file
   When the upload completes while the task is queued
-  Then CLOSE is enabled and RUN stays disabled with the queue's reason
+  Then SAVE is enabled and RUN stays disabled with the queue's reason
   When its queue wait ends
   Then RUN is enabled, its queue reason is removed, and the comment and file stay in the draft
 
 Scenario: AC-122 edge — a refresh during a RUN press
   Given RUN is enabled in the task's window
   When the task changes after the pointer is pressed on RUN and before it is released
-  Then the press still opens RUN's window for that task, using its current draft
+  Then the press still runs that task, with its current draft
 
 Scenario: AC-122 edge — keyboard focus during a refresh
   Given the enabled RUN key has keyboard focus in the task's window
@@ -273,13 +298,13 @@ Scenario: AC-122 edge — keyboard focus during a refresh
   Then keyboard focus stays on RUN
 
 Scenario: AC-122 edge — preparing RUN preserves the draft
-  Given RUN is reading the task before opening its window
-  Then the comment is read-only and its RUN and CLOSE keys are disabled, including through a task refresh
+  Given RUN is reading the task before it starts
+  Then the comment is read-only and its RUN and SAVE keys are disabled, including through a task refresh
   And another file is refused with "Wait until this action finishes, then add the files."
   When that read is refused
   Then the draft stays and the keys follow the task's current queue state; an enabled RUN regains keyboard focus
   When Back closes the task or a different task opens before that read answers
-  Then its late answer opens no RUN window and changes none of the other task's draft or window
+  Then its late answer starts nothing, opens no RUN window and changes none of the other task's draft or window
 
 Scenario: AC-122 happy path — a live agent
   Given API-12 is DONE, FAILED or WAIT FOR HUMAN and the agent of a session Dispatcher started lives
@@ -704,7 +729,7 @@ Scenario: AC-138 edge — run again
 Scenario: AC-138 edge — its conversation on another agent
   Given API-12 WAIT FOR HUMAN on Opus reviewer, its session closed or only its shell left, its conversation c0ffee known
   When the user drops it on Fast fixer, also Claude Code
-  Then the window says "Continue API-12 on Fast fixer" and "Its conversation c0ffee with Opus reviewer goes on on Fast fixer, with what you write. Run from scratch starts anew."
+  Then the window says "Continue API-12 on Fast fixer" and "Its conversation c0ffee with Opus reviewer goes on on Fast fixer, with what you write. Run from scratch, in its window, starts anew."
   When the user presses Run
   Then Fast fixer's command, effort and permissions resume c0ffee in the run's own folder and host, on Fast fixer's slot (AC-158 when it has none), its usage carried so nothing counts twice (AC-129)
   When Fast fixer is another kind, the agent still lives in its session, or no conversation is known
@@ -1754,10 +1779,10 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-121 — `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
+- [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
-- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), its real run as AC-121's
+- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`

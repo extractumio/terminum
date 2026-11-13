@@ -15,16 +15,17 @@ export function family(t, { openTask, newSubtask, patch, send }) {
   if (t.parent) {
     const up = el("h3", null, "Subtask of ");
     up.append(button("linklike", t.parent, () => openTask(t.parent)));
-    head.append(up, button("textkey", "Take out", () => patch(t.id, { parent: null })));
+    head.append(up, button("linklike", "Take out", () => patch(t.id, { parent: null })));
     head.lastChild.title = `Take ${t.id} out of ${t.parent}: it stays a task of its own`;
     wrap.append(head);
     return wrap;
   }
   const keys = el("span", "seckeys");
-  keys.append(button("textkey", "Add existing", () => askId(`A task to put under ${t.id}: its ID`, "Add", (id) => send(id, { parent: t.id }))));
+  // what is seldom done: words to press; a new subtask: the head's one key
+  keys.append(button("linklike", "Add existing", () => askId(`A task to put under ${t.id}: its ID`, "Add", (id) => send(id, { parent: t.id }))));
   // a task with subtasks of its own stays a parent
-  if (!t.children.length) keys.append(button("textkey", "Make it a subtask", () => askId(`Put ${t.id} under which task? Its ID`, "Move", (id) => send(t.id, { parent: id }))));
-  keys.append(button("textkey", "New subtask", () => newSubtask(t)));
+  if (!t.children.length) keys.append(button("linklike", "Make it a subtask", () => askId(`Put ${t.id} under which task? Its ID`, "Move", (id) => send(t.id, { parent: id }))));
+  keys.append(iconButton("icon", "plus", "New subtask", `New subtask of ${t.id}`, () => newSubtask(t)));
   head.append(el("h3", null, t.subtasks ? `Subtasks ${t.subtasks_done}/${t.subtasks}` : "Subtasks"), keys);
   const list = el("ul", "sublist");
   list.append(...t.children.map((k) => {
