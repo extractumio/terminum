@@ -38,8 +38,11 @@ export async function webTaskLines(browser, name) {
     f.say({ t: "taskmarks", marks: {}, counts: {}, need: 1, lines: [] });
     f.say({ t: "taskmarks", marks: {}, counts: {}, need: 1, lines: [line("9|T-7 waits for you")] });
     check(`AC-117 ${at} moved into the column again: its line again, same words`, await until(async () => (await shown(page)).includes("T-7 waits for you")), await shown(page));
-    const stored = await page.evaluate(() => localStorage.getItem("tm.taskseen"));
-    check(`AC-117 ${at} nothing of the lines is kept in this browser`, stored === null, stored);
+    // the session page opens a task's window on the board, which says it was seen: no key, terminumd knows the line
+    f.say({ t: "taskmarks", marks: {}, counts: {}, need: 1, lines: [] });
+    check(`AC-117 ${at} a line that goes in terminumd goes here`, await until(async () => (await shown(page)) === ""), await shown(page));
+    const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => /taskseen/.test(k)).join());
+    check(`AC-117 ${at} nothing of the lines is kept in this browser`, stored === "", stored);
     check(`no page error ${at}`, f.errors.length === 0, f.errors.join("; "));
     await f.context.close();
   }

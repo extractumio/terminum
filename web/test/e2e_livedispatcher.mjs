@@ -353,6 +353,11 @@ export async function liveDispatcher(page, opts) {
     await page.click("#asks .taskline .x");
     left = await page.evaluate(() => document.querySelectorAll("#asks .taskline").length);
     check("AC-117 a line closed in one browser goes in another at once, on the board", before.includes(gone) && await until(async () => !(await shown()).includes(gone), 8000), `${before} → ${await shown()}`);
+    const seen = before.find((id) => id !== gone);
+    await board.goto(`${base}/kanban/${seen}`);
+    const here = () => page.evaluate(() => [...document.querySelectorAll("#asks .taskline")].map((c) => c.dataset.task));
+    check("AC-117 a task's window opened in one browser takes its line from another", await until(async () => !(await here()).includes(seen), 8000), `${seen}: ${await here()}`);
+    left = (await here()).length;
   } finally {
     await other.close();
   }
