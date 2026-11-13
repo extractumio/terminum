@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! What the session list shows of tasks: open ones by session, for their rows' marks (AC-113), and
-//! by project, for the dialog of Delete Project (AC-110). Told to pages only when they change.
+//! by project, for the dialog of Delete Project (AC-110), and the tasks that need a human with the lines no human
+//! closed or saw (AC-117). Told to pages only when they change.
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
+use axum::response::Response;
+use axum::routing::post;
+use axum::{Json, Router};
 use parking_lot::Mutex;
-use serde_json::json;
+use serde_json::{json, Value};
 
-use super::ops::rows;
+use super::api::{answer, store};
+use super::ops::{self, rows};
 use super::store::Store;
 use crate::app::Shared;
 use crate::page::Page;
@@ -17,8 +24,38 @@ use crate::page::Page;
 struct Held {
     counts: HashMap<String, i64>,
     sessions: BTreeMap<String, Vec<String>>,
-    /// WAIT FOR HUMAN and FAILED, each with what moved it and why (AC-117)
-    attention: Vec<(String, String, bool, String)>,
+    /// WAIT FOR HUMAN and FAILED (AC-117)
+    attention: Vec<Asks>,
+}
+
+/// A task that needs a human, as its last move left it (AC-117).
+#[derive(PartialEq)]
+struct Asks {
+    id: String,
+    failed: bool,
+    /// an agent or Dispatcher made the move: it has a line
+    by_agent: bool,
+    /// the first line of the reason that move gave
+    why: String,
+    /// which move: a move back into the column is a new line, whatever its words
+    moved: i64,
+    /// the key of the line a human closed or saw, kept in the store for every browser
+    seen: Option<String>,
+}
+
+impl Asks {
+    fn words(&self) -> String {
+        if self.failed { format!("{} failed: {}", self.id, self.why) } else { format!("{} waits for you", self.id) }
+    }
+
+    /// What a close names: this move with these words, so a close of an older line leaves a newer one up.
+    fn key(&self) -> String {
+        format!("{}|{}", self.moved, self.words())
+    }
+
+    fn due(&self) -> bool {
+        self.by_agent && self.seen.as_deref() != Some(self.key().as_str())
+    }
 }
 
 #[derive(Default)]
@@ -73,10 +110,13 @@ impl Marks {
             for (key, id) in rows(tx, "SELECT session_key, slug FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
                 sessions.entry(key).or_default().push(id);
             }
-            let attention = rows(tx, "SELECT t.slug, t.status,
-                    COALESCE((SELECT author != 'human' FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), 0),
-                    COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), '')
-                FROM tasks t WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
+            // the reason is the one its mover gave with that move, never a later note (a human's choice of agent)
+            let attention = rows(tx, "SELECT t.slug, t.status = 'FAILED', COALESCE(m.author != 'human', 0),
+                    COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.author = m.author AND e.rowid > m.rowid ORDER BY e.rowid DESC LIMIT 1), ''),
+                    COALESCE(m.rowid, 0), t.line_seen
+                FROM tasks t LEFT JOIN events m ON m.rowid = (SELECT e.rowid FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
+                WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [],
+                |r| Ok(Asks { id: r.get(0)?, failed: r.get(1)?, by_agent: r.get(2)?, why: r.get::<_, String>(3)?.lines().next().unwrap_or("").to_string(), moved: r.get(4)?, seen: r.get(5)? }))?;
             Ok(Held { counts, sessions, attention })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
@@ -94,10 +134,7 @@ impl Marks {
 
     fn message(&self) -> String {
         let held = self.held.lock();
-        let lines: Vec<_> = held.attention.iter().filter(|a| a.2).map(|(id, status, _, why)| {
-            let first = why.lines().next().unwrap_or("");
-            json!({"id": id, "failed": status == "FAILED", "words": if status == "FAILED" { format!("{id} failed: {first}") } else { format!("{id} waits for you") }})
-        }).collect();
+        let lines: Vec<_> = held.attention.iter().filter(|a| a.due()).map(|a| json!({"id": a.id, "failed": a.failed, "words": a.words(), "key": a.key()})).collect();
         json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "need": held.attention.len(), "lines": lines}).to_string()
     }
 }
@@ -105,6 +142,30 @@ impl Marks {
 /// A page that connects learns them.
 pub fn hello(app: &Shared, page: &Page) {
     page.send(app.task_marks.message());
+}
+
+/// The longest key a close names: an ID, a move and a reason's first line.
+const KEY_MOST: usize = 64 * 1024;
+
+pub fn routes() -> Router<Shared> {
+    Router::new().route("/api/tasks/{id}/seen", post(seen))
+}
+
+/// `{key}`: the human closed or saw that line of the task (AC-117); kept here, every page hears it.
+async fn seen(State(app): State<Shared>, Path(id): Path<String>, Json(body): Json<Value>) -> Response {
+    let Some(key) = body["key"].as_str().filter(|k| !k.is_empty() && k.len() <= KEY_MOST).map(str::to_owned) else {
+        return crate::http::refuse(StatusCode::BAD_REQUEST, "Name the line: its key, as terminumd gave it.");
+    };
+    let done = store(&app, move |tx| keep_seen(tx, &id, &key).map(|()| json!({"ok": true}))).await;
+    if done.is_ok() {
+        read_later(&app);
+    }
+    answer(done)
+}
+
+fn keep_seen(tx: &rusqlite::Transaction, id: &str, key: &str) -> Result<(), String> {
+    let task = ops::key_of(tx, id)?;
+    tx.execute("UPDATE tasks SET line_seen = ?1 WHERE id = ?2", (key, task)).map(drop).map_err(ops::sql)
 }
 
 /// Every page learns them (after a change).
@@ -116,7 +177,58 @@ pub fn tell(app: &Shared) {
 mod tests {
     use super::*;
     use crate::tasks::ops::{create, move_to, NewTask};
-    use crate::tasks::store::HUMAN;
+    use crate::tasks::store::{DISPATCHER, HUMAN};
+
+    fn lines(marks: &Marks) -> (Value, Value) {
+        let told: Value = serde_json::from_str(&marks.message()).unwrap();
+        (told["need"].clone(), told["lines"].clone())
+    }
+
+    #[test]
+    fn ac117_a_line_closed_in_one_browser_is_closed_in_all_until_its_task_moves_back() {
+        let store = Store::open(crate::testutil::fresh_dir("marks-seen").join("kanban.sqlite"));
+        let marks = Marks::default();
+        let t = store.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)).unwrap();
+        store.with(|tx| move_to(tx, DISPATCHER, &t.id, "WAIT FOR HUMAN", 2)).unwrap();
+        marks.refresh(&store).unwrap();
+        let (need, told) = lines(&marks);
+        let key = told[0]["key"].as_str().unwrap().to_string();
+        assert_eq!((need, told[0]["words"].clone()), (json!(1), json!(format!("{} waits for you", t.id))));
+        store.with(|tx| keep_seen(tx, &t.id, "1|an older line")).unwrap();
+        marks.refresh(&store).unwrap();
+        assert_eq!(lines(&marks).1[0]["key"], json!(key), "a close of another line leaves this one up");
+        store.with(|tx| keep_seen(tx, &t.id, &key)).unwrap();
+        assert!(marks.refresh(&store).unwrap(), "a close is news for every page");
+        assert_eq!(lines(&marks), (json!(1), json!([])), "the line goes; the task still needs a human");
+        store.with(|tx| { move_to(tx, HUMAN, &t.id, "IN PROGRESS", 3)?; move_to(tx, DISPATCHER, &t.id, "WAIT FOR HUMAN", 4) }).unwrap();
+        marks.refresh(&store).unwrap();
+        let (_, told) = lines(&marks);
+        assert_eq!(told[0]["words"], json!(format!("{} waits for you", t.id)), "back in the column: its line again, same words");
+        assert_ne!(told[0]["key"], json!(key));
+    }
+
+    #[test]
+    fn ac117_a_failed_line_says_the_reason_its_move_gave_never_a_later_note() {
+        let store = Store::open(crate::testutil::fresh_dir("marks-why").join("kanban.sqlite"));
+        let marks = Marks::default();
+        let t = store.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)).unwrap();
+        store.with(|tx| {
+            move_to(tx, DISPATCHER, &t.id, "FAILED", 2)?;
+            ops::log(tx, &t.key, DISPATCHER, "why", "No result.\nmore", None, 2).map(drop)
+        }).unwrap();
+        marks.refresh(&store).unwrap();
+        let (_, told) = lines(&marks);
+        assert_eq!(told[0]["words"], json!(format!("{} failed: No result.", t.id)));
+        let key = told[0]["key"].as_str().unwrap().to_string();
+        store.with(|tx| keep_seen(tx, &t.id, &key)).unwrap();
+        store.with(|tx| ops::log(tx, &t.key, HUMAN, "why", "Its agent: codex", None, 3).map(drop)).unwrap();
+        marks.refresh(&store).unwrap();
+        assert_eq!(lines(&marks), (json!(1), json!([])), "a human's note neither reopens the line nor rewords it");
+        store.with(|tx| move_to(tx, HUMAN, &t.id, "WAIT FOR HUMAN", 4)).unwrap();
+        marks.refresh(&store).unwrap();
+        assert_eq!(lines(&marks), (json!(1), json!([])), "a human's move has no line");
+        assert!(store.with(|tx| keep_seen(tx, "TASK-404", "x")).is_err(), "an unknown task is refused");
+    }
 
     #[test]
     fn ac113_a_burst_of_changes_asks_for_one_read_and_one_that_began_asks_anew() {
