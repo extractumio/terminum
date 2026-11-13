@@ -48,7 +48,7 @@ def main():
 
         ws.send({"t": "in", "data": "\x15"})
         # A slow raw reader makes input span many tmux commands and intermediate frames.
-        with tempfile.TemporaryDirectory(prefix="tmt-", dir=short_tmp()) as work:
+        with tempfile.TemporaryDirectory(prefix="tmw-", dir=short_tmp()) as work:
             reader = Path(work, "reader.py")
             reader.write_text(
                 "import os, sys, termios, time, tty\n"
