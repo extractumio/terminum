@@ -4,6 +4,9 @@
 use super::*;
 use crate::tasks::store::HUMAN;
 
+#[path = "tools_archive_tests.rs"]
+mod archive;
+
 const KEY: &str = "tmux:local:terminum:%7";
 const OTHER: &str = "tmux:local:terminum:%8";
 

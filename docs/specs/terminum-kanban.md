@@ -479,6 +479,12 @@ Scenario: AC-115 failure — another session's running task
   And before that run has its session: "API-13 is starting at a human's RUN. You can read it and comment."
   And once that run is over API-13 is moved as any other
 
+Scenario: AC-115 failure — archived
+  Given archived API-7 of the agent's project, held by any session or none
+  When the agent calls move_task or finish_task on it
+  Then it is refused: "API-7 is archived: a human brings it back from the Archived list."
+  And its status, archive and history stay as they were; reading and commenting still work
+
 Scenario: AC-115 happy path — taking a free task
   Given API-8 of its project in TODO with no session
   When the agent calls take_task {id: "API-8"}

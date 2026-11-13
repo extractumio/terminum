@@ -81,6 +81,9 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 /// human's RUN still holds in another session is that run's, which Dispatcher watches.
 fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = visible(tx, who, id)?;
+    if t.archived_at.is_some() {
+        return Err(format!("{} is archived: a human brings it back from the Archived list.", t.id));
+    }
     not_run_elsewhere(tx, who, &t).map(|()| t)
 }
 

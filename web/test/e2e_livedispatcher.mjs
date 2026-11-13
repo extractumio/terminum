@@ -90,6 +90,13 @@ export async function liveDispatcher(page, opts) {
     if (was === "DONE") tool(archivedPane, "move_task", { id: archived, to: "DONE" });
     await j(`/api/tasks/${archived}/archive`, "POST", { on: true });
     check(`AC-122 ${was}: its archived card leaves the board`, await until(async () => !(await page.$(card(archived)))));
+    const before = await j(`/api/tasks/${archived}`);
+    for (const [name, more] of [["move_task", { to: "IN PROGRESS" }], ["finish_task", { result: "Do not keep this result" }]]) {
+      const said = tool(archivedPane, name, { id: archived, ...more });
+      check(`AC-115 ${name} refuses an archived task`, said.includes(`${archived} is archived: a human brings it back from the Archived list.`), said);
+    }
+    const after = await j(`/api/tasks/${archived}`);
+    check("AC-115 refused moves and results leave archive, status and history intact", after.archived_at === before.archived_at && after.status === before.status && JSON.stringify(after.history) === JSON.stringify(before.history));
     tmux("send-keys", "-t", archivedPane, "-l", "More work WORKS");
     tmux("send-keys", "-t", archivedPane, "Enter");
     check(`AC-122 ${was}: a human's prompt restores it in progress`, await until(async () => { const t = await j(`/api/tasks/${archived}`); return t.status === "IN PROGRESS" && !t.archived_at; }));
