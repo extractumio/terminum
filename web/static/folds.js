@@ -7,25 +7,33 @@
 // rows on the screen fold too, by the same rules (terminumd sends them with each screen that
 // changes them): a fold opened there stays open while its first row reads the same.
 import { hostOf } from "./widgetui.js";
+import { Requests } from "./requests.js";
 
 const MARKS = /[︎️]/g;          // the text-style marks render.js adds
 
 export class Folds {
   /** view: the TermView; click: the shadow roots' click handler; send(msg) to the bridge;
    *  copy(text); notify(text): a short message. */
-  constructor({ view, click, send, copy, notify }) {
-    Object.assign(this, { view, click, send, copy, notify });
+  constructor({ view, click, send, copy, notify, keepPlace = (fn) => fn() }) {
+    Object.assign(this, { view, click, send, copy, notify, keepPlace });
+    this.reads = new Requests(send);
     this.reset();
+  }
+
+  cancel() {
+    for (const pending of this.waiting?.values() ?? []) pending.finish(Object.assign(new Error("The fold request was cancelled."), { name: "AbortError" }));
+    this.reads.cancel();
   }
 
   /** Another pane, or its scrollback cleared (its line numbers mean other lines now). */
   reset() {
+    this.cancel();
     for (const [anchor, b] of this.hosts ?? []) this.drop(anchor, b);
     this.items = new Map();      // first line -> {n, to, label}, as the bridge told
     this.open = new Set();       // first lines of folds the user opened
     this.hosts = new Map();      // first row -> {f, rows, open}: as drawn
     this.rows = new WeakSet();   // rows of a fold (no widget there)
-    this.waiting = new Map();    // first line -> "show" | "again" | {resolve, reject}: its lines are asked for
+    this.waiting = new Map();    // range -> the shared promise and the intents waiting for its lines
     this.onScreen = [];          // the screen's: [from row, to row, label]
     this.yielded = new Set();    // folds given way to rendered output over their lines (giveWay)
   }
@@ -159,44 +167,48 @@ export class Folds {
     if (!f) return;
     if (!this.records(f).some((r) => r.gone)) return this.copy(this.textOf(f));
     if (window.isSecureContext && navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
-      const text = new Promise((resolve, reject) => this.ask(f, { resolve, reject }));
+      const text = this.ask(f, "copy");
       navigator.clipboard.write([new ClipboardItem({ "text/plain": text.then((t) => new Blob([t], { type: "text/plain" })) })])
-        .then(() => this.notify("Copied."), () => this.notify("The lines are here now: press Copy again."));
+        .then(() => this.notify("Copied."), (e) => { if (e?.name !== "AbortError") this.notify("Copy failed: press Copy again."); });
       return;
     }
     this.ask(f, "again");
   }
 
-  // its lines asked for, from the first the history still has
+  // Multiple readers share one capture and settle only after its rows have been placed.
   ask(f, then) {
-    this.waiting.set(f.n, then);
-    this.send({ t: "unfold", n: Math.max(f.n, this.records(f)[0]?.n ?? f.n), to: f.to });
-  }
-
-  /** The bridge could not send lines first.. (the page shows why): folds waiting for them stop. */
-  failed(first) {
-    for (const [n, then] of this.waiting) {
-      const f = this.items.get(n);
-      if (!f || first < f.n || first > f.to) continue;
-      this.waiting.delete(n);
-      then?.reject?.(new Error("not sent"));
-    }
-  }
-
-  /** The bridge sent lines first.. (they are in the history now): a fold waiting for them opens,
-   *  or is copied. */
-  filled(first, count) {
-    const copies = [];
-    for (const [n, then] of this.waiting) {
-      const f = this.items.get(n);
-      if (!f || f.n > first + count - 1 || f.to < first) continue;
-      this.waiting.delete(n);
-      if (then === "show") this.open.add(n); else copies.push([f, then]);
-    }
-    this.apply();                                 // the rows are new: drawn again first
-    for (const [f, then] of copies) {
-      if (then === "again") this.notify("The lines are here: press Copy again to copy them.");
-      else then.resolve(this.textOf(f));
-    }
+    const key = `${f.n}:${f.to}`;
+    let pending = this.waiting.get(key);
+    if (pending) { pending.intents.add(then); return pending.promise; }
+    let resolve, reject;
+    const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+    pending = { intents: new Set([then]), promise, finish: (error) => {
+      if (this.waiting.get(key) !== pending) return;
+      this.waiting.delete(key);
+      clearTimeout(pending.timer);
+      if (error) {
+        if (error.name !== "AbortError") this.notify(error.message);
+        reject(error);
+      } else {
+        if (pending.intents.has("again")) this.notify("The lines are here: press Copy again to copy them.");
+        resolve(this.textOf(f));
+      }
+    } };
+    this.waiting.set(key, pending);
+    pending.timer = setTimeout(() => pending.finish(new Error("The fold did not finish within 15 s. Try again.")), 15000);
+    this.reads.ask({ t: "unfold", n: Math.max(f.n, this.records(f)[0]?.n ?? f.n), to: f.to }).then((m) => {
+      this.keepPlace(() => {
+        if (this.waiting.get(key) !== pending) return;             // reset, timed out or replaced while frozen
+        try {
+          this.view.refill(m.first, m.lines);
+          if (pending.intents.has("show")) this.open.add(f.n);
+          this.apply();
+          pending.finish(null);
+        } catch (e) { pending.finish(e); }
+      });
+    }).catch((e) => pending.finish(e));
+    // Open/Copy starts this without awaiting; a jump may await the same failure.
+    promise.catch(() => {});
+    return promise;
   }
 }

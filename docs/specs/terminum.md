@@ -374,6 +374,14 @@ Scenario: AC-06 failure — the report cannot be sent
   Then the event is dropped and the status line says "Mouse event not sent: <error>" once a second at most
 ```
 
+Scenario: AC-02 failure — a history request keeps its owner and can be retried
+  Given a scroll or bookmark jump asks for older lines
+  When its reply fails, is lost for 15 seconds, or its view resets
+  Then only that request stops waiting; an error or timeout says why in the terminal, and another scroll can ask again
+  And a jump owns its request separately from scrolling
+  And a read queued before a pane switch captures its pane and subscription when queued; after a switch, including away and back, it sends no reply into the new subscription
+  And success, failure and a full read queue echo the request's ref; an expired reply changes nothing
+
 ### AC-07 — Manage sessions [MUST / P0]
 
 ```gherkin
@@ -421,6 +429,12 @@ Scenario: AC-07 failure — tmux refuses
   When a command answers %error ("no such window", "session exists")
   Then the status line shows the message in words and nothing else changes; at most one new window, session or split a second per client, a second press within it says "Wait a second: one new window, session or split a second."
 ```
+
+Scenario: AC-07 failure — creation forms own their replies
+  Given New session, Add host or Attach tmux sessions has sent a request
+  Then a second submit sends nothing while it waits
+  And only its matching ref can close that form or show an error there; layout changes and unrelated errors cannot answer it
+  And a closed or reopened form ignores its earlier reply; no answer within 15 seconds (Add host: 180 seconds) releases the form with an inline error
 
 ### AC-09 — Only the page can use terminumd, with the password [MUST / P0]
 
@@ -477,6 +491,11 @@ Scenario: AC-09 security — the page runs no content
   Then the page's CSP is "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'self'", terminal output reaches only what `terminum-terminal.md` §9 Security names, and a link never navigates the page
   And every answer, a refusal too, carries "X-Content-Type-Options: nosniff", "Referrer-Policy: no-referrer", "Cache-Control: no-store" (unless it sets its own), "Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=()", "Cross-Origin-Opener-Policy: same-origin" and "Cross-Origin-Resource-Policy: same-origin"
 ```
+
+Scenario: AC-09 edge — sign-in attempts have a lifetime
+  Given a sign-in is waiting for an answer
+  Then another submit sends nothing; no answer within 15 seconds releases the form with an inline error
+  And Sign out or a replaced form invalidates that attempt, so a late answer adopts no sign-in
 
 ### AC-10 — Other devices through tailscale serve [SHOULD / P1]
 
@@ -722,6 +741,11 @@ Scenario: AC-92 edge — sessions that close
   And a bookmark or a reminder shows only in the session it was made in, in a project or not (terminum-terminal.md AC-33): a project deleted leaves it there, its session closing orphans it
 ```
 
+Scenario: AC-88 edge — a quick shell reply arrives after navigation
+  Given a quick shell was requested in one pane
+  When the user leaves that pane before its reply
+  Then its correlated reply neither changes the shown pane nor moves focus, including on a phone
+
 ### AC-89 — Sessions of the user's own tmux [SHOULD / P1]
 
 ```gherkin
@@ -945,9 +969,11 @@ Scenario: AC-165 edge — two questions at once
   Then Esc answers the question alone; the menu stays for the next key
 
 Scenario: AC-165 edge — Enter again while it is kept
-  Given an agent's window, a new project's window, or a name's dialog that terminumd checks (Add existing)
-  When the user presses Enter and again before terminumd answered
-  Then one request is sent, its button is off, Esc and Cancel wait
+  Given an agent's window, a new project's window, a name's dialog that terminumd checks (Add existing), a new task's window, a task's comment, RUN's window, or Convert to task
+  When the user presses Enter, ⌘Enter or the button, and again before terminumd answered
+  Then one request is sent, its buttons are off, its text stands still (what is typed meanwhile goes nowhere and nothing typed is lost), Esc and Cancel wait
+  When Run is off (no agent yet)
+  Then Enter and ⌘Enter send nothing either
   When terminumd answers
   Then it is kept once and the window closes (a new project's stays on it, AC-139), or says why and stays
 ```
@@ -1249,6 +1275,8 @@ A forwarded request may do everything but what AC-10 refuses it, so: the page, `
 | `/tmux`, `/tmux/{action}` on `terminumd.sock` | `terminum tmux` | AC-89 |
 | `/hosts`, `/hosts/{action}`, `/restore`, `/hook`, `/agent` on `terminumd.sock` | the CLI and agents' hooks | `terminum-remote.md`, `terminum-lifecycle.md`, `terminum-agents.md` |
 
+History and unfold reads, creation forms, quick-shell creation, quote numbers, sent-history entries and resolve/delete requests carry `ref` (at most 80 characters); their direct success or error echoes it. Stream and broadcast messages remain unsolicited.
+
 WebSocket messages, page → terminumd:
 
 | `t` | Fields | Does |
@@ -1421,7 +1449,7 @@ All cases are shipped; nothing is staged.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-01 — web/test/e2e_tmux.mjs, `cargo test manager::tests` (a problem goes on the fast path back), web/test/e2e_rows.mjs, web/test/e2e_header.mjs, web/test/e2e_live.mjs, web/test/dircolors.test.mjs, scripts/e2e_core.py, terminumd/src/tmux/titles_tests.rs
-- [x] AC-02 — web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
+- [x] AC-02 — `cargo test page::hist::request_tests`, `web/test/e2e_requests.mjs`, `node web/test/e2e_live.mjs requests`, web/test/e2e_tmux.mjs, web/test/e2e_live.mjs, web/test/e2e_livejitter.mjs, web/test/e2e_livelimit.mjs, web/test/e2e_openend.mjs, scripts/e2e_core.py, terminumd/src/page/hist_tests.rs
 - [x] AC-03 — terminumd/src/tmux/keys_tests.rs, terminumd/src/page/pastefold.rs, web/test/e2e_livekeys.mjs, web/test/e2e_liveprogs.mjs, web/test/e2e_idekeys.mjs, web/test/e2e_touch.mjs, web/test/kbdtouch.test.mjs, scripts/e2e_core.py, scripts/e2e_typing_review.py
 - [x] AC-04 — web/test/e2e_screen.mjs, web/test/e2e_switch.mjs, web/test/e2e_resize.mjs, web/test/e2e_livesplit.mjs, web/test/switchgate.test.mjs, scripts/e2e_sizing.py, terminumd/src/screen/rows_tests.rs
 - [x] AC-05 — web/test/e2e_screen.mjs, web/test/e2e_appscreen.mjs, web/test/e2e_codex.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_sizing.py

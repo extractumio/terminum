@@ -6,6 +6,7 @@ import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
 import { dropLit } from "./droplit.js";
+import { cardState } from "./cardstate.js";
 
 export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
@@ -21,6 +22,16 @@ export const agentLabel = (a) => a?.name || "Agent gone";
 /** An estimate in dollars: "≈$12.30"; whole dollars past a thousand. */
 export const dollars = (x) => `≈$${x >= 1000 ? Math.round(x).toLocaleString("en-US") : x.toFixed(2)}`;
 export const $ = (id) => document.getElementById(id);
+
+/** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
+export function sessionLine(t) {
+  const st = cardState(t);
+  if (!st) return null;
+  const e = el("span", `cstate ${st.cls}`, st.words);
+  e.title = st.why ? `${st.words}: ${st.why}` : st.words;
+  return e;
+}
+
 /** A column's tasks with Show subtasks on (terminum-kanban.md AC-112), as [task, the parent it is drawn under or ""]:
  *  each subtask right under its parent when its parent is in the same list, in their own order; one whose parent is
  *  elsewhere keeps its place. */
@@ -39,10 +50,11 @@ export function underParents(tasks) {
  *  there too: terminum-kanban.md AC-150); the board goes to /sessions/, whose form signs in (signInElsewhere). */
 let refused = () => {};
 
-/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/. */
+/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/; what does that. */
 export function signInElsewhere() {
   refused = () => { location.href = "/sessions/"; };
   signin.onRefused(refused);
+  return refused;
 }
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
@@ -83,6 +95,14 @@ export function statusBox(t, open) {
     b.addEventListener("click", (e) => { e.stopPropagation(); open(t.id); });
   }
   return b;
+}
+
+/** `parent` holding `nodes` in this order, moving only what must move: one that stays is never taken out, as a node
+ *  taken out and put back between a press's down and up loses its click (Chromium). */
+export function placeChildren(parent, nodes) {
+  const kept = new Set(nodes);
+  for (const c of [...parent.children]) if (!kept.has(c)) c.remove();
+  nodes.forEach((n, i) => { if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] ?? null); });
 }
 
 /** A line of keys at a window's foot. */
@@ -165,6 +185,8 @@ const fileUrl = (id) => `/api/task-files/${id}`;
 
 /** Markdown of a kept file: terminumd calls a file image/* only when it shows as one; anything else links. */
 export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
+/** `text` with file `f`'s link on a line of its own at its end. */
+export const withFileLink = (text, f) => `${text}${text && !text.endsWith("\n") ? "\n" : ""}${fileMarkdown(f)}\n`;
 
 /** Saves a file through a fetch with the sign-in, never its address (terminum.md AC-09). */
 export async function download(id, name) {

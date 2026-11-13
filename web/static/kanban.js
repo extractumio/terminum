@@ -24,13 +24,13 @@ import { projectWindow } from "./kanbanproject.js";
 import { autoDispatcher } from "./kanbanauto.js";
 import "./dropdown.js";
 import { runWindow } from "./kanbanrun.js";
+import { sessionStarter } from "./kanbansession.js";
 import { taskLines } from "./tasklines.js";
-import { cardState, liveSession } from "./cardstate.js";
-import { choose } from "./dialogs.js";
+import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk } from "./listparts.js";
-import { $, COLUMNS, agentChip, api, button, hasFiles, say, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
-signInElsewhere();                                 // with no sign-in the board goes to /sessions/, whose form signs in
+const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
@@ -124,15 +124,6 @@ async function more(column) {
 }
 
 const projectOf = (id) => meta.projects.find((p) => p.id === id);
-
-/** What a session's row cannot say (AC-136): an agent gone quiet with its task open, why it failed, a closed one. */
-function sessionLine(t) {
-  const st = cardState(t);
-  if (!st) return null;
-  const e = el("span", `cstate ${st.cls}`, st.words);
-  e.title = st.why ? `${st.words}: ${st.why}` : st.words;
-  return e;
-}
 
 function showUsage(c, id) {
   const words = usageWords(usage[id]), line = c.querySelector(".cusage");
@@ -275,23 +266,40 @@ $("schedbar").append(scheduled.box);
 $("board").replaceChildren(...[...columns.values()].map((c) => c.col));
 $("colswitch").replaceChildren(...[...columns.values()].map((p) => p.tab));
 
-/** A column is built anew only when what it shows changed; a drag's card stays until it ends. */
+/** The cards drawn, by task: one whose task shows the same (`key`) is the same element at the next draw, so a press
+ *  that straddles a redraw of its column lands (AC-133). */
+const drawnCards = new Map();
+function keptCard(t, under, key) {
+  const had = drawnCards.get(t.id);
+  if (had?.key === key) return had.c;
+  const c = card(t, under);
+  drawnCards.set(t.id, { c, key });
+  return c;
+}
+
+/** A column is drawn anew only when what it shows changed, keeping its cards that did not; a drag's card stays until
+ *  it ends. */
 function draw() {
   if (dragging) return;
   folds.keep(cards);
-  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed();
+  const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed(), one = filters().project.length === 1;
+  const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
   for (const [column, part] of columns) {
-    const have = cards.get(column), n = counts[column] ?? 0, shown = JSON.stringify([have.map((t) => ({ ...t, session: t.session?.key })), n, !!filtered, filters().project.length === 1]);   // a session's state changes on its card alone (sessionsCame)
+    // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
+    const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));
+    const shown = JSON.stringify([seen, n, !!filtered, one]);
     part.count.textContent = String(n);
     part.tab.textContent = `${column} ${n}`;
     if (shown === part.drawn) continue;
     part.drawn = shown;
-    const scroll = part.list.scrollTop;
-    part.list.replaceChildren(...underParents(have).map(([t, under]) => card(t, under)));
-    if (!have.length) part.list.append(el("p", "colempty", filtered ? "No tasks match" : "No tasks"));
-    if (have.length < n) part.list.append(button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column)));
+    const scroll = part.list.scrollTop, keys = new Map(have.map((t, i) => [t.id, `${seen[i]}${JSON.stringify(t.session ?? null)}${one}`]));
+    placeChildren(part.list, [...underParents(have).map(([t, under]) => keptCard(t, under, `${keys.get(t.id)}${under}`)),
+      !have.length && el("p", "colempty", filtered ? "No tasks match" : "No tasks"),
+      have.length < n && button("textkey colmore", `Show ${Math.min(PAGE, n - have.length)} more`, () => more(column))].filter(Boolean));
     part.list.scrollTop = scroll;
   }
+  const onBoard = new Set([...cards.values()].flat().map((t) => t.id));
+  for (const id of drawnCards.keys()) if (!onBoard.has(id)) drawnCards.delete(id);
   if (focused) document.querySelector(`.card[data-id="${focused}"]`)?.focus({ preventScroll: true });
   markTab();
 }
@@ -365,6 +373,7 @@ async function madeHidden(t) {
   if (!tasks.length) say(`${t.id} is kept; a filter hides it.`);
 }
 
+const newSession = sessionStarter({ getMeta: () => meta, slots: () => slots, addAgent: () => agents.add(), askFolder });
 const bar = filterBar({ getMeta: () => meta, changed: () => { load(true); side.draw(); drawPool(); }, editProject: (p) => project.open(p), newProject: () => project.open(), newSession });
 const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, archived: archivedWindow({ openTask }), deleteProject: side.deleteProject, chosen: (id) => bar.setFilters({ project: [id] }) });
 /** What goes by the pool and the projects shown. */
@@ -389,22 +398,6 @@ async function runMade(t, agent) {
   }
 }
 
-/** + Session (terminum-dispatcher.md AC-142): a project's agent with no task, its session shown once it opens; the
- *  agent last used there first, the only one at once. */
-async function newSession(p) {
-  if (!p.dir) return askFolder(p.id, `${p.name} has no folder: set it in its window.`);
-  const last = meta.last_agents?.[p.id], all = meta.agents.filter((a) => !slots.full.includes(a.id));
-  if (!meta.agents.length) return agents.add();
-  if (slots.full_projects.includes(p.id) || !all.length) return say(slots.full_projects.includes(p.id) ? `${p.name} is at its limit of agents at once.` : "Every agent is at its limit.");
-  const ordered = [...all.filter((a) => a.id === last), ...all.filter((a) => a.id !== last)];
-  const agent = ordered.length === 1 ? ordered[0].id : await choose(`A session in ${p.name}`, "Which agent? Nothing is typed in it: it is yours.", ordered.map((a) => [a.id, a.name]));
-  if (!agent) return;
-  try {
-    const { key } = await api(`/api/task-projects/${p.id}/session`, { method: "POST", body: { agent } });
-    (meta.last_agents ??= {})[p.id] = agent;
-    location.href = sessionUrl(key);
-  } catch (e) { say(e.message); }
-}
 
 /** A project with no folder starts nothing: said, and its window opens at the folder (terminum-dispatcher.md AC-140). */
 function askFolder(id, words) {
@@ -443,44 +436,54 @@ function readSoon(columns = true) {
   readWait = setTimeout(() => { if (columnsToo) load(); if (windowToo) windowed.refresh(false, true); columnsToo = windowToo = false; }, 40);
 }
 
+const RETRY = 2000;
+let unproven = RETRY, columnsRead = false;
 /** Every page hears of a task's change; an open window reads again only when it shows that task; a change
- *  to its `history` alone is on no card. */
-function listen() {
+ *  to its `history` alone is on no card. The socket follows the sign-in as the session page's does (conn.js): the
+ *  server proved first, again after a drop; signed out, the board goes to sign in; a server down or unproved is
+ *  asked again, an unproved one less and less often. It opens before the columns' first read; one opening after
+ *  it reads what it missed (AC-133). `body[data-socket=open]` says it is open; `tried()` once this try ended. */
+async function listen(retry = false, tried = () => {}) {
+  if (retry) signin.invalidate();                  // another program may hold the port now
+  const p = await signin.prove();
+  if (p === "unknown") { tried(); return signIn(); }
+  if (p !== "ok") { tried(); return void setTimeout(() => listen(true), p === "bad" ? (unproven = Math.min(unproven * 2, 30000)) : RETRY); }
+  unproven = RETRY;
   const again = (id, history) => {
     windowToo ||= !id || windowed.shows(id);
     readSoon(!history);
   };
-  signin.prove().then(() => {
-    const ws = socket = new WebSocket(signin.socketUrl(), signin.protocols());
-    ws.onmessage = (ev) => {
-      const m = JSON.parse(ev.data);
-      side.seen(m);
-      if (m.t === "taskchange") again(m.id, m.history);
-      else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
-      else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
-      else if (m.t === "taskmarks") needs.came(m);
-      else if (m.t === "schedules") { scheduled.load(); readSoon(); }   // its tasks and the slots it keeps
-      else if (m.t === "taskusage") {
-        usage = m.items ?? {};
-        slots = m.slots ?? slots;
-        agents.draw();
-        for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
-      }
-      else if (m.t === "subscriptions") { readings = m.subscriptions; agents.draw(); }
-      else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
-      else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
-      else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
-    };
-    ws.onclose = () => setTimeout(() => { listen(); load(); }, 2000);
-  });
+  const ws = socket = new WebSocket(signin.socketUrl(), signin.protocols());
+  ws.onopen = () => { document.body.dataset.socket = "open"; if (columnsRead) again(); tried(); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    side.seen(m);
+    if (m.t === "taskchange") again(m.id, m.history);
+    else if (m.t === "layout") { sessionsCame(m.groups ?? []); form.refresh(); }
+    else if (m.t === "build") signin.reloadOnce(m.id, () => document.querySelector("dialog[open]"));   // a draft is kept anyway
+    else if (m.t === "taskmarks") needs.came(m);
+    else if (m.t === "schedules") { scheduled.load(); readSoon(); }   // its tasks and the slots it keeps
+    else if (m.t === "taskusage") {
+      usage = m.items ?? {};
+      slots = m.slots ?? slots;
+      agents.draw();
+      for (const c of document.querySelectorAll(".card")) showUsage(c, c.dataset.id);
+    }
+    else if (m.t === "subscriptions") { readings = m.subscriptions; agents.draw(); }
+    else if (m.t === "settings") { meta.scheme = m.page.colorScheme; colors(); }
+    else if (m.t === "boardtheme") { meta.theme = m.theme; colors(); }
+    else if (m.t === "projects") { clearTimeout(ws.wait); ws.wait = setTimeout(async () => { await loadMeta(); form.refresh(); again(); }, 500); }
+  };
+  ws.onclose = () => { tried(); delete document.body.dataset.socket; setTimeout(() => listen(true), RETRY); };
 }
 
 // the user's own stylesheet (terminum.md AC-19): the last one at once, the newest when it comes
 signin.showKeptCss();
 signin.loadCss();
 await loadMeta();
+await Promise.race([new Promise((r) => listen(false, r)), new Promise((r) => setTimeout(r, 3000))]);   // a socket that hangs holds no board
+columnsRead = true;
 await Promise.all([load(), scheduled.load()]);
-listen();
 address.route();
 const asked = new URLSearchParams(location.search);
 if (asked.get("new") === "1") {

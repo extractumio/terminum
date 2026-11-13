@@ -4,6 +4,7 @@ import { addBlocks, MAX_BLOCK } from "./blocks.js";
 import { lineRec, palette } from "./render.js";
 import { openEnd } from "./openend.js";
 import { glued, inputWraps, wrapsInto } from "./rejoin.js";
+import { Requests } from "./requests.js";
 import { queueHist } from "./histq.js";
 
 const LOAD_OLDER_AT = 300;   // px from the top that triggers loading older lines
@@ -30,8 +31,9 @@ export class TermView {
    *  again on scrolling up). onRows(full, keep) after the rows changed (keep: the reader's place is
    *  the widgets' to keep) and onReset (set by the page):
    *  the output widgets (widgets.js). */
-  constructor({ term, hist, screen, note, bottomBtn, paused, send, keep = Infinity }) {
-    Object.assign(this, { term, histEl: hist, screenEl: screen, note, bottomBtn, paused, send, keep });
+  constructor({ term, hist, screen, note, bottomBtn, paused, send, notify = () => {}, keep = Infinity }) {
+    Object.assign(this, { term, histEl: hist, screenEl: screen, note, bottomBtn, paused, send, notify, keep });
+    this.pages = new Requests(send);
     this.theme = null; this.pal = []; this.cols = 0;
     this.recs = new WeakMap();   // row element -> its record (a bookmark's line, AC-57)
     this.end = openEnd({ term, toBottom: () => this.toBottom() });   // a session just opened keeps to its end
@@ -60,7 +62,8 @@ export class TermView {
     this.due = [];           // "hist" appends waiting for the screen's message
     this.met = [];           // those it came after, going with it in its frame
     this.screen = [];        // line records
-    this.oldest = 0; this.truncated = false; this.loading = false;
+    this.oldest = 0; this.truncated = false;
+    this.pages.cancel();
     this.top = 0;            // the screen's first line
     this.alt = false;        // the pane shows its alternate screen (a full-screen program)
     this.mouse = false;      // its program asked for the mouse
@@ -218,7 +221,7 @@ export class TermView {
       this.dueTimer ??= setTimeout(() => this.screenLate(), SCREEN_DUE);
       return;
     }
-    if (m.mode === "reset") { clearTimeout(this.dueTimer); this.dueTimer = null; this.met = []; this.due = []; this.queued = []; }
+    if (m.mode === "reset") { this.pages.cancel(); clearTimeout(this.dueTimer); this.dueTimer = null; this.met = []; this.due = []; this.queued = []; }
     this.applyHist(m);
   }
 
@@ -284,7 +287,6 @@ export class TermView {
     } else {                                        // prepend older lines, keep the view still
       const first = this.hist.length ? this.hist[0].n : Infinity;
       const older = rows.filter((r) => r.n < first);
-      this.loading = false;
       if (older.length && first !== Infinity && older.at(-1).n !== first - 1) return;   // a gap: scrolling asks again
       const h = this.term.scrollHeight;
       this.hist.unshift(...older);
@@ -370,12 +372,21 @@ export class TermView {
     this.onDrawn?.();
   }
 
+  get loading() { return this.pages.size > 0; }
+
+  /** Each scroll or jump owns its request; a reset settles both without sharing a flag. */
+  async older(before, to) {
+    const m = await this.pages.ask({ t: "more", before, ...(to === undefined ? {} : { to }) });
+    this.onOlder?.(m);
+    this.onHist(m);
+    return m;
+  }
+
   onScroll() {
     this.updateBottom();
     const first = this.hist.length ? this.hist[0].n : null;
     if (this.term.scrollTop < LOAD_OLDER_AT && !this.loading && first !== null && first > this.oldest) {
-      this.loading = true;
-      this.send({ t: "more", before: first });
+      this.older(first).catch((e) => { if (e.name !== "AbortError") this.notify(e.message); });
     }
   }
 

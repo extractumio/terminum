@@ -63,7 +63,11 @@ export function folderPicker() {
     box.showModal();
     const q = new URLSearchParams({ dir });
     if (server) q.set("host", server);
-    try { await show((await api(`/api/task-projects/folder?${q}`)).path); } catch (e) { say(e.message); }
+    const mine = ++asked;                          // closed and opened again meanwhile: the newer opening's stands
+    try {
+      const { path } = await api(`/api/task-projects/folder?${q}`);
+      if (mine === asked) await show(path);
+    } catch (e) { if (mine === asked) say(e.message); }
   }
   return { open };
 }

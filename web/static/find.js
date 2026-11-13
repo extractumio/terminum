@@ -43,7 +43,7 @@ export class Find {
   /** Every message from the bridge (after app.js dropped those of another pane). */
   seen(m) {
     this.jumper.seen(m);
-    if (m.t === "found" && m.ref === this.ref) this.found(m);
+    if (m.t === "found" && this.pending && m.ref === this.ref) this.found(m);
     if (m.t === "hist" && m.mode === "reset" && this.open()) {
       if (m.sid !== this.paneSid) this.toggle(false);                 // another pane
       else if (this.hits.length || this.pending) this.forget("The history changed: press Find again.");   // its lines are numbered anew
@@ -95,10 +95,10 @@ export class Find {
     this.ref = Math.random().toString(36).slice(2);
     const ref = this.ref;
     this.say("Searching…");
-    this.send({ t: "find", ref, q });
+    if (this.send({ t: "find", ref, q }) === false) { this.pending = false; this.ref = ""; return this.say("Not connected: press Find again when the connection is back."); }
     setTimeout(() => {
       if (this.ref !== ref || !this.pending) return;
-      this.pending = false;
+      this.pending = false; this.ref = "";
       this.say("The Mac did not answer.");
     }, ANSWER);
   }

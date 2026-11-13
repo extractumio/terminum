@@ -17,6 +17,7 @@ export interface Doc {
   diskChanged: boolean;            // changed on disk while dirty
   saving?: Promise<boolean>;       // one save per file at a time
   deleted?: boolean;               // gone on disk (content kept; a rename may bring it back)
+  gen: number;                     // bumped by each re-check and save: an older answer is dropped
   scroll: Record<string, number>;  // per view mode
   host: string | null;             // where the file lives: every read and save goes there (AC-37)
 }
