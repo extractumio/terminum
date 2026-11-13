@@ -61,7 +61,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-39 | [MUST / P0] | A pane running a coding agent shows its state (working, waiting, failed; done shows no mark) in the list and the header, breathes while it works, and a reminder over the terminal names an agent that waits for an answer in a pane not shown. |
+| AC-39 | [MUST / P0] | A pane running a coding agent shows its state (working, waiting, failed; done shows no mark) in the list and the header, breathes while it works or work it started runs in the background, and a reminder over the terminal names an agent that waits for an answer in a pane not shown. |
 | AC-93 | [SHOULD / P1] | A session whose coding agent finished a turn while no page in sight showed it is marked unread until a page shows it. |
 | AC-97 | [SHOULD / P1] | A coding agent's plan (its own plan tool through the hooks, or terminum's MCP tools) shows as a percent and a track on its session's row and in the header, and in a Plan pane with the items, the current step and the agent's ETA; a plan not updated for a while is asked for through the hooks. |
 | AC-98 | [SHOULD / P1] | Agents make no bookmarks or reminders; the records they kept stay for the user to read, close, delete or make into tasks. |
@@ -87,8 +87,15 @@ Scenario: AC-39 happy path — states
   And done so, its row and the header show a quiet terminal mark after the state's place ("Done; a shell, a monitor or a task it started still runs") while the footer still counts them, read every 6 s (with hooks too, for that pane only); the mark goes when the count goes or a turn of the agent starts, and never shows while it works, waits or failed
   But a count of agents (local agents, teams, background and remote dynamic workflows, cloud sessions) keeps it working however long they run: they end on their own; "← 1 agent" is Claude Code's agents view's count of other background sessions waiting on the user, not this turn's work
   And on a screen without Claude Code's input box (Codex) the last 10 rows saying agents still run ("2 agents still running", "1 subagent is running", "3 background agents are still running", "Waiting for 2 agents") keep it working; "2 agents finished, none running" does not
-  And the row's bar (one color per theme) breathes every 1.4 s while the agent works (not with reduced motion); a dot reads as an unread message; the header's bar stands still
+  And the row's bar (one color per theme) breathes every 1.4 s while the agent works (not with reduced motion), and also while it is done with that quiet mark (next scenario); a dot reads as an unread message; the header's bar stands still
   And a waiting row's ? goes from the row and the header as soon as the user shows that session (it was seen), and comes back only when the agent waits anew after it stopped waiting
+
+Scenario: AC-39 edge — work it started runs on past the 10 minutes
+  Given Claude Code's turn ended while its footer counts a shell it started ("1 shell": its checks, `make land`)
+  Then its row's bar pulses and stays pulsing past the 10 minutes, however long the footer counts that work, as the row reads at work: working, or done with the quiet terminal mark; its card says "background work runs" (terminum-kanban.md AC-136) and the board's dot of its session blinks (terminum-dispatcher.md AC-138), all three by that one reading of the row
+  When the shell ends and the agent stays stopped
+  Then the bar stands still, the mark goes, the card says "stopped, task open" (DONE: nothing) and the dot stands still
+  And a job that never ends (a dev server, `tail -f`, a monitor) pulses the same until it ends or the user stops it: terminum cannot tell it from a long check, and work the agent started is its task's work; the quiet mark says it is no turn of the agent's
 
 Scenario: AC-39 happy path — a turn that stopped and needs the user
   Given a coding agent's turn ends and what it last did leaves it to the user: Codex's request_user_input_async (drawn "? title" with its options, gone from its title at the turn's end), a last message that ends in a question mark of any script ("?", "？", "؟", "՞", "፧", the Greek one), Claude Code's "Session paused" (safeguards' retry dialog), an error line of the program saying a safety stop ("■ This request has been flagged for possible cybersecurity risk.", "API Error: … can't help with this", "Chat stopped as a precaution")
@@ -742,7 +749,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`
+- [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`, `web/test/cardstate.test.mjs` (work it started runs on)
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`

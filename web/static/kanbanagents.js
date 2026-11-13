@@ -8,6 +8,7 @@ import { agentMark, agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
 import { agentView, stripes } from "./kanbanagentview.js";
 import { asTyped } from "./astyped.js";
+import { slotState } from "./cardstate.js";
 import { queueKey, queueList } from "./kanbanqueue.js";
 import { $, agentColor, api, fillSelect, guardCancel, showError } from "./kanbanutil.js";
 
@@ -39,11 +40,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
 
   const WORDS = { starting: "starting", working: "working", waits: "waits for you", idle: "idle" };
   /** What a session does now. */
-  function doing(s) {
-    if (s.idle) return "idle";
-    const row = s.key ? liveRow(s.key) : null;
-    return ["starting", "typed"].includes(s.state) ? "starting" : s.state === "asking" || row?.state === "waiting" ? "waits" : "working";
-  }
+  const doing = (s) => slotState(s, s.key ? liveRow(s.key) : null);
 
   /** A session's dot: blinking while it works, still when it waits or idles; a press on it opens it. */
   function dot(s) {

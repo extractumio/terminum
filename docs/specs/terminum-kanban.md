@@ -727,6 +727,7 @@ Scenario: AC-136 failure — it stopped with the task open
 Scenario: AC-136 edge — its background work runs
   Given a Stop while Claude Code's footer counts a shell or a monitor it started (its checks, a landing), past the 10 minutes its row shows it working (terminum-agents.md AC-39)
   Then its card says "background work runs", its title saying the agent goes on when that ends, never "stopped, task open"
+  And its row's bar pulses and its board dot blinks meanwhile, by the same reading (terminum-agents.md AC-39 "work it started runs on past the 10 minutes")
   And once that work ends with the agent idle and the task open, the card says "stopped, task open"
 
 Scenario: AC-136 failure — it died or left

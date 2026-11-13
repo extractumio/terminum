@@ -13,6 +13,7 @@ import { planPct, planTrack } from "./planrow.js";
 import { arranged } from "./reorder.js";
 import { PROJECT_HUES, el, hueColor, iconButton, plural, projectColor, projectHue } from "./listparts.js";
 import { taskUrl } from "./tasklink.js";
+import { atWork } from "./cardstate.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
 // but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
@@ -83,7 +84,7 @@ export function folderBar(item, shown = false, busy = false, project = null) {
   if (busy) d.style.animationDelay = `-${Math.round(performance.now()) % 1400}ms`;   // one breath, however often its row is drawn anew (style.css pulse-bar)
   if (project) d.style.setProperty("--dot", projectColor(project));   // a project's rows: its color, not the folder's (AC-92)
   else if (hue != null) d.style.setProperty("--dot", `oklch(var(--dir-l) var(--dir-c) ${hue.toFixed(1)})`);
-  d.title = (key ? `Folder ${key.split("\n")[1]}` : "No folder") + (busy ? ", working" : "");
+  d.title = (key ? `Folder ${key.split("\n")[1]}` : "No folder") + (busy ? (item.state === "working" ? ", working" : ", its background work runs") : "");
   return d;
 }
 
@@ -193,7 +194,7 @@ export function row(item, current, onPick, movable, child = false, marked = new 
     n.title = plural(item.subagents, "subagent");
     st.append(n);
   }
-  const bar = folderBar(item, item.id === current, item.state === "working", opts.project);
+  const bar = folderBar(item, item.id === current, atWork(item), opts.project);
   b.append(bar, txt, st);
   // its bookmarks and open reminders: a wavy orange and a wavy pink line at the row's right edge
   const has = marked.get(item.id);
