@@ -96,6 +96,7 @@ export async function webQueueOrder(browser, name) {
 
       // A task leaves while its row is dragged: stale DOM IDs still go to server validation,
       // but missing rows cannot crash optimistic rendering before the authoritative read.
+      await page.evaluate(() => queueFixture.hold(true));
       await page.evaluate(() => {
         const item = document.querySelector('#queue-test .item[data-id="API-2"]'), list = item.closest("ol");
         const from = item.closest("li").getBoundingClientRect(), x = from.left + from.width / 3;
@@ -107,6 +108,8 @@ export async function webQueueOrder(browser, name) {
         const to = document.querySelector('#queue-test .item[data-id="API-3"]').closest("li").getBoundingClientRect();
         fire("pointerup", list, to.top + to.height / 4);
       });
+      check("AC-169 a stale drop remains readable while its write is pending", await rows() === "API-3,API-1" && !f.errors.length, f.errors.join(" | "));
+      await page.evaluate(() => queueFixture.release());
       check("AC-169 a task leaving during a drag is refused and reconciled without losing the remaining queue", await until(async () =>
         await rows() === "API-3,API-1" && /queue changed meanwhile/.test(await page.textContent("#queue-test > p"))), await rows());
       await page.evaluate(() => { queueFixture.queues.owl = [queueFixture.tasks[2], queueFixture.tasks[0], queueFixture.tasks[1]]; queueFixture.show("owl"); });
