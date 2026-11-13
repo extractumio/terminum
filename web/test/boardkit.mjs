@@ -42,6 +42,19 @@ export async function pressCard(page, id) {
   }
   throw new Error(`three presses on ${id}'s card opened no window`);
 }
+/** terminumd's answers to `method` on `url` held until `release()`, or lost by `release("abort")`; `sent()` counts
+ *  the requests. */
+export async function hold(page, url, method) {
+  let release, sent = 0;
+  const gate = new Promise((r) => { release = r; });
+  const handler = async (route) => {
+    if (route.request().method() !== method) return route.fallback();
+    sent++;
+    return await gate === "abort" ? route.abort() : route.continue();
+  };
+  await page.route(url, handler);
+  return { sent: () => sent, release, end: () => page.unroute(url, handler) };
+}
 /** A press on a card's Run key: a folded card no agent ran shows the key only when whole (terminum-kanban.md AC-159). */
 export async function pressRun(page, id) {
   await showRun(page, id);

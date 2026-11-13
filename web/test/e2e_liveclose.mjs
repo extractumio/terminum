@@ -2,7 +2,7 @@
 // AC-133: a visible subtask link starts a real opening read; closing its parent cancels it. Save keeps a comment
 // once under a real change of its task (AC-108). Two quick field changes land in the order made; a text saved under
 // another edit redraws nothing over it.
-import { boardKit, nap, pressCard } from "./boardkit.mjs";
+import { boardKit, hold, nap, pressCard } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 export async function liveTaskClose(page, opts) {
@@ -70,35 +70,20 @@ async function liveFieldOrder(page, j, open, id) {
   await open(`?project=${(await j(`/api/tasks/${id}`)).project}`);
   await pressCard(page, id);
   await page.waitForSelector("#taskbox[open]");
-  const route = `**/api/tasks/${id}`, patches = [], url = new URL(`/api/tasks/${id}`, page.url()).href;
-  let answered = 0;
-  const heard = (r) => { if (r.method() === "PATCH" && r.url() === url) answered++; };
-  let release;
-  const held = new Promise((done) => { release = done; });
-  const handler = async (r) => {
-    if (r.request().method() !== "PATCH") return r.continue();
-    patches.push(r.request().postDataJSON().severity);
-    if (patches.length === 1) await held;
-    await r.continue();
-  };
-  await page.route(route, handler);
-  page.on("requestfinished", heard);
+  const route = `**/api/tasks/${id}`, held = await hold(page, route, "PATCH");
   const severity = page.locator("#taskbody .fieldrow", { hasText: "Severity" }).locator("select");
   try {
     await severity.selectOption("P1");
-    await until(() => patches.length === 1);
+    await until(() => held.sent() === 1);
     await severity.selectOption("P0");
     await nap(300);
-    check("AC-133 live a field's second change waits for the answer to the first", patches.length === 1, JSON.stringify(patches));
-    release();
-    await until(() => answered === 2);            // both landed: what stands now is what stays
-    const stood = await until(async () => (await j(`/api/tasks/${id}`)).severity === "P0" && await severity.inputValue() === "P0");
-    check("AC-133 live the last choice of two quick ones stands, in terminumd and in the window", stood && patches.join() === "P1,P0",
-      `${(await j(`/api/tasks/${id}`)).severity}, shown ${await severity.inputValue()}, sent ${patches.join()}`);
+    check("AC-133 live a field's second change waits for the answer to the first", held.sent() === 1, `sent ${held.sent()}`);
+    held.release();
+    const stood = await until(async () => held.sent() === 2 && (await j(`/api/tasks/${id}`)).severity === "P0" && await severity.inputValue() === "P0");
+    check("AC-133 live the last choice of two quick ones stands, in terminumd and in the window", stood, `shown ${await severity.inputValue()}`);
   } finally {
-    release();
-    page.off("requestfinished", heard);
-    await page.unroute(route, handler);
+    held.release();
+    await held.end();
   }
   // refused while the text's editor holds the window's redraw: the field goes back to what stands
   const refuse = (r) => r.request().method() === "PATCH" ? r.fulfill({ status: 400, contentType: "application/json", body: '{"error":"Refused for the check."}' }) : r.continue();

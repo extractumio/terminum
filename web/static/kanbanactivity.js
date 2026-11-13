@@ -40,16 +40,13 @@ export function activity(t, { refresh, confirmed, leads = true }) {
     const route = `/api/tasks/${t.id}/comments/${e.id}`;
     const edit = iconButton("icon", "pencil", "Edit", "Edit this comment", () => {
       const area = editor(e.text ?? "");
-      // a part of its own each time: an edit closed before (`.ended`) marks nothing of a new one
-      const part = el("div");
       const save = button("primary", "Save", async () => {
         try {
           await api(route, { method: "PATCH", body: { text: area.value } });
-          refresh(part);
+          refresh(said);
         } catch (err) { say(err.message); }
       });
-      part.append(expandable(area), row(button(null, "Cancel", () => refresh(part)), save));
-      said.replaceChildren(part);
+      said.replaceChildren(expandable(area), row(button(null, "Cancel", () => refresh(said)), save));
       area.focus();
     });
     const del = iconButton("icon", "x", "Delete", "Delete this comment", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));

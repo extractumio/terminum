@@ -12,7 +12,8 @@ import { activity, editor } from "./kanbanactivity.js";
 import { family } from "./kanbansubs.js";
 import { expandable } from "./expand.js";
 
-const EDITS = ".tasktext textarea, .markdown textarea";   // a text or a comment being edited
+// a text or a comment being edited; one saved or cancelled is off (refresh) and holds nothing
+const EDITS = ".tasktext textarea:not(:disabled), .markdown textarea:not(:disabled)";
 const HELD = `${EDITS}, .xbox.full`;                     // or a box over the window (AC-184): nothing redraws under it
 
 export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }) {
@@ -47,6 +48,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return done;
   };
 
+  /** The agent Auto-Dispatcher starts it on, by its own route, in the same turns: whether terminumd took it. */
+  const setAgent = (id, agent) => inTurn(() => api(`/api/tasks/${id}/agent`, { method: "PUT", body: { agent: agent || null } })
+    .then(() => true, (e) => { say(e.message); return false; }));
+
   /** A change of a field, in its turn: whether terminumd took it. The board hears of it from terminumd. */
   const patch = (id, change) => inTurn(() => changeField(id, change));
   async function changeField(id, change) {
@@ -80,11 +85,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const line = el("label", "fieldrow", label);
     const s = el("select", "field");
     fillSelect(s, options, value);
-    let stands = value;
     s.addEventListener("change", async () => {
       const chosen = s.value;
-      if (await changed(chosen)) stands = chosen;
-      else if (s.value === chosen) s.value = stands;
+      if (await changed(chosen)) value = chosen;
+      else if (s.value === chosen) s.value = value;
     });
     line.append(s);
     return line;
@@ -137,7 +141,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       // the agent that runs it when Auto-Dispatcher starts it (terminum-dispatcher.md AC-170); none: its project's default
-      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => inTurn(() => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => true, (e) => { say(e.message); return false; }))),
+      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => setAgent(t.id, agent)),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
       budgetField(t));
@@ -405,10 +409,8 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return true;
   }
 
-  /** What is open in the window that `sel` finds: an editor saved or cancelled (`.ended`) no longer counts. */
-  const openEdits = (sel) => [...body.querySelectorAll(sel)].filter((e) => !e.closest(".ended"));
   /** A text being edited, changed from what shows. */
-  const edited = () => openEdits(EDITS).some((a) => a.value !== a.defaultValue);
+  const edited = () => [...body.querySelectorAll(EDITS)].some((a) => a.value !== a.defaultValue);
 
   /** Closes it; an edit not saved is asked about first. Whether it closed. */
   async function tryClose() {
@@ -419,16 +421,14 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return true;
   }
 
-  /** Reads it again; an edit open holds it. `ended`: the part whose editor was saved or cancelled, which holds
-   *  nothing more; shown still, its keys off, while another edit holds the window (AC-133). What the page only
-   *  heard of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
+  /** Reads it again; an edit open holds it. `ended`: the part whose editor was saved or cancelled: its text and keys
+   *  go off, so it holds nothing more, shown still while another edit holds the window (AC-133). What the page
+   *  only heard of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
   async function refresh(ended = null, news = false) {
     if (!box.open || !shown) return;
-    if (ended) {
-      ended.classList.add("ended");
-      for (const c of ended.querySelectorAll("textarea, button:not(.xkey)")) c.disabled = true;
-    }
-    const editing = () => box.dataset.busy || openEdits(HELD).length;   // a comment being kept: it closes
+    if (ended) for (const c of ended.querySelectorAll("textarea, button:not(.xkey)")) c.disabled = true;
+    const held = (e) => !e.matches(".xbox") || !e.querySelector("textarea:disabled");   // a closed editor's box holds nothing
+    const editing = () => box.dataset.busy || [...body.querySelectorAll(HELD)].some(held);   // a comment being kept: it closes
     if (editing()) return;
     const mine = ++reading;
     try {
