@@ -54,6 +54,16 @@ export async function showRun(page, id) {
 }
 /** A key's focus ring as the page draws it (docs/UI-GUIDELINES.md "Focus"): lit, focused, matching :focus-visible. */
 export const ring = (page, sel) => page.$eval(sel, (b) => ({ lit: getComputedStyle(b).outlineStyle !== "none", focused: document.activeElement === b, visible: b.matches(":focus-visible") }));
+/** A press on `sel`; `close` shuts what it opened (Esc by default); then a key typed: Chrome lights a focused key's
+ *  ring by either. Answers `ring`. */
+export async function pressed(page, sel, close = () => page.keyboard.press("Escape")) {
+  await page.click(sel);
+  await nap(250);
+  await close();
+  await nap(250);
+  await page.keyboard.press("Shift+ArrowRight");
+  return ring(page, sel);
+}
 /** Tab as a Mac's browser takes it to a key: WebKit with Option, as Safari. */
 export const tabKey = (page) => page.keyboard.press(page.context().browser().browserType().name() === "webkit" ? "Alt+Tab" : "Tab");
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });

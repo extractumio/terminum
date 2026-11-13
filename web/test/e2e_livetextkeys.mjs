@@ -3,17 +3,7 @@
 // closed by Esc or by its Cancel, or a key typed after, lights no ring round them in Chrome; Tab still reaches and
 // rings them. Run by `node web/test/e2e_live.mjs iconkeys`, after the icon keys.
 import { check, until } from "./check.mjs";
-import { boardKit, nap, ring, tabKey } from "./boardkit.mjs";
-
-/** A press on `sel`; `close` shuts what it opened (Esc by default); then a key typed, which Chrome rings a focused key by. */
-async function pressed(page, sel, close = () => page.keyboard.press("Escape")) {
-  await page.click(sel);
-  await nap(250);
-  await close();
-  await nap(250);
-  await page.keyboard.press("Shift+ArrowRight");
-  return ring(page, sel);
-}
+import { boardKit, pressed, ring, tabKey } from "./boardkit.mjs";
 
 const shut = (page, box) => until(async () => !(await page.$(`${box}[open]`)));
 

@@ -3,9 +3,9 @@
 // and Paused; terminumd says its next runs, the prompt that will go, where it runs and the agent's command as it is typed, and
 // refuses what is wrong in the field's words. What was typed is not lost by a slip of Esc (terminum-kanban.md AC-133).
 import { askConfirm, oneAtATime } from "./dialogs.js";
-import { el, plural, textKey } from "./listparts.js";
+import { plural } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
-import { $, agentsOf, api, fillSelect, knownAgent, onlyProject, projectOptions, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
+import { $, agentsOf, api, button, fillSelect, knownAgent, onlyProject, projectOptions, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
 const HOUR_STEPS = [1, 2, 3, 4, 6, 8, 12];
 
@@ -16,12 +16,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
     every: $("schedevery"), minute: $("schedminute"), day: $("schedday"), date: $("scheddate"), time: $("schedtime"), cron: $("schedcron"), budget: $("schedbudget"), paused: $("schedpaused") };
   let editing = null, snapshot = "", days = new Set([1]), asked = 0;
   fillSelect(f.kind, KINDS, "daily");
-  const dayKeys = DAY_NAMES.map((name, i) => {
-    const b = textKey(el("button", null, name));
-    b.type = "button";
-    b.addEventListener("click", () => { if (!days.delete(i)) days.add(i); if (!days.size) days.add(i); shownDays(); changedWhen(); });
-    return b;
-  });
+  const dayKeys = DAY_NAMES.map((name, i) => button(null, name, () => { if (!days.delete(i)) days.add(i); if (!days.size) days.add(i); shownDays(); changedWhen(); }));
   $("whendays").replaceChildren(...[1, 2, 3, 4, 5, 6, 0].map((i) => dayKeys[i]));
   const shownDays = () => dayKeys.forEach((b, i) => b.setAttribute("aria-pressed", String(days.has(i))));
 

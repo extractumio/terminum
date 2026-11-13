@@ -3,18 +3,8 @@
 // typed after, lights no ring round them in Chrome; a menu one opened gives the keys back to the terminal; Tab still
 // reaches and rings them. `node web/test/e2e_live.mjs iconkeys`.
 import { check, until } from "./check.mjs";
-import { boardKit, nap, ring, tabKey } from "./boardkit.mjs";
+import { boardKit, pressed, ring, tabKey } from "./boardkit.mjs";
 import { liveTextKeys } from "./e2e_livetextkeys.mjs";
-
-/** A press on `sel`, Esc for what it opened, a key typed after: Chrome lights a focused key's ring by either. */
-async function pressed(page, sel) {
-  await page.click(sel);
-  await nap(200);
-  await page.keyboard.press("Escape");
-  await nap(200);
-  await page.keyboard.press("Shift+ArrowRight");
-  return ring(page, sel);
-}
 
 /** The board's icon keys; `phone`: those a phone shows (its pool is a row of its own), and no session list. */
 export async function liveIconKeys(page, live, phone = false) {

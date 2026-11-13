@@ -3,7 +3,7 @@
 // head by default and remembered by this browser; open, its cards stand on the columns' tracks, four to a row.
 // terminumd owns the schedules and says their next runs and words; every page hears of a change.
 import { askConfirm } from "./dialogs.js";
-import { el, iconButton, read, textKey, write } from "./listparts.js";
+import { el, iconButton, read, write } from "./listparts.js";
 import { scheduleWindow } from "./kanbanschedwin.js";
 import { agentColor, api, button, say, statusBox } from "./kanbanutil.js";
 
@@ -12,15 +12,14 @@ const OPEN_KEY = "tm.board.schedules";
 /** `getMeta()`: projects and agents; `chosen()`: the projects shown, none for all; `openTask(id)`. */
 export function scheduledSection({ getMeta, chosen, openTask }) {
   const box = el("div", "schedsection");
-  const head = el("div", "schedhead"), toggle = el("button", "textkey schedtoggle"), list = el("div", "agentlist trackitems schedlist");
+  const head = el("div", "schedhead"), toggle = button("textkey schedtoggle"), list = el("div", "agentlist trackitems schedlist");
   const grid = el("div", "tracks schedtracks");
-  toggle.type = "button";
   toggle.setAttribute("aria-controls", "schedgrid");
   grid.id = "schedgrid";
   const add = button("textkey", "+ Schedule", () => win.open());
   add.id = "newschedule";
   add.title = "A task that runs on a cadence on one agent";
-  head.append(textKey(toggle), add);   // + Schedule stands with the head: the section may be folded
+  head.append(toggle, add);   // + Schedule stands with the head: the section may be folded
   grid.append(list);
   box.append(head, grid);
   let schedules = [], drawn = "", opened = read(OPEN_KEY) === true;

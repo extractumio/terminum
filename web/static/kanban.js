@@ -31,7 +31,7 @@ import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
-document.querySelectorAll("#bar .textkey, #projectbox .textkey").forEach(textKey);   // the page's own text keys; button()'s have it
+document.querySelectorAll(".textkey").forEach(textKey);   // the page's own text keys; button()'s have it
 
 const PAGE = 200;
 let meta = { projects: [], users: [], sessions: [], agents: [], hosts: [] };
