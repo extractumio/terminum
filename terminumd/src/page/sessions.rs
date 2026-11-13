@@ -152,12 +152,8 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         let ps = app.projects.lock();
         project.and_then(|p| ps.list().iter().find(|x| x.id == p)).or_else(|| ps.of(id)).map(|p| (p.id.clone(), p.dir.clone()))
     };
-    let usable = match (&joins, project) {
-        (Some((_, d)), Some(_)) => !d.is_empty() && args::check_text(d).is_ok() && crate::dispatcher::procs::is_folder(app, &server, d).await != Some(false),
-        _ => false,
-    };
-    let (dir, note) = match &joins {
-        Some((_, d)) if usable => (d.clone(), None),
+    let (dir, note) = match (&joins, project) {
+        (Some((_, d)), Some(_)) if !d.is_empty() && args::check_text(d).is_ok() && crate::dispatcher::procs::is_folder(app, &server, d).await != Some(false) => (d.clone(), None),
         _ => folder_of(&server, &pane).await,
     };
     let new = open_window(&server, &format!("-a -t {window}"), &dir).await?;
