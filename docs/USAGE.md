@@ -233,6 +233,8 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its
   switch says why;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
+  An agent's bug (a title starting `Bug:`) is never below P2: P1 or above when it has impact (lost
+  or blocked work, a wrong result, a red main), else P2; its tools refuse P3 for one.
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
   archived with its reason; your own words and tasks are never reworded or archived by an agent.
