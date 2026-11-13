@@ -136,7 +136,7 @@ async function newTaskOnce(page, { open, j, project }) {
   } finally { held.release(); await held.end(); }
 }
 
-/** A comment's Close by ⌘Enter, three times while terminumd has not answered: one comment, nothing typed lost. */
+/** A comment's Save by ⌘Enter, three times while terminumd has not answered: one comment, nothing typed lost. */
 async function commentOnce(page, { open, j, id }) {
   await open(id);
   await page.waitForSelector("#taskbox[open] .newcomment textarea");
@@ -152,9 +152,11 @@ async function commentOnce(page, { open, j, id }) {
     check("AC-165 a comment: ⌘Enter again sends nothing, Esc waits, the text stands still while it is kept",
       held.sent() === 1 && !!(await page.$("#taskbox[open]")) && text === "said once", `sent=${held.sent()} text=${text}`);
     held.release();
-    check("AC-165 a comment: kept once; the window closes and its draft goes",
-      await until(async () => !(await page.$("#taskbox[open]")) && (await said()).length === 1) && (await said())[0].text === "said once"
+    check("AC-165 a comment: kept once; the window stays, its field empty and its draft gone",
+      await until(async () => (await said()).length === 1 && await page.inputValue(".newcomment textarea") === "") && (await said())[0].text === "said once" && !!(await page.$("#taskbox[open]"))
         && await page.evaluate((k) => localStorage.getItem(k) === null, `tm.comment.${id}`), JSON.stringify(await said()));
+    await page.click("#taskclose");
+    await page.waitForSelector("#taskbox", { state: "hidden" });
   } finally { held.release(); await held.end(); }
 }
 
