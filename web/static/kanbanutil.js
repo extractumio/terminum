@@ -208,6 +208,22 @@ const fileUrl = (id) => `/api/task-files/${id}`;
 export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
 /** `text` with file `f`'s link on a line of its own at its end. */
 export const withFileLink = (text, f) => `${text}${text && !text.endsWith("\n") ? "\n" : ""}${fileMarkdown(f)}\n`;
+/** `text` without the links to file `id`, and the name the first one showed (null with none). */
+export function withoutFileLink(text, id) {
+  let name = null;
+  const link = new RegExp(`!?\\[([^\\]]*)\\]\\(${fileUrl(id).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\)\\n?`, "g");
+  return { text: text.replace(link, (_, shown) => { name ??= shown; return ""; }), name };
+}
+
+/** Of a draft's files, those terminumd no longer keeps: a file joined to no task goes after 7 days (AC-106, AC-108).
+ *  Only its 404 says so: any other answer, or none, keeps the file in the draft. */
+export async function goneFiles(ids) {
+  const gone = await Promise.all(ids.map((id) => fetch(fileUrl(id), { method: "HEAD" }).then((r) => r.status === 404, () => false)));
+  return ids.filter((_, i) => gone[i]);
+}
+
+/** What a window says of a draft's files that are gone. */
+export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was not saved for 7 days. Drop ${names.length > 1 ? "them" : "it"} again to keep ${names.length > 1 ? "them" : "it"}.`;
 
 /** Saves a file through a fetch with the sign-in, never its address (terminum.md AC-09). */
 export async function download(id, name) {

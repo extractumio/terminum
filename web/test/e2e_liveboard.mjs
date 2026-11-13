@@ -174,10 +174,13 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   const secret = await page.evaluate(() => localStorage.getItem("tm.session"));
   const byAddress = await fetch(`${base}/api/task-files/${seen}?t=${secret}`).then((r) => r.status);
   check("AC-09 never an address", byAddress === 401, String(byAddress));
+  const head = (id) => page.evaluate(async (f) => (await fetch(`/api/task-files/${f}`, { method: "HEAD" })).status, id);
+  check("AC-108 a draft asks whether its file is kept: HEAD answers 200", await head(seen) === 200);
   await page.click("#taskbody .filelist button[aria-label^=\"Delete\"]");
   await page.click("#confirmok");
   check("AC-109 a file can be deleted for good", await until(async () => /deleted the file shot.png/.test(await page.textContent("#taskbody .history"))));
   check("AC-109 its bytes are gone", await page.evaluate(async (id) => (await fetch(`/api/task-files/${id}`)).status, seen) === 404);
+  check("AC-108 and a gone file answers HEAD 404", await head(seen) === 404);
   await page.click("#taskclose");
 
   // a session: one IN PROGRESS at a time, closed is said

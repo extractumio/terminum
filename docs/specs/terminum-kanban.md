@@ -223,6 +223,9 @@ Scenario: AC-106 happy path — from a session and from a terminal's selection
 Scenario: AC-106 edge — a draft
   When the user closes the window with text typed, or reloads the page
   Then the next new task on that browser offers the draft with its files; Discard drops them, and files of a draft not used for 7 days go, as a paste's do
+  When a draft is offered, or Create is refused, after its file shot.png went
+  Then shot.png leaves the draft's Files and its text, the window says "shot.png: gone, this draft was not saved for 7 days. Drop it again to keep it." and Create keeps the rest
+  And only terminumd's answer that the file is gone (404) drops it: no answer, or another, keeps it
 
 Scenario: AC-106 failure — refused
   When Create has no title, or a title over 200 characters, or a text over 1 MiB
@@ -265,6 +268,12 @@ Scenario: AC-108 happy path — a human's comment
   And RUN stands only where the task can be run; SAVE is off while the field is empty
   When the window is closed by ×, Esc or Back with a comment not saved
   Then nothing is kept on the task: the comment stays in this browser as that task's draft
+
+Scenario: AC-108 edge — a draft's file gone
+  Given API-12's comment draft links log.txt and shot.png, kept 7 days without a Save, and terminumd let log.txt go (AC-106)
+  When API-12 opens, or its SAVE or RUN is refused
+  Then log.txt's link leaves the draft, the window says "log.txt: gone, this draft was not saved for 7 days. Drop it again to keep it." and SAVE keeps the comment with shot.png
+  And only terminumd's answer that the file is gone (404) drops it: no answer, or another, keeps it
 
 Scenario: AC-108 happy path — shown
   Then a comment shows as the Panel's Markdown (raw HTML off, javascript: links dropped, remote images not loaded), an agent's marked as the agent's and Dispatcher's as Dispatcher's
