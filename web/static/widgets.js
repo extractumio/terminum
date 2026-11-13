@@ -80,7 +80,7 @@ export class Widgets {
     this.settledN = null;        // the history line the next scan starts at (null: its first)
     this.hosts = new Map();      // a region's first row -> {key, raw, rows, live}: what is attached
     this.held = new Set();       // rows of a table not whole yet (holdOpen)
-    Object.assign(this, { heldSince: 0, heldText: "", heldAt: 0, heldOut: false });
+    this.hold = null;            // the clock of those rows: {top, text, since, at, out}
     this.folds?.reset();
     this.pin = null;             // a bookmark held in view (AC-57) was of the last pane
     clearTimeout(this.steady); clearTimeout(this.later);
@@ -168,13 +168,19 @@ export class Widgets {
    *  the first; nothing is lost: after that they show as text, and stay text while it waits.
    *  True while it holds some. */
   holdOpen(rows, at) {
-    const now = rows.map((r) => info(r).text).join("\n"), top = now.split("\n", 1)[0];
-    // nothing held, or another table waiting (its first line is not the held one's): a new clock
-    if (!rows.length || top !== this.heldText.split("\n", 1)[0]) Object.assign(this, { heldSince: 0, heldText: "", heldOut: false });
-    if (rows.length && now !== this.heldText) Object.assign(this, { heldSince: this.heldSince || at, heldText: now, heldAt: at });
-    this.heldOut ||= rows.length > 0 && (at - this.heldAt >= STEADY || at - this.heldSince >= HOLD_MAX);
-    const els = rows.length && !this.heldOut ? rows.filter(Boolean).map((r) => r.el).filter((el) => !this.folds.has(el)) : [];
-    const hide = new Set(els);
+    rows = rows.filter(Boolean);
+    let h = this.hold;
+    if (!rows.length) h = null;
+    else {
+      // another table waiting (another first line; a screen's row has no number to know it by): a new clock
+      const top = info(rows[0]).text;
+      if (h?.top !== top) h = { top, text: "", since: at, out: false };
+      const text = rows.map((r) => info(r).text).join("\n");
+      if (text !== h.text) Object.assign(h, { text, at });
+      h.out ||= at - h.at >= STEADY || at - h.since >= HOLD_MAX;
+    }
+    this.hold = h;
+    const hide = new Set(h && !h.out ? rows.map((r) => r.el).filter((el) => !this.folds.has(el)) : []);
     for (const el of this.held) if (!hide.has(el)) el.classList.remove("wg-hid");
     for (const el of hide) el.classList.add("wg-hid");
     this.held = hide;
