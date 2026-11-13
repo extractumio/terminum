@@ -96,7 +96,9 @@ async function claude(page, { tmux, work }, tui) {
   // the user's clipboard is never written: pbcopy is a stub that keeps what it was given
   fs.writeFileSync(path.join(stub, "pbcopy"), `#!/bin/sh\ncat >> '${stubLog}'\n`, { mode: 0o755 });
   const env = `PATH='${stub}':"$PATH" EDITOR='vim -u NONE -N' CLAUDE_CONFIG_DIR='${config}' ANTHROPIC_AUTH_TOKEN=no-model-call ANTHROPIC_BASE_URL=http://127.0.0.1:9 DISABLE_AUTOUPDATER=1 CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`;
-  const pane = await open(page, tmux, dir, `claude-${tui}`, `env ${env} claude --safe-mode --tools '' --settings '{"tui":"${tui}"}'`);
+  // a check run from a Claude Code agent Dispatcher started inherits its CLAUDE_CODE_NO_FLICKER=0 (AC-156),
+  // which overrides the tui setting: without it, Claude Code takes the TUI the check names
+  const pane = await open(page, tmux, dir, `claude-${tui}`, `env -u CLAUDE_CODE_NO_FLICKER ${env} claude --safe-mode --tools '' --settings '{"tui":"${tui}"}'`);
   const ready = await until(async () => {
     const t = tmux("capture-pane", "-p", "-t", pane);
     return t.includes("Safe mode") && /^❯/m.test(t);
