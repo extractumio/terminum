@@ -71,7 +71,7 @@ pub fn ahead(tx: &Transaction, agent: &str, project: &str, task: &str) -> Result
     let place = of_task(tx, task)?.map_or(i64::MAX, |w| w.pos);
     let slots = pool::Slots::read(tx)?;
     for w in all(tx)?.into_iter().filter(|w| w.task != task && w.pos < place && (w.agent == agent || w.project == project)) {
-        if let Some(a) = agents::by_id(tx, &w.agent)? && slots.check_for(tx, &a, &w.project, Some(&w.task), None)?.is_none() {
+        if let Some(a) = agents::in_project(tx, &w.agent, &w.project)? && slots.check_for(tx, &a, &w.project, Some(&w.task), None)?.is_none() {
             return Ok(Some(ops::get(tx, &w.task)?.id));
         }
     }
@@ -143,7 +143,7 @@ enum Due {
 
 fn due(tx: &Transaction, w: &Wait) -> Result<Due, String> {
     let t = ops::get(tx, &w.task)?;
-    let Some(a) = agents::by_id(tx, &w.agent)? else {
+    let Some(a) = agents::in_project(tx, &w.agent, &w.project)? else {
         return Ok(Due::Off(t.id, "Its wait was called off: its agent is no longer in the pool. Run it again.".into()));
     };
     if t.archived_at.is_some() {

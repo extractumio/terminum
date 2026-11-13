@@ -11,7 +11,7 @@ fn store(name: &str) -> Store {
     let s = Store::open(crate::testutil::fresh_dir(name).join("kanban.sqlite"));
     s.with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place, agent_limit) VALUES ('api', 'api', 0, '/srv', 0, NULL), ('web', 'web', 1, '/srv', 1, 1)", []).map_err(sql)?;
-        tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('a', 'Smith', 'claude', 'claude', 0, 1), ('b', 'Jones', 'claude', 'claude', 1, 1)", []).map(drop).map_err(sql)
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'api', 'Smith', 'claude', 'claude', 0, 1), ('b', 'api', 'Jones', 'claude', 'claude', 1, 1)", []).map(drop).map_err(sql)
     }).unwrap();
     s
 }
@@ -87,21 +87,21 @@ fn ac158_a_wait_stays_while_full_and_goes_when_its_task_moved_was_archived_or_it
 #[test]
 fn ac169_a_queue_is_its_agents_waits_in_the_order_the_human_gave() {
     store("waits-queue").with(|tx| {
-        let (one, two, three, other) = (task(tx, "api"), task(tx, "api"), task(tx, "web"), task(tx, "api"));
+        let (one, two, three, other) = (task(tx, "api"), task(tx, "api"), task(tx, "api"), task(tx, "api"));
         add(tx, &one, "a", "api", &json!({}), 10)?;
         add(tx, &other, "b", "api", &json!({}), 10)?;
         add(tx, &two, "a", "api", &json!({}), 10)?;
-        add(tx, &three, "a", "web", &json!({}), 10)?;
+        add(tx, &three, "a", "api", &json!({}), 10)?;
         let ids = |tx: &Transaction, agent: &str| -> Vec<String> { queues(tx).unwrap().remove(agent).unwrap_or_default().iter().map(|t| t["id"].as_str().unwrap().to_string()).collect() };
         assert_eq!(ids(tx, "a"), [one.id.clone(), two.id.clone(), three.id.clone()], "pressed in the same second: in the order they came");
-        assert_eq!(queues(tx)?["a"][2], json!({"id": three.id, "title": "t in web", "project": "web", "also": []}));
+        assert_eq!(queues(tx)?["a"][2], json!({"id": three.id, "title": "t in api", "project": "api", "also": []}));
         reorder(tx, "a", &[three.id.clone(), one.id.clone(), two.id.clone()])?;
         assert_eq!(ids(tx, "a"), [three.id.clone(), one.id.clone(), two.id.clone()]);
         assert_eq!(all(tx)?.iter().map(|w| w.task.as_str()).collect::<Vec<_>>(), [three.key.as_str(), other.key.as_str(), one.key.as_str(), two.key.as_str()], "another agent's wait keeps its place among them");
         assert_eq!(ahead(tx, "a", "api", &one.key)?, Some(three.id.clone()), "the one moved first goes first");
-        assert_eq!(ahead(tx, "a", "web", &three.key)?, None);
+        assert_eq!(ahead(tx, "a", "api", &three.key)?, None);
         // a new press on a queued task keeps the place the human gave it
-        add(tx, &three, "a", "web", &json!({"comment": "again"}), 99)?;
+        add(tx, &three, "a", "api", &json!({"comment": "again"}), 99)?;
         assert_eq!(ids(tx, "a")[0], three.id);
         // a queue that changed meanwhile is not ordered by an older list
         assert_eq!(reorder(tx, "a", &[one.id.clone(), two.id.clone()]).unwrap_err(), "The queue changed meanwhile: look at it again.");

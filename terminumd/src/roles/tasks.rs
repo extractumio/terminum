@@ -24,11 +24,11 @@ pub async fn list_runs(app: &Shared, boss: &Boss) -> Result<String, String> {
     Ok(format!("{DATA}\n{listed}"))
 }
 
-/// The pool's agent named `named`: by its name, else its id.
-pub fn agent_named(tx: &rusqlite::Transaction, named: &str) -> Result<agents::Agent, String> {
-    let all = agents::list(tx)?;
+/// The agent of `project`'s pool named `named`: by its name, else its id.
+pub fn agent_named(tx: &rusqlite::Transaction, project: &str, named: &str) -> Result<agents::Agent, String> {
+    let all = agents::of_project(tx, project)?;
     all.iter().find(|a| a.name == named).or_else(|| all.iter().find(|a| a.id == named)).cloned()
-        .ok_or_else(|| format!("The pool has no agent {named:?}: {}.", if all.is_empty() { "it is empty".to_string() } else { all.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ") }))
+        .ok_or_else(|| format!("Your project's pool has no agent {named:?}: {}.", if all.is_empty() { "it is empty".to_string() } else { all.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", ") }))
 }
 
 pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String, String> {
@@ -36,7 +36,7 @@ pub async fn run_task(app: &Shared, boss: &Boss, args: &Value) -> Result<String,
     let (b, wanted, named) = (boss.clone(), id.clone(), opt(args, "agent").map(str::to_string));
     let agent = store(app, move |tx| {
         in_project(tx, &b, &wanted)?;
-        named.map(|n| agent_named(tx, &n)).transpose()
+        named.map(|n| agent_named(tx, &b.project, &n)).transpose()
     }).await?;
     let comment = args["comment"].as_str().map(crate::plans::rules::clean).filter(|c| !c.trim().is_empty());
     let name = agent.as_ref().map(|a| a.name.clone());

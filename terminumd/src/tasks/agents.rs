@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The pool of agents (`terminum-dispatcher.md` AC-137): what RUN can start, none a project's. Where it
-//! starts is the project's (AC-140). A signed-in page changes them, and a project's manager by its tools
-//! (terminum-agents.md AC-180), never a worker; a command is kept as written.
+//! A project's pool of agents (`terminum-dispatcher.md` AC-137): what RUN can start there, each agent one
+//! project's; where it starts is the project's too (AC-140). A signed-in page changes them, and a project's
+//! manager its own by its tools (terminum-agents.md AC-180), never a worker; a command is kept as written.
 
 use axum::extract::{Path, State};
 use axum::response::Response;
@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use super::api::{answer, store, told_projects};
 use super::ops::{rows, sql};
+use super::store::DEFAULT_PROJECT;
 use crate::app::Shared;
 use crate::termtext::{has_control, stray};
 use crate::tmux::hookstate::AGENTS;
@@ -25,6 +26,8 @@ const MOST_LINE: usize = 1000;
 #[derive(Clone, Serialize)]
 pub struct Agent {
     pub id: String,
+    /// the one project whose pool it is in (AC-137)
+    pub project: String,
     pub name: String,
     pub kind: String,
     pub command: String,
@@ -80,6 +83,8 @@ fn command_line(kind: &str, command: &str, effort: &str) -> String {
 
 /// What a page keeps, trimmed.
 pub(crate) struct Given {
+    /// a new one's project; a change never moves one
+    project: String,
     name: String,
     kind: String,
     command: String,
@@ -97,7 +102,7 @@ fn limit_of(v: &Value) -> Option<f64> {
 impl Given {
     fn of(body: &Value) -> Given {
         let text = |k: &str| body[k].as_str().unwrap_or_default().trim().to_string();
-        Given { name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: if body["at_once"].is_null() { 1 } else { body["at_once"].as_i64().unwrap_or(-1) },
+        Given { project: text("project"), name: text("name"), kind: text("kind"), command: text("command"), effort: text("effort"), at_once: if body["at_once"].is_null() { 1 } else { body["at_once"].as_i64().unwrap_or(-1) },
                 week_limit: limit_of(&body["week_limit"]), month_limit: limit_of(&body["month_limit"]) }
     }
 
@@ -146,9 +151,9 @@ impl Given {
         Ok(())
     }
 
-    /// A name stands once in the pool.
-    fn fits(&self, tx: &Transaction, but: &str) -> Result<(), String> {
-        let taken: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE name = ?1 AND id != ?2)", (&self.name, but), |r| r.get(0)).map_err(sql)?;
+    /// A name stands once in `project`'s pool.
+    fn fits(&self, tx: &Transaction, project: &str, but: &str) -> Result<(), String> {
+        let taken: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE project = ?1 AND name = ?2 AND id != ?3)", (project, &self.name, but), |r| r.get(0)).map_err(sql)?;
         if taken {
             return Err(format!("The pool already has an agent named {}.", self.name));
         }
@@ -156,19 +161,56 @@ impl Given {
     }
 }
 
-/// The pool, as they were added.
-const SELECT: &str = "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit FROM agents";
+/// Every project's pool, as they were added.
+const SELECT: &str = "SELECT id, name, kind, command, effort, color, at_once, week_limit, month_limit, project FROM agents";
 
 fn of_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
     let (kind, command, effort): (String, String, String) = (r.get(2)?, r.get(3)?, r.get(4)?);
-    Ok(Agent { id: r.get(0)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
+    Ok(Agent { id: r.get(0)?, project: r.get(9)?, name: r.get(1)?, line: command_line(&kind, &command, &effort), kind, command, effort, color: r.get(5)?, at_once: r.get(6)?, week_limit: r.get(7)?, month_limit: r.get(8)? })
 }
 
 pub fn list(tx: &Transaction) -> Result<Vec<Agent>, String> {
     rows(tx, &format!("{SELECT} ORDER BY rowid"), [], of_row)
 }
 
-/// The pool as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
+/// `project`'s pool, as they were added.
+pub fn of_project(tx: &Transaction, project: &str) -> Result<Vec<Agent>, String> {
+    rows(tx, &format!("{SELECT} WHERE project = ?1 ORDER BY rowid"), [project], of_row)
+}
+
+/// One of `project`'s pool. Another project's is none here, as one deleted is: nothing of a project starts,
+/// queues, schedules or names it (AC-137).
+pub fn in_project(tx: &Transaction, id: &str, project: &str) -> Result<Option<Agent>, String> {
+    Ok(by_id(tx, id)?.filter(|a| a.project == project))
+}
+
+/// `id` for a human's or a manager's choice in `project`: one of its pool, or why not, another project's said so.
+pub fn chosen(tx: &Transaction, id: &str, project: &str) -> Result<Agent, String> {
+    let a = by_id(tx, id)?.ok_or("That agent is gone.")?;
+    if a.project == project {
+        return Ok(a);
+    }
+    let name = |p: &str| super::ops::project_place(tx, p).map(|(name, _, _)| name);
+    Err(format!("{} is {}'s agent, not {}'s: choose one of its own.", a.name, name(&a.project)?, name(project)?))
+}
+
+/// A deleted project's agents stand in Default with its tasks and runs; a name Default has takes a number.
+pub fn move_to_default(tx: &Transaction, project: &str) -> Result<(), String> {
+    for a in of_project(tx, project)? {
+        let taken = |name: &str| tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE project = ?1 AND name = ?2)", (DEFAULT_PROJECT, name), |r| r.get::<_, bool>(0)).map_err(sql);
+        let (mut name, mut n) = (a.name.clone(), 1);
+        while taken(&name)? {
+            n += 1;
+            let tail = format!(" ({n})");
+            name = format!("{}{tail}", a.name.chars().take(MOST_NAME - tail.chars().count()).collect::<String>());
+        }
+        tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(&a.id), &name)).map_err(sql)?;
+        tx.execute("UPDATE agents SET project = ?2, name = ?3 WHERE id = ?1", (&a.id, DEFAULT_PROJECT, &name)).map_err(sql)?;
+    }
+    Ok(())
+}
+
+/// Every pool as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
 pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
     let spent = crate::dispatcher::usage::of_agents(tx, now)?;
     Ok(list(tx)?.into_iter().map(|a| {
@@ -179,24 +221,29 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
     }).collect())
 }
 
-/// One of the pool, if it is still there.
+/// An agent, whichever project's, if it is still there.
 pub fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
     Ok(rows(tx, &format!("{SELECT} WHERE id = ?1"), [id], of_row)?.pop())
 }
 
 /// Keeps a new one. Its id.
 pub(crate) fn add(tx: &Transaction, given: &Given) -> Result<String, String> {
-    given.fits(tx, "")?;
+    if given.project.is_empty() {
+        return Err("An agent needs a project.".into());
+    }
+    super::ops::check_project(tx, &given.project)?;
+    given.fits(tx, &given.project, "")?;
     let id = crate::auth::crypto::random_hex::<8>();
-    // the next color after the last: agents far apart, and no two alike for a palette's length
-    let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM agents", [], |r| r.get(0)).map_err(sql)?;
-    tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once, week_limit, month_limit) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-               rusqlite::params![id, given.name, given.kind, given.command, given.effort, color, given.at_once, given.week_limit, given.month_limit]).map_err(sql)?;
+    // the next color after its project's last: agents far apart, and no two alike for a palette's length
+    let color: i64 = tx.query_row("SELECT COALESCE(MAX(color) + 1, 0) FROM agents WHERE project = ?1", [&given.project], |r| r.get(0)).map_err(sql)?;
+    tx.execute("INSERT INTO agents (id, project, name, kind, command, effort, color, at_once, week_limit, month_limit) VALUES (?1, ?10, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+               rusqlite::params![id, given.name, given.kind, given.command, given.effort, color, given.at_once, given.week_limit, given.month_limit, given.project]).map_err(sql)?;
     Ok(id)
 }
 
 pub(crate) fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), String> {
-    given.fits(tx, id)?;
+    let Some(was) = by_id(tx, id)? else { return Err("That agent is gone.".into()) };
+    given.fits(tx, &was.project, id)?;
     // its schedules keep their slots (terminum-schedules.md AC-161)
     let kept = super::schedules::kept_on(tx, id, None)?;
     if kept.len() as i64 > given.at_once {

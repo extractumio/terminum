@@ -166,7 +166,7 @@ fn ac171_dispatcher_s_sessions_failures_and_load() {
     let s = store("dashboard-system");
     let noon = noon(&s);
     s.with(|tx| {
-        tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('a', 'Opus', 'claude', 'claude', 0, 2)", []).map_err(sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'default', 'Opus', 'claude', 'claude', 0, 2)", []).map_err(sql)?;
         let (_, done) = run(tx, "a", "default", noon - 3 * HOUR, Some(60));
         let (_, failed) = run(tx, "a", "default", noon - 2 * HOUR, Some(30));
         let (_, by_hand) = run(tx, "gone", "default", noon - HOUR, None);
@@ -206,8 +206,8 @@ fn ac172_what_dispatcher_s_sessions_spent() {
     let noon = noon(&s);
     let one = |model: &str, input: i64, output: i64| BTreeMap::from([(model.to_string(), Totals { input, output, ..Totals::default() })]);
     s.with(|tx| {
-        tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once, week_limit) VALUES ('a', 'Opus', 'claude', 'claude', 4, 1, 5)", []).map_err(sql)?;
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('p1', 'Api', 3, '/srv', 1)", []).map_err(sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once, week_limit) VALUES ('a', 'p1', 'Opus', 'claude', 'claude', 4, 1, 5)", []).map_err(sql)?;
         let (first, _) = run(tx, "a", "p1", noon - HOUR, Some(30));
         let (second, _) = run(tx, "b", "default", noon - HOUR, Some(30));
         usage::heard(tx, &first, "a", &one("claude-opus-5-5", 1_000_000, 100_000), noon / 1000 - 3000, None)?;

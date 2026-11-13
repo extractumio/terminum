@@ -10,7 +10,7 @@ fn open(name: &str) -> Store {
 }
 
 fn agent(tx: &Transaction, id: &str, at_once: i64) {
-    tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES (?1, upper(?1), 'claude', 'claude', 0, ?2)", (id, at_once)).unwrap();
+    tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES (?1, 'default', upper(?1), 'claude', 'claude', 0, ?2)", (id, at_once)).unwrap();
 }
 
 fn body(agent: &str, cron: &str) -> Value {

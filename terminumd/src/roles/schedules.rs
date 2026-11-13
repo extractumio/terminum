@@ -28,7 +28,7 @@ pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
 /// The body the board's own rules judge: `args` over what the schedule `was`, in the manager's project.
 fn body(tx: &Transaction, boss: &Boss, args: &Value, was: Option<&Schedule>) -> Result<Value, String> {
     let agent = match opt(args, "agent") {
-        Some(named) => Some(agent_named(tx, named)?.id),
+        Some(named) => Some(agent_named(tx, &boss.project, named)?.id),
         None => was.map(|s| s.agent.clone()),
     };
     // a new cadence takes the place of the old one, whichever kind it was

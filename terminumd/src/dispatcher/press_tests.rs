@@ -209,7 +209,7 @@ fn ac157_after_its_questions_only_the_humans_answers_go_back() {
 #[test]
 fn ac138_dropped_on_another_agent_of_its_kind_its_ended_conversation_goes_on_there() {
     store_of("api-moved").with(|tx| {
-        tx.execute("INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('b', 'Jones', 'claude', 'claude --model sonnet', 1, 1), ('x', 'Codex', 'codex', 'codex', 2, 1)", []).map_err(ops::sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('b', 'default', 'Jones', 'claude', 'claude --model sonnet', 1, 1), ('x', 'default', 'Codex', 'codex', 'codex', 2, 1)", []).map_err(ops::sql)?;
         let t = made(tx, "Fix it", "the text");
         let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         let r = runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;
@@ -249,7 +249,7 @@ fn ac166_the_prompt_closes_the_task_out_in_the_project_s_language() {
 #[test]
 fn ac156_going_on_starts_the_agent_s_command_as_the_pool_has_it_now() {
     store_of("api-current").with(|tx| {
-        tx.execute("INSERT INTO agents (id, name, kind, command, effort, color, at_once) VALUES ('a', 'Smith', 'claude', 'myclaude', 'high', 0, 1)", []).map_err(ops::sql)?;
+        tx.execute("INSERT INTO agents (id, project, name, kind, command, effort, color, at_once) VALUES ('a', 'default', 'Smith', 'claude', 'myclaude', 'high', 0, 1)", []).map_err(ops::sql)?;
         let t = made(tx, "Fix it", "the text");
         let old = runs::add(tx, &Run { agent_id: "a".into(), agent_name: "Smith".into(), kind: "claude".into(), command: "claude".into(), folder: "/srv/api".into(), project: "default".into(), ..Default::default() }, std::slice::from_ref(&t.key), Default::default(), 1)?;
         runs::change(tx, &old, |r| { r.state = Phase::Closed; r.agent_session = Some("c0ffee".into()); })?;

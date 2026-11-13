@@ -49,6 +49,7 @@ pub fn numbers(tx: &Transaction, ask: &Ask, now_s: i64) -> Result<Value, String>
     // an agent's name and color: the pool's, else what its last run kept
     let mut agents: HashMap<String, (String, i64)> = rows(tx, "SELECT agent_id, agent_name, agent_color FROM runs ORDER BY rowid", [], |r| Ok((r.get(0)?, (r.get(1)?, r.get(2)?))))?.into_iter().collect();
     let mut pool = crate::tasks::agents::list(tx)?;
+    pool.retain(|a| ask.task_project().is_none_or(|p| a.project == p));
     pool.sort_by(|a, b| a.name.cmp(&b.name));
     for a in &pool {
         agents.insert(a.id.clone(), (a.name.clone(), a.color));

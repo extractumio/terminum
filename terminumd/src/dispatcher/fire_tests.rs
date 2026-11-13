@@ -12,7 +12,7 @@ fn open(name: &str) -> Store {
 
 /// Agent `a` with `at_once`, and a schedule of it every 15 minutes, its body `text`.
 fn schedule(tx: &rusqlite::Transaction, at_once: i64, v: serde_json::Value) -> Schedule {
-    tx.execute("INSERT OR IGNORE INTO agents (id, name, kind, command, color, at_once) VALUES ('a', 'Opus reviewer', 'claude', 'claude', 0, ?1)", [at_once]).unwrap();
+    tx.execute("INSERT OR IGNORE INTO agents (id, project, name, kind, command, color, at_once) VALUES ('a', 'default', 'Opus reviewer', 'claude', 'claude', 0, ?1)", [at_once]).unwrap();
     let (id, _) = schedules::add(tx, HUMAN, &Given::of(tx, &v, NOW).unwrap(), NOW).unwrap();
     schedules::by_id(tx, &id).unwrap()
 }
