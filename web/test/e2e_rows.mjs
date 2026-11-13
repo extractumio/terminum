@@ -74,12 +74,13 @@ export async function webRows(browser, name) {
     check("AC-39 done with a shell of its still running: a quiet terminal mark in the state's place, in the row and the header; none when only done or while working",
       m.row?.title === said && m.head?.title === said && m.row.svg === 14 && m.head.svg === 14 && m.others === 1, JSON.stringify(m));
     // the turn over with its shell running past the 10 minutes (terminumd: done with the mark), then the shell gone
-    const pulse = async (state, background) => {
+    const pulse = async (state, background, title) => {
       f.say({ t: "layout", groups: [group("local", LAYOUT[0].items.map((it) => (it.id === ID(6) ? { ...it, state, background, subagents: 0 } : it))), LAYOUT[1]] });
-      await page.waitForTimeout(300);
+      // drawn anew as expected, or not within 5 s: the check below says what it shows
+      await page.waitForFunction((t) => document.querySelector('#sessions .item[data-id$="%6"] .pbar')?.title === t, title, { timeout: 5000 }).catch(() => {});
       return page.evaluate(() => { const b = document.querySelector('#sessions .item[data-id$="%6"] .pbar'); return { busy: b.classList.contains("busy"), title: b.title, anim: getComputedStyle(b).animationName }; });
     };
-    const past = await pulse("done", true), over = await pulse("done", false);
+    const past = await pulse("done", true, "Folder ~/work/slicer, its background work runs"), over = await pulse("done", false, "Folder ~/work/slicer");
     check("AC-39 its turn over while work it started runs on past the 10 minutes: its bar still pulses, said on hover",
       past.busy && past.anim === "pulse-bar" && past.title.endsWith(", its background work runs"), JSON.stringify(past));
     check("AC-39 that work ended and the agent stopped: its bar stands still", !over.busy && over.anim === "none" && !over.title.includes(","), JSON.stringify(over));

@@ -16,8 +16,8 @@ import { taskUrl } from "./tasklink.js";
 import { atWork } from "./cardstate.js";
 
 // A coding agent's state: waiting for the user, failed; working is its bar's pulse (folderBar), done nothing
-// but a quiet terminal mark while a shell, a monitor or a task it started still runs (terminumd reads
-// Claude Code's footer, AC-39).
+// but a quiet terminal mark and that pulse (atWork) while a shell, a monitor or a task it started still runs
+// (terminumd reads Claude Code's footer, AC-39).
 const STATES = {
   waiting: { label: "Waiting for your answer", icon: "circle-help" },
   failed: { label: "Failed", icon: "triangle-alert" },
