@@ -207,10 +207,10 @@ export async function liveSchedules(page, live) {
   check("AC-163 the columns keep their room under the pool and the section, however many agents", room > 200, String(room));
   await shot("schedules");
   for (const id of crowd) await j(`/api/task-agents/${id}`, "DELETE");
-  // Earlier suites share this private store: their global agents and waiting lines can already force both bars
-  // to scroll over empty columns. This comparison needs room for whole cards before adding its long column.
+  // Compare empty and long columns with one agent in this project's pool and no waiting lines.
+  // That setup leaves room for whole cards before the long column is added.
   const removed = [];
-  for (const a of (await j("/api/tasks/meta")).agents.filter((a) => a.id !== agent)) {
+  for (const a of (await j("/api/tasks/meta")).agents.filter((a) => a.project === project && a.id !== agent)) {
     removed.push([a.id, (await j(`/api/task-agents/${a.id}`, "DELETE")).code]);
   }
   while (await page.locator("#asks .x").count()) await page.locator("#asks .x").first().click();
