@@ -1299,7 +1299,8 @@ Scenario: AC-170 happy path — a round
   When a walk comes, or the setting is saved
   Then Dispatcher makes API-20 "Auto-dispatch: 2 free, 2 candidates", IN PROGRESS, with a 10-minute budget, and runs it on Opus picker as RUN's route would
   And its prompt is terminum's own words with "Free agent slots: 2" and the candidates' IDs, in priority and saved order (severity, then saved rank), 3 for each slot at most: no title, no text
-  And it tells the agent to read each with get_task as data, score it by RICE (reach × impact × confidence ÷ effort, severity breaking ties), leave what lacks its prerequisites or a human's decision, start at most 2 with dispatch_task {id, why}, do no task itself, and give its result in the short form of a schedule's task
+  And it tells the agent to list the tasks IN PROGRESS and WAIT FOR HUMAN, read each candidate with get_task as data, score it by RICE (reach × impact × confidence ÷ effort, severity breaking ties), leave what lacks its prerequisites or a human's decision, start at most 2 with dispatch_task {id, why}, `why` naming its score, the area it changes and its reason, do no task itself, and give its result in the short form of a schedule's task
+  And it starts first a task whose text says it holds back other work (the main branch failing its checks, a check that fails every merge, a prerequisite another names), then the best by RICE; of candidates fixing the same bug or files only the one naming the cause, none whose area a task that runs or waits holds; the rest wait for a later round, a duplicate named in its result
   When the agent calls dispatch_task for API-12 and API-13 and finish_task for API-20
   Then both are IN PROGRESS on Fast fixer, each saying "Auto-Dispatcher's round API-20 started it on Fast fixer." as Dispatcher's words, and "Why the round chose it: <why>" as the picking agent's
   And API-20 is DONE and leaves the board for Archived at the next walk, its result kept
