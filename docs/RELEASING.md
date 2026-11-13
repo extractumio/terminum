@@ -100,6 +100,11 @@ fails when any of its runs fails, each run's log in its own group; it holds the 
 cap, and main's next verdict waits for it. `gh run view --log` cuts a long
 job's log short: read the whole one with `gh api repos/extractumio/terminum/actions/jobs/<job>/logs`.
 
+The pinned Playwright dev dependency supplies the test browsers. Linux WebKit needs libsoup
+3.6.6 or later: 3.6.5 can crash its network process when a navigation cancels requests
+([upstream fix](https://bugs.webkit.org/show_bug.cgi?id=324897)). Install the matching browsers
+after updating `ui/package-lock.json`.
+
 ### The runner (once)
 
 An Ubuntu 24.04 machine; the runner under an unprivileged user of its own (no sudo, no docker,
