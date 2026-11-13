@@ -36,7 +36,7 @@ fn ac123_a_turn_with_no_result_gets_a_request_then_an_hour_then_failed() {
 fn ac123_the_request_asks_whether_it_is_finished_and_says_the_hour() {
     let w = nudge_words("API-12");
     assert!(w.starts_with("[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool(\"finish_task\", {id, result}) with its result in the sections"), "{w}");
-    assert!(w.contains("If a human must decide or approve something, or a cause that can be removed (another task, a failing check not its own, access) keeps it from being finished, ask by execute_tool(\"ask_human\", {id, questions}): the task waits for them; never finish it as done while its work is not."), "a decision, an approval or a removable cause goes to the human, never to Dispatcher: {w}");
+    assert!(w.contains("If a human must decide or approve something, or a cause that can be removed") && w.contains("keeps it from being finished, ask by execute_tool(\"ask_human\", {id, questions}): the task waits for them."), "a decision, an approval or a removable cause goes to the human, never to Dispatcher: {w}");
     assert!(w.contains("update_session_plan") && w.ends_with("it is FAILED after an hour."), "{w}");
     assert!(!w.chars().any(char::is_control), "typed through the gate: one line, no control characters");
 }

@@ -12,10 +12,17 @@ pub const DEFAULT_LANGUAGE: &str = "English";
 /// At most this many characters: a language's name, typed into a pane in RUN's prompt.
 pub const LANGUAGE_MOST: usize = 40;
 
+/// A cause that can be removed, as agents are told it (terminum-dispatcher.md AC-157): its task waits for a human,
+/// never DONE or FAILED. A macro, so the prompts' constants (`concat!`) and the answers (`format!`) share its words.
+macro_rules! removable {
+    () => { "(another task or a prerequisite not done, a check that fails for another task's reason, missing access)" };
+}
+pub(crate) use removable;
+
 /// The result's sections, in order, each with what it holds; the finishing tool's description names them
 /// too (cli/mcp_tasks.rs).
 pub const SECTIONS: [(&str, &str); 9] = [
-    ("Outcome", "done, partly done or not done, these words first and in English; where the work stands (merged, committed on a branch, nothing committed)"),
+    ("Outcome", "Done, first and in English: work not done takes no result, a human is asked or it is FAILED; where the work stands (merged, committed on a branch)"),
     ("Done", "each change, why, and where (files, commits, tasks by ID); each choice the task left open, and why"),
     ("Checked", "how each was verified, on what, with what result; what was not verified, and why"),
     ("Not done", "what of the task is left or dropped, and why; what is left names its task's ID"),
@@ -137,7 +144,7 @@ pub fn not_done(result: &str) -> bool {
 /// What finishing answers on such a result: its words stay a comment, the task where it was, and the agent's turn goes
 /// on to ask or fail it.
 pub fn not_done_words(id: &str, status: &str) -> String {
-    format!("Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and {id} stays {status}; give its result again only once its work is done. If a cause that can be removed holds it (another task, a failing check not its own, access, a decision), ask by execute_tool(\"ask_human\", {{id, questions}}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool(\"move_task\", {{id, to}}) with a comment saying why.")
+    format!("Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and {id} stays {status}; give its result again only once its work is done. If a cause that can be removed {} holds it, ask by execute_tool(\"ask_human\", {{id, questions}}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool(\"move_task\", {{id, to}}) with a comment saying why.", removable!())
 }
 
 /// The language a project's agents write in on the board.

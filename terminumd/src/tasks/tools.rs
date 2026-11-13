@@ -103,7 +103,7 @@ fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
     if open.is_empty() {
         return Ok(());
     }
-    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first; when a cause that can be removed holds one, ask by execute_tool(\"ask_human\", {{id, questions}}); when one cannot be done at all, move {0} to FAILED with a comment saying why.", t.id, open.join(", ")))
+    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first; when a cause that can be removed {2} holds one, ask by execute_tool(\"ask_human\", {{id, questions}}); when one cannot be done at all, move {0} to FAILED with a comment saying why.", t.id, open.join(", "), super::closeout::removable!()))
 }
 
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.

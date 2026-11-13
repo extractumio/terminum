@@ -90,7 +90,7 @@ pub enum Act {
 
 /// The request for a result (AC-123): fixed words and the task's ID, typed through the gate (§9).
 pub fn nudge_words(task: &str) -> String {
-    format!("[terminum Dispatcher] {task} is still open and your turn ended; no human watches this run now. If it is finished, call {} with its result in the sections you were asked for. If a human must decide or approve something, or a cause that can be removed (another task, a failing check not its own, access) keeps it from being finished, ask by {}: the task waits for them; never finish it as done while its work is not. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour.", super::press::FINISH, super::press::ASK_HUMAN)
+    format!("[terminum Dispatcher] {task} is still open and your turn ended; no human watches this run now. If it is finished, call {} with its result in the sections you were asked for. If a human must decide or approve something, or a cause that can be removed {} keeps it from being finished, ask by {}: the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour.", super::press::FINISH, crate::tasks::closeout::removable!(), super::press::ASK_HUMAN)
 }
 
 /// When the last warning goes: 3% of the budget left, at least 2 minutes (AC-126).
