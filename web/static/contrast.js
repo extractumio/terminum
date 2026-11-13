@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The page's colors from the theme, among them the focus ring's (docs/UI-GUIDELINES.md §2.6):
-// the theme's accent (its cursor color), unless that is too near the background to see (under
-// 3:1), then the theme's text color; links in the theme's link color, lightened on a dark
-// background or darkened on a light one until they read (4.5:1).
+// The page's colors from the theme (docs/UI-GUIDELINES.md §2): the accent (its cursor color,
+// also the focus ring and a primary key's fill under the background's color) and links (its link
+// color), each lightened on a dark background or darkened on a light one until it reads (4.5:1).
 
 /** "#rgb" or "#rrggbb" as [r, g, b], each 0…1; null for anything else. */
 function rgb(hex) {
@@ -26,9 +25,6 @@ export function contrast(a, b) {
   return x === null || y === null ? null : (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
 }
 
-/** The ring for a theme: its accent when it stands out from bg (or cannot be measured), else fg. */
-export const ringColor = (bg, accent, fg) => ((contrast(bg, accent) ?? 3) >= 3 ? accent : fg);
-
 /** "#rgb" or "#rrggbb" as [h 0…360, s 0…1, l 0…1]; null for anything else. */
 function hsl(hex) {
   const c = rgb(hex);
@@ -44,30 +40,29 @@ const toHex = ([h, s, l]) => {
   return "#" + [0, 8, 4].map((n) => Math.round((l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))) * 255).toString(16).padStart(2, "0")).join("");
 };
 
-/** A link color that reads on bg (4.5:1, WCAG's for text): the theme's own while it does, else
- *  its hue and saturation lighter on a dark background, darker on a light one, by 2% steps;
- *  not measurable (not a hex color): as the theme says. */
-export function linkColor(bg, link) {
-  const c = hsl(link);
-  if (!c || (contrast(bg, link) ?? 21) >= 4.5) return link;
+/** A color that reads on bg (4.5:1, WCAG's for text): the theme's own while it does, else its
+ *  hue and saturation lighter on a dark background, darker on a light one, by 2% steps; not
+ *  measurable (not a hex color): as the theme says. Text in bg's color reads on it as well. */
+export function readable(bg, color) {
+  const c = hsl(color);
+  if (!c || (contrast(bg, color) ?? 21) >= 4.5) return color;
   const step = contrast(bg, "#ffffff") >= contrast(bg, "#000000") ? 0.02 : -0.02;
-  let out = link;
+  let out = color;
   for (let i = 1; i <= 50 && contrast(bg, out) < 4.5; i++) out = toHex([c[0], c[1], Math.min(1, Math.max(0, c[2] + step * i))]);
   return out;
 }
 
 /** A theme's link color (its `link`, else its ANSI 12, as View's), made to read on its bg; undefined without one. */
-export const themeLink = (theme) => { const l = theme.link || theme.ansi?.[12]; return l && linkColor(theme.bg, l); };
+export const themeLink = (theme) => { const l = theme.link || theme.ansi?.[12]; return l && readable(theme.bg, l); };
 
-/** The page's colors from a theme: the terminal's, the accent, links, the focus ring, the
- *  selection and the browser's bar. */
+/** The page's colors from a theme: the terminal's, the accent (tokens.css: the focus ring, a
+ *  primary key's fill), links, the selection and the browser's bar. */
 export function pageColors(theme) {
   const r = document.documentElement.style;
   r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
-  r.setProperty("--accent", theme.cursor || theme.fg);
+  r.setProperty("--accent", readable(theme.bg, theme.cursor || theme.fg));   // a white cursor on white: grey, under white words
   const link = themeLink(theme);                       // as View colors links (ui/src/theme.ts); else tokens.css's
   if (link) r.setProperty("--link", link); else r.removeProperty("--link");
-  r.setProperty("--ring", ringColor(theme.bg, theme.cursor || theme.fg, theme.fg));   // a focus ring that shows
   document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues
   if (theme.sel) r.setProperty("--sel", theme.sel);
   if (theme.selfg) r.setProperty("--selfg", theme.selfg);

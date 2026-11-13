@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The focus ring's color: the accent while it shows against the background, else the text color;
-// a link's: the theme's while it reads, else lighter on a dark background, darker on a light one.
+// The accent's and a link's color: the theme's while it reads on the background, else lighter on
+// a dark background, darker on a light one (the accent is also the focus ring, and a primary
+// key's fill under words in the background's color).
 import assert from "node:assert/strict";
 import test from "node:test";
-import { contrast, linkColor, ringColor } from "../static/contrast.js";
+import { contrast, readable } from "../static/contrast.js";
 
 test("contrast is WCAG's ratio, for #rgb and #rrggbb", () => {
   assert.equal(Math.round(contrast("#000", "#ffffff")), 21);
@@ -11,27 +12,28 @@ test("contrast is WCAG's ratio, for #rgb and #rrggbb", () => {
   assert.equal(contrast("rgb(0,0,0)", "#fff"), null);
 });
 
-test("the ring is the accent when it shows, the text color when it hides", () => {
-  assert.equal(ringColor("#1e1e1e", "#ffffff", "#d4d4d4"), "#ffffff");
-  assert.equal(ringColor("#1e1e1e", "#2a2a2a", "#d4d4d4"), "#d4d4d4");   // a cursor near the background
-  assert.equal(ringColor("#ffffff", "#fdfdfd", "#1f2328"), "#1f2328");
-  assert.equal(ringColor("#1e1e1e", "rebeccapurple", "#d4d4d4"), "rebeccapurple");   // not measurable: as the theme says
+test("an accent near the background (a light cursor on a light theme) reads, and so do words in the background's color on it", () => {
+  for (const [bg, cursor] of [["#ffffff", "#ffffff"], ["#ffffff", "#fdfdfd"], ["#1e1e1e", "#2a2a2a"], ["#eff1f5", "#dc8a78"], ["#faf9f5", "#c4625a"]]) {
+    const accent = readable(bg, cursor);
+    assert.ok(contrast(accent, bg) >= 4.5, `${cursor} on ${bg}: ${accent}`);
+  }
+  assert.equal(readable("#1e1e1e", "#ffffff"), "#ffffff");   // a cursor that reads stays the theme's
 });
 
 test("a link keeps the theme's color while it reads on the background", () => {
-  assert.equal(linkColor("#1e1e1e", "#6ea8fe"), "#6ea8fe");
-  assert.equal(linkColor("#ffffff", "#2f6fdf"), "#2f6fdf");
-  assert.equal(linkColor("#1e1e1e", "rebeccapurple"), "rebeccapurple");   // not measurable: as the theme says
+  assert.equal(readable("#1e1e1e", "#6ea8fe"), "#6ea8fe");
+  assert.equal(readable("#ffffff", "#2f6fdf"), "#2f6fdf");
+  assert.equal(readable("#1e1e1e", "rebeccapurple"), "rebeccapurple");   // not measurable: as the theme says
 });
 
 test("a link too dark for a dark theme is lightened, too light for a light one darkened, its hue kept", () => {
-  const dark = linkColor("#322925", "#315f78");   // a theme whose link was made for a light background
+  const dark = readable("#322925", "#315f78");   // a theme whose link was made for a light background
   assert.ok(contrast("#322925", dark) >= 4.5, dark);
   assert.ok(contrast(dark, "#ffffff") < contrast("#315f78", "#ffffff"), `${dark} is lighter`);
-  const light = linkColor("#ffffff", "#a0c8ff");
+  const light = readable("#ffffff", "#a0c8ff");
   assert.ok(contrast("#ffffff", light) >= 4.5, light);
   assert.ok(contrast(light, "#000000") < contrast("#a0c8ff", "#000000"), `${light} is darker`);
   const [r, , b] = [1, 3, 5].map((i) => parseInt(dark.slice(i, i + 2), 16));
   assert.ok(b > r, `${dark} stays blue`);
-  assert.ok(contrast("#808080", linkColor("#808080", "#7f7f7f")) >= 4.5);   // a mid grey background: whichever way reads
+  assert.ok(contrast("#808080", readable("#808080", "#7f7f7f")) >= 4.5);   // a mid grey background: whichever way reads
 });

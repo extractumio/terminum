@@ -84,6 +84,16 @@ export async function webLook(browser, name) {
       root.style.cssText = css; root.className = cls; document.querySelector('meta[name="theme-color"]').content = meta;
       return [got, contrast("#322925", got)]; });
     check("look: a link the theme made too dark for a dark background is lightened to read (4.5:1)", link[1] >= 4.5, link.join(" "));
+    // a light theme with a white cursor: New session's Create was white on white (the accent is its fill)
+    const create = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const root = document.documentElement;
+      const css = root.style.cssText, cls = root.className, meta = document.querySelector('meta[name="theme-color"]').content;
+      pageColors({ bg: "#ffffff", fg: "#202020", cursor: "#ffffff", dark: false });
+      const hex = (c) => "#" + c.match(/[\d.]+/g).slice(0, 3).map((v) => Math.round(+v).toString(16).padStart(2, "0")).join("");
+      const s = getComputedStyle(document.querySelector("#newsess .primary")), fill = hex(s.backgroundColor), ink = hex(s.color);
+      root.style.cssText = css; root.className = cls; document.querySelector('meta[name="theme-color"]').content = meta;
+      return [fill, ink, contrast(fill, ink), contrast(fill, "#ffffff")]; });
+    check("look: a primary key reads on a light theme with a white cursor: its words on its fill, its fill on the background (4.5:1)",
+      create[2] >= 4.5 && create[3] >= 4.5, create.join(" "));
     // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
     const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu)")].map((d) => {
       d.showModal();
