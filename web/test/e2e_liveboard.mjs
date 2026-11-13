@@ -361,7 +361,8 @@ export async function liveBoardPhone(page, { base, shots }) {
   check("AC-105 no sideways scroll on a phone", wide <= 0, String(wide));
   const tap = await page.evaluate(() => Math.round(document.querySelector("#newtask").getBoundingClientRect().height));
   check("AC-105 touch targets", tap >= 40, String(tap));
-  check("AC-106 a phone hides TODO's [+] with its head", await page.evaluate(() => !document.querySelector(".colhead .new").getClientRects().length));
+  const plus = await page.evaluate(() => { const r = document.querySelector('.col[data-status="TODO"] .colhead .new').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; });
+  check("AC-106 a phone keeps TODO's [+] in its head, + Task as well", plus && await page.isVisible("#newtask"));
   const small = await page.evaluate(() => [...document.querySelectorAll("#bar button, #bar summary, #bar a, .card button")].filter((e) => e.getClientRects().length && !e.closest("details:not([open]) > .box") && (e.getBoundingClientRect().height < 34 || e.getBoundingClientRect().width < 34)).map((e) => e.textContent.trim() || e.getAttribute("aria-label")));
   check("AC-105 every key of the head and a card takes a finger", !small.length, small.join());
   const head = await page.evaluate(() => Math.round(document.querySelector("#bar").getBoundingClientRect().height));
