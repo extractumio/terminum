@@ -322,7 +322,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       throw e;
     }
     if (mine !== opening) return false;
-    if (!box.open) commentId = null;              // reopening is a new press target, even for the same task
+    if (!box.open) {                              // reopening is a new press target, even for the same task,
+      commentId = null;
+      if (!note?.uploads) note = null;            // and its comment is read from its draft again, unless files are on their way
+    }
     draw(t);
     if (!box.open) box.showModal();
     return true;
