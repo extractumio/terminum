@@ -18,11 +18,28 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from worktree import working_in  # noqa: E402
 import owned_children  # noqa: E402
-from check_cancel import Cancellation, signal_guard  # noqa: E402
+from check_cancel import Cancellation, unreaped_status  # noqa: E402
 
 SETTLE_S = 15   # what ends by itself gets this long: terminumd's tmutil takes seconds on a busy Mac
 LEFT = 3   # the exit status of a check that passed but left something
 KILL_AFTER_S = 2   # a leftover still there this long after SIGTERM gets SIGKILL
+
+
+class GuardCancellation(Cancellation):
+    """Notify the pinned private group once, outside the handler, including shell descendants."""
+    def __init__(self):
+        super().__init__()
+        self.forwarded = False
+
+    def forward(self, group):
+        if self.number is None or self.forwarded:
+            return False
+        self.forwarded = True
+        try:
+            os.killpg(group, self.number)
+        except ProcessLookupError:
+            pass
+        return True
 
 
 def listing():
@@ -99,11 +116,10 @@ def run(command, folder, cancelled, private_group=False):
     owned_children.register(owned_children.path(folder), child.pid)
     group = os.getpgrp() if private_group else child.pid
     while not cancelled.number:
-        try:
-            return child, child.wait(timeout=0.1), group
-        except subprocess.TimeoutExpired:
-            pass
-    signal_guard(child, owned_children.records(owned_children.path(folder)).get(child.pid), cancelled.number)
+        status = unreaped_status(child)
+        if status is not None:
+            return child, status, group
+        time.sleep(0.1)
     return child, 128 + cancelled.number, group
 
 
@@ -112,7 +128,7 @@ def main(command, folder=None):
         sys.exit("usage: check_step.py <command…>")
     if folder is not None and os.getpgrp() != os.getpid():
         sys.exit("--owned-root requires a private guard session")
-    with Cancellation() as cancelled:
+    with GuardCancellation() as cancelled:
         return check(command, folder, cancelled)
 
 
@@ -122,10 +138,16 @@ def check(command, folder, cancelled):
     try:
         child, status, group = run(command, folder, cancelled, private_group)
         end = time.monotonic() + SETTLE_S
-        processes = own_processes(folder, group)
-        while (files_in(folder) or processes) and time.monotonic() < end:
-            time.sleep(1)
+        while True:
+            if cancelled.forward(group):
+                end = time.monotonic() + SETTLE_S
             processes = own_processes(folder, group)
+            files = files_in(folder)
+            if cancelled.number and not cancelled.forwarded:
+                continue  # a signal during metadata discovery gets its full grace too
+            if not (files or processes) or time.monotonic() >= end:
+                break
+            time.sleep(1)
         left = len(processes)
         for pid, name in processes:
             print(f"LEFT process {pid}: {name}", file=sys.stderr)

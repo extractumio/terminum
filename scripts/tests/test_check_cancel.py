@@ -43,25 +43,35 @@ def stop_recorded(child, orderly=False):
 
 
 class OuterCancellation(unittest.TestCase):
-    def exercise(self, number, *, recover=False, failed_guard=False):
+    def exercise(self, number, *, recover=False, failed_guard=False, settling=False):
         with tempfile.TemporaryDirectory(prefix="tm-cancel-", dir=short_tmp()) as tmp:
             root = Path(tmp)
             (root / "scripts").symlink_to(SCRIPTS, target_is_directory=True)
             ready = root / "ready.json"
             later = root / "later"
+            cooperative_ready = root / "cooperative-ready"
+            cleaned = root / "cleaned"
             # Both children ignore cancellation; the detached one leaves both the group and cwd.
             ignore = "\nfor number in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT): signal.signal(number,signal.SIG_IGN)\n"
             detached = "import signal,time" + ignore + "time.sleep(180)"
+            cooperative = ("import signal,time\nfrom pathlib import Path\nreceived=None\n"
+                           "def receive(number,frame):\n global received\n received=received or number\n"
+                           "for number in (signal.SIGTERM,signal.SIGHUP,signal.SIGINT): signal.signal(number,receive)\n"
+                           f"Path({str(cooperative_ready)!r}).touch()\n"
+                           "while received is None: time.sleep(0.01)\n"
+                           f"time.sleep(5)\nPath({str(cleaned)!r}).write_text(str(received))\n")
             script = ("import json,os,signal,subprocess,sys,time\n"
                       f"sys.path.insert(0, {str(SCRIPTS)!r})\nimport owned_children\n"
                       f"{ignore}"
                       f"child=subprocess.Popen([sys.executable,'-c',{detached!r}], cwd='/', start_new_session=True)\n"
                       "owned_children.register(os.environ['TM_TEST_CHILDREN_FILE'],child.pid)\n"
-                      "starts=owned_children.identities([os.getpid(),os.getppid(),child.pid])\n"
+                      f"cooperative=subprocess.Popen([sys.executable,'-c',{cooperative!r}])\n"
+                      f"while not os.path.exists({str(cooperative_ready)!r}): time.sleep(0.01)\n"
+                      "starts=owned_children.identities([os.getpid(),os.getppid(),child.pid,cooperative.pid])\n"
                       f"with open({str(ready)+'.pending'!r},'w') as out:\n"
-                      " json.dump({'root':os.environ['TMPDIR'],'foreground':os.getpid(),'detached':child.pid,'guard':os.getppid(),'starts':starts},out)\n"
+                      " json.dump({'root':os.environ['TMPDIR'],'foreground':os.getpid(),'detached':child.pid,'cooperative':cooperative.pid,'guard':os.getppid(),'starts':starts},out)\n"
                       f"os.replace({str(ready)+'.pending'!r},{str(ready)!r})\n"
-                      "while True: time.sleep(1)\n")
+                      + ("sys.exit(0)\n" if settling else "while True: time.sleep(1)\n"))
             command = "exec " + shlex.join([sys.executable, "-I", "-c", script])
             harness = (f"import sys\nsys.path.insert(0,{str(SCRIPTS)!r})\n"
                        "from pathlib import Path\nimport check_changed,check_cancel\n"
@@ -81,6 +91,9 @@ class OuterCancellation(unittest.TestCase):
                 info = wait_for(lambda: json.loads(ready.read_text()) if ready.exists() and ready.stat().st_size else None)
                 # Wait until the detached child installed its signal handler too.
                 time.sleep(0.2)
+                if settling:
+                    wait_for(lambda: owned_children.identity(info["foreground"]) is None)
+                    time.sleep(14)  # cancellation late in the original settling interval needs a fresh grace period
                 if recover:
                     os.kill(info["guard"], signal.SIGSTOP)
                 if failed_guard:
@@ -92,17 +105,20 @@ class OuterCancellation(unittest.TestCase):
                 output, _ = outer.communicate(timeout=100)
                 self.assertEqual(outer.returncode, 128 + (signal.SIGKILL if failed_guard else number), output)
                 self.assertIsNone(unrelated.poll(), "an unrelated process was touched")
-                for key in ("foreground", "detached", "guard"):
+                for key in ("foreground", "detached", "cooperative", "guard"):
                     self.assertIsNone(owned_children.identity(info[key]), f"{key} still runs")
                 self.assertFalse(Path(info["root"]).exists(), "private root survived cancellation")
                 self.assertFalse(later.exists(), "a cancelled run started its next check")
                 self.assertEqual(list((root / ".checks").glob("changed-*.ok")), [])
+                if not recover and not failed_guard:
+                    self.assertTrue(cleaned.exists(), "a shell descendant lost its five-second cleanup grace")
+                    self.assertEqual(cleaned.read_text(), str(number), "the first signal must reach the whole group")
             finally:
                 stop_recorded(outer, orderly=True)
                 stop_recorded(unrelated)
                 if info:
                     # Only PIDs explicitly published by our child; no pattern or environment scans.
-                    pids = [info[key] for key in ("foreground", "detached", "guard")]
+                    pids = [info[key] for key in ("foreground", "detached", "cooperative", "guard")]
                     expected = {pid: info["starts"][str(pid)] for pid in pids}
                     check_step.end_pids(list(expected), expected)
                     if Path(info["root"]).exists():
@@ -117,11 +133,27 @@ class OuterCancellation(unittest.TestCase):
     def test_stuck_guard_is_recovered_after_cancellation_deadline(self):
         self.exercise(signal.SIGTERM, recover=True)
 
+    def test_cancellation_during_settling_gives_descendants_a_fresh_grace_period(self):
+        self.exercise(signal.SIGTERM, settling=True)
+
     def test_failed_guard_is_recovered_without_running_another_step(self):
         self.exercise(signal.SIGTERM, failed_guard=True)
 
 
 class Boundaries(unittest.TestCase):
+    def test_group_notification_happens_once_even_when_the_guard_receives_its_own_signal(self):
+        with self.assertRaises(SystemExit) as ended:
+            with check_step.GuardCancellation() as cancelled:
+                def delivered(_group, number):
+                    cancelled.receive(number, None)
+                with mock.patch.object(os, "killpg", side_effect=delivered) as kill:
+                    cancelled.receive(signal.SIGTERM, None)
+                    self.assertTrue(cancelled.forward(42))
+                    cancelled.receive(signal.SIGINT, None)
+                    self.assertFalse(cancelled.forward(42))
+                    kill.assert_called_once_with(42, signal.SIGTERM)
+        self.assertEqual(ended.exception.code, 143)
+
     def test_failed_metadata_discovery_resumes_the_same_guard(self):
         with mock.patch.object(owned_children, "identity", return_value="original"), \
                 mock.patch.object(check_step, "own_processes", side_effect=OSError("metadata query failed")), \

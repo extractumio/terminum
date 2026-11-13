@@ -360,6 +360,7 @@ Scenario Outline: AC-102 edge — cancel the outer targeted runner
   Given scripts/check_changed.py has an active private guard, a foreground child that ignores signals, and a registered detached child outside the private folder
   When the outer runner receives <signal>, and another signal during cleanup
   Then it forwards cancellation to its guard once and waits for owned-child cleanup before exiting with <status>
+  And the guard notifies its private process group once so shell descendants can finish orderly cleanup; cancellation first received during settling starts a fresh 15 s grace period, and repeated signals neither notify again nor extend it
   And both children and the private folder are gone, an unrelated process is untouched, no later step starts, and no passing result is recorded
   And a guard that fails or exceeds the 60 s cancellation wait is recovered using its private group, folder and registered children, with PID start identities checked before each signal and the guard kept unreaped until its children are ended
   And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis

@@ -44,6 +44,14 @@ def signal_guard(child, started, number):
             pass
 
 
+def unreaped_status(child):
+    """An exited child's status, or None; keep its PID and private group pinned until cleanup ends."""
+    ended = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+    if ended:
+        return ended.si_status if ended.si_code == os.CLD_EXITED else -ended.si_status
+    return None
+
+
 def recover(child, started, folder):
     """End children before reaping the guard: its unreaped PID pins our private group against reuse."""
     import check_step
@@ -80,10 +88,8 @@ def run_guard(guard, command, *, cwd, stdout):
                 if cancelled.number and deadline is None:
                     signal_guard(child, started, cancelled.number)
                     deadline = time.monotonic() + CANCEL_WAIT_S
-                # WNOWAIT preserves the guard's PID even after exit, until owned-child recovery ends.
-                ended = os.waitid(os.P_PID, child.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT)
-                if ended:
-                    code = ended.si_status if ended.si_code == os.CLD_EXITED else -ended.si_status
+                code = unreaped_status(child)
+                if code is not None:
                     break
                 if deadline is not None and time.monotonic() >= deadline:
                     code = 128 + cancelled.number
