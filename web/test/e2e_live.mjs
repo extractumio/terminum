@@ -45,6 +45,7 @@ import { liveBoardBusy } from "./e2e_liveboardbusy.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
+import { liveArchived } from "./e2e_livearchived.mjs";
 import { liveWaitingRun } from "./e2e_livewaiting.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
@@ -52,7 +53,7 @@ import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, QUEUE_ALONE, MAIN_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, QUEUE_ALONE, MAIN_ALONE, ARCHIVED_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -185,7 +186,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveArchived, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -202,8 +203,9 @@ async function wide(browser, name) {
     await boards([liveAuto]);
     return ctx;
   }
-  if (WAITING_ALONE) {
-    await boards([liveWaitingRun]);
+  if (WAITING_ALONE || ARCHIVED_ALONE) {
+    const suite = ARCHIVED_ALONE ? liveArchived : liveWaitingRun;
+    await boards([suite]);
     return ctx;
   }
   if (MAIN_ALONE) {
@@ -408,8 +410,9 @@ async function phone(browser, name) {
   await signIn(page);
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start };
   if (REQUESTS_ALONE) { await liveRequests(page, live); await ctx.close(); return; }
-  if (WAITING_ALONE) {
-    await liveWaitingRun(page, live);
+  if (WAITING_ALONE || ARCHIVED_ALONE) {
+    const suite = ARCHIVED_ALONE ? liveArchived : liveWaitingRun;
+    await suite(page, live);
     await ctx.close();
     return;
   }

@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { boardKit, intoStore, nap, pressRun } from "./boardkit.mjs";
+import { boardKit, nap, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 
 const FAKE = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../scripts/fake_agent.py");
@@ -23,7 +23,7 @@ const taskKit = (j) => {
 
 export async function liveDispatcher(page, opts) {
   const { base, tmux, work, shots, stop, start } = opts;
-  const { j, keyOf, card, open, backToSessions, cli, tool } = boardKit(page, opts);
+  const { j, keyOf, card, open, backToSessions, cli } = boardKit(page, opts);
   const project = (await j("/api/task-projects", "POST", { name: "Runs", dir: work })).id;
   const fake = (kind, more = "") => `python3 -I ${FAKE} ${cli} --kind ${kind} ${more}`;
   const agent = async (name, more = "", kind = "claude") => (await j("/api/task-agents", "POST", { project, name, kind, command: fake(kind, more) })).id;
@@ -80,37 +80,6 @@ export async function liveDispatcher(page, opts) {
   const refused = await run(linked);
   check("AC-125 a session it did not start is not run", /Unlink the session/.test(refused.error), JSON.stringify(refused));
   check("AC-125 and never typed in", !/fake_agent|human ran/.test(tmux("capture-pane", "-p", "-t", otherPane)));
-
-  // AC-122: new work brings an archived live task back, including one already IN PROGRESS (TERM-77).
-  const archived = await task("archived FINISHES");
-  await run(archived);
-  check("AC-122 setup: its agent finishes and its session stays open", await hasStatus(archived, "DONE", 15000));
-  const archivedPane = await paneOf(archived);
-  for (const was of ["DONE", "IN PROGRESS"]) {
-    if (was === "DONE") {
-      check("AC-122 a human archives the finished task", await until(async () => (await j(`/api/tasks/${archived}/archive`, "POST", { on: true })).ok));
-      await until(async () => !(await page.$(card(archived))));
-    } else {
-      // A persisted archive beside active work: the archive route refuses a held run (AC-138).
-      intoStore(opts.app, `UPDATE tasks SET archived_at = unixepoch() WHERE slug = '${archived}'`);
-      await open(`?project=${project}`);
-    }
-    const before = await j(`/api/tasks/${archived}`);
-    check(`AC-122 ${was}: its persisted archive is hidden`, before.archived_at && before.status === was && !(await page.$(card(archived))));
-    for (const [name, more] of [["move_task", { to: "IN PROGRESS" }], ["finish_task", { result: "Do not keep this result" }]]) {
-      const said = tool(archivedPane, name, { id: archived, ...more });
-      check(`AC-115 ${name} refuses an archived task`, said.includes(`${archived} is archived: a human brings it back from the Archived list.`), said);
-    }
-    const after = await j(`/api/tasks/${archived}`);
-    check("AC-115 refused moves and results leave archive, status and history intact", after.archived_at === before.archived_at && after.status === before.status && JSON.stringify(after.history) === JSON.stringify(before.history));
-    tmux("send-keys", "-t", archivedPane, "-l", "More work WORKS");
-    tmux("send-keys", "-t", archivedPane, "Enter");
-    check(`AC-122 ${was}: a human's prompt restores it in progress`, await until(async () => { const t = await j(`/api/tasks/${archived}`); return t.status === "IN PROGRESS" && !t.archived_at; }));
-    check(`AC-122 ${was}: its card returns without reloading`, await until(() => page.isVisible(card(archived))));
-  }
-  tmux("send-keys", "-t", archivedPane, "-l", `${archived} FINISHES`);
-  tmux("send-keys", "-t", archivedPane, "Enter");
-  check("AC-115 after restoration its agent finishes normally", await hasStatus(archived, "DONE"));
 
   // AC-121 failures of the start
   const fast = await agent("Fast", "--start fast");
