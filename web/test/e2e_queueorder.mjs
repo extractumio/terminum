@@ -96,23 +96,23 @@ export async function webQueueOrder(browser, name) {
 
       // A task leaves while its row is dragged: stale DOM IDs still go to server validation,
       // but missing rows cannot crash optimistic rendering before the authoritative read.
-      await page.evaluate(() => queueFixture.hold(true));
+      await page.evaluate(() => { queueFixture.queues.heron = [queueFixture.tasks[2], queueFixture.tasks[0], queueFixture.tasks[1]]; queueFixture.show("heron"); queueFixture.hold(true); });
       await page.evaluate(() => {
         const item = document.querySelector('#queue-test .item[data-id="API-2"]'), list = item.closest("ol");
         const from = item.closest("li").getBoundingClientRect(), x = from.left + from.width / 3;
         const fire = (type, target, y) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 75, pointerType: "mouse", button: 0, clientX: x, clientY: y }));
         fire("pointerdown", item, from.top + from.height / 2);
         fire("pointermove", list, from.top - 12);
-        queueFixture.queues.owl = queueFixture.queues.owl.filter((t) => t.id !== "API-2");
-        queueFixture.show("owl");
+        queueFixture.queues.heron = queueFixture.queues.heron.filter((t) => t.id !== "API-2");
+        queueFixture.show("heron");
         const to = document.querySelector('#queue-test .item[data-id="API-3"]').closest("li").getBoundingClientRect();
         fire("pointerup", list, to.top + to.height / 4);
       });
-      check("AC-169 a stale drop remains readable while its write is pending", await rows() === "API-3,API-1" && !f.errors.length, f.errors.join(" | "));
+      check("AC-169 a stale drop remains readable while its write is pending", await until(async () => await rows() === "API-3,API-1") && !f.errors.length, JSON.stringify([await rows(), f.errors]));
       await page.evaluate(() => queueFixture.release());
       check("AC-169 a task leaving during a drag is refused and reconciled without losing the remaining queue", await until(async () =>
         await rows() === "API-3,API-1" && /queue changed meanwhile/.test(await page.textContent("#queue-test > p"))), await rows());
-      await page.evaluate(() => { queueFixture.queues.owl = [queueFixture.tasks[2], queueFixture.tasks[0], queueFixture.tasks[1]]; queueFixture.show("owl"); });
+      await page.evaluate(() => queueFixture.show("owl"));
 
       // Switching agents while an old write fails must not alter the new agent's queue or error.
       await page.evaluate(() => { queueFixture.hold(true); queueFixture.refuse(true); });
