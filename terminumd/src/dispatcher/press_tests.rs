@@ -178,6 +178,7 @@ fn ac157_the_prompt_says_how_to_ask_a_human() {
         let prompt = prompt_of(tx, std::slice::from_ref(&a), None)?;
         assert!(prompt.ends_with(&format!("When it is done, call {FINISH} with the result. {ASK}")), "{prompt}");
         assert!(ASK.contains("ask_human") && ASK.contains("the answer you recommend") && ASK.contains("end your turn"));
+        assert!(ASK.contains("a cause that can be removed") && ASK.contains("never give its result by execute_tool(\"finish_task\", {id, result}) and never move it to FAILED") && ASK.contains("FAILED is only for a task that cannot be done at all"), "a removable cause waits for a human (AC-157)");
         Ok(())
     }).unwrap();
 }
@@ -301,7 +302,8 @@ fn ac185_a_main_task_goes_with_its_subtasks_still_to_do() {
         let prompt = prompt_of(tx, &tasks, Some("mind the API"))?;
         assert!(prompt.starts_with(&format!("The human ran main task {} with its 2 subtasks still to do: {}, {}. Read each with", main.id, a.id, failed.id)), "{prompt}");
         assert!(prompt.contains("in the order you decide") && prompt.contains("a main task goes last") && prompt.contains("can be DONE only when each of them is"));
-        assert!(prompt.contains("move it to FAILED") && prompt.contains("leave none in progress") && prompt.contains("what is not DONE runs again"));
+        assert!(prompt.contains("If one cannot be done at all") && prompt.contains("move it to FAILED") && prompt.contains("leave none in progress") && prompt.contains("what is not DONE runs again"));
+        assert!(prompt.contains("If one cannot be finished now for a cause that can be removed") && prompt.contains("never give its result by execute_tool(\"finish_task\", {id, result}) or move it to FAILED") && prompt.contains("it waits for a human with the tasks still in progress"), "a removable cause waits (AC-157)");
         assert!(prompt.contains("starts a new session with the answers") && !prompt.contains("back into this conversation"), "it asks as a run of several does");
         assert!(prompt.contains("The human's message: mind the API") && !prompt.contains("SECRET"), "by their numbers alone");
         assert!(facts(tx, &tasks)?.shown().contains("SECRET of failed"), "the human sees each text before Run");

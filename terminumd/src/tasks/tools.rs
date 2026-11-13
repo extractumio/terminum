@@ -103,7 +103,7 @@ fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
     if open.is_empty() {
         return Ok(());
     }
-    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first, or move {0} to FAILED with a comment saying why.", t.id, open.join(", ")))
+    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first; when a cause that can be removed holds one, ask by execute_tool(\"ask_human\", {{id, questions}}); when one cannot be done at all, move {0} to FAILED with a comment saying why.", t.id, open.join(", ")))
 }
 
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.
@@ -281,9 +281,14 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let result = rules::clean(arg(args, "result")?);
                 ops::comment(tx, &me, id, &result, at)?;
                 // a result is there only in its sections: else its words stay a comment, the task as it was (AC-123)
-                let lacks = closeout::missing(&result, closeout::form_of(tx, &t.key)?);
+                let form = closeout::form_of(tx, &t.key)?;
+                let lacks = closeout::missing(&result, form);
                 if !lacks.is_empty() {
                     return Ok((closeout::missing_words(id, &t.status, &lacks), vec![id.to_string()]));
+                }
+                // work its own Outcome says is not done is no DONE: it waits for a human or fails (AC-123, AC-157)
+                if form == closeout::SECTIONS.as_slice() && closeout::not_done(&result) {
+                    return Ok((closeout::not_done_words(id, &t.status), vec![id.to_string()]));
                 }
                 ops::move_to(tx, &me, id, "DONE", at)?;
                 crate::dispatcher::runs::finished(tx, &t.key)?;
