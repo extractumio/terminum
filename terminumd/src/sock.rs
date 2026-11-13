@@ -160,7 +160,7 @@ pub async fn hook_on(app: Shared, server: Option<std::sync::Arc<crate::tmux::ser
     // that changed nothing the list shows
     if app.hooks.take_ended(&key) {
         crate::manager::hook_turn_ended(&app, &key, ev["event"].as_str().unwrap_or(""));
-        crate::tasks::tell::turn_ended(&app, &key);
+        crate::tasks::tell::turn_ended(&app, &key, None);
     }
     // a human's prompt, not one Dispatcher typed: what was decided before it no longer holds (AC-131);
     // the agent's own turns (a background task's end, another session's message) and a subagent's

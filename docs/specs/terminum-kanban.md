@@ -720,7 +720,7 @@ Scenario: AC-136 failure — out of limits
 
 Scenario: AC-136 failure — it stopped with the task open
   When a Stop comes and the last message asks nothing, API-12 still IN PROGRESS
-  Then its card says "stopped, task open" and its history "The agent stopped with this task open", once in a row
+  Then its card says "stopped, task open" and, once its own fresh session list settles that end, its history says "The agent stopped with this task open", once in a row
   When the agent works again
   Then the words go and its row's bar pulses (AC-134)
 
@@ -728,6 +728,7 @@ Scenario: AC-136 edge — its background work runs
   Given a Stop while Claude Code's footer counts a shell or a monitor it started (its checks, a landing), past the 10 minutes its row shows it working (terminum-agents.md AC-39)
   Then its card says "background work runs", its title saying the agent goes on when that ends, never "stopped, task open"
   And its row's bar pulses and its board dot blinks meanwhile, by the same reading (terminum-agents.md AC-39 "work it started runs on past the 10 minutes")
+  And history says nothing of the Stop until its own fresh session list settles that end: with background work still counted, it says "The agent's turn ended while its background work runs with this task open", once in a row, never the plain stop line
   And once that work ends with the agent idle and the task open, the card says "stopped, task open"
 
 Scenario: AC-136 failure — it died or left

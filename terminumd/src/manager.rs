@@ -311,6 +311,10 @@ pub fn ended_turns(old: &Value, new: &[Value]) -> Vec<String> {
 /// The reminders of the panes whose agent ended a turn (in panes `ended`) come up, on every
 /// page (AC-91).
 pub async fn remind(app: &Shared, ended: Vec<String>) {
+    for k in &ended {
+        let background = crate::page::marks::find_item(&app.layout.read(), k).map(|it| it["background"] == true);
+        crate::tasks::tell::turn_ended(app, k, background);
+    }
     crate::page::unread::ended(app, &ended);           // a turn nobody saw end is unread (AC-93)
     // where the answer ended (AC-90): a hooked pane's was kept at its Stop (sock.rs)
     for k in ended.iter().filter(|k| !app.hooks.has(k)) {

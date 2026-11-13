@@ -96,10 +96,15 @@ fn say_told(tx: &rusqlite::Transaction, tasks: &[String], at: i64) -> Result<Has
 }
 
 /// What a turn's end says of the task its session works on (AC-136), as hookstate read it: a turn
-/// that ends in a question or while subagents run is no stop.
-fn ended_words(state: State, why: &str) -> Option<String> {
+/// that ends in a question or while subagents run is no stop. Done waits for its fresh layout
+/// to settle the end and say whether background work still runs (`None`: not settled yet).
+fn ended_words(state: State, why: &str, background: Option<bool>) -> Option<String> {
     match state {
-        State::Done => Some("The agent stopped with this task open".to_string()),
+        State::Done => background.map(|runs| if runs {
+            "The agent's turn ended while its background work runs with this task open"
+        } else {
+            "The agent stopped with this task open"
+        }.to_string()),
         State::Failed => Some(format!("The agent stopped: {}", if why.is_empty() { "an error" } else { why })),
         _ => None,
     }
@@ -128,9 +133,10 @@ fn said_stopped(app: &Shared, key: &str, words: String) {
     });
 }
 
-/// A pane's turn ended: what became of it is said on its task.
-pub fn turn_ended(app: &Shared, key: &str) {
-    if let Some(words) = app.hooks.ended_as(key).and_then(|(state, why)| ended_words(state, &why)) {
+/// A pane's hook ended its turn (`background`: None), or its fresh layout settled that end:
+/// failures are said at once, Done only once the layout says whether background work runs.
+pub fn turn_ended(app: &Shared, key: &str, background: Option<bool>) {
+    if let Some(words) = app.hooks.ended_as(key).and_then(|(state, why)| ended_words(state, &why, background)) {
         said_stopped(app, key, words);
     }
 }
@@ -167,12 +173,69 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ac132_what_a_turn_s_end_says() {
-        assert_eq!(ended_words(State::Failed, "rate_limit").as_deref(), Some("The agent stopped: rate_limit"));
-        assert_eq!(ended_words(State::Failed, "").as_deref(), Some("The agent stopped: an error"));
-        assert_eq!(ended_words(State::Done, "").as_deref(), Some("The agent stopped with this task open"));
-        assert_eq!(ended_words(State::Waiting, "Which one?"), None, "a question is no stop");
-        assert_eq!(ended_words(State::Working, ""), None, "subagents still run");
+    fn ac136_what_a_turn_s_end_says() {
+        assert_eq!(ended_words(State::Failed, "rate_limit", None).as_deref(), Some("The agent stopped: rate_limit"));
+        assert_eq!(ended_words(State::Failed, "", None).as_deref(), Some("The agent stopped: an error"));
+        assert_eq!(ended_words(State::Done, "", None), None, "a hook's Stop waits for its fresh layout");
+        assert_eq!(ended_words(State::Done, "", Some(false)).as_deref(), Some("The agent stopped with this task open"));
+        assert_eq!(ended_words(State::Done, "", Some(true)).as_deref(), Some("The agent's turn ended while its background work runs with this task open"));
+        assert_eq!(ended_words(State::Waiting, "Which one?", Some(false)), None, "a question is no stop");
+        assert_eq!(ended_words(State::Working, "", Some(false)), None, "subagents still run");
+    }
+
+    #[tokio::test]
+    async fn ac136_a_new_prompt_before_settlement_is_no_stop() {
+        let (_root, app) = crate::testutil::app_with_tasks("tell-new-turn");
+        let key = "tmux:local:t:%7";
+        let task = app.tasks.with(|tx| {
+            let t = ops::create(tx, super::super::store::HUMAN, ops::NewTask { title: "one".into(), session: Some(key.into()), ..Default::default() }, 1)?;
+            ops::move_to(tx, super::super::store::HUMAN, &t.id, "IN PROGRESS", 2)?;
+            Ok(t)
+        }).unwrap();
+        let event = |name| serde_json::json!({"agent": "claude", "event": name, "session": "s1"});
+        let now = std::time::Instant::now();
+        app.hooks.apply(key, &event("UserPromptSubmit"), now);
+        app.hooks.apply(key, &event("Stop"), now);
+        turn_ended(&app, key, None);
+        app.hooks.apply(key, &event("UserPromptSubmit"), now);
+        turn_ended(&app, key, Some(false));
+        let stops: i64 = app.tasks.with(|tx| tx.query_row("SELECT count(*) FROM events WHERE task = ?1 AND kind = 'told'", [&task.key], |r| r.get(0)).map_err(ops::sql)).unwrap();
+        assert_eq!(stops, 0, "a hook alone or a stale settlement writes no stop");
+    }
+
+    #[tokio::test]
+    async fn ac136_settled_history_uses_the_fresh_layout_background_mark() {
+        use crate::tmux::agentstate::{after_stop, Background, BACKGROUND_LIMIT};
+        let (_root, app) = crate::testutil::app_with_tasks("tell-settled");
+        for (key, footer) in [("tmux:local:t:%7", Background::Tasks), ("tmux:local:t:%8", Background::None)] {
+            let task = app.tasks.with(|tx| {
+                let t = ops::create(tx, super::super::store::HUMAN, ops::NewTask { title: "one".into(), session: Some(key.into()), ..Default::default() }, 1)?;
+                ops::move_to(tx, super::super::store::HUMAN, &t.id, "IN PROGRESS", 2)?;
+                Ok(t)
+            }).unwrap();
+            let now = std::time::Instant::now();
+            let event = |name| serde_json::json!({"agent": "claude", "event": name, "session": "s1"});
+            app.hooks.apply(key, &event("UserPromptSubmit"), now);
+            app.hooks.apply(key, &event("Stop"), now);
+            app.turns.hook_ended(key, now);
+            let (keeps, background) = after_stop(true, Some(footer));
+            assert!(!keeps);
+            *app.layout.write() = serde_json::json!([{"items": [{"id": key, "state": "done", "background": background}]}]);
+            let ended = app.turns.settle("tmux:local:t:", |_| Some(false), now + BACKGROUND_LIMIT);
+            assert_eq!(ended, [key]);
+            crate::manager::remind(&app, ended).await;
+            let expected = ended_words(State::Done, "", background).unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(5), async {
+                loop {
+                    let texts = app.tasks.with(|tx| ops::rows(tx, "SELECT text FROM events WHERE task = ?1 AND kind = 'told'", [&task.key], |r| r.get::<_, String>(0))).unwrap();
+                    if !texts.is_empty() {
+                        assert_eq!(texts, [expected]);
+                        break;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                }
+            }).await.expect("settled history was written");
+        }
     }
 
     #[test]
