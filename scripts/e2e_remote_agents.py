@@ -181,7 +181,8 @@ def main():
     open(stub, "w").write(STUB)
     os.chmod(stub, stat.S_IRWXU)
     pids = os.path.join(t.root, "ssh-pids")
-    t.through_fake_ssh(home, REMOTE_SOCKET, pids)
+    # The stand-in host owns its shell-probe temporaries too, rather than the client's TMPDIR.
+    t.through_fake_ssh(home, REMOTE_SOCKET, pids, TMPDIR=home)
     os.system(f"tmux -L {REMOTE_SOCKET} kill-server 2>/dev/null")
     other = None
     try:

@@ -41,7 +41,7 @@ def main():
     with open(stub, "w", encoding="utf8") as f:
         f.write(STUB)
     os.chmod(stub, 0o700)
-    t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"))
+    t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"), TMPDIR=home)
     end_tmux(REMOTE_SOCKET)
     try:
         t.start()
