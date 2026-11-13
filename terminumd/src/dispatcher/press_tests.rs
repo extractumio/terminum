@@ -382,6 +382,9 @@ fn ac185_a_main_tasks_press_of_its_own_runs_tasks_goes_on_in_its_conversation() 
         assert!(matches!(&w, Ok(Way::Resume(r)) if r.agent_session.as_deref() == Some("c0ffee")), "its own run's tasks: its conversation goes on");
         assert!(matches!(ways(tx, &main.id, &[], Some("y"), false)?.1, Ok(Way::First)), "another agent starts anew");
         assert!(matches!(ways(tx, &main.id, &[], None, true)?.1, Ok(Way::First)), "Run from scratch starts anew");
+        let open = with_open("Go on.".into(), &[main.clone(), a.clone()]);
+        assert_eq!(open, format!("Go on.\n\nIts open tasks: {}, {} (a main task last).", a.id, main.id), "it learns which are open again");
+        assert_eq!(with_open("Go on.".into(), std::slice::from_ref(&main)), "Go on.", "one task: its words alone");
         let alone = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("beef".into()), ..Default::default() }, std::slice::from_ref(&a.key), Default::default(), 4)?;
         runs::change(tx, &alone, |r| r.state = Phase::Closed)?;
         assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)), "a subtask run alone since has newer work: anew");

@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::gate::{self, Miss};
 use super::runs::{self, How, Phase, Run, Started};
-use super::press::{again_words, also_of, answers_of, bring_back, facts, way, ways, Asked, Facts, Way};
+use super::press::{again_words, also_of, answers_of, bring_back, facts, way, ways, with_open, Asked, Facts, Way};
 use super::pool;
 use super::screen::Screen;
 use super::places::{ad_hoc, folder_there, launch, no_folder, place, project_named, server_of};
@@ -250,12 +250,11 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                 if let (Some(a), Some(c), true) = (&mut answers, &said, by.manager.is_some()) {
                     a.push(c.clone());
                 }
-                again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some())
+                with_open(again_words(&tasks[0].id, &ops::user_name(tx, by.by())?, said.as_deref(), answers.as_deref(), by.manager.is_some()), &tasks)
             }
         };
         Ok((tasks, w, again))
     }).await?;
-    let t = tasks[0].clone();
     if comment.is_some() && !matches!(w, Ok(Way::First)) {
         told(app, id);
     }
@@ -286,7 +285,7 @@ async fn pressed(app: &Shared, id: &str, body: Press) -> Result<Value, String> {
                     Miss::Other(why) => format!("Not delivered: {why}"),
                 });
             }
-            went_on(app, &r, &t, kept.manager.is_some()).await
+            went_on(app, &r, &tasks, kept.manager.is_some()).await
         }
         Way::Shell(r) | Way::Anew(r) => {
             let (server, pane) = pane_of(app, &r)?;
@@ -390,17 +389,20 @@ async fn could_not_continue(app: &Shared, r: &Run, why: &str) -> Result<Value, S
     Err(format!("{why}: use Run from scratch."))
 }
 
-/// RUN goes on in its live session: every clock starts anew; a finished task reopens alone, an open one
-/// with the others waiting with it.
-async fn went_on(app: &Shared, r: &Run, t: &Task, manager: bool) -> Result<Value, String> {
-    let (id, task, key, status, words) = (r.id.clone(), t.id.clone(), t.key.clone(), t.status.clone(), if manager { "The project's manager ran it again." } else { "The human ran it again." });
+/// RUN goes on in its live session: every clock starts anew; each finished task of the press reopens (a main task's
+/// subtasks with it, AC-185), an open one with the others waiting with it.
+async fn went_on(app: &Shared, r: &Run, tasks: &[Task], manager: bool) -> Result<Value, String> {
+    let (id, all, words) = (r.id.clone(), tasks.to_vec(), if manager { "The project's manager ran it again." } else { "The human ran it again." });
     let done = store(app, move |tx| {
         let now = runs::change(tx, &id, |now| { now.state = Phase::Working; now.new_work(); })?;
-        bring_back(tx, &task)?;
-        if super::plan::finished(&status) {
-            move_one(tx, &task, "IN PROGRESS", words)?;
-            runs::reopened(tx, &key)?;
-        } else {
+        for t in &all {
+            bring_back(tx, &t.id)?;
+            if super::plan::finished(&t.status) {
+                move_one(tx, &t.id, "IN PROGRESS", words)?;
+                runs::reopened(tx, &t.key)?;
+            }
+        }
+        if all.iter().any(|t| !super::plan::finished(&t.status)) {
             move_task(tx, &now, "IN PROGRESS", words)?;
         }
         Ok(now.id)

@@ -1398,7 +1398,8 @@ Scenario: AC-185 happy path — one cannot be done
   When the agent finishes API-13, fails API-14 and API-12 so, and ends its turn
   Then API-13 is DONE, API-14 and API-12 are FAILED with the agent's comments, and the session closes as AC-125 says
   When the human removes the cause and presses Run on API-12
-  Then the run's conversation goes on in a new window (AC-122) for API-12 and its subtasks not DONE, API-14 among them, its work and context kept; API-13 stays DONE
+  Then the run's conversation goes on for API-12 and its subtasks not DONE, API-14 among them, its work and context kept: in its window while it stands, else in a new one (AC-122); API-13 stays DONE
+  And its words end "Its open tasks: API-14, API-12 (a main task last).", each reopened IN PROGRESS, and the press's message is kept on each
   And a press that names a task its last run did not hold, or another agent, or Run from scratch, starts a new session instead
   And one left in progress at the turn's end is asked for and failed as AC-123 says
 

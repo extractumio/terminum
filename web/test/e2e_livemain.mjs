@@ -27,7 +27,7 @@ export async function liveMain(page, live) {
     await pressRun(page, main);
     await page.waitForSelector("#runbox[open]");
     const [head, prompt, whole] = [await page.textContent("#runhead"), await page.textContent("#runprompt"), await page.evaluate(() => document.querySelector("#runwhat").open)];
-    await page.selectOption("#runagent", agent);
+    if (await page.isVisible("#runagent")) await page.selectOption("#runagent", agent);   // going on, its agent is its run's
     await page.fill("#runmessage", words);
     await page.click("#rungo");
     await until(async () => !(await page.$("#runbox[open]")));
@@ -47,8 +47,8 @@ export async function liveMain(page, live) {
   const offer = await j(`/api/tasks/${main}/run?agent=${agent}`);
   check("AC-185 run again on the same agent, its run's tasks go on in its conversation", offer.first === false && JSON.stringify(offer.ids) === JSON.stringify([main, b]), JSON.stringify({ first: offer.first, ids: offer.ids }));
   const again = await run("FINISHES");
-  check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b}`, again.head);
-  check("AC-185 and all are DONE, the conversation gone on in a new window", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 2 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
+  check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b} again`, again.head);
+  check("AC-185 and all are DONE, the same conversation gone on", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 1 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
   const said = async (id) => (await task(id)).history.filter((e) => e.kind === "comment" && e.text === "FINISHES").length;
   check("AC-185 the press's message is kept on each of its tasks", await said(main) === 1 && await said(b) === 1, `${await said(main)} ${await said(b)}`);
 }

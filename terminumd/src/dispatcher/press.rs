@@ -389,6 +389,16 @@ pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), Str
     Ok(())
 }
 
+/// A press of several that goes on in its conversation names the tasks it reopens, a main task last (AC-185): the
+/// agent learns which of them are open again, one a human finished meanwhile not among them.
+pub(super) fn with_open(words: String, tasks: &[Task]) -> String {
+    match tasks {
+        [_] => words,
+        [first, rest @ ..] => format!("{words}\n\nIts open tasks: {}, {} (a main task last).", rest.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", "), first.id),
+        [] => words,
+    }
+}
+
 /// What the humans answered since the press's tasks asked, each task's in turn, under its ID when several go (AC-157,
 /// AC-185); None when none of them asked.
 pub(super) fn answers_of(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Option<Vec<String>>, String> {
