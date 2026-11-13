@@ -375,6 +375,11 @@ Scenario: AC-102 failure — a step that leaves something fails
   When it ends
   Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
 
+Scenario: AC-102 edge — real pane programs keep temporary files inside the run's cleanup
+  Given the Linux live Chromium suite runs under scripts/check_step.py with Midnight Commander installed
+  When its private tmux pane runs mc and the suite passes, fails or gets a signal
+  Then the pane's TMPDIR is inside the live run's own folder, its mc cache goes with that folder, and the guard reports no leftovers
+
 Scenario: AC-102 edge — a pane's program that ignores SIGHUP does not outlive its test
   Given a test's private tmux server whose pane runs a program that ignores SIGHUP, as macOS's bash does when it spins on a terminal gone
   When the test ends that server with end_tmux of scripts/e2e_ws.py
