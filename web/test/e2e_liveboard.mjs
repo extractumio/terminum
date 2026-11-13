@@ -332,7 +332,7 @@ async function sameKinds(page, base, phone) {
   await page.waitForSelector(".card");
   await page.waitForTimeout(500);
   const ours = { search: await look("#filters .search"), key: await look("#filters .pick summary, #filtersbtn"), track: await look("#colswitch"), plus: await look(".colhead .new") };
-  // a phone hides the column heads; a computer's session list has a group's [+] to match (AC-106)
+  // matched on a computer, whose session list shows a group's [+] (AC-106)
   if (!phone) check("look: TODO's [+] is the session list's group-header [+]", !!theirs.plus && ["fill", "image", "edge", "radius", "h"].every((k) => ours.plus?.[k] === theirs.plus[k]), JSON.stringify([ours.plus, theirs.plus]));
   check(`look: Find is the session list's field (${phone ? "phone" : "wide"})`, ["fill", "edge", "radius"].every((k) => ours.search?.[k] === theirs.search?.[k]), JSON.stringify([ours.search, theirs.search]));
   check("look: a board key is the page's key", ["image", "edge", "radius"].every((k) => ours.key?.[k] === theirs.key?.[k]), JSON.stringify([ours.key, theirs.key]));
@@ -358,13 +358,14 @@ export async function liveBoardPhone(page, { base, shots }) {
   await page.waitForSelector("#colswitch button");
   const shown = () => page.evaluate(() => [...document.querySelectorAll(".col[data-status]")].filter((c) => { const r = c.getBoundingClientRect(); return r.left > -5 && r.right < innerWidth + 5; }).map((c) => c.dataset.status));
   check("AC-105 a phone shows one column", (await shown()).join() === "TODO", (await shown()).join());
+  // + Task stays in the board's head too: "AC-105 touch targets" below
+  check("AC-106 a phone keeps TODO's [+] in its head, on screen", await page.evaluate(() => { const r = document.querySelector('.col[data-status="TODO"] .colhead .new').getBoundingClientRect(); return r.width > 0 && r.left >= 0 && r.right <= innerWidth; }));
   await page.click('#colswitch button:has-text("DONE")');
   check("AC-105 its switch names them and shows another", await until(async () => (await shown()).join() === "DONE"), (await shown()).join());
   const wide = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
   check("AC-105 no sideways scroll on a phone", wide <= 0, String(wide));
   const tap = await page.evaluate(() => Math.round(document.querySelector("#newtask").getBoundingClientRect().height));
   check("AC-105 touch targets", tap >= 40, String(tap));
-  check("AC-106 a phone hides TODO's [+] with its head", await page.evaluate(() => !document.querySelector(".colhead .new").getClientRects().length));
   const small = await page.evaluate(() => [...document.querySelectorAll("#bar button, #bar summary, #bar a, .card button")].filter((e) => e.getClientRects().length && !e.closest("details:not([open]) > .box") && (e.getBoundingClientRect().height < 34 || e.getBoundingClientRect().width < 34)).map((e) => e.textContent.trim() || e.getAttribute("aria-label")));
   check("AC-105 every key of the head and a card takes a finger", !small.length, small.join());
   const head = await page.evaluate(() => Math.round(document.querySelector("#bar").getBoundingClientRect().height));

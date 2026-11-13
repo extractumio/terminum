@@ -14,11 +14,12 @@ export class TreeInput {
   rowEl(e: Event) { return (e.target as HTMLElement).closest<HTMLElement>(".row[data-p]"); }
 
   select(p: string, i: number, mode: "one" | "toggle" | "range" = "one") {
-    this.t.selectionRun++;
     if (mode === "range" && this.t.anchor >= 0) {
       void this.rangeTo(i);
       return;
-    } else if (mode === "toggle") {
+    }
+    this.t.pick();
+    if (mode === "toggle") {
       if (!this.t.selected.delete(p)) this.t.selected.add(p);
       this.t.anchor = i;
     } else {
@@ -32,7 +33,8 @@ export class TreeInput {
 
   async rangeTo(i: number, range = true) {
     if (!this.t.root) return;
-    const root = this.t.root, epoch = this.t.epoch, run = ++this.t.selectionRun;
+    this.t.pick();
+    const root = this.t.root, epoch = this.t.epoch, run = this.t.selectionRun;
     const alive = () => epoch === this.t.epoch && run === this.t.selectionRun;
     const rows = Object.create(this.t.rows) as RowsHost;
     rows.load = () => {}; // selection controls page concurrency; rendering still loads its viewport
@@ -113,10 +115,10 @@ export class TreeInput {
         if (cur?.isDir && this.t.expanded.has(cur.p)) this.t.collapse(cur.p);
         else if (cur && cur.d.dir !== this.t.root) {
           // the parent is selected only if it was found under the same root and no other
-          // selection came meanwhile
-          const parent = cur.d.dir.path, run = ++this.t.selectionRun;
-          void this.t.reveal(parent).then((found) => {
-            if (!found || run !== this.t.selectionRun) return;
+          // selection came meanwhile (reveal says so)
+          const parent = cur.d.dir.path;
+          void this.t.reveal(parent, false, this.t.pick()).then((found) => {
+            if (!found) return;
             this.t.selected = new Set([parent]); this.t.cb.changed(); this.t.queue();
           });
         }
