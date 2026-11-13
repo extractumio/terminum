@@ -9,7 +9,7 @@ import time
 
 import owned_children
 
-CANCEL_WAIT_S = 90  # settling, bounded cwd queries and termination; less than land.py's 120 s
+CANCEL_WAIT_S = 60  # leave another minute for recovery before land.py's 120 s escalation
 SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGINT)
 
 
