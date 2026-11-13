@@ -408,6 +408,7 @@ Scenario: AC-112 edge — gone from the board
 
 Scenario: AC-112 edge — run on its own
   Then RUN works on a subtask as on any task (terminum-dispatcher.md AC-121): its parent is named in the prompt and does not run with it
+  And RUN on API-12 itself takes its subtasks not DONE into its session (terminum-dispatcher.md AC-185)
 
 Scenario Outline: AC-112 failure — refused, said in the dialog
   When the user puts <task> under <parent>

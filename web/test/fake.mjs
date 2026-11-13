@@ -41,13 +41,20 @@ export function credentialOf(secret, b) {
   return `${crypto.createHash("sha256").update(secret).digest("hex").slice(0, 16)}.${crypto.createHmac("sha256", key).update(`tm-cred-v1:${b}`).digest("hex")}`;
 }
 
+/** Direct replies echo their request ref, as terminumd does; broadcasts never inherit it. */
+export function replyTo(msg, answer) {
+  const types = { more: "hist", unfold: "lines", askno: "askno", sentget: "sentone", quick: "quickmade",
+    newsession: "created", addhost: "hostadded", addtmux: "tmuxadded", tmuxsessions: "tmuxsessions", unmark: "markdone", remind: "markdone" };
+  return msg.ref && (answer.t === types[msg.t] || answer.t === "error") ? { ...answer, ref: msg.ref } : answer;
+}
+
 /** Opens the page. secret: what the fake server knows (its proof and credential; "unknown_signin": none, it
  *  answers 404 unknown_signin); stored: a sign-in already in the origin's storage; auth:
  *  /auth/check's answer (204, or {login}); login(body): /auth/login's answer as [status, json];
  *  hook(msg, say): every message the page sends; onSub(msg, say): answers a "sub" in place of the
  *  screen (true: answered). */
 export async function openPage(browser, { device = WIDE, secret = null, stored = null, auth = 204, login = null, layout = LAYOUT,
-  screen = SCREEN, cols = 80, hook = null, onSub = null, url = "/", css = "", settings = null } = {}) {
+  screen = SCREEN, cols = 80, available = () => true, hook = null, onSub = null, url = "/", css = "", settings = null } = {}) {
   // reduced motion: boxes measured at once are at their place and size (e2e_motion.mjs checks the motion)
   const context = await browser.newContext({ reducedMotion: "reduce", ...device });
   const page = await context.newPage();
@@ -90,6 +97,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
   let say = () => {};
   await page.routeWebSocket(`${ORIGIN.replace("http", "ws")}/ws`, (ws) => {
     sockets.push({ protocols: ws.protocols(), close: () => ws.close() });
+    if (!available()) return void ws.close();
     // a server that knows a secret refuses a socket without its credential, as terminumd does (401)
     if (typeof secret === "string" && secret !== "unknown_signin" && !knows(ws.protocols()[1])) return void ws.close();
     say = (m) => ws.send(JSON.stringify(m));
@@ -101,7 +109,7 @@ export async function openPage(browser, { device = WIDE, secret = null, stored =
         say({ t: "hist", mode: "reset", sid: msg.id, first: 0, oldest: 0, truncated: false, lines: [] });
         say({ t: "screen", sid: msg.id, full: true, n: screen.length, cols, rows: screen.length, alt: false, ch: screen.map((l, i) => [i, l]) });
       }
-      hook?.(msg, say);
+      hook?.(msg, (m) => say(replyTo(msg, m)));
     });
     say({ t: "build", id: "test", mac: true });   // the Mac's own browser, as at 127.0.0.1
     if (settings) say({ t: "settings", ...settings });

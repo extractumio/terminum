@@ -44,7 +44,8 @@ export function runWindow({ addAgent, noFolder, done }) {
     fresh = scratch;
     offered = null;
     const first = fresh || offer.first, none = first && !offer.agents.length, moved = !first && offer.moved;
-    const names = tasks.map((t) => t.id).join(", "), on = offer.agents.find((a) => a.id === dropped);
+    // what goes is terminumd's word: a main task brings its subtasks still to do (AC-185)
+    const names = offer.ids.join(", "), on = offer.agents.find((a) => a.id === dropped);
     $("runhead").textContent = moved ? `Continue ${names} on ${moved.to}` : !first ? `Run ${names} again` : on ? `Run ${names} on ${on.name}` : `Run ${names}`;
     const words = none ? "No agents yet." : moved ? `Its conversation ${moved.conversation} with ${moved.from} goes on on ${moved.to}, with what you write. Run from scratch starts anew.`
       : first ? "" : "It goes on in its session, with what you write.";
@@ -53,7 +54,7 @@ export function runWindow({ addAgent, noFolder, done }) {
     $("runagentrow").hidden = !first || none || !!on;
     $("runhow").hidden = !first || none;
     $("runwhat").hidden = !first;
-    $("runwhat").open = offer.by_agent || tasks.length > 1;   // several, or an agent's words: read before they go (AC-121)
+    $("runwhat").open = offer.by_agent || offer.ids.length > 1;   // several, or an agent's words: read before they go (AC-121)
     $("runmarked").hidden = !offer.by_agent;
     $("runadd").hidden = !none;
     $("runfresh").hidden = first;

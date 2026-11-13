@@ -18,11 +18,13 @@ const PAGE = `<!doctype html><link rel=stylesheet href="/style.css"><link rel=st
 <button id="bottom"></button><p id="paused" hidden></p><button id="copyfab" hidden>Copy</button>
 <script type="module">
 import { TermView } from "/term.js";
+import { answer } from "/requests.js";
 import { copyButton, copyByCommand } from "/touchcopy.js";
 import { cellAt } from "/cursor.js";
 const $ = (id) => document.getElementById(id);
+const sent = [];
 const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"), note: $("note"),
-  bottomBtn: $("bottom"), paused: $("paused"), send: () => {}, keep: 2000 });
+  bottomBtn: $("bottom"), paused: $("paused"), send: (m) => sent.push(m), keep: 2000 });
 const ansi = Array.from({ length: 16 }, () => "#808080");
 view.setTheme({ bg: "#000000", fg: "#ffffff", cursor: "#ffffff", cursorText: "#000000", bold: "#ffffff", useBold: false, ansi });
 // Line n: mostly paragraphs of 1-6 rows (prose wrapped by the program, re-joined in Wrap),
@@ -35,8 +37,11 @@ const line = (n) => {
   const t = Array.from({ length: 13 }, (_, i) => words[(n + i) % words.length]).join(" ");
   return { r: [[t.slice(0, 78), null, null, 0]], e: true };
 };
-const hist = (mode, first, count) => { view.onHist({ mode, first, oldest: 0, truncated: false,
-  lines: Array.from({ length: count }, (_, i) => line(first + i)) }); view.applyDue(); };   // as with the screen's message after it
+const hist = (mode, first, count, ref) => {
+  const m = { mode, first, oldest: 0, truncated: false, lines: Array.from({ length: count }, (_, i) => line(first + i)) };
+  if (ref) answer({ ...m, t: "hist", ref });
+  else { view.onHist(m); view.applyDue(); }
+};   // as with the screen's message after it
 const screen = (cols, n = 3) => new Promise((done) => { view.onScreen({ full: true, n, cols, rows: n,
   ch: Array.from({ length: n }, (_, i) => [i, line(9000 + i)]) }); requestAnimationFrame(() => requestAnimationFrame(done)); });
 const part = (n, ch) => new Promise((done) => { view.onScreen({ full: false, n, cols: 80, rows: n, ch });
@@ -74,7 +79,7 @@ const broken = () => {
 window.copied = [];
 window.copyByCommand = copyByCommand;
 copyButton($("copyfab"), $("term"), (text) => { window.copied.push(text); });
-window.t = { view, hist, screen, part, line, touch, broken, cellAt, blocks: () => $("hist").querySelectorAll(".blk").length };
+window.t = { view, hist, screen, part, line, touch, broken, cellAt, sent, blocks: () => $("hist").querySelectorAll(".blk").length };
 window.ready = true;
 </script>`;
 
@@ -117,10 +122,14 @@ export async function webTerm(browser) {
 
   // an older page still on its way: the cap waits, and a page that no longer fits is refused
   const before = s.lines;
-  await run((next) => { t.view.loading = true; t.view.toBottom(); t.hist("append", next, 5); }, s.first + s.lines);
+  await run((next) => { t.pendingOlder = t.view.older(t.view.hist[0].n); t.view.toBottom(); t.hist("append", next, 5); }, s.first + s.lines);
   s = await state();
-  check("AC-52 web: the cap waits while older lines are on their way", !s.broken.length && s.lines === before + 5, JSON.stringify(s));
-  await run((f) => t.hist("prepend", f - 2000, 1000), s.first);
+  check("AC-52 web: the cap waits while older lines are on their way", !s.broken.length && s.lines === before + 5 && await run(() => t.view.loading), JSON.stringify(s));
+  await run(async (f) => {
+    t.hist("prepend", f - 2000, 1000, t.sent.at(-1).ref);
+    await t.pendingOlder;
+    t.view.applyDue();
+  }, s.first);
   const gap = await state();
   check("AC-52 web: older lines that would leave a gap are refused", !gap.broken.length && gap.first === s.first && gap.lines === s.lines
     && !(await run(() => t.view.loading)), JSON.stringify(gap));

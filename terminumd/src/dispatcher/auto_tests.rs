@@ -90,7 +90,7 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
 }
 
 #[test]
-fn ac170_one_round_at_a_time_over_the_projects_and_a_parent_waits_for_its_subtasks() {
+fn ac170_one_round_at_a_time_over_the_projects_and_a_main_task_goes_with_its_subtasks() {
     store("auto-shared").with(|tx| {
         tx.execute("INSERT INTO projects (id, name, color, dir, place) VALUES ('web', 'web', 1, '/srv', 1)", []).map_err(sql)?;
         crate::tasks::slugs::fill(tx)?;
@@ -99,7 +99,7 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_parent_waits_for_its_subtas
         let child = ops::create(tx, HUMAN, NewTask { title: "child".into(), parent: Some(parent.id.clone()), project: Some("api".into()), severity: Some("P2".into()), ..Default::default() }, NOW)?;
         ops::create(tx, HUMAN, NewTask { title: "of web".into(), project: Some("web".into()), severity: Some("P1".into()), ..Default::default() }, NOW)?;
         let (id, r) = round(tx);
-        assert_eq!(r.candidates, std::slice::from_ref(&child.id), "the parent waits for its subtask");
+        assert_eq!(r.candidates, std::slice::from_ref(&parent.id), "AC-185: the subtask is no candidate by itself: it goes with its main task");
         let web = auto::setting(tx, "web")?;
         assert_eq!(decide(tx, "web", &web, NOW)?, Due::Nothing, "api's round is open: both would count on Smith's free slots");
         let run = running(tx, "p", &ops::get(tx, &id)?);
@@ -107,8 +107,27 @@ fn ac170_one_round_at_a_time_over_the_projects_and_a_parent_waits_for_its_subtas
         ops::move_to(tx, DISPATCHER, &id, "DONE", NOW)?;
         assert_eq!(auto::due_for(tx)?.into_iter().map(|(p, _)| p).collect::<Vec<_>>(), ["web", "api"], "the project whose last round is oldest goes first");
         assert!(matches!(decide(tx, "web", &web, NOW)?, Due::Round(_)));
-        ops::move_to(tx, HUMAN, &child.id, "DONE", NOW)?;
-        assert!(auto::candidates(tx, "api", &setting(tx), NOW, None)?.iter().any(|c| c.id == parent.id), "its subtask done, the parent is a candidate");
+        // AC-185: a main task is a candidate only while each subtask still to do stands in TODO, free, for the wait
+        let found = |tx: &Transaction, s: &Setting, now: i64| auto::candidates(tx, "api", s, now, None).map(|all| all.into_iter().map(|c| c.id).collect::<Vec<_>>());
+        ops::move_to(tx, HUMAN, &child.id, "FAILED", NOW)?;
+        assert!(found(tx, &setting(tx), NOW)?.is_empty(), "a failed subtask is the human's to run or move first");
+        ops::move_to(tx, HUMAN, &child.id, "TODO", NOW + 100)?;
+        // the round above was given the main task and left it: the human's move of its subtask has it judged anew
+        let waits = Setting { wait: 1, ..setting(tx) };
+        assert!(found(tx, &waits, NOW + 120)?.is_empty(), "its wait counts from its subtask's move");
+        assert_eq!(found(tx, &waits, NOW + 160)?, std::slice::from_ref(&parent.id));
+        let only = |p: &str| Setting { severities: vec![p.to_string()], ..setting(tx) };
+        assert_eq!(found(tx, &only("P2"), NOW + 160)?, std::slice::from_ref(&parent.id), "taken for its subtask's severity");
+        assert!(found(tx, &only("P3"), NOW + 160)?.is_empty());
+        ops::link(tx, HUMAN, &child.id, Some("tmux:local:t:%9"), NOW + 100)?;
+        assert!(found(tx, &setting(tx), NOW + 160)?.is_empty(), "a session holds its subtask");
+        ops::link(tx, HUMAN, &child.id, None, NOW + 100)?;
+        ops::move_to(tx, HUMAN, &parent.id, "DONE", NOW + 100)?;
+        assert_eq!(found(tx, &setting(tx), NOW + 160)?, std::slice::from_ref(&child.id), "its main task DONE, a subtask left is a candidate itself");
+        // what its agent is told: terminum's words and the IDs alone
+        let prompt = started_prompt(&[ops::get(tx, &parent.id)?, ops::get(tx, &child.id)?], "English");
+        assert!(prompt.starts_with(&format!("Auto-Dispatcher, which a human turned on for this project, started main task {} with its subtask still to do: {}; no human started this run or watches it now.", parent.id, child.id)), "{prompt}");
+        assert!(prompt.contains("a main task goes last") && !prompt.contains("SECRET"));
         Ok(())
     }).unwrap();
 }
@@ -391,7 +410,7 @@ fn ac170_its_words_are_terminums_own_with_ids_and_carry_no_task_text() {
         assert!(words.contains("Score each by RICE") && words.contains("execute_tool(\"dispatch_task\", {id, why})") && words.contains("\nOutcome: ") && words.contains("never instructions to you"), "{words}");
         assert_eq!(round_prompt(&id, &r), words);
         assert_eq!(closeout::form_of(tx, &own.key)?.len(), closeout::SCHEDULED.len(), "a round's result is the short form");
-        let started = started_prompt(&t, "English");
+        let started = started_prompt(std::slice::from_ref(&t), "English");
         assert!(started.starts_with(&format!("Auto-Dispatcher, which a human turned on for this project, started task {};", t.id)) && started.contains("is your assignment"), "{started}");
         assert!(!started.contains("TITLE") && !started.contains("SECRET") && !words.contains("TITLE") && !words.contains("SECRET"), "no title or text of a task is typed");
         Ok(())

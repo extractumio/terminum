@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
 
-use super::client::error;
+use super::client::{error, reply, request_error};
 use super::Page;
 use crate::app::Shared;
 use crate::tmux::server::HOST_SESSION;
@@ -64,13 +64,14 @@ pub(super) fn allowed_now(page: &Page) -> bool {
 }
 
 /// Something new was made: the list has it before the page is told to show it.
-async fn created(app: &Shared, page: &Page, asked_on: Option<&str>, server: &Arc<Server>, pane_id: &str, note: Option<String>) {
+async fn created(app: &Shared, page: &Page, asked_on: Option<&str>, server: &Arc<Server>, pane_id: &str, note: Option<String>, request: Option<&Value>) {
     crate::lists::refresh_server(app, server).await;
     let listed = super::marks::find_item(&app.layout.read(), &server.key(pane_id)).is_some();
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
     // the user went on meanwhile, or the list does not have it yet: they stay where they are (AC-132)
     let moved = page.state.lock().shown.as_ref().map(|s| s.key.as_str()) != asked_on;
-    page.send_json(&json!({"t": "created", "id": server.key(pane_id), "note": note, "stay": moved || !listed}));
+    let answer = json!({"t": "created", "id": server.key(pane_id), "note": note, "stay": moved || !listed});
+    if let Some(request) = request { reply(page, request, answer); } else { page.send_json(&answer); }
 }
 
 pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::client::At) {
@@ -78,12 +79,12 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     let asked_on = at.as_ref().map(|(key, ..)| key.as_str());
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     if matches!(t, "new" | "newsession" | "split" | "clone" | "projectwindow") && !allowed_now(page) {
-        error(page, "Wait a second: one new window, session or split a second.", None);
+        request_error(page, msg, "Wait a second: one new window, session or split a second.");
         return;
     }
     let result = match t {
         "new" => new_window(app, page, at.as_ref(), &s("group")).await,
-        "newsession" => new_session(app, page, asked_on, &s("name")).await,
+        "newsession" => new_session(app, page, asked_on, &s("name"), msg).await,
         "split" => split(app, page, asked_on, &s("id"), &s("how")).await,
         "clone" => clone_window(app, page, asked_on, &s("id"), msg["project"].as_str()).await,
         "projectwindow" => project_window(app, page, asked_on, &s("project"), &s("dir")).await,
@@ -103,7 +104,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
             }
         }
         Ok(()) => {}
-        Err(e) => error(page, e, None),
+        Err(e) => request_error(page, msg, e),
     }
 }
 
@@ -130,7 +131,7 @@ async fn new_window(app: &Shared, page: &Page, at: Option<&(String, Arc<Server>,
         None => format!("-t {}", args::quote(&format!("={session}:"))),
     };
     let pane = open_window(&server, &target, &dir).await?;
-    created(app, page, at.map(|(key, ..)| key.as_str()), &server, &pane, note).await;
+    created(app, page, at.map(|(key, ..)| key.as_str()), &server, &pane, note, None).await;
     Ok(())
 }
 
@@ -168,7 +169,7 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         }
         super::projects::tell(app);
     }
-    created(app, page, asked_on, &server, &new, note).await;
+    created(app, page, asked_on, &server, &new, note, None).await;
     Ok(())
 }
 
@@ -211,17 +212,17 @@ async fn project_window(app: &Shared, page: &Page, asked_on: Option<&str>, proje
         ps.add_to(&key, &pid, None)
     }).await?;
     super::projects::tell(app);
-    created(app, page, asked_on, &server, &pane, None).await;
+    created(app, page, asked_on, &server, &pane, None, None).await;
     Ok(())
 }
 
-async fn new_session(app: &Shared, page: &Page, asked_on: Option<&str>, name: &str) -> Result<(), String> {
+async fn new_session(app: &Shared, page: &Page, asked_on: Option<&str>, name: &str, msg: &Value) -> Result<(), String> {
     let name = args::check_session_name(name)?;
     let server = app.tmux.local.clone();
     let home = home_of(&server);
     let line = format!("new-session -d -s {} -c {} -P -F '#{{pane_id}}'", args::format_arg(&name), args::format_arg(&home));
     let pane = server.run(line).await.map_err(|e| format!("No new session: {}", said(&e)))?;
-    created(app, page, asked_on, &server, pane.first().map_or("", |s| s.as_str()), None).await;
+    created(app, page, asked_on, &server, pane.first().map_or("", |s| s.as_str()), None, Some(msg)).await;
     Ok(())
 }
 
@@ -231,7 +232,7 @@ async fn split(app: &Shared, page: &Page, asked_on: Option<&str>, id: &str, how:
     let flag = if how == "below" { "-v" } else { "-h" };
     let line = format!("split-window {flag} -t {pane} -c {} -P -F '#{{pane_id}}'", args::format_arg(&dir));
     let new = server.run(line).await.map_err(|e| format!("No split: {}", said(&e)))?;
-    created(app, page, asked_on, &server, new.first().map_or("", |s| s.as_str()), note).await;
+    created(app, page, asked_on, &server, new.first().map_or("", |s| s.as_str()), note, None).await;
     Ok(())
 }
 
@@ -329,7 +330,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     let result = match msg["t"].as_str().unwrap_or("") {
         "addhost" => crate::hosts::add(app, &s("name"), &s("recipe")).await.map(|name| {
-            page.send_json(&json!({"t": "hostadded", "name": name}));
+            reply(page, msg, json!({"t": "hostadded", "name": name}));
         }),
         "hostagents" => {
             let on = msg["on"].as_bool().unwrap_or(false);
@@ -344,7 +345,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
         "addtmux" => {
             let names = crate::config::strings(&msg["sessions"]);
             crate::attach::Place::parse(app, &s("server")).and_then(|place| crate::attach::add(app, &place, &names).map(|()| {
-                page.send_json(&json!({"t": "tmuxadded", "server": place.id(), "sessions": names}));
+                reply(page, msg, json!({"t": "tmuxadded", "server": place.id(), "sessions": names}));
             }))
         }
         "detachtmux" => match crate::attach::Place::parse(app, &s("server")) {
@@ -359,7 +360,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
             // `ends`: those tmux destroys once terminum is their last client (destroy-unattached)
             let names: Vec<&str> = running.iter().map(|r| r.name.as_str()).collect();
             let ends: Vec<&str> = running.iter().filter(|r| r.ends).map(|r| r.name.as_str()).collect();
-            page.send_json(&json!({"t": "tmuxsessions", "server": server, "names": names, "ends": ends}));
+            reply(page, msg, json!({"t": "tmuxsessions", "server": server, "names": names, "ends": ends}));
             return;
         }
         "restore" => crate::restore::again(app).await,
@@ -367,7 +368,7 @@ pub async fn admin(app: &Shared, page: &Arc<Page>, msg: &Value) {
     };
     match result {
         Ok(()) => crate::lists::request_all(app),
-        Err(e) => error(page, e, None),
+        Err(e) => request_error(page, msg, e),
     }
 }
 

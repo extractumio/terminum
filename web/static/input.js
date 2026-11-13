@@ -309,13 +309,14 @@ export class Input {
   async copySelection(given, keep = false) {
     const got = given ?? selectedText(this.term) ?? String(getSelection());
     if (!got) return this.options.status("Select text first, then press Copy.");
+    const owner = this.copyOwner = {};
     this.keepSelection = keep;
     try {
       const { said, api } = await copyText(got, given ? copyByCommand : () => document.execCommand("copy"));
       if (api) this.afterCopy();                   // ⌘V next
       this.options.status(said);
     } finally {
-      this.keepSelection = false;
+      if (this.copyOwner === owner) this.keepSelection = false;
     }
   }
 

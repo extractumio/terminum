@@ -6,13 +6,15 @@
 // side in this browser; ⇄ moves it, × closes it (asked first when a program runs in it). ⌘D
 // splits the view as iTerm2 does, a terminal on the right; ⌘⇧D and the button under the
 // magnifier, one below.
+import { Requests } from "./requests.js";
 import { frameTo } from "./listparts.js";
 
 const $ = (id) => document.getElementById(id);
 const DEFAULT = 1 / 3, LEAST = 0.12, MOST = 0.8;
 
 /** current(): the shown pane's {group, item}; item(id) finds a row; pick(id) shows a pane. */
-export function quickShell({ send, store, current, item, pick, askConfirm, narrow }) {
+export function quickShell({ send, store, current, item, pick, askConfirm, narrow, notify = () => {} }) {
+  const reads = new Requests(send);
   let key = null, side = "bottom";
   let asked = null, focusKey = null;     // the pane whose quick shell was asked for; the one to focus once loaded
   let loaded = false;                    // the frame shows `key`
@@ -44,7 +46,7 @@ export function quickShell({ send, store, current, item, pick, askConfirm, narro
       const q = item(want);
       $("quick").querySelector(".qtitle").textContent = ["Quick shell", ...(q?.sub ?? []).filter((s) => s !== "quick shell")].join(" · ");
     }
-    if (it?.id !== asked) asked = null;    // another pane shown: an answer for that one moves no keys
+    if (it?.id !== asked?.id) { asked = null; reads.cancel(); }    // another pane shown: an answer for that one moves no keys
     if (want !== focusKey) focusKey = null;
     if (want !== key) {
       key = want;
@@ -72,14 +74,17 @@ export function quickShell({ send, store, current, item, pick, askConfirm, narro
       if (where !== (it.quickSide ?? "bottom")) send({ t: "quickside", id: it.quick, side: where });
       return focus();
     }
-    asked = it.id;
-    send({ t: "quick", id: it.id, side: where });
+    reads.cancel();
+    const op = asked = { id: it.id };
+    reads.ask({ t: "quick", id: it.id, side: where }).then((m) => {
+      if (asked === op && current()?.item.id === op.id) made(m);
+    }).catch((e) => { if (asked === op) { asked = null; if (e.name !== "AbortError") notify(e.message); } });
   }
 
   /** terminumd made (or found) it: a computer shows it with its pane, a phone shows it alone. */
   function made(m) {
-    if (narrow.matches) return pick(m.id);
-    const mine = asked !== null && asked === (current()?.item.id ?? null);
+    const mine = asked !== null && asked.id === (current()?.item.id ?? null) && m.for === asked.id;
+    if (narrow.matches) { asked = null; if (mine) pick(m.id); return; }
     asked = null;
     sync();
     if (!mine || key !== m.id) return;

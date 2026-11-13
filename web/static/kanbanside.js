@@ -2,6 +2,7 @@
 // The session list on the board, and the session row on a card (terminum-kanban.md AC-134, AC-135):
 // the session page's widget, its code and its markup: a press opens the session on its page. Only its
 // foot stays there; it shows the projects the board shows.
+import { answer } from "./requests.js";
 import { sessionDrawer } from "./drawer.js";
 import { listTools } from "./listtools.js";
 import { colored, el, markedSessions, read, write } from "./listparts.js";
@@ -71,6 +72,7 @@ export function boardSessions({ chosen, openTask, send, narrow, newSession }) {
 
   /** What terminumd says for the list. */
   function seen(m) {
+    if (answer(m)) return;
     menus.seen(m);
     tools.seen(m);
     switch (m.t) {
@@ -82,7 +84,7 @@ export function boardSessions({ chosen, openTask, send, narrow, newSession }) {
       case "unmark": marks.delete(m.id); draw(); return;
       case "settings": lastLines = m.page?.lastLines ?? 0; return;
       case "note": say(m.msg); return;
-      case "error": if (m.msg && !tools.formError(m.msg)) say(m.msg); return;
+      case "error": if (m.msg) say(m.msg); return;
     }
   }
   /** Asked as the list's own menu asks. */

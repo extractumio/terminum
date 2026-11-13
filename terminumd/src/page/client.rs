@@ -75,6 +75,20 @@ pub fn error(page: &Page, msg: impl Into<String>, sid: Option<&str>) {
     page.send_json(&v);
 }
 
+/// A direct reply echoes its request identity, including every error path.
+pub fn reply(page: &Page, request: &Value, mut answer: Value) {
+    if let Some(r) = request["ref"].as_str().filter(|r| r.len() <= 80) {
+        answer["ref"] = json!(r);
+    }
+    page.send_json(&answer);
+}
+
+pub fn request_error(page: &Page, request: &Value, message: impl Into<String>) {
+    let msg = message.into();
+    tracing::warn!(event = "page.error", page = page.id, msg);
+    reply(page, request, json!({"t": "error", "msg": msg}));
+}
+
 /// Handles one message from a page.
 pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
     let t = msg["t"].as_str().unwrap_or("");
@@ -87,14 +101,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: Value) {
         "in" => super::typing::typed(app, page, s("data"), msg["k"].as_u64()),
         "paste" => super::typing::paste(app, page, s("data"), msg["bracket"].as_bool().unwrap_or(true)),
         // reads wait on tmux or ssh: off the loop, so keys sent meanwhile are typed at once
-        "more" => {
-            let (before, to) = (msg["before"].as_i64().unwrap_or(0), msg["to"].as_i64());
-            read(app, page, "more", move |a, p| async move { super::hist::older(&a, &p, before, to).await });
-        }
-        "unfold" => {
-            let (n, to) = (msg["n"].as_i64().unwrap_or(0), msg["to"].as_i64().unwrap_or(-1));
-            read(app, page, "unfold", move |a, p| async move { super::hist::unfold(&a, &p, n, to).await });
-        }
+        "more" | "unfold" => super::hist::queue(app, page, msg),
         "find" => super::find::start(app, page, &msg),
         "mark" | "unmark" | "locate" | "remind" => super::marks::handle(app, page, t, &msg).await,
         "files" => read(app, page, "files", |a, p| async move { files(&a, &p).await }),
@@ -176,8 +183,9 @@ where
     Fut: std::future::Future<Output = ()> + Send + 'static,
 {
     let (lane, at) = (lane_of(app, page, &msg), shown_at(page));
+    let request = json!({"ref": msg["ref"]});
     if !super::reads::spawn_action(page, &lane, work(app.clone(), page.clone(), msg, at)) {
-        error(page, "Too many actions are waiting for that server; try again in a moment.", None);
+        request_error(page, &request, "Too many actions are waiting for that server; try again in a moment.");
     }
 }
 
