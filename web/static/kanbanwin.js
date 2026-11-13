@@ -74,11 +74,18 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return false;
   }
 
+  /** A field to choose in; a choice terminumd did not take goes back to what stands, even while an edit holds the
+   *  window's redraw. */
   function select(label, options, value, changed) {
     const line = el("label", "fieldrow", label);
     const s = el("select", "field");
     fillSelect(s, options, value);
-    s.addEventListener("change", () => changed(s.value));
+    let stands = value;
+    s.addEventListener("change", async () => {
+      const chosen = s.value;
+      if (await changed(chosen)) stands = chosen;
+      else if (s.value === chosen) s.value = stands;
+    });
     line.append(s);
     return line;
   }
@@ -130,7 +137,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       // the agent that runs it when Auto-Dispatcher starts it (terminum-dispatcher.md AC-170); none: its project's default
-      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => inTurn(() => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).catch((e) => say(e.message)))),
+      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => inTurn(() => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => true, (e) => { say(e.message); return false; }))),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
       budgetField(t));
@@ -180,7 +187,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       area.placeholder = "Markdown. Drop or paste files here.";
       const dropped = [], kept = (file) => dropped.push(file.id);
       takesFiles(area, (list) => addFiles(list, area, kept));
-      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(wrap); });
+      // pressed once until answered: a second Save would carry the same `text_rev` and find it old
+      const save = button("primary", "Save", async () => {
+        save.disabled = true;
+        if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(wrap);
+        else save.disabled = false;
+      });
       // a secret pasted by mistake leaves the store for good by this (AC-109): seldom wanted, so only here
       const purge = t.text ? button("danger", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
         () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(wrap)))) : null;

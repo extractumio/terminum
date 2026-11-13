@@ -100,17 +100,31 @@ async function liveFieldOrder(page, j, open, id) {
     page.off("requestfinished", heard);
     await page.unroute(route, handler);
   }
+  // refused while the text's editor holds the window's redraw: the field goes back to what stands
+  const refuse = (r) => r.request().method() === "PATCH" ? r.fulfill({ status: 400, contentType: "application/json", body: '{"error":"Refused for the check."}' }) : r.continue();
+  await page.click('#taskbody .tasktext button[aria-label="Edit"]');
+  await page.route(route, refuse);
+  try {
+    await severity.selectOption("P2");
+    check("AC-133 live a refused choice goes back to what stands while an edit is open",
+      await until(async () => await severity.inputValue() === "P0") && (await j(`/api/tasks/${id}`)).severity === "P0", await severity.inputValue());
+  } finally { await page.unroute(route, refuse); }
+  await page.locator(".tasktext").getByRole("button", { name: "Cancel", exact: true }).click();
   // a text saved while a comment of the task is being edited: the comment's edit stays as typed
   await j(`/api/tasks/${id}/comments`, "POST", { text: "Edited while the text is saved" });
-  await page.waitForSelector("#taskbody .ev-comment.by-human .evacts");
-  await page.locator('#taskbody .ev-comment.by-human:has-text("Edited while the text is saved") button[aria-label="Edit"]').click();
-  await page.fill("#taskbody .ev-comment.by-human .markdown textarea", "Comment being rewritten");
+  const comment = page.locator('#taskbody .ev-comment.by-human:has-text("Edited while the text is saved")');
+  await comment.locator('button[aria-label="Edit"]').waitFor();   // drawn before the text's editor holds the window
   await page.click('#taskbody .tasktext button[aria-label="Edit"]');
+  // its edit cancelled first while the text's editor holds the window, then opened again: the new one holds too
+  await comment.locator('button[aria-label="Edit"]').click();
+  await comment.locator(".markdown").getByRole("button", { name: "Cancel", exact: true }).click();
+  await comment.locator('button[aria-label="Edit"]').click();
+  await page.fill("#taskbody .ev-comment.by-human .markdown textarea:not(:disabled)", "Comment being rewritten");
   await page.fill(".tasktext textarea", "Text saved under another edit");
   await page.locator(".tasktext").getByRole("button", { name: "Save", exact: true }).click();
   const saved = await until(async () => (await j(`/api/tasks/${id}`)).text === "Text saved under another edit");
   await nap(300);
-  const typed = await page.$eval("#taskbody .ev-comment.by-human .markdown textarea", (a) => a.value).catch(() => "its editor gone");
+  const typed = await page.$eval("#taskbody .ev-comment.by-human .markdown textarea:not(:disabled)", (a) => a.value).catch(() => "its editor gone");
   check("AC-133 live Save of a text redraws nothing over a comment being edited", saved && typed === "Comment being rewritten", typed);
   await page.locator("#taskbody .ev-comment.by-human .markdown").getByRole("button", { name: "Cancel", exact: true }).click();
   check("AC-133 live the comment's edit closed, the window shows the saved text",
