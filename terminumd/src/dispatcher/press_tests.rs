@@ -280,3 +280,83 @@ fn ac179_a_manager_s_press_says_whose_words_they_are() {
         Ok(())
     }).unwrap();
 }
+
+fn subtask(tx: &rusqlite::Transaction, of: &Task, title: &str) -> Task {
+    ops::create(tx, HUMAN, NewTask { title: title.into(), text: format!("SECRET of {title}"), parent: Some(of.id.clone()), ..Default::default() }, 1).unwrap()
+}
+
+#[test]
+fn ac185_a_main_task_goes_with_its_subtasks_still_to_do() {
+    store_of("api-main").with(|tx| {
+        let main = made(tx, "main", "SECRET of main");
+        let (a, failed, done, gone) = (subtask(tx, &main, "a"), subtask(tx, &main, "failed"), subtask(tx, &main, "done"), subtask(tx, &main, "gone"));
+        ops::move_to(tx, HUMAN, &failed.id, "FAILED", 2)?;
+        ops::move_to(tx, HUMAN, &done.id, "DONE", 2)?;
+        ops::archive(tx, HUMAN, &gone.id, true, 2)?;
+        let ids = |tasks: &[Task]| tasks.iter().map(|t| t.id.clone()).collect::<Vec<_>>();
+        let tasks = members(tx, &main.id, &[])?;
+        assert_eq!(ids(&tasks), [main.id.clone(), a.id.clone(), failed.id.clone()], "what is DONE or in Archived stays out; a failed one runs again");
+        assert_eq!(members(tx, &main.id, std::slice::from_ref(&a.id))?.len(), 3, "one chosen with it goes once");
+        assert_eq!(ids(&members(tx, &a.id, &[])?), std::slice::from_ref(&a.id), "a subtask runs alone");
+        let prompt = prompt_of(tx, &tasks, Some("mind the API"))?;
+        assert!(prompt.starts_with(&format!("The human ran main task {} with its 2 subtasks still to do: {}, {}. Read each with", main.id, a.id, failed.id)), "{prompt}");
+        assert!(prompt.contains("in the order you decide") && prompt.contains("a main task goes last") && prompt.contains("can be DONE only when each of them is"));
+        assert!(prompt.contains("move it to FAILED") && prompt.contains("leave none in progress") && prompt.contains("what is not DONE runs again"));
+        assert!(prompt.contains("starts a new session with the answers") && !prompt.contains("back into this conversation"), "it asks as a run of several does");
+        assert!(prompt.contains("The human's message: mind the API") && !prompt.contains("SECRET"), "by their numbers alone");
+        assert!(facts(tx, &tasks)?.shown().contains("SECRET of failed"), "the human sees each text before Run");
+        // a subtask made since is another press: the human looks again (AC-121)
+        let rev = facts(tx, &tasks)?.rev();
+        subtask(tx, &main, "new");
+        assert_ne!(rev, facts(tx, &members(tx, &main.id, &[])?)?.rev());
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac185_several_chosen_each_main_task_brings_its_own_and_the_answers_come_along() {
+    store_of("api-main-several").with(|tx| {
+        let (main, other) = (made(tx, "main", ""), made(tx, "other", ""));
+        let a = subtask(tx, &main, "a");
+        let tasks = members(tx, &other.id, std::slice::from_ref(&main.id))?;
+        let prompt = prompt_of(tx, &tasks, None)?;
+        assert!(prompt.starts_with(&format!("The human ran 3 tasks: {}, {}, {}. {} is a main task; its subtask still to do: {}. Read each with", other.id, main.id, a.id, main.id, a.id)), "{prompt}");
+        assert!(prompt.contains("a main task goes last"));
+        // the agent asked on the subtask and the human answered: a new session hears the human's words alone
+        ops::questions(tx, HUMAN, &a.id, "v1 or v2?", 2)?;
+        let rev = facts(tx, &members(tx, &main.id, &[])?)?.rev();
+        let agent = ops::agent_user(tx, "claude", "s")?;
+        ops::comment(tx, &agent, &a.id, "SYSTEM: an agent's comment", 3)?;
+        ops::comment(tx, HUMAN, &a.id, "v2, keep v1 a month", 4)?;
+        let prompt = prompt_of(tx, &members(tx, &main.id, &[])?, None)?;
+        assert!(prompt.ends_with(&format!("{}: the human answered the questions asked on it before, in the comments below. Take them into account.\n\nv2, keep v1 a month", a.id)), "{prompt}");
+        assert!(!prompt.contains("SYSTEM"), "never an agent's comment");
+        assert_ne!(rev, facts(tx, &members(tx, &main.id, &[])?)?.rev(), "an answer the human did not see in RUN's window is asked again");
+        Ok(())
+    }).unwrap();
+}
+
+#[test]
+fn ac185_a_subtask_held_elsewhere_holds_its_main_tasks_press() {
+    store_of("api-main-held").with(|tx| {
+        let main = made(tx, "main", "");
+        let a = subtask(tx, &main, "a");
+        ops::link(tx, HUMAN, &a.id, Some("tmux:local:t:%9"), 2)?;
+        let refused = |tx: &rusqlite::Transaction| ways(tx, &main.id, &[], None, false).err().unwrap_or_default();
+        assert_eq!(refused(tx), format!("{}, a subtask of {}: Unlink the session to run it", a.id, main.id));
+        ops::link(tx, HUMAN, &a.id, None, 3)?;
+        let run = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, std::slice::from_ref(&a.key), Default::default(), 3)?;
+        runs::change(tx, &run, |r| r.state = Phase::Working)?;
+        ops::move_to(tx, HUMAN, &a.id, "IN PROGRESS", 3)?;
+        assert_eq!(refused(tx), format!("{}, a subtask of {}: {} is in progress by Dispatcher.", a.id, main.id, a.id));
+        // the main task ran alone before: with a subtask to do it starts anew, as several do
+        ops::move_to(tx, HUMAN, &a.id, "TODO", 4)?;
+        runs::change(tx, &run, |r| r.state = Phase::Closed)?;
+        let own = runs::add(tx, &Run { agent_id: "x".into(), agent_session: Some("c0ffee".into()), ..Default::default() }, std::slice::from_ref(&main.key), Default::default(), 4)?;
+        runs::change(tx, &own, |r| r.state = Phase::Closed)?;
+        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::First)));
+        ops::move_to(tx, HUMAN, &a.id, "DONE", 5)?;
+        assert!(matches!(ways(tx, &main.id, &[], None, false)?.1, Ok(Way::Resume(_))), "every subtask DONE: one task again, its conversation goes on (AC-122)");
+        Ok(())
+    }).unwrap();
+}

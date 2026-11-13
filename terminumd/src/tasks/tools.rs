@@ -97,6 +97,15 @@ pub(super) fn not_run_elsewhere(tx: &Transaction, who: &Who, t: &Task) -> Result
     }
 }
 
+/// A main task ends last: refused while a subtask its run took is not DONE (terminum-dispatcher.md AC-185).
+fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
+    let open = crate::dispatcher::runs::subtasks_open(tx, &t.key)?;
+    if open.is_empty() {
+        return Ok(());
+    }
+    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first, or move {0} to FAILED with a comment saying why.", t.id, open.join(", ")))
+}
+
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.
 fn not_without_questions(id: &str) -> String {
     format!("A task waits for a human only with what it asks: call execute_tool(\"ask_human\", {{\"id\": \"{id}\", \"questions\": ...}}). Waiting for another task? Say so there, as \"RUN {id} again once TERM-9 is DONE\". {id} stays where it was.")
@@ -111,10 +120,12 @@ fn asked(tx: &Transaction, who: &Who, waits: bool) -> Result<&'static str, Strin
     if let Some(r) = &run {
         runs::change(tx, &r.id, |r| r.asked = waits)?;
     }
-    Ok(match (waits, run.is_some()) {
+    Ok(match (waits, run.map(|r| r.ids.len() > 1)) {
         (false, _) => "",
-        (true, true) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
-        (true, false) => " Wait for the answer in this session.",
+        // several tasks: they wait together, and their next RUN may start anew (AC-185)
+        (true, Some(true)) => " End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers.",
+        (true, Some(false)) => " End your turn now, with no more tool calls: Dispatcher closes this session, and the human's RUN resumes this conversation with the answers.",
+        (true, None) => " Wait for the answer in this session.",
     })
 }
 
@@ -231,9 +242,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 if to == "TODO" && crate::dispatcher::runs::holding(tx, &t.key)?.is_some() {
                     return Err(format!("{id} is what the human ran: finish it, fail it, or ask."));
                 }
+                if to == "DONE" {
+                    after_its_subtasks(tx, &t)?;
+                }
                 ops::move_to(tx, &me()?, id, to, at)?;
-                // the wait is this session's run's only for the task it holds
-                if t.session.as_deref() == Some(&who.key) {
+                // the wait is this session's run's only for the task it holds; a move of another task of the run, or
+                // of one that did not wait, leaves what its agent asked standing
+                if t.session.as_deref() == Some(&who.key) && t.status == "WAIT FOR HUMAN" {
                     asked(tx, who, false)?;
                 }
                 Ok((format!("{id} is in {to}."), vec![id.to_string()]))
@@ -244,7 +259,13 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let me = me()?;
                 ops::questions(tx, &me, id, &rules::clean(arg(args, "questions")?), at)?;
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
-                Ok((format!("{id} waits for the human, with your questions.{}", asked(tx, who, true)?), vec![id.to_string()]))
+                let then = asked(tx, who, true)?;
+                // in a run of several its other tasks in progress wait with it: one question closes the session (AC-185)
+                let mut cards = vec![id.to_string()];
+                if let Some(run) = crate::dispatcher::runs::in_pane(tx, &who.key)?.filter(|r| r.ids.len() > 1) {
+                    cards.extend(crate::dispatcher::wait_with(tx, &run, id)?);
+                }
+                Ok((format!("{id} waits for the human, with your questions.{then}"), cards))
             }
             "add_comment" => {
                 let id = arg(args, "id")?;
@@ -255,6 +276,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             "finish_task" => {
                 let id = arg(args, "id")?;
                 let t = movable(tx, who, id)?;
+                after_its_subtasks(tx, &t)?;
                 let me = me()?;
                 let result = rules::clean(arg(args, "result")?);
                 ops::comment(tx, &me, id, &result, at)?;
