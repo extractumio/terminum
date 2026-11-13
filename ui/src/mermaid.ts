@@ -7,9 +7,8 @@ let shownTheme = "";
 let seq = 0;
 let redraws = 0;   // bumps at each theme redraw: an older one stops, a fence drawn meanwhile redraws
 
-/** Mermaid's code did not load (a gap, a restart). Safari loads it again at the next diagram;
- *  Chrome keeps a failed module for the page's life, so only a reload helps there. */
-export const NOT_LOADED = "Mermaid's code did not load: reload the page";
+// Chrome keeps a module that failed to load for the page's life: only a reload helps there
+const NOT_LOADED ="Mermaid's code did not load: reload the page";
 
 /** A Mermaid diagram's SVG markup. Strict: no click handlers, no HTML labels (the SVG is shown
  *  as an image, where HTML inside it would not draw). Throws Mermaid's message on bad source. */
