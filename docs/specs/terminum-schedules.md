@@ -387,6 +387,6 @@ Single stage.
 - [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered)
 - [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
-- [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; with long columns every card over them whole)
+- [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column)
 - [x] AC-164 — `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs`
 - [x] AC-182 — `cargo test roles` (`ac182_…`), `scripts/e2e_roles.py`; the card's play key: `web/test/e2e_liveschedules.mjs`

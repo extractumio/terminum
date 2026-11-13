@@ -207,21 +207,51 @@ export async function liveSchedules(page, live) {
   check("AC-163 the columns keep their room under the pool and the section, however many agents", room > 200, String(room));
   await shot("schedules");
   for (const id of crowd) await j(`/api/task-agents/${id}`, "DELETE");
-  // columns far longer than the window take no room from what stands over them: the pool and the section are as
-  // tall as over empty columns, where every card is whole unless there are more than their own bars hold
+  // Compare empty and long columns with one agent in this project's pool and no waiting lines.
+  // That setup leaves room for whole cards before the long column is added.
+  const removed = [];
+  for (const a of (await j("/api/tasks/meta")).agents.filter((a) => a.project === project && a.id !== agent)) {
+    removed.push([a.id, (await j(`/api/task-agents/${a.id}`, "DELETE")).code]);
+  }
+  while (await page.locator("#asks .x").count()) await page.locator("#asks .x").first().click();
   const bars = async () => {
     await page.reload();
     await page.waitForSelector(sched);
-    // read once they hold still: a card drawn after the load (a session's dot, a reading) changes a bar's height
-    const read = () => page.evaluate(() => ["#agentbar", "#schedbar"].map((bar) => Math.round(document.querySelector(bar).getBoundingClientRect().height)));
+    await page.waitForSelector(owl);
+    await page.evaluate(() => document.fonts.ready);
+    const read = () => page.evaluate(() => {
+      const heights = ["#agentbar", "#schedbar"].map((bar) => Math.round(document.querySelector(bar).getBoundingClientRect().height));
+      const whole = (bar, cards) => {
+        const e = document.querySelector(bar), b = e.getBoundingClientRect();
+        return e.scrollHeight <= e.clientHeight + 1 && [...document.querySelectorAll(cards)].every((c) => {
+          const r = c.getBoundingClientRect();
+          return r.height > 0 && r.top >= b.top - 1 && r.bottom <= b.bottom + 1;
+        });
+      };
+      const column = document.querySelector('.col[data-status="TODO"] .cards');
+      return { heights, whole: whole("#agentbar", "#agentbar .agentcard") && whole("#schedbar", ".schedcard"),
+        agents: document.querySelectorAll("#agentbar .agentcard").length, schedules: document.querySelectorAll(".schedcard").length,
+        asks: document.querySelector("#asks").childElementCount, tasks: column.querySelectorAll(".card").length,
+        overflow: column.scrollHeight > column.clientHeight + 1 };
+    });
     let last = await read();
-    await until(async () => { const now = await read(), same = now.join() === last.join(); last = now; return same; });
+    const stable = await until(async () => {
+      await nap(150);   // the first poll must wait too: two immediate reads can precede an async redraw
+      const now = await read(), same = JSON.stringify(now) === JSON.stringify(last);
+      last = now;
+      return same;
+    });
+    check("AC-163 the layout fixture settles with whole cards and only its own agent", stable && last.whole && last.agents === 1
+      && last.schedules === 1 && last.asks === 0 && removed.every(([, code]) => code === 200), JSON.stringify(last));
     return last;
   };
   const over = await bars(), many = [];
+  check("AC-163 the comparison starts over empty columns", over.tasks === 0 && !over.overflow, JSON.stringify(over));
   for (let i = 0; i < 40; i++) many.push((await j("/api/tasks", "POST", { title: `Long column ${i}`, project })).id);
   const overLong = await bars();
-  check("AC-163 long columns take no room from the agents and the schedules over them", overLong.every((h, i) => h >= over[i] - 1) && overLong[1] > 60, JSON.stringify({ over, overLong }));
+  check("AC-163 the long column contains all 40 tasks and scrolls", overLong.tasks === many.length && overLong.overflow, JSON.stringify(overLong));
+  check("AC-163 long columns take no room from the agents and the schedules over them", overLong.heights.every((h, i) => h >= over.heights[i] - 1)
+    && overLong.heights[1] > 60, JSON.stringify({ over: over.heights, overLong: overLong.heights }));
   await shot("schedules-long");
   for (const id of many) await j(`/api/tasks/${id}/archive`, "POST", { on: true });
 

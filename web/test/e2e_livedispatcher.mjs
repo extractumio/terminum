@@ -179,8 +179,11 @@ export async function liveDispatcher(page, opts) {
   const flaky = (await j("/api/task-agents", "POST", { project, name: "Flaky", kind: "claude", command: fake("claude", "--start quits") })).id;
   const unsaid = await task("never heard FINISHES", "The whole text.");
   await run(unsaid, { agent: flaky });
-  check("AC-121 an agent that ends once its session opened, before its prompt: FAILED", await hasStatus(unsaid, "FAILED", 15000), await history(unsaid));
+  const unsaidFailed = await hasStatus(unsaid, "FAILED", 15000);
   const firstPane = await paneOf(unsaid);
+  const unsaidPane = tmux("display", "-p", "-t", firstPane, "#{@terminum-exit} | #{pane_current_command} | #{pane_pid}");
+  const unsaidHistory = await history(unsaid);
+  check("AC-121 an agent that ends once its session opened, before its prompt: FAILED", unsaidFailed && unsaidHistory.includes("program ended with exit 0"), `${unsaidHistory}; pane: ${unsaidPane}`);
   await j(`/api/task-agents/${flaky}`, "PATCH", { name: "Flaky", kind: "claude", command: fake("claude") });
   // the fake finishes only on a prompt holding FINISHES: the task's title has it, the comment and "go on" words do not
   const offered = await j(`/api/tasks/${unsaid}/run?agent=${flaky}`);
