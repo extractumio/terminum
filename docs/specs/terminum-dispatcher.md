@@ -1129,6 +1129,7 @@ Scenario: AC-158 happy path — a press at a limit
   When the user runs API-13 on it, first or to go on in a closed session, and adds it to the queue (AC-169)
   Then the press is kept, its comment kept on API-13 at once, and the answer and a toast say "It waits for Opus reviewer: Opus reviewer is at its limit of 1: API-12 is working. It starts when there is room."
   And API-13's card and window say "waits for Opus reviewer"; its column does not change
+  And while it waits, an agent's move_task or finish_task on it is refused, "API-13 waits in Opus reviewer's queue: it starts when there is room. You can read it and comment.": no other session calls off a human's or a manager's press; a human's move still does
   When API-12's session closes, its agent goes or it is given up
   Then within a walk API-13's press goes again as RUN would go now: every check of a press read anew, the folder, hooks, the host's link, the text the human saw
 

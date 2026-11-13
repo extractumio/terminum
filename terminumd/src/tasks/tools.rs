@@ -81,7 +81,18 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 /// human's RUN still holds in another session is that run's, which Dispatcher watches.
 fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = visible(tx, who, id)?;
-    not_run_elsewhere(tx, who, &t).map(|()| t)
+    not_run_elsewhere(tx, who, &t)?;
+    not_queued(tx, &t).map(|()| t)
+}
+
+/// Refused while a press waits for `t` in an agent's queue (terminum-dispatcher.md AC-158, AC-169): that press is a
+/// human's or a manager's, and a move would call it off.
+fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
+    let Some(w) = crate::dispatcher::waits::of_task(tx, &t.key)? else {
+        return Ok(());
+    };
+    let agent = super::agents::in_project(tx, &w.agent, &w.project)?.map_or(w.agent, |a| a.name);
+    Err(format!("{} waits in {agent}'s queue: it starts when there is room. You can read it and comment.", t.id))
 }
 
 /// Refused while a human's RUN holds `t` in another session: from its start, before it has a pane, until
