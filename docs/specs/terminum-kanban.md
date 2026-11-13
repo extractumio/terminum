@@ -748,6 +748,24 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
   When another's change arrives during a drag
   Then the drag goes on, the card held; the columns' scroll stays through any change
 
+Scenario: AC-133 edge — closing while a task is being read
+  Given a task's window open, with another read to open a task still waiting
+  When the user closes it with CLOSE, ×, Esc or Back, confirming any edit to discard
+  Then the window stays closed when that read answers
+  And Back before the first read answers keeps the board without opening the window
+  And Cancel on the discard question keeps the window and its edit
+  When the user opens a task again after closing
+  Then that new open stands, even before the close's own Back is heard
+  And the canceled read's success or failure changes neither its address nor its error message
+
+Scenario: AC-133 edge — a refresh during a Close press
+  Given a task's window open with a comment draft
+  When a changed task read arrives between pressing and releasing CLOSE
+  Then that press keeps the current draft once and closes the window, including when the available actions change
+  And a refused save keeps the draft and window; a retry keeps the current draft once
+  When another task opens between that press and release
+  Then the release sends neither task's draft and leaves the new task open
+
 Scenario: AC-133 edge — nothing typed is lost by a slip
   When Discard is pressed on a window with text, or Esc, × or Back on an edit not saved
   Then it asks; Cancel keeps it
@@ -1190,7 +1208,7 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after CLOSE, ×, Esc and Back; a deliberate reopen), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`
