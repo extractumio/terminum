@@ -150,6 +150,12 @@ Scenario: AC-121 edge — a paste shown late
   When it is not shown in 30 s
   Then no Enter is sent, and at 60 s API-12 is FAILED, as below
 
+Scenario: AC-121 edge — the agent ends before the pasted prompt shows
+  Given the gate pasted the first prompt into the agent's empty box
+  When the agent ends before it shows that text or takes Enter
+  Then the gate stops waiting for the echo, sends no Enter, and API-12 is FAILED with the program's exit reason
+  And RUN offers the task's whole first prompt again, in the same pane (AC-122)
+
 Scenario: AC-121 failure — did not start
   When the program is not found, the box does not come in 60 s, or the prompt is not taken in 30 s
   Then API-12 is FAILED and its comment says "Session did not start: <reason>" with the screen's last 20 rows, redacted (`sent::redact`) as a Markdown block
