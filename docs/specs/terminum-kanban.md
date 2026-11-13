@@ -333,6 +333,7 @@ Scenario: AC-110 happy path — delete
   Then it asks "Delete the project Billing? Its 2 sessions and 7 tasks move to Default; nothing is closed." and, confirmed, does that in one transaction, each task's history saying so
   And its sessions stand in their tmux groups again
   And Close Project… closes its sessions and leaves the project and tasks
+  And deleting a project with schedules follows terminum-schedules.md AC-160
 
 Scenario: AC-110 edge — first start
   Given a projects.json and no store

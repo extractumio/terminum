@@ -303,5 +303,24 @@ export async function liveSchedules(page, live) {
   // AC-161: an agent running schedules is not deleted; a schedule deleted leaves its tasks
   const kept = await j(`/api/task-agents/${agent}`, "DELETE");
   check("AC-161 an agent with schedules is not deleted", kept.code === 400 && /runs schedules SCH-\d+: give them another agent first\./.test(kept.error ?? ""), JSON.stringify(kept));
+  // AC-160: deleting a project must not silently change where its standing RUN executes.
+  const deleteProject = async () => {
+    await open(`?project=${project}`);
+    await page.click("#fproject summary");
+    await page.click('#fproject .projrow:has-text("Nightly") .projedit');
+    await page.waitForSelector("#projectbox[open]");
+    await page.click("#projectdelete");
+    await page.waitForSelector("#confirmbox[open]");
+    await page.click("#confirmok");
+  };
+  await deleteProject();
+  check("AC-160 deleting a project names its schedule and keeps it", await until(async () => await page.textContent("#toast") === `Nightly has schedules ${s.key}: move or delete them first.`)
+    && (await j("/api/tasks/meta")).projects.some((p) => p.id === project), await page.textContent("#toast"));
   check("AC-160 deleted, its tasks stay", (await j(`/api/schedules/${s.id}`, "DELETE")).code === 200 && (await j(`/api/tasks/${task}`)).status === "DONE");
+  await deleteProject();
+  check("AC-160 a deleted schedule no longer blocks deleting its project", await until(async () => !(await j("/api/tasks/meta")).projects.some((p) => p.id === project))
+    && (await j(`/api/tasks/${task}`)).project === "default" && (await j("/api/tasks/meta")).agents.find((a) => a.id === agent)?.project === "default");
+  const moved = (await j(`/api/tasks/${task}`)).id;
+  await page.goto(`${live.base}/scheduled/?schedule=${s.key}`);
+  check("AC-160 the deleted project's schedule keeps its firing history", await until(() => page.isVisible(`#fires .fire:has(.stbox[aria-label^="${moved} · "])`)));
 }
