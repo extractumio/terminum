@@ -255,7 +255,7 @@ async fn start_in_order(app: &Shared, project: &str, c: &Candidate) -> Option<St
     let off = why.clone();
     let done = store(app, move |tx| {
         if ran {
-            let name = agents::by_id(tx, &agent)?.map_or(agent, |a| a.name);
+            let name = agents::name_of(tx, &agent)?;
             return ops::log(tx, &task, DISPATCHER, "why", &format!("Auto-Dispatcher started it on {name}, by priority and saved order."), None, ops::now()).map(drop);
         }
         auto::not_started(tx, &task, None)?;

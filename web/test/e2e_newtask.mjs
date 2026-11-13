@@ -5,7 +5,7 @@ import path from "node:path";
 import { check, runningIn, until } from "./check.mjs";
 import { drawn, openPage, PHONE, SIZES, THEME } from "./fake.mjs";
 
-const AGENTS = [{ id: "a1", name: "Claude Code" }, { id: "a2", name: "Codex" }];
+const AGENTS = [{ id: "a1", project: "web", name: "Claude Code" }, { id: "a2", project: "api", name: "Codex" }];
 const META = { projects: [{ id: "api", name: "API" }, { id: "web", name: "Web" }],
   users: [{ id: "human", name: "Alex" }], sessions: [], agents: AGENTS, last_agents: { api: "a2", web: "a1" } };
 
@@ -37,6 +37,8 @@ export async function webNewTask(browser, name) {
       check("AC-106 new task starts unspecified despite a last-used agent", await page.inputValue("#newagent") === "");
       await page.selectOption("#newproj", "web");
       check("AC-106 changing project keeps the agent unspecified", await page.inputValue("#newagent") === "");
+      const offered = await page.$$eval("#newagent option", (all) => all.map((o) => o.value));
+      check("AC-137 a new task is offered its project's own agents alone", JSON.stringify(offered) === JSON.stringify(["", "a1"]), JSON.stringify(offered));
       await page.selectOption("#newagent", "a1");
       await page.evaluate(() => window.newform.refresh());
       check("AC-106 an explicit agent survives refresh", await page.inputValue("#newagent") === "a1");

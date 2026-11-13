@@ -37,7 +37,7 @@ pub(crate) async fn gave_up(app: &Shared, id: &str, who: &'static str) -> Result
     let done = store(app, move |tx| {
         let key = ops::key_of(tx, &wanted)?;
         let Some(w) = super::waits::of_task(tx, &key)? else { return runs::give_up(tx, &key).map(Some) };
-        let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
+        let name = agents::name_of(tx, &w.agent)?;
         super::waits::call_off(tx, &key, &format!("{who} called off its wait for {name}.")).map(|()| None)
     }).await?;
     Ok(match done {

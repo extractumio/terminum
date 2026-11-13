@@ -75,7 +75,7 @@ async fn ac178_a_manager_s_call_comes_from_its_pane_and_its_main_agent() {
     // a subagent reads, never writes
     assert!(in_pane(&app, BOSS, true, true, "list_agents", &json!({})).await.is_ok());
     assert_eq!(in_pane(&app, BOSS, true, true, "delete_agent", &json!({"agent": "Opus"})).await.unwrap_err(), SUBAGENT);
-    assert!(app.tasks.with(|tx| crate::tasks::agents::by_id(tx, "a1")).unwrap().is_some(), "nothing was done");
+    assert!(app.tasks.with(|tx| crate::tasks::agents::in_project(tx, "a1", "api")).unwrap().is_some(), "nothing was done");
 }
 
 #[tokio::test]

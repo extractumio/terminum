@@ -45,17 +45,12 @@ INSERT INTO agents_new (id, project, name, kind, command, effort, color, at_once
   SELECT u.copy, u.project, a.name, a.kind, a.command, a.effort, a.color, a.at_once, a.week_limit, a.month_limit
   FROM agent_uses u JOIN agents a ON a.id = u.agent WHERE u.copy IS NOT NULL ORDER BY a.rowid, u.project;
 
-UPDATE tasks SET agent = (SELECT u.copy FROM agent_uses u WHERE u.agent = tasks.agent AND u.project = tasks.project)
-  WHERE EXISTS (SELECT 1 FROM agent_uses u WHERE u.agent = tasks.agent AND u.project = tasks.project AND u.copy IS NOT NULL);
+UPDATE tasks SET agent = u.copy FROM agent_uses u WHERE u.agent = tasks.agent AND u.project = tasks.project AND u.copy IS NOT NULL;
 UPDATE tasks SET agent = NULL WHERE agent IS NOT NULL AND NOT EXISTS (SELECT 1 FROM agents_new n WHERE n.id = tasks.agent AND n.project = tasks.project);
-UPDATE schedules SET agent_id = (SELECT u.copy FROM agent_uses u WHERE u.agent = schedules.agent_id AND u.project = schedules.project)
-  WHERE EXISTS (SELECT 1 FROM agent_uses u WHERE u.agent = schedules.agent_id AND u.project = schedules.project AND u.copy IS NOT NULL);
-UPDATE run_waits SET agent_id = (SELECT u.copy FROM agent_uses u WHERE u.agent = run_waits.agent_id AND u.project = run_waits.project)
-  WHERE EXISTS (SELECT 1 FROM agent_uses u WHERE u.agent = run_waits.agent_id AND u.project = run_waits.project AND u.copy IS NOT NULL);
-UPDATE projects SET auto_agent = (SELECT u.copy FROM agent_uses u WHERE u.agent = projects.auto_agent AND u.project = projects.id)
-  WHERE EXISTS (SELECT 1 FROM agent_uses u WHERE u.agent = projects.auto_agent AND u.project = projects.id AND u.copy IS NOT NULL);
-UPDATE projects SET auto_default = (SELECT u.copy FROM agent_uses u WHERE u.agent = projects.auto_default AND u.project = projects.id)
-  WHERE EXISTS (SELECT 1 FROM agent_uses u WHERE u.agent = projects.auto_default AND u.project = projects.id AND u.copy IS NOT NULL);
+UPDATE schedules SET agent_id = u.copy FROM agent_uses u WHERE u.agent = schedules.agent_id AND u.project = schedules.project AND u.copy IS NOT NULL;
+UPDATE run_waits SET agent_id = u.copy FROM agent_uses u WHERE u.agent = run_waits.agent_id AND u.project = run_waits.project AND u.copy IS NOT NULL;
+UPDATE projects SET auto_agent = u.copy FROM agent_uses u WHERE u.agent = projects.auto_agent AND u.project = projects.id AND u.copy IS NOT NULL;
+UPDATE projects SET auto_default = u.copy FROM agent_uses u WHERE u.agent = projects.auto_default AND u.project = projects.id AND u.copy IS NOT NULL;
 
 DROP TABLE agents;
 ALTER TABLE agents_new RENAME TO agents;

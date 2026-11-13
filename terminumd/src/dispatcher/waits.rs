@@ -113,7 +113,7 @@ pub fn reorder(tx: &Transaction, agent: &str, ids: &[String]) -> Result<(), Stri
 pub fn take_out(tx: &Transaction, id: &str) -> Result<(), String> {
     let key = ops::key_of(tx, id)?;
     let Some(w) = of_task(tx, &key)? else { return Err(format!("{id} waits no more: it started, or its wait was called off.")) };
-    let name = agents::by_id(tx, &w.agent)?.map_or(w.agent, |a| a.name);
+    let name = agents::name_of(tx, &w.agent)?;
     call_off(tx, &key, &format!("The human called off its wait for {name}."))
 }
 

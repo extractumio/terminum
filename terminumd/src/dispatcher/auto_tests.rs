@@ -62,9 +62,9 @@ fn ac170_a_round_is_made_for_the_free_slots_and_the_tasks_nobody_holds() {
         let run = running(tx, "p", &t);
         assert_eq!(decide(tx, "api", &setting(tx), NOW)?, Due::Nothing, "one round at a time");
         assert_eq!(ops::get(tx, &id)?.status, "IN PROGRESS");
-        let picker = agents::by_id(tx, "p")?.unwrap();
+        let picker = agents::in_project(tx, "p", "api")?.unwrap();
         let slots = pool::Slots::read(tx)?;
-        assert_eq!((slots.free_of(&picker), slots.free_of(&agents::by_id(tx, "a")?.unwrap()), slots.free_in(tx, "api")?), (3, 1, None));
+        assert_eq!((slots.free_of(&picker), slots.free_of(&agents::in_project(tx, "a", "api")?.unwrap()), slots.free_in(tx, "api")?), (3, 1, None));
         let shown = pool::board(tx)?;
         assert_eq!((shown["agents"]["p"][0]["round"].as_bool(), shown["agents"]["a"][0]["round"].as_bool()), (Some(true), Some(false)), "{shown}");
         // ended, it leaves the board; the same candidates with no more room are not judged again

@@ -13,7 +13,7 @@ use crate::tasks::ops;
 
 pub async fn list(app: &Shared, boss: &Boss) -> Result<String, String> {
     let project = boss.project.clone();
-    let pool: Vec<Value> = store(app, move |tx| Ok(agents::listed(tx, ops::now())?.into_iter().filter(|a| a["project"] == project.as_str()).collect())).await?;
+    let pool = store(app, move |tx| agents::listed(tx, ops::now(), Some(&project))).await?;
     Ok(format!("{DATA}\n{}", json!(pool)))
 }
 

@@ -201,7 +201,7 @@ fn ac162_the_prompt_says_a_scheduled_run_and_the_result_s_form() {
 fn ac161_its_task_takes_the_kept_slot_and_others_have_the_rest() {
     open("fire-slot").with(|tx| {
         let s = schedule(tx, 1, every_15());
-        let a = crate::tasks::agents::by_id(tx, "a")?.unwrap();
+        let a = crate::tasks::agents::in_project(tx, "a", "default")?.unwrap();
         let other = ops::create(tx, HUMAN, NewTask { title: "API-12".into(), ..Default::default() }, NOW)?;
         let full = pool::check_for(tx, &a, "default", Some(&other.key), None)?.expect("its one slot is kept");
         assert_eq!(full.words, "Opus reviewer is at its limit of 1: SCH-1 (kept).");
@@ -225,7 +225,7 @@ fn working(tx: &rusqlite::Transaction, task: &ops::Task) -> String {
 fn ac161_one_run_stands_in_a_kept_slot() {
     open("fire-one-kept").with(|tx| {
         let s = schedule(tx, 1, every_15());
-        let a = crate::tasks::agents::by_id(tx, "a")?.unwrap();
+        let a = crate::tasks::agents::in_project(tx, "a", "default")?.unwrap();
         let (old, _) = made(decide(tx, &s, NOW + 10 * 60, false)?);
         ops::move_to(tx, DISPATCHER, &old, "FAILED", NOW + 11 * 60)?;
         let (new, _) = made(decide(tx, &s, NOW + 25 * 60, false)?);

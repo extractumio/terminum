@@ -61,7 +61,7 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
 
   /** Its rectangle: its color, name, kind, effort, its project when several are shown, and a dot for each session of what is shown; its limit counts them all. */
   function row(a) {
-    const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project));
+    const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project)), of = whose(a);
     const b = el("button", `item agentcard${full(a) ? " busy" : ""}`);
     b.type = "button";
     b.dataset.agent = a.id;
@@ -80,9 +80,9 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     const queued = queueOf(a);
     if (queued.length) dots.append(queueKey(a, queued, () => open(a, true)));
     line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
-    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : []), ...whose(a)], false), stripes(a.kind, readings()[a.kind], Date.now() / 1000), dots);
+    txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : []), ...of], false), stripes(a.kind, readings()[a.kind], Date.now() / 1000), dots);
     b.append(bar, txt);
-    b.title = [a.name, ...whose(a), `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");
+    b.title = [a.name, ...of, `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");
     return b;
   }
 
@@ -147,16 +147,18 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
   const values = () => Object.fromEntries(Object.entries(field).map(([k, e]) => [k, e.value]));
   const say = (text) => showError(error, text);
 
+  /** The name is still a kind's own, not the user's words. */
+  const kindNamed = () => KINDS.some((k) => field.name.value.startsWith(agentName(k)));
   // what a kind fills in follows the kind; what the user wrote stays
   field.kind.addEventListener("change", () => {
     const kind = field.kind.value;
-    if (!field.name.value.trim() || KINDS.some((k) => field.name.value.startsWith(agentName(k)))) field.name.value = freeName(kind, field.project.value);
+    if (!field.name.value.trim() || kindNamed()) field.name.value = freeName(kind, field.project.value);
     if (!field.command.value.trim() || KINDS.includes(field.command.value)) field.command.value = kind;
     fillEfforts(field.effort.value);
   });
   // a new one's name is free in the project chosen for it
   field.project.addEventListener("change", () => {
-    if (KINDS.some((k) => field.name.value.startsWith(agentName(k)))) field.name.value = freeName(field.kind.value, field.project.value);
+    if (kindNamed()) field.name.value = freeName(field.kind.value, field.project.value);
   });
 
   /** A kind's name not yet taken in `project`'s pool: Claude Code, Claude Code 2… */

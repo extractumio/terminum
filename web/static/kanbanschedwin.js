@@ -5,7 +5,7 @@
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, plural } from "./listparts.js";
 import { DAY_NAMES, KINDS, MINUTE_STEPS, fromCron, localSeconds, toCron } from "./cadence.js";
-import { $, agentsOf, api, fillSelect, onlyProject, projectOptions, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
+import { $, agentsOf, api, fillSelect, knownAgent, onlyProject, projectOptions, guardCancel, onSend, showError, stamp, writePreview } from "./kanbanutil.js";
 
 const HOUR_STEPS = [1, 2, 3, 4, 6, 8, 12];
 
@@ -82,7 +82,7 @@ export function scheduleWindow({ getMeta, chosen, changed }) {
   /** The agents of the project chosen: a schedule runs on one of its own project's (terminum-dispatcher.md AC-137). */
   function fillAgentsOf(wanted = f.agent.value) {
     const own = agentsOf(getMeta(), f.project.value);
-    fillSelect(f.agent, [["", "Choose an agent"], ...own.map((a) => [a.id, a.name])], own.some((a) => a.id === wanted) ? wanted : own.length === 1 ? own[0].id : "");
+    fillSelect(f.agent, [["", "Choose an agent"], ...own.map((a) => [a.id, a.name])], knownAgent(own, [wanted])?.id ?? "");
   }
   f.project.addEventListener("change", () => fillAgentsOf());
 

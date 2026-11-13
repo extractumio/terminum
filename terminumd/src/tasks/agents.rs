@@ -153,12 +153,21 @@ impl Given {
 
     /// A name stands once in `project`'s pool.
     fn fits(&self, tx: &Transaction, project: &str, but: &str) -> Result<(), String> {
-        let taken: bool = tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE project = ?1 AND name = ?2 AND id != ?3)", (project, &self.name, but), |r| r.get(0)).map_err(sql)?;
-        if taken {
+        if name_taken(tx, project, &self.name, but)? {
             return Err(format!("The pool already has an agent named {}.", self.name));
         }
         Ok(())
     }
+}
+
+/// Whether `project`'s pool has an agent named `name`, `but` one not counted.
+fn name_taken(tx: &Transaction, project: &str, name: &str, but: &str) -> Result<bool, String> {
+    tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE project = ?1 AND name = ?2 AND id != ?3)", (project, name, but), |r| r.get(0)).map_err(sql)
+}
+
+/// What an agent wrote stays under its name, the new one (AC-137).
+fn rename_user(tx: &Transaction, id: &str, name: &str) -> Result<(), String> {
+    tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(id), name)).map(drop).map_err(sql)
 }
 
 /// Every project's pool, as they were added.
@@ -197,23 +206,27 @@ pub fn chosen(tx: &Transaction, id: &str, project: &str) -> Result<Agent, String
 /// A deleted project's agents stand in Default with its tasks and runs; a name Default has takes a number.
 pub fn move_to_default(tx: &Transaction, project: &str) -> Result<(), String> {
     for a in of_project(tx, project)? {
-        let taken = |name: &str| tx.query_row("SELECT EXISTS (SELECT 1 FROM agents WHERE project = ?1 AND name = ?2)", (DEFAULT_PROJECT, name), |r| r.get::<_, bool>(0)).map_err(sql);
         let (mut name, mut n) = (a.name.clone(), 1);
-        while taken(&name)? {
+        while name_taken(tx, DEFAULT_PROJECT, &name, "")? {
             n += 1;
             let tail = format!(" ({n})");
             name = format!("{}{tail}", a.name.chars().take(MOST_NAME - tail.chars().count()).collect::<String>());
         }
-        tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(&a.id), &name)).map_err(sql)?;
+        rename_user(tx, &a.id, &name)?;
         tx.execute("UPDATE agents SET project = ?2, name = ?3 WHERE id = ?1", (&a.id, DEFAULT_PROJECT, &name)).map_err(sql)?;
     }
     Ok(())
 }
 
-/// Every pool as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
-pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
+/// `project`'s pool, or every pool, as they were added.
+pub fn of(tx: &Transaction, project: Option<&str>) -> Result<Vec<Agent>, String> {
+    project.map_or_else(|| list(tx), |p| of_project(tx, p))
+}
+
+/// `project`'s pool, or every pool, as a page shows it: each with what it spent in the last 7 and 30 days (AC-143).
+pub fn listed(tx: &Transaction, now: i64, project: Option<&str>) -> Result<Vec<Value>, String> {
     let spent = crate::dispatcher::usage::of_agents(tx, now)?;
-    Ok(list(tx)?.into_iter().map(|a| {
+    Ok(of(tx, project)?.into_iter().map(|a| {
         let (week, month) = spent.get(&a.id).copied().unwrap_or((0, 0));
         let mut v = json!(a);
         v["spent"] = json!({"week": week, "month": month});
@@ -221,8 +234,13 @@ pub fn listed(tx: &Transaction, now: i64) -> Result<Vec<Value>, String> {
     }).collect())
 }
 
-/// An agent, whichever project's, if it is still there.
-pub fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
+/// An agent's name for a line that only says it, whichever project's; its id when it is gone.
+pub fn name_of(tx: &Transaction, id: &str) -> Result<String, String> {
+    Ok(by_id(tx, id)?.map_or_else(|| id.to_string(), |a| a.name))
+}
+
+/// An agent, whichever project's, if it is still there: what decides for a project asks `in_project` or `chosen`.
+fn by_id(tx: &Transaction, id: &str) -> Result<Option<Agent>, String> {
     Ok(rows(tx, &format!("{SELECT} WHERE id = ?1"), [id], of_row)?.pop())
 }
 
@@ -250,19 +268,15 @@ pub(crate) fn change(tx: &Transaction, id: &str, given: &Given) -> Result<(), St
         let n = kept.len();
         return Err(format!("{} keeps {n} slot{} for {}: at once is at least {n}.", given.name, if n == 1 { "" } else { "s" }, kept.join(", ")));
     }
-    // what it wrote stays under its name, the new one (AC-137)
-    tx.execute("UPDATE users SET name = ?2 WHERE id = ?1", (super::ops::pool_user_id(id), &given.name)).map_err(sql)?;
-    match tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6, week_limit = ?7, month_limit = ?8 WHERE id = ?1",
-                      rusqlite::params![id, given.name, given.kind, given.command, given.effort, given.at_once, given.week_limit, given.month_limit]).map_err(sql)? {
-        0 => Err("That agent is gone.".into()),
-        _ => Ok(()),
-    }
+    rename_user(tx, id, &given.name)?;
+    tx.execute("UPDATE agents SET name = ?2, kind = ?3, command = ?4, effort = ?5, at_once = ?6, week_limit = ?7, month_limit = ?8 WHERE id = ?1",
+               rusqlite::params![id, given.name, given.kind, given.command, given.effort, given.at_once, given.week_limit, given.month_limit]).map(drop).map_err(sql)
 }
 
 pub(crate) fn remove(tx: &Transaction, id: &str) -> Result<(), String> {
     let runs_them: Vec<String> = rows(tx, "SELECT 'SCH-' || number FROM schedules WHERE agent_id = ?1 AND deleted_at IS NULL ORDER BY number", [id], |r| r.get(0))?;
     if !runs_them.is_empty() {
-        let name = by_id(tx, id)?.map_or_else(|| id.to_string(), |a| a.name);
+        let name = name_of(tx, id)?;
         return Err(format!("{name} runs schedules {}: give them another agent first.", runs_them.join(", ")));
     }
     if let Some(run) = crate::dispatcher::runs::holding_agent(tx, id)? {

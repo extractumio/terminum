@@ -186,9 +186,8 @@ pub fn agent_of(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
 
 /// A human names the agent that runs task `id`, or none; its history says so.
 pub fn set_agent(tx: &Transaction, id: &str, agent: Option<&str>, at: i64) -> Result<(), String> {
-    let key = ops::key_of(tx, id)?;
-    let project: String = tx.query_row("SELECT project FROM tasks WHERE id = ?1", [&key], |r| r.get(0)).map_err(sql)?;
-    let agent = in_pool(tx, &project, agent)?;
+    let t = ops::get(tx, id)?;
+    let (key, agent) = (t.key, in_pool(tx, &t.project, agent)?);
     if agent_of(tx, &key)? == agent.as_ref().map(|a| a.id.clone()) {
         return Ok(());
     }
