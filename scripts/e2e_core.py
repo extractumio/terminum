@@ -216,18 +216,24 @@ def main():
 
         # AC-38: ?trace=1 times a key from its arrival to the frame that shows it, into logs/
         ws.send({"t": "trace", "on": True})
-        on = ws.until(lambda m: m["t"] == "trace" and "on" in m, 5)
+        on = ws.until(lambda m: m["t"] == "trace" and "on" in m, 15)
         ws.send({"t": "in", "data": "z", "k": 77})
-        traced = ws.until(lambda m: m["t"] == "screen" and any(k.get("k") == 77 for k in (m.get("tr") or {}).get("ks", [])), 5)
+        traced = ws.until(lambda m: m["t"] == "screen" and any(k.get("k") == 77 for k in (m.get("tr") or {}).get("ks", [])), 15)
         ws.send({"t": "in", "data": "\x15"})
         ws.send({"t": "trace", "on": False})
-        ws.until(lambda m: m["t"] == "trace", 5)
+        off = ws.until(lambda m: m["t"] == "trace" and m.get("on") is False, 15)
         logs = os.path.join(t.home, "logs")
-        files = [f for f in os.listdir(logs) if f.startswith("trace-")] if os.path.isdir(logs) else []
-        body = open(os.path.join(logs, files[0])).read() if files else ""
-        check("AC-38 a traced key comes back with its stages in the frame", on and on.get("on") and traced is not None,
-              traced and traced["tr"]["ks"][0])
-        check("AC-38 the trace is written without typed text", files and '"k":77' in body.replace(" ", "") and '"z"' not in body, files)
+        path = os.path.join(logs, (on or {}).get("file", ""))
+
+        def recorded(text):
+            return any(r.get("ev") == "key" and r.get("k") == 77
+                       for r in (json.loads(line) for line in text.splitlines(keepends=True) if line.endswith("\n")))
+
+        body = wait_for(lambda: open(path).read() if os.path.isfile(path) else "", recorded, 15, last=True)
+        stages = next((k for k in (traced or {}).get("tr", {}).get("ks", []) if k.get("k") == 77), {})
+        check("AC-38 a traced key comes back with its stages in the frame", on and on.get("on") and
+              all(type(stages.get(k)) in (int, float) for k in ("to_tmux_ms", "until_change_ms", "capture_ms", "encode_ms", "total_ms")), stages)
+        check("AC-38 the trace is written without typed text", off and recorded(body) and '"z"' not in body, path)
 
         # AC-06: a program that asked for the mouse gets SGR reports for clicks and the wheel (a
         # page's frame of wheel steps as one message with their count), in order with the keys
