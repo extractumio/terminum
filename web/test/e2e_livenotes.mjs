@@ -253,10 +253,10 @@ export async function liveNotes(page, { tmux, work, bin, home, app }) {
     page.on("websocket", sent);
     await page.goto(new URL(/\]\((\/sessions\/[^)\s]+)\)/.exec(conv.text)[1], page.url()).href);
     check("AC-116 the task's link brings its record's line into view", await until(() => located.some((m) => m.text.includes("electable word") && Number.isInteger(m.n)), 10000)
-      && await until(() => !page.url().includes("then="), 8000)
+      && await until(() => page.url() === back, 8000)
       && await until(() => page.evaluate(() => [...document.querySelectorAll("#screen .ln")].some((l) => l.textContent.includes("selectable words of notes-a"))), 8000), JSON.stringify(located).slice(0, 300));
     page.off("websocket", sent);
-    await page.goto(back);
+    // The link already returned to this address; reloading it only adds a second navigation.
     await page.waitForSelector(row(a.pane), { timeout: 8000 });
     await foldFoot(page);
   } finally {
