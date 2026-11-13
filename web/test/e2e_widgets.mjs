@@ -6,6 +6,7 @@
 // serves them through the /fb proxy (the folds and the printed tables are in e2e_widgetfolds.mjs and
 // e2e_widgettables.mjs). Alone: node web/test/e2e_widgets.mjs [chromium|webkit].
 
+import { replyTo } from "./fake.mjs";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -79,10 +80,10 @@ export async function open(browser, { renderers = true, agent = false, history =
         const rows = [...screen.map((t) => (typeof t === "string" ? line(t) : t)), { r: [[PROMPT, null, null, 0], [" ", null, null, 256]], e: true }];
         say({ t: "screen", sid: "S1", full: true, n: rows.length, cols: 80, rows: rows.length, ch: rows.map((r, i) => [i, r]) });
       }
-      if (msg.t === "unfold") say(folds.find((f) => f.n === msg.n)?.fail ? { t: "lines", sid: "S1", first: msg.n, lines: [], error: "These lines are no longer in iTerm's history." }
-        : { t: "lines", sid: "S1", first: msg.n, lines: history.slice(msg.n, msg.to + 1) });
+      if (msg.t === "unfold") say(replyTo(msg, folds.find((f) => f.n === msg.n)?.fail ? { t: "lines", sid: "S1", first: msg.n, lines: [], error: "These lines are no longer in iTerm's history." }
+        : { t: "lines", sid: "S1", first: msg.n, lines: history.slice(msg.n, msg.to + 1) }));
       if (msg.t === "files") say({ t: "files", sid: "S1", key: "S1", cwd, home: "/Users/alex", host: null });
-      hook?.(msg, say);
+      hook?.(msg, (m) => say(replyTo(msg, m)));
     });
     say({ t: "build", id: "test" });
     say({ t: "settings", page: {}, css: 1 });                    // as terminumd greets a page (looks.rs hello): custom.css is fetched then

@@ -43,7 +43,7 @@ function make() {
     st.moved = false;
   });
   stage.addEventListener("pointermove", (e) => {
-    const p = st.pointers.get(e.pointerId);
+    const p = st?.pointers.get(e.pointerId);
     if (!p) return;
     const r = stage.getBoundingClientRect();
     if (st.pointers.size === 1) {
@@ -61,7 +61,7 @@ function make() {
     if (before.d > 0) zoomAt(st.s * (d / before.d), mx - r.left, my - r.top);
   });
   const up = (e) => {
-    if (!st.pointers.delete(e.pointerId) || st.pointers.size || st.moved) return;
+    if (!st?.pointers.delete(e.pointerId) || st.pointers.size || st.moved) return;
     const now = performance.now(), r = stage.getBoundingClientRect();    if (st.last && now - st.last < 320) {                        // a double tap or click
       st.last = 0;
       const near = (a, b) => Math.abs(a - b) < 0.01;
@@ -109,7 +109,7 @@ export function openZoom(src, { caption = "", alt = "", vector = false, onClose 
   box.querySelector(".zstage").replaceChildren(img);
   box.querySelector(".zcap").textContent = caption;
   box.hidden = false;
-  img.onload = fit;
+  img.onload = () => { if (st?.img === img) fit(); };
   img.src = src;
   if (img.complete && img.naturalWidth) fit();
   box.querySelector('[data-z="close"]').focus({ preventScroll: true });

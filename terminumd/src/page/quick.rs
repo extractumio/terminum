@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use super::client::error;
+use super::client::{reply, request_error};
 use super::sessions::{allowed_now, folder_of, said, window_of};
 use super::Page;
 use crate::app::Shared;
@@ -18,18 +18,18 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value) {
     let s = |k: &str| msg[k].as_str().unwrap_or("").to_string();
     let side = match s("side").as_str() { "left" => "left", "right" => "right", _ => "bottom" };
     let result = match msg["t"].as_str().unwrap_or("") {
-        "quick" => open(app, page, &s("id"), side).await,
+        "quick" => open(app, page, &s("id"), side, msg).await,
         "quickside" => set_side(app, &s("id"), side).await,
         _ => Ok(()),
     };
     if let Err(e) = result {
-        error(page, e, None);
+        request_error(page, msg, e);
     }
 }
 
 /// The pane's quick shell: the one it has in its session, else a new one; the page is told its
 /// key. Asked for a quick shell's own pane (a phone shows it alone), its pane's.
-async fn open(app: &Shared, page: &Arc<Page>, id: &str, side: &str) -> Result<(), String> {
+async fn open(app: &Shared, page: &Arc<Page>, id: &str, side: &str, msg: &Value) -> Result<(), String> {
     let (server, mut pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
     // (its session, the pane whose quick shell it is)
     let read = async |p: &str| -> (String, String) {
@@ -62,7 +62,7 @@ async fn open(app: &Shared, page: &Arc<Page>, id: &str, side: &str) -> Result<()
     };
     crate::lists::refresh_server(app, &server).await;
     page.send_json(&json!({"t": "layout", "groups": app.layout.read().clone()}));
-    page.send_json(&json!({"t": "quickmade", "id": server.key(&quick), "for": parent}));
+    reply(page, msg, json!({"t": "quickmade", "id": server.key(&quick), "for": parent}));
     Ok(())
 }
 

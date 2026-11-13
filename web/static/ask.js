@@ -10,6 +10,7 @@
 // measured as the dialog opens: on a phone its field's keyboard then makes the pane shorter. In a shell, where Ctrl+J would run the line, it is pasted. Send to Agent (a
 // coding agent's pane only) puts the same and presses Enter.
 
+import { Requests } from "./requests.js";
 import { sendOnModEnter } from "./modenter.js";
 
 const $ = (id) => document.getElementById(id);
@@ -61,12 +62,14 @@ export function askSends(text, { agent, now = false, typed = false }) {
 export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, closed }) {
   const box = $("askbox"), q = $("askq"), add = box.querySelector(".primary"), now = $("asksend");
   let quote = "", line = null, waiting = null, size;
+  const reads = new Requests(send);
+  let generation = 0;
   const fail = (text) => { $("askerr").textContent = text; $("askerr").hidden = !text; };
   const ready = (on) => { add.disabled = now.disabled = !on; };
-  q.addEventListener("input", () => ready(q.value.trim()));
+  q.addEventListener("input", () => ready(q.value.trim() && !waiting));
   sendOnModEnter(box);                                             // ⌘Enter: Add to Chat
   // Esc leaves the focus in the closed dialog's field a moment (the terminal would not take it from a field)
-  box.addEventListener("close", () => { waiting?.(null); if (box.contains(document.activeElement)) document.activeElement.blur(); closed?.(); });
+  box.addEventListener("close", () => { generation++; reads.cancel(); waiting = null; if (box.contains(document.activeElement)) document.activeElement.blur(); closed?.(); });
   box.querySelector("form").addEventListener("submit", async (e) => {
     const how = e.submitter?.value;
     if (how !== "add" && how !== "send") return;                    // Cancel closes it
@@ -76,13 +79,14 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, clo
     ready(false);
     fail("");
     const at = sid();
-    const m = await new Promise((resolve) => {
-      const timer = setTimeout(() => waiting?.({ error: "The Mac did not answer: is the connection back?" }), ANSWER);
-      waiting = (got) => { clearTimeout(timer); waiting = null; resolve(got); };
-      send({ t: "askno" });
-    });
+    const mine = ++generation;
+    waiting = true;
+    let m;
+    try { m = await reads.ask({ t: "askno" }, { ms: ANSWER }); }
+    catch (e) { m = { error: e.message }; }
+    if (mine !== generation || !box.open) return;
+    waiting = null;
     ready(q.value.trim());
-    if (!m || !box.open) return;                                   // closed meanwhile
     if (m.error || !Number.isInteger(m.n)) return fail(m.error ?? "No number came back.");
     if (sid() !== at) return fail("The pane shown changed: nothing was put in.");
     if (how === "send" && !agent()) return sync();
@@ -118,8 +122,6 @@ export function askBox({ send, toChat, keys, sid, agent, pane, asked, toast, clo
       box.showModal();
       q.focus();
     },
-    /** Every message from terminumd (app.js dropped another pane's). */
-    seen(m) { if (m.t === "askno") waiting?.(m); },
     /** The list changed (a layout): the shown pane may have left its agent. */
     sync() { if (box.open) sync(); },
   };

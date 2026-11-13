@@ -76,7 +76,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     let (key, host, path) = match got {
         Ok(got) => got,
         Err(e) => {
-            page.send_json(&json!({"t": "sentone", "error": e}));
+            super::client::request_error(page, msg, e);
             return;
         }
     };
@@ -87,8 +87,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
             a.sent.next_question(&h, &p, &k, sent)
         });
         match next.await {
-            Ok(n) => page.send_json(&json!({"t": "askno", "sid": key, "n": n})),
-            Err(e) => page.send_json(&json!({"t": "askno", "sid": key, "error": format!("The quote's number could not be kept: {e}")})),
+            Ok(n) => super::client::reply(page, msg, json!({"t": "askno", "sid": key, "n": n})),
+            Err(e) => super::client::reply(page, msg, json!({"t": "askno", "sid": key, "error": format!("The quote's number could not be kept: {e}")})),
         };
         return;
     }
@@ -106,7 +106,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
             Ok(item) => json!({"t": "sentone", "sid": key, "id": id, "item": item}),
             Err(e) => json!({"t": "sentone", "sid": key, "id": id, "error": e}),
         };
-        page.send_json(&answer);
+        super::client::reply(page, msg, answer);
         return;
     }
     let n = msg["n"].as_u64().unwrap_or(0) as usize;
@@ -115,7 +115,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         Ok((total, item)) => json!({"t": "sentone", "sid": key, "n": n, "total": total, "item": item, "host": host, "path": path}),
         Err(e) => json!({"t": "sentone", "sid": key, "n": n, "error": e}),
     };
-    page.send_json(&answer);
+    super::client::reply(page, msg, answer);
 }
 
 /// `asked {n, text, line}` keeps a quote the shown pane was asked about (AC-37) and tells

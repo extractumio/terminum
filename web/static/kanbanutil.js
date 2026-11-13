@@ -39,10 +39,11 @@ export function underParents(tasks) {
  *  there too: terminum-kanban.md AC-150); the board goes to /sessions/, whose form signs in (signInElsewhere). */
 let refused = () => {};
 
-/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/. */
+/** The board's, the Message history's and the Dashboard's: with no sign-in it goes to /sessions/; what does that. */
 export function signInElsewhere() {
   refused = () => { location.href = "/sessions/"; };
   signin.onRefused(refused);
+  return refused;
 }
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
@@ -83,6 +84,14 @@ export function statusBox(t, open) {
     b.addEventListener("click", (e) => { e.stopPropagation(); open(t.id); });
   }
   return b;
+}
+
+/** `parent` holding `nodes` in this order, moving only what must move: one that stays is never taken out, as a node
+ *  taken out and put back between a press's down and up loses its click (Chromium). */
+export function placeChildren(parent, nodes) {
+  const kept = new Set(nodes);
+  for (const c of [...parent.children]) if (!kept.has(c)) c.remove();
+  nodes.forEach((n, i) => { if (parent.children[i] !== n) parent.insertBefore(n, parent.children[i] ?? null); });
 }
 
 /** A line of keys at a window's foot. */
@@ -165,6 +174,8 @@ const fileUrl = (id) => `/api/task-files/${id}`;
 
 /** Markdown of a kept file: terminumd calls a file image/* only when it shows as one; anything else links. */
 export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
+/** `text` with file `f`'s link on a line of its own at its end. */
+export const withFileLink = (text, f) => `${text}${text && !text.endsWith("\n") ? "\n" : ""}${fileMarkdown(f)}\n`;
 
 /** Saves a file through a fetch with the sign-in, never its address (terminum.md AC-09). */
 export async function download(id, name) {

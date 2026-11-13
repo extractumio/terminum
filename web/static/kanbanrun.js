@@ -5,6 +5,7 @@
 // project's (AC-140), said here; the agent dropped on, or the last chosen, already picked: one press. Several tasks
 // go by their numbers; what each says shows here first. Dropped on another agent, a conversation goes on there.
 import { $, AT_LIMIT, THIS_MAC, api, fillAgents, onSend, showError } from "./kanbanutil.js";
+import { oneAtATime } from "./dialogs.js";
 import { taskBoxes } from "./taskboxes.js";
 
 /** `addAgent()` opens the agents' window; `noFolder(project, words)`: terminumd says nothing can start there; `done(waits)`
@@ -12,7 +13,7 @@ import { taskBoxes } from "./taskboxes.js";
 export function runWindow({ addAgent, noFolder, done }) {
   taskBoxes();
   const box = $("runbox");
-  let tasks = [], offer = null, attached = [], fresh = false, dropped = null, way = "run", answer = () => {};
+  let tasks = [], offer = null, attached = [], fresh = false, dropped = null, way = "run", answer = () => {}, opened = 0;
 
   const say = (text) => showError($("runerror"), text);
   const chosen = () => offer.agents.find((a) => a.id === $("runagent").value);
@@ -66,21 +67,28 @@ export function runWindow({ addAgent, noFolder, done }) {
   }
 
   const others = () => tasks.slice(1).map((t) => t.id);
+  /** terminumd's offer for the tasks shown; false when the window was opened anew meanwhile: that one's stands. */
   const read = async () => {
-    const q = new URLSearchParams({ also: others().join(","), ...(dropped ? { agent: dropped } : {}) });
-    offer = await api(`/api/tasks/${tasks[0].id}/run?${q}`);
+    const mine = opened, q = new URLSearchParams({ also: others().join(","), ...(dropped ? { agent: dropped } : {}) });
+    const got = await api(`/api/tasks/${tasks[0].id}/run?${q}`);
+    if (mine !== opened) return false;
+    offer = got;
+    return true;
   };
 
   /** Opens it for `list`, on `agent` if chosen: true when a run started, else false; a refusal throws terminumd's
    *  words. `words`, `files`: the comment that goes with it; `why`: what a press already found wrong; `how`: the
    *  way it was asked for, kept with its run (terminum-dispatcher.md AC-183): a card dropped on an agent unless said. */
   async function open(list, { words = "", files = [], agent = null, why = "", how = agent ? "drop" : "run" } = {}) {
+    opened++;
+    answer(false);                                 // one opened before it is answered: nothing ran from it
+    answer = () => {};
     tasks = list;
     dropped = agent;
     way = how;
     attached = files;
     $("runmessage").value = words;
-    await read();
+    if (!await read()) return false;
     if (offer.no_folder) {
       noFolder(offer.project, offer.no_folder);
       return false;
@@ -94,10 +102,9 @@ export function runWindow({ addAgent, noFolder, done }) {
   }
 
   /** Run; `toQueue`: Add to queue beside the key that closes an idle holder. A press that finds no room where the
-   *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). */
-  async function go(toQueue = false) {
-    say("");
-    $("rungo").disabled = true;
+   *  window showed some is offered the queue here, and nothing waits before the next press (AC-169). Sent once, on
+   *  every path (the key, Enter, ⌘Enter): never while Run is off or terminumd answers (AC-165). */
+  const send = oneAtATime(box, async (toQueue) => {
     try {
       const first = fresh || offer.first, full = limit();
       const queue = toQueue || Boolean(full && !full.close);
@@ -111,7 +118,11 @@ export function runWindow({ addAgent, noFolder, done }) {
         done(started?.waits);
       }
     } catch (e) { say(e.message); }
-    $("rungo").disabled = false;
+  });
+  function go(toQueue = false) {
+    if ($("rungo").disabled) return;
+    say("");
+    return send(toQueue);
   }
 
   $("rungo").addEventListener("click", () => go());
@@ -121,8 +132,7 @@ export function runWindow({ addAgent, noFolder, done }) {
   $("runfresh").addEventListener("click", () => draw(true));
   $("runadd").addEventListener("click", async () => {
     await addAgent();
-    await read();
-    draw(true);
+    if (await read()) draw(true);
   });
   box.addEventListener("close", () => answer(box.returnValue === "run"));
   return { open };

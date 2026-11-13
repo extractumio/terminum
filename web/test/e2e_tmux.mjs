@@ -20,11 +20,12 @@ export async function webTmux(browser, name) {
     let css = "body { --custom-probe: one; }";
     const f = await openPage(browser, { device, settings, css: () => css, hook: (m, say) => {
       if (m.t === "newsession" && m.name.includes(":")) say({ t: "error", msg: `bad session name: ${m.name}` });
-      else if (m.t === "newsession") { layout = [...layout, group(m.name, [item("tmux:local:terminum:%9", "zsh")])]; say({ t: "layout", groups: layout }); }
+      else if (m.t === "newsession") { layout = [...layout, group(m.name, [item("tmux:local:terminum:%9", "zsh")])]; say({ t: "layout", groups: layout }); say({ t: "created", id: "tmux:local:terminum:%9", stay: true }); }
     } });
     const { page, sent } = f;
     await drawn(page);
     const last = (t) => sent.filter((m) => m.t === t).at(-1);
+    const body = ({ ref, ...m }) => m;
     const drawer = async () => { if (phone) { await page.click("#navbtn"); await pause(page, 300); } };
 
     // settings.json's page defaults, its message once, the hot keys, custom.css
@@ -101,10 +102,10 @@ export async function webTmux(browser, name) {
     await page.click('#addhost button[type="submit"]');
     await pause(page);
     const waits = await page.isVisible("#addhost");
-    f.say({ t: "hostadded", name: "devbox" });
+    f.say({ t: "hostadded", name: "devbox", ref: last("addhost").ref });
     await pause(page);
     check("AC-81 Add host: what follows ssh, no name, no tick, what it sets up said; it closes and clears once terminumd added it",
-      first === "addhostssh" && waits && JSON.stringify(last("addhost")) === JSON.stringify({ t: "addhost", name: "", recipe: "alex@devbox.example -p 2222" })
+      first === "addhostssh" && waits && JSON.stringify(body(last("addhost"))) === JSON.stringify({ t: "addhost", name: "", recipe: "alex@devbox.example -p 2222" })
         && await page.isHidden("#addhost") && await page.inputValue("#addhostssh") === "" && !(await page.$("#addhostfiles")) && sets.includes("by themselves"),
       JSON.stringify({ first, waits, sent: last("addhost") }));
 
@@ -223,8 +224,8 @@ export async function webTmux(browser, name) {
     if (await page.isHidden("#addtmuxbtn")) await drawer();
     await pressFoot(page, "#addtmuxbtn");
     const asked = last("tmuxsessions");
-    f.say({ t: "tmuxsessions", server: "devbox:default", names: ["late"] });
-    f.say({ t: "tmuxsessions", server: "local:default", names: ["work", "notes"], ends: ["notes"] });
+    f.say({ t: "tmuxsessions", ref: "req-0", server: "devbox:default", names: ["late"] });
+    f.say({ t: "tmuxsessions", ref: last("tmuxsessions").ref, server: "local:default", names: ["work", "notes"], ends: ["notes"] });
     await pause(page);
     const ticks = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks input")].map((b) => b.value));
     const warned = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks .tick")].map((l) => [l.querySelector("input").value, l.querySelector("span")?.textContent ?? ""]));
@@ -235,11 +236,11 @@ export async function webTmux(browser, name) {
     await page.keyboard.press("Enter");
     await pause(page);
     const waiting = await page.isVisible("#addtmux");
-    f.say({ t: "tmuxadded", server: "local:default", sessions: ["work", "later"] });
+    f.say({ t: "tmuxadded", server: "local:default", sessions: ["work", "later"], ref: last("addtmux").ref });
     await pause(page);
     check("AC-89 Attach tmux sessions: on this Mac, the running sessions are ticks (a late answer for another place ignored); ticked and named attach in one message; it closes once attached",
-      JSON.stringify(asked) === JSON.stringify({ t: "tmuxsessions", server: "local:default" }) && ticks.join() === "work,notes" && waiting
-        && JSON.stringify(last("addtmux")) === JSON.stringify({ t: "addtmux", server: "local:default", sessions: ["work", "later"] })
+      JSON.stringify(body(asked)) === JSON.stringify({ t: "tmuxsessions", server: "local:default" }) && ticks.join() === "work,notes" && waiting
+        && JSON.stringify(body(last("addtmux"))) === JSON.stringify({ t: "addtmux", server: "local:default", sessions: ["work", "later"] })
         && await page.isHidden("#addtmux"), JSON.stringify({ asked, ticks, waiting, sent: last("addtmux") }));
     const own = group("later", [], { wid: "local:default/later", attached: "default", where: "tmux", server: "local:default",
       state: "absent", why: "not running on your tmux: attached when it starts" });
@@ -259,7 +260,7 @@ export async function webTmux(browser, name) {
     await page.fill("#addhostssh", "alex@box.example");
     await page.keyboard.press("Enter");
     await pause(page);
-    f.say({ t: "hostadded", name: "box" });
+    f.say({ t: "hostadded", name: "box", ref: last("addhost").ref });
     const boxg = (state, others) => group("box", [item("tmux:box:default:%1", "build", { host: "box" })], { host: "box", session: "terminum", state, others, server: "box:default" });
     f.say({ t: "layout", groups: [...LAYOUT, boxg("reconnecting", 0)] });
     await pause(page);
@@ -267,7 +268,7 @@ export async function webTmux(browser, name) {
     f.say({ t: "layout", groups: [...LAYOUT, boxg("attached", 2)] });
     await pause(page);
     const offered2 = { open: await page.isVisible("#addtmux"), on: await page.inputValue("#addtmuxon"), asked: last("tmuxsessions") };
-    f.say({ t: "tmuxsessions", server: "box:default", names: ["api", "db"] });
+    f.say({ t: "tmuxsessions", ref: last("tmuxsessions").ref, server: "box:default", names: ["api", "db"] });
     await pause(page);
     const boxTicks = await page.evaluate(() => [...document.querySelectorAll("#addtmuxticks input")].map((b) => `${b.value}:${b.checked}`));
     await page.click("#addtmuxcancel");

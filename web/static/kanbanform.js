@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // The new-task window (AC-106): a title, Markdown with Preview, files dropped or pasted into the
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
-import { askConfirm } from "./dialogs.js";
+import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, AT_LIMIT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, writePreview } from "./kanbanutil.js";
+import { $, AT_LIMIT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -11,11 +11,16 @@ const DRAFT = "tm.taskdraft";
  *  `slots()`: who is at a limit, as terminumd counts it. */
 export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   const box = $("newbox");
-  let files = [], uploads = 0, offered = "", parent = null, chose = "";   // chose: the agent the user picked in this window, "" for none
+  let files = [], offered = "", parent = null, chose = "";   // chose: the agent the user picked in this window, "" for none
   /** Each its own draft: a subtask's never takes a new task's. */
   const draftKey = () => (parent ? `${DRAFT}.${parent}` : DRAFT);
+  /** Each draft's files on their way, and its generation: one sent or discarded is another draft from then on, so an
+   *  upload that ends late never lands in it (AC-133). */
+  const uploads = new Map(), ended = new Map();
+  const pending = (key = draftKey()) => uploads.get(key) ?? 0;
+  const end = () => { ended.set(draftKey(), (ended.get(draftKey()) ?? 0) + 1); uploads.delete(draftKey()); files = []; write(draftKey(), null); };
   /** Create waits for the files on their way: pressed earlier, they would not be on the task (AC-133). */
-  const canCreate = (busy = false) => { $("newcreate").disabled = $("newrun").disabled = busy || uploads > 0; };
+  const canCreate = () => { if (!box.dataset.busy) $("newcreate").disabled = $("newrun").disabled = pending() > 0; };
 
   const error = (text) => showError($("newerror"), text);
   /** Said as the window opens with no project chosen, terminumd's words for it (tasks/ops.rs TASK_NEEDS_PROJECT). */
@@ -43,20 +48,29 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     keep();
   }
 
-  /** Kept by terminumd at once, linked at the cursor; a refusal keeps the window and says why. */
+  /** A file kept for a draft that is not shown: it goes into that draft as stored, linked at its end. */
+  function intoStored(key, kept) {
+    const d = read(key);
+    if (d) write(key, { ...d, files: [...(d.files ?? []), kept], text: withFileLink(d.text ?? "", kept) });
+  }
+
+  /** Kept by terminumd at once, linked at the cursor of the draft it was added to; a refusal keeps the window and
+   *  says why. None while the task is being made: what is sent is what was shown. */
   async function add(list) {
+    if (box.dataset.busy) return error("Wait until the task is made, then add the files.");
     error(null);
-    uploads += list.length;
+    const key = draftKey(), gen = ended.get(key) ?? 0;
+    const mine = () => (ended.get(key) ?? 0) === gen;
+    uploads.set(key, pending(key) + list.length);
     canCreate();
     for (const f of list) {
-      try {
-        const kept = await upload(f, getMeta().most_bytes);
-        files.push(kept);
-        insert(`${fileMarkdown(kept)}\n`);
-      } catch (e) { error(e.message); }
-      uploads--;
-      showFiles();
-      keep();
+      let kept = null;
+      try { kept = await upload(f, getMeta().most_bytes); } catch (e) { if (mine() && key === draftKey()) error(e.message); }
+      if (!mine()) continue;                         // its draft was sent or discarded meanwhile: the store's sweep takes the file
+      uploads.set(key, pending(key) - 1);
+      if (kept && key !== draftKey()) intoStored(key, kept);
+      else if (kept) { files.push(kept); insert(`${fileMarkdown(kept)}\n`); }
+      if (key === draftKey()) { showFiles(); keep(); }
     }
     canCreate();
   }
@@ -89,6 +103,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     $("newtext").value = given.text ? `${saved.text ? `${saved.text}\n\n` : ""}${given.text}` : saved.text ?? "";
     files = saved.files ?? [];
     showFiles();
+    canCreate();
     view(false);
     unchosen = !project;
     error(unchosen ? "Choose the project to make it in." : null);
@@ -96,18 +111,21 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
     $("newtitle").focus();
   }
 
-  async function create(run = false) {
-    error(null);
-    if ($("newcreate").disabled) return;
+  /** Made once: while terminumd answers, a second press, Enter or ⌘Enter sends nothing, Esc waits and the text
+   *  stands still (AC-165); kept, that draft ends; refused, it stays as it was, saying why. */
+  const send = oneAtATime(box, async (run) => {
     const d = draft(), agent = $("newagent").value;
-    canCreate(true);
     try {
-      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: files.map((f) => f.id) } });
-      write(draftKey(), null);
-      files = [];
+      const made = await api("/api/tasks", { method: "POST", body: { title: d.title, text: d.text, project: d.project, severity: d.severity, owner: d.owner || undefined, agent: agent || undefined, session: d.session || undefined, parent: parent ?? undefined, files: d.files.map((f) => f.id) } });
+      end();
       box.close();
       if (run) onRun(made, agent); else onMade(made);
-    } catch (e) { error(e.message); $("newtitle").focus(); } finally { canCreate(); }
+    } catch (e) { error(e.message); $("newtitle").focus(); }
+  });
+  function create(run = false) {
+    if ($("newcreate").disabled) return;           // a file on its way, or the task being made
+    error(null);
+    return send(run);
   }
 
   $("newcreate").addEventListener("click", () => create());
@@ -118,8 +136,7 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
   $("newdiscard").addEventListener("click", async () => {
     const typed = $("newtitle").value.trim() || $("newtext").value.trim() || files.length;
     if (typed && !await askConfirm("Discard this task? What you typed and its files go.", "Discard")) return;
-    write(draftKey(), null);
-    files = [];
+    end();
     box.close();
   });
   $("newclose").addEventListener("click", () => { keep(); box.close(); });

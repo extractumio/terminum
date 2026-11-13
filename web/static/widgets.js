@@ -54,7 +54,7 @@ export class Widgets {
     this.styled = false;         // widgets wait for their style sheet
     this.reset();
     this.click = (b, root) => this.onClick(b, root);
-    this.folds = new Folds({ view, click: this.click, send, copy, notify });
+    this.folds = new Folds({ view, click: this.click, send, copy, notify, keepPlace: (fn) => this.keepPlace(fn) });
     loadStyles().then(() => { this.styled = true; this.keepPlace(() => this.update(true)); });
     // scrolled, or shown again (Files, View), or another size: regions come near the view
     let timer = 0;

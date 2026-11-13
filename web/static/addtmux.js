@@ -5,11 +5,14 @@
 // yet; one message attaches them all. It opens from the list's foot (this Mac), a host group's
 // import icon or menu, and by itself once a host just added is attached with other sessions.
 
+import { Requests } from "./requests.js";
+
 const $ = (id) => document.getElementById(id);
 const OFFER_FOR = 30000;                           // how long a host just added may take to attach
 
 /** `groups()`: the layout's groups; `openForm(id)` toggles a foot form, `closeForm(id)` closes it. */
-export function addTmux({ send, groups, openForm, closeForm, setPending }) {
+export function addTmux({ send, groups, openForm, closeForm, submit }) {
+  const reads = new Requests(send);
   let offer = null;                                // {host, until}: a host just added, to offer its sessions
   const form = $("addtmux"), on = $("addtmuxon"), ticks = $("addtmuxticks");
 
@@ -18,9 +21,11 @@ export function addTmux({ send, groups, openForm, closeForm, setPending }) {
     const hosts = groups().filter((g) => g.host && !g.attached && g.state === "attached").map((g) => g.host);
     return [["local:default", "This Mac"], ...[...new Set(hosts)].map((h) => [`${h}:default`, h])];
   }
-  function ask() {
+  async function ask() {
+    reads.cancel();
     ticks.replaceChildren(Object.assign(document.createElement("p"), { className: "hint", textContent: "Looking for running sessions…" }));
-    send({ t: "tmuxsessions", server: on.value });
+    try { choices(await reads.ask({ t: "tmuxsessions", server: on.value })); }
+    catch (e) { if (e.name !== "AbortError" && !form.hidden) { ticks.replaceChildren(); $("addtmuxerr").textContent = e.message; } }
   }
   /** Opens the form on `server` (kept open when it is), asking what runs there. */
   function open(server = "local:default") {
@@ -64,8 +69,7 @@ export function addTmux({ send, groups, openForm, closeForm, setPending }) {
     const typed = $("addtmuxname").value.trim();
     if (typed) names.push(typed);
     $("addtmuxerr").textContent = "";
-    setPending("addtmux");
-    send({ t: "addtmux", server: on.value, sessions: names });
+    submit({ t: "addtmux", server: on.value, sessions: names });
   });
 
   /** terminumd attached them: the form closes. */
@@ -90,5 +94,5 @@ export function addTmux({ send, groups, openForm, closeForm, setPending }) {
     } else if (g?.state === "failed" || Date.now() > offer.until) offer = null;
   }
 
-  return { open, choices, added, hostAdded, layoutCame };
+  return { open, choices, added, hostAdded, layoutCame, cancel: () => reads.cancel() };
 }

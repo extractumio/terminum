@@ -27,15 +27,20 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, t: &str, msg: &Value) {
     match t {
         "unmark" => {
             if let Err(e) = forget(app, msg["id"].as_str().unwrap_or("")).await {
-                super::client::error(page, e, None);
+                super::client::request_error(page, msg, e);
+            } else {
+                super::client::reply(page, msg, json!({"t": "markdone", "id": msg["id"]}));
             }
         }
         "remind" => {
             // a reminder closed or resolved (AC-91)
             let (id, resolve) = (msg["id"].as_str().unwrap_or(""), msg["action"] == "resolve");
             match app.bookmarks.lock().settle(id, resolve) {
-                Ok(item) => tell_mark(app, &item),
-                Err(e) => super::client::error(page, e.to_string(), None),
+                Ok(item) => {
+                    tell_mark(app, &item);
+                    super::client::reply(page, msg, json!({"t": "markdone", "id": id}));
+                }
+                Err(e) => super::client::request_error(page, msg, e.to_string()),
             }
         }
         "locate" => {

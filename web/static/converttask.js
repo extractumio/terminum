@@ -4,6 +4,7 @@
 // type. Its text is the record's, quoted, with a link to its line in the session it came from; the task counts as made in that
 // session (AC-150); the board does not open, and the record goes once the task is kept.
 import { $, DEFAULT, SEVERITIES, api, fillSelect, showError } from "./kanbanutil.js";
+import { oneAtATime } from "./dialogs.js";
 import { chatText } from "./marks.js";
 import { titleOf } from "./marktext.js";
 import { lineWords, sessionUrl } from "./tasklink.js";
@@ -28,9 +29,8 @@ export function recordTasks({ sid, name, panes, projects, made }) {
     $("converttitle").select();
   }
 
-  async function keep() {
-    const go = $("convertok");
-    if (go.disabled) return;                       // a second press or Enter while the first is sent: one task
+  /** Kept once: a second press or Enter while terminumd answers sends nothing, Esc and Cancel wait (AC-165). */
+  const keep = oneAtATime(box, async () => {
     const from = record.sid && name(record.sid) ? record.sid : null;   // a closed session links nowhere
     const where = from ? `\n\nFrom [${name(from)}, line ${record.n}](${sessionUrl(from, `line:${record.n}:${lineWords(record)}`)})` : "";
     const body = {
@@ -38,13 +38,12 @@ export function recordTasks({ sid, name, panes, projects, made }) {
       severity: $("convertsev").value, project: $("convertproj").value, session: $("convertsession").value || null,
       made_in: from ?? (sid() || null), record: record.id,
     };
-    go.disabled = true;
     try {
       const t = await api("/api/tasks", { method: "POST", body });
       box.close();
       made(t);
-    } catch (e) { showError($("converterror"), e.message); } finally { go.disabled = false; }
-  }
+    } catch (e) { showError($("converterror"), e.message); }
+  });
 
   $("convertok").addEventListener("click", keep);
   $("converttitle").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); keep(); } });
