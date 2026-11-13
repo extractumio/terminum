@@ -36,34 +36,41 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   };
   for (const type of ["pointerup", "pointercancel", "keyup"]) document.addEventListener(type, released);
 
-  /** A change of a field: whether terminumd took it. The window shows what stands; a text being
-   *  typed stays (refresh). The board hears of it from terminumd. */
-  const patch = async (id, change) => {
-    let took = false;
+  /** The window's changes of fields go one at a time, in the order made, each after the answer to the one before:
+   *  the last choice made is the one that stands (AC-133). Once none is left the window shows what stands; a text
+   *  being typed stays (refresh). */
+  let lastChange = Promise.resolve(), changesLeft = 0;
+  const inTurn = (work) => {
+    changesLeft++;
+    const done = lastChange.then(work).finally(() => { if (!--changesLeft) refresh(); });
+    lastChange = done.catch(() => {});
+    return done;
+  };
+
+  /** A change of a field, in its turn: whether terminumd took it. The board hears of it from terminumd. */
+  const patch = (id, change) => inTurn(() => changeField(id, change));
+  async function changeField(id, change) {
     try {
       const answered = await api(`/api/tasks/${id}`, { method: "PATCH", body: change });
       if (answered.note) say(answered.note);
-      took = true;
+      return true;
     } catch (e) {
       if (e.status === 409) return moveAcross(id, change);
       if (e.status === 412) return textChanged(id, change);
       say(e.message);
+      return false;
     }
-    await refresh();
-    return took;
-  };
+  }
 
   /** A task with a session moving to another project: its session goes too, or is unlinked (AC-113). */
   async function moveAcross(id, change) {
     const how = await choose(`${id} has a session. What becomes of it?`, "A session stands in one project.", [["move", "Move the session too"], ["unlink", "Unlink the session"]]);
-    if (how) return patch(id, { ...change, session_choice: how });
-    refresh(true);
-    return false;
+    return how ? changeField(id, { ...change, session_choice: how }) : false;
   }
 
   /** Another changed the text while this one was written: nothing goes unasked; Cancel keeps writing (AC-133). */
   async function textChanged(id, { text_rev: _, ...change }) {
-    if (await askConfirm("The text changed meanwhile. Put yours over it? The other text goes.", "Overwrite")) return patch(id, change);
+    if (await askConfirm("The text changed meanwhile. Put yours over it? The other text goes.", "Overwrite")) return changeField(id, change);
     return false;
   }
 
@@ -123,7 +130,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       select("Project", meta.projects.map((p) => [p.id, p.name]), t.project, (project) => patch(t.id, { project })),
       select("Severity", SEVERITIES.map((s) => [s, s]), t.severity, (severity) => patch(t.id, { severity })),
       // the agent that runs it when Auto-Dispatcher starts it (terminum-dispatcher.md AC-170); none: its project's default
-      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).then(() => refresh(), (e) => say(e.message))),
+      select("Agent", [["", "Auto-Dispatcher's default"], ...agentsOf(meta, t.project).map((a) => [a.id, a.name])], t.runs_on ?? "", (agent) => inTurn(() => api(`/api/tasks/${t.id}/agent`, { method: "PUT", body: { agent: agent || null } }).catch((e) => say(e.message)))),
       select("Owner", owners, t.owner, (owner) => patch(t.id, { owner })),
       select("Session", sessions, key, (session) => patch(t.id, { session: session || null })),
       budgetField(t));
@@ -173,12 +180,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
       area.placeholder = "Markdown. Drop or paste files here.";
       const dropped = [], kept = (file) => dropped.push(file.id);
       takesFiles(area, (list) => addFiles(list, area, kept));
-      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(true); });
+      const save = button("primary", "Save", async () => { if (await patch(t.id, { text: area.value, text_rev: t.text_rev, files: dropped })) refresh(wrap); });
       // a secret pasted by mistake leaves the store for good by this (AC-109): seldom wanted, so only here
       const purge = t.text ? button("danger", "Purge text", () => confirmed(`Purge the text of ${t.id}? It leaves the store for good. Use this for a secret pasted by mistake.`, "Purge",
-        () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(true)))) : null;
+        () => api(`/api/tasks/${t.id}/purge`, { method: "POST" }).then(() => refresh(wrap)))) : null;
       keys.remove();
-      wrap.replaceChildren(head, expandable(area), row(purge, button("fromright", "Cancel", () => refresh(true)), save));
+      wrap.replaceChildren(head, expandable(area), row(purge, button("fromright", "Cancel", () => refresh(wrap)), save));
       area.focus();
       addFiles(files, area, kept);
     };
@@ -386,8 +393,10 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return true;
   }
 
+  /** What is open in the window that `sel` finds: an editor saved or cancelled (`.ended`) no longer counts. */
+  const openEdits = (sel) => [...body.querySelectorAll(sel)].filter((e) => !e.closest(".ended"));
   /** A text being edited, changed from what shows. */
-  const edited = () => [...body.querySelectorAll(EDITS)].some((a) => a.value !== a.defaultValue);
+  const edited = () => openEdits(EDITS).some((a) => a.value !== a.defaultValue);
 
   /** Closes it; an edit not saved is asked about first. Whether it closed. */
   async function tryClose() {
@@ -398,11 +407,16 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     return true;
   }
 
-  /** Reads it again; a text being edited holds until it is saved (`saved`). What the page only heard
-   *  of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
-  async function refresh(saved = false, news = false) {
+  /** Reads it again; an edit open holds it. `ended`: the part whose editor was saved or cancelled, which holds
+   *  nothing more; shown still, its keys off, while another edit holds the window (AC-133). What the page only
+   *  heard of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
+  async function refresh(ended = null, news = false) {
     if (!box.open || !shown) return;
-    const editing = () => box.dataset.busy || (!saved && body.querySelector(HELD));   // a comment being kept: it closes
+    if (ended) {
+      ended.classList.add("ended");
+      for (const c of ended.querySelectorAll("textarea, button:not(.xkey)")) c.disabled = true;
+    }
+    const editing = () => box.dataset.busy || openEdits(HELD).length;   // a comment being kept: it closes
     if (editing()) return;
     const mine = ++reading;
     try {
