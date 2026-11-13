@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_worktree import commit, Repo, SCRIPTS, sh, worktree  # noqa: E402
@@ -56,24 +57,41 @@ class Fresh(Repo):
                       "".join(worktree_fresh.fresh(cwd=own)))
 
     def test_git_fetch_runs_at_most_every_five_minutes_and_a_failure_stays_said(self):
-        self.push_from_another_clone()
-        self.assertEqual(worktree.count("HEAD..origin/main", self.primary), 0)
-        worktree_fresh.fresh(cwd=self.primary)
-        self.assertEqual(worktree.count("HEAD..origin/main", self.primary), 1, "fetched")
-        self.push_from_another_clone("second.txt")
-        worktree_fresh.fresh(cwd=self.primary)
-        self.assertEqual(worktree.count("HEAD..origin/main", self.primary), 2, "no stamp, a new fetch")
-        other = Path(self.tmp.name) / "other"
-        commit(other, "third.txt")
-        sh(other, "git", "push", "-q", "origin", "HEAD:main")
-        worktree_fresh.fresh(cwd=self.primary)
-        self.assertEqual(worktree.count("HEAD..origin/main", self.primary), 2, "within the 5 minutes: no fetch")
-        self.forget_fetch()
-        sh(self.primary, "git", "remote", "set-url", "origin", str(Path(self.tmp.name) / "gone.git"))
-        for _ in range(2):
-            said = worktree_fresh.fresh(cwd=self.primary)
-            self.assertIn("terminum: git fetch failed: origin/main is as last known.", said)
-            self.assertNotIn("gone.git", "".join(said), "git's own words stay out of an agent's context")
+        # Cadence must not depend on a real fetch finishing within the hook's five-second budget
+        # under load. The session-start and prompt tests above check real fetched commits.
+        stamp = self.primary / ".git" / "terminum-fetch"
+        warning = "terminum: git fetch failed: origin/main is as last known."
+        with mock.patch.object(worktree_fresh, "fetched", return_value=None) as fetch, \
+                mock.patch.object(worktree_fresh.time, "time", return_value=0) as clock:
+            worktree_fresh.fresh(cwd=self.primary)
+            fetch.assert_called_once_with(self.primary, 5)
+            self.assertEqual(stamp.read_text(), "")
+            self.forget_fetch()
+            worktree_fresh.fresh(cwd=self.primary)
+            self.assertEqual(fetch.call_count, 2, "no stamp, a new fetch")
+
+            clock.return_value = stamp.stat().st_mtime + 299
+            worktree_fresh.fresh(cwd=self.primary)
+            self.assertEqual(fetch.call_count, 2, "within the 5 minutes: no fetch")
+            clock.return_value += 1
+            worktree_fresh.fresh(cwd=self.primary)
+            self.assertEqual(fetch.call_count, 3, "at 5 minutes: fetch again")
+
+            self.forget_fetch()
+            fetch.return_value = "no answer in 5 s: gone.git"
+            clock.return_value = 0
+            for _ in range(2):
+                said = worktree_fresh.fresh(cwd=self.primary)
+                self.assertIn(warning, said)
+                self.assertNotIn("gone.git", "".join(said), "git's own words stay out of an agent's context")
+            self.assertEqual(stamp.read_text(), "failed")
+            self.assertEqual(fetch.call_count, 4, "a failed fetch is throttled too")
+
+            clock.return_value = stamp.stat().st_mtime + 300
+            fetch.return_value = None
+            self.assertNotIn(warning, worktree_fresh.fresh(cwd=self.primary))
+            self.assertEqual(stamp.read_text(), "")
+            self.assertEqual(fetch.call_args_list, [mock.call(self.primary, 5)] * 5)
 
     def test_a_merged_tree_is_named_at_each_prompt_and_left_to_the_sweep(self):
         path = self.merged_tree("named")
