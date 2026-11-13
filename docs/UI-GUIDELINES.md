@@ -42,9 +42,9 @@ Each surface is `--t-fg` mixed into `--t-bg` (§1, Surfaces, not lines).
 | `--muted`, `--faint` | Secondary text, idle icons, placeholders (`fg 58%`); a quiet dot (`fg 40%`). |
 | `--muted-text` | Small secondary text that must reach 4.5:1 (the plan's percent, progress and pane text): `--muted`, on a light theme `fg 75%` (`--muted` is 3.2–3.6:1 there). |
 | `--shadow-near`, `--shadow-far` | A floating button's shadow; a box's: its edges (`--m-edge`, §2.7) and a deep drop, `#000` at `--shadow-a` (40%, 18% on a light theme). |
-| `--accent` | The theme's cursor color: selection, primary button fill, active tab. |
-| `--ring` | The focus ring: `--accent`, or `--t-fg` when the accent is under 3:1 against `--t-bg` (contrast.js). |
-| `--link` | A link (Markdown, `.linklike`): the theme's link color (its `link`, else its ANSI 12) while it reads on `--t-bg` (4.5:1); else the same hue lighter on a dark background, darker on a light one, until it does (contrast.js `linkColor`, the Panel's too); `#6ea8fe`, `#2f6fdf` on a light theme, without one. |
+| `--accent` | The theme's cursor color while it reads on `--t-bg` (4.5:1); else the same hue lighter on a dark background, darker on a light one, until it does, and for a grey cursor (no hue to keep: an inverted one, white on white) the theme's text color (contrast.js `accentColor`): selection, primary button fill under `--t-bg` text (so 4.5:1 too), active tab. |
+| `--ring` | The focus ring: `--accent`. |
+| `--link` | A link (Markdown, `.linklike`): the theme's link color (its `link`, else its ANSI 12) while it reads on `--t-bg` (4.5:1); else the same hue lighter on a dark background, darker on a light one, until it does (contrast.js `readable`, the Panel's too); `#6ea8fe`, `#2f6fdf` on a light theme, without one. |
 | `--sel`, `--selfg` | Terminal text selection. |
 | `--size` | Terminal font size; also what §4.6 names (tmux.css). |
 | `:root.light` | Set by app.js when the theme says `dark: false`: lighter shadows, darker folder hues. |
