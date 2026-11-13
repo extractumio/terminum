@@ -143,8 +143,8 @@ async fn open_window(server: &Server, target: &str, dir: &str) -> Result<String,
 }
 
 /// Clone (AC-07): a new window right after pane `id`'s, in its folder, with a shell (what runs
-/// there is not copied). A session of a project (or its [+], `project`) gives the project's
-/// window: in the project's folder while that is usable, and in the project after it (AC-92).
+/// there is not copied); a session of a project gives the project's window, after it (AC-92).
+/// The project's [+] (`project`) opens in the project's folder while that is usable.
 async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &str, project: Option<&str>) -> Result<(), String> {
     let (server, pane) = app.tmux.resolve(id).ok_or(super::CLOSED)?;
     let window = window_of(&server, &pane).await?;
@@ -152,9 +152,9 @@ async fn clone_window(app: &Shared, page: &Page, asked_on: Option<&str>, id: &st
         let ps = app.projects.lock();
         project.and_then(|p| ps.list().iter().find(|x| x.id == p)).or_else(|| ps.of(id)).map(|p| (p.id.clone(), p.dir.clone()))
     };
-    let usable = match &joins {
-        Some((_, d)) => !d.is_empty() && args::check_text(d).is_ok() && crate::dispatcher::procs::is_folder(app, &server, d).await != Some(false),
-        None => false,
+    let usable = match (&joins, project) {
+        (Some((_, d)), Some(_)) => !d.is_empty() && args::check_text(d).is_ok() && crate::dispatcher::procs::is_folder(app, &server, d).await != Some(false),
+        _ => false,
     };
     let (dir, note) = match &joins {
         Some((_, d)) if usable => (d.clone(), None),

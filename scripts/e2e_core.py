@@ -17,7 +17,7 @@ import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_for, wait_layout  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-core")
@@ -168,12 +168,25 @@ def main():
         wait_layout(ws, lambda gs: win_of(twin["id"]).endswith(":0"), 5)
         check("AC-92 a tmux group's reorder leaves a project's window in its place", win_of(twin["id"]).endswith(":0") and win_of(created["id"]) == place,
               (place, win_of(created["id"]), win_of(twin["id"])))
+        # the session moves out of the project's folder: its Clone follows the session, the [+] the project
+        path_of = lambda k: tmux("display", "-p", "-t", k.rsplit(":", 1)[-1], "#{pane_current_path}").strip()
+        tmux("send-keys", "-t", created["id"].rsplit(":", 1)[-1], f"cd {work}", "Enter")
+        moved_off = wait_for(lambda: path_of(created["id"]), lambda v: v == os.path.realpath(work), 5, last=True) == os.path.realpath(work)
         time.sleep(1.1)
         ws.send({"t": "clone", "id": created["id"]})
         joined = ws.until(lambda m: m["t"] == "projects" and len(m["items"][0]["members"]) == 2, 5)
         third = ws.until(lambda m: m["t"] in ("created", "error"), 5)
-        check("AC-92 a project's session cloned: the window joins the project after it", joined and third and joined["items"][0]["members"] == [created["id"], third["id"]], joined)
+        check("AC-92 a project's session cloned: the window joins the project after it, in the session's folder, not the project's",
+              moved_off and joined and third and joined["items"][0]["members"] == [created["id"], third["id"]]
+              and path_of(third["id"]) == os.path.realpath(work), (joined, third and path_of(third["id"])))
+        time.sleep(1.1)
+        ws.send({"t": "clone", "id": created["id"], "project": pj.get("id")})
+        fourth = ws.until(lambda m: m["t"] in ("created", "error"), 5)
+        check("AC-92 the project's [+] after its session opens in the project's folder",
+              fourth and fourth["t"] == "created" and path_of(fourth["id"]) == os.path.realpath(odd), (fourth, fourth and path_of(fourth.get("id", "x:%0"))))
         tmux("kill-pane", "-t", third["id"].rsplit(":", 1)[-1])
+        if fourth and fourth["t"] == "created":
+            tmux("kill-pane", "-t", fourth["id"].rsplit(":", 1)[-1])
         # a member added a moment ago is kept 5 s (its window may not be listed yet), then the list is read again
         left = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["members"] == [created["id"]], 8)
         check("AC-92 a pane closed leaves its project", left is not None)
