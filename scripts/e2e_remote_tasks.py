@@ -91,10 +91,17 @@ def main():
         check("AC-92 on a host it opens in the session terminumd holds there", held == "terminum", held)
         ws.close()
 
-        # hooks missing there: said, nothing starts
+        # AC-99 installs hooks automatically after attach: await their removal to establish
+        # AC-130's missing-hooks condition, even if automatic setup was still running.
+        st, body = unix_request(t.sock, "POST", "/hosts/agents-off", {"name": "devbox"})
+        check("setup: hooks explicitly off on the host", st == 200 and host().get("agents") == "off" and not os.path.exists(hb), body)
         off = task("no hooks yet")
+        panes = lambda: tmux_on(REMOTE_SOCKET, "list-panes", "-a", "-F", "#{pane_id}")  # noqa: E731
+        before = panes()
         st, said = run(off)
-        check("AC-130 hooks missing there: said, nothing starts", st == 400 and "hooks install on devbox" in said.get("error", "") and status(off) == "TODO", said)
+        refused = call(f"/api/tasks/{off}")[1]
+        check("AC-130 hooks missing there: said, nothing starts", st == 400 and "hooks install on devbox" in said.get("error", "")
+              and refused["status"] == "TODO" and refused["session"] is None and panes() == before, said)
 
         st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "devbox"})
         check("setup: agents on", st == 200, body)
