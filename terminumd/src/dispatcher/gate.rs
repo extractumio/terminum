@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-//! The typing gate (`terminum-dispatcher.md` §9): the only way Dispatcher types. All in order, on the
+//! The typing gate (`terminum-dispatcher.md` AC-121, AC-122, §9): the only way Dispatcher types. All in order, on the
 //! pane's typing queue; any miss types nothing, or no Enter, and says which. The paste and the Enter
 //! are tmux's own to refuse: it reads the mark and the exit in the same command that types.
 
@@ -92,6 +92,9 @@ pub async fn deliver(app: &Shared, run: &Run, server: &Server, pane: &str, text:
         let until = tokio::time::Instant::now() + if first { SHOWN_FIRST } else { SHOWN };
         loop {
             tokio::time::sleep(Duration::from_millis(100)).await;
+            if super::start::exit_of(server, pane).await.is_some() {
+                return Err(other("the agent ended before what was pasted showed: no Enter"));
+            }
             if screen::shows(&read(server, pane, &run.kind).await.map_err(other)?, text) {
                 return Ok(());
             }

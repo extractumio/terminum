@@ -7,6 +7,7 @@ FINISHES, WORKS, SUBAGENT, TOKENS, ASKS, QUESTIONS (ask_human, then its turn end
 task with its subtasks, terminum-dispatcher.md AC-185: the last subtask and the main task fail, the rest is finished); Auto-Dispatcher's
 round (terminum-dispatcher.md AC-170) starts its first candidates, one for each free slot, and finishes; a task a round started
 is worked on; any other stops at once. `--stubborn`: SIGTERM is ignored. `--start trust`: a question before its box; `--start
+quits`: ends after receiving its first paste, without echoing or taking it; `--start
 none`: never a box; `--start fast`: exits at once with 7; `--start slow`: its first paste shows 3 s late, as a busy
 machine's does, and a prompt pasted twice is not worked on."""
 import json
@@ -83,7 +84,8 @@ def main():
         if kind == "claude":
             hook("SessionStart", source="resume" if "--resume" in args else "startup")
         if start == "quits":
-            return                    # its session opened, its box shown, it ends before any prompt (an update's restart)
+            os.read(fd, 65536)         # force the gate's paste to win the race; never echo it or take Enter
+            return                    # its session opened, but it never took the task (an update's restart)
         while True:
             data = os.read(fd, 65536).decode("utf8", "replace")
             if not data:
