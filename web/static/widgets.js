@@ -12,6 +12,7 @@ import { hostOf, loadStyles, regionWidget, zoomDiagram } from "./widgetui.js";
 
 const STEADY = 150;          // ms a region on the screen stays as it is before it is rendered
 const OPEN_TABLE = 500;      // the same, a table that may go on (a Markdown table at the end of the output)
+const HOLD_MAX = 1000;       // ms at most a drawn table's rows, still coming, stay out of sight before its last rule
 const CACHED = 150;          // rendered widgets kept, the least recently shown go first
 const THROTTLE = 100;        // ms between scans of streaming output
 const NEAR = 2;              // screens above and below the view whose history regions are drawn
@@ -79,7 +80,7 @@ export class Widgets {
     this.settledN = null;        // the history line the next scan starts at (null: its first)
     this.hosts = new Map();      // a region's first row -> {key, raw, rows, live}: what is attached
     this.held = new Set();       // rows of a table not whole yet (holdOpen)
-    this.heldSince = 0;
+    Object.assign(this, { heldSince: 0, heldText: "", heldAt: 0, heldOut: false });
     this.folds?.reset();
     this.pin = null;             // a bookmark held in view (AC-57) was of the last pane
     clearTimeout(this.steady); clearTimeout(this.later);
@@ -163,12 +164,16 @@ export class Widgets {
   }
 
   /** A table's rows while its last rule is on its way (a frame caught midway, a slow link) stay out
-   *  of sight, at most STEADY ms from the first; nothing is lost: after that they show as text.
+   *  of sight while they keep coming: until STEADY ms pass with none new, at most HOLD_MAX ms from
+   *  the first; nothing is lost: after that they show as text, and stay text while it waits.
    *  True while it holds some. */
   holdOpen(rows, at) {
-    if (!rows.length) this.heldSince = 0;
-    else this.heldSince ||= at;
-    const els = at - this.heldSince < STEADY ? rows.filter(Boolean).map((r) => r.el).filter((el) => !this.folds.has(el)) : [];
+    const now = rows.map((r) => info(r).text).join("\n"), top = now.split("\n", 1)[0];
+    // nothing held, or another table waiting (its first line is not the held one's): a new clock
+    if (!rows.length || top !== this.heldText.split("\n", 1)[0]) Object.assign(this, { heldSince: 0, heldText: "", heldOut: false });
+    if (rows.length && now !== this.heldText) Object.assign(this, { heldSince: this.heldSince || at, heldText: now, heldAt: at });
+    this.heldOut ||= rows.length > 0 && (at - this.heldAt >= STEADY || at - this.heldSince >= HOLD_MAX);
+    const els = rows.length && !this.heldOut ? rows.filter(Boolean).map((r) => r.el).filter((el) => !this.folds.has(el)) : [];
     const hide = new Set(els);
     for (const el of this.held) if (!hide.has(el)) el.classList.remove("wg-hid");
     for (const el of hide) el.classList.add("wg-hid");
