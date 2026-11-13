@@ -75,7 +75,8 @@ impl Marks {
             }
             let attention = rows(tx, "SELECT t.slug, t.status,
                     COALESCE((SELECT author != 'human' FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), 0),
-                    COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' ORDER BY e.at DESC, e.rowid DESC LIMIT 1), '')
+                    COALESCE((SELECT e.text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.rowid > (SELECT max(m.rowid) FROM events m WHERE m.task = t.id AND m.kind = 'move') ORDER BY e.rowid DESC LIMIT 1),
+                        (SELECT e.text FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.rowid DESC LIMIT 1), '')
                 FROM tasks t WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL ORDER BY t.number DESC", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
             Ok(Held { counts, sessions, attention })
         });
@@ -96,7 +97,13 @@ impl Marks {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.2).map(|(id, status, _, why)| {
             let first = why.lines().next().unwrap_or("");
-            json!({"id": id, "failed": status == "FAILED", "words": if status == "FAILED" { format!("{id} failed: {first}") } else { format!("{id} waits for you") }})
+            // why it failed: what was said with its move there, else who moved it; never what was said of an older move
+            let words = match (status == "FAILED", first.is_empty()) {
+                (true, false) => format!("{id} failed: {first}"),
+                (true, true) => format!("{id} failed"),
+                (false, _) => format!("{id} waits for you"),
+            };
+            json!({"id": id, "failed": status == "FAILED", "words": words})
         }).collect();
         json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "need": held.attention.len(), "lines": lines}).to_string()
     }
@@ -143,6 +150,22 @@ mod tests {
         assert!(marks.refresh(&store).unwrap());
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
         assert_eq!(told, json!({"t": "taskmarks", "marks": {}, "counts": {"default": 1}, "need": 0, "lines": []}), "DONE leaves its row, and still counts in its project");
+    }
+
+    #[test]
+    fn ac39_a_failed_task_says_why_it_failed_never_an_older_moves_why() {
+        use crate::tasks::store::DISPATCHER;
+        let store = Store::open(crate::testutil::fresh_dir("marks-why").join("kanban.sqlite"));
+        let marks = Marks::default();
+        let t = store.with(|tx| create(tx, HUMAN, NewTask { title: "a".into(), ..Default::default() }, 1)).unwrap();
+        store.with(|tx| { move_to(tx, DISPATCHER, &t.id, "IN PROGRESS", 2)?; crate::tasks::ops::log(tx, &t.key, DISPATCHER, "why", "The agent took it.", None, 2).map(drop) }).unwrap();
+        store.with(|tx| move_to(tx, DISPATCHER, &t.id, "FAILED", 3)).unwrap();
+        marks.refresh(&store).unwrap();
+        let line = |m: &Marks| serde_json::from_str::<serde_json::Value>(&m.message()).unwrap()["lines"][0]["words"].clone();
+        assert_eq!(line(&marks), json!(format!("{} failed: Dispatcher moved it from IN PROGRESS to FAILED", t.id)), "who moved it, not the start's why");
+        store.with(|tx| crate::tasks::ops::log(tx, &t.key, DISPATCHER, "why", "No result from the agent within an hour.", None, 3).map(drop)).unwrap();
+        marks.refresh(&store).unwrap();
+        assert_eq!(line(&marks), json!(format!("{} failed: No result from the agent within an hour.", t.id)), "what was said with its move there");
     }
 
     #[test]
