@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-// The page's colors from the theme (docs/UI-GUIDELINES.md §2): the accent (its cursor color,
-// also the focus ring and a primary key's fill under the background's color) and links (its link
-// color), each lightened on a dark background or darkened on a light one until it reads (4.5:1).
+// The page's colors from the theme (docs/UI-GUIDELINES.md §2): the accent (its cursor color, or
+// its text color for a grey cursor that hides; also the focus ring and a primary key's fill under
+// the background's color) and links (its link color), each lightened on a dark background or
+// darkened on a light one until it reads (4.5:1).
 
 /** "#rgb" or "#rrggbb" as [r, g, b], each 0…1; null for anything else. */
 function rgb(hex) {
@@ -52,6 +53,13 @@ export function readable(bg, color) {
   return out;
 }
 
+/** A theme's accent: its cursor color, made to read on bg; a grey cursor that does not read (an
+ *  inverted one, white on a white theme) has no hue to keep, so the text color instead. */
+export function accentColor(bg, cursor, fg) {
+  const grey = (contrast(bg, cursor) ?? 21) < 4.5 && hsl(cursor)?.[1] < 0.1;
+  return readable(bg, grey ? fg : cursor);
+}
+
 /** A theme's link color (its `link`, else its ANSI 12, as View's), made to read on its bg; undefined without one. */
 export const themeLink = (theme) => { const l = theme.link || theme.ansi?.[12]; return l && readable(theme.bg, l); };
 
@@ -60,7 +68,7 @@ export const themeLink = (theme) => { const l = theme.link || theme.ansi?.[12]; 
 export function pageColors(theme) {
   const r = document.documentElement.style;
   r.setProperty("--t-bg", theme.bg); r.setProperty("--t-fg", theme.fg);
-  r.setProperty("--accent", readable(theme.bg, theme.cursor || theme.fg));   // a white cursor on white: grey, under white words
+  r.setProperty("--accent", accentColor(theme.bg, theme.cursor || theme.fg, theme.fg));
   const link = themeLink(theme);                       // as View colors links (ui/src/theme.ts); else tokens.css's
   if (link) r.setProperty("--link", link); else r.removeProperty("--link");
   document.documentElement.classList.toggle("light", theme.dark === false);   // tokens.css: lighter shadows, darker folder hues

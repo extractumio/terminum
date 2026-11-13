@@ -4,7 +4,7 @@
 // key's fill under words in the background's color).
 import assert from "node:assert/strict";
 import test from "node:test";
-import { contrast, readable } from "../static/contrast.js";
+import { accentColor, contrast, readable } from "../static/contrast.js";
 
 test("contrast is WCAG's ratio, for #rgb and #rrggbb", () => {
   assert.equal(Math.round(contrast("#000", "#ffffff")), 21);
@@ -12,12 +12,22 @@ test("contrast is WCAG's ratio, for #rgb and #rrggbb", () => {
   assert.equal(contrast("rgb(0,0,0)", "#fff"), null);
 });
 
-test("an accent near the background (a light cursor on a light theme) reads, and so do words in the background's color on it", () => {
-  for (const [bg, cursor] of [["#ffffff", "#ffffff"], ["#ffffff", "#fdfdfd"], ["#1e1e1e", "#2a2a2a"], ["#eff1f5", "#dc8a78"], ["#faf9f5", "#c4625a"]]) {
-    const accent = readable(bg, cursor);
+test("an accent near the background reads, and so do words in the background's color on it", () => {
+  for (const [bg, cursor, fg] of [["#ffffff", "#ffffff", "#202020"], ["#ffffff", "#fdfdfd", "#1f2328"], ["#1e1e1e", "#2a2a2a", "#d4d4d4"],
+    ["#eff1f5", "#dc8a78", "#4c4f69"], ["#faf9f5", "#c4625a", "#2b2925"], ["#191724", "#524f67", "#e0def4"]]) {
+    const accent = accentColor(bg, cursor, fg);
     assert.ok(contrast(accent, bg) >= 4.5, `${cursor} on ${bg}: ${accent}`);
   }
-  assert.equal(readable("#1e1e1e", "#ffffff"), "#ffffff");   // a cursor that reads stays the theme's
+  assert.equal(accentColor("#1e1e1e", "#ffffff", "#d4d4d4"), "#ffffff");   // a cursor that reads stays the theme's
+  assert.equal(accentColor("#1e1e1e", "rebeccapurple", "#d4d4d4"), "rebeccapurple");   // not measurable: as the theme says
+});
+
+test("a grey cursor that hides gives way to the text color; a colored one keeps its hue", () => {
+  assert.equal(accentColor("#ffffff", "#ffffff", "#202020"), "#202020");   // an inverted cursor: white on a white theme
+  assert.equal(accentColor("#1e1e1e", "#2a2a2a", "#d4d4d4"), "#d4d4d4");
+  const latte = accentColor("#eff1f5", "#dc8a78", "#4c4f69");   // Catppuccin Latte's rosewater
+  const [r, g, b] = [1, 3, 5].map((i) => parseInt(latte.slice(i, i + 2), 16));
+  assert.ok(r > g && r > b, `${latte} stays warm`);
 });
 
 test("a link keeps the theme's color while it reads on the background", () => {

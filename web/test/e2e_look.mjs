@@ -76,24 +76,20 @@ export async function webLook(browser, name) {
     check("look: a field is edged by soft shadows only, no line round it at rest or in focus (a glow in focus)",
       [lines.rest, lines.focus].every(([b, o, s]) => b === "none" && o === "none" && !ring(s)) && lines.focus[2] !== lines.rest[2] && /\b8px\b/.test(lines.focus[2]),
       JSON.stringify(lines));
-    // a theme's link too dark for its background is lightened until it reads (contrast.js)
-    const link = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const root = document.documentElement;
+    // contrast.js makes a theme's colors read on its background: a link too dark for a dark one is
+    // lightened; a white cursor on a white one (the accent, a primary key's fill under the
+    // background's color: New session's Create was white on white) gives way to the text color
+    const themed = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const root = document.documentElement;
       const css = root.style.cssText, cls = root.className, meta = document.querySelector('meta[name="theme-color"]').content;
-      pageColors({ bg: "#322925", fg: "#e2ded9", cursor: "#969486", dark: true, link: "#315f78" });
-      const got = root.style.getPropertyValue("--link");
-      root.style.cssText = css; root.className = cls; document.querySelector('meta[name="theme-color"]').content = meta;
-      return [got, contrast("#322925", got)]; });
-    check("look: a link the theme made too dark for a dark background is lightened to read (4.5:1)", link[1] >= 4.5, link.join(" "));
-    // a light theme with a white cursor: New session's Create was white on white (the accent is its fill)
-    const create = await page.evaluate(async () => { const { pageColors, contrast } = await import("/contrast.js"); const root = document.documentElement;
-      const css = root.style.cssText, cls = root.className, meta = document.querySelector('meta[name="theme-color"]').content;
-      pageColors({ bg: "#ffffff", fg: "#202020", cursor: "#ffffff", dark: false });
       const hex = (c) => "#" + c.match(/[\d.]+/g).slice(0, 3).map((v) => Math.round(+v).toString(16).padStart(2, "0")).join("");
+      pageColors({ bg: "#322925", fg: "#e2ded9", cursor: "#969486", dark: true, link: "#315f78" });
+      const link = root.style.getPropertyValue("--link");
+      pageColors({ bg: "#ffffff", fg: "#202020", cursor: "#ffffff", dark: false });
       const s = getComputedStyle(document.querySelector("#newsess .primary")), fill = hex(s.backgroundColor), ink = hex(s.color);
       root.style.cssText = css; root.className = cls; document.querySelector('meta[name="theme-color"]').content = meta;
-      return [fill, ink, contrast(fill, ink), contrast(fill, "#ffffff")]; });
-    check("look: a primary key reads on a light theme with a white cursor: its words on its fill, its fill on the background (4.5:1)",
-      create[2] >= 4.5 && create[3] >= 4.5, create.join(" "));
+      return { link: [link, contrast("#322925", link)], create: [fill, ink, contrast(fill, ink)] }; });
+    check("look: a link the theme made too dark for a dark background is lightened to read (4.5:1)", themed.link[1] >= 4.5, themed.link.join(" "));
+    check("look: a primary key's words read on its fill on a light theme with a white cursor (4.5:1)", themed.create[2] >= 4.5, themed.create.join(" "));
     // one type in every dialog: its text, fields and buttons in the terminal's font at its size (a field of 16 px stood out)
     const type = await f.page.evaluate(() => [...document.querySelectorAll("dialog:not(#rowmenu)")].map((d) => {
       d.showModal();

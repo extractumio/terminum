@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial */
 /* The chrome wears the shown session's iTerm2 profile: every surface is a mix of the profile's
-   background and foreground, and the accent is its cursor color. */
+   background and foreground, and the accent is its cursor color, made to read on the background (contrast.js). */
 :root {
   --t-bg: #000000; --t-fg: #c7c7c7; --accent: #c7c7c7; --sel: #3a5a8a; --selfg: #ffffff;
   --size: 13px;   /* surfaces, sizes and hues: tokens.css */
