@@ -21,9 +21,8 @@ const dir = (path) => { const n = { path, children: new Map(), pages: new Map(),
 /** A Tree over /r whose folder lookups wait until `release()`; `input` is its real TreeInput. */
 function fixture() {
   const root = dir("/r"), nodes = new Map([[root.path, root]]);
-  let gate, release;
-  const hold = () => { gate = new Promise((r) => { release = r; }); };
-  hold();
+  let release;
+  const gate = new Promise((r) => { release = r; });
   const t = Object.assign(Object.create(Tree.prototype), {
     root, nodes, expanded: new Set(), selected: new Set(), cursor: -1, anchor: -1, rowH: 20, version: 0,
     el: { clientHeight: 200, scrollTop: 0 }, epoch: 0, expandRun: 0, selectionRun: 0, picks: 0,
@@ -34,12 +33,12 @@ function fixture() {
   t.rows = { get version() { return t.version; }, filter: "", get root() { return t.root; }, nodes, creatingIn: () => 0, load() {} };
   const key = (k) => input.onKey({ key: k, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, preventDefault() {} });
   const input = new TreeInput(t);
-  return { t, input, key, release: async () => { release(); await tick(); }, hold };
+  return { t, input, key, release: async () => { release(); await tick(); } };
 }
 
 test("Reveal in tree expands the file's folders and puts the cursor on it", async () => {
   const { t, release } = fixture();
-  const pending = t.reveal("/r/a/y.rs", true, ++t.picks);
+  const pending = t.reveal("/r/a/y.rs", true, t.pick());
   await release();
   assert.equal(await pending, true);
   assert.deepEqual([...t.expanded], ["/r/a"]);
@@ -53,7 +52,7 @@ test("a click or a key while the folders open or the lookup runs wins over an ol
     ["↓", (f) => { f.t.cursor = 1; f.key("ArrowDown"); }],
   ]) {
     const f = fixture();
-    const pending = f.t.reveal("/r/a/x.rs", true, ++f.t.picks);   // would put the cursor on row 1
+    const pending = f.t.reveal("/r/a/x.rs", true, f.t.pick());   // would put the cursor on row 1
     pick(f);
     await f.release();
     assert.equal(await pending, null, what);
@@ -63,7 +62,7 @@ test("a click or a key while the folders open or the lookup runs wins over an ol
 
 test("a folder read or refreshed meanwhile does not stop Reveal in tree", async () => {
   const { t, release } = fixture();
-  const pending = t.reveal("/r/a/y.rs", true, ++t.picks);
+  const pending = t.reveal("/r/a/y.rs", true, t.pick());
   const refresh = t.refreshDirs(["/r"]);                 // disk activity bumps selectionRun, not picks
   await release();
   await refresh;
@@ -73,8 +72,8 @@ test("a folder read or refreshed meanwhile does not stop Reveal in tree", async 
 
 test("a newer Reveal in tree wins over an older one", async () => {
   const { t, release } = fixture();
-  const older = t.reveal("/r/a/y.rs", true, ++t.picks);
-  const newer = t.reveal("/r/c.rs", false, ++t.picks);
+  const older = t.reveal("/r/a/y.rs", true, t.pick());
+  const newer = t.reveal("/r/c.rs", false, t.pick());
   await release();
   assert.equal(await older, null);
   assert.equal(await newer, true);
@@ -134,9 +133,9 @@ test("a new file is selected and revealed, unless the user picked something whil
     let refreshed;
     const revealed = [];
     const tree = {
-      picks: 0, selected: new Set(["/r/b.rs"]),
+      picks: 0, pick() { return ++this.picks; }, selected: new Set(["/r/b.rs"]),
       refreshDirs: () => new Promise((r) => { refreshed = r; }),
-      reveal: async (...args) => { revealed.push(args); return true; },
+      reveal: async (...args) => { revealed.push(args); return args[2] === tree.picks ? true : null; },   // reveal's contract
     };
     const pending = commitPath("file", "/r", "new.txt", undefined, { host: null, current: () => true, tree, viewer: {}, open() {}, changed() {} });
     await tick();
@@ -144,6 +143,6 @@ test("a new file is selected and revealed, unless the user picked something whil
     refreshed();
     assert.equal(await pending, null);
     assert.deepEqual([...tree.selected], [clicked ? "/r/c.rs" : "/r/new.txt"], `clicked: ${clicked}`);
-    assert.deepEqual(revealed, clicked ? [] : [["/r/new.txt", false, 1]], `clicked: ${clicked}`);
+    assert.deepEqual(revealed, [["/r/new.txt", false, 1]], `clicked: ${clicked}`);
   }
 });

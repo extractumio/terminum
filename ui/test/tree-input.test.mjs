@@ -12,7 +12,7 @@ function setup() {
   let finish;
   const t = {
     root, cursor: 3, anchor: 3, rowH: 20, el: { clientHeight: 200 }, expanded: new Set(), selected: new Set(["/r/src/a.rs"]),
-    selectionRun: 0, picks: 0, rows: { version: 0, filter: "", root, nodes: new Map(), creatingIn: () => 0, load() {} },
+    selectionRun: 0, pick() { return ++this.selectionRun; }, rows: { version: 0, filter: "", root, nodes: new Map(), creatingIn: () => 0, load() {} },
     cb: { changed() {} }, queue() {},
     descAt: () => ({ isDir: false, p: "/r/src/a.rs", d: { dir: { path: "/r/src" } } }),
     reveal: () => new Promise((r) => { finish = r; }),

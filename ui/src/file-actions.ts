@@ -17,7 +17,7 @@ interface CommitHost {
 }
 
 export async function commitPath(mode: EditMode, dir: string, name: string, path: string | undefined, ctx: CommitHost): Promise<string | null> {
-  const picks = ++ctx.tree.picks; // a selection the user picks meanwhile wins over the new path
+  const picks = ctx.tree.pick(); // a selection the user picks meanwhile wins over the new path
   try {
     let created: string;
     if (mode === "rename") {
@@ -33,11 +33,8 @@ export async function commitPath(mode: EditMode, dir: string, name: string, path
     }
     await ctx.tree.refreshDirs([dir]);
     if (!ctx.current()) return null;
-    if (picks === ctx.tree.picks) {
-      ctx.tree.selected = new Set([created]);
-      await ctx.tree.reveal(created, false, picks);
-      if (!ctx.current()) return null;
-    }
+    if (await ctx.tree.reveal(created, false, picks) !== null) ctx.tree.selected = new Set([created]);
+    if (!ctx.current()) return null;
     ctx.changed();
     return null;
   } catch (e) {

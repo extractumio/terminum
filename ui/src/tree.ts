@@ -27,7 +27,7 @@ export interface TreeCallbacks {
 }
 
 /** The members without `private` that are not the Panel's API (cursor, anchor, epoch,
- *  selectionRun, picks, rows, pager, el, cb, load, expand, collapse, descAt, scrollIntoView,
+ *  selectionRun, pick, rows, pager, el, cb, load, expand, collapse, descAt, scrollIntoView,
  *  expandAllFrom) are @internal: shared with TreeInput (tree-input.ts) and Pager (tree-load.ts)
  *  only. Moving the selection state into TreeInput would close them again (Noticed, not fixed). */
 export class Tree {
@@ -46,7 +46,7 @@ export class Tree {
   epoch = 0;                 // bumps on re-root; stale async results are dropped
   private expandRun = 0;             // bumps on expand all and any collapse; cancels a running one
   selectionRun = 0;          // cancels a paged range on another interaction
-  picks = 0;                 // bumps on each newer selection the user makes; an older reveal yields to it
+  private picks = 0;                 // bumps on each newer selection the user makes (pick); an older reveal yields to it
   private spacer = document.createElement("div");
   private layer = document.createElement("div");
   private edit: InlineEdit;
@@ -282,6 +282,10 @@ export class Tree {
   toggle(path: string) {
     if (this.expanded.has(path)) this.collapse(path); else void this.expand(path);
   }
+
+  /** A newer selection by the user: a paged range and an older reveal yield to it. Returns its
+   *  token for reveal. */
+  pick() { this.selectionRun++; return ++this.picks; }
 
   /** The cursor onto `path`, scrolled into sight; `open`: its folders expand first (Reveal in tree).
    *  False when it is not under the root or not found; null, the cursor untouched, when the tree was
