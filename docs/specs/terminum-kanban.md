@@ -54,7 +54,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards, each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
+| AC-105 | [MUST / P0] | `/kanban/` shows five columns of task cards (a sixth, INTEGRATION, where a shown project's integration is on: `terminum-integration.md` AC-193), each sorted by recent updates or by priority then recent updates, chosen by two icons before its count and remembered per project in this browser; `/sessions/` is the session list, `/` leads to it; a phone shows one column at a time. |
 | AC-159 | [MUST / P0] | TODO and DONE show each card as one line, its ID, severity, title and its state's dot; a press shows one whole, folding the one before; the other columns show cards whole. |
 | AC-106 | [MUST / P0] | A window makes a task (title, Markdown with preview, files dropped or pasted, project, severity, owner, parent), in TODO unless said; a draft survives closing; a selection in a terminal can start one. |
 | AC-107 | [MUST / P0] | A human moves a task only by running it (terminum-dispatcher.md AC-138); agents and Dispatcher move it; every change is kept in the task's history with who and when. |
@@ -69,7 +69,7 @@ Open questions: none.
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
-| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
+| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab; so do a task returned from integration with no live agent and a queue terminumd paused (`terminum-integration.md` AC-190, AC-192). |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
