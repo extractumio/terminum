@@ -456,8 +456,15 @@ Scenario: AC-123 happy path — an hour of nothing
 Scenario: AC-123 edge — a running tool is activity
   Given a tool started with no end yet (`gh run watch`, a remote build) or a counted subagent
   Then no idle clock runs, bounded by the budget when one is set
-  Given the agent's turn is over and Claude Code's foot says its background shells still run ("· 2 shells")
-  Then that is activity too: no request, no WAIT FOR HUMAN and no closing while they run (its checks, a landing)
+  Given the agent's turn is over and Claude Code's footer counts background work, including a monitor alone ("· 1 monitor")
+  Then that is activity too: no request, no WAIT FOR HUMAN and no closing while it runs (its checks, a landing), bounded by the budget when one is set
+  And Dispatcher uses the same footer reading as the session row and card (terminum-kanban.md AC-136), for every kind it counts, past the row's 10-minute mark too
+
+Scenario: AC-123 edge — a detached job is not a keepalive
+  Given a job started detached (nohup, or disown) is absent from the footer, open tools, counted subagents and the pane's process tree
+  Then that job alone is no activity: the idle clock runs
+  And update_session_plan can say what runs and until when, but its text and ETA suspend no clock; its tool hooks count as ordinary activity when present
+  And to keep a run active while waiting for that job, the agent keeps an observable tool open or uses background work its footer counts
 
 Scenario: AC-123 happy path — the session ends cleanly
   When the window command records exit 0, API-12 open
@@ -1785,7 +1792,7 @@ Only the following pass: a task's ID with fixed words, never a title or a commen
 | Budget | 5 min to 7 days; last warning max(3%, 2 min); SIGTERM, 10 s, SIGKILL |
 | Subagent silent and idle | 10 min request; 20 min end |
 
-**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's foot counting background shells, read each walk (no hook tells of them); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
+**Activity.** A hook event of the agent or a subagent, other than for what terminum typed; an open tool (a PreToolUse with no end) or a counted subagent; after a turn, Claude Code's footer counting any background work, read each walk by the session row's parser (no hook tells of it; AC-123 also defines detached jobs); a character a human typed; the pane's tree above the idle threshold, as the change of cumulative CPU time between walks (`ps -o time=`: `%cpu` is a life's average on Linux). The threshold is 3 s of CPU in a 30 s walk, well over a measured idle agent's 0.36 s (AS-127). Screen output alone is none: a spinner prints for ever. A dev server the agent left running holds the clock open, bounded by the budget: accepted.
 
 **Subscription readings (AC-168).** Claude Code gives its windows only to a status line command (`rate_limits.five_hour`, `seven_day`: `used_percentage`, `resets_at`); terminum never edits its settings and adds no status line (its `--settings` name only the TUI, AC-156), so the user puts `terminum statusline [their command]` there (`docs/USAGE.md`). It posts the windows as a `Limits` hook event, then runs their command (one word: `sh -c`, several: as given) with the same input and prints its output; terminumd down or slow costs it the hook's 150 ms at most. Codex's hook, on each Stop, reads the last `rate_limits` of its log's tail in the pass that sums tokens (`primary`, `secondary`: `used_percent`, `window_minutes`, `resets_at`). An event carries `windows: [{minutes, used, resets_at}]`, at most 4: minutes 1 to 44,640, used 0 to 100, resets_at a time or null; anything else drops the event. terminumd keeps the last per kind with its time and its source (`session`, `usage`), from panes it lists and from the usage commands, in the store (`meta` key `subscriptions`): the same numbers move its time at most every 10 minutes; a change of either, or a failed usage command (kept in memory, cleared by its next reading), tells pages (`subscriptions`: per kind `{at, windows, via, failed: {at, why}}`), and `/api/tasks?counts=1` carries them.
 
@@ -1831,7 +1838,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
 - [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), its real run as AC-121's
-- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
+- [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::walk` (every footer kind), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `web/test/e2e_livebackground.mjs` (a monitor-only run past the idle hour; `node web/test/e2e_live.mjs background`), `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`
 - [x] AC-126 — `cargo test dispatcher::plan`, `cargo test tasks::tell` (words not heard go again), `cargo test dispatcher::acts` (an end decided before a human's input), `web/test/e2e_livedispatcher.mjs`, `SECURITY.md` carries Dispatcher's signals

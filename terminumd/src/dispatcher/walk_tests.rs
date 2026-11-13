@@ -27,3 +27,19 @@ fn ac123_an_open_tool_is_forgotten_only_when_no_hook_says_it_works() {
     let r = walk(&Hooks::default());
     assert_eq!(r.open_tools, 0, "no hook says it works: a tool an interrupt cut off is not open");
 }
+
+#[test]
+fn ac123_every_footer_kind_holds_the_idle_clock_like_the_card() {
+    let footer = |pill: &str| ["✻ Worked for 2m · 1 shell still running", "────", "❯ ", "────", pill].map(String::from).to_vec();
+    for pill in ["1 shell", "1 monitor", "2 local agents", "1 team", "1 background dynamic workflow",
+                 "1 remote dynamic workflow", "1 cloud session", "1 MCP task", "1 background task"] {
+        let read = background_tasks(&footer(pill));
+        assert_ne!(read, Background::None, "the card's parser counts {pill}");
+        let mut r = Run { task: "one".into(), status: "IN PROGRESS".into(), state: runs::Phase::Working, turn_ended: true, idle_for: plan::NOTHING - 1, ..Default::default() };
+        let facts = Facts { pane: true, marked: true, alive: true, active: read != Background::None, dt: plan::NOTHING + 1, ..Default::default() };
+        assert!(plan::step(&mut r, &facts).is_empty(), "{pill}: no nudge or failure past an hour");
+        assert_eq!(r.idle_for, 0);
+        let quiet = Facts { active: background_tasks(&footer("0 monitors")) != Background::None, ..facts };
+        assert!(plan::step(&mut r, &quiet).iter().any(|a| matches!(a, Act::Move { to: "FAILED", .. })), "work ended: the idle clock runs");
+    }
+}

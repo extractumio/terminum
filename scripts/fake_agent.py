@@ -41,14 +41,14 @@ def main():
         sys.stdout.write("\x1b[2J\x1b[H" + "\r\n".join(body) + "\r\n")
         sys.stdout.flush()
 
-    def box():
+    def box(background=""):
         # a long paste folds to a mark, as both agents' boxes do (the gate reads "[Pasted")
         held = typed if len(typed) <= FOLD else (f"[Pasted Content {len(typed)} chars]" if kind == "codex" else f"[Pasted text #1 +{len(typed)} chars]")
         if kind == "codex":
             shown = f"\x1b[1m›\x1b[0m \x1b[2mAsk Codex to do anything\x1b[0m" if not typed else f"\x1b[1m›\x1b[0m {held}"
             draw(["  OpenAI Codex", "", shown, "", "  ? for shortcuts"])
         else:
-            draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {held.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, "  ? for shortcuts"])
+            draw(["  Claude Code", "", RULE, f"\x1b[39m❯ {held.replace(chr(10), ' ')}\x1b[7m \x1b[0m", RULE, background or "  ? for shortcuts"])
 
     def tool(name, arguments):
         rpc = lambda i, m, p=None: json.dumps({"jsonrpc": "2.0", **({} if i is None else {"id": i}), "method": m, **({"params": p} if p else {})})
@@ -152,6 +152,12 @@ def main():
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # then at work: its session stays to be read
             elif "WORKS" in prompt or prompt.startswith("Auto-Dispatcher, which a human turned on"):
                 hook("PreToolUse", tool_name="Bash", tool_input={"command": "sleep"})   # a long tool: no Stop
+            elif "MONITOR" in prompt:
+                box("  ⏵⏵ bypass permissions on · 1 monitor")
+                hook("Stop", last_assistant_message="A monitor still runs.")
+                while os.path.exists(opt("--monitor-file", "")):
+                    time.sleep(1)
+                box()
             elif "STUCK" in prompt and main:
                 for task in tasks[:-2]:
                     finish(task)

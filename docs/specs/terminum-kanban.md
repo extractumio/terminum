@@ -1236,7 +1236,7 @@ Depends on: nothing more.
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
-- [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
+- [x] AC-136 — `cargo test tasks::tell` (fresh settlement with and without background work, a new prompt), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_livebackground.mjs` (monitor-only Stop, work ending, immediate failure), `web/test/cardstate.test.mjs` (its background work)
 - [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after ×, Esc and Back; a deliberate reopen; a Save press under a refresh), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes, a real change under a Save press; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)

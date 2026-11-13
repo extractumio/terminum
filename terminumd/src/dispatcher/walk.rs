@@ -15,6 +15,7 @@ use super::{move_task, procs, say, scale, start, store, BEAT, GAP};
 use crate::app::Shared;
 use crate::tasks::ops;
 use crate::tmux::hookstate::Hooks;
+use crate::tmux::agentstate::{background_tasks, Background};
 use crate::tmux::Server;
 
 /// CPU seconds in a beat over which an agent's tree counts as active (§9 Activity, AS-127).
@@ -270,10 +271,10 @@ async fn walk(app: &Shared) {
             (busy, memory, under, !w.subs.is_empty())
         };
         let (waiting, failed, ended) = listed(app, &key);
-        // its turn is over and its background shells still run (its checks, a landing): Claude Code's foot says so,
+        // its turn is over and its background work still runs (its checks, a landing): the row's footer parser says so,
         // no hook does; that is work, as an open tool is (AC-123)
-        let shells = r.kind == "claude" && (r.turn_ended || ended) && under && p.is_some_and(|p| p.exit.is_none())
-            && server.run(format!("capture-pane -p -t {pane}")).await.is_ok_and(|rows| super::screen::background_shells(&r.kind, &rows));
+        let background = r.kind == "claude" && (r.turn_ended || ended) && under && p.is_some_and(|p| p.exit.is_none())
+            && server.run(format!("capture-pane -p -J -t {pane}")).await.is_ok_and(|rows| background_tasks(&rows) != Background::None);
         // after its agent, what runs in front is a human's: it stays theirs. A job behind the shell keeps
         // the 5 minutes from running: a prompt's own helpers come and go, and must not leave it open for good
         let program = p.filter(|p| p.exit.is_some() && !crate::tmux::titles::is_shell(&p.command)).map(|p| p.command.clone());
@@ -285,7 +286,7 @@ async fn walk(app: &Shared) {
             alive: under && p.is_some_and(|p| p.exit.is_none()),
             waiting,
             failed,
-            active: app.dispatcher.take_active(&key) || busy || job || shells,
+            active: app.dispatcher.take_active(&key) || busy || job || background,
             program,
             watched: app.pages.watched(&key),
             memory,

@@ -14,3 +14,4 @@ export const ICONS_ALONE = process.argv.includes("iconkeys");    // while workin
 export const REQUESTS_ALONE = process.argv.includes("requests");
 export const QUEUE_ALONE = process.argv.includes("queue");  // the agent queue, without the scheduling suites
 export const MAIN_ALONE = process.argv.includes("main");             // while working on a main task's run with its subtasks
+export const BACKGROUND_ALONE = process.argv.includes("background");
