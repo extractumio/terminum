@@ -330,13 +330,13 @@ pub(super) fn moved_to(tx: &rusqlite::Transaction, tasks: &[Task], last: Option<
     if fresh || tasks.len() > 1 || r.agent_id == id || !(r.is_over() || r.state == Phase::Gone) || r.agent_session.is_none() {
         return Ok(None);
     }
-    Ok(crate::tasks::agents::by_id(tx, id)?.filter(|a| a.kind == r.kind).map(|a| on_agent(r.clone(), a)))
+    Ok(crate::tasks::agents::in_project(tx, id, &tasks[0].project)?.filter(|a| a.kind == r.kind).map(|a| on_agent(r.clone(), a)))
 }
 
 /// The run a press goes on from, its agent as the pool has it now: the operator's change of its command holds for
-/// what goes on (AC-122, AC-156); an agent deleted since: the run's own.
+/// what goes on (AC-122, AC-156); an agent deleted since, or its project's no more: the run's own.
 fn as_pool_has(tx: &rusqlite::Transaction, r: Run) -> Result<Run, String> {
-    Ok(match crate::tasks::agents::by_id(tx, &r.agent_id)? {
+    Ok(match crate::tasks::agents::in_project(tx, &r.agent_id, &r.project)? {
         Some(a) => on_agent(r, a),
         None => r,
     })

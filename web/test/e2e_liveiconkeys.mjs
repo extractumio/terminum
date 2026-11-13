@@ -18,7 +18,7 @@ async function pressed(page, sel) {
 /** The board's icon keys; `phone`: those a phone shows (its pool is a row of its own), and no session list. */
 export async function liveIconKeys(page, live, phone = false) {
   const { j, open, backToSessions } = boardKit(page, live);
-  const agent = phone ? null : (await j("/api/task-agents", "POST", { name: "Icon agent", kind: "claude", command: "claude" })).id;
+  const agent = phone ? null : (await j("/api/task-agents", "POST", { project: "default", name: "Icon agent", kind: "claude", command: "claude" })).id;
   await open("?project=default");
   const newTask = '.col[data-status="TODO"] .new';
   const keys = {

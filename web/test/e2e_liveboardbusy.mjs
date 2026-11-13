@@ -101,6 +101,7 @@ export async function liveBoardBusy(page, opts) {
   await commentWaitsForFiles(page, { open, j, id: await make("commented with a file") });
   await lateFile(page, { open, project });
   const runs = (await j("/api/task-projects", "POST", { name: "Run once", dir: work })).id;
+  await j("/api/task-agents", "POST", { project: runs, name: "Runs once", kind: "claude", command: "claude" });
   await runOnce(page, { open, project: runs, id: (await j("/api/tasks", "POST", { title: "run once", project: runs })).id });
   await page.goto(`${base}/kanban/`);
 }

@@ -119,7 +119,7 @@ fn room_for(tx: &rusqlite::Transaction, project: &str, s: &Setting, now: i64) ->
     let mut free = Vec::new();
     for c in auto::candidates(tx, project, s, now, None)? {
         if !room.contains_key(&c.agent) {
-            let a = agents::by_id(tx, &c.agent)?.ok_or("its agent is gone")?;
+            let a = agents::in_project(tx, &c.agent, project)?.ok_or("its agent is gone")?;
             room.insert(c.agent.clone(), if over_limit(&spent, &a).is_some() { 0 } else { slots.free_of(&a) });
         }
         if room[&c.agent] > 0 {
@@ -180,7 +180,7 @@ pub(super) fn decide(tx: &rusqlite::Transaction, project: &str, s: &Setting, now
         // a round of another project still counts on the slots it was given
         return Ok(if auto::open_elsewhere(tx, project)? { Due::Nothing } else { Some(in_order(tx, project, s, now)?).filter(|l| !l.is_empty()).map_or(Due::Nothing, Due::Start) });
     }
-    let Some(picker) = s.agent.as_deref().map(|a| agents::by_id(tx, a)).transpose()?.flatten() else {
+    let Some(picker) = s.agent.as_deref().map(|a| agents::in_project(tx, a, project)).transpose()?.flatten() else {
         return off(tx, "its agent is no longer in the pool.".to_string());
     };
     // the agent that picks is held to its limits as those it starts are
@@ -255,7 +255,7 @@ async fn start_in_order(app: &Shared, project: &str, c: &Candidate) -> Option<St
     let off = why.clone();
     let done = store(app, move |tx| {
         if ran {
-            let name = agents::by_id(tx, &agent)?.map_or(agent, |a| a.name);
+            let name = agents::name_of(tx, &agent)?;
             return ops::log(tx, &task, DISPATCHER, "why", &format!("Auto-Dispatcher started it on {name}, by priority and saved order."), None, ops::now()).map(drop);
         }
         auto::not_started(tx, &task, None)?;
@@ -301,7 +301,7 @@ fn chosen(tx: &rusqlite::Transaction, pane: &str, id: &str, now: i64) -> Result<
     // what it may start is read anew: a human, an agent or a schedule may have taken or changed it since the round began
     let task = auto::candidates(tx, &round.project, &s, now, Some(id))?.pop()
         .ok_or_else(|| format!("{id} is no longer free to start: it left TODO, it was changed just now, a session or a run holds it, its severity is not taken, or no agent is named for it."))?;
-    let agent = agents::by_id(tx, &task.agent)?.ok_or("That agent is gone.")?;
+    let agent = agents::in_project(tx, &task.agent, &round.project)?.ok_or("That agent is gone.")?;
     if let Some(why) = over_limit(&super::usage::of_agents(tx, now)?, &agent) {
         return Err(format!("{why} Auto-Dispatcher starts nothing on it."));
     }

@@ -17,7 +17,7 @@ export async function liveWaitingRun(page, opts) {
     await open();
     const name = `Waiting ${page.context().browser().browserType().name()} ${page.viewportSize().width}`;
     const project = (await j("/api/task-projects", "POST", { name, dir: opts.work })).id;
-    const agent = (await j("/api/task-agents", "POST", { name, kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
+    const agent = (await j("/api/task-agents", "POST", { project, name, kind: "claude", command: `python3 -I ${FAKE} ${cli} --kind claude` })).id;
     const id = (await j("/api/tasks", "POST", { title: "answer before closing QUESTIONS", project })).id;
     await j(`/api/tasks/${id}/run`, "POST", { agent });
     check("AC-157 the agent asks the human and ends its turn", await until(async () => (await j(`/api/tasks/${id}`)).status === "WAIT FOR HUMAN", 15000));

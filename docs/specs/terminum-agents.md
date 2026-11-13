@@ -69,7 +69,7 @@ Open questions: none.
 | AC-174 | [MUST / P0] | A tool's caller is a worker or a manager, decided by terminumd from its own records at each call: the session a human's + Session started, and a session the human opened in a project, are its project's managers; every other session is a worker, with today's tools. A worker neither finds nor runs a manager's tool. |
 | AC-178 | [SHOULD / P1] | A manager's call is run only when it comes from under the pane it names, and what writes only from that pane's main agent. |
 | AC-179 | [MUST / P0] | A manager starts its project's tasks on the pool's agents through Dispatcher, answers and goes on with them, stops them, reads what runs and the project's numbers, and lists, reads, types into and closes its project's other sessions, never another manager's; its words reach an agent as the manager's, never as a human's. |
-| AC-180 | [MUST / P0] | A manager adds, changes and removes the pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
+| AC-180 | [MUST / P0] | A manager adds, changes and removes its project's pool's agents and its project's schedules by the board's own rules, in force at once, each under its name. |
 | AC-181 | [MUST / P0] | Every tool of `terminum mcp` runs from a shell by `terminum tool`, as the session of the pane it runs in or, outside a pane, as a token's role and project; a token is made and removed only outside terminum's panes and kept as its hash. |
 | AC-153 | [SHOULD / P1] | Claude Code or Codex left idle in a row no page has shown for the days set in Settings (0: off, the default) gets Ctrl+C twice, then `/exit` while it still runs; its shell and session stay, and the pane says which agent ended and how to resume it. |
 
@@ -471,11 +471,16 @@ Scenario: AC-179 failure — outside its reach
 ```gherkin
 Scenario: AC-180 happy path — agents
   When the manager calls create_agent {name: "Sonnet worker", kind: "claude", command: "claude --model sonnet", at_once: "2"}
-  Then the pool has it at once, for every project, as the board's window would make it (terminum-dispatcher.md AC-137)
+  Then its project's pool has it at once, and no other project's, as the board's window would make it (terminum-dispatcher.md AC-137)
   When it calls update_agent {agent: "Sonnet worker", at_once: "3", week_limit: ""}
   Then only what it named changes; an empty effort or limit clears it
   When it calls delete_agent {agent: "Sonnet worker"}
   Then it leaves the pool, unless it runs schedules or has a session open
+
+Scenario: AC-180 failure — another project's agent
+  Given Webby in project web's pool alone
+  When api's manager calls list_agents, or update_agent, delete_agent or run_task naming Webby by its name or its id
+  Then list_agents shows api's agents alone, and the others say "Your project's pool has no agent \"Webby\"" with the names it has; web's pool stands as it was
 
 Scenario: AC-180 happy path — schedules
   When the manager calls create_schedule {title, text, agent, cron: "0 3 * * *", budget_minutes: "30"}

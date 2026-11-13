@@ -3,14 +3,14 @@
 // agent last used there first, the only one at once.
 import { choose } from "./dialogs.js";
 import { sessionUrl } from "./tasklink.js";
-import { api, say } from "./kanbanutil.js";
+import { agentsOf, api, say } from "./kanbanutil.js";
 
-/** `slots()`: who is at a limit; `addAgent()`: the agents' window; `askFolder(id, words)`: a project with no folder. */
+/** `slots()`: who is at a limit; `addAgent(project)`: the agents' window, for a new one of that project; `askFolder(id, words)`: a project with no folder. */
 export function sessionStarter({ getMeta, slots, addAgent, askFolder }) {
   return async (p) => {
     if (!p.dir) return askFolder(p.id, `${p.name} has no folder: set it in its window.`);
-    const meta = getMeta(), now = slots(), last = meta.last_agents?.[p.id], all = meta.agents.filter((a) => !now.full.includes(a.id));
-    if (!meta.agents.length) return addAgent();
+    const meta = getMeta(), now = slots(), last = meta.last_agents?.[p.id], own = agentsOf(meta, p.id), all = own.filter((a) => !now.full.includes(a.id));
+    if (!own.length) return addAgent(p.id);
     if (now.full_projects.includes(p.id) || !all.length) return say(now.full_projects.includes(p.id) ? `${p.name} is at its limit of agents at once.` : "Every agent is at its limit.");
     const ordered = [...all.filter((a) => a.id === last), ...all.filter((a) => a.id !== last)];
     const agent = ordered.length === 1 ? ordered[0].id : await choose(`A session in ${p.name}`, "Which agent? Nothing is typed in it: it is yours.", ordered.map((a) => [a.id, a.name]));

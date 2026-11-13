@@ -158,7 +158,7 @@ export async function liveHistory(page, opts) {
   // the other tabs: a session of Dispatcher's, a failed write and a report in the store (e2e_livedispatcher.mjs runs real sessions)
   // what other suites of this run left is counted too: the figures are told by what this adds
   const dash = `dash${Date.now()}`, sys0 = await numbers("tab=system&period=year"), cost0 = await numbers("tab=costs&period=year");
-  intoStore(app, `INSERT INTO agents (id, name, kind, command, color, at_once) VALUES ('${dash}', 'Agent ${dash}', 'claude', 'claude', 2, 1);
+  intoStore(app, `INSERT INTO agents (id, project, name, kind, command, color, at_once) VALUES ('${dash}', 'default', 'Agent ${dash}', 'claude', 'claude', 2, 1);
     INSERT INTO runs (id, project, agent_id, agent_name, agent_color, kind, command, folder, state, last_walk) VALUES ('${dash}', 'default', '${dash}', 'Agent ${dash}', 2, 'claude', 'claude', '${work}', 'closed', CAST(strftime('%s','now') AS INTEGER) - 600);
     INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, run, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 2400) * 1000, 0, 'dispatcher', 'dispatcher.start', 'launch', 'claude', 6, '${key}', '${dash}', 'test');
     INSERT INTO inputs (at, ended, sender, component, kind, text, bytes, pane, error, version) VALUES ((CAST(strftime('%s','now') AS INTEGER) - 900) * 1000, 0, 'human', 'page', 'typed', 'x', 1, '${key}', 'This pane has closed.', 'test');

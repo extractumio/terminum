@@ -56,7 +56,7 @@ pub(super) async fn place(app: &Shared, project: &str, agent: Option<String>) ->
     let (a, host, dir) = store(app, move |tx| {
         let (name, host, dir) = ops::project_place(tx, &project)?;
         no_folder(&name, &dir)?;
-        let a = agent.as_deref().map(|id| agents::by_id(tx, id)).transpose()?.flatten().ok_or("No agents yet: add one first.")?;
+        let a = agent.as_deref().map(|id| agents::chosen(tx, id, &project)).transpose()?.ok_or("No agents yet: add one first.")?;
         Ok((a, host, dir))
     }).await?;
     let server = server_of(app, host.as_deref())?;

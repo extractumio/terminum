@@ -471,7 +471,8 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
         return Err(format!("{kid} has a session of its own: unlink it first."));
     }
     for k in std::iter::once(&key).chain(kids.iter()) {
-        tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
+        // the agent a human chose for it is its old project's (terminum-dispatcher.md AC-137): none is named now
+        tx.execute("UPDATE tasks SET project = ?1, agent = NULL, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
         // it takes the project's next ID; the one it had still finds it (AC-148)
         let slug = super::slugs::assign(tx, k, project, false)?;
         log(tx, k, author, "project", &format!("{who} moved it to {name}, as {slug}"), None, at)?;

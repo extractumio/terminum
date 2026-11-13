@@ -34,7 +34,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::queue::routes())
 }
 
-/// What RUN's dialog shows (AC-121, AC-138): the pool, each saying what keeps it busy; an agent named that cannot
+/// What RUN's dialog shows (AC-121, AC-138): the tasks' project's pool, each saying what keeps it busy; an agent named that cannot
 /// take them is refused here, so the window never offers another under its name. `no_folder`: nothing can start (AC-140).
 async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract::Query(asked): axum::extract::Query<Asked>) -> Response {
     answer(store(&app, move |tx| {
@@ -42,7 +42,7 @@ async fn offer(State(app): State<Shared>, Path(id): Path<String>, axum::extract:
         let w = w?;
         let t = &tasks[0];
         let (name, host, dir) = ops::project_place(tx, &t.project)?;
-        let all: Vec<Agent> = agents::list(tx)?;
+        let all: Vec<Agent> = agents::of_project(tx, &t.project)?;
         let lacks = no_folder(&name, &dir).err().filter(|_| matches!(w, Way::First));
         let slots = pool::Slots::read(tx)?;
         let mut offered = Vec::new();
@@ -418,7 +418,7 @@ async fn next_run(app: &Shared, r: &Run, t: &Task, prompt: String, kept: Press) 
     let (old, key, id, task) = (r.clone(), t.key.clone(), t.id.clone(), t.clone());
     store(app, move |tx| {
         // an agent deleted since has no slot to take: its run's own settings start, or nothing waits for it
-        let agent = agents::by_id(tx, &old.agent_id)?;
+        let agent = agents::in_project(tx, &old.agent_id, &old.project)?;
         match &agent {
             Some(a) => if let Some(kept) = wait_if_full(tx, a, &old.project, (&task, true), Some(&old.id), (&kept, None, &[]))? {
                 return Ok(Next::Kept(kept));

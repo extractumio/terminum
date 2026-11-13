@@ -3,7 +3,7 @@
 // text, in TODO unless said. A draft survives closing and a reload on this browser.
 import { askConfirm, oneAtATime } from "./dialogs.js";
 import { el, iconButton, read, write } from "./listparts.js";
-import { $, AT_LIMIT, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, writePreview } from "./kanbanutil.js";
+import { $, AT_LIMIT, agentsOf, api, fileMarkdown, fillAgents, fillSelect, onFiles, onSend, onlyProject, projectOptions, sessionOptions, showError, upload, withFileLink, writePreview } from "./kanbanutil.js";
 
 const DRAFT = "tm.taskdraft";
 
@@ -77,10 +77,10 @@ export function taskForm({ getMeta, getFilter, onMade, onRun, slots }) {
 
   const view = writePreview("new", $("newtext"), $("newshown"));
 
-  /** The pool: only an explicit choice picks an agent (AC-106); otherwise assignment chooses later.
+  /** The chosen project's pool: only an explicit choice picks an agent (AC-106); otherwise assignment chooses later.
    *  One at a limit is said so: Run offers its queue (terminum-dispatcher.md AC-169). */
   function showAgents() {
-    const meta = getMeta(), project = $("newproj").value, all = meta.agents, now = slots();
+    const meta = getMeta(), project = $("newproj").value, all = agentsOf(meta, project), now = slots();
     const busy = (a) => (now.full.includes(a.id) ? AT_LIMIT : now.full_projects.includes(project) ? `the project is ${AT_LIMIT}` : "");
     fillAgents($("newagent"), all, busy, [chose, ""], !all.length ? "No agents yet" : "Choose when it runs");
   }

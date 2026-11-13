@@ -192,7 +192,7 @@ pub fn kept_by_agent(tx: &Transaction) -> Result<std::collections::BTreeMap<Stri
 
 /// A slot to keep on its agent, unless it is paused (AC-161).
 fn check_slot(tx: &Transaction, given: &Given, id: Option<&str>) -> Result<(), String> {
-    let a = agents::by_id(tx, &given.agent)?.ok_or("That agent is gone.")?;
+    let a = agents::chosen(tx, &given.agent, &given.project)?;
     let kept = kept_on(tx, &a.id, id)?;
     if !given.paused && kept.len() as i64 >= a.at_once {
         return Err(format!("{} runs {} at once, kept for {}: raise its at once, or choose another agent.", a.name, a.at_once, kept.join(", ")));

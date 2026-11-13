@@ -138,10 +138,10 @@ pub fn due_for(tx: &Transaction) -> Result<Vec<(String, Setting)>, String> {
         ORDER BY COALESCE((SELECT max(r.at) FROM auto_rounds r WHERE r.project = projects.id), 0), place"), [], setting_of)
 }
 
-/// An agent of the pool, or none.
-fn in_pool(tx: &Transaction, agent: Option<&str>) -> Result<Option<agents::Agent>, String> {
+/// An agent of `project`'s pool, or none.
+fn in_pool(tx: &Transaction, project: &str, agent: Option<&str>) -> Result<Option<agents::Agent>, String> {
     match agent.filter(|a| !a.is_empty()) {
-        Some(a) => agents::by_id(tx, a)?.map(Some).ok_or_else(|| "That agent is gone.".to_string()),
+        Some(a) => agents::chosen(tx, a, project).map(Some),
         None => Ok(None),
     }
 }
@@ -155,7 +155,7 @@ pub fn set(tx: &Transaction, project: &str, new: &Setting, at: i64) -> Result<()
         let (name, _, dir) = ops::project_place(tx, project)?;
         ops::no_folder(&name, &dir)?;
     }
-    let (agent, default) = (in_pool(tx, new.agent.as_deref())?.map(|a| a.id), in_pool(tx, new.default.as_deref())?.map(|a| a.id));
+    let (agent, default) = (in_pool(tx, project, new.agent.as_deref())?.map(|a| a.id), in_pool(tx, project, new.default.as_deref())?.map(|a| a.id));
     if new.on && agent.is_none() && !new.by_order() {
         return Err("Choose the agent that picks first: its settings.".to_string());
     }
@@ -179,14 +179,15 @@ pub fn open_elsewhere(tx: &Transaction, project: &str) -> Result<bool, String> {
     tx.query_row("SELECT EXISTS (SELECT 1 FROM auto_rounds r JOIN tasks t ON t.id = r.task WHERE r.project <> ?1 AND t.archived_at IS NULL AND t.status NOT IN ('DONE', 'FAILED'))", [project], |r| r.get(0)).map_err(sql)
 }
 
-/// The agent a human chose to run task `key`, while it is in the pool.
+/// The agent a human chose to run task `key`, while it is in its project's pool.
 pub fn agent_of(tx: &Transaction, key: &str) -> Result<Option<String>, String> {
-    tx.query_row("SELECT a.id FROM tasks t JOIN agents a ON a.id = t.agent WHERE t.id = ?1", [key], |r| r.get(0)).optional().map_err(sql)
+    tx.query_row("SELECT a.id FROM tasks t JOIN agents a ON a.id = t.agent AND a.project = t.project WHERE t.id = ?1", [key], |r| r.get(0)).optional().map_err(sql)
 }
 
 /// A human names the agent that runs task `id`, or none; its history says so.
 pub fn set_agent(tx: &Transaction, id: &str, agent: Option<&str>, at: i64) -> Result<(), String> {
-    let (key, agent) = (ops::key_of(tx, id)?, in_pool(tx, agent)?);
+    let t = ops::get(tx, id)?;
+    let (key, agent) = (t.key, in_pool(tx, &t.project, agent)?);
     if agent_of(tx, &key)? == agent.as_ref().map(|a| a.id.clone()) {
         return Ok(());
     }
@@ -329,7 +330,7 @@ pub fn candidates(tx: &Transaction, project: &str, s: &Setting, now: i64, only: 
                      AND e.kind IN ('made', 'move', 'edit')), 0) AS changed,
                    COALESCE((SELECT max(e.at) FROM events e JOIN users u ON u.id = e.author WHERE e.task IN (SELECT t.id UNION ALL SELECT k.id FROM to_do k WHERE k.parent = t.id)
                      AND u.kind = 'human' AND e.kind IN ('move', 'edit')), 0) AS by_human
-                 FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2)
+                 FROM tasks t JOIN agents a ON a.id = COALESCE(t.agent, ?2) AND a.project = t.project
                  WHERE t.project = ?1 AND t.status = 'TODO' AND t.archived_at IS NULL AND t.session_key IS NULL AND (?3 IS NULL OR t.slug = ?3)
                    AND (t.severity IN (SELECT value FROM json_each(?5))
                      OR EXISTS (SELECT 1 FROM to_do k WHERE k.parent = t.id AND k.severity IN (SELECT value FROM json_each(?5))))

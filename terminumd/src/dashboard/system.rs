@@ -67,7 +67,7 @@ fn read(tx: &Transaction, ask: &Ask, now: i64) -> Result<Read, String> {
     let writes: Vec<(i64, String)> = rows(tx, &format!("SELECT {}, error FROM inputs WHERE error IS NOT NULL AND at >= ?1 AND (?2 IS NULL OR coalesce(project, '') = ?2)", local("at")),
         (ask.since, ask.project), |r| Ok((r.get(0)?, r.get(1)?)))?;
     failures.extend(writes.into_iter().map(|(t, why)| (t, "write", class(&why))));
-    let slots = rows(tx, "SELECT id, at_once FROM agents", [], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
+    let slots = rows(tx, "SELECT id, at_once FROM agents WHERE ?1 IS NULL OR project = ?1", [ask.task_project()], |r| Ok((r.get(0)?, r.get(1)?)))?.into_iter().collect();
     Ok(Read { runs, moves: ended.into_iter().map(|(t, to, _)| (t, to)).collect(), failures, fires: fires.into_iter().map(|(t, state, _)| (t, state)).collect(), slots })
 }
 

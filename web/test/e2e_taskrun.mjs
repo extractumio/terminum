@@ -7,7 +7,7 @@ import { check, runningIn, until } from "./check.mjs";
 import { drawn, openPage, ORIGIN, PHONE, SIZES, THEME } from "./fake.mjs";
 import { pressCard } from "./boardkit.mjs";
 
-const META = { projects: [{ id: "api", name: "API", color: 0 }], users: [], sessions: [{ key: "k1", title: "API conversation" }], hosts: [], agents: [{ id: "a1", name: "Claude", kind: "claude", color: 0, line: "claude" }] };
+const META = { projects: [{ id: "api", name: "API", color: 0 }], users: [], sessions: [{ key: "k1", title: "API conversation" }], hosts: [], agents: [{ id: "a1", project: "api", name: "Claude", kind: "claude", color: 0, line: "claude" }] };
 const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
 const tasks = () => [...COLUMNS, "WAIT FOR HUMAN", "WAIT FOR HUMAN", "WAIT FOR HUMAN"].map((status, i) => ({
   id: `API-${i + 1}`, uid: "abcd1234", title: `Continue task ${i + 1}`, project: "api", severity: "P1", status, text: "Choose an API.",
