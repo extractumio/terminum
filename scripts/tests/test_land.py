@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """Landing a worktree (spec AC-104), on real repositories in a temporary folder; no remote is contacted."""
 import importlib.util
+from concurrent.futures import ThreadPoolExecutor
 import os
 import shutil
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -152,6 +154,97 @@ class Landing(unittest.TestCase):
         before = self.on_origin()
         self.assertEqual(land.land(tree, check=self.green, say=lambda _: None), before)
         self.assertEqual(self.checks, [])
+
+    def changed_while_waiting(self, slug, change, retry=False):
+        tree = self.tree(slug)
+        self.commit(tree, "new.txt", "checked\n")
+        before, waiting = self.on_origin(), threading.Event()
+        take = land.Turn.take
+        attempts = 0
+        if retry:
+            other = self.tree("other")
+            before = self.commit(other, "other.txt", "another landing\n")
+
+        def taking(turn, wait=False):
+            nonlocal attempts
+            if retry and not wait and turn.slug == slug:
+                attempts += 1
+                if attempts == 2:
+                    self.assertTrue(holder.take())
+            if wait:
+                waiting.set()
+            return take(turn, wait=wait)
+
+        def smoke(tree):
+            if retry:
+                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
+            return True
+
+        with mock.patch.object(land.Turn, "take", taking), ThreadPoolExecutor(max_workers=1) as runner:
+            with land.TreeTurn(tree, "terminum-land.turn") as holder:
+                if not retry:
+                    self.assertTrue(holder.take())
+                future = runner.submit(land.land, tree, check=self.green, smoke=smoke, say=lambda _: None)
+                self.assertTrue(waiting.wait(10), "landing reached its real push-turn wait")
+                change(tree)
+            with self.assertRaises(land.Stop) as stop:
+                future.result(timeout=10)
+        self.assertEqual(stop.exception.code, 1)
+        self.assertIn("changed while landing", str(stop.exception))
+        self.assertEqual(self.on_origin(), before, "unchecked work never reaches origin")
+        self.assertEqual(self.checks, [slug])
+        self.assertTrue(tree.is_dir())
+        self.assertTrue(self.turn_is_free())
+
+    def test_a_commit_added_while_waiting_for_the_push_turn_is_refused(self):  # AC-104
+        self.changed_while_waiting("commit", lambda tree: self.commit(tree, "new.txt", "unchecked\n"))
+
+    def test_an_empty_commit_added_while_waiting_for_the_push_turn_is_refused(self):  # AC-104
+        self.changed_while_waiting("empty", lambda tree: git("commit", "-q", "--allow-empty", "-m", "unchecked", cwd=tree))
+
+    def test_a_commit_added_while_waiting_for_the_retry_turn_is_refused(self):  # AC-104
+        self.changed_while_waiting("retry", lambda tree: self.commit(tree, "new.txt", "unchecked\n"), retry=True)
+
+    def test_uncommitted_changes_while_waiting_for_the_push_turn_are_refused(self):  # AC-104
+        for kind in ("tracked", "untracked", "staged", "mode", "hidden"):
+            with self.subTest(kind=kind):
+                self.checks = []
+                def change(tree):
+                    if kind == "mode":
+                        git("update-index", "--chmod=+x", "new.txt", cwd=tree)
+                    else:
+                        if kind == "hidden":
+                            git("update-index", "--assume-unchanged", "new.txt", cwd=tree)
+                        (tree / ("extra.txt" if kind == "untracked" else "new.txt")).write_text("unchecked\n")
+                        if kind == "staged":
+                            git("add", "new.txt", cwd=tree)
+                        if kind == "hidden":
+                            self.assertEqual(git("status", "--porcelain", cwd=tree), "")
+                self.changed_while_waiting(kind, change)
+
+    def test_a_commit_added_during_checks_is_refused(self):  # AC-104
+        tree = self.tree("one")
+        self.commit(tree, "new.txt", "checked\n")
+        before = self.on_origin()
+        def smoke(tree):
+            self.commit(tree, "new.txt", "unchecked\n")
+            return True
+        with self.assertRaises(land.Stop):
+            land.land(tree, check=self.green, smoke=smoke, say=lambda _: None)
+        self.assertEqual(self.on_origin(), before)
+
+    def test_the_push_and_result_use_the_checked_commit_if_head_moves_after_comparison(self):  # AC-104
+        tree = self.tree("one")
+        checked = self.commit(tree, "new.txt", "checked\n")
+        real_git = land.git
+        def move_before_push(*args, **kwargs):
+            if args[0] == "push":
+                self.commit(tree, "new.txt", "unchecked\n")
+            return real_git(*args, **kwargs)
+        with mock.patch.object(land, "git", move_before_push):
+            self.assertEqual(land.land(tree, check=self.green, say=lambda _: None), checked)
+        self.assertEqual(self.on_origin(), checked)
+        self.assertNotEqual(git("rev-parse", "HEAD", cwd=tree), checked)
 
     def test_two_trees_touching_other_files_each_test_once(self):
         one, two = self.tree("one"), self.tree("two")

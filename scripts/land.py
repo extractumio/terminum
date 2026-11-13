@@ -24,7 +24,7 @@ import subprocess
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from check_changed import is_doc, red, skipped_note  # noqa: E402
+from check_changed import is_doc, red, skipped_note, tree_id  # noqa: E402
 from worktree import primary_of, Refused, releasing, Turn as TreeTurn  # noqa: E402
 
 BASE = "origin/main"
@@ -159,6 +159,17 @@ def has_code(files):
     return any(not is_doc(f) for f in files)
 
 
+def tree_state(tree):
+    """Both commit identity and file content: even an empty commit changes what may be pushed."""
+    return git("rev-parse", "HEAD", cwd=tree).stdout.strip(), tree_id(tree)
+
+
+def unchanged(tree, expected):
+    """Do not adopt concurrent edits, including index-only changes the content hash cannot see."""
+    if git("status", "--porcelain", cwd=tree).stdout.strip() or tree_state(tree) != expected:
+        raise Stop(1, f"{tree} changed while landing: nothing pushed; commit any changes and land again")
+
+
 def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", minutes=SMOKE_MOST_MINUTES),
          passed=lambda tree: checks_of(tree, "--passed"), say=print, after=lambda files: None):
     """Returns the commit landed. Stop if it did not land. `after(its files)` runs still in turn."""
@@ -167,18 +178,21 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", min
     git("fetch", "--quiet", "origin", cwd=tree)
     if git("merge-base", "--is-ancestor", "HEAD", BASE, cwd=tree, check=False).returncode == 0:
         return git("rev-parse", "HEAD", cwd=tree).stdout.strip()  # nothing of its own to land
+    expected = tree_state(tree)
     checked = passed(tree)   # the tree's own content, before the merge
     own_files = files_between(BASE, "HEAD", tree)
 
     def once(held):
         """One merge, its checks and the push: the commit landed, or None when origin/main moved meanwhile."""
-        nonlocal checked
+        nonlocal checked, expected
         git("fetch", "--quiet", "origin", cwd=tree)
+        unchanged(tree, expected)   # also after waiting for a retry's held turn
         base_now = git("rev-parse", BASE, cwd=tree).stdout.strip()
         ours = files_between(BASE, "HEAD", tree)
         others = files_between("HEAD", BASE, tree)
         if not has_base(tree):
             merge_base_in(tree)
+            expected = tree_state(tree)   # only our deliberate merge may replace the checked state
             say(f"merged {BASE} ({base_now[:9]})")
         if not checked or ours & others:
             if not check(tree):
@@ -189,13 +203,14 @@ def land(tree, check=checks_of, smoke=lambda tree: checks_of(tree, "--land", min
             raise Stop(1, f"smoke checks failed: {tree} stays with its merge of {BASE}, nothing pushed")
         with nullcontext() if held else Turn(tree):   # a second flock of the same file would wait for itself
             git("fetch", "--quiet", "origin", cwd=tree)
+            unchanged(tree, expected)
             if not has_base(tree):
                 say(f"{BASE} moved while this tree was checked")
                 return None
-            pushed = git("push", "--quiet", "origin", "HEAD:main", cwd=tree, check=False)
+            commit = expected[0]   # HEAD can move even after the last comparison
+            pushed = git("push", "--quiet", "origin", f"{commit}:main", cwd=tree, check=False)
             if pushed.returncode == 0:
                 git("fetch", "--quiet", "origin", cwd=tree)
-                commit = git("rev-parse", "HEAD", cwd=tree).stdout.strip()
                 after(own_files)  # minutes, when it installs: a sweep may take the tree, merged now
                 return commit
             git("fetch", "--quiet", "origin", cwd=tree)

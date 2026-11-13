@@ -494,6 +494,21 @@ Scenario: AC-104 edge — uncommitted work
   When make land runs
   Then it exits 1 saying "has uncommitted changes: commit them first" before any check
 
+Scenario Outline: AC-104 failure — work changes during landing
+  Given landing records the tree's commit and content before its checks
+  And <change> while the checks run or the tree waits for its landing turn, including a retry's held turn
+  When landing holds the turn before its push or retry merge
+  Then it exits 1 saying "changed while landing" and "nothing pushed", leaving the tree and freeing the turn
+  And only landing's own merge may replace the recorded state before checking the merged result
+  And an unchanged tree pushes and reports the recorded commit, even if HEAD moves after the final comparison
+
+  Examples:
+    | change                                      |
+    | another commit is added, even an empty one   |
+    | a tracked file is edited or staged          |
+    | an untracked file is added                  |
+    | an executable bit is changed in the index   |
+
 Scenario: AC-104 edge — several worktrees land at once
   Given worktrees one and two are each checked on their own
   When one lands while two's checks run
