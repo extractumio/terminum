@@ -156,6 +156,7 @@ const POOL_ALONE = process.argv.includes("boardpool");     // while working on t
 const SMOKE = process.argv.includes("smoke");
 const HISTORY_ALONE = process.argv.includes("history");   // while working on the Message history and the Dashboard
 const AUTO_ALONE = process.argv.includes("auto");             // while working on Auto-Dispatcher
+const QUEUE_ALONE = process.argv.includes("queue");  // the agent queue, without the scheduling suites
 const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
 const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 const ICONS_ALONE = process.argv.includes("iconkeys");    // while working on icon keys' focus
@@ -217,8 +218,8 @@ async function wide(browser, name) {
     await boards([liveIconKeys]);
     return ctx;
   }
-  if (SCHEDULES_ALONE) {
-    await boards([liveFolded, liveSchedules, liveQueue]);
+  if (SCHEDULES_ALONE || QUEUE_ALONE) {
+    await boards(QUEUE_ALONE ? [liveQueue] : [liveFolded, liveSchedules, liveQueue]);
     return ctx;
   }
   if (TASKS_ALONE) {
@@ -417,9 +418,9 @@ async function phone(browser, name) {
     await ctx.close();
     return;
   }
-  if (SCHEDULES_ALONE) {
+  if (SCHEDULES_ALONE || QUEUE_ALONE) {
     const shots = { ...live, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
-    await liveFolded(page, shots);
+    if (!QUEUE_ALONE) await liveFolded(page, shots);
     await liveQueue(page, shots);
     await ctx.close();
     return;

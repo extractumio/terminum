@@ -88,7 +88,7 @@ async function load(reset = false) {
       const got = await Promise.all(Array.from({ length: pages }, (_, n) => api(`/api/tasks?${queries.get(c)}&after=${n * PAGE}${i === 0 && !n ? "&counts=1" : ""}`)));
       return { tasks: got.flatMap((g) => g.tasks), counts: got[0].counts, slots: got[0].slots, readings: got[0].subscriptions };
     }));
-    if (mine !== loading) return;
+    if (mine !== loading) return parts[0].slots;    // a queue's post-write reconciliation still needs this snapshot
     cards = new Map(COLUMNS.map((c, i) => [c, parts[i].tasks]));
     cardQueries = queries;
     counts = parts[0].counts;
@@ -99,6 +99,7 @@ async function load(reset = false) {
     banner();
     draw();
     moreState();
+    return parts[0].slots;
   } catch (e) {
     if (mine !== loading) return;
     failed.tasks = e.message;
@@ -266,6 +267,7 @@ const folds = foldedCards((id) => openTask(id));
 const side = boardSessions({ chosen: () => filters().project, openTask, send, narrow, newSession: () => newSession(projectOf(filters().project[0])) });
 const runs = runWindow({ addAgent: () => agents.add(), noFolder: askFolder, done: (waits) => { if (waits) say(waits); readSoon(); } });
 const agents = agentsSection({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta, slots: () => slots, liveRow: (key) => liveRows.get(key),
+  refreshQueue: async (id) => { const got = await load(); return got ? (got.queue?.[id] ?? []) : undefined; },
   dragging: () => dragging, given: () => dragging ?? (picked.size ? pickedTasks() : null), run: runThem, openSession, readings: () => readings, openTask });
 $("agentbar").append(agents.box);
 const scheduled = scheduledSection({ getMeta: () => meta, chosen: () => filters().project, openTask });

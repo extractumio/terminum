@@ -106,6 +106,25 @@ export async function liveQueue(page, live) {
   }
   check("AC-169 a row dragged to the top starts first", await listed([b, a, c]), JSON.stringify([await rows(), await queue()]));
 
+  // AC-169: release coordinates decide the drop, even when the last movement was not delivered.
+  // Start from a,c,b; the last move places b below a, but the release is inside a's upper half.
+  await j(`/api/task-agents/${agent}/queue`, "POST", { tasks: [a, c, b] });
+  await listed([a, c, b]);
+  const dropped = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith(`/api/task-agents/${agent}/queue`));
+  await page.evaluate(([a, b]) => {
+    const item = (id) => document.querySelector(`#agentqueue .item[data-id="${id}"]`);
+    const list = document.querySelector("#agentqueue .agqueuelist");
+    const rect = (id) => item(id).closest("li").getBoundingClientRect();
+    const fire = (type, target, x, y) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 73, pointerType: "mouse", isPrimary: true, button: 0, clientX: x, clientY: y }));
+    const from = rect(b), to = rect(a), x = from.left + from.width / 3;
+    fire("pointerdown", item(b), x, from.top + from.height / 2);
+    fire("pointermove", list, x, to.top + to.height * 3 / 4);
+    const atRelease = rect(a);
+    fire("pointerup", list, x, atRelease.top + atRelease.height / 4);
+  }, [a, b]);
+  const posted = (await dropped).postDataJSON();
+  check("AC-169 release position decides the sent and persisted queue order", posted.tasks.join() === [b, a, c].join() && await listed([b, a, c]), JSON.stringify([posted, await rows(), await queue()]));
+
   // an order of a queue that changed is refused; a task taken out
   const stale = await j(`/api/task-agents/${agent}/queue`, "POST", { tasks: [a, b] });
   check("AC-169 an order of another queue is refused", /The queue changed meanwhile/.test(stale.error ?? ""), JSON.stringify(stale));

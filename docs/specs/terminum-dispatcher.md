@@ -1081,6 +1081,22 @@ Scenario: AC-169 edge — a phone
   Given the board on a phone
   Then the queue's rows fit the window with no sideways scroll, the project's name left out, and each key is a finger wide
 
+Scenario: AC-169 edge — changes while a gesture or write is pending
+  Given API-13, API-15 and API-16 in the queue
+  When the user presses API-16's up key twice before the first write answers
+  Then both moves appear at once and their writes reach terminumd in press order
+  And an older board read cannot undo those moves; the list reconciles with terminumd after the writes
+  When a board read changes the order between an arrow's press and release
+  Then the arrow still clicks and moves its named task within that order
+  And a refused write says why, without rolling back later queued intent or changing another agent's window
+
+Scenario: AC-169 edge — the release decides the drop
+  Given API-13, API-16 and API-15 in the queue, and API-15 being dragged
+  And its last movement puts its slot below API-13
+  When the pointer is released inside API-13's upper half, with no further movement event
+  Then the page sends and keeps API-15, API-13, API-16: the release position decides the drop
+  And Esc before release restores the original order and sends no change
+
 Scenario: AC-169 failure — the queue changed meanwhile
   Given another page took API-15 out
   When this page sends an order naming API-15

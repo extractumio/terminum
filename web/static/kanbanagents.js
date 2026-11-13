@@ -16,7 +16,7 @@ const KINDS = ["claude", "codex"];                 // their commands are their n
 /** `getMeta()`: terminumd's agents; `chosen()`: the projects shown, none for all; `slots()`: what each agent's slots hold, as terminumd counts them;
  *  `liveRow(key)`: a session's row; `dragging()`: the tasks of a drag; `given()`: those a press or a drop would run on an
  *  agent; `run(tasks, agent)`; `readings()`: each kind's subscription windows (AC-168); `openTask(id)`. */
-export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask }) {
+export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: counted, liveRow, dragging, given, run, openSession, readings, openTask }) {
   // on the columns' tracks: an agent a column wide, its keys in the fifth (kanban.css .tracks)
   const box = el("section", "agents tracks"), list = el("div", "agentlist trackitems"), side = el("div", "trackside");
   const addKey = iconButton("icon", "plus", "Add agent", "Add an agent to the pool", () => open());
@@ -159,7 +159,7 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     return `${base} ${n}`;
   }
 
-  const queue = queueList($("agentqueue"), { projectName, say });
+  const queue = queueList($("agentqueue"), { projectName, say, refresh: refreshQueue });
 
   /** Its window: a new one, or `a` to change; `atQueue`: its queue shown first. */
   function open(a = null, atQueue = false) {
@@ -168,11 +168,11 @@ export function agentsSection({ getMeta, chosen, reload, slots: counted, liveRow
     for (const k of ["kind", "name", "command", "at_once", "week_limit", "month_limit"]) field[k].value = v[k] ?? "";
     fillEfforts(v.effort);
     showView(a);
-    queue.show(a, a ? queueOf(a) : []);
+    say("");
+    queue.show(a, a ? queueOf(a) : [], true);
     $("agenthead").textContent = a ? a.name : "Add agent";
     $("agentok").textContent = a ? "Save" : "Add";
     $("agentdrop").hidden = !a;
-    say("");
     snapshot = JSON.stringify(values());
     dialog.showModal();
     if (atQueue) queue.at();
