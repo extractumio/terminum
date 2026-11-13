@@ -62,6 +62,23 @@ fn ac154_severity_and_parent_of_an_agents_task_change_its_author_the_agent() {
 }
 
 #[test]
+fn ac154_a_bug_is_never_left_below_p2() {
+    let (s, dir) = fresh("gr-floor");
+    let (bug, debt) = (agents_task(&s, &dir, "Bug: a"), agents_task(&s, &dir, "Debt: b"));
+    assert_eq!(call(&s, &dir, json!({"id": bug, "severity": "P3"})).unwrap_err(), BUG_FLOOR);
+    assert_eq!(task(&s, &bug).severity, "P2", "nothing changed");
+    call(&s, &dir, json!({"id": debt, "severity": "P3"})).unwrap();
+    assert_eq!(call(&s, &dir, json!({"id": debt, "title": "Bug: b"})).unwrap_err(), BUG_FLOOR, "a P3 task does not become a bug");
+    assert_eq!(call(&s, &dir, json!({"id": debt, "title": "b", "severity": "P3"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.", "its own fault only");
+    call(&s, &dir, json!({"id": debt, "title": "Bug: b", "severity": "P1"})).unwrap();
+    assert_eq!((task(&s, &debt).title.as_str(), task(&s, &debt).severity.as_str()), ("Bug: b", "P1"));
+    // a human's bug at P3 is the human's: an agent still regroups it
+    let h = s.with(|tx| ops::create(tx, HUMAN, NewTask { title: "Bug: old".into(), project: Some("api".into()), severity: Some("P3".into()), ..Default::default() }, 1)).unwrap().id;
+    call(&s, &dir, json!({"id": h, "parent": bug, "reason": "one cause"})).unwrap();
+    assert_eq!(task(&s, &h).severity, "P3");
+}
+
+#[test]
 fn ac154_a_humans_task_changes_only_with_its_reason() {
     let (s, dir) = fresh("gr-human");
     let h = humans_task(&s, "api");

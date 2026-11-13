@@ -21,6 +21,14 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
    *  their way; Close and Run wait for them (AC-133). */
   let note = null;
   const leftWaiting = new Map();                   // the comments of tasks left while their files were on their way
+  let commentClose = null, commentId = null, pendingKeys = null;
+
+  const flushKeys = () => { const paint = pendingKeys; pendingKeys = null; paint?.(); };
+  // A release outside the key (or a cancelled touch) sends no click; give the footer its latest keys too.
+  const released = () => {
+    if (pendingKeys) requestAnimationFrame(() => { if (!commentClose?.matches(":active")) flushKeys(); });
+  };
+  for (const type of ["pointerup", "pointercancel", "keyup"]) document.addEventListener(type, released);
 
   /** A change of a field: whether terminumd took it. The window shows what stands; a text being
    *  typed stays (refresh). The board hears of it from terminumd. */
@@ -230,7 +238,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   /** The comment's keys at the window's foot, for `t` as it stands. */
   function commentKeys(t, n) {
     const area = n.area;
-    const close = button(t.run_holds ? "primary" : null, "Close", () => keepComment(n, t));
+    // A refresh keeps the key under the press; a different task gets a key of its own.
+    if (commentId !== t.id) {
+      commentClose = button(null, "Close");
+      commentClose.addEventListener("click", flushKeys);   // after the target is chosen, before its save handler
+      commentId = t.id;
+    }
+    const close = commentClose;
+    close.classList.toggle("primary", Boolean(t.run_holds));
+    close.onclick = () => keepComment(n, t);
     // Run: the comment goes with it, and on in its session or a new one (terminum-dispatcher.md AC-122)
     const run = button(t.run_holds ? null : "primary", "Run", async () => {
       try {
@@ -252,7 +268,15 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     const shelve = button(null, t.archived_at ? "Bring back" : "Archive", () => api(`/api/tasks/${t.id}/archive`, { method: "POST", body: { on: !t.archived_at } }).then(() => refresh(), (e) => say(e.message)));
     shelve.classList.add("evenleft");
     // its keys at the window's foot, in sight while the task scrolls above them
-    $("taskacts").replaceChildren(...[t.run_holds ? null : shelve, giveUp, stopWaiting, close, t.run_holds || t.waits ? null : run].filter(Boolean));
+    const acts = $("taskacts"), paint = () => {
+      for (const key of [...acts.children]) if (key !== close) key.remove();
+      if (close.parentNode !== acts) acts.append(close);
+      close.before(...[t.run_holds ? null : shelve, giveUp, stopWaiting].filter(Boolean));
+      if (!t.run_holds && !t.waits) close.after(run);
+    };
+    // Removing Run would move Close out from under the release. Keep its slot until the click or cancellation.
+    pendingKeys = close.matches(":active") ? () => { if (close.isConnected && box.open) paint(); } : null;
+    if (!pendingKeys) paint();
   }
 
   /** A change terminumd must take, or it throws its refusal (a dialog says it); the window shows what stands. */
@@ -288,15 +312,20 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     body.scrollTop = scroll;
   }
 
-  /** The newest asked is the one that shows, whichever answers last; one closed or called off (`forget`) meanwhile
-   *  shows nothing. */
+  /** The newest asked is the one that shows, whichever answers last; whether this read opened it. */
   async function open(id) {
     const mine = ++opening;
     reading++;                                     // a read of what showed before stands over nothing
-    const t = await api(`/api/tasks/${id}`);
-    if (mine !== opening) return;
+    let t;
+    try { t = await api(`/api/tasks/${id}`); } catch (e) {
+      if (mine !== opening) return false;
+      throw e;
+    }
+    if (mine !== opening) return false;
+    if (!box.open) commentId = null;              // reopening is a new press target, even for the same task
     draw(t);
     if (!box.open) box.showModal();
+    return true;
   }
 
   /** A text being edited, changed from what shows. */
@@ -304,14 +333,12 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
 
   /** Closes it; an edit not saved is asked about first. Whether it closed. */
   async function tryClose() {
-    if (edited() && !await askConfirm("Discard your edit? It is not saved.", "Discard")) return false;
-    shut();
+    if (box.open && edited() && !await askConfirm("Discard your edit? It is not saved.", "Discard")) return false;
+    opening++;                                  // a read still waiting cannot reopen what the user closed
+    pendingKeys = null;
+    box.close();
     return true;
   }
-
-  /** Closed, or called off before it showed (Back): an open still on its way shows nothing. */
-  const forget = () => { opening++; };
-  const shut = () => { forget(); box.close(); };
 
   /** Reads it again; a text being edited holds until it is saved (`saved`). What the page only heard
    *  of (`news`) and answers the same draws nothing: no Markdown again, no picture fetched again. */
@@ -328,6 +355,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
   }
 
   $("taskclose").addEventListener("click", tryClose);
-  box.addEventListener("cancel", (e) => { if (e.defaultPrevented) return; if (edited()) { e.preventDefault(); tryClose(); } else forget(); });
-  return { open, refresh, tryClose, forget, shows: (id) => box.open && shown?.id === id, shownId: () => shown?.id };
+  box.addEventListener("cancel", (e) => { if (e.defaultPrevented) return; e.preventDefault(); tryClose(); });   // held while a comment is kept (AC-165)
+  box.addEventListener("close", () => { if (!box.open) pendingKeys = null; });
+  return { open, refresh, tryClose, shows: (id) => box.open && shown?.id === id, shownId: () => shown?.id };
 }

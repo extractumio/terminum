@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use super::family;
 use super::ops::{self, Edit, Task};
-use super::tools::{arg, author, not_run_elsewhere, visible, words_of, Who};
+use super::tools::{arg, author, below_floor, not_run_elsewhere, visible, words_of, Who, BUG_FLOOR};
 use crate::plans::rules;
 
 /// What `parent` says to take a task out of its parent.
@@ -51,6 +51,10 @@ pub(super) fn update(tx: &Transaction, who: &Who, args: &Value, at: i64) -> Resu
     }
     let mut faults = Vec::new();
     let (title, text) = words_of(tx, &t.project, title, text, &mut faults);
+    // a change of its title or severity never leaves a bug below P2; what stood so before stays for a human
+    if (title.is_some() || severity.is_some()) && below_floor(title.as_deref().unwrap_or(&t.title), severity.unwrap_or(&t.severity)) {
+        faults.push(BUG_FLOOR.to_string());
+    }
     if !faults.is_empty() {
         return Err(faults.join("\n"));
     }
