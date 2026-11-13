@@ -52,7 +52,10 @@ sys.exit(0)
 def cleanup_children(expected):
     for pid, started in identities(expected).items():
         if expected[pid] == started:
-            os.kill(pid, signal.SIGKILL)
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def ask(t, action):
