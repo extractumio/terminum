@@ -55,7 +55,7 @@ export async function liveQueue(page, live) {
   await shot("queue-agent");
   await page.click(`${owl} .agqueue`);
   await page.waitForSelector("#agentbox[open]");
-  const rows = () => page.$$eval("#agentqueue .agqueued:not(.dragghost) .item", (l) => l.map((i) => i.dataset.id));
+  const rows = () => page.evaluate(() => [...document.querySelectorAll("#agentqueue .agqueued:not(.dragghost) .item")].map((i) => i.dataset.id));
   const listed = async (ids) => until(async () => (await rows()).join() === ids.join() && (await queue()).join() === ids.join(), 8000);
   check("AC-169 its key opens the agent's window at its queue", await listed([a, b, c]) && await page.isVisible("#agentqueue .agqueuelist"), JSON.stringify(await rows()));
   const fits = await page.evaluate(() => {
@@ -74,7 +74,8 @@ export async function liveQueue(page, live) {
   check("AC-169 an arrow moves a task one place", await listed([a, c, b]), JSON.stringify(await rows()));
 
   // a drag: a mouse at once; a finger rests on the row first
-  const mid = async (id) => page.$eval(`#agentqueue .item[data-id="${id}"]`, (i) => { const r = i.closest("li").getBoundingClientRect(); return { x: r.left + r.width / 3, y: r.top + r.height / 2, h: r.height }; });
+  // Query and measure together: a read may replace a row between $eval's lookup and its callback.
+  const mid = async (id) => page.evaluate((id) => { const r = document.querySelector(`#agentqueue .item[data-id="${id}"]`).closest("li").getBoundingClientRect(); return { x: r.left + r.width / 3, y: r.top + r.height / 2, h: r.height }; }, id);
   if (narrow) {
     const from = await mid(b), to = await mid(a);
     const finger = (type, at) => page.$eval("#agentqueue .agqueuelist", (list, [type, at, id]) => {
@@ -105,6 +106,25 @@ export async function liveQueue(page, live) {
     await page.mouse.up();
   }
   check("AC-169 a row dragged to the top starts first", await listed([b, a, c]), JSON.stringify([await rows(), await queue()]));
+
+  // AC-169: release coordinates decide the drop, even when the last movement was not delivered.
+  // Start from a,c,b; the last move places b below a, but the release is inside a's upper half.
+  await j(`/api/task-agents/${agent}/queue`, "POST", { tasks: [a, c, b] });
+  await listed([a, c, b]);
+  const dropped = page.waitForRequest((r) => r.method() === "POST" && r.url().endsWith(`/api/task-agents/${agent}/queue`));
+  await page.evaluate(([a, b]) => {
+    const item = (id) => document.querySelector(`#agentqueue .item[data-id="${id}"]`);
+    const list = document.querySelector("#agentqueue .agqueuelist");
+    const rect = (id) => item(id).closest("li").getBoundingClientRect();
+    const fire = (type, target, x, y) => target.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 73, pointerType: "mouse", isPrimary: true, button: 0, clientX: x, clientY: y }));
+    const from = rect(b), to = rect(a), x = from.left + from.width / 3;
+    fire("pointerdown", item(b), x, from.top + from.height / 2);
+    fire("pointermove", list, x, to.top + to.height * 3 / 4);
+    const atRelease = rect(a);
+    fire("pointerup", list, x, atRelease.top + atRelease.height / 4);
+  }, [a, b]);
+  const posted = (await dropped).postDataJSON();
+  check("AC-169 release position decides the sent and persisted queue order", posted.tasks.join() === [b, a, c].join() && await listed([b, a, c]), JSON.stringify([posted, await rows(), await queue()]));
 
   // an order of a queue that changed is refused; a task taken out
   const stale = await j(`/api/task-agents/${agent}/queue`, "POST", { tasks: [a, b] });

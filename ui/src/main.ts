@@ -13,6 +13,7 @@ import { contextMenu } from "./context-menu";
 import { acceptFromPage, emptiedOutside, escapedOutside, openOutside, PIN, PIN_CWD, PIN_HOST, pinKey, revealOutside } from "./embed";
 import { applyTheme } from "./theme";
 import { redrawDiagrams } from "./mermaid";
+import { initSplitter } from "./splitter";
 import { Tree, type EditMode } from "./tree";
 import { bindDrag, bindHold } from "./tree-drag";
 import { bindDrop } from "./tree-drop";
@@ -102,9 +103,12 @@ function saveNow(): Promise<void> {
   return saving;
 }
 
+/** terminumd has this panel's state (nothing to send, or the last write took it). */
+const inSync = (snap = snapshot()) => !snap || !key || content(snap) === content(ws!);
+
 async function saveOnce() {
   const snap = snapshot(), k = key;
-  if (!snap || !k || content(snap) === content(ws!)) return;
+  if (!snap || !k || inSync(snap)) return;
   const previous = ws, run = workspaceRun;
   const current = () => key === k && ws === previous && run === workspaceRun;
   try {
@@ -332,19 +336,6 @@ function setSplit(r: number) {
   $("app").style.setProperty("--split", `${prefs.split * 100}%`);
 }
 
-function initSplitter() {
-  const sp = $("splitter");
-  sp.addEventListener("pointerdown", (e) => {
-    sp.setPointerCapture(e.pointerId);
-    const app = $("app").getBoundingClientRect(), top = $("tree").getBoundingClientRect().top;
-    const move = (ev: PointerEvent) => setSplit((ev.clientY - top) / (app.bottom - top));
-    const up = () => { sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up); savePrefs(); };
-    sp.addEventListener("pointermove", move);
-    sp.addEventListener("pointerup", up);
-  });
-  sp.addEventListener("dblclick", () => { setSplit(0.5); savePrefs(); });
-}
-
 // ── wiring ───────────────────────────────────────────────────────────────────
 
 // ⌘-click asks the page for a window of its own (AC-70); without a page around, a tab here
@@ -389,7 +380,8 @@ function revealInTree(p: string) {
   });
 }
 
-const busy = () => viewer.hasDirty || !!document.querySelector(".modal, .inline-edit.on, dialog[open]");
+// a panel state terminumd lacks (a write pending or refused) holds a reload too: it would be lost
+const busy = () => viewer.hasDirty || !inSync() || !!document.querySelector(".modal, .inline-edit.on, dialog[open]");
 // The page reloads after an upgrade only while none of its frames is busy (AC-16).
 if (PROXIED) (window as unknown as { fbBusy: () => boolean }).fbBusy = busy;
 const upgrade = new Upgrade({
@@ -479,7 +471,8 @@ if (!PROXIED) notice("Not served by terminumd", "Open Files from terminum's page
 
 (async () => {
   if (VIEW) return startViewer(VIEW);
-  initSplitter();
+  initSplitter($("splitter"), () => ({ top: $("tree").getBoundingClientRect().top, bottom: $("app").getBoundingClientRect().bottom }),
+    setSplit, savePrefs);
   renderHeader(term);
   // this panel starts from the latest layout; changing it later updates the default only
   let denied = "";

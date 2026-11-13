@@ -22,6 +22,7 @@ import { listFoot, showBuild } from "./foot.js";
 import { cellAt, cursorCell, shellMove } from "./cursor.js";
 import { BoxMoves } from "./boxnav.js";
 import { selectionCut } from "./selcut.js";
+import { answer } from "./requests.js";
 import { switchGate } from "./switchgate.js";
 import { askConfirm } from "./dialogs.js";
 import { navTools } from "./navtools.js";
@@ -88,7 +89,6 @@ const conn = connection({ parse: (data) => trace.parse(data), onMessage: (m) => 
     if (st.sid) select(st.sid, true);
     if (!embedded || focusAsked) focusTerminal();  // a computer types into the chat at once; a phone opens no keyboard
   } });
-// Nothing typed waits for a connection: it would arrive late, all at once (AC-14).
 function send(m) {
   trace.sent(m);
   const sent = conn.send(m);
@@ -103,11 +103,12 @@ const files = uploads({ sid: () => st.sid, host: () => itemOf(st.sid)?.host ?? n
 // The lines kept on the page while it follows the output: each one is laid out on every frame, a
 // phone's on every touch too (AC-52; a computer with 20,000: 39 ms a frame).
 const view = new TermView({ term: $("term"), hist: $("hist"), screen: $("screen"), note: $("note"),
-  bottomBtn: $("bottom"), paused: $("paused"), send, keep: touch.matches ? 2000 : 5000 });
+  bottomBtn: $("bottom"), paused: $("paused"), send, notify: toast, keep: touch.matches ? 2000 : 5000 });
 // Sizing and full-screen programs (AC-04, AC-05, AC-13), settings.json's page defaults (AC-19): before anything draws.
 const sizing = paneSizing({ view, send, sid: () => st.sid, refit: () => view.keepBottom(syncControls), notify: (text) => toast(text, 9000),
   copied: (pick) => bookmarks.picker.program(pick) });   // a full-screen program's own selection (AC-06)
 // another pane opened: the one shown stays until the new one has this view's grid, then it is drawn at once (AC-04)
+view.onOlder = (m) => widgets.folds.add(m.folds);
 const gate = switchGate({ release: (queue, reset) => { reset(); for (const m of queue) onMessage(m); } });
 const settings = pageSettings({ toast, setLayout: (rows) => { input.setLayout(rows); syncControls(); }, onPage: (page) => {
   if (page.textSize) setBase(page.textSize);
@@ -217,12 +218,12 @@ $("attachfab").addEventListener("click", pickFile);
 $("attachfab").addEventListener("mousedown", (e) => e.preventDefault());   // the terminal keeps the keys
 files.bindDrop($("term"));
 
-const tools = navTools({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
+const tools = navTools({ send, store, onCreated: (m) => { if (!m.stay) pick(m.id); }, current: () => (st.sid && findItem(st.groups, st.sid)) || null, groups: () => st.groups,
   onResize: () => view.keepBottom(applyFit), onRenamed: () => (computer.matches ? focusTerminal() : document.activeElement?.blur()) });
 dockGrip({ store, cellWidth: () => view.charRatio() * view.chosenSize(), onResize: () => view.keepBottom(applyFit) });   // docked Files' width (AC-70)
 const menu = paneMenu({ send, pick: (id) => pick(id), signOut: () => conn.signOut(), copy: (text) => input.copySelection(text) });
 const quick = quickShell({ send, store, current: () => (st.sid && findItem(st.groups, st.sid)) || null, item: (id) => findItem(st.groups, id)?.item,
-  pick: (id) => pick(id), askConfirm, narrow });
+  pick: (id) => pick(id), askConfirm, narrow, notify: toast });
 
 // ---------- the keys go back to the terminal (a computer only) ----------
 // With a mouse and a hardware keyboard, typing goes to the terminal again when the user comes
@@ -268,12 +269,13 @@ addEventListener("focus", syncActive);
 addEventListener("blur", () => setTimeout(syncActive, 0));   // the focus may have gone into the Files frame
 
 function onMessage(m) {
-  if (m.sid && m.sid !== st.sid) return;            // a frame from the session we just left
+  if (m.sid && m.sid !== st.sid) return void answer({ ...m, error: "The pane shown changed.", cancelled: true });
   if (gate.take(m)) return;                         // the pane just opened, until its first frame
   trace.received(m);
+  if (answer(m)) return;
   bookmarks.seen(m);
   rail?.seen(m);
-  ask.seen(m); asked.seen(m); rowMenu.seen(m); tools.seen(m);
+  asked.seen(m); rowMenu.seen(m); tools.seen(m);
   switch (m.t) {
     case "layout": st.groups = m.groups; tasks.layout(m.groups); place.note(); seeWaits(st.groups, st.sid); st.ran = false; if (!embedded) reminders.layout(m.groups); drawNav(); reminded.draw(); ask.sync(); tools.layoutCame(m.groups); views.forget(m.groups); break;
     case "theme": themeSent = m.theme; applyTheme(schemes.over(m.theme)); break;
@@ -281,9 +283,6 @@ function onMessage(m) {
       if (m.mode === "reset") widgets.folds.reset();
       widgets.folds.add(m.folds); view.onHist(m); break;
     case "folds": widgets.folds.add(m.items); widgets.keepPlace(() => widgets.update(false, true)); break;   // lines that scrolled off
-    case "lines":
-      if (m.error) { widgets.folds.failed(m.first); toast(m.error, 5000); break; }
-      view.refill(m.first, m.lines); widgets.keepPlace(() => widgets.folds.filled(m.first, m.lines.length)); break;
     case "screen": if ("folds" in m) widgets.folds.screen(m.folds); view.onScreen(m); sizing.sync(); break;
     case "sized": sizing.onSized(m); break;
     case "copied": sizing.onCopied(m); break;   // what a full-screen program copied after our release (AC-06)
@@ -291,7 +290,7 @@ function onMessage(m) {
     case "restore": if (!embedded) menu.showRestore(m.report); break;
     case "files": if (embedded) views.answered(m); else views.onFiles(m); break;   // a quick shell has no Files
     case "quickmade": quick.made(m); break;
-    case "error": if (!m.msg) status(""); else if (!tools.formError(m.msg)) status(m.msg); break;   // empty: tmux is back
+    case "error": if (!m.msg) status(""); else status(m.msg); break;   // empty: tmux is back
     case "update": if (!embedded) menu.showUpdate(m.latest); break;
     case "note": toast(m.msg, 4000); break;
     case "stall": tools.showStall(m); drawNav(); break;
@@ -370,7 +369,6 @@ function toggleGroup(key) {
   drawNav();
 }
 
-// The header (header.js): the title, then the folder with its Copy, the window, what runs there.
 const showCurrent = pageHeader({ narrow, copy: (text) => input.copySelection(text, true), renaming: () => tools.renaming(), setAgent: (a) => { view.setAgent(a); sizing.sync(); },
   send, sid: () => st.sid, toChat: (text) => bookmarks.toChat(text), tasks: () => taskMarksOf(st.sid), toast, onShown: tools.sayStalls });
 
@@ -378,6 +376,8 @@ function select(id, force = false) {
   if (id) tasks.address(id);
   if (id === st.sid && !force && view.screen.length) return;
   st.sid = id; document.body.dataset.sid = id ?? ""; store.set("sid", id); place.note(); seeWaits(st.groups, id);
+  view.pages.cancel();
+  widgets.folds.cancel();
   recent.shown(id);
   status("");                                      // an error about the pane shown before
   if (tools.renaming()) tools.endRename();         // a name being typed was for that pane

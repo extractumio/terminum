@@ -255,6 +255,7 @@ fn ac145_what_is_left_to_do_says_its_kind_and_severity() {
     let ((s, dir), w) = (fresh("tools-left"), who(Some("api")));
     assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "a gap", "severity": "P2"})).unwrap_err(), "Start the title with Bug:, Feat: or Debt:.");
     assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Feat: a gap"})).unwrap_err(), "Give it a severity: P0, P1, P2 or P3.");
+    assert_eq!(call(&s, &dir, &w, "create_task", json!({"title": "Bug: a small gap", "severity": "P3"})).unwrap_err(), BUG_FLOOR);
     for title in ["Bug: drops a BOM", "Feat: paging", "Debt: two copies of a rule"] {
         assert!(call(&s, &dir, &w, "create_task", json!({"title": title, "severity": "P2"})).unwrap().starts_with("Kept as"), "{title}");
     }
@@ -451,4 +452,34 @@ fn ac166_follow_ups_that_name_no_task_are_reminded() {
     assert_eq!(finish(&id, &format!("Further recommendations: replay it, {other}")), format!("{id} is DONE, with your result."), "one that names its task");
     let id = started();
     assert_eq!(finish(&id, "Outcome: done"), format!("{id} is DONE, with your result."), "every follow-up None");
+}
+
+#[test]
+fn ac185_a_main_task_is_finished_after_the_subtasks_of_its_run() {
+    use crate::dispatcher::runs::{self, Phase, Run};
+    let (s, dir) = fresh("tt-main");
+    let w = who(Some("api"));
+    let main = task(&s, "api", Some(KEY));
+    let (kid, later) = s.with(|tx| {
+        let made = |title: &str| ops::create(tx, HUMAN, NewTask { title: title.into(), text: "body".into(), project: Some("api".into()), parent: Some(main.clone()), ..Default::default() }, 1).map(|t| (t.id, t.key));
+        let (kid, later) = (made("kid")?, made("made after the run started")?);
+        let run = runs::add(tx, &Run { agent_id: "x".into(), ..Default::default() }, &[ops::key_of(tx, &main)?, kid.1], Default::default(), 2)?;
+        runs::change(tx, &run, |r| { r.state = Phase::Working; r.pane_key = Some(KEY.into()); })?;
+        Ok((kid.0, later.0))
+    }).unwrap();
+    // one question, and what is in progress waits with it: the session can close
+    let status = |id: &str| s.with(|tx| ops::get(tx, id)).unwrap().status;
+    s.with(|tx| { ops::link(tx, HUMAN, &kid, Some(KEY), 2)?; ops::move_to(tx, HUMAN, &main, "IN PROGRESS", 2)?; ops::move_to(tx, HUMAN, &kid, "IN PROGRESS", 2) }).unwrap();
+    let asked = call(&s, &dir, &w, "ask_human", json!({"id": kid, "questions": "v1 or v2?"})).unwrap();
+    assert!(asked.ends_with("this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."), "{asked}");
+    assert_eq!((status(&main), status(&kid), status(&later)), ("WAIT FOR HUMAN".to_string(), "WAIT FOR HUMAN".to_string(), "TODO".to_string()));
+    let refused = call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap_err();
+    assert_eq!(refused, format!("{main} is a main task: its subtasks of this run are not DONE: {kid}. Finish them first, or move {main} to FAILED with a comment saying why."));
+    assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": main, "to": "DONE"})).unwrap_err(), refused, "nor by a move");
+    call(&s, &dir, &w, "move_task", json!({"id": kid, "to": "FAILED"})).unwrap();
+    // its run over, a session going on with the subtask alone ends no main task
+    s.with(|tx| runs::change(tx, &runs::last_of(tx, &ops::key_of(tx, &main)?)?.unwrap().id, |r| { r.state = Phase::Closed; r.pane_key = None; })).unwrap();
+    assert!(call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).is_err(), "a failed subtask fails its main task: it is not DONE");
+    call(&s, &dir, &w, "finish_task", json!({"id": kid, "result": "the subtask"})).unwrap();
+    assert_eq!(call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap(), format!("{main} is DONE, with your result."), "{later} is none of the run's");
 }

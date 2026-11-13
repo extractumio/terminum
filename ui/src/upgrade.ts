@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Working through a terminumd restart or an upgrade (AC-16). A short gap shows only an amber
 // dot; when terminumd is back the panel re-reads what it shows; a panel of another build
-// (state.build) reloads itself in place once nothing is unsaved or in progress: its URL names
-// the pane, terminumd keeps its workspace. A lazy chunk that is gone means the same: this
-// page is old.
+// (state.build) reloads itself in place once nothing is unsaved or in progress and its
+// workspace is saved: its URL names the pane, terminumd keeps its workspace. A lazy chunk that
+// is gone means the same: this page is old.
 
 import { session } from "./api";
 
@@ -11,7 +11,8 @@ const GRACE = 3000;
 const RELOADED = "fb.reloaded-for";
 
 export interface UpgradeHost {
-  busy(): boolean;                 // unsaved tabs, a dialog, an inline edit or a save running
+  busy(): boolean;                 // unsaved tabs, a dialog, an inline edit, a save running, or
+                                   // a workspace terminumd does not have yet
   beforeReload(): Promise<void>;   // persist the workspace
   waiting(text: string): void;     // tell the user an update is waiting for them
 }

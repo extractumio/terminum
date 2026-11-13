@@ -66,8 +66,8 @@ Open questions: none.
 | AC-113 | [MUST / P0] | A task has at most one session, a session one IN PROGRESS task at most; moving a task across projects asks about its session; a closed session is said on the card. |
 | AC-114 | [MUST / P0] | [DROPPED — a human no longer moves a task across the board: AC-107] |
 | AC-115 | [MUST / P0] | `terminum mcp` lists, reads, makes, moves, comments and finishes tasks of the agent's project, whatever session made or holds them, but one a human's RUN holds in another session; a free task can be taken. |
-| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
-| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason. |
+| AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
+| AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
 | AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab. |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
@@ -408,6 +408,7 @@ Scenario: AC-112 edge — gone from the board
 
 Scenario: AC-112 edge — run on its own
   Then RUN works on a subtask as on any task (terminum-dispatcher.md AC-121): its parent is named in the prompt and does not run with it
+  And RUN on API-12 itself takes its subtasks not DONE into its session (terminum-dispatcher.md AC-185)
 
 Scenario Outline: AC-112 failure — refused, said in the dialog
   When the user puts <task> under <parent>
@@ -508,6 +509,7 @@ Scenario: AC-145 happy path
   When it calls create_task {title: "Bug: the retry loop drops the last item", severity: "P1", text: "lib/retry.rs: ..., reproduced by ..."}
   Then API-30 stands in TODO of api, by that agent, with that severity
   And `terminum mcp`'s instructions say: only what must be done, fixed or finished, no progress and no findings of no consequence, each with what is needed to act on it
+  And they say "a Bug: never below P2"; create_task's description says a Bug: is P1 or above with impact (lost or blocked work, a wrong result, a red main), else P2
 
 Scenario Outline: AC-145 failure — refused with what to do
   When it calls create_task with <what>
@@ -516,6 +518,7 @@ Scenario Outline: AC-145 failure — refused with what to do
     | what | words |
     | a title with no such word | Start the title with Bug:, Feat: or Debt:. |
     | no severity | Give it a severity: P0, P1, P2 or P3. |
+    | a title starting Bug: with severity P3 | A Bug: is never below P2: P1 or above when it has impact (lost or blocked work, a wrong result, a red main), else P2. |
 
 Scenario: AC-145 happy path — the project's template
   Given project api with no template of its own
@@ -568,12 +571,18 @@ Scenario Outline: AC-154 failure — refused with what to do
     | archive with no reason | Give the reason it leaves the board. |
     | archive with another field | archive goes alone, with its reason. |
     | nothing to change | Give severity, parent, title, text or archive. |
+    | severity P3 for a task titled Bug:, or a title starting Bug: for a P3 task | AC-145's words for a bug below P2 |
 
 Scenario: AC-154 edge — a human's task
   Given API-7 made by a human
   When an agent calls update_task {id: "API-7", severity: "P3", reason: "a log line only"}
   Then API-7 is P3 and "a log line only" is its comment, after the change in its history
   And a task of another project stays out of reach (AC-115)
+
+Scenario: AC-154 edge — a bug a human left at P3
+  Given a human made "Bug: old" at P3 on the board
+  When an agent changes its parent with a reason
+  Then it is regrouped and stays P3: the floor refuses an agent's change of title or severity, a human's choice on the board stays the human's
 ```
 
 ### AC-116 — A record becomes a task [SHOULD / P1]
@@ -738,7 +747,29 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
   When an older read answers after a newer, or two windows are opened with the first slower
   Then the newest stands
   When another's change arrives during a drag
-  Then the drag goes on, the card held; the columns' scroll stays through any change
+  Then the drag goes on, the card held; the columns' scroll stays through any change; after the drop each card shows once
+  When a column is drawn anew while a card in it is pressed, and that card's task did not change
+  Then the card is the same, and the press lands
+  When the board's connection to terminumd opens, or opens again
+  Then the board reads its columns again: a change made before it opened shows; signed out, the board goes to sign in (AC-09)
+
+Scenario: AC-133 edge — closing while a task is being read
+  Given a task's window open, with another read to open a task still waiting
+  When the user closes it with CLOSE, ×, Esc or Back, confirming any edit to discard
+  Then the window stays closed when that read answers
+  And Back before the first read answers keeps the board without opening the window
+  And Cancel on the discard question keeps the window and its edit
+  When the user opens a task again after closing
+  Then that new open stands, even before the close's own Back is heard
+  And the canceled read's success or failure changes neither its address nor its error message
+
+Scenario: AC-133 edge — a refresh during a Close press
+  Given a task's window open with a comment draft
+  When a changed task read arrives between pressing and releasing CLOSE
+  Then that press keeps the current draft once and closes the window, including when the available actions change
+  And a refused save keeps the draft and window; a retry keeps the current draft once
+  When another task opens between that press and release
+  Then the release sends neither task's draft and leaves the new task open
 
 Scenario: AC-133 edge — nothing typed is lost by a slip
   When Discard is pressed on a window with text, or Esc, × or Back on an edit not saved
@@ -746,7 +777,9 @@ Scenario: AC-133 edge — nothing typed is lost by a slip
   When Enter is pressed in the title
   Then it is Create; ⌘Enter in a text is Create or CLOSE
   When Create is pressed while a file is on its way
-  Then it waits for the file
+  Then it waits for the file; a comment's Close and Run wait for its files the same way
+  When a file lands after its draft was sent or discarded, or after another draft opened in the window
+  Then it is in no other draft: a draft closed only, not ended, gets it
 
 Scenario: AC-133 failure — another changed the text meanwhile
   Given Alex editing API-12's text
@@ -1083,6 +1116,7 @@ Comments and history are one table, `events`: a window lists them in one order. 
 |---|---|---|
 | AC-113, AC-115 | A refusal names a session by its pane (Session %7), not its title. | `terminumd/src/tasks/ops.rs` |
 | AC-119 | The session list says nothing of a store that cannot be read; the board's banner does. | `web/static/kanban.js` |
+| AC-133 | A task window's fields go as separate PATCHes, unordered: two choices made quickly may land in the other order, so the first may stand. Only its text has a revision (`text_rev`). | `web/static/kanbanwin.js` |
 | AC-154 | An agent may take a human's free task (take_task) and finish it (finish_task): DONE, then archived after 2 days (AC-118), with no human deciding. | `terminumd/src/tasks/tools.rs` |
 
 ## 8. Recommendation and ownership
@@ -1182,7 +1216,7 @@ Depends on: nothing more.
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
 - [x] AC-119 — `cargo test tasks::store`
 - [x] AC-136 — `cargo test tasks::tell`, `web/test/e2e_liveboardedge.mjs`, `web/test/cardstate.test.mjs` (its background work)
-- [x] AC-133 — `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs` (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
+- [x] AC-133 — `web/test/e2e_taskclose.mjs` (pending reads after CLOSE, ×, Esc and Back; a deliberate reopen), `web/test/e2e_liveclose.mjs` (a real subtask read held while its parent's window closes; `node web/test/e2e_live.mjs boardtasks`), `web/test/e2e_liveboardedge.mjs`, `web/test/e2e_liveboard.mjs`, `web/test/e2e_liveboardbusy.mjs` (a file that lands late; alone: `node web/test/e2e_live.mjs boardpool`) (`node web/test/e2e_live.mjs board` also measures §9's budgets on AS-112's tasks: `liveBoardScale`)
 - [x] AC-134 — `web/test/e2e_liveboardsession.mjs`, `cargo test page::plans`
 - [x] AC-139 — `cargo test page::projects`, `cargo test tasks::folder`, `web/test/e2e_liveboardagents.mjs` (a 200-character folder, the picker up, in, Cancel and Choose)
 - [x] AC-135 — `web/test/e2e_liveboardsession.mjs`, `web/test/e2e_liveboard.mjs`

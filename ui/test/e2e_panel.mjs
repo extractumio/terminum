@@ -13,7 +13,7 @@ import http from "node:http";
 import path from "node:path";
 import { slack } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
-import { layoutTools } from "./e2e_layout.mjs";
+import { layoutTools, splitterCancel } from "./e2e_layout.mjs";
 import { panelReview } from "./e2e_panel_review.mjs";
 import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
 import {
@@ -158,6 +158,18 @@ try {
   check("AC-56 … all of it on disk", fs.readFileSync(`${SB}/app.py`, "utf8").endsWith("# b\n# c"), JSON.stringify(fs.readFileSync(`${SB}/app.py`, "utf8").slice(-30)));
   await page.waitForTimeout(900); // our own save's fs event must not raise "Changed on disk"
   check("AC-61 own save does not show 'Changed on disk'", !(await page.$('.banner:has-text("Changed on disk")')));
+  // AC-56 a save that recreates a file deleted on disk takes its "Deleted on disk" banner away
+  const kept = fs.readFileSync(`${SB}/app.py`, "utf8");
+  fs.rmSync(`${SB}/app.py`);
+  await within("AC-61 an open file deleted on disk shows 'Deleted on disk'", (ms) => page.waitForSelector('.banner:has-text("Deleted on disk")', { timeout: ms }));
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
+  await within("AC-56 saving a deleted file asks", (ms) => page.waitForSelector(".modal button[data-id=overwrite]", { timeout: ms }));
+  await page.click(".modal button[data-id=overwrite]");
+  await within("AC-56 Overwrite recreates the deleted file", (ms) => waitFor(() => fs.existsSync(`${SB}/app.py`), ms));
+  await page.waitForTimeout(900); // its own fs event and re-check come and go
+  check("AC-56 … with its text, and the 'Deleted on disk' banner is gone", fs.readFileSync(`${SB}/app.py`, "utf8") === kept && !(await page.$('.banner:has-text("Deleted on disk")')),
+    JSON.stringify(await page.evaluate(() => document.querySelector(".banner")?.textContent)));
+  await splitterCancel(page);
 
   await panelDocs(page, { row, SECRET, outside, blocked });   // AC-54, AC-67: Markdown and HTML documents
 
@@ -332,7 +344,16 @@ try {
   await bringBack({ TM_BUILD_ID: "e2e-next" });
   await within("AC-16 a dirty panel waits for the save", (ms) => page.waitForFunction(() => document.getElementById("note").textContent.startsWith("Update ready"), null, { timeout: ms }));
   check("AC-16 … without reloading", (await page.evaluate(() => window.__before)) === 1);
-  await page.keyboard.press("ControlOrMeta+s");
+  // a panel state terminumd refused holds the reload too, until a later change saves it
+  const refuse = (route) => route.request().method() === "PUT" ? route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "io", message: "disk full (test)" }) }) : route.fallback();
+  await page.route("**/fb/api/workspace?*", refuse);
+  await page.focus("#tree"); await page.keyboard.press("ArrowUp");   // the selection moved: its write is refused
+  await within("AC-71 the refused write says so", (ms) => page.waitForFunction(() => document.getElementById("toast").textContent.startsWith("Panel state not saved"), null, { timeout: ms }));
+  await page.click(".cm-content"); await page.keyboard.press("ControlOrMeta+s");
+  await page.waitForTimeout(2500);
+  check("AC-16 a saved tab whose panel state terminumd refused still waits", (await page.evaluate(() => window.__before)) === 1);
+  await page.unroute("**/fb/api/workspace?*", refuse);
+  await page.focus("#tree"); await page.keyboard.press("ArrowDown"); // the next change is saved
   await within("AC-16 after the save the panel reloads", (ms) => page.waitForFunction(() => window.__before === undefined, null, { timeout: ms }), 8000);
   await within("AC-16 … with its tabs and tree", (ms) => page.waitForSelector(`${row("src")}`, { timeout: ms }));
   // its tabs come back after its tree

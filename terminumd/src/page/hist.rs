@@ -9,7 +9,6 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::stream::{Ctl, FIRST_HISTORY};
-use super::find::shown;
 use super::Page;
 use crate::app::Shared;
 use crate::screen::frame::Fields;
@@ -178,6 +177,10 @@ async fn anchored(client: &Control, probe: &str, pane: &str, top: i64, screen: &
 #[path = "hist_tests.rs"]
 mod tests;
 
+#[cfg(test)]
+#[path = "hist_request_tests.rs"]
+mod request_tests;
+
 /// Seconds since terminumd started: the folds' clock.
 fn now() -> f64 {
     static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
@@ -265,19 +268,68 @@ pub fn scan_folds(page: &Page, ctl: &Ctl, key: &str, screen: &[(&str, bool)]) {
     }
 }
 
+/// A read's subscription is captured before it enters its lane (AC-02).
+struct Target {
+    key: String,
+    server: Arc<crate::tmux::Server>,
+    pane: String,
+    ctl: Arc<Ctl>,
+    request: Value,
+}
+
+impl Target {
+    fn current(&self, page: &Page) -> bool {
+        page.state.lock().shown.as_ref().is_some_and(|s| Arc::ptr_eq(&s.ctl, &self.ctl))
+    }
+
+    fn send(&self, page: &Page, m: Value) {
+        let state = page.state.lock();
+        if state.shown.as_ref().is_some_and(|s| Arc::ptr_eq(&s.ctl, &self.ctl)) {
+            super::client::reply(page, &self.request, m);
+        }
+    }
+
+    fn error(&self, page: &Page, why: &str) {
+        self.send(page, json!({"t": "error", "sid": self.key, "msg": why}));
+    }
+}
+
+pub fn queue(app: &Shared, page: &Arc<Page>, request: Value) {
+    let Some((key, server, pane, ctl)) = super::find::shown(page) else {
+        super::client::request_error(page, &request, "No pane is shown.");
+        return;
+    };
+    let lane = format!("{} {}", request["t"].as_str().unwrap_or(""), server.id());
+    let refused = json!({"ref": request["ref"]});
+    let at = Target { key, server, pane, ctl, request };
+    let (a, p) = (app.clone(), page.clone());
+    if !super::reads::spawn(page, &lane, async move {
+        if !at.current(&p) { return; }
+        if at.request["t"] == "more" {
+            older(&a, &p, &at, at.request["before"].as_i64().unwrap_or(0), at.request["to"].as_i64()).await;
+        } else {
+            unfold(&a, &p, &at, at.request["n"].as_i64().unwrap_or(0), at.request["to"].as_i64().unwrap_or(-1)).await;
+        }
+    }) {
+        super::client::request_error(page, &refused, "Too many reads of the history are waiting; try again in a moment.");
+    }
+}
+
 /// Older rows before `before` (down to `to`, a bookmark's line), never past the oldest
 /// the page may load (AC-02, AC-33).
-pub async fn older(app: &Shared, page: &Arc<Page>, before: i64, to: Option<i64>) {
-    let Some((key, server, pane, ctl)) = shown(page) else { return };
-    let Some(client) = server.bulk() else { return };
-    let (top, history, screen, oldest, truncated, (width, limit)) = {
+async fn older(app: &Shared, page: &Arc<Page>, at: &Target, before: i64, to: Option<i64>) {
+    let Target { key, server, pane, ctl, .. } = at;
+    let Some(client) = server.bulk() else { at.error(page, "tmux is not connected"); return };
+    let numbered = {
         let n = ctl.numbering.lock();
-        let Some(top) = n.top() else { return };
-        (top, n.history(), n.screen().to_vec(), n.oldest(keep(app)), n.truncated(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit)))
+        n.top().map(|top| (top, n.history(), n.screen().to_vec(), n.oldest(keep(app)), n.truncated(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit))))
+    };
+    let Some((top, history, screen, oldest, truncated, (width, limit))) = numbered else {
+        at.error(page, "The pane is not shown yet."); return;
     };
     let before = before.clamp(oldest, top);
     let first = to.map_or(before - PAGE, |t| t.min(before - PAGE)).max(oldest);
-    match capture(&client, &pane, top, history, limit, &screen, first, before, width).await {
+    match capture(&client, pane, top, history, limit, &screen, first, before, width).await {
         Ok(lines) => {
             let (lines, folds) = match ctl.folds.lock().as_mut() {
                 Some(h) => h.take(first, lines, true),
@@ -287,17 +339,17 @@ pub async fn older(app: &Shared, page: &Arc<Page>, before: i64, to: Option<i64>)
             if !folds.is_empty() {
                 m["folds"] = json!(folds);
             }
-            page.send_json(&m);
+            at.send(page, m);
         }
-        Err(e) => super::client::error(page, format!("Could not load older lines: {e}"), Some(&key)),
+        Err(e) => at.error(page, &format!("Could not load older lines: {e}")),
     }
 }
 
 /// A fold's rows, when the page shows it: only rows of a fold terminumd told of, still in
 /// tmux's history, at most 20,000 (AC-32).
-pub async fn unfold(app: &Shared, page: &Arc<Page>, a: i64, b: i64) {
-    let Some((key, server, pane, ctl)) = shown(page) else { return };
-    let Some(client) = server.bulk() else { return };
+async fn unfold(app: &Shared, page: &Arc<Page>, at: &Target, a: i64, b: i64) {
+    let Target { key, server, pane, ctl, .. } = at;
+    let Some(client) = server.bulk() else { at.error(page, "tmux is not connected"); return };
     let (top, history, screen, oldest, (width, limit)) = {
         let n = ctl.numbering.lock();
         (n.top().unwrap_or(0), n.history(), n.screen().to_vec(), n.oldest(keep(app)), ctl.fields.lock().as_ref().map_or((80, 0), |f| (f.width, f.limit)))
@@ -314,15 +366,15 @@ pub async fn unfold(app: &Shared, page: &Arc<Page>, a: i64, b: i64) {
         None
     };
     if let Some(why) = why {
-        page.send_json(&json!({"t": "lines", "sid": key, "first": a, "lines": [], "error": why}));
+        at.send(page, json!({"t": "lines", "sid": key, "first": a, "lines": [], "error": why}));
         return;
     }
-    match capture(&client, &pane, top, history, limit, &screen, a, b + 1, width).await {
+    match capture(&client, pane, top, history, limit, &screen, a, b + 1, width).await {
         Ok(lines) => {
-            page.send_json(&json!({"t": "lines", "sid": key, "first": a, "lines": lines}));
+            at.send(page, json!({"t": "lines", "sid": key, "first": a, "lines": lines}));
         }
         Err(e) => {
-            page.send_json(&json!({"t": "lines", "sid": key, "first": a, "lines": [], "error": e}));
+            at.send(page, json!({"t": "lines", "sid": key, "first": a, "lines": [], "error": e}));
         }
     }
 }

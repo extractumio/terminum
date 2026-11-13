@@ -102,7 +102,7 @@ export function bindReorder(list, done, ended = () => {}, held = () => {}) {
     ended();
   }
   list.addEventListener("pointerup", (e) => {
-    if (drag) return end(true);
+    if (drag) { place(e); return end(true); }       // the release position, even with no final move (AC-169)
     if (press?.lifted && press.kind === "row") {   // lifted and let go: the row's menu
       const { el } = press;
       clear();

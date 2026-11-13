@@ -233,6 +233,8 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   started is started again only after you move or edit it; a failed round or two failed tasks turn it off, and its
   switch says why;
   `create_task`'s text follows the project's template (its window: Template for agents' tasks).
+  An agent's bug (a title starting `Bug:`) is never below P2: P1 or above when it has impact (lost
+  or blocked work, a wrong result, a red main), else P2; its tools refuse P3 for one.
   With `update_task` an agent grooms its project's board: severity and parent of any task (a
   human's with a reason, kept as a comment), title and text of a task agents wrote, and such a task
   archived with its reason; your own words and tasks are never reworded or archived by an agent.
@@ -288,6 +290,9 @@ page says how; how the sign-in is kept is in [SECURITY.md](../SECURITY.md). `tmu
   beside its dates still find it. A task's window shows the task, then its subtasks (New subtask,
   Add existing, Make it a subtask, × to take one out), then its comments and history, newest first
   (press Newest first to turn them); a card shows its subtasks as boxes in their status's color.
+  Run on a task with subtasks takes those not DONE into the same session: its agent does them one
+  after another in the order it decides, the main task last; one that cannot be done fails with
+  its main task, and Run on the main task again runs what is not DONE. Auto-Dispatch does the same.
   The round button with a blue number under the sent history's counts the tasks made in the shown
   session, and opens them in the same window; Convert to task on a bookmark or reminder (its pane,
   its bar, the list below the sessions) makes one in TODO without leaving the session.

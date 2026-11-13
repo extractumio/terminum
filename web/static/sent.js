@@ -7,6 +7,7 @@
 // ↓ newer, Copy; at its foot Jump to message brings it into view in the shown pane (terminumd
 // finds its text nearest the line it was sent on, which Enter tells with it) and Insert into
 // chat pastes it into the shown pane's input.
+import { Requests } from "./requests.js";
 import { typedEnd } from "./cursor.js";
 import { fabPane } from "./fabpane.js";
 import { when } from "./listparts.js";
@@ -52,8 +53,9 @@ export const sentText = (rows, box, shell) => sentAt(rows, box, shell).text;
  *  toChat(text): pasted into the shown pane's input; jump({text, n}): brings a message into view
  *  (marks.js jumpText). */
 export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
-  let n = 0, last = null;
-  const pane = fabPane({ fab: $("sentfab"), pane: $("sentpane"), close: $("spclose"), onToggle: (on) => { if (on) ask(0); } });
+  let n = 0, last = null, generation = 0;
+  const reads = new Requests(send), jumps = new Requests(send);
+  const pane = fabPane({ fab: $("sentfab"), pane: $("sentpane"), close: $("spclose"), onToggle: (on) => { if (on) ask(0); else { generation++; reads.cancel(); } } });
 
   // the screen's rows, each with its absolute line (n)
   function rows() {
@@ -61,7 +63,7 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
   }
   const say = (text, failed = false) => { $("spwhy").textContent = text; $("spwhy").hidden = !text; $("spwhy").classList.toggle("err", failed); };
 
-  async function draw(m) {
+  async function draw(m, mine = generation) {
     last = m;
     say("");
     const body = $("spbody"), it = m.item;
@@ -76,11 +78,22 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
     body.className = "markdown";
     const fence = "`".repeat(Math.max(3, ...[...it.text.matchAll(/`+/g)].map((x) => x[0].length + 1)));   // longer than any run in it
     const md = it.agent ? it.text : `${fence}sh\n${it.text}\n${fence}`;
-    await markdownInto(body, md);
+    const rendered = document.createElement("div");
+    await markdownInto(rendered, md);
+    if (mine !== generation || !pane.open()) return;
+    body.replaceChildren(...rendered.childNodes);
     pane.place();
   }
 
-  function ask(k) { n = Math.max(0, k); send({ t: "sentget", n }); }
+  async function ask(k) {
+    const mine = ++generation;
+    reads.cancel();
+    n = Math.max(0, k); last = null;
+    $("spcopy").disabled = $("spinsert").disabled = $("spjump").disabled = true;
+    say("Loading…");
+    try { const m = await reads.ask({ t: "sentget", n }); if (mine === generation && pane.open()) await draw(m, mine); }
+    catch (e) { if (e.name !== "AbortError" && mine === generation && pane.open()) await draw({ error: e.message }, mine); }
+  }
 
   $("spolder").onclick = () => ask(n + 1);
   $("spnewer").onclick = () => ask(n - 1);
@@ -99,10 +112,12 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
   };
   // the Message history's Open in session (terminum.md AC-151): its message asked by id once this pane is
   // shown, then found as Jump to message finds it; what cannot be found is said where the page is
-  let wanted = null;
-  document.addEventListener("sentjump", (e) => { wanted = e.detail; send({ t: "sentget", id: wanted }); });
+  document.addEventListener("sentjump", async (e) => {
+    jumps.cancel();
+    try { await jumpTo(await jumps.ask({ t: "sentget", id: e.detail })); }
+    catch (err) { if (err.name !== "AbortError") toast(err.message, 4000); }
+  });
   async function jumpTo(m) {
-    wanted = null;
     const it = m.item;
     if (m.error || !it) return toast(m.error ?? "That message is no longer kept.", 4000);
     const r = await jump({ text: it.text, n: it.key === item()?.id ? it.line : undefined, prompt: !!it.agent });
@@ -123,12 +138,10 @@ export function sentHistory({ view, send, item, copy, toast, toChat, jump }) {
     },
     onMessage(m) {
       // the answer to the last ask for the pane shown; an older one (a quick ↑, another pane) is dropped
-      if (m.t === "sentone" && m.id !== undefined) { if (m.id === wanted) void jumpTo(m); }
-      else if (m.t === "sentone" && pane.open() && (m.error || (m.n === n && m.sid === item()?.id))) void draw(m);
-      else if (m.t === "sentnew" && pane.open() && last && m.host === last.host && m.path === last.path && n === 0) ask(0);
+      if (m.t === "sentnew" && pane.open() && last && m.host === last.host && m.path === last.path && n === 0) ask(0);
     },
     /** Another pane is shown: its project's history, when open. */
-    shown() { if (pane.open()) ask(0); },
+    shown() { generation++; reads.cancel(); jumps.cancel(); last = null; if (pane.open()) ask(0); },
     place: pane.place,
   };
 }

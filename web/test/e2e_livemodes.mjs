@@ -11,3 +11,6 @@ export const AUTO_ALONE = process.argv.includes("auto");             // while wo
 export const SCHEDULES_ALONE = process.argv.includes("schedules");   // while working on schedules and folded cards
 export const NOTES_ALONE = process.argv.includes("notes");       // while working on bookmarks, reminders and their tasks
 export const ICONS_ALONE = process.argv.includes("iconkeys");    // while working on icon keys' focus
+export const REQUESTS_ALONE = process.argv.includes("requests");
+export const QUEUE_ALONE = process.argv.includes("queue");  // the agent queue, without the scheduling suites
+export const MAIN_ALONE = process.argv.includes("main");             // while working on a main task's run with its subtasks

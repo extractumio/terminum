@@ -21,6 +21,7 @@ import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
 import { liveQuick } from "./e2e_livequick.mjs";
 import { liveSplit } from "./e2e_livesplit.mjs";
 import { liveView } from "./e2e_liveview.mjs";
+import { liveRequests } from "./e2e_liverequests.mjs";
 import { liveFolds } from "./e2e_livefolds.mjs";
 import { liveJitter } from "./e2e_livejitter.mjs";
 import { liveLinks } from "./e2e_livelinks.mjs";
@@ -39,6 +40,7 @@ import { liveBoard, liveBoardPhone } from "./e2e_liveboard.mjs";
 import { liveBoardEdge, liveBoardScale } from "./e2e_liveboardedge.mjs";
 import { liveBoardSessions, liveBoardSessionsPhone } from "./e2e_liveboardsession.mjs";
 import { liveBoardAgents } from "./e2e_liveboardagents.mjs";
+import { liveMain } from "./e2e_livemain.mjs";
 import { liveBoardBusy } from "./e2e_liveboardbusy.mjs";
 import { liveBoardTasks } from "./e2e_liveboardtasks.mjs";
 import { liveBoardIds } from "./e2e_liveboardids.mjs";
@@ -50,7 +52,7 @@ import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, QUEUE_ALONE, MAIN_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -182,10 +184,11 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveIconKeys, liveWaitingRun]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardTasks, liveBoardIds, liveDispatcher, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
+  if (REQUESTS_ALONE) { await liveRequests(page, live); return ctx; }
   if (process.env.TM_TEST_REAL_AGENTS) {
     await liveDispatcherReal(page, { base: BASE, tmux, work: process.env.TM_TEST_REAL_DIR ?? WORK, bin: BIN, home: HOME, app: APP });
     return ctx;
@@ -202,6 +205,10 @@ async function wide(browser, name) {
     await boards([liveWaitingRun]);
     return ctx;
   }
+  if (MAIN_ALONE) {
+    await boards([liveMain]);
+    return ctx;
+  }
   if (POOL_ALONE) {
     await boards([liveBoardAgents, liveBoardBusy, liveDispatcher, liveWaitingRun]);
     return ctx;
@@ -214,8 +221,8 @@ async function wide(browser, name) {
     await boards([liveIconKeys]);
     return ctx;
   }
-  if (SCHEDULES_ALONE) {
-    await boards([liveFolded, liveSchedules, liveQueue]);
+  if (SCHEDULES_ALONE || QUEUE_ALONE) {
+    await boards(QUEUE_ALONE ? [liveQueue] : [liveFolded, liveSchedules, liveQueue]);
     return ctx;
   }
   if (TASKS_ALONE) {
@@ -399,6 +406,7 @@ async function phone(browser, name) {
   const page = await ctx.newPage();
   await signIn(page);
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start };
+  if (REQUESTS_ALONE) { await liveRequests(page, live); await ctx.close(); return; }
   if (WAITING_ALONE) {
     await liveWaitingRun(page, live);
     await ctx.close();
@@ -419,9 +427,9 @@ async function phone(browser, name) {
     await ctx.close();
     return;
   }
-  if (SCHEDULES_ALONE) {
+  if (SCHEDULES_ALONE || QUEUE_ALONE) {
     const shots = { ...live, shots: process.env.TM_TEST_SHOTS && `${process.env.TM_TEST_SHOTS}/phone-` };
-    await liveFolded(page, shots);
+    if (!QUEUE_ALONE) await liveFolded(page, shots);
     await liveQueue(page, shots);
     await ctx.close();
     return;

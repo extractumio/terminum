@@ -296,6 +296,19 @@ fn move_task(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str)
     run.open.iter().try_for_each(|id| move_one(tx, id, to, words))
 }
 
+/// The agent of `run` asked a human on `asked` (AC-185): its other tasks in progress wait with it, so its session
+/// closes on one question. Their IDs.
+pub(crate) fn wait_with(tx: &rusqlite::Transaction, run: &runs::Run, asked: &str) -> Result<Vec<String>, String> {
+    let mut moved = Vec::new();
+    for id in run.open.iter().filter(|id| *id != asked) {
+        if ops::get(tx, id)?.status == "IN PROGRESS" {
+            move_one(tx, id, "WAIT FOR HUMAN", &format!("It waits with {asked}: its session's agent asked the human there."))?;
+            moved.push(id.clone());
+        }
+    }
+    Ok(moved)
+}
+
 /// Moves all `run`'s tasks: its agent took them.
 fn move_all(tx: &rusqlite::Transaction, run: &runs::Run, to: &str, words: &str) -> Result<(), String> {
     run.ids.iter().try_for_each(|id| move_one(tx, id, to, words))

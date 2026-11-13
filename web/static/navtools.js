@@ -17,8 +17,8 @@ export async function closeSession(item, send, tasks = []) {
 }
 
 /** Wires the tools; `current()` is the shown pane's {group, item} or null, `onResize()` refits the terminal. */
-export function navTools({ send, store, current, groups, onResize, onRenamed }) {
-  const list = listTools({ send, store, groups, onResize });
+export function navTools({ send, store, current, groups, onResize, onRenamed, onCreated }) {
+  const list = listTools({ send, store, groups, onResize, onCreated });
 
   // ---------- a tmux server not answering (AC-03, AC-14) ----------
   // Screens, keys and histories wait for it: say so, with the time it has not answered.

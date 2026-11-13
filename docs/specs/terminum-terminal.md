@@ -40,7 +40,7 @@ Assumptions:
 | ID | Assumption | Owner | Status |
 |---|---|---|---|
 | AS-31 | The page's modules of this spec (`outparse.js`, `widgets.js`, `folds.js`, `marks.js`, `markjump.js`, `find.js`, `links.js`, `termlinks.js`, `upload.js`, `agentbox.js`, `boxnav.js`, `trace*.js`) work on terminumd's messages as §9 lists them. | Claude | verified: `web/test/e2e_live.mjs` |
-| AS-32 | Folds, bookmarks and search are pure functions of the lines: terminumd computes them with no call to tmux inside. | Claude | verified: `cargo test page::folds`, `cargo test page::search` |
+| AS-32 | Folds, bookmarks and search are pure functions of the lines: terminumd computes them with no call to tmux inside. | Claude | verified: `cargo test page::folds`, `node --test web/test/requests.test.mjs`, `cargo test page::search` |
 | AS-33 | Claude Code's input box rows hold `cols - 2` characters, the prompt included; its footer and status lines follow the box; a redraw of its own can leave the cursor below the footer. Measured at 54–151 columns. | Claude | verified: `web/test/claude-input-60.json` in `web/test/e2e_boxnav.mjs` |
 
 Dependencies:
@@ -146,6 +146,10 @@ Scenario: AC-31 failure — the renderer cannot be loaded or a diagram does not 
   And a Mermaid fence that does not parse shows Mermaid's message in its bar and its lines as text; inside a document only that diagram stays source
 ```
 
+Scenario: AC-31 edge — an image loads after its viewer closes
+  When an image finishes loading after Close or after another image opens
+  Then it neither changes the newer viewer nor raises an error
+
 ### AC-32 — History folds [SHOULD / P1]
 
 ```gherkin
@@ -189,6 +193,11 @@ Scenario: AC-32 failure — lines terminumd cannot send
   When the lines are gone from tmux's history, the fold was not told, or more than 20,000 are asked
   Then terminumd refuses with why, the page shows it, and the fold stays
 ```
+
+Scenario: AC-32 failure — every fold reader settles
+  Given a fold is waiting for its lines to open or copy
+  When it is asked again, all readers share its request rather than replacing an earlier promise
+  And an error, a reset or no answer within 15 seconds settles every reader; late replies after that change nothing
 
 ### AC-33 — Bookmarks [SHOULD / P1]
 
@@ -258,6 +267,18 @@ Scenario: AC-33 failure — cannot keep or reach
   Then the bar says the bookmark could not be reached and why
 ```
 
+Scenario: AC-33 failure — delayed resolve or delete loses its connection
+  Given a bookmark delete or reminder resolve is in its five-second Undo period
+  When that period ends while disconnected
+  Then the intent stays pending, the page says it is waiting for a connection, and reconnect sends it
+  And only its correlated acknowledgement removes the intent; an error or no answer within 15 seconds restores the action with a visible failure
+  And a page restored from memory retains its pending actions without stale Undo timers
+
+Scenario: AC-33 edge — a bookmark save finishes after its dialog changes
+  Given a save is pending
+  Then another submit sends nothing
+  And its reply cannot close or change another bookmark dialog
+
 ### AC-34 — Search [SHOULD / P1]
 
 ```gherkin
@@ -283,6 +304,10 @@ Scenario: AC-34 failure — terminumd cannot search
   Then the field says why and keeps the text
   And after a request times out, Find retries the unchanged text; an old response cannot replace a newer request
 ```
+
+Scenario: AC-34 failure — a Find answer arrives after its timeout
+  When a search times out and its answer arrives late
+  Then it leaves the timeout in the Find field and shows no obsolete matches; a retry owns a new ref
 
 ### AC-35 — Links and file names [SHOULD / P1]
 
@@ -433,6 +458,15 @@ Scenario: AC-38 failure — the trace cannot write
   Then the trace ends with a line in terminumd's log; typing and screens go on
 ```
 
+Scenario: AC-37 edge — overlapping copies keep their own selection hold
+  Given one clipboard write is waiting and another copy starts
+  Then the earlier write's completion cannot release the later copy's selection hold
+
+Scenario: AC-37 edge — an old quote-number reply reaches a retry
+  Given Ask stopped waiting for a quote number, or its dialog closed
+  When a newer Ask request is waiting
+  Then the earlier reply cannot answer it; success and failure both carry the request's ref
+
 ### AC-90 — Sent history [SHOULD / P1]
 
 ```gherkin
@@ -475,6 +509,11 @@ Scenario: AC-90 failure — not written
   When the file cannot be written
   Then the command goes to the terminal all the same and terminumd's log says why, and the other report of the same Enter (the page's or the hook's) may still keep it; a folder that cannot be read says "The pane's folder is not known: …" in the pane; a project with none says "Nothing sent in this folder yet."
 ```
+
+Scenario: AC-90 edge — sent-history replies arrive out of order
+  Given the user requests another entry or changes pane while an entry is loading
+  Then only the latest matching request can draw its success or error, including after Markdown rendering waits
+  And no answer within 15 seconds is said in the sent-history pane
 
 ### AC-91 — Reminders [SHOULD / P1]
 
@@ -720,7 +759,7 @@ All cases are shipped; nothing is staged.
 
 - [x] AC-31 — `web/test/outparse.test.mjs`, `web/test/difftable.test.mjs`, `web/test/tableforms.test.mjs`, `web/test/e2e_widgets.mjs`, `web/test/e2e_widgettables.mjs`, `web/test/e2e_widgetsteady.mjs`, `web/test/e2e_widgetpng.mjs`, `web/test/e2e_tableforms.mjs`, `web/test/e2e_livewidgetsteady.mjs`, `web/test/e2e_livewidgetpng.mjs`
 - [x] AC-32 — `cargo test page::folds`, `web/test/e2e_widgetfolds.mjs`, `web/test/e2e_screenfolds.mjs`, `web/test/e2e_livefolds.mjs`, `scripts/e2e_core.py`
-- [x] AC-33 — `cargo test page::bookmarks`, `web/test/marktext.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_marknav.mjs`, `web/test/e2e_marksdata.mjs`, `web/test/e2e_marksscope.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_panewin.mjs`
+- [x] AC-33 — `cargo test page::bookmarks`, `web/test/marktext.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_marknav.mjs`, `web/test/e2e_requests.mjs`, `web/test/e2e_requestowners.mjs`, `web/test/e2e_marksdata.mjs`, `web/test/e2e_marksscope.mjs`, `web/test/e2e_phonerow.mjs`, `web/test/e2e_panewin.mjs`
 - [x] AC-34 — `cargo test page::search`, `web/test/review-regressions.test.mjs`, `web/test/e2e_marks.mjs`, `web/test/e2e_review_regressions.mjs`
 - [x] AC-35 — `web/test/links.test.mjs`, `web/test/panefiles.test.mjs`, `web/test/e2e_term.mjs`, `web/test/e2e_pathfold.mjs`, `web/test/e2e_livelinks.mjs`, `web/test/e2e_app.mjs`
 - [x] AC-36 — `cargo test page::upload`, `cargo test dragged`, `web/test/upload.test.mjs`, `web/test/e2e_livepaste.mjs`, `web/test/e2e_app.mjs`, `scripts/e2e_remote.py`

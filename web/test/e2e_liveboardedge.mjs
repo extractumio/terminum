@@ -39,9 +39,24 @@ export async function liveBoardEdge(page, { base, tmux, work, bin, home, app, st
       await page.evaluate((s) => {
         const col = document.querySelector('.col[data-status="TODO"]'), r = document.querySelector(s).getBoundingClientRect(), at = { bubbles: true, cancelable: true, dataTransfer: window.dt, clientX: r.left + 40, clientY: r.top + 2 };
         col.dispatchEvent(new DragEvent("dragover", at)); col.dispatchEvent(new DragEvent("drop", at)); window.held.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: window.dt }));
+        const ids = [...col.querySelectorAll(".card")].map((c) => c.dataset.id);
+        window.twice = ids.filter((x, i) => ids.indexOf(x) !== i);   // right after the drop, before the next read
       }, card(stay));
+      check("  and right after the drop each card shows once", (await page.evaluate(() => window.twice)).length === 0, await colIds());
       check("  and its drop keeps the fixed sort", await until(() => above(stay, id)), await colIds());
       check("  and what changed meanwhile shows after it", await until(async () => await colOf(other) === "FAILED"), await colOf(other));
+    },
+    async press_lands_through_a_redraw() {
+      // a press that straddles a redraw of its column: its card, unchanged, is the same element (AC-133)
+      const id = await make("pressed while another changes"), other = await make("changes under it"); await open();
+      const kept = await page.$(card(id)), at = await page.$eval(card(id), (c) => { const r = c.getBoundingClientRect(); return { x: r.left + 20, y: r.top + r.height / 2 }; });
+      await page.mouse.move(at.x, at.y);
+      await page.mouse.down();
+      await j(`/api/tasks/${other}`, "PATCH", { title: "changed under the press" });
+      await until(() => page.evaluate((s) => document.querySelector(s)?.textContent.includes("changed under the press"), card(other)));
+      await page.mouse.up();
+      check("a column drawn anew keeps the card of a task that did not change", await kept.evaluate((c, s) => c.isConnected && document.querySelector(s) === c, card(id)));
+      check("  and a press across that redraw lands", await until(() => page.evaluate(([s, id]) => !!document.querySelector(`${s}.compact.open`) || location.pathname.endsWith(`/${id}`), [card(id), id])));
     },
     async server_restart() {
       const id = await make("over a restart"); await open();
