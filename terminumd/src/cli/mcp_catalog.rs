@@ -54,7 +54,7 @@ pub const CARDS: &[Card] = &[
     Card { name: "finish_task", area: "tasks", keywords: "finish my task, mark it done, complete, close, resolve, report the result, wrap up",
         example: r#"{"id": "TERM-12", "result": "Fixed in tasks/ops.rs; cargo test tasks passes; nothing left."}"# },
     Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
-        example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8: a small fix many sessions hit"}"# },
+        example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
 ];
 
 /// The cards a role finds: a worker the catalog's own, a manager those and its own (AC-174).
