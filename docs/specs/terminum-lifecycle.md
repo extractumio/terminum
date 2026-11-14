@@ -508,6 +508,8 @@ Scenario: AC-104 edge — builds leave room for others
   Then the targeted checks and the smoke set build terminumd under nice -n 10, and their browsers run as usual
   And while a release runs, the whole smoke set runs under nice -n 10
   And no landing builds the release build in its tree: the primary checkout's install builds it
+  And a step that builds or tests terminumd with cargo (the debug build, clippy, cargo test), of any tree, while it works or lands, runs holding one of the machine's heavy-build slots: the cores' count / 8, at least 1, or TM_HEAVY_SLOTS
+  And a step that finds every slot held says once "slot: cargo waits for one of 2 heavy-build slots: two cargo, three debug-build" and starts when one is free; a slot is freed with its holder, however it ends
   And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
 
 Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent checks
@@ -557,16 +559,17 @@ Scenario Outline: AC-104 failure — work changes during landing
     | an executable bit is changed in the index   |
 
 Scenario: AC-104 edge — several worktrees land at once
-  Given worktrees one and two are each checked on their own
-  When one lands while two's checks run
-  Then two merges what one landed; its targeted checks run again only if both changed the same file, its smoke set on every merge
-  And only the last look at origin/main and the push take turns, so neither waits for the other's tests
+  Given worktrees one and two are finished at once
+  When both run make land
+  Then one takes the landing turn and holds it from its merge to its push: its targeted checks when they run again, and its smoke set, run in the turn
+  And two says "land: one's landing has its turn (its checks and push can take half an hour): waiting", running no check meanwhile
+  And once one has pushed, two merges what one landed and runs its smoke set once, on that merge; its targeted checks run again only if both changed the same file
+  And no landing's smoke set is made moot by another landing's push: one smoke set runs at a time
 
-Scenario: AC-104 edge — a tree that lost the race once
-  Given worktree two's smoke set passed, and one landed while it ran
-  When two tries again
-  Then it says "lost the race once: holding the landing turn through this merge's checks", and holds the turn from its merge to its push and install, so no other landing pushes before it and it loses no second race
-  And a landing waiting for that turn says "land: two's landing has its turn (its checks, push and install can take half an hour): waiting"
+Scenario: AC-104 edge — a push from outside the landings
+  Given someone pushed to origin main while one's smoke set ran
+  When one looks at origin/main before its push
+  Then it says "origin/main moved while this tree was checked", merges it and runs its smoke set again, still in the turn, at most 8 tries
   And a smoke set still running after 90 minutes is ended with its processes, said, and fails as "smoke checks failed", freeing the turn
 
 Scenario: AC-104 failure — others' code breaks the merged build
@@ -598,8 +601,9 @@ Scenario: AC-104 edge — a release is running
 Scenario: AC-104 edge — installing, on the maintainer's machine
   Given TM_LAND_INSTALL=1 in the uncommitted local.mk
   When a change with code lands
-  Then make build, make install and make installed run in the primary checkout before the next tree's turn, with their three results printed
-  And a change with only docs installs nothing
+  Then the landing marks an install in the turn, and once it ends, landed or not, and finds the turn free, make build, make install and make installed run in the primary checkout, with their three results printed: once for all code landed since the last install
+  And a landing that ends while another holds the turn says "install: left to two's landing, which has the turn", and two installs after its own push or failure
+  And a change with only docs installs nothing, and while a release runs the install waits for a landing after it
 
 Scenario: AC-104 failure — a conflict
   Given a file changed differently in the worktree and on origin/main
@@ -910,6 +914,6 @@ All cases are shipped; nothing is staged.
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
 - [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
-- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
+- [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_heavy_slots.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

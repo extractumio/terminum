@@ -4,7 +4,7 @@
 acceptance cases it touches, and the critical functions; a pass is kept per content
 (.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
 quiet machine (scripts/load_gate.py, AC-146); still busy after 15 minutes, the timed steps are skipped and
-said in red last, here and by make land (.checks/skipped). --land: a landing's smoke set on its merged result, the
+said in red last, here and by make land (.checks/skipped). A cargo step holds a heavy-build slot (scripts/heavy_slots.py). --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
@@ -20,6 +20,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
+import heavy_slots  # noqa: E402
 from check_cancel import run_guard  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
 from worktree import releasing  # noqa: E402
@@ -234,9 +235,9 @@ def run(steps, root=REPO, gate=True, nice=False):
             skipped.append(name)
             continue
         optional = command.startswith("-")
-        started = time.monotonic()
         log = logs / f"changed.{name}.log"
-        with log.open("w") as out:
+        with heavy_slots.slot(root, name, say=lambda words: print(words, flush=True)), log.open("w") as out:
+            started = time.monotonic()
             # under make check's guard (AC-102): a step that leaves a process or a file fails here too
             guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py")]
             code = run_guard(guarded, ["sh", "-c", command.lstrip("-")], cwd=root, stdout=out)

@@ -81,6 +81,16 @@ class Landing(unittest.TestCase):
         self.checks.append(tree.name)
         return True
 
+    def push_from_outside(self, name, text):
+        """A push to origin main by no landing (a human's): the only thing that moves it under a landing."""
+        other = Path(self.home.name) / "elsewhere"
+        if not other.exists():
+            git("clone", "-q", str(self.origin), str(other), cwd=Path(self.home.name))
+        git("pull", "-q", "--ff-only", cwd=other)
+        made = self.commit(other, name, text)
+        git("push", "-q", "origin", "HEAD:main", cwd=other)
+        return made
+
     def on_origin(self):
         return git("rev-parse", "main", cwd=self.origin)
 
@@ -155,44 +165,29 @@ class Landing(unittest.TestCase):
         self.assertEqual(land.land(tree, check=self.green, say=lambda _: None), before)
         self.assertEqual(self.checks, [])
 
-    def changed_while_waiting(self, slug, change, retry=False):
+    def changed_while_waiting(self, slug, change):
         tree = self.tree(slug)
         self.commit(tree, "new.txt", "checked\n")
         before, waiting = self.on_origin(), threading.Event()
         take = land.Turn.take
-        attempts = 0
-        if retry:
-            other = self.tree("other")
-            before = self.commit(other, "other.txt", "another landing\n")
 
         def taking(turn, wait=False):
-            nonlocal attempts
-            if retry and not wait and turn.slug == slug:
-                attempts += 1
-                if attempts == 2:
-                    self.assertTrue(holder.take())
             if wait:
                 waiting.set()
             return take(turn, wait=wait)
 
-        def smoke(tree):
-            if retry:
-                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
-            return True
-
         with mock.patch.object(land.Turn, "take", taking), ThreadPoolExecutor(max_workers=1) as runner:
             with land.TreeTurn(tree, "terminum-land.turn") as holder:
-                if not retry:
-                    self.assertTrue(holder.take())
-                future = runner.submit(land.land, tree, check=self.green, smoke=smoke, say=lambda _: None)
-                self.assertTrue(waiting.wait(10), "landing reached its real push-turn wait")
+                self.assertTrue(holder.take())
+                future = runner.submit(land.land, tree, check=self.green, say=lambda _: None)
+                self.assertTrue(waiting.wait(10), "landing reached its real turn wait")
                 change(tree)
             with self.assertRaises(land.Stop) as stop:
                 future.result(timeout=10)
         self.assertEqual(stop.exception.code, 1)
         self.assertIn("changed while landing", str(stop.exception))
         self.assertEqual(self.on_origin(), before, "unchecked work never reaches origin")
-        self.assertEqual(self.checks, [slug])
+        self.assertEqual(self.checks, [], "seen in the turn, before any check")
         self.assertTrue(tree.is_dir())
         self.assertTrue(self.turn_is_free())
 
@@ -202,8 +197,21 @@ class Landing(unittest.TestCase):
     def test_an_empty_commit_added_while_waiting_for_the_push_turn_is_refused(self):  # AC-104
         self.changed_while_waiting("empty", lambda tree: git("commit", "-q", "--allow-empty", "-m", "unchecked", cwd=tree))
 
-    def test_a_commit_added_while_waiting_for_the_retry_turn_is_refused(self):  # AC-104
-        self.changed_while_waiting("retry", lambda tree: self.commit(tree, "new.txt", "unchecked\n"), retry=True)
+    def test_a_commit_added_while_a_push_from_outside_moved_main_is_refused_at_the_next_try(self):  # AC-104
+        tree = self.tree("retry")
+        self.commit(tree, "new.txt", "checked\n")
+        def smoke(tree):
+            if not self.smokes:
+                self.smokes.append(tree.name)
+                before.append(self.push_from_outside("other.txt", "x\n"))
+                self.commit(tree, "new.txt", "unchecked\n")
+            return True
+        before = []
+        with self.assertRaises(land.Stop) as stop:
+            land.land(tree, check=self.green, smoke=smoke, say=lambda _: None)
+        self.assertIn("changed while landing", str(stop.exception))
+        self.assertEqual(self.on_origin(), before[0])
+        self.assertTrue(self.turn_is_free())
 
     def test_uncommitted_changes_while_waiting_for_the_push_turn_are_refused(self):  # AC-104
         for kind in ("tracked", "untracked", "staged", "mode", "hidden"):
@@ -257,28 +265,26 @@ class Landing(unittest.TestCase):
         self.assertIn("one.txt", files)
         self.assertIn("two.txt", files)
 
-    def test_another_landing_during_the_checks_is_merged_and_not_retested_unless_it_overlaps(self):
-        one, other = self.tree("one"), self.tree("other")
+    def test_a_push_from_outside_during_the_checks_is_merged_and_not_retested_unless_it_overlaps(self):  # AC-104
+        one = self.tree("one")
         self.commit(one, "one.txt", "x\n")
-        self.commit(other, "other.txt", "x\n")
         def lands_other_first(tree):
             self.checks.append(tree.name)
             if len(self.checks) == 1:
-                land.land(other, check=lambda _: True, say=lambda _: None)
+                self.push_from_outside("other.txt", "x\n")
             return True
         land.land(one, check=lands_other_first, say=lambda _: None)
         self.assertEqual(self.checks, ["one"])
         self.assertIn("other.txt", git("ls-tree", "--name-only", "main", cwd=self.origin).split())
         self.assertIn("one.txt", git("ls-tree", "--name-only", "main", cwd=self.origin).split())
 
-    def test_a_landing_on_the_same_file_during_the_checks_makes_them_run_again(self):
-        one, other = self.tree("one"), self.tree("other")
+    def test_a_push_from_outside_on_the_same_file_during_the_checks_makes_them_run_again(self):  # AC-104
+        one = self.tree("one")
         self.commit(one, "a.txt", "one\ntwo\n")
-        self.commit(other, "a.txt", "zero\none\n")
         def lands_other_first(tree):
             self.checks.append(tree.name)
             if len(self.checks) == 1:
-                land.land(other, check=lambda _: True, say=lambda _: None)
+                self.push_from_outside("a.txt", "zero\none\n")
             return True
         land.land(one, check=lands_other_first, say=lambda _: None)
         self.assertEqual(self.checks, ["one", "one"])
@@ -309,46 +315,68 @@ class Landing(unittest.TestCase):
         self.assertEqual((self.checks, self.smokes), (["one"], ["one"]))
 
     def test_each_merge_gets_its_smoke_set(self):  # AC-104
-        one, other = self.tree("one"), self.tree("other")
+        one = self.tree("one")
         self.commit(one, "one.txt", "x\n")
-        self.commit(other, "other.txt", "x\n")
         def smoke_landing_other_first(tree):
             self.smokes.append(tree.name)
             if len(self.smokes) == 1:
-                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
+                self.push_from_outside("other.txt", "x\n")
             return True
         land.land(one, check=self.green, smoke=smoke_landing_other_first, say=lambda _: None)
         self.assertEqual((self.checks, self.smokes), (["one"], ["one", "one"]))
 
-    def test_a_tree_that_lost_the_race_once_holds_the_turn_until_it_lands(self):  # AC-104
-        one, other = self.tree("one"), self.tree("other")
+    def test_a_landing_holds_the_turn_from_its_merge_to_its_push_and_through_a_retry(self):  # AC-104
+        one = self.tree("one")
         self.commit(one, "one.txt", "x\n")
-        self.commit(other, "other.txt", "x\n")
         held = []
         def smoke(tree):
             held.append(not self.turn_is_free())
-            if len(held) == 1:
-                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
+            self.smokes.append(tree.name)
+            if len(self.smokes) == 1:
+                self.push_from_outside("other.txt", "x\n")
+            return True
+        def check(tree):
+            held.append(not self.turn_is_free())
             return True
         said = []
-        land.land(one, check=self.green, smoke=smoke, say=said.append)
-        self.assertEqual(held, [False, True], "the first smoke set runs beside the others, the second in the turn")
-        self.assertIn("lost the race once: holding the landing turn through this merge's checks", said)
+        land.land(one, check=check, smoke=smoke, say=said.append)
+        self.assertEqual(held, [True, True, True], "its targeted checks and both smoke sets in the turn")
+        self.assertIn("origin/main moved while this tree was checked", said)
         self.assertIn("one.txt", git("ls-tree", "--name-only", "main", cwd=self.origin).split())
         self.assertTrue(self.turn_is_free(), "and lets it go once landed")
 
-    def test_a_red_check_in_the_held_turn_frees_it(self):  # AC-104
-        one, other = self.tree("one"), self.tree("other")
+    def test_two_landings_at_once_run_one_smoke_set_each_one_after_the_other(self):  # AC-104
+        one, two = self.tree("one"), self.tree("two")
         self.commit(one, "one.txt", "x\n")
-        self.commit(other, "other.txt", "x\n")
-        def smoke(tree):
+        self.commit(two, "two.txt", "x\n")
+        inside, go, running = threading.Event(), threading.Event(), []
+        def slow(tree):
+            running.append(tree.name)
+            inside.set()
+            self.assertTrue(go.wait(10))
+            running.remove(tree.name)
+            return True
+        def quick(tree):
+            self.assertEqual(running, [], "never beside another landing's smoke set")
             self.smokes.append(tree.name)
-            if len(self.smokes) == 1:
-                land.land(other, check=lambda _: True, smoke=lambda _: True, say=lambda _: None)
-                return True
-            return False
+            return True
+        with ThreadPoolExecutor(max_workers=2) as runner:
+            first = runner.submit(land.land, one, check=self.green, smoke=slow, say=lambda _: None)
+            self.assertTrue(inside.wait(10))
+            second = runner.submit(land.land, two, check=self.green, smoke=quick, say=lambda _: None)
+            time.sleep(0.5)
+            self.assertEqual((self.checks, self.smokes), (["one"], []), "two waits for the turn, checking nothing")
+            go.set()
+            first.result(timeout=10)
+            second.result(timeout=10)
+        self.assertEqual((self.checks, self.smokes), (["one", "two"], ["two"]), "one targeted pass and one smoke set each")
+        self.assertTrue({"one.txt", "two.txt"} <= set(git("ls-tree", "--name-only", "main", cwd=self.origin).split()))
+
+    def test_a_red_check_in_the_turn_frees_it(self):  # AC-104
+        one = self.tree("one")
+        self.commit(one, "one.txt", "x\n")
         with self.assertRaises(land.Stop):
-            land.land(one, check=self.green, smoke=smoke, say=lambda _: None)
+            land.land(one, check=self.green, smoke=lambda _: False, say=lambda _: None)
         self.assertTrue(self.turn_is_free())
 
     def test_the_turn_names_its_holder_for_those_who_wait(self):  # AC-104
@@ -405,6 +433,50 @@ class Landing(unittest.TestCase):
     def test_only_a_change_with_code_counts_as_code(self):
         self.assertFalse(land.has_code({"docs/USAGE.md", "README.md"}))
         self.assertTrue(land.has_code({"docs/USAGE.md", "terminumd/src/a.rs"}))
+
+    def installs(self, files, env="1"):
+        with mock.patch.dict(os.environ, {"TM_LAND_INSTALL": env}):
+            land.after_push(self.primary)(files)
+        return land.install_mark(self.primary).exists()
+
+    def made(self, ran):
+        def run(primary, target):
+            ran.append(target)
+            return subprocess.CompletedProcess([], 0, "terminumd: this checkout's build\n" if target == "installed" else "", "")
+        return run
+
+    def test_code_landed_marks_one_install_and_docs_none(self):  # AC-104
+        self.assertFalse(self.installs({"docs/USAGE.md"}))
+        self.assertFalse(self.installs({"terminumd/src/a.rs"}, env="0"))
+        self.assertTrue(self.installs({"terminumd/src/a.rs"}))
+
+    def test_the_install_runs_once_after_the_turn_for_all_that_landed(self):  # AC-104
+        self.installs({"one.rs"})
+        self.installs({"two.rs"})
+        ran, said = [], []
+        land.install_pending(self.primary, run=self.made(ran), say=said.append)
+        land.install_pending(self.primary, run=self.made(ran), say=said.append)
+        self.assertEqual(ran, ["build", "install", "installed"], "once for both")
+        self.assertIn("make installed: exit 0: terminumd: this checkout's build", said)
+        self.assertFalse(land.install_mark(self.primary).exists())
+
+    def test_a_landing_in_the_turn_is_left_the_install(self):  # AC-104
+        self.installs({"one.rs"})
+        ran, said = [], []
+        with land.Turn(self.tree("two")):
+            land.install_pending(self.primary, run=self.made(ran), say=said.append)
+        self.assertEqual((ran, said), ([], ["install: left to two's landing, which has the turn"]))
+        self.assertTrue(land.install_mark(self.primary).exists(), "kept for two, which installs after its own")
+        land.install_pending(self.primary, run=self.made(ran), say=said.append)
+        self.assertEqual(ran, ["build", "install", "installed"])
+
+    def test_a_failed_build_stops_the_install_and_is_said(self):  # AC-104
+        self.installs({"one.rs"})
+        said = []
+        failed = lambda primary, target: subprocess.CompletedProcess([], 2, "", "error[E0425]")
+        with mock.patch("sys.stderr"):
+            land.install_pending(self.primary, run=failed, say=said.append)
+        self.assertEqual(said, ["make build: exit 2"])
 
     def turn_is_free(self):
         """Whether another landing would get the turn now: the same call a landing makes, not a lock of the test's own."""
@@ -469,7 +541,7 @@ class Said(unittest.TestCase):
                     mock.patch.object(land, "ci_status", return_value="CI on main: success on 0123456789: u"), \
                     mock.patch.object(land, "land", lambda tree, after: after(["x.rs"]) or "abcdef0123456789"), \
                     mock.patch.object(land, "after_push", lambda _: lambda files: shutil.rmtree(tree)), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
-                    mock.patch.object(land.os, "chdir"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
+                    mock.patch.object(land.os, "chdir"), mock.patch.object(land, "install_pending"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
                 self.assertEqual(land.main(["x"]), 0)
         self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",
                                     "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page"])
