@@ -66,7 +66,7 @@ Open questions:
 |---|---|---|
 | AC-121 | [MUST / P0] | RUN opens a window at its project's place (AC-140), starts the chosen agent there by its command, pastes the task through the gate and starts the work: IN PROGRESS once the agent takes it, FAILED with the reason if not. |
 | AC-122 | [MUST / P0] | RUN again takes the human's comment on: in the live session, in that pane when only its shell remains, else in a new window continuing the agent's conversation; a human's new prompt in the session returns the task to IN PROGRESS. |
-| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` with a result in its sections is DONE, one without them stays a comment; a turn with no result gets a request at each quiet stop, 3 a run at most, to finish it, ask a human or say what still runs, then an hour with no result is FAILED; an hour with no activity while IN PROGRESS is FAILED; a session that ends with no result, a dead agent or a turn's failure is FAILED; no clock makes a task DONE. |
+| AC-123 | [MUST / P0] | Dispatcher finds the end: `finish_task` with a result in its sections is DONE, one without them, or whose Outcome says partly done or not done, stays a comment; a turn with no result gets a request at each quiet stop, 3 a run at most, to finish it, ask a human or say what still runs, then an hour with no result is FAILED; an hour with no activity while IN PROGRESS is FAILED; a session that ends with no result, a dead agent or a turn's failure is FAILED; no clock makes a task DONE. |
 | AC-124 | [MUST / P0] | An agent that waits for a human for 2 minutes puts its task in WAIT FOR HUMAN, and it returns once the agent goes on. |
 | AC-125 | [MUST / P0] | Dispatcher closes a session it started 5 minutes after DONE or FAILED, only with the agent idle, keeps the screen's last rows when there is no result, writes each session's start and end on the task, and acts only on sessions it started and marked. |
 | AC-126 | [MUST / P0] | A task's optional time budget counts only IN PROGRESS; the agent hears it at the start and 3% before its end, at least 2 minutes; at the limit Dispatcher ends the agent and what it can reach of its subagents and the task is FAILED. |
@@ -87,7 +87,7 @@ Open questions:
 | AC-158 | [MUST / P0] | A RUN at its agent's or project's limit that the human added to the queue (AC-169) waits for room, in the queue's order, and starts once there is room; it is called off by the human, or by the task moving, archived or its agent deleted. |
 | AC-169 | [MUST / P0] | A RUN at a limit is offered its agent's queue and waits only once the human agrees; the agent's card shows a pale dot for each queued task, a ring for each free slot and a dashed ring for each kept one, and a key that opens its window at the queue, where tasks are dragged or moved by arrows into another order and taken out, on a Mac and on a phone. |
 | AC-170 | [SHOULD / P1] | Auto-Dispatcher, off until a human turns it on for a project with the switch in the board's bar: it takes TODO tasks of the severities chosen that stand for the wait set; with free slots and such tasks Dispatcher starts a round, one more session of the chosen agent that takes no slot; that agent scores the candidates by RICE and starts the best, one a free slot, each on the agent named in the task or the setting's default, told only its ID; or, set to priority and saved order, terminumd starts them itself top down with no agent; a failing round or two failing tasks turn it off, said on the board. |
-| AC-185 | [MUST / P0] | A main task runs with its subtasks: a RUN of it, a human's, a manager's or Auto-Dispatcher's, takes its subtasks not DONE into the same session; the agent is told to do them all one after another in the order it decides, the main task last, done only when each subtask is; one that cannot be done fails with what depends on it and its main task, and the main task's next RUN runs again what is not DONE. |
+| AC-185 | [MUST / P0] | A main task runs with its subtasks: a RUN of it, a human's, a manager's or Auto-Dispatcher's, takes its subtasks not DONE into the same session; the agent is told to do them all one after another in the order it decides, the main task last, done only when each subtask is; one held by a cause that can be removed waits for a human with the rest still in progress, one that cannot be done at all fails with what depends on it and its main task, and the main task's next RUN runs again what is not DONE. |
 | AC-183 | [MUST / P0] | A run keeps who asked for it and how: the user's ID for a human's Run (the Run key, a card dropped on an agent, the new-task window's Run, + Session), Dispatcher for a schedule's firing and Auto-Dispatcher's start; a page never starts a run as Dispatcher's. |
 | AC-166 | [SHOULD / P1] | RUN's prompt asks the agent to close its task out: what it noticed goes to tasks, the tasks it made are reviewed, and its result has fixed sections, written in the project's language (English when none is set); a task's end says on it which tasks its session made, and finishing says which IDs its result names that the board lacks. |
 | AC-131 | [MUST / P0] | Dispatcher is one named system user, walks its tasks on a fixed beat, goes on where it was after terminumd restarts, and never acts on time it did not see pass. |
@@ -432,9 +432,15 @@ Scenario: AC-123 failure — a result without its sections
   Then its words are a comment by the agent, not its result, and API-12 stays as it was: a session ended next loses no words
   And the call answers "Not a result: it lacks Outcome, Done, Checked, Not done, Needs a human, New tasks, Tasks changed, Issues and discoveries, Further recommendations. Your text is kept as a comment and API-12 stays IN PROGRESS. Write each section as a line "Name:" or a heading, its name as given ("None" when empty), then call it again.", naming only the sections it lacks, so the agent writes it again in the same turn
 
+Scenario: AC-123 failure — a result of work not done
+  When the agent calls finish_task for API-12 with every section, its Outcome beginning "Partly done" or "Not done" on its heading's line or the next (the form asks those words first, in English)
+  Then its words are a comment by the agent and API-12 stays as it was: never DONE
+  And the call answers "Not finished: its Outcome says the work is not done, and a result is for done work. Your text is kept as a comment and API-12 stays IN PROGRESS; give its result again only once its work is done. If a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access) holds it, ask by execute_tool("ask_human", {id, questions}): it waits for a human. If it cannot be done at all, move it to FAILED by execute_tool("move_task", {id, to}) with a comment saying why."
+  And a schedule's task and Auto-Dispatcher's round keep their own form, whose Outcome is ok, attention or failed
+
 Scenario: AC-123 happy path — a turn ended with no result
   Given a Stop, or an idle screen after a turn with no Stop (an interrupt), API-12 IN PROGRESS, and no activity (§9) for 5 minutes
-  Then through the gate: "[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for. If a human must decide or approve something, ask by execute_tool("ask_human", {id, questions}): the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour."
+  Then through the gate: "[terminum Dispatcher] API-12 is still open and your turn ended; no human watches this run now. If it is finished, call execute_tool("finish_task", {id, result}) with its result in the sections you were asked for. If a human must decide or approve something, or a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access) keeps it from being finished, ask by execute_tool("ask_human", {id, questions}): the task waits for them. If work you started still runs (a check, a landing), say what and until when by update_session_plan, then end your turn: you go on when it ends. With none of these, it is FAILED after an hour."
   And the agent, with its whole context, says which way it ended: Dispatcher approves nothing for a human, and a question it asks in words alone is answered by this request, not by Dispatcher
   And the turn that request starts is not new work and starts no clock anew; an answer in words only changes nothing; its tools are activity
   When that turn's Stop has come and the agent is again quiet for 5 minutes, the task still IN PROGRESS
@@ -1086,7 +1092,7 @@ Scenario: AC-157 happy path — the human answers
   Then AC-158 holds; dropped on another agent, AC-138's edge "its conversation on another agent"
 
 Scenario: AC-157 happy path — what a prompt says
-  Then RUN's prompt ends with "If you need a human's decision, call execute_tool("ask_human", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window."
+  Then RUN's prompt ends with "If you need a human's decision, call execute_tool("ask_human", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. If the task cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access), ask the same way, saying what is done and committed, what holds it and what you recommend (such as "RUN it again once TERM-9 is DONE"): it waits for a human; give it no result by execute_tool("finish_task", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why."
   And terminum mcp's ask_human says the same in its description
 
 Scenario: AC-157 edge — what keeps it open
@@ -1123,6 +1129,7 @@ Scenario: AC-158 happy path — a press at a limit
   When the user runs API-13 on it, first or to go on in a closed session, and adds it to the queue (AC-169)
   Then the press is kept, its comment kept on API-13 at once, and the answer and a toast say "It waits for Opus reviewer: Opus reviewer is at its limit of 1: API-12 is working. It starts when there is room."
   And API-13's card and window say "waits for Opus reviewer"; its column does not change
+  And while it waits, an agent's move_task or finish_task on it is refused, "API-13 waits in Opus reviewer's queue: it starts when there is room. You can read it and comment.": no other session calls off a human's or a manager's press; a human's move still does
   When API-12's session closes, its agent goes or it is given up
   Then within a walk API-13's press goes again as RUN would go now: every check of a press read anew, the folder, hooks, the host's link, the text the human saw
 
@@ -1386,11 +1393,14 @@ Scenario: AC-185 happy path — a human's RUN
   And each is finished by finish_task as it is done, the session working on what is still open (AC-138)
 
 Scenario: AC-185 happy path — one cannot be done
-  Then the prompt says: "If one cannot be done, say why in a comment on it and move it to FAILED. Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. The human can remove the cause and run the main task again: what is not DONE runs again."
+  Then the prompt says: "If one cannot be finished now for a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access), give it no result by execute_tool("finish_task", {id, result}) and do not fail it: keep what you did committed, do the rest that does not depend on it, then ask about it as below, saying what is done, what holds it and what you recommend: it waits for a human with the tasks still in progress."
+  And: "If one cannot be done at all, say why in a comment on it and move it to FAILED. Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. What is not DONE runs again at the main task's next RUN."
   When the agent finishes API-13, fails API-14 and API-12 so, and ends its turn
   Then API-13 is DONE, API-14 and API-12 are FAILED with the agent's comments, and the session closes as AC-125 says
   When the human removes the cause and presses Run on API-12
-  Then a new session starts for API-12 and its subtasks not DONE, API-14 among them; API-13 stays DONE
+  Then the run's conversation goes on for API-12 and its subtasks not DONE, API-14 among them, its work and context kept: in its window while it stands, else in a new one (AC-122); API-13 stays DONE
+  And its words end "Its open tasks: API-14, API-12 (a main task last).", each reopened IN PROGRESS, and the press's message is kept on each
+  And a press that names a task its last run did not hold, or another agent, or Run from scratch, starts a new session instead
   And one left in progress at the turn's end is asked for and failed as AC-123 says
 
 Scenario: AC-185 happy path — Auto-Dispatcher
@@ -1405,14 +1415,14 @@ Scenario: AC-185 happy path — Auto-Dispatcher
 Scenario: AC-185 edge — the main task ends last
   Given API-12 and its subtask API-14 IN PROGRESS in one run
   When the agent calls finish_task on API-12
-  Then it is refused: "API-12 is a main task: its subtasks of this run are not DONE: API-14. Finish them first, or move API-12 to FAILED with a comment saying why."
+  Then it is refused: "API-12 is a main task: its subtasks of this run are not DONE: API-14. Finish them first; when a cause that can be removed (another task or a prerequisite not done, a check that fails for another task's reason or cannot run here, missing access) holds one, ask by execute_tool("ask_human", {id, questions}); when one cannot be done at all, move API-12 to FAILED with a comment saying why."
   And move_task {id: "API-12", to: "DONE"} is refused in the same words
   And a subtask made or put under API-12 after the run started is none of the run's: it does not hold API-12 open, and its next RUN takes it
   When that run is over and an agent, in the conversation a subtask's own RUN resumed too, finishes API-12 with API-14 not DONE
   Then it is refused as well: what API-12's newest run took holds it until it is DONE; a human moves a card as they will
 
 Scenario: AC-185 edge — asking a human
-  Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window."
+  Then the prompt says, for AC-157's words: "If you need a human's decision: do first what does not depend on it. Then call execute_tool("ask_human", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task brings the answers back into this conversation. Do not wait for an answer in this window."
   When the agent calls ask_human on API-14, with API-12 and API-15 of its run still IN PROGRESS
   Then API-12 and API-15 are WAIT FOR HUMAN too, by Dispatcher: "It waits with API-14: its session's agent asked the human there."; in any run of several tasks (AC-138)
   And the tool answers "API-14 waits for the human, with your questions. End your turn now, with no more tool calls: this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."
@@ -1420,9 +1430,10 @@ Scenario: AC-185 edge — asking a human
   When the agent's turn is over
   Then the session closes as AC-157 says
   When the human answers in comments and presses Run on API-12
-  Then a new session starts for what is not DONE, and its prompt carries, after the rules, each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
+  Then the run's conversation goes on for what is not DONE, and its prompt carries each human comment since the last questions on a task of the run, under its task's ID, whatever column the task stands in; an agent's comment is never in it
+  And while the session that asked still stands open, the answers go into it, its subtasks of the run with them; only Run from scratch is refused there, the run still being watched
   And RUN's window shows them: one written or changed after it was read is "The task's text changed: look at it again." (AC-121)
-  And any run of several tasks carries them so (AC-138): it starts anew too
+  And any run of several tasks carries them so (AC-138)
   When the human presses Run on the subtask that asked instead
   Then AC-157 holds for it alone: its conversation resumes
 
@@ -1458,7 +1469,7 @@ Scenario: AC-166 happy path — the close-out in RUN's prompt
   Then RUN's prompt holds, before "When it is done, call execute_tool("finish_task", {id, result}) with the result.", the close-out: "Before you call execute_tool("finish_task", {id, result}), close the task out; short of time, write the result (step 3) first. The session closes minutes after the result: work left that is in no task is lost then." and three steps
   And step 1: what the agent noticed and did not do that a human would plan work for (what is left of the task's own work, a bug or gap outside its scope, a follow-up, a decision to take) gets a task, after list_tasks finds no open one on it, else a comment on that one; smaller things go into the result's Issues and discoveries
   And step 2: the agent reviews the tasks it made in this run (renamed, re-prioritized, regrouped where its work changed them); it archives one only when its work resolved it, or it made it in this run and it is no longer needed, naming the commit or task in the reason; another task that looks stale gets a comment, never a change
-  And step 3: the result "in the language named "Русский"" (the name quoted as data), plain words a newcomer reads without the session, every heading there, its name as written ("None" when empty), in this order: Outcome (done, partly or not; merged, on a branch or nothing committed), Done (each change, why, where; each choice the task left open), Checked (how, on what, with what result; what was not verified), Not done (what is left names its task's ID), Needs a human, New tasks (ID and one sentence each, only tasks that exist), Tasks changed (ID and why), Issues and discoveries, Further recommendations (each one a human would plan names its task's ID)
+  And step 3: the result "in the language named "Русский"" (the name quoted as data), plain words a newcomer reads without the session, every heading there, its name as written ("None" when empty), in this order: Outcome ("Done", first and in English: work not done takes no result, a human is asked or it is FAILED (AC-123, AC-157); merged or on a branch), Done (each change, why, where; each choice the task left open), Checked (how, on what, with what result; what was not verified), Not done (what is left names its task's ID), Needs a human, New tasks (ID and one sentence each, only tasks that exist), Tasks changed (ID and why), Issues and discoveries, Further recommendations (each one a human would plan names its task's ID)
   And the titles after Bug:, Feat: or Debt:, the texts and the comments the agent puts on the board are in Русский too; the template's headings stay as it writes them
   And the budget's words ask to leave time for the close-out (AC-126)
   And finish_task's description names the same sections, for an agent that took a task without RUN
@@ -1769,7 +1780,7 @@ Exit -1 is the folder's: no process exits with it. The target names the pane: `t
 5. Read the screen again until the text or Claude's fold marker stands in the box, with no dialog, within its time below (a first prompt's longer: an agent still starting shows it late).
 6. Enter.
 
-Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message and the humans' answers alone (AC-138); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set. terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
+Only the following pass: a task's ID with fixed words, never a title or a comment, Auto-Dispatcher's two prompts among them (AC-170: a round's with its candidates' IDs, a started task's with its own and its subtasks', AC-185), and the integration queue's two return notices and its round's words (`terminum-integration.md` AC-192, AC-194); the prompt of a batch's integration task: its project's saved Prompt with terminumd's facts filled in (`terminum-integration.md` §9); the prompt of a human's RUN: for one task its title and text, for several, a main task with its subtasks among them (AC-185), their numbers, the human's message and the humans' answers alone (AC-138); the close-out of AC-166 in fixed words with the project's language, a name of letters, spaces, hyphens and brackets that a human set. terminumd keeps what it typed for 5 minutes and matches it to the hook's `prompt`, on that field's first 20,000 characters: such a prompt is not new work (AC-122) and is no activity (AC-123). Each paste and the window's command are rows of the input log, as Dispatcher's (terminum.md AC-147).
 
 **Times.** Constants, not settings: no need for another value is known. Tests drive them with an injected clock (`TM_TEST_CLOCK_SCALE`) and, to act on a finished session before it closes, a longer Close (`TM_TEST_CLOSE_AFTER`, seconds), both read only with a test's `TM_APP_DIR`.
 

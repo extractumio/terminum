@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { PROJECT_HUES, el, hueColor, iconButton, when } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton, textKey, when } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
@@ -58,17 +58,23 @@ export function signInElsewhere() {
 }
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
- *  message, with its status. */
+ *  message, with its status. An empty answer is {}; one that cannot be read (cut off, as a navigation
+ *  leaves a read in WebKit) throws, never stands for an empty one. */
 export async function api(path, { method = "GET", body } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
   const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
-  const m = await r.json().catch(() => ({}));
+  let m = {}, unread;
+  try {
+    const text = await r.text();
+    if (text) m = JSON.parse(text);
+  } catch (e) { unread = e; }
   if (r.status === 401) refused();
   if (!r.ok) {
     const e = new Error(m.error ?? `terminumd answered ${r.status}`);
     e.status = r.status;
     throw e;
   }
+  if (unread) throw new Error(`the answer was cut off or not JSON (${unread.message})`);
   return m;
 }
 
@@ -128,8 +134,9 @@ export function guardQueuedRun(key, waits) {
   return key;
 }
 
+/** A text key; a pointer's press leaves it unfocused (textKey). */
 export function button(cls, text, onClick) {
-  const b = el("button", cls, text);
+  const b = textKey(el("button", cls, text));
   b.type = "button";
   if (onClick) b.addEventListener("click", onClick);
   return b;
@@ -208,6 +215,29 @@ const fileUrl = (id) => `/api/task-files/${id}`;
 export const fileMarkdown = (f) => `${f.mime?.startsWith("image/") ? "!" : ""}[${f.name.replace(/[[\]]/g, "")}](${fileUrl(f.id)})`;
 /** `text` with file `f`'s link on a line of its own at its end. */
 export const withFileLink = (text, f) => `${text}${text && !text.endsWith("\n") ? "\n" : ""}${fileMarkdown(f)}\n`;
+/** `text` without the links to files `ids` (32 hex digits, terminumd's), and the name each first showed. */
+export function withoutFileLinks(text, ids) {
+  const names = [];
+  for (const id of ids) {
+    let name = null;
+    text = text.replace(new RegExp(`!?\\[([^\\]]*)\\]\\(${fileUrl(id)}\\)\\n?`, "g"), (_, shown) => { name ??= shown; return ""; });
+    names.push(name);
+  }
+  return { text, names };
+}
+
+/** Of a draft's files, those terminumd no longer keeps: a file joined to no task goes after 7 days (AC-106, AC-108).
+ *  Only its 404 says so: any other answer, or none, keeps the file in the draft. */
+export async function goneFiles(ids) {
+  const gone = await Promise.all(ids.map((id) => fetch(fileUrl(id), { method: "HEAD" }).then((r) => r.status === 404, () => false)));
+  return ids.filter((_, i) => gone[i]);
+}
+
+/** terminumd's refusal of a draft's file the sweep took (tasks/files.rs FILE_GONE): only then is a refused draft
+ *  asked of its files again. */
+export const FILE_GONE = "A file of this window is gone: add it again";
+/** What a window says of a draft's files that are gone. */
+export const goneSaid = (names) => `${names.join(", ")}: gone, this draft was not saved for 7 days. Drop ${names.length > 1 ? "them" : "it"} again to keep ${names.length > 1 ? "them" : "it"}.`;
 
 /** Saves a file through a fetch with the sign-in, never its address (terminum.md AC-09). */
 export async function download(id, name) {

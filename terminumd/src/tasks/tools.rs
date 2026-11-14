@@ -81,7 +81,17 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 /// human's RUN still holds in another session is that run's, which Dispatcher watches.
 fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = visible(tx, who, id)?;
-    not_run_elsewhere(tx, who, &t).map(|()| t)
+    not_run_elsewhere(tx, who, &t)?;
+    not_queued(tx, &t).map(|()| t)
+}
+
+/// Refused while a press waits for `t` in an agent's queue (terminum-dispatcher.md AC-158, AC-169): that press is a
+/// human's or a manager's, and a move would call it off.
+fn not_queued(tx: &Transaction, t: &Task) -> Result<(), String> {
+    let Some(w) = crate::dispatcher::waits::of_task(tx, &t.key)? else {
+        return Ok(());
+    };
+    Err(format!("{} waits in {}'s queue: it starts when there is room. You can read it and comment.", t.id, super::agents::name_of(tx, &w.agent)?))
 }
 
 /// Refused while a human's RUN holds `t` in another session: from its start, before it has a pane, until
@@ -103,7 +113,7 @@ fn after_its_subtasks(tx: &Transaction, t: &Task) -> Result<(), String> {
     if open.is_empty() {
         return Ok(());
     }
-    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first, or move {0} to FAILED with a comment saying why.", t.id, open.join(", ")))
+    Err(format!("{0} is a main task: its subtasks of this run are not DONE: {1}. Finish them first; when a cause that can be removed {2} holds one, ask by execute_tool(\"ask_human\", {{id, questions}}); when one cannot be done at all, move {0} to FAILED with a comment saying why.", t.id, open.join(", "), super::closeout::removable!()))
 }
 
 /// Why an agent's own move to WAIT FOR HUMAN is refused: a card there with no question tells the human nothing.
@@ -255,7 +265,7 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
             }
             "ask_human" => {
                 let id = arg(args, "id")?;
-                own(tx, who, id)?;
+                not_queued(tx, &own(tx, who, id)?)?;
                 let me = me()?;
                 ops::questions(tx, &me, id, &rules::clean(arg(args, "questions")?), at)?;
                 ops::move_to(tx, &me, id, "WAIT FOR HUMAN", at)?;
@@ -281,9 +291,14 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
                 let result = rules::clean(arg(args, "result")?);
                 ops::comment(tx, &me, id, &result, at)?;
                 // a result is there only in its sections: else its words stay a comment, the task as it was (AC-123)
-                let lacks = closeout::missing(&result, closeout::form_of(tx, &t.key)?);
+                let form = closeout::form_of(tx, &t.key)?;
+                let lacks = closeout::missing(&result, form);
                 if !lacks.is_empty() {
                     return Ok((closeout::missing_words(id, &t.status, &lacks), vec![id.to_string()]));
+                }
+                // work its own Outcome says is not done is no DONE: it waits for a human or fails (AC-123, AC-157)
+                if form == closeout::SECTIONS.as_slice() && closeout::not_done(&result) {
+                    return Ok((closeout::not_done_words(id, &t.status), vec![id.to_string()]));
                 }
                 ops::move_to(tx, &me, id, "DONE", at)?;
                 crate::dispatcher::runs::finished(tx, &t.key)?;
