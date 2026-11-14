@@ -56,7 +56,7 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             r.turn_starts();
             if r.ids.len() == 1 || !r.open.is_empty() {
                 for id in r.targets() {
-                    moved |= super::api::bring_back(tx, id)?;
+                    moved |= super::press::bring_back(tx, id)?;
                     if r.status != "IN PROGRESS" {
                         move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
                         moved = true;

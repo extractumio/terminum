@@ -400,6 +400,19 @@ fn ac123_a_result_is_kept_only_in_its_sections() {
 }
 
 #[test]
+fn ac123_work_its_outcome_says_is_not_done_is_no_done() {
+    let (s, dir) = fresh("tt-notdone");
+    let w = who(Some("api"));
+    let id = task(&s, "api", Some(KEY));
+    let partly = closed_out("Outcome: Partly done, committed on fix/x");
+    assert_eq!(call_raw(&s, &dir, &w, json!({"id": id, "result": partly})), closeout::not_done_words(&id, "TODO"));
+    let (status, comments) = s.with(|tx| Ok((ops::get(tx, &id)?.status, ops::history(tx, &id)?.as_array().unwrap().iter().filter(|e| e["kind"] == "comment").count()))).unwrap();
+    assert_eq!((status.as_str(), comments), ("TODO", 1), "its words a comment, the task where it was: never DONE");
+    let done = closed_out("Outcome: Done, merged");
+    assert_eq!(call_raw(&s, &dir, &w, json!({"id": id, "result": done})), format!("{id} is DONE, with your result."));
+}
+
+#[test]
 fn ac123_a_section_is_a_heading_line_and_a_schedule_has_its_own_form() {
     for (before, after) in [("", ": x"), ("**", ":** x"), ("### ", ""), ("__", "__\nx"), ("- **", ":** x"), ("1. ", ": x"), ("2) ", ""), ("> ", ":"), ("= ", ":")] {
         let r = closeout::SECTIONS.iter().map(|(n, _)| format!("{before}{}{after}", n.to_uppercase())).collect::<Vec<_>>().join("\n");
@@ -477,7 +490,7 @@ fn ac185_a_main_task_is_finished_after_the_subtasks_of_its_run() {
     assert!(asked.ends_with("this session's tasks in progress wait with it, Dispatcher closes the session, and the human's RUN brings the answers."), "{asked}");
     assert_eq!((status(&main), status(&kid), status(&later)), ("WAIT FOR HUMAN".to_string(), "WAIT FOR HUMAN".to_string(), "TODO".to_string()));
     let refused = call(&s, &dir, &w, "finish_task", json!({"id": main, "result": "all"})).unwrap_err();
-    assert_eq!(refused, format!("{main} is a main task: its subtasks of this run are not DONE: {kid}. Finish them first, or move {main} to FAILED with a comment saying why."));
+    assert_eq!(refused, format!("{main} is a main task: its subtasks of this run are not DONE: {kid}. Finish them first; when a cause that can be removed {} holds one, ask by execute_tool(\"ask_human\", {{id, questions}}); when one cannot be done at all, move {main} to FAILED with a comment saying why.", closeout::removable!()));
     assert_eq!(call(&s, &dir, &w, "move_task", json!({"id": main, "to": "DONE"})).unwrap_err(), refused, "nor by a move");
     call(&s, &dir, &w, "move_task", json!({"id": kid, "to": "FAILED"})).unwrap();
     // its run over, a session going on with the subtask alone ends no main task

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // A main task run with its subtasks, against a real private terminumd (terminum-dispatcher.md AC-185): RUN's window
 // names them all, one session does them, a subtask that cannot be done fails with its main task, and the main task's
-// next RUN runs again what is not DONE. scripts/fake_agent.py works by the real hooks and tools:
+// next RUN goes on in that conversation with what is not DONE. scripts/fake_agent.py works by the real hooks and tools:
 // `node web/test/e2e_live.mjs main chromium`.
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,7 +27,7 @@ export async function liveMain(page, live) {
     await pressRun(page, main);
     await page.waitForSelector("#runbox[open]");
     const [head, prompt, whole] = [await page.textContent("#runhead"), await page.textContent("#runprompt"), await page.evaluate(() => document.querySelector("#runwhat").open)];
-    await page.selectOption("#runagent", agent);
+    if (await page.isVisible("#runagent")) await page.selectOption("#runagent", agent);   // going on, its agent is its run's
     await page.fill("#runmessage", words);
     await page.click("#rungo");
     await until(async () => !(await page.$("#runbox[open]")));
@@ -44,7 +44,12 @@ export async function liveMain(page, live) {
   check("AC-185 the agent's reason stands on the failed subtask", (await task(b)).history.some((e) => /It cannot be done/.test(e.text ?? "")));
 
   await page.waitForSelector(`${card(main)} .crun`);
+  const offer = await j(`/api/tasks/${main}/run?agent=${agent}`);
+  check("AC-185 run again on the same agent, its run's tasks go on in its conversation", offer.first === false && JSON.stringify(offer.ids) === JSON.stringify([main, b]), JSON.stringify({ first: offer.first, ids: offer.ids }));
   const again = await run("FINISHES");
-  check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b}`, again.head);
-  check("AC-185 and all are DONE, in a new session", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 2 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
+  check("AC-185 run again, the main task takes what is not DONE", again.head === `Run ${main}, ${b} again`, again.head);
+  check("AC-185 and all are DONE, the same conversation gone on", await has(b, "DONE") && await has(main, "DONE") && (await runs(main)).length === 1 && (await runs(a)).length === 1, JSON.stringify(await runs(main)));
+  const said = async (id) => (await task(id)).history.filter((e) => e.kind === "comment" && e.text === "FINISHES").length;
+  const kept = [await said(main), await said(b)];
+  check("AC-185 the press's message is kept on each of its tasks", kept[0] === 1 && kept[1] === 1, kept.join(" "));
 }
