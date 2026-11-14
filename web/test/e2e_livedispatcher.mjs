@@ -2,7 +2,7 @@
 // Dispatcher against a real private terminumd and tmux (e2e_live.mjs; terminum-dispatcher.md AC-121 to
 // AC-125, AC-131, AC-137; terminum-kanban.md AC-117): scripts/fake_agent.py draws the measured input box
 // and speaks by the real hooks and tools; the clock runs 300 times as fast (TM_TEST_CLOCK_SCALE),
-// and a finished session stands 2 of its hours, 24 s, for the checks that act on one (TM_TEST_CLOSE_AFTER).
+// and a finished session stands 2 of its hours, 24 s times the timing slack, for the checks that act on one (TM_TEST_CLOSE_AFTER).
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
