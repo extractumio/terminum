@@ -334,3 +334,28 @@ fn ac148_an_older_store_s_tasks_keep_their_numbers_under_their_project_s_letters
     let next = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "e".into(), project: Some("t".into()), ..Default::default() }, 90)).unwrap();
     assert_eq!(next.id, "TERM-4", "the project counts on from its highest");
 }
+
+#[test]
+fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
+    let s = std::sync::Arc::new(Store::open(fresh("store-slow")));
+    let (held, go) = std::sync::mpsc::channel();
+    // another call's transaction, held 150 ms
+    let holder = { let s = s.clone(); std::thread::spawn(move || { let turn = s.state.lock(); held.send(()).unwrap(); std::thread::sleep(Duration::from_millis(150)); drop(turn) }) };
+    go.recv().unwrap();
+    let (lines, guard) = crate::testutil::logs();
+    let made = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "waited".into(), ..Default::default() }, 1));
+    drop(guard);
+    holder.join().unwrap();
+    assert!(made.is_ok(), "a write waits its turn, never refused: {made:?}");
+    let said = lines.text();
+    assert!(said.contains("event=\"store.slow\"") && said.contains("store_tests.rs"), "{said}");
+    let waited: u64 = said.split("wait_ms=").nth(1).and_then(|r| r.split(' ').next()).and_then(|n| n.parse().ok()).unwrap_or(0);
+    assert!(waited >= 100, "its wait is said: {said}");
+    // under 100 ms waited and held says nothing (a real call's times would follow the machine's load)
+    let (quiet, _guard) = crate::testutil::logs();
+    let throttle = crate::slow::Throttle::default();
+    said_slow(&throttle, Location::caller(), Duration::from_millis(99), Duration::from_millis(99));
+    assert_eq!(quiet.text(), "", "nothing waited, nothing said");
+    said_slow(&throttle, Location::caller(), Duration::ZERO, Duration::from_millis(100));
+    assert!(quiet.text().contains("hold_ms=100"), "a hold alone is said: {}", quiet.text());
+}

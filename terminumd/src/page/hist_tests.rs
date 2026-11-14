@@ -18,7 +18,7 @@ fn attach(s: &Tmux) -> Control {
     let (ntx, nrx) = mpsc::unbounded_channel();
     let (dtx, drx) = oneshot::channel();
     std::mem::forget((nrx, drx));                       // notices and the end are not this test's
-    Control::spawn(cmd, ntx, dtx).unwrap()
+    Control::spawn(cmd, "test".into(), ntx, dtx).unwrap()
 }
 
 async fn history_size(c: &Control) -> i64 {

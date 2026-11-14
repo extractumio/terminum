@@ -11,7 +11,21 @@ fn attach(s: &Tmux) -> (Control, mpsc::UnboundedReceiver<Notice>, oneshot::Recei
     cmd.args(["-C", "-u", "-L", &s.socket, "attach", "-f", "ignore-size", "-t", "main"]);
     let (ntx, nrx) = mpsc::unbounded_channel();
     let (dtx, drx) = oneshot::channel();
-    (Control::spawn(cmd, ntx, dtx).unwrap(), nrx, drx)
+    (Control::spawn(cmd, "test".into(), ntx, dtx).unwrap(), nrx, drx)
+}
+
+/// AC-195: an answer 500 ms or more after its command was queued is said with its client and first word, a line a second.
+#[test]
+fn ac195_a_slow_answer_names_its_client_and_command_word() {
+    let (logs, _guard) = crate::testutil::logs();
+    let slow = crate::slow::Throttle::default();
+    said_slow(&slow, "local:t session", "capture-pane", Duration::from_millis(499));
+    assert_eq!(logs.text(), "", "a quick answer says nothing");
+    said_slow(&slow, "local:t session", "capture-pane", Duration::from_millis(700));
+    said_slow(&slow, "local:t session", "send-keys", Duration::from_millis(900));
+    let said = logs.text();
+    assert!(said.contains("event=\"tmux.slow\"") && said.contains("client=\"local:t session\"") && said.contains("cmd=\"capture-pane\"") && said.contains("ms=700"), "{said}");
+    assert_eq!(said.matches("tmux.slow").count(), 1, "the second within the second is held back: {said}");
 }
 
 #[tokio::test]
@@ -122,7 +136,7 @@ async fn output_arriving_keeps_a_slow_client_alive_past_the_answer_wait() {
         cmd.args(["-c", script]);
         let (ntx, nrx) = mpsc::unbounded_channel();
         let (dtx, _drx) = oneshot::channel();
-        (Control::spawn(cmd, ntx, dtx).unwrap(), nrx)
+        (Control::spawn(cmd, "test".into(), ntx, dtx).unwrap(), nrx)
     };
     let (slow, _n1) = start("while :; do echo '%output %1 x'; sleep 1; done");
     let (quiet, _n2) = start("exec sleep 60");
@@ -143,7 +157,7 @@ async fn a_silent_link_says_so_whatever_ssh_warned() {
     std::fs::set_permissions(&ssh, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     let (ntx, _nrx) = mpsc::unbounded_channel();
     let (dtx, drx) = oneshot::channel();
-    let c = Control::spawn(Command::new(&ssh), ntx, dtx).unwrap();
+    let c = Control::spawn(Command::new(&ssh), "test".into(), ntx, dtx).unwrap();
     drop(c.send("display -p x".into()));
     let why = tokio::time::timeout(ANSWER_WAIT + Duration::from_secs(5), drx).await;
     std::fs::remove_dir_all(&dir).ok();
@@ -193,7 +207,7 @@ async fn an_ssh_link_that_never_reached_tmux_says_so() {
         let (_c, _nrx, drx) = loop {
             let (ntx, nrx) = mpsc::unbounded_channel();
             let (dtx, drx) = oneshot::channel();
-            match Control::spawn(Command::new(&path), ntx, dtx) {
+            match Control::spawn(Command::new(&path), "test".into(), ntx, dtx) {
                 // Linux refuses to run a file another test's fork still holds open for writing (ETXTBSY): again
                 Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 100 => {
                     tries += 1;
@@ -213,7 +227,7 @@ async fn commands_past_the_bound_fail_at_once_while_stdin_is_full() {
     cmd.arg("30");
     let (ntx, _nrx) = mpsc::unbounded_channel();
     let (dtx, _drx) = oneshot::channel();
-    let c = Control::spawn(cmd, ntx, dtx).unwrap();
+    let c = Control::spawn(cmd, "test".into(), ntx, dtx).unwrap();
     let line = format!("display -p {}", "x".repeat(64 << 10));
     let waiting: Vec<_> = (0..(LINES_MAX / line.len()) + 64).map(|_| c.send(line.clone())).collect();
     let refused = c.send(line.clone()).await.unwrap();

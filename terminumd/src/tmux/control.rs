@@ -68,16 +68,22 @@ pub enum Notice {
 /// An answer: the block's lines, or tmux's error text.
 pub type Answer = Result<Vec<String>, String>;
 
+/// A command line queued: its text, its waiter, whether it is a nested `if-shell`, when it was queued.
+type Line = (String, oneshot::Sender<Answer>, bool, Instant);
+
 struct Pending {
     reply: oneshot::Sender<Answer>,
     at: Instant,
+    /// when it was queued, and its line, whose first word names it in `tmux.slow` (AC-195)
+    queued: Instant,
+    line: String,
     /// an `if-shell -F` with both branches: its own empty answer is passed over, the branch's is the reply
     nested: bool,
 }
 
 /// A running control client. Dropping the last handle kills the process.
 pub struct Control {
-    lines: mpsc::UnboundedSender<(String, oneshot::Sender<Answer>, bool)>,
+    lines: mpsc::UnboundedSender<Line>,
     /// bytes in `lines` (LINES_MAX)
     queued: Arc<AtomicUsize>,
     alive: Arc<AtomicBool>,
@@ -94,7 +100,7 @@ pub struct Control {
 
 impl Control {
     #[cfg(test)]
-    pub(crate) fn test_queue() -> (Self, mpsc::UnboundedReceiver<(String, oneshot::Sender<Answer>, bool)>) {
+    pub(crate) fn test_queue() -> (Self, mpsc::UnboundedReceiver<Line>) {
         let (lines, rx) = mpsc::unbounded_channel();
         (Self { lines, queued: Arc::default(), alive: Arc::default(), ended: Arc::default(), attached: Arc::default(),
             clean: Arc::default(), pid: None, pending: Arc::default() }, rx)
@@ -105,7 +111,8 @@ impl Control {
     /// unbounded: its reader (notices.rs) never waits on anything but it, so it keeps up, and
     /// a bound would either stall this reader, which also carries every answer, or drop a
     /// notice (a layout change, a copy) for good; a copy is at most clip.rs `MOST` bytes.
-    pub fn spawn(mut cmd: Command, notices: mpsc::UnboundedSender<Notice>, done: oneshot::Sender<String>) -> std::io::Result<Control> {
+    /// `label` names it in `tmux.slow`: its server and which client (AC-195).
+    pub fn spawn(mut cmd: Command, label: String, notices: mpsc::UnboundedSender<Notice>, done: oneshot::Sender<String>) -> std::io::Result<Control> {
         cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
         // what ended without a word says: a link that never reached tmux says so
         let via_ssh = std::path::Path::new(cmd.as_std().get_program()).file_name().is_some_and(|n| n.to_string_lossy().contains("ssh"));
@@ -114,7 +121,7 @@ impl Control {
         let mut stdin = child.stdin.take().expect("piped");
         let stdout = child.stdout.take().expect("piped");
         let mut stderr = child.stderr.take().expect("piped");
-        let (tx, mut rx) = mpsc::unbounded_channel::<(String, oneshot::Sender<Answer>, bool)>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<Line>();
         let pending: Arc<Mutex<VecDeque<Pending>>> = Arc::default();
         let alive = Arc::new(AtomicBool::new(true));
         let attached = Arc::new(AtomicBool::new(false));
@@ -134,11 +141,11 @@ impl Control {
             let mut bytes = Vec::new();
             while let Some(first) = rx.recv().await {
                 let mut next = Some(first);
-                while let Some((line, reply, nested)) = next {
+                while let Some((line, reply, nested, queued)) = next {
                     q.fetch_sub(line.len(), Ordering::Relaxed);
                     if a.load(Ordering::Relaxed) {
-                        p.lock().push_back(Pending { reply, at: Instant::now(), nested });
                         bytes.extend_from_slice(line.as_bytes());
+                        p.lock().push_back(Pending { reply, at: Instant::now(), nested, queued, line });
                         bytes.push(b'\n');
                     } else {
                         let _ = reply.send(Err(NOT_CONNECTED.into()));
@@ -169,6 +176,7 @@ impl Control {
 
         // reader: notices and answers; at the end every waiter learns why
         let (p, a, att, end, cl, h, hung_up) = (pending.clone(), alive.clone(), attached.clone(), ended.clone(), clean.clone(), heard.clone(), silent.clone());
+        let slow = crate::slow::Throttle::default();
         tokio::spawn(async move {
             let mut reader = BufReader::with_capacity(1 << 16, stdout);
             let mut block: Option<(String, bool)> = None; // (the %begin's "time num flags", ours)
@@ -201,7 +209,10 @@ impl Control {
                         match waiting.pop_front() {
                             // the branch tmux runs next, before any other line of ours, answers it
                             Some(w) if w.nested && ok => waiting.push_front(Pending { nested: false, at: Instant::now(), ..w }),
-                            Some(w) => drop(w.reply.send(if ok { Ok(taken) } else { Err(taken.join("\n")) })),
+                            Some(w) => {
+                                said_slow(&slow, &label, w.line.split(' ').next().unwrap_or_default(), w.queued.elapsed());
+                                drop(w.reply.send(if ok { Ok(taken) } else { Err(taken.join("\n")) }));
+                            }
                             None => {}
                         }
                     } else {
@@ -311,7 +322,7 @@ impl Control {
             let _ = tx.send(Err(NOT_KEEPING_UP.into()));
             return rx;
         }
-        if self.lines.send((line, tx, nested)).is_err() {
+        if self.lines.send((line, tx, nested, Instant::now())).is_err() {
             self.queued.fetch_sub(n, Ordering::Relaxed);
             let (tx, rx) = oneshot::channel();
             let _ = tx.send(Err(NOT_CONNECTED.into()));
@@ -363,6 +374,13 @@ impl Control {
 impl Drop for Control {
     fn drop(&mut self) {
         self.kill();
+    }
+}
+
+/// An answer `waited` after its command was queued: from 500 ms on, one `tmux.slow` line a second (AC-195).
+fn said_slow(slow: &crate::slow::Throttle, client: &str, word: &str, waited: Duration) {
+    if waited >= crate::slow::TMUX_SLOW && let Some(more) = slow.pass() {
+        tracing::warn!(event = "tmux.slow", client, cmd = word, ms = crate::slow::ms(waited), more);
     }
 }
 

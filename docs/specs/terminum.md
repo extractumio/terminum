@@ -32,6 +32,7 @@ Out of scope (explicit):
 - Shells outside tmux: every local terminal is a tmux pane.
 - Windows, and Linux desktops as the place of the page: terminumd runs as a server on Ubuntu/Debian (terminum-lifecycle.md AC-08) and as a remote host's agent; Finder and default apps are a Mac's only. The page works in any modern browser; acceptance is on the clients of AS-07.
 - Several users or several passwords; HTTPS of our own (use `tailscale serve`).
+- The board, Dispatcher and tmux's handling as separate processes or runtimes, and a priority for terminumd or its threads above a program's: one terminumd keeps them apart by what they share, and a raised QoS class wakes a thread no sooner on a busy Mac (AC-195, §9 "Apart under load").
 
 ## 3. Assumptions, dependencies, open questions
 
@@ -108,6 +109,7 @@ Open questions:
 | AC-184 | [SHOULD / P1] | Every box to read or type in a text (a task's, a comment's, a schedule's, a prompt, a quoted screen or selection, Paste, Ask, a bookmark's note) has a key in its bottom-right corner that shows it over the whole window; the key or Esc gives it back, with what was typed, its window still open. |
 | AC-175 | [SHOULD / P1] | What the user does in a page is counted by the clock minute and kept in the tasks' store's `user_interaction`, for the Dashboard's active time and engagement: presses, keys, the wheel's and a finger's scrolls, drags, the pointer's moves, the seconds a page was in front; how many and where (the page or frame, the id of a pressed control of the page), never which key, what text or what position. |
 | AC-176 | [SHOULD / P1] | The Dashboard's Tasks tab shows who does the work on tasks: the operations the human decided (a task made, edited, moved, commented on, put under another, run, archived) beside the agents' and Dispatcher's, over time, by operation, and each task's split. |
+| AC-195 | [MUST / P0] | The board, Dispatcher and tmux's handling wait for one another only where they share a resource, the tasks' store's turn or a tmux server's bulk client; the log names who waited for whom (`store.slow`, `tmux.slow`, `runtime.lag`), and `scripts/bench_busy.py` measures the board, a card's edit and a key's echo beside a build-like load. |
 
 ## 5. BDD scenarios
 
@@ -1168,6 +1170,43 @@ Scenario: AC-176 failure — the numbers cannot be read
   Then as AC-152
 ```
 
+### AC-195 — Apart under load [MUST / P0]
+
+A build-like load is `scripts/bench_busy.py`'s: four busy loops a core (CPU, memory, system calls) at a terminal program's priority, and tmux windows printing without a pause.
+
+```gherkin
+Scenario: AC-195 happy path — writes take turns
+  Given a call holds the tasks' store's transaction
+  When the board edits a card, an agent's tool comments, the input log's writer saves its rows
+  Then each waits its turn and is kept; none is refused as busy
+
+Scenario: AC-195 happy path — the log says who waited
+  When a call of the tasks' store waits 100 ms or more for its turn, counted from its call with the blocking threads' queue, or holds its transaction that long
+  Then one line says so: event="store.slow", the caller (file and line of the call), wait_ms, hold_ms
+  When a tmux command is answered 500 ms or more after it was queued
+  Then one line: event="tmux.slow", the client (its server, bulk or session), the command's first word, ms
+  When terminumd's async workers run a 100 ms tick 200 ms or more late
+  Then one line: event="runtime.lag", ms
+
+Scenario: AC-195 edge — a line a second
+  When many calls wait within one second
+  Then each store, control client and the runtime write at most one line a second, the next one counting those held back (more=n)
+  And no line holds a task's text, a command's arguments or a pane's content
+
+Scenario: AC-195 edge — nothing waited
+  When a call takes its turn at once and holds it briefly, and a command is answered within 500 ms
+  Then nothing is written
+
+Scenario: AC-195 happy path — the bench
+  When scripts/bench_busy.py runs, by hand, never in make check
+  Then it lists the board, edits cards and types keys into a shell of a private terminumd, all at once, quiet and then beside a build-like load
+  And it prints each one's median, p95 and max, a key's stages (AC-38), and the AC-195 lines its terminumd wrote
+  And with --installed it also times the installed terminumd's /health, only reading it
+
+Scenario: AC-195 edge — the bench's own load
+  Then its loops end by themselves after the run's seconds and 30 more, and are ended by pid on pass, fail or signal, with its terminumd and tmux server
+```
+
 ## 6. Flow and sequence diagrams
 
 ### Architecture (AC-01, AC-02, AC-03, AC-09, AC-10)
@@ -1398,6 +1437,22 @@ Listed elsewhere: `page.widgets`, `page.folds` in `terminum-terminal.md`; `resto
 
 The other budgets are in AC-20's scenarios; a large folder's in `terminum-files.md` §9 Performance.
 
+### Apart under load (AC-195)
+
+One terminumd, one async runtime; what its parts share, and how each stays out of the others' way:
+
+| Shared | Who uses it | Kept apart by |
+|---|---|---|
+| The tasks' store's turn | the board, agents' tools, Dispatcher's walk and hooks, the input log, the message history, the interaction log, the Dashboard | one connection, one `BEGIN IMMEDIATE` transaction a call, callers in turn; every call off the async workers (`http::off`, the input log's own thread); no tmux, ssh or file waited for inside one: Dispatcher's walk reads tmux and `ps` between its transactions |
+| A tmux server's bulk client | the session list, history pages, search, last lines, Dispatcher's list of panes and screen reads | one ordered pipe per server; a caller's own time cap (Dispatcher's list: 2 s), a stall said past 3 s (AC-03); a server's pipe is no other server's |
+| A session's control client | that session's screens and typing | one per session: a busy session holds no other |
+| The async workers | everything | blocking work (the store, files, `ps`) runs off them; `runtime.lag` says when something did not |
+| The machine's CPU and memory | terminumd, the tmux server, the panes' programs | nothing: all run at a program's priority. Beside 64 busy loops on 16 cores a waiting thread wakes within 5 ms at the default QoS class and at user-interactive alike, and the tmux server and a pane's build cannot be told apart without raising both |
+
+A caller is named in `store.slow` by where it called from (`#[track_caller]`): `tasks::api::store` takes its caller's place, so a line names the handler or Dispatcher's step, not the helper.
+
+A swapped-out terminumd or tmux server, and a scanner that checks each process start and file write, are no part of the bench's load: their cost shows in the installed service's lines.
+
 ### Constraints and limits
 
 | Limit | Value | When exceeded |
@@ -1409,6 +1464,8 @@ The other budgets are in AC-20's scenarios; a large folder's in `terminum-files.
 | Commands waiting to be written to a control client | 16 MB | the command fails at once: "tmux is not keeping up: too many commands wait for it" |
 | Pages per terminumd | 100 WebSockets | the 101st is refused with 503 `too_many_pages`, "Too many pages" |
 | Control command answer | 10 s | the client is ended and started again (terminum-lifecycle.md AC-14) |
+| A call of the tasks' store waiting for its turn (AC-195) | no cap inside terminumd; 5 s for a writer outside it (`busy_timeout`) | past 100 ms: `store.slow`; outside, past 5 s: refused with SQLite's words |
+| Dispatcher's list of a server's panes (AC-195) | 2 s | that server's sessions are left for the beat |
 | Theme, settings and hot keys files | 64 KB each | refused with a toast |
 | Window and session names | 100 characters, no control characters | refused inline: "A name is at most 100 characters." |
 | Input log (AC-147) | 180 days, 500,000 rows; a row's text 20,000 characters, a paste's 4,000 (`bytes` the whole); 1,000 rows waiting for the writer | older rows go hourly; a longer text is cut; more waiting rows are dropped, counted in the log |
@@ -1449,11 +1506,19 @@ Logs go to stderr, the install's log file, by `tracing` (`TM_LOG`), each with an
 2026-10-15T09:14:10.001Z  WARN terminumd::tmux::control: control client timed out event="tmux.timeout" pid=Some(4242)
 ```
 
+Who waited for whom (AC-195): `store.slow` (`caller`, `wait_ms`, `hold_ms`), `tmux.slow` (`client`, `cmd`, `ms`), `runtime.lag` (`ms`), each with `more` for the lines it held back.
+
 `/health` on the socket: `build`, `pid`, `uptime_s`, `port`, `password`, `servers`, `hosts`, `pages`, `tmux` (`ok`, `message`, `started_by`), `service`, `signins`, `workspaces`, `denied_requests`, `rss_mb`, `hooks`.
 
 ## 10. Delivery stages
 
-All cases are shipped; nothing is staged.
+All cases are shipped. What AC-195's lines may call for, each only once the installed service's lines name it:
+
+| Stage | Holds | Started when |
+|---|---|---|
+| 1 | Read-only connections beside the one that writes, for the reads `store.slow` names | a read waited for a write's turn |
+| 2 | A control client of Dispatcher's own per server | `tmux.slow` names Dispatcher's reads waiting behind the list, history or search, or theirs behind Dispatcher's |
+| 3 | A blocking call moved off the async workers | `runtime.lag` with no store or tmux line beside it |
 
 ## 11. Checklist with Definition of Done
 
@@ -1487,3 +1552,4 @@ All cases are shipped; nothing is staged.
 - [x] AC-184 — `web/test/e2e_expand.mjs`, `web/test/e2e_taskwin.mjs`
 - [x] AC-175 — `cargo test interact::`, `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
 - [x] AC-176 — `cargo test dashboard::`, `web/test/e2e_livehistory.mjs`
+- [x] AC-195 — `cargo test tasks::store::tests::ac195`, `cargo test tmux::control::tests::ac195`, `cargo test slow::`; the bench by hand: `scripts/bench_busy.py`

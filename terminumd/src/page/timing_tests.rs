@@ -19,9 +19,9 @@ async fn a_key_is_in_its_echo_frame_before_its_reply_is_polled() {
     let mut key: Vec<_> = [77, 78].into_iter().filter_map(|k| arrived(&page, Some(k))).collect();
     let input = submit(&page, &client, &mut key, vec!["send-keys -t %1 -l zz".into()]);
     let (began, screen) = capture(&page, &client, vec!["capture-pane -p -t %1".into()]);
-    let (line, input_reply, _) = commands.try_recv().expect("input queued without polling");
+    let (line, input_reply, _, _) = commands.try_recv().expect("input queued without polling");
     assert!(line.starts_with("send-keys"));
-    let (line, screen_reply, _) = commands.try_recv().expect("capture queued without polling");
+    let (line, screen_reply, _, _) = commands.try_recv().expect("capture queued without polling");
     assert!(line.starts_with("capture-pane"));
     screen_reply.send(Ok(vec!["z".into()])).unwrap();
     assert_eq!(screen.await, vec![Ok(vec!["z".into()])]);
