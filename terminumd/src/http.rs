@@ -202,7 +202,7 @@ mod page_tests {
     /// prose keeps them.
     #[test]
     fn machine_text_fields_ask_no_autocorrect() {
-        const PROSE: [&str; 8] = ["newtitle", "newtext", "schedtitle", "schedtext", "converttitle", "askq", "marknote", "projecttemplate"];
+        const PROSE: [&str; 9] = ["newtitle", "newtext", "schedtitle", "schedtext", "converttitle", "askq", "marknote", "projecttemplate", "integrationprompt"];
         const NOT_TEXT: [&str; 12] = ["checkbox", "radio", "number", "password", "color", "file", "range", "hidden", "date", "time", "month", "week"];
         let pages = [
             ("index.html", include_str!("../../web/static/index.html")),
