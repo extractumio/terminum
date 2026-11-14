@@ -86,7 +86,8 @@ async function liveFolderLink(page, { work, mod }) {
       return sel && /ipad/.test(sel.textContent) && names.some((n) => /coach\.png/.test(n)) ? names : null;
     }, null, { timeout: 1500 }).then((h) => h.jsonValue(), () => null);
     let closed = await hidden(), other = false, shown = null;
-    for (let i = 0; i < 6 && !shown; i++) {
+    for (let i = 0; i < 15 && !shown; i++) {
+      if (i) await page.waitForTimeout(400);       // the listing that makes it a link is on its way
       other = await clickText(page, `${path.basename(outside)}/`, mod);
       closed &&= await hidden();
       if (!(await clickText(page, "shots/ipad/", mod))) break;
