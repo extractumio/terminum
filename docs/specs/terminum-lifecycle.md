@@ -475,6 +475,13 @@ Scenario: AC-104 edge — builds leave room for others
   And no landing builds the release build in its tree: the primary checkout's install builds it
   And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
 
+Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent checks
+  Given concurrent script suites delay the startup of the listing benchmark's private stand-ins
+  When the harness checks the benchmark command with supplied timing and RSS samples
+  Then its bounded execution deadline allows for startup independently of the measured listing budgets in terminum-files.md section 9
+  And samples just below each budget pass; a sample at any budget fails, and the slowest of ten samples counts toward p95
+  And an explicitly stalled stand-in still hits the cleanup test's short deadline and leaves no running process in the harness's own group
+
 Scenario: AC-104 edge — a session hears of a changed pipeline
   Given origin/main changed scripts/land.py since a tree's base
   When the session's prompt hook runs in that tree
