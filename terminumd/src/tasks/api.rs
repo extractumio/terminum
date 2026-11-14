@@ -44,9 +44,11 @@ pub fn routes() -> Router<Shared> {
 }
 
 /// Runs `f` in one transaction off the async workers.
-pub(crate) async fn store<T: Send + 'static>(app: &Shared, f: impl FnOnce(&Transaction) -> Result<T, String> + Send + 'static) -> Result<T, String> {
-    let a = app.clone();
-    off(move || a.tasks.with(f)).await
+/// Its caller is named if it waits for its turn (AC-195): the wait counts from this call, off the workers' queue too.
+#[track_caller]
+pub(crate) fn store<T: Send + 'static, F: FnOnce(&Transaction) -> Result<T, String> + Send + 'static>(app: &Shared, f: F) -> impl Future<Output = Result<T, String>> + Send + use<T, F> {
+    let (a, caller, asked) = (app.clone(), std::panic::Location::caller(), std::time::Instant::now());
+    off(move || a.tasks.with_from(caller, asked, f))
 }
 
 pub(crate) fn answer<T: Serialize>(done: Result<T, String>) -> Response {

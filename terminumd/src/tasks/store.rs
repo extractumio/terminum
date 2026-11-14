@@ -4,11 +4,14 @@
 //! empty one is made only when the user asks; one that is busy, not permitted or newer than this
 //! terminum stays as it is, said, and is tried again at the next call.
 
+use std::panic::Location;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
+
+use crate::slow;
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run.
 const MIGRATIONS: [&str; 27] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql")];
@@ -32,6 +35,7 @@ enum State {
 pub struct Store {
     path: PathBuf,
     state: Mutex<State>,
+    slow: slow::Throttle,
 }
 
 pub(super) fn message(e: &impl std::fmt::Display) -> String {
@@ -144,22 +148,36 @@ fn state_of(path: &Path) -> State {
 impl Store {
     pub fn open(path: PathBuf) -> Store {
         let state = Mutex::new(state_of(&path));
-        Store { path, state }
+        Store { path, state, slow: Default::default() }
     }
 
     /// An Agent's, which never opens a file.
     pub fn absent() -> Store {
-        Store { path: PathBuf::new(), state: Mutex::new(State::Absent) }
+        Store { path: PathBuf::new(), state: Mutex::new(State::Absent), slow: Default::default() }
     }
 
     /// One transaction: `f` commits on Ok and rolls back on Err. On a store that cannot be used,
     /// its message.
+    #[track_caller]
     pub fn with<T>(&self, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
+        self.with_from(Location::caller(), Instant::now(), f)
+    }
+
+    /// `with` for `caller`, who asked at `asked`: a wait for its turn or a hold of 100 ms or more is said (AC-195).
+    pub fn with_from<T>(&self, caller: &'static Location<'static>, asked: Instant, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
         let mut state = self.state.lock();
+        let got = Instant::now();
+        let out = Self::write(&self.path, &mut state, f);
+        drop(state);
+        self.said(caller, "write", got - asked, got.elapsed());
+        out
+    }
+
+    fn write<T>(path: &Path, state: &mut State, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
         if let State::Failed(_) = *state {
-            *state = state_of(&self.path);
+            *state = state_of(path);
         }
-        let conn = match &mut *state {
+        let conn = match state {
             State::Open(c) => c,
             State::Failed(why) | State::SetAside(why) => return Err(why.clone()),
             State::Absent => return Err("An agent keeps no tasks.".into()),
@@ -169,6 +187,14 @@ impl Store {
         let out = f(&tx)?;
         tx.commit().map_err(|e| message(&e))?;
         Ok(out)
+    }
+
+    /// One `store.slow` line a second at most (AC-195).
+    fn said(&self, caller: &Location, kind: &str, wait: Duration, hold: Duration) {
+        if (wait >= slow::STORE_SLOW || hold >= slow::STORE_SLOW)
+            && let Some(more) = self.slow.pass() {
+                tracing::warn!(event = "store.slow", caller = %format_args!("{}:{}", caller.file(), caller.line()), kind, wait_ms = slow::ms(wait), hold_ms = slow::ms(hold), more);
+            }
     }
 
     /// Why it cannot be used, for the board's banner.
