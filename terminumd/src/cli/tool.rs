@@ -21,13 +21,13 @@ pub const TOOL_USAGE: &str = "usage: terminum tool <name> ['<json arguments>' | 
 pub const TOKENS_USAGE: &str = "usage: terminum tokens [add <name> --role manager|worker --project <project> [--days N] | remove <name>]";
 
 /// Who calls: the pane of the environment, else outside one a token's holder.
-enum Caller {
+pub(super) enum Caller {
     Token(String),
     Pane(Env),
 }
 
 /// In a pane the pane's session calls, whatever token its environment holds: a token is for outside.
-fn caller(ctx: &Ctx) -> Result<Caller, String> {
+pub(super) fn caller(ctx: &Ctx) -> Result<Caller, String> {
     let env = Env { tmux: ctx.var("TMUX").map(str::to_string), pane: ctx.var("TMUX_PANE").map(str::to_string), ..Default::default() };
     if mcp::pane_of(&env).is_some() {
         return Ok(Caller::Pane(env));
@@ -36,7 +36,7 @@ fn caller(ctx: &Ctx) -> Result<Caller, String> {
 }
 
 /// One call to terminumd as `who`: (the answer's text, whether it is a refusal).
-fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bool), String> {
+pub(super) fn call(ctx: &Ctx, who: &Caller, tool: &str, args: &Value) -> Result<(String, bool), String> {
     let text = |v: &Value| v.as_str().unwrap_or_default().to_string();
     match who {
         Caller::Token(token) => {

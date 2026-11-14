@@ -140,6 +140,37 @@ fn ac187_status_says_the_settings_and_the_queue() {
     assert_eq!(v["queue"][0]["place"].as_str(), Some("1st"));
 }
 
+/// What `terminum integration wait` reads: the task's status, Dispatcher's words, how it left (AC-187).
+#[test]
+fn ac187_status_of_a_task_says_how_it_left_the_queue() {
+    let r = repo("iq-left");
+    call(&r, "integrate", json!({"id": r.id, "result": result()})).unwrap();
+    let of = |r: &Repo| -> Value { serde_json::from_str::<Value>(&call(r, "integration_status", json!({"id": r.id})).unwrap()).unwrap()["task"].take() };
+    let queued = of(&r);
+    assert_eq!((queued["status"].as_str(), &queued["left"]), (Some(INTEGRATION), &Value::Null), "still queued");
+    for (words, left) in [(format!("{} returned: red check. Batch 1's check was red.", r.id), "red"), (format!("{} returned: conflict with origin/main at 1a2b3c4 in a.txt.", r.id), "conflict"),
+                          (format!("{} returned: batch 1 was given up: integration was turned off for api.", r.id), "out")] {
+        r.s.with(|tx| {
+            let t = ops::get(tx, &r.id)?;
+            if t.status != INTEGRATION {
+                ops::place(tx, HUMAN, &t, INTEGRATION, 3)?;
+            }
+            let t = ops::get(tx, &r.id)?;
+            ops::place(tx, DISPATCHER, &t, "IN PROGRESS", 4)?;
+            ops::comment(tx, DISPATCHER, &r.id, &words, 5).map(drop)
+        }).unwrap();
+        let t = of(&r);
+        assert_eq!((t["status"].as_str(), t["left"].as_str()), (Some("IN PROGRESS"), Some(left)), "{words}");
+        assert_eq!(t["said"].as_array().unwrap().last().unwrap()["text"].as_str(), Some(words.as_str()));
+    }
+    r.s.with(|tx| {
+        ops::comment(tx, DISPATCHER, &r.id, "Integrated into origin/main at 3e9b5c2 in batch 2.", 6)?;
+        let t = ops::get(tx, &r.id)?;
+        ops::place(tx, DISPATCHER, &t, "DONE", 6)
+    }).unwrap();
+    assert_eq!(of(&r)["left"].as_str(), Some("landed"));
+}
+
 #[test]
 fn ordinals_and_lists_read_as_words() {
     assert_eq!([1, 2, 3, 4, 11, 12, 13, 21, 22].map(ordinal), ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"]);

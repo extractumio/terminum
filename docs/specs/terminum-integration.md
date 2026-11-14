@@ -578,7 +578,7 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-187 | `terminum integration queue|wait|status`, queueing with a title where a session has no task, a human's Integrate key and drop: not built; the tools are. | `terminumd/src/tasks/integration_queue.rs` |
+| AC-187 | Queueing with a title where a session has no task (the tool's and `--title`), `make land` queueing its tree, a human's Integrate key and drop: not built; the tools and `terminum integration queue <ID> --result-file <path>|wait|status` are. | `terminumd/src/tasks/integration_queue.rs`, `terminumd/src/cli/integration.rs` |
 | AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
 | AC-192 | Notices are comments: queued (the tool's answer), in a batch, held, returned, landed; overlaps while working, the hooks' context, the waiting command and the gate: not built. | `terminumd/src/integrate/store.rs` |
 | AC-193 | The column stands as a plain list where integration is on; the batch's group, its marks, Pause, Batches…: not built. The keys of AC-194 stand in the integration task's window. | `web/static/kanbanbatch.js` |
@@ -729,7 +729,7 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-186 — `cargo test tasks::integration` (defaults, kept and read back, the default prompt, the agent of its own pool, each refusal's words, a checkout, its target and git's version, What runs), `web/test/e2e_liveintegration.mjs` (the window from the project's, the pool's dropdown, refusals where pressed, what is kept, on for a git checkout)
-- [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row); to come: `cargo test tasks::integration_queue` (a task made), `cargo test cli::integration` (the wait's exit statuses), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
+- [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row), `cargo test integration_queue::tests::ac187_status_of_a_task` (how a task left), `cargo test cli::integration` (the command's usage, the wait's exit statuses); to come: `cargo test tasks::integration_queue` (a task made), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
 - [ ] AC-188 — `cargo test integrate::batch`, `cargo test integrate::engine` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
 - [ ] AC-189 — `cargo test integrate::batch` and `integrate::engine::tests::ac189_…` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
 - [ ] AC-190 — `cargo test integrate::engine` (green, red, over its time), `cargo test integrate::runner`; to come: `cargo test integration::check` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
