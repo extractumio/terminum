@@ -3,7 +3,8 @@
 // receives its files as messages (AC-70), a host's files offer (AC 83), the tree's Sorting (AC-52).
 
 import fs from "node:fs";
-import { base, check, SB, thrown, within } from "./e2e_harness.mjs";
+import { base, check, SB, within } from "./e2e_harness.mjs";
+import { thrown } from "../../web/test/check.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 
 /** AC-70 the View alone: renders the file, no tree, no secret in its URL, a path bar. */

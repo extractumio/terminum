@@ -5,7 +5,7 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, content, copyText, DEFAULT_PREFS, dirname, isPane, isUnder,
+  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isPane, isUnder,
   proofRefusal, PROXIED, scope, setScope, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
@@ -73,6 +73,11 @@ function snapshot(): Pane | null {
     active_tab: viewer.active,
   };
 }
+
+/** A pane's state without its revision and time, its keys sorted: terminumd answers with sorted
+ *  keys, a snapshot has them in the order it built them. */
+const content = (p: Pane) => JSON.stringify({ ...p, rev: 0, updated: 0 }, (_k, v: unknown) =>
+  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v);
 
 function scheduleSave() {
   clearTimeout(saveTimer);

@@ -78,10 +78,6 @@ export const isPane = (p: unknown): p is Pane => {
   const q = p as Partial<Pane> | null;
   return typeof q?.root === "string" && [q.expanded, q.selected, q.tabs].every(Array.isArray);
 };
-/** A pane's state without its revision and time, its keys sorted: terminumd answers with sorted
- *  keys, a snapshot has them in the order it built them. */
-export const content = (p: Pane) => JSON.stringify({ ...p, rev: 0, updated: 0 }, (_k, v: unknown) =>
-  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v);
 export interface Theme {
   bg?: string; fg?: string; sel?: string; selfg?: string; cursor?: string; link?: string;
   ansi?: string[]; font?: string | null; size?: number | null; dark?: boolean;
@@ -115,10 +111,9 @@ export class ApiError extends Error {
 }
 
 type Query = Record<string, string | number | boolean | undefined>;
-/** `is`: what terminumd answers looks so; another answer came from another program on its port
- *  (AC-09), to a request sent on the last proof as terminumd went: a read is proved and sent again
- *  once, then (or a write at once) it fails as "foreign". */
-type ApiOpts<T> = { query?: Query; body?: unknown; headers?: Record<string, string>; retry?: boolean; host?: string | null; is?: (body: unknown) => body is T; again?: boolean };
+/** `is`: what terminumd answers looks so (an answer that does not came from another program on its
+ *  port, to a request sent on the last proof as terminumd went: AC-09). */
+type ApiOpts<T> = { query?: Query; body?: unknown; headers?: Record<string, string>; retry?: boolean; host?: string | null; is?: (body: unknown) => body is T };
 
 /** `host`: the machine the request is for (null: this Mac); default the shown pane's. An
  *  action that waited for the user (a dialog) passes the host it started on (AC-37). */
@@ -129,7 +124,7 @@ export async function api<T>(method: string, path: string, opts: ApiOpts<T> = {}
   const host = opts.host === undefined ? scope : opts.host;
   const headers: Record<string, string> = { "X-TM-Client": CLIENT, ...(host ? { "X-TM-Host": host } : {}), ...opts.headers };
   if (opts.body !== undefined) headers["Content-Type"] = "application/json";
-  let res: Response;
+  let res: Response, body: any;
   for (let waited = 0, step = 250, renewed = false; ; waited += step, step *= 2) {
     try {
       const mine = proveServer(), cred = await mine;
@@ -141,6 +136,13 @@ export async function api<T>(method: string, path: string, opts: ApiOpts<T> = {}
         if (proven === mine) forgetProof();
         continue;
       }
+      body = res.status === 204 || res.status === 304 ? undefined : await res.json().catch(() => null);
+      // not terminumd's answer: proved again and a read sent once more; else (a write at once) said
+      if (res.ok && opts.is && !opts.is(body)) {
+        if (proven === mine) forgetProof();
+        if (method === "GET" && !renewed) { renewed = true; continue; }
+        throw new ApiError(0, "foreign", "the answer on terminumd's port is not terminumd's", body);
+      }
       break;
     } catch (e) {
       if (e instanceof ApiError) throw e;  // not proven: the secret is never sent, nor retried
@@ -150,13 +152,8 @@ export async function api<T>(method: string, path: string, opts: ApiOpts<T> = {}
       await new Promise((r) => setTimeout(r, step));
     }
   }
-  const body = res.status === 204 || res.status === 304 ? undefined : await res.json().catch(() => null);
+  if (res.status === 204 || res.status === 304) return undefined as T;
   if (!res.ok) throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
-  if (opts.is && !opts.is(body)) {
-    forgetProof();
-    if (method === "GET" && !opts.again) return api(method, path, { ...opts, again: true });
-    throw new ApiError(0, "foreign", "the answer on terminumd's port is not terminumd's", body);
-  }
   return body as T;
 }
 

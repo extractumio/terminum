@@ -5,8 +5,9 @@
 //   node test/e2e_review.mjs            (from ui/; needs `npm run build` and terminumd built)
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { base, check, cleanup, panelUrl, results, SB, signIn, thrown, wsKey } from "./e2e_harness.mjs";
+import { base, check, cleanup, panelUrl, results, SB, signIn, wsKey } from "./e2e_harness.mjs";
 import { hostRegressions } from "./e2e_review_hosts.mjs";
+import { thrown } from "../../web/test/check.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 520, height: 900 } });

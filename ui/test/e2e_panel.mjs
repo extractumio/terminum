@@ -11,13 +11,13 @@
 import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
-import { slack } from "../../web/test/check.mjs";
+import { slack, thrown } from "../../web/test/check.mjs";
 import { manyPanels } from "./e2e_sockets.mjs";
 import { layoutTools, splitterCancel } from "./e2e_layout.mjs";
 import { panelReview } from "./e2e_panel_review.mjs";
 import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
 import {
-  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, thrown, waitFor, within, wsKey,
+  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, waitFor, within, wsKey,
 } from "./e2e_harness.mjs";
 import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
@@ -400,19 +400,24 @@ try {
   // AC 09 a pane's state read on the last proof as terminumd went, answered by another program on the
   // port ({} here; a body cut off, as WebKit hands one after a restart: TERM-56), is not taken: the
   // panel proves the port again and reads it once more
-  for (const [body, always] of [["{}", false], ['{"rev":1,"ro', false], ["{}", true]]) {
+  const notRead = "Panel state not read: the answer on terminumd's port is not terminumd's";
+  const foreign = async (body, foreignReads) => {
     const fp = await context.newPage();
     fp.on("pageerror", (e) => errors.push(`foreign: ${thrown(e)}`));
     let reads = 0;
-    await fp.route("**/fb/api/workspace?*", (r) => (r.request().method() === "GET" && (always || !reads++) ? r.fulfill({ status: 200, contentType: "application/json", body }) : r.fallback()));
+    await fp.route("**/fb/api/workspace?*", (r) => (r.request().method() === "GET" && reads++ < foreignReads ? r.fulfill({ status: 200, contentType: "application/json", body }) : r.fallback()));
     await fp.goto(panelUrl());
-    const said = "Panel state not read: the answer on terminumd's port is not terminumd's";
-    if (!always) {
-      await within(`AC 09 a pane's state answered ${body} is read again, from terminumd`, (ms) => fp.waitForSelector(row("src"), { timeout: ms }));
-      check("AC 09 … read again, nothing said", reads >= 2 && (await fp.textContent("#toast")) !== said, String(reads));
-    } else await within("AC 09 … answered so twice, it is said", (ms) => fp.waitForFunction((t) => document.getElementById("toast").textContent === t, said, { timeout: ms }));
+    return { fp, reads: () => reads };
+  };
+  for (const body of ["{}", '{"rev":1,"ro']) {
+    const { fp, reads } = await foreign(body, 1);
+    await within(`AC 09 a pane's state answered ${body} is read again, from terminumd`, (ms) => fp.waitForSelector(row("src"), { timeout: ms }));
+    check("AC 09 … read again, nothing said", reads() >= 2 && (await fp.textContent("#toast")) !== notRead, String(reads()));
     await fp.close();
   }
+  const { fp } = await foreign("{}", Infinity);
+  await within("AC 09 … answered so twice, it is said", (ms) => fp.waitForFunction((t) => document.getElementById("toast").textContent === t, notRead, { timeout: ms }));
+  await fp.close();
 
   // AC-53 only regular files are read; AC-56 a large text file saves, a body over the limit is 413
   const t0 = Date.now();
