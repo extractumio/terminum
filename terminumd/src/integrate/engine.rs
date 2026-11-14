@@ -128,6 +128,11 @@ fn advance(store: &Store, runner: &dyn Runner, home: &Path, b: Batch, now: i64) 
     match b.state.as_str() {
         "checking" | "publishing" | "after" => follow(store, runner, &p, b, now),
         "green" => publish(store, runner, &p, b, now),
+        // a human returned one of its tasks: the rest built anew on the target as it is
+        "rebuild" => match target_now(&p) {
+            Ok(t) => again(store, &p, &b, &t, now),
+            Err(why) => not_published(store, &b, &why, now),
+        },
         _ => Ok(()),
     }
 }

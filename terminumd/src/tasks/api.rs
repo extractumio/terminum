@@ -30,6 +30,7 @@ pub fn routes() -> Router<Shared> {
         .merge(super::agents::routes())
         .merge(super::limits::routes())
         .merge(super::integration::routes())
+        .merge(crate::integrate::keys::routes())
         .merge(super::auto::routes())
         .merge(super::folder::routes())
         .merge(super::schedulesapi::routes())

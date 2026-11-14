@@ -5,6 +5,7 @@
 // AC-122). A task that waits for its human to react (its agent's questions, a result, a failure) shows that first,
 // the comment field under it, then the task and the rest. The board and the session page open the same one (AC-150).
 import { askConfirm, choose, oneAtATime } from "./dialogs.js";
+import { batchPart } from "./kanbanbatch.js";
 import { el, iconButton, read, write } from "./listparts.js";
 import { $, SEVERITIES, agentChip, agentsOf, api, button, download, fillSelect, guardQueuedRun, knownAgent, onFiles, onSend, madeChanged, renderInto, row, say, sessionOptions, statusTag, upload, withFileLink, withoutFileLinks, goneFiles, goneSaid, FILE_GONE } from "./kanbanutil.js";
 import { taskBoxes } from "./taskboxes.js";
@@ -376,7 +377,7 @@ export function taskWindow({ getMeta, runs, openTask, newSubtask, openSchedule }
     if (from) from.append("From schedule ", button("linklike", `${t.schedule.key}: ${t.schedule.title}`, () => openSchedule(t.schedule.key)));
     const when = el("div", "taskwhen");
     when.append(...[stamps, from].filter(Boolean));
-    wrap.append(...[when, standing(t), fields(t), text(t), filesOf(t)].filter(Boolean));
+    wrap.append(...[when, standing(t), batchPart(t, refresh), fields(t), text(t), filesOf(t)].filter(Boolean));   // a batch's keys (terminum-integration.md AC-194)
     return wrap;
   }
 

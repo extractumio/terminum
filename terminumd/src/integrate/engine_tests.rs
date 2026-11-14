@@ -221,3 +221,63 @@ fn ac191_a_publish_terminumd_did_not_see_end_is_found_published_never_built_agai
     assert_eq!(status(&w, &a), "DONE");
     assert_eq!(sh(&w.origin, &["rev-parse", "main"]), bt.candidate.unwrap(), "the same commit, no second merge on top");
 }
+
+/// A red batch of two tasks, its check `exit 3`.
+fn red_batch(name: &str) -> (World, String, String, Batch) {
+    let w = world(name, Settings { check: "exit 3".into(), ..Settings::default() });
+    let (a, b) = (queued(&w, 1, "b.txt", "b\n"), queued(&w, 2, "c.txt", "c\n"));
+    go(&w, &Sh::default(), 4);
+    let bt = batch(&w);
+    assert_eq!(bt.state, "red");
+    (w, a, b, bt)
+}
+
+#[test]
+fn ac194_the_human_returns_one_task_and_the_rest_is_built_anew_and_checked() {
+    let (w, a, b, bt) = red_batch("ik-return");
+    assert_eq!(w.s.with(|tx| super::super::keys::return_one(tx, bt.id, &a, "", 300)).unwrap_err(), "Say why, for its agent.");
+    w.s.with(|tx| super::super::keys::return_one(tx, bt.id, &a, "its test fails", 300)).unwrap();
+    assert_eq!(status(&w, &a), "IN PROGRESS");
+    assert!(w.s.with(|tx| ops::history(tx, &a)).unwrap().to_string().contains("returned by"), "the human's words as its analysis");
+    go(&w, &Sh::default(), 1);
+    let again = batch(&w);
+    assert_eq!((again.state.as_str(), again.round, again.tasks.len()), ("checking", 2, 1), "built anew without it");
+    assert_eq!(status(&w, &b), INTEGRATION);
+}
+
+#[test]
+fn ac194_return_all_gives_every_task_back_and_ends_the_batch() {
+    let (w, a, b, bt) = red_batch("ik-all");
+    w.s.with(|tx| super::super::keys::return_all(tx, bt.id, 300)).unwrap();
+    assert_eq!((status(&w, &a), status(&w, &b)), ("IN PROGRESS".into(), "IN PROGRESS".into()));
+    let i = w.s.with(|tx| bs::slug(tx, bt.task.as_deref().unwrap())).unwrap();
+    assert_eq!((batch(&w).state.as_str(), status(&w, &i)), ("given up", "DONE".to_string()));
+    assert!(w.s.with(|tx| super::super::keys::return_all(tx, bt.id, 301)).unwrap_err().contains("nothing to decide now"));
+}
+
+#[test]
+fn ac194_check_again_runs_the_same_candidate_a_new_round() {
+    let (w, _, _, bt) = red_batch("ik-again");
+    w.s.with(|tx| super::super::keys::check_again(tx, bt.id, 300)).unwrap();
+    let again = batch(&w);
+    assert_eq!((again.state.as_str(), again.round, again.candidate), ("checking", 2, bt.candidate));
+    let i = w.s.with(|tx| bs::slug(tx, bt.task.as_deref().unwrap())).unwrap();
+    assert_eq!(status(&w, &i), INTEGRATION, "terminumd works on it again");
+}
+
+#[test]
+fn ac191_a_refused_push_is_not_published_and_publish_again_tries_once_more() {
+    let w = world("ik-refused", Settings::default());
+    let a = queued(&w, 1, "b.txt", "b\n");
+    let hook = w.origin.join("hooks/pre-receive");
+    std::fs::write(&hook, "#!/bin/sh\necho nobody may push >&2\nexit 1\n").unwrap();
+    std::fs::set_permissions(&hook, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    go(&w, &Sh::default(), 2);
+    let bt = batch(&w);
+    assert_eq!(bt.state, "not published");
+    assert_eq!(status(&w, &a), INTEGRATION);
+    std::fs::remove_file(&hook).unwrap();
+    w.s.with(|tx| super::super::keys::publish_again(tx, bt.id, 300)).unwrap();
+    go(&w, &Sh::default(), 1);
+    assert_eq!(status(&w, &a), "DONE");
+}
