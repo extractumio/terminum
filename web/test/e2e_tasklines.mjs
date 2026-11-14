@@ -62,6 +62,8 @@ export async function webTaskLines(browser, name) {
     check(`AC-117 ${at} both on the key's corner, within its width`, two?.every((b) => b.onKey), JSON.stringify(two));
     f.say({ t: "taskmarks", marks: {}, counts: {}, waiting: 0, failed: 1, lines: [] });
     check(`AC-117 ${at} none waiting: only the red one`, await until(async () => JSON.stringify((await badges())?.map((b) => [b.kind, b.n])) === '[["failed","1"]]'), JSON.stringify(await badges()));
+    f.say({ t: "taskmarks", marks: {}, counts: {}, waiting: 1, failed: 0, lines: [] });
+    check(`AC-117 ${at} none failed: only the yellow one, its words for one`, await until(async () => JSON.stringify((await badges())?.map((b) => [b.kind, b.n, b.title])) === '[["waiting","1","1 task waits for you"]]'), JSON.stringify(await badges()));
     f.say({ t: "taskmarks", marks: {}, counts: {}, waiting: 0, failed: 0, lines: [] });
     check(`AC-117 ${at} none at all: no count`, await until(async () => (await badges())?.length === 0), JSON.stringify(await badges()));
     const stored = await page.evaluate(() => Object.keys(localStorage).filter((k) => /taskseen/.test(k)).join());

@@ -21,6 +21,8 @@ struct Held {
     sessions: BTreeMap<String, Vec<String>>,
     /// WAIT FOR HUMAN and FAILED (AC-117)
     attention: Vec<Asks>,
+    /// the Kanban key's counts, as the board's cards: (waiting for a human, failed) (AC-117)
+    cards: (i64, i64),
 }
 
 /// A task that needs a human, as its last move left it (AC-117).
@@ -34,8 +36,6 @@ struct Asks {
     key: String,
     /// an agent or Dispatcher made the move and no human closed or saw its line
     due: bool,
-    /// a card of its own in its column: no main task of the same column holds it (AC-112)
-    card: bool,
 }
 
 /// WAIT FOR HUMAN and FAILED, or only task `one` (its store key) of them; the reason is the one its mover gave with
@@ -43,8 +43,7 @@ struct Asks {
 fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
     rows(tx, "SELECT t.slug, t.status = 'FAILED', COALESCE(m.author != 'human', 0),
             COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.author = m.author AND e.rowid > m.rowid ORDER BY e.at DESC, e.rowid DESC LIMIT 1), m.text, ''),
-            COALESCE(m.rowid, 0), t.line_seen,
-            NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.status = t.status AND p.archived_at IS NULL)
+            COALESCE(m.rowid, 0), t.line_seen
         FROM tasks t LEFT JOIN events m ON m.rowid = (SELECT e.rowid FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
         WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL AND (?1 IS NULL OR t.id = ?1) ORDER BY t.number DESC", [one], |r| {
         let (id, failed): (String, bool) = (r.get(0)?, r.get(1)?);
@@ -56,7 +55,7 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
         };
         let key = format!("{}|{words}", r.get::<_, i64>(4)?);
         let due = r.get::<_, bool>(2)? && r.get::<_, Option<String>>(5)?.as_deref() != Some(key.as_str());
-        Ok(Asks { id, failed, words, key, due, card: r.get(6)? })
+        Ok(Asks { id, failed, words, key, due })
     })
 }
 
@@ -130,7 +129,11 @@ impl Marks {
             for (key, id) in rows(tx, "SELECT session_key, slug FROM tasks WHERE session_key IS NOT NULL AND archived_at IS NULL AND status <> 'DONE' ORDER BY number", [], |r| Ok((r.get(0)?, r.get(1)?)))? {
                 sessions.entry(key).or_default().push(id);
             }
-            Ok(Held { counts, sessions, attention: asks(tx, None)? })
+            // as the board's cards: a subtask in its main task's column stands under it, counted once (AC-112)
+            let cards = tx.query_row("SELECT COALESCE(SUM(t.status = 'WAIT FOR HUMAN'), 0), COALESCE(SUM(t.status = 'FAILED'), 0) FROM tasks t
+                WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL
+                    AND NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.status = t.status AND p.archived_at IS NULL)", [], |r| Ok((r.get(0)?, r.get(1)?))).map_err(ops::sql)?;
+            Ok(Held { counts, sessions, attention: asks(tx, None)?, cards })
         });
         // a passing failure says nothing about the tasks: the last numbers stand
         let read = read?;
@@ -148,9 +151,8 @@ impl Marks {
     fn message(&self) -> String {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "failed": a.failed, "words": a.words, "key": a.key})).collect();
-        // the Kanban key's counts, as the board's cards: what waits for a human, what failed
-        let cards = |failed: bool| held.attention.iter().filter(|a| a.card && a.failed == failed).count();
-        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": cards(false), "failed": cards(true), "lines": lines}).to_string()
+        let (waiting, failed) = held.cards;
+        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": waiting, "failed": failed, "lines": lines}).to_string()
     }
 }
 

@@ -56,15 +56,14 @@ export function taskLines(box, open, say) {
       draw();
       for (const a of kanbanLinks()) {
         a.querySelector(".taskneeds")?.remove();
-        const counts = [["waiting", m.waiting, (n) => `${plural(n, "task")} wait for you`], ["failed", m.failed, (n) => `${plural(n, "task")} failed`]].filter(([, n]) => n > 0);
-        if (!counts.length) continue;
-        const box = el("span", "taskneeds");
-        for (const [kind, n, says] of counts) {
+        const badges = el("span", "taskneeds");
+        for (const [kind, n, says] of [["waiting", m.waiting, m.waiting === 1 ? "waits for you" : "wait for you"], ["failed", m.failed, "failed"]]) {
+          if (!n) continue;
           const b = el("span", `taskneed ${kind}`, n);
-          b.title = says(n);
-          box.append(b);
+          b.title = `${plural(n, "task")} ${says}`;
+          badges.append(b);
         }
-        a.append(box);
+        if (badges.childElementCount) a.append(badges);
       }
     },
     /** A task's window opened: its line is seen, in every browser. */

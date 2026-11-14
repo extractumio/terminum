@@ -252,7 +252,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 /* how many cards wait for a human (yellow) and failed (red), on Kanban in the page's head (terminum-kanban.md AC-117) */
 .taskneeds { display: inline-flex; gap: 2px; margin-left: var(--sp-1); }
 .taskneed { padding: 0 var(--sp-1); border-radius: var(--r-xs); font-size: var(--fs-micro); font-weight: var(--fw-head); font-variant-numeric: tabular-nums; line-height: 16px; }
-.taskneed.waiting { color: #1f1300; background: var(--waiting); }   /* WAIT FOR HUMAN's own yellow, as its status box (taskwin.css) */
+.taskneed.waiting { color: var(--waiting-ink); background: var(--waiting); }   /* WAIT FOR HUMAN's own yellow, as its status box (taskwin.css) */
 .taskneed.failed { color: var(--danger-ink); background: var(--danger-fill); }
 .sections a .taskneeds { position: absolute; top: -4px; right: -4px; margin: 0; }   /* on its key's corner (the key: controls.css) */
 #asks .ask { display: flex; align-items: center; min-width: 0; color: var(--t-fg);
