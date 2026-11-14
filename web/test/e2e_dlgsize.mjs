@@ -45,10 +45,10 @@ export async function webDialogSize(browser, name) {
     check("no page errors", !f.errors.length, f.errors.join(" | "));
     await f.close();
     const b = await openPage(browser, { device, url: "/kanban.html" });
-    const list = await b.page.evaluate(() => { const d = document.getElementById("archivedbox"); d.showModal();
+    const list = await b.page.evaluate(() => { const d = document.getElementById("folderbox"); d.showModal();
       const r = d.getBoundingClientRect(), a = d.querySelector(".actions").getBoundingClientRect();   // the bar holds the padding under its keys
       return { h: Math.round(r.height), win: innerHeight, gap: Math.round(r.bottom - a.bottom) }; });
-    check(`AC-173 the archived list, empty, keeps its Close at its foot, 80% of the window high (${size})`,
+    check(`AC-173 a list window, empty (a folder's), keeps its keys at its foot, 80% of the window high (${size})`,
       near(list.h, clamp(360, list.win * .8, 760)) && Math.abs(list.gap) <= 1, JSON.stringify(list));
     // a form taller than a short window: its buttons stay at its foot while its fields scroll
     await b.page.setViewportSize({ width: 1400, height: 420 });

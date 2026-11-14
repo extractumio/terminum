@@ -690,7 +690,7 @@ Scenario: AC-118 happy path — by hand and by time
   Then it archives itself with its subtasks that are DONE; the history says "Archived by Dispatcher"
 
 Scenario: AC-118 happy path — Archived
-  When the user opens Archived in a project's window on the board
+  When the user chooses the Archived tab of a project's window on the board
   Then its archived tasks list newest first, subtasks too, 200 a page, with Find
   When the user picks Return on one
   Then it stands in the column it had
@@ -990,7 +990,8 @@ Scenario: AC-139 happy path — a new project
 
 Scenario: AC-139 happy path — changing it
   When the user presses the pencil on Billing's row in the project menu
-  Then its window shows its name, server, folder, Agents at once, its own pool's agents, Archived… and Memory limits…
+  Then its window, as wide as a writing window, shows tabs: General (its name, server, folder, task ID letters, language, template, Agents at once), Agents (its own pool's agents as tiles, as many to a row as fit, and Add agent), Integration (terminum-integration.md AC-186), Memory limits and Archived; General first, each filled as it is chosen, no window opening over it
+  And each tab's own keys stand in the window's foot, always in view: General's Delete project and Done, Integration's Save, Memory limits' Use the global ones and Save; a new project's window has General alone
   When the user changes the name, folder and Agents at once and presses Done
   Then all are kept at once and every page shows them
 

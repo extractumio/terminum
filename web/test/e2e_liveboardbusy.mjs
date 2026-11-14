@@ -44,7 +44,7 @@ export async function liveBoardBusy(page, opts) {
     what: "a new project's window", url: "**/api/task-projects", method: "POST",
     open: async () => { await page.click("#fproject summary"); await page.click("#newproject"); await page.waitForSelector("#projectbox[open]"); await page.fill("#projectname", "Made once"); },
     box: "#projectbox", field: "#projectname", ok: "#projectok",
-    kept: async () => (await meta()).projects.filter((p) => p.name === "Made once").length === 1 && await page.isVisible("#projectaddagent"),
+    kept: async () => (await meta()).projects.filter((p) => p.name === "Made once").length === 1 && await page.isVisible("#projecttabs"),
   });
   await page.click("#projectok");
   await page.waitForSelector("#projectbox", { state: "hidden" });

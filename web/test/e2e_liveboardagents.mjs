@@ -176,7 +176,9 @@ async function projectWindowChecks(page, opts) {
   await page.fill("#projectname", "Fresh");
   await page.click("#projectok");
   check("AC-139 + Project makes it empty", await until(async () => !!(await named("Fresh"))) && (await j(`/api/tasks?project=${(await named("Fresh")).id}&limit=5`)).tasks.length === 0);
-  check("AC-139 the window stays, for its agents", await until(() => page.isVisible("#projectaddagent")) && await page.textContent("#projecthead") === "Fresh");
+  check("AC-139 the window stays, its tabs shown", await until(() => page.isVisible("#projecttabs")) && await page.textContent("#projecthead") === "Fresh");
+  await pressAt(page, "#projecttabagents");
+  check("AC-139 the Agents tab holds Add agent", await until(() => page.isVisible("#projectaddagent")));
   const fresh = (await named("Fresh")).id;
   check("AC-139 it is the project shown", await until(() => new URL(page.url()).searchParams.get("project") === fresh), page.url());
   await pressAt(page, "#projectaddagent");
@@ -186,15 +188,13 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 the agent stands in the project's window", await until(() => page.isVisible('#projectagentlist .agentcard:has-text("Its first")')),
     JSON.stringify(await page.evaluate(() => ({ asking: !!document.querySelector("#agentbox[open]"), why: document.getElementById("agenterror")?.textContent, list: document.getElementById("projectagentlist")?.textContent.slice(0, 200) }))));
   await pressAt(page, "#projectlimits");
-  await page.waitForSelector("#limitsbox[open]");
+  await page.waitForSelector("#limitspanel:not([hidden])");
   check("AC-128 the window says what it does", /every 30 s\. Two readings in a row over Warn tell the agent; over End its tasks fail and it is ended\. Nothing stops a process between readings/.test(await page.textContent("#limitstext")));
   check("AC-128 empty fields show the global values", await page.getAttribute("#limitwarn", "placeholder") === "4 (global)" && await page.getAttribute("#limitend", "placeholder") === "8 (global)");
   await page.fill("#limitwarn", "2");
   await page.fill("#limitend", "3");
   await pressAt(page, "#limitsok");
   check("AC-139 limits are kept from the project's window", await until(async () => (await j("/api/tasks/meta")).limits.some((l) => l.project === fresh && l.warn === 2 && l.end === 3)), JSON.stringify((await j("/api/tasks/meta")).limits));
-  // terminumd keeps them before the page has its answer and closes the limits' window: a press meanwhile lands on it
-  await page.waitForSelector("#limitsbox", { state: "hidden" });
   await integrationChecks(page, { j, fresh, work, pressAt, shots: opts.shots && `${opts.shots}${opts.shots.endsWith("-") ? "" : "/"}` });
   const done = await pressAt(page, "#projectok");
   check("AC-139 Done keeps the project and closes its window", await until(() => page.isHidden("#projectbox"), 15000),

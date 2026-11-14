@@ -13,11 +13,11 @@ const git = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t
 export async function integrationChecks(page, { j, fresh, work, pressAt, shots }) {
   const url = `/api/task-projects/${fresh}/integration`;
   const browser = page.context().browser()?.browserType().name() ?? "browser";
-  const shot = (name) => shots && page.locator("#integrationbox").screenshot({ path: `${shots}integration-${name}-${browser}.png` });
+  const shot = (name) => shots && page.locator("#projectbox").screenshot({ path: `${shots}integration-${name}-${browser}.png` });
   await pressAt(page, "#projectintegration");
-  await page.waitForSelector("#integrationbox[open]");
-  check("AC-186 Integration… opens its window, off, with the defaults",
-    await page.textContent("#integrationhead") === "Integration of Fresh" && !(await page.isChecked("#integrationon"))
+  await page.waitForSelector("#integrationpanel:not([hidden]) #integrationfields:not([hidden])");
+  check("AC-186 the project's Integration tab, off, with the defaults",
+    await page.textContent("#projecthead") === "Fresh" && await page.getAttribute("#projectintegration", "aria-selected") === "true" && !(await page.isChecked("#integrationon"))
       && await page.inputValue("#integrationtarget") === "origin/main" && await page.inputValue("#integrationbatch") === "8" && await page.inputValue("#integrationminutes") === "90"
       && await page.inputValue("#integrationbudget") === "60" && await page.inputValue("#integrationrounds") === "3");
   const options = await page.$$eval("#integrationagent option", (os) => os.map((o) => o.textContent));
@@ -26,6 +26,8 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
   check("AC-186 an empty line says what it means",
     await page.isVisible("#integrationcheckhint") && await page.textContent("#integrationpublishhint") === "terminum pushes the candidate to origin/main, never forced." && await page.isVisible("#integrationafterhint"));
   check("AC-186 the prompt is the default", (await page.inputValue("#integrationprompt")).startsWith("Task {task}: integration batch {batch} of {project}"));
+  await page.evaluate(() => { document.querySelector("#projectbox form").scrollTop = 0; });
+  await shot("top");
   await page.click("#integrationwhat summary");
   await shot("defaults");
   if (shots) {   // the window at a phone's width too, for its look (docs/UI-GUIDELINES.md §6)
@@ -39,7 +41,7 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
   await page.check("#integrationon");
   await pressAt(page, "#integrationok");
   check("AC-186 on, a project with no folder is refused where it was pressed",
-    await until(async () => (await page.textContent("#integrationerror")) === "Fresh has no folder: set it in its window.") && await page.isVisible("#integrationbox"));
+    await until(async () => (await page.textContent("#integrationerror")) === "Fresh has no folder: set it in its window.") && await page.isVisible("#integrationpanel"));
   await shot("refused");
   check("AC-186 nothing is kept", !(await j(url)).on);
 
@@ -54,15 +56,15 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
     await until(async () => (await page.textContent("#integrationerror")) === "Tasks in a batch: 1 to 8.") && await page.inputValue("#integrationcheck") === "make smoke");
   await page.fill("#integrationbatch", "4");
   await pressAt(page, "#integrationok");
-  await page.waitForSelector("#integrationbox", { state: "hidden" });
+  await until(async () => (await j(url)).batch_most === 4);
   const kept = await j(url);
   const agent = (await j("/api/tasks/meta")).agents.find((a) => a.project === fresh && a.name === "Its first")?.id;
   check("AC-186 Save keeps them", kept.check === "make smoke" && kept.batch_most === 4 && kept.agent === agent && !kept.on && kept.prompt === "", JSON.stringify(kept));
+  await pressAt(page, "#projecttabgeneral");
   await pressAt(page, "#projectintegration");
-  await page.waitForSelector("#integrationbox[open]");
-  check("AC-186 opened again it shows what was kept",
+  await page.waitForSelector("#integrationpanel:not([hidden]) #integrationfields:not([hidden])");
+  check("AC-186 chosen again it shows what was kept",
     await page.inputValue("#integrationcheck") === "make smoke" && await page.inputValue("#integrationagent") === agent && /Check runs `make smoke`/.test(await page.textContent("#integrationruns")));
-  await page.evaluate(() => document.getElementById("integrationbox").close());
 
   // on, for a git checkout with its target fetched: kept; a target it lacks: refused in git's terms
   const repo = path.join(work, "integration-repo");
@@ -75,4 +77,12 @@ export async function integrationChecks(page, { j, fresh, work, pressAt, shots }
   const lacks = await j(`/api/task-projects/${gitty}/integration`, "PUT", { on: true, target: "origin/nope" });
   check("AC-186 on for a git checkout is kept; a target it has not fetched is refused",
     on.ok === true && (await j(`/api/task-projects/${gitty}/integration`)).on === true && lacks.error === "origin/nope: no such branch at origin.", JSON.stringify({ on, lacks }));
+  if (shots) {   // the window's other tabs, for their look (docs/UI-GUIDELINES.md §6)
+    for (const tab of ["agents", "general"]) {
+      await pressAt(page, `#projecttab${tab}`);
+      await page.evaluate(() => { document.querySelector("#projectbox form").scrollTop = 0; });
+      await shot(`tab-${tab}`);
+    }
+  }
+  await pressAt(page, "#projecttabgeneral");
 }
