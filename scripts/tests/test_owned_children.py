@@ -16,6 +16,11 @@ from testrun import short_tmp
 
 
 class RegisteredChildren(unittest.TestCase):
+    def test_cleanup_keeps_original_registered_starts_and_snapshots_other_owned_pids(self):
+        with mock.patch.object(owned_children, "identities", return_value={42: "reused", 43: "current"}), \
+                mock.patch.object(owned_children, "records", return_value={42: "original", 44: "ended"}):
+            self.assertEqual(owned_children.cleanup_identities([42, 43], "registry"), {42: "original", 43: "current"})
+
     def test_identity_queries_start_and_state_only_and_ignores_zombies(self):
         for state, expected in [("S", "Thu Nov 12 21:00:00 2026"), ("Z", None)]:
             with self.subTest(state=state), mock.patch.object(owned_children.subprocess, "run",
