@@ -121,7 +121,7 @@ async function start(clock = process.env.TM_TEST_CLOCK_SCALE ?? "300") {
   if (ended) throw new Error("the run was ended");   // a signal ended it while a browser ran
   // as the build the Files panel was bundled for: another one makes the panel reload itself (AC-34)
   // AC-102: pane programs (mc included) keep their temporary files inside this run's teardown.
-  // a finished session stands 24 s, a timing budget like the checks' own: a busy machine slows the checks, not this close
+  // a finished session stands 24 s times the slack, a timing budget like the checks' own: a busy machine slows the checks, not this close
   const env = { ...process.env, TMPDIR: tmp, TM_TEST_CLOCK_SCALE: clock, TM_TEST_CLOSE_AFTER: String(slack(7200)), TM_TEST_HOOKS: "1", TM_HOME: HOME, TM_APP_DIR: APP, TM_PORT: String(PORT), TM_TMUX_SOCKET: SOCKET, TM_LOG: process.env.TM_TEST_LOG ?? "warn", TM_BUILD_ID: UI_BUILD, TM_OSASCRIPT: OSASCRIPT };
   delete env.TMUX;
   proc = spawn(BIN, [], { env, stdio: ["ignore", "ignore", "inherit"] });

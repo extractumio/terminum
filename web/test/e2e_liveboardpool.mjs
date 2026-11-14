@@ -132,7 +132,7 @@ export async function agentPool(page, opts, pressAt) {
   await page.click('#runbox button[value="cancel"]');
   tmux("send-keys", "-t", idlePane, "C-u");
   // pressed only once the box is drawn empty: a screen read before the agent redraws still shows the draft
-  await until(() => !tmux("capture-pane", "-p", "-t", idlePane).includes("a draft in its box"));
+  check("AC-141 Ctrl+U empties its box", await until(() => !tmux("capture-pane", "-p", "-t", idlePane).includes("a draft in its box")), tmux("capture-pane", "-p", "-t", idlePane));
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   await page.fill("#runmessage", "WORKS");
