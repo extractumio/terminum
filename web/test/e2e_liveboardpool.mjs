@@ -132,15 +132,16 @@ export async function agentPool(page, opts, pressAt) {
   await page.click('#runbox button[value="cancel"]');
   tmux("send-keys", "-t", idlePane, "C-u");
   // pressed only once the box is drawn empty: a screen read before the agent redraws still shows the draft
-  check("AC-141 Ctrl+U empties its box", await until(() => !tmux("capture-pane", "-p", "-t", idlePane).includes("a draft in its box")), tmux("capture-pane", "-p", "-t", idlePane));
+  const screen = () => tmux("capture-pane", "-p", "-t", idlePane);
+  check("AC-141 Ctrl+U empties its box", await until(() => !screen().includes("a draft in its box")), screen());
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
   check("AC-141 with its box empty it closes the holder", await until(() => !paneAlive(tmux, idlePane), 15000));
-  const ends = async () => (await j(`/api/tasks/${a}`)).history.map((e) => e.text).filter((t) => /^Session ended/.test(t ?? ""));
+  const historyOfA = async () => (await j(`/api/tasks/${a}`)).history.map((e) => e.text).join(" | ");
   // "closed 5 minutes after DONE" instead: AC-125's close came first, the press too late for TM_TEST_CLOSE_AFTER
-  check("AC-141 and says so on its task", await until(async () => (await ends()).some((t) => t.startsWith("Session ended: closed for"))), JSON.stringify(await ends()));
+  check("AC-141 and says so on its task", await until(async () => /Session ended: closed for/.test(await historyOfA())), await historyOfA());
   check("AC-141 and the third starts in the slot", await hasStatus(c, "IN PROGRESS"), await status(c));
   check("AC-138 a dot for it", await dotted((d) => d.length === 1 && d[0].includes(c)), JSON.stringify(await dots()));
   tmux("kill-pane", "-t", await paneOf(c));
