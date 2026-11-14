@@ -92,27 +92,36 @@ class Ownership(unittest.TestCase):
                 check_step.own_processes("/tmp/private", 7)
             self.assertEqual(error.exception.processes, [(42, "group"), (44, "registered")])
 
-    def test_cancellation_during_failed_inspection_keeps_original_signal_and_grace(self):
-        events = []
-        cancelled = check_step.GuardCancellation()
-        def fail(_folder):
-            cancelled.receive(signal.SIGHUP, None)
-            raise process_cwd.InspectionError("query timed out")
-        with mock.patch.object(check_step, "run", return_value=(mock.Mock(), 0, 7)), \
-                mock.patch.object(check_step, "working_in", side_effect=fail), \
-                mock.patch.object(check_step, "listing", return_value=[(42, "7", "owned")]), \
-                mock.patch.object(check_step.owned_children, "active", return_value={}), \
-                mock.patch.object(check_step.owned_children, "cleanup_identities", return_value={42: "start"}), \
-                mock.patch.object(check_step.os, "killpg", side_effect=lambda group, number: events.append((group, number))), \
-                mock.patch.object(check_step.time, "sleep", side_effect=lambda seconds: events.append(("grace", seconds))), \
-                mock.patch.object(check_step, "end_pids", side_effect=lambda *_: events.append("end")), \
-                mock.patch.object(check_step, "files_in", return_value=["x"]), \
-                mock.patch.object(check_step.shutil, "rmtree") as remove, contextlib.redirect_stderr(io.StringIO()) as err:
-            self.assertNotEqual(check_step.check(["unused"], "private", cancelled), 0)
-            self.assertEqual(events, [(7, signal.SIGHUP), ("grace", check_step.SETTLE_S), "end"])
-            self.assertIn("LEFT x", err.getvalue())
-            self.assertIn("inspection failed", err.getvalue())
-            remove.assert_not_called()
+    def test_failed_inspection_preserves_cancellation_grace_and_rechecks_ownership(self):
+        for before_query in (False, True):
+            with self.subTest(cancellation_already_forwarded=before_query):
+                events = []
+                clock = [100]
+                cancelled = check_step.GuardCancellation()
+                if before_query:
+                    cancelled.receive(signal.SIGHUP, None)
+                def fail(_folder):
+                    clock[0] += 2
+                    cancelled.receive(signal.SIGHUP, None)
+                    raise process_cwd.InspectionError("query timed out")
+                # The first group member's PID is reused by an unrelated process during grace.
+                snapshots = [[(42, "7", "owned")], [(42, "8", "unrelated")]]
+                with mock.patch.object(check_step, "run", return_value=(mock.Mock(), 0, 7)), \
+                        mock.patch.object(check_step, "working_in", side_effect=fail), \
+                        mock.patch.object(check_step, "listing", side_effect=snapshots), \
+                        mock.patch.object(check_step.owned_children, "active", return_value={}), \
+                        mock.patch.object(check_step.owned_children, "cleanup_identities", side_effect=lambda pids, _: dict.fromkeys(pids, "start")), \
+                        mock.patch.object(check_step.os, "killpg", side_effect=lambda group, number: events.append((group, number))), \
+                        mock.patch.object(check_step.time, "monotonic", side_effect=lambda: clock[0]), \
+                        mock.patch.object(check_step.time, "sleep", side_effect=lambda seconds: events.append(("grace", seconds))), \
+                        mock.patch.object(check_step, "end_pids", side_effect=lambda pids, _: events.append(("end", pids))), \
+                        mock.patch.object(check_step, "files_in", return_value=["x"]), \
+                        mock.patch.object(check_step.shutil, "rmtree") as remove, contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertNotEqual(check_step.check(["unused"], "private", cancelled), 0)
+                    self.assertEqual(events, [(7, signal.SIGHUP), ("grace", 13 if before_query else 15), ("end", [])])
+                    self.assertIn("LEFT x", err.getvalue())
+                    self.assertIn("inspection failed", err.getvalue())
+                    remove.assert_not_called()
 
     def test_linux_directory_lookup_preserves_boundaries_and_excludes_itself(self):
         folder = Path("/tmp/private").resolve()

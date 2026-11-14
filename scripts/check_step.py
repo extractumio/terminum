@@ -62,17 +62,18 @@ class OwnershipError(InspectionError):
 
 def own_processes(folder, group):
     """(pid, command) of each process of our private group or working in our private folder."""
-    failure = None
     try:
         inside = working_in(folder)
     except InspectionError as error:
-        failure, inside = error, ()
+        raise OwnershipError(error, selected_processes(folder, group)) from error
+    return selected_processes(folder, group, inside)
+
+
+def selected_processes(folder, group, inside=()):
+    """Current group/registry members, plus any successfully inspected working-directory PIDs."""
     registered = owned_children.active(owned_children.path(folder))
-    processes = [(pid, text[:120]) for pid, pgid, text in listing()
-                 if pgid == str(group) or pid in inside or pid in registered]
-    if failure is not None:
-        raise OwnershipError(failure, processes) from failure
-    return processes
+    return [(pid, text[:120]) for pid, pgid, text in listing()
+            if pgid == str(group) or pid in inside or pid in registered]
 
 
 def send(pid, number):
@@ -168,7 +169,10 @@ def check(command, folder, cancelled):
                 print(f"ownership inspection failed: {error}; private root retained: {folder}", file=sys.stderr)
                 status = status or 1
                 if cancelled.forward(group):
-                    time.sleep(SETTLE_S)
+                    end = time.monotonic() + SETTLE_S
+                if cancelled.number:
+                    time.sleep(max(0, end - time.monotonic()))
+                    processes = selected_processes(folder, group)
                 break
             files = files_in(folder)
             if cancelled.number and not cancelled.forwarded:
