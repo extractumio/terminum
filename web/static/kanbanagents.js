@@ -5,9 +5,9 @@
 // the strip shows the agents of the projects shown.
 // terminumd checks what is kept and says what is wrong; every page hears.
 import { askConfirm, oneAtATime } from "./dialogs.js";
-import { agentMark, agentName, metaLine } from "./nav.js";
+import { agentName, metaLine } from "./nav.js";
 import { el, iconButton } from "./listparts.js";
-import { agentView, stripes } from "./kanbanagentview.js";
+import { agentFace, agentView, stripes } from "./kanbanagentview.js";
 import { asTyped } from "./astyped.js";
 import { slotState } from "./cardstate.js";
 import { queueKey, queueList } from "./kanbanqueue.js";
@@ -61,10 +61,9 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     const shown = chosen(), mine = slots(a).filter((s) => !shown.length || shown.includes(s.project)), of = whose(a);
     const b = button(`item agentcard${full(a) ? " busy" : ""}`);
     b.dataset.agent = a.id;
-    const bar = el("span", `pbar${slots(a).length ? " busy" : ""}`);
-    bar.style.setProperty("--dot", agentColor(a));
+    const [bar, line] = agentFace(a, slots(a).length > 0);
     b.style.setProperty("--ag", agentColor(a));
-    const txt = el("span", "txt"), line = el("span", "head"), dots = el("span", "agdots");
+    const txt = el("span", "txt"), dots = el("span", "agdots");
     // a dashed ring for each slot its schedules keep, before its sessions' dots (terminum-schedules.md AC-161); a plain
     // ring for each slot still free; then a pale dot for each task of its queue, in the key that opens it (AC-169)
     const kept = counted().kept?.[a.id] ?? [];
@@ -75,7 +74,6 @@ export function agentsSection({ getMeta, chosen, reload, refreshQueue, slots: co
     if (a.at_once > 1 || kept.length) dots.append(el("small", "agcount", `${used}/${a.at_once}`));
     const queued = queueOf(a);
     if (queued.length) dots.append(queueKey(a, queued, () => open(a, true)));
-    line.append(agentMark({ agent: a.kind }), el("span", "t", a.name));
     txt.append(line, metaLine([agentName(a.kind), ...(a.effort ? [a.effort] : []), ...of], false), stripes(a.kind, readings()[a.kind], Date.now() / 1000), dots);
     b.append(bar, txt);
     b.title = [a.name, ...of, `${used} of ${a.at_once} at once`, ...(kept.length ? [`kept for ${kept.join(", ")}`] : []), a.line].join(" · ");

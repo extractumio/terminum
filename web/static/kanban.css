@@ -91,8 +91,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* a tick beside a field: centred on it; a touch screen's taller row reaches under it */
 .fieldgrid > .checkrow { margin-bottom: min(0px, (var(--field-h) - var(--key-h)) / 2); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
-.agentlist .item .s { padding-left: 20px; }
-/* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled by its use's level, the percent;
+.agentlist .item .s, /* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled by its use's level, the percent;
    an old reading fades; in its window the reset time follows the percent */
 .agsubs { display: flex; flex-direction: column; gap: 3px; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .agsubs.stale { opacity: .55; }
