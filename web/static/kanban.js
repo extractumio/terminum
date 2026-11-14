@@ -29,7 +29,7 @@ import { taskLines } from "./tasklines.js";
 import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
 import { showIntegration } from "./kanbanintegration.js";
-import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
+import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, needBoxes, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
 document.querySelectorAll(".textkey").forEach(textKey);   // the page's own text keys; button()'s have it
@@ -180,10 +180,11 @@ function card(t, under = "") {
   // its subtasks as boxes, each its ID on its status's color; a press opens one (AC-112)
   const boxes = t.boxes?.length ? el("div", "cboxes") : null;
   boxes?.append(...t.boxes.map((k) => statusBox(k, openTask)));
+  const needRow = t.boxes?.length ? needBoxes(t.boxes, openTask) : null;   // how many of them failed or wait for a human
   if (t.files) foot.append(el("span", "cfiles", plural(t.files, "file")));
   if (t.spent) foot.append(spentLine(t.spent));
   showState(foot, t);
-  c.append(...[head, el("div", "ctitle", t.title), boxes, foot].filter(Boolean));
+  c.append(...[head, el("div", "ctitle", t.title), boxes, needRow, foot].filter(Boolean));
   showUsage(c, t.id);
   showSession(c, t);
   c.addEventListener("click", (e) => { if (e.metaKey || e.ctrlKey) pick(t.id, c); else folds.press(c); });
