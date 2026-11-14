@@ -1626,6 +1626,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 
 | AC | Gap | Evidence |
 |---|---|---|
+| AC-122 | A human prompt in a fully finished multi-task run selects no task (TERM-233). | `terminumd/src/dispatcher/hooks.rs` |
 | AC-123 | An agent's move_task to DONE keeps no result: a task goes DONE without one that way (TERM-85). | `terminumd/src/tasks/tools.rs` |
 | AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
