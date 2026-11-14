@@ -202,6 +202,8 @@ pub struct NewTask {
     pub made_in: Option<String>,
     /// a schedule's firing made it: IN PROGRESS from its first moment, its ID saying so (terminum-schedules.md AC-162)
     pub scheduled: bool,
+    /// a batch's integration task: INTEGRATION from its first moment, I_ before its ID (terminum-integration.md AC-194)
+    pub integration: bool,
 }
 
 /// A new task's window with no project chosen (terminum-kanban.md AC-106).
@@ -245,14 +247,14 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
         }
     }
     let owner = new.owner.unwrap_or_else(|| HUMAN.to_string());
-    let status = if new.scheduled { "IN PROGRESS" } else { "TODO" };
+    let status = if new.scheduled { "IN PROGRESS" } else if new.integration { INTEGRATION } else { "TODO" };
     let rank = top_rank(tx, status, &severity)?;
     let number: i64 = tx.query_row("SELECT coalesce(max(number), 0) + 1 FROM tasks", [], |r| r.get(0)).map_err(sql)?;
     let key = crate::auth::crypto::random_hex::<16>();
     tx.execute("INSERT INTO tasks (id, number, project, parent, title, body, status, severity, rank, owner, by_agent, session_key, made_in, updated_at, created_at)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?14, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?13)",
                rusqlite::params![key, number, project, parent.as_ref().map(|(k, _)| k), title, new.text, severity, rank, owner, new.by_agent as i64, new.session, new.made_in, at, status]).map_err(sql)?;
-    let slug = super::slugs::assign(tx, &key, &project, new.scheduled)?;
+    let slug = super::slugs::assign(tx, &key, &project, if new.scheduled { "S_" } else if new.integration { "I_" } else { "" })?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     get(tx, &slug)
 }
@@ -436,7 +438,7 @@ fn set_project(tx: &Transaction, author: &str, id: &str, project: &str, at: i64)
         // the agent a human chose for it is its old project's (terminum-dispatcher.md AC-137): none is named now
         tx.execute("UPDATE tasks SET project = ?1, agent = NULL, updated_at = ?2 WHERE id = ?3", (project, at, k)).map_err(sql)?;
         // it takes the project's next ID; the one it had still finds it (AC-148)
-        let slug = super::slugs::assign(tx, k, project, false)?;
+        let slug = super::slugs::assign(tx, k, project, "")?;
         log(tx, k, author, "project", &format!("{who} moved it to {name}, as {slug}"), None, at)?;
     }
     Ok(())

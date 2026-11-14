@@ -14,6 +14,8 @@ pub const PREFIX_MOST: usize = 8;
 pub const UID_LEN: usize = 8;
 /// What stands before the ID of a task a schedule made (terminum-schedules.md AC-162); no prefix holds "_".
 pub(super) const SCHEDULED: &str = "S_";
+/// A batch's integration task (terminum-integration.md AC-194).
+pub(super) const INTEGRATING: &str = "I_";
 
 /// A prefix as kept: 1–8 of A–Z and 0–9, a letter first; lower case taken as upper.
 pub fn check_prefix(prefix: &str) -> Result<String, String> {
@@ -52,7 +54,7 @@ fn free_prefix(tx: &Transaction, base: &str, project: &str) -> Result<String, St
 fn bump_above_found(tx: &Transaction, project: &str, prefix: &str) -> Result<(), String> {
     // "TERM-" up to "TERM." ('.' follows '-'): a range the key's index walks, where a LIKE would scan; a schedule's
     // tasks count with the others
-    for mark in ["", SCHEDULED] {
+    for mark in ["", SCHEDULED, INTEGRATING] {
         let top: Option<i64> = tx.query_row("SELECT max(CAST(substr(slug, ?3) AS INTEGER)) FROM task_slugs WHERE slug >= ?1 AND slug < ?2",
                                             (format!("{mark}{prefix}-"), format!("{mark}{prefix}."), (mark.len() + prefix.len()) as i64 + 2), |r| r.get(0)).map_err(sql)?;
         if let Some(top) = top {
@@ -90,15 +92,17 @@ fn fill_project(tx: &Transaction, project: &str, dir: &str, name: &str) -> Resul
 
 /// Task `key` takes the next ID of `project`; the one it had stays found. `scheduled`: a schedule made it; one
 /// that said so keeps saying it in the project it moves to.
-pub fn assign(tx: &Transaction, key: &str, project: &str, scheduled: bool) -> Result<String, String> {
+/// `mark`: "S_" for a schedule's task, "I_" for a batch's, "" else; a task that had one keeps it.
+pub fn assign(tx: &Transaction, key: &str, project: &str, mark: &str) -> Result<String, String> {
     let (prefix, seq, dir, name): (Option<String>, i64, String, String) = tx.query_row("SELECT prefix, next_seq, dir, name FROM projects WHERE id = ?1", [project],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))).map_err(sql)?;
     let Some(prefix) = prefix else {
         fill_project(tx, project, &dir, &name)?;       // a project written since the last fill
-        return assign(tx, key, project, scheduled);
+        return assign(tx, key, project, mark);
     };
     let had = |tx: &Transaction| tx.query_row("SELECT slug FROM tasks WHERE id = ?1", [key], |r| r.get::<_, Option<String>>(0)).optional().map(Option::flatten).map_err(sql);
-    let mark = if scheduled || had(tx)?.is_some_and(|s| s.starts_with(SCHEDULED)) { SCHEDULED } else { "" };
+    let had = had(tx)?;
+    let mark = [SCHEDULED, INTEGRATING].into_iter().find(|m| *m == mark || had.as_deref().is_some_and(|s| s.starts_with(m))).unwrap_or("");
     let slug = format!("{mark}{prefix}-{seq}");
     tx.execute("UPDATE projects SET next_seq = ?1 WHERE id = ?2", (seq + 1, project)).map_err(sql)?;
     put_slug(tx, key, &slug)?;

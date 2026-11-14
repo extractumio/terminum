@@ -273,6 +273,7 @@ async fn make(State(app): State<Shared>, Json(body): Json<Value>) -> Response {
         by_agent: false,
         made_in: text(&body, "made_in"),           // a record's session it was made of (AC-116, AC-150)
         scheduled: false,
+        integration: false,
     };
     let (attached, runs_on) = (crate::config::strings(&body["files"]), text(&body, "agent"));
     let done = store(&app, move |tx| {

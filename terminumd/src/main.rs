@@ -24,6 +24,7 @@ mod events;
 mod files;
 mod folders;
 mod hosts;
+mod integrate;
 mod hotkeys;
 mod http;
 mod idle_exit;

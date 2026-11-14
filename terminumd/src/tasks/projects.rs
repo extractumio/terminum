@@ -89,7 +89,7 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
     tx.execute("UPDATE tasks SET project = ?1, updated_at = ?2 WHERE project = ?3", (DEFAULT_PROJECT, now, project)).map_err(sql)?;
     super::agents::move_to_default(tx, project)?;   // its agents too: what names them still finds them (terminum-dispatcher.md AC-137)
     for task in &tasks {
-        super::slugs::assign(tx, task, DEFAULT_PROJECT, false)?;   // TASK-n; the ID it had still finds it (AC-148)
+        super::slugs::assign(tx, task, DEFAULT_PROJECT, "")?;   // TASK-n; the ID it had still finds it (AC-148)
     }
     tx.execute("UPDATE runs SET project = ?1 WHERE project = ?2", (DEFAULT_PROJECT, project)).map_err(sql)?;   // they go with their tasks
     tx.execute("UPDATE schedules SET project = ?1 WHERE project = ?2 AND deleted_at IS NOT NULL", (DEFAULT_PROJECT, project)).map_err(sql)?;
