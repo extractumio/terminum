@@ -94,10 +94,11 @@ export function columns(box, bands, opts = {}) {
 
 /** The keys, pointer and finger over a plot's `marks` (a grid of `cols` when given, else a row): `at(e)` is the
  *  mark under a pointer event or -1; select(i | -1) on hover, focus, a tap or a key, open(i) on a mouse's
- *  press or Enter (a finger's tap only chooses: a 3px column is no target). */
+ *  press or Enter (a finger's tap only chooses: a 3px column is no target). The mark chosen outlives the plot
+ *  drawn anew in a focused `box`. */
 export function pointer(box, s, marks, { at, select = () => {}, open = () => {}, cols = 0 }) {
   let i = -1;
-  const pick = (to) => { if (to === i) return; marks[i]?.classList.remove("on"); i = to; marks[i]?.classList.add("on"); select(i); };
+  const pick = (to) => { if (to === i) return; marks[i]?.classList.remove("on"); i = to; marks[i]?.classList.add("on"); box.dataset.chosen = i; select(i); };
   const under = (e) => { const to = at(e); return to >= 0 && to < marks.length ? to : -1; };
   s.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.buttons) pick(under(e)); });
   s.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") pick(under(e)); });
@@ -111,6 +112,10 @@ export function pointer(box, s, marks, { at, select = () => {}, open = () => {},
     else if (e.key === "Escape" && i >= 0) { e.stopPropagation(); pick(-1); }
   };
   box.onblur = () => pick(-1);
+  // drawn anew while it holds the focus (its width changed: a scrollbar came or went): the column chosen stays
+  // chosen, Enter still opens it; after the card's own drawing, which says its whole first
+  const kept = Number(box.dataset.chosen ?? -1);
+  if (globalThis.document?.activeElement === box && kept >= 0 && kept < marks.length) queueMicrotask(() => pick(kept));
 }
 
 /** The trend of `values` (null: not measured): a least-squares line over the measured ones but the last, which is

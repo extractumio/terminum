@@ -156,6 +156,12 @@ export async function liveHistory(page, opts) {
   await page.focus("#active");
   await page.keyboard.press("End");
   check("AC-152 a day chosen by the keys says its active time", /^Today so far · \d/.test(await page.textContent("#cactive .readout span")), await page.textContent("#cactive .readout span"));
+  // a scrollbar that comes or goes (Linux's take room) changes the charts' width: drawn anew, the day stays chosen
+  await page.setViewportSize({ width: size.width - 15, height: size.height });
+  await nap(400);
+  check("AC-152 the charts drawn anew keep the day chosen by the keys", /^Today so far · \d/.test(await page.textContent("#cactive .readout span")), await page.textContent("#cactive .readout span"));
+  await page.setViewportSize(size);
+  await nap(400);
   await page.keyboard.press("Enter");
   await page.waitForURL(/\/history\/\?/);
   check("AC-152 a day leads to the history of that day, the human's", await until(async () => (await page.textContent("#hsum")).startsWith(`${human.toLocaleString("en-US")} message`), 6000), await page.textContent("#hsum"));
@@ -180,11 +186,21 @@ export async function liveHistory(page, opts) {
   // a ranked row's text without the mark the page sets after a symbol
   const rowOf = (list, name) => page.evaluate(([list, name]) => ([...document.querySelectorAll(`#${list} .rrow`)].find((r) => r.textContent.includes(name))?.textContent ?? "").replace("︎", ""), [list, name]);
   await page.click('#dtabs [data-tab="system"]');
-  check("AC-171 System: Dispatcher's sessions, the failures by reason, the agents' load", await until(async () => await tileOf("Sessions started") === String(sys0.tiles.sessions + 1), 6000)
-    // its failed write by its count: among the reasons shown it falls under Other once the suites before left ten kinds
-    && /tab=system/.test(page.url()) && (await numbers("tab=system&period=year")).tiles.failed_writes === sys0.tiles.failed_writes + 1 && /Write: This pane has closed|Other \(\d+\)/.test(await page.textContent("#failures")) &&new RegExp(`Agent ${dash}\\d+%1$`).test(await rowOf("agents", dash))
-    && (await numbers("tab=system&period=year")).agents.find((a) => a.id === dash)?.busy_ms === 1_800_000
-    && (await page.$$("#ends rect.hit")).length === 12 && (await page.$$("#load rect.hit")).length === 12 && (await page.$$("#fires rect.hit")).length === 12, `${await page.textContent("#tiles")} | ${await rowOf("agents", dash)}`);
+  // sessions of Dispatcher's that the suites before left can start meanwhile: the counts hold this one at least,
+  // and the page shows what terminumd counts; each part said on its own, so a failure names it
+  const sys1 = async () => numbers("tab=system&period=year");
+  check("AC-171 System: the tab is in the address", await until(async () => /tab=system/.test(page.url()), 6000), page.url());
+  check("AC-171 System: Dispatcher's sessions count this one, as terminumd counts them", await until(async () => {
+    const now = (await sys1()).tiles.sessions;
+    return now >= sys0.tiles.sessions + 1 && await tileOf("Sessions started") === String(now);
+  }, 6000), `before ${sys0.tiles.sessions}, now ${(await sys1()).tiles.sessions}, shown ${await tileOf("Sessions started")}`);
+  // its failed write by its count: among the reasons shown it falls under Other once the suites before left ten kinds
+  check("AC-171 System: the failures by reason count its failed write", (await sys1()).tiles.failed_writes >= sys0.tiles.failed_writes + 1 && /Write: This pane has closed|Other \(\d+\)/.test(await page.textContent("#failures")),
+    `before ${sys0.tiles.failed_writes}, now ${(await sys1()).tiles.failed_writes} | ${await page.textContent("#failures")}`);
+  check("AC-171 System: the agents' load, its run's half hour busy", new RegExp(`Agent ${dash}\\d+%1$`).test(await rowOf("agents", dash)) && (await sys1()).agents.find((a) => a.id === dash)?.busy_ms === 1_800_000,
+    `${await rowOf("agents", dash)} | busy ${(await sys1()).agents.find((a) => a.id === dash)?.busy_ms}`);
+  const columns = async () => Promise.all(["ends", "load", "fires"].map(async (id) => (await page.$$(`#${id} rect.hit`)).length));
+  check("AC-171 System: a year in 12 columns on each chart", JSON.stringify(await columns()) === "[12,12,12]", JSON.stringify(await columns()));
   await page.click('#dtabs [data-tab="costs"]');
   const cost1 = await numbers("tab=costs&period=year");
   check("AC-172 Costs: dollars at list prices and tokens, by agent, project and model", Math.abs(cost1.tiles.usd - cost0.tiles.usd - 7) < 0.005 && cost1.tiles.counted - cost0.tiles.counted === 1_100_000

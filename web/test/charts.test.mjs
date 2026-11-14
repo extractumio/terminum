@@ -2,7 +2,7 @@
 // The charts' scale (charts.js; terminum.md AC-151, AC-152): a "nice" top and its ticks.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { niceTicks, trend } from "../static/charts.js";
+import { niceTicks, pointer, trend } from "../static/charts.js";
 
 test("AC-152 a nice top over the largest value, 1, 2 or 5 times a power of ten apart", () => {
   assert.deepEqual(niceTicks(87), { top: 100, ticks: [0, 50, 100] });
@@ -32,4 +32,36 @@ test("AC-152 a trend skips what was not measured, and needs 4 columns", () => {
   assert.equal(trend([1, 2, 3, 4]), null, "3 finished columns");
   assert.equal(trend([1, null, 2, null, 3, 4]), null);
   assert.equal(trend([]), null);
+});
+
+/** A plot's box, its svg and its columns, as much of the DOM as pointer() touches. */
+function plot(n) {
+  const marks = Array.from({ length: n }, () => { const on = new Set(); return { on, classList: { add: (c) => on.add(c), remove: (c) => on.delete(c) } }; });
+  return { box: { dataset: {} }, s: { addEventListener() {} }, marks };
+}
+
+test("AC-152 a column chosen by the keys stays chosen when its focused plot is drawn anew, Enter still opens it", async () => {
+  const { box, s, marks } = plot(14), said = [], opened = [];
+  globalThis.document = { activeElement: box };
+  try {
+    pointer(box, s, marks, { at: () => -1, select: (i) => said.push(i), open: (i) => opened.push(i) });
+    box.onkeydown({ key: "End", preventDefault() {} });
+    assert.deepEqual(said, [13]);
+    const again = plot(14).marks;   // a scrollbar came or went: the same box, its columns drawn anew
+    pointer(box, s, again, { at: () => -1, select: (i) => said.push(i), open: (i) => opened.push(i) });
+    await null;
+    assert.deepEqual(said, [13, 13], "chosen again, said again");
+    assert.ok(again[13].on.has("on"));
+    box.onkeydown({ key: "Enter", preventDefault() {} });
+    assert.deepEqual(opened, [13]);
+    box.onblur();
+    pointer(box, s, plot(14).marks, { at: () => -1, select: (i) => said.push(i) });
+    await null;
+    assert.deepEqual(said, [13, 13, -1], "let go, a later drawing chooses nothing");
+    globalThis.document = { activeElement: null };
+    box.dataset.chosen = 5;
+    pointer(box, s, plot(14).marks, { at: () => -1, select: (i) => said.push(i) });
+    await null;
+    assert.deepEqual(said, [13, 13, -1], "a plot not focused keeps nothing");
+  } finally { delete globalThis.document; }
 });
