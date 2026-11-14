@@ -14,7 +14,7 @@ import worktree_fresh  # noqa: E402
 
 SETTINGS = SCRIPTS.parent / ".claude/settings.json"
 needs_settings = unittest.skipUnless(SETTINGS.exists(), "no .claude here: the Mac test runner's tree has none")
-HOOK_SCRIPTS = ("worktree.py", "worktree_fresh.py", "shell_writes.py")
+HOOK_SCRIPTS = ("worktree.py", "worktree_fresh.py", "shell_writes.py", "process_cwd.py")
 
 
 class Fresh(Repo):

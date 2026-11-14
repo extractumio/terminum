@@ -397,8 +397,10 @@ Scenario: AC-122 edge — CLOSE
   Then the comment is kept, nothing moves and the session hears nothing (terminum-kanban.md AC-108)
 
 Scenario: AC-122 edge — archived
-  When new work comes to an archived task
-  Then it returns to the board
+  Given an archived task whose live session Dispatcher started, DONE or already IN PROGRESS
+  When the human types a new prompt in that session, or presses RUN
+  Then it returns to the board in IN PROGRESS, in the same transaction
+  And a prompt terminum typed or the agent wrote itself leaves it archived
 
 Scenario: AC-122 failure — cannot go on
   When the agent refuses that session ID, none is known, the ID is not of §9's shape, or the first folder is gone
@@ -1635,7 +1637,7 @@ New task and Run is two presses; a drop and Run one drag and one press. What to 
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-122 | A human's own prompt in the session of an archived task does not return it; Run does. | `terminumd/src/dispatcher/hooks.rs` |
+| AC-122 | A human prompt in a fully finished multi-task run selects no task (TERM-233). | `terminumd/src/dispatcher/hooks.rs` |
 | AC-123 | An agent's move_task to DONE keeps no result: a task goes DONE without one that way (TERM-85). | `terminumd/src/tasks/tools.rs` |
 | AC-138 | Several tasks are chosen with a pointer's ⌘ or Ctrl: a phone or the keyboard runs one at a time. Clearing one task's budget takes the limit off the run. | `web/static/kanban.js`, `terminumd/src/dispatcher/runs.rs` |
 | AC-125 | Of a session Dispatcher did not start, its end is written, its start not. | `terminumd/src/tasks/tell.rs` |
@@ -1842,7 +1844,7 @@ Depends on `terminum-kanban.md`'s Stage 1. All three stages belong to terminum's
 - [x] AC-121 — `web/test/e2e_taskrun.mjs` (Run in the task's window: at once, or the dialog for an agent's words, subtasks, no agent, no room, a refusal), `cargo test dispatcher::screen`, `cargo test tmux::control` (the gate's guarded paste and Enter get their own answers), `web/test/e2e_livedispatcher.mjs` on `scripts/fake_agent.py`; on the real programs, outside every gate as it spends model calls: `TM_TEST_REAL_AGENTS=1 TM_TEST_CLOCK_SCALE=1 node web/test/e2e_live.mjs board` (`TM_TEST_REAL_CODEX=1` too); `SECURITY.md` carries Dispatcher's typing
 - [x] AC-138 — `cargo test dispatcher::runs`, `cargo test dispatcher::press`, `cargo test tasks::agents`, `web/test/e2e_liveboardagents.mjs`, `web/test/cardstate.test.mjs` (a dot at work)
 - [x] AC-137 — `cargo test tasks::agents`, `cargo test tasks::store` (`ac137_one_pool_s_agents_each_go_to_a_project`), `cargo test tasks::auto` (`ac137_a_task_names_an_agent_of_its_own_project_alone`), `cargo test roles`, `cargo test cli::mcp`, `cargo test auth::checks`, `web/test/e2e_liveboardagents.mjs`, `web/test/astyped.test.mjs`, `SECURITY.md` carries a project agent's command
-- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), its real run as AC-121's
+- [x] AC-122 — `cargo test dispatcher::hooks`, `cargo test dispatcher::acts` (RUN cancels a waiting close already decided), `web/test/e2e_taskrun.mjs` (all columns, held sessions, queue and refusals; one press in the task's window, Run from scratch), `web/test/e2e_livewaiting.mjs` (answer before closing, `e2e_live.mjs waiting`), `web/test/e2e_livedispatcher.mjs` (answer after closing), `web/test/e2e_livearchived.mjs` (a human's prompt restores archived DONE and IN PROGRESS cards), its real run as AC-121's
 - [x] AC-123 — `cargo test dispatcher::plan`, `cargo test dispatcher::hooks` (a request's turn and its Stop), `cargo test dispatcher::start`, `cargo test tasks::tools`, `web/test/e2e_livedispatcher.mjs` with the test clock, `scripts/e2e_remote_tasks.py`
 - [x] AC-124 — `cargo test dispatcher::plan`, `web/test/e2e_livedispatcher.mjs`
 - [x] AC-125 — `cargo test dispatcher::plan`, `cargo test dispatcher::acts` (a close decided before a human's input), `web/test/e2e_livedispatcher.mjs`

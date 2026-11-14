@@ -236,6 +236,39 @@ class Worktrees(Repo):
         worktree.remove("busy", cwd=self.primary)
         self.assertFalse(path.exists())
 
+    def test_empty_inventory_needs_no_process_inspection(self):  # AC-104
+        with mock.patch.object(worktree, "directories") as query:
+            self.assertEqual(worktree.listing(self.primary), ["no worktrees besides the primary checkout"])
+            query.assert_not_called()
+
+    def test_listing_keeps_inventory_when_process_ownership_is_unknown(self):  # AC-104
+        paths = [worktree.add(slug, cwd=self.primary)[0] for slug in ("one", "two")]
+        for error in (worktree.InspectionError("lsof timed out"), worktree.InspectionError("lsof failed")):
+            with self.subTest(error=error), mock.patch.object(worktree, "directories", side_effect=error) as query:
+                lines = worktree.listing(self.primary)
+                self.assertEqual(len(lines), 2)
+                for path, line in zip(paths, lines):
+                    self.assertIn(str(path), line)
+                    self.assertIn("0 uncommitted", line)
+                    self.assertIn("process count unknown", line)
+                    self.assertIn(str(error), line)
+                query.assert_called_once()
+        with mock.patch.object(worktree, "directories", return_value={}) as query:
+            self.assertTrue(all("0 processes in it" in line for line in worktree.listing(self.primary)))
+            query.assert_called_once()
+
+    def test_unknown_ownership_refuses_remove_and_sweep(self):  # AC-104
+        path = self.merged_tree("unknown")
+        self.idle(path, "feat/unknown")
+        with mock.patch.object(worktree, "directories", side_effect=worktree.InspectionError("lsof timed out")):
+            for discard in (False, True):
+                with self.subTest(discard=discard), self.assertRaisesRegex(worktree.InspectionError, "lsof timed out"):
+                    worktree.remove("unknown", discard=discard, cwd=self.primary)
+                self.assertTrue(path.exists())
+                self.assertTrue((path / "local.mk").is_symlink())
+            self.assertIn("kept unknown", "\n".join(worktree.sweep(self.primary)))
+            self.assertTrue(path.exists())
+
     # the sweep: a tree finished and forgotten goes, anything that may still be someone's work stays
     def test_sweep_takes_a_merged_idle_tree_and_its_branch(self):
         path = self.merged_tree("done")
