@@ -954,6 +954,11 @@ Scenario: AC-152 edge — nothing in the period
 Scenario: AC-152 failure — the numbers cannot be read
   When terminumd cannot read the store
   Then the page says "The numbers could not be read: <terminumd's message>" over the tab last drawn
+
+Scenario: AC-152 failure — the projects cannot be read
+  When the answer of the projects fails, is cut off or holds no projects
+  Then the page says "The projects could not be read: <why>", draws the numbers of all projects, and throws nothing
+  And the next numbers read the projects again; once read, the message goes and the menu holds them
 ```
 
 ### AC-165 — One question at a time [MUST / P0]
