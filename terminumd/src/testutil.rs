@@ -146,3 +146,30 @@ mod tests {
         assert!(!Path::new(root).exists(), "{root} stayed");
     }
 }
+
+/// What `tracing` writes on this thread while its guard lives (a current-thread test's tasks too).
+#[derive(Clone, Default)]
+pub struct Logs(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
+
+impl Logs {
+    pub fn text(&self) -> String {
+        String::from_utf8_lossy(&self.0.lock()).into_owned()
+    }
+}
+
+impl std::io::Write for Logs {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().extend_from_slice(b);
+        Ok(b.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+pub fn logs() -> (Logs, tracing::subscriber::DefaultGuard) {
+    let logs = Logs::default();
+    let to = logs.clone();
+    let sub = tracing_subscriber::fmt().with_ansi(false).with_writer(move || to.clone()).finish();
+    (logs, tracing::subscriber::set_default(sub))
+}

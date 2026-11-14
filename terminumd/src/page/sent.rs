@@ -99,9 +99,8 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
         let text = msg["text"].as_str().unwrap_or("");
         return keep(app, &host, &path, &key, text, json!({"agent": agent, "via": "page", "line": line})).await;
     }
-    let a = app.clone();
     if let Some(id) = msg["id"].as_i64() {
-        let item = crate::http::off(move || a.tasks.with(|tx| crate::messages::by_id(tx, id))).await;
+        let item = crate::tasks::api::store(app, move |tx| crate::messages::by_id(tx, id)).await;
         let answer = match item {
             Ok(item) => json!({"t": "sentone", "sid": key, "id": id, "item": item}),
             Err(e) => json!({"t": "sentone", "sid": key, "id": id, "error": e}),
@@ -111,7 +110,7 @@ pub async fn handle(app: &Shared, page: &Arc<Page>, msg: &Value, at: super::clie
     }
     let n = msg["n"].as_u64().unwrap_or(0) as usize;
     let (h, p) = (host.clone(), path.clone());
-    let answer = match crate::http::off(move || a.tasks.with(|tx| crate::messages::nth_of_folder(tx, &h, &p, n))).await {
+    let answer = match crate::tasks::api::store(app, move |tx| crate::messages::nth_of_folder(tx, &h, &p, n)).await {
         Ok((total, item)) => json!({"t": "sentone", "sid": key, "n": n, "total": total, "item": item, "host": host, "path": path}),
         Err(e) => json!({"t": "sentone", "sid": key, "n": n, "error": e}),
     };

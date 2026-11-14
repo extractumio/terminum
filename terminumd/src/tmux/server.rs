@@ -462,7 +462,8 @@ impl Server {
         };
         let (ntx, nrx) = mpsc::unbounded_channel();
         let (dtx, drx) = oneshot::channel();
-        let control = Control::spawn(cmd, ntx, dtx).map_err(|e| format!("cannot start tmux: {e}"))?;
+        let label = format!("{} {}", self.id(), if bulk { "bulk" } else { "session" });
+        let control = Control::spawn(cmd, label, ntx, dtx).map_err(|e| format!("cannot start tmux: {e}"))?;
         let me = Arc::downgrade(self);
         tokio::spawn(notices(me.clone(), nrx));
         let session = session.to_string();
