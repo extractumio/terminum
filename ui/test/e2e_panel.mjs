@@ -398,15 +398,19 @@ try {
   check("AC 09 … with the unsaved edit", (await page.textContent(".cm-content")).includes("# kept through a squatter"));
 
   // AC 09 a pane's state read on the last proof as terminumd went, answered by another program on the
-  // port ({} here), is never taken: the panel proves the port again and reads it once more
-  for (const always of [false, true]) {
+  // port ({} here; a body cut off, as WebKit hands one after a restart: TERM-56), is not taken: the
+  // panel proves the port again and reads it once more
+  for (const [body, always] of [["{}", false], ['{"rev":1,"ro', false], ["{}", true]]) {
     const fp = await context.newPage();
     fp.on("pageerror", (e) => errors.push(`foreign: ${thrown(e)}`));
     let reads = 0;
-    await fp.route("**/fb/api/workspace?*", (r) => (r.request().method() === "GET" && (always || !reads++) ? r.fulfill({ status: 200, contentType: "application/json", body: "{}" }) : r.fallback()));
+    await fp.route("**/fb/api/workspace?*", (r) => (r.request().method() === "GET" && (always || !reads++) ? r.fulfill({ status: 200, contentType: "application/json", body }) : r.fallback()));
     await fp.goto(panelUrl());
-    if (!always) await within("AC 09 a pane's state another program answered is read again, from terminumd", (ms) => fp.waitForSelector(row("src"), { timeout: ms }));
-    else await within("AC 09 … answered so twice, it is said", (ms) => fp.waitForFunction(() => document.getElementById("toast").textContent === "Panel state not read: terminumd's answer is not a pane's state", null, { timeout: ms }));
+    const said = "Panel state not read: the answer on terminumd's port is not terminumd's";
+    if (!always) {
+      await within(`AC 09 a pane's state answered ${body} is read again, from terminumd`, (ms) => fp.waitForSelector(row("src"), { timeout: ms }));
+      check("AC 09 … read again, nothing said", reads >= 2 && (await fp.textContent("#toast")) !== said, String(reads));
+    } else await within("AC 09 … answered so twice, it is said", (ms) => fp.waitForFunction((t) => document.getElementById("toast").textContent === t, said, { timeout: ms }));
     await fp.close();
   }
 

@@ -73,7 +73,7 @@ export interface Pane {
   rev: number; root: string; expanded: string[]; selected: string[]; scroll: number;
   tabs: Tab[]; active_tab: number | null; updated: number;
 }
-/** A pane's state as terminumd answers it: another program on its port answers what it likes (AC-09). */
+/** Looks like a pane's state as terminumd answers it (`api`'s `is`). */
 export const isPane = (p: unknown): p is Pane => {
   const q = p as Partial<Pane> | null;
   return typeof q?.root === "string" && [q.expanded, q.selected, q.tabs].every(Array.isArray);
@@ -115,10 +115,14 @@ export class ApiError extends Error {
 }
 
 type Query = Record<string, string | number | boolean | undefined>;
+/** `is`: what terminumd answers looks so; another answer came from another program on its port
+ *  (AC-09), to a request sent on the last proof as terminumd went: a read is proved and sent again
+ *  once, then (or a write at once) it fails as "foreign". */
+type ApiOpts<T> = { query?: Query; body?: unknown; headers?: Record<string, string>; retry?: boolean; host?: string | null; is?: (body: unknown) => body is T; again?: boolean };
 
 /** `host`: the machine the request is for (null: this Mac); default the shown pane's. An
  *  action that waited for the user (a dialog) passes the host it started on (AC-37). */
-export async function api<T>(method: string, path: string, opts: { query?: Query; body?: unknown; headers?: Record<string, string>; retry?: boolean; host?: string | null } = {}): Promise<T> {
+export async function api<T>(method: string, path: string, opts: ApiOpts<T> = {}): Promise<T> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(opts.query ?? {})) if (v !== undefined) qs.set(k, String(v));
   const url = BASE + path + (qs.size ? `?${qs}` : "");
@@ -146,9 +150,13 @@ export async function api<T>(method: string, path: string, opts: { query?: Query
       await new Promise((r) => setTimeout(r, step));
     }
   }
-  if (res.status === 204 || res.status === 304) return undefined as T;
-  const body = await res.json().catch(() => null);
+  const body = res.status === 204 || res.status === 304 ? undefined : await res.json().catch(() => null);
   if (!res.ok) throw new ApiError(res.status, body?.error ?? "http", body?.message ?? `HTTP ${res.status}`, body);
+  if (opts.is && !opts.is(body)) {
+    forgetProof();
+    if (method === "GET" && !opts.again) return api(method, path, { ...opts, again: true });
+    throw new ApiError(0, "foreign", "the answer on terminumd's port is not terminumd's", body);
+  }
   return body as T;
 }
 

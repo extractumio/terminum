@@ -5,7 +5,7 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, content, copyText, DEFAULT_PREFS, dirname, forgetProof, isPane, isUnder,
+  api, apiOrToast, ApiError, basename, CLIENT, content, copyText, DEFAULT_PREFS, dirname, isPane, isUnder,
   proofRefusal, PROXIED, scope, setScope, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
@@ -129,14 +129,14 @@ async function saveOnce() {
   }
 }
 
-async function loadWorkspace(k: string, again = false) {
+async function loadWorkspace(k: string) {
   const run = ++workspaceRun;
   // a pinned panel names its pane's folder once: a later reconnect must not undo a newer cd
   const cwd = pinCwd;
   pinCwd = null;
   let pane: Pane;
   try {
-    pane = await api<Pane>("GET", "/api/workspace", { query: { key: k, cwd: cwd ?? undefined } });
+    pane = await api<Pane>("GET", "/api/workspace", { query: { key: k, cwd: cwd ?? undefined }, is: isPane });
   } catch (e) {
     // a terminumd gone or unproven is the stream's notice, and its next open loads it again
     // (a load the stream's last open started met a program on the port: AC 09)
@@ -144,16 +144,7 @@ async function loadWorkspace(k: string, again = false) {
     pinCwd ??= cwd;   // not named yet: the next load names it
     return;
   }
-  if (key !== k || run !== workspaceRun) return;
-  if (!isPane(pane)) {
-    // read on the last proof before the panel saw terminumd go, and answered by another program on
-    // its port (AC-09): the port proves itself again and the pane is read once more
-    pinCwd ??= cwd;
-    if (again) return failed("workspace", "Panel state not read: terminumd's answer is not a pane's state");
-    forgetProof();
-    return loadWorkspace(k, true);
-  }
-  await applyWorkspace(pane);
+  if (key === k && run === workspaceRun) await applyWorkspace(pane);
 }
 
 async function applyWorkspace(pane: Pane) {
