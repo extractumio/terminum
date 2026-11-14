@@ -3,6 +3,7 @@
 // Publish and After, the batch's size, the check's time, and the agent of its own pool that analyses a red batch,
 // with its budget, red rounds and prompt. terminumd checks what is kept and says what is wrong; "What runs" is its
 // words for the settings as saved.
+import { asTyped } from "./astyped.js";
 import { oneAtATime } from "./dialogs.js";
 import { el } from "./listparts.js";
 import { $, agentsOf, api, fillSelect, say as toast, showError } from "./kanbanutil.js";
@@ -21,6 +22,7 @@ export function showIntegration(part, meta, chosen, n) {
 
 export function integrationWindow({ getMeta }) {
   const box = $("integrationpanel");
+  for (const k of ["check", "publish", "after"]) asTyped($(FIELDS[k]));
   let project = null, defaultPrompt = "";
 
   const say = (text) => showError($("integrationerror"), text);

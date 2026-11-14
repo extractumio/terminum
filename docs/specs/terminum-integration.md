@@ -112,6 +112,13 @@ Scenario: AC-186 failure — refused
   When the project is on another server
   Then the Integration tab says "Integration runs for projects on this Mac." and has no switch
 
+Scenario: AC-186 edge — command punctuation stays as typed
+  Given the Integration tab is open
+  When the browser substitutes smart dashes or quotes while the user types in Check, Publish or After
+  Then the field restores command punctuation as typed, with the caret after it (docs/UI-GUIDELINES.md §4.7)
+  And pasted, dropped and composing text stays verbatim, including when typing continues after it
+  And Target and Prompt keep their Unicode punctuation
+
 Scenario: AC-186 edge — turned off, changed
   Given a batch under check and two tasks queued
   When the user turns it off
@@ -728,7 +735,7 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-186 — `cargo test tasks::integration` (defaults, kept and read back, the default prompt, the agent of its own pool, each refusal's words, a checkout, its target and git's version, What runs), `web/test/e2e_liveintegration.mjs` (the window from the project's, the pool's dropdown, refusals where pressed, what is kept, on for a git checkout)
+- [x] AC-186 — `cargo test tasks::integration` (defaults, kept and read back, the default prompt, the agent of its own pool, each refusal's words, a checkout, its target and git's version, What runs), `web/test/e2e_liveintegration.mjs` (the window from the project's, the pool's dropdown, refusals where pressed, what is kept, on for a git checkout; command punctuation, paste, drop and composition in Chromium and WebKit)
 - [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row); to come: `cargo test tasks::integration_queue` (a task made), `cargo test cli::integration` (the wait's exit statuses), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
 - [ ] AC-188 — `cargo test integrate::batch`, `cargo test integrate::engine` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
 - [ ] AC-189 — `cargo test integrate::batch` and `integrate::engine::tests::ac189_…` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
