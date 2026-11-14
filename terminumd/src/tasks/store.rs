@@ -279,11 +279,13 @@ struct Turn<'a> {
 
 impl Drop for Turn<'_> {
     fn drop(&mut self) {
-        let (wait, hold) = (self.got - self.asked, self.got.elapsed());
-        if (wait >= slow::STORE_SLOW || hold >= slow::STORE_SLOW)
-            && let Some(more) = self.slow.pass() {
-                tracing::warn!(event = "store.slow", caller = %format_args!("{}:{}", self.caller.file(), self.caller.line()), wait_ms = slow::ms(wait), hold_ms = slow::ms(hold), more);
-            }
+        said_slow(self.slow, self.caller, self.got - self.asked, self.got.elapsed());
+    }
+}
+
+fn said_slow(slow: &slow::Throttle, caller: &Location, wait: Duration, hold: Duration) {
+    if (wait >= slow::STORE_SLOW || hold >= slow::STORE_SLOW) && let Some(more) = slow.pass() {
+        tracing::warn!(event = "store.slow", caller = %format_args!("{}:{}", caller.file(), caller.line()), wait_ms = slow::ms(wait), hold_ms = slow::ms(hold), more);
     }
 }
 
