@@ -372,8 +372,9 @@ pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent:
     };
     let lead = way(&tasks[0], last, anew);
     for (other, its) in tasks[1..].iter().zip(lasts.drain(1..)) {
-        // a subtask that cannot go holds its main task's press, said as its own (AC-185)
-        way(other, its, true).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
+        // a subtask that cannot go holds its main task's press, said as its own; one of the run going on, still
+        // open in its live session, goes on with it (AC-185)
+        way(other, its, anew).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
             Some(main) => format!("{}, a subtask of {main}: {why}", other.id),
             None => why,
         })?;

@@ -69,7 +69,7 @@ Open questions: none.
 | AC-145 | [MUST / P0] | What an agent leaves undone reaches its project's board by `create_task`: only what must be done, its title saying Bug:, Feat: or Debt:, with its severity, a bug's never below P2, its text in the sections of its project's template (a setting of the project; by default problem or goal, context, expected result, prerequisites). |
 | AC-154 | [SHOULD / P1] | An agent grooms its project's board with `update_task`: the severity and parent of any task it reaches, a human's with its reason; the title and text of an agents' task; such a task archived with its reason; an agent's change of title or severity never sets a bug below P2. |
 | AC-116 | [SHOULD / P1] | A bookmark or reminder becomes a TODO task in one small window (severity, project, session), its text linking its session, the board not opened; the record goes once the task is kept. |
-| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and a count on the Kanban tab, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
+| AC-117 | [MUST / P0] | WAIT FOR HUMAN and FAILED raise the banner of waiting agents and counts of cards on the Kanban tab, yellow and red, the same in every browser: terminumd keeps which lines a human closed or saw; so does a task returned from integration with no live agent (`terminum-integration.md` AC-192). |
 | AC-118 | [SHOULD / P1] | Archive hides a task from the board and can return it; DONE archives itself after 2 days; each project has an Archived list. |
 | AC-119 | [MUST / P0] | One SQLite file holds tasks and projects; writes are atomic; authors and roles name users, so a central store can follow; an unreadable file is set aside and said, never overwritten. |
 | AC-136 | [MUST / P0] | A card says what became of its session's agent: working, waiting, failed with why, stopped with its task open, gone; the task's history says so once; nothing moves by it unless Dispatcher started the session. |
@@ -643,11 +643,12 @@ Scenario: AC-116 failure — not kept
 Scenario: AC-117 happy path — banner and count
   When API-12 moves to WAIT FOR HUMAN or FAILED by an agent or Dispatcher
   Then a line as terminum-agents.md AC-39's reminder says "API-12 waits for you" or "API-12 failed: <reason>" and opens its window, the reason being what was said with its move to FAILED, else who moved it, never what an older move said, on both pages
-  And Kanban among the sections counts those tasks
+  And Kanban among the sections counts them as the board's cards: those in WAIT FOR HUMAN on WAIT FOR HUMAN's yellow, those FAILED on FAILED's red, each count said in words on hover ("2 tasks wait for you", "3 tasks failed"), and none at 0
+  And a subtask counts once with its main task when both stand in the same column; in another column it counts on its own
 
 Scenario: AC-117 edge — closed and seen
   When the user closes the line, opens the task or moves it on
-  Then the line goes; the count falls when it leaves those columns
+  Then the line goes; its count falls when it leaves those columns
   When the human made the move
   Then no line comes
   When API-12 moves into WAIT FOR HUMAN or FAILED again, even with the same words
@@ -663,7 +664,7 @@ Scenario: AC-117 edge — every browser
   Then the line stays, and the refusal is said where it was pressed
 
 Scenario: AC-117 edge — a filter
-  Then the count is of every project, whatever the board's filter
+  Then the counts are of every project, whatever the board's filter
 
 Scenario: AC-117 edge — many lines
   Given more lines than a third of the window holds
@@ -1224,7 +1225,7 @@ Sample event: `{"task":"API-12","at":1792003600,"author":"Dispatcher","kind":"co
 
 `PATCH` takes `text_rev`, as a task's window gave it, for the text the human began from: another now, it answers 412 and changes nothing (AC-133). A `session` that is not in the list is refused.
 
-Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts, need, lines}` when the open tasks by session, the tasks by project or the tasks that need a human change, for the session list and both pages' lines (AC-117: `lines` only those no human closed or saw); the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
+Pages hear over the page's WebSocket: `taskchange {id, history?}` (`""` for several: a server's links), upon which a board reads its columns and an open window of that task reads it, and with `history: true`, a line of a task's history that changes no card, only the window reads; `taskmarks {marks, counts, waiting, failed, lines}` when the open tasks by session, the tasks by project or the tasks that need a human change (`waiting`, `failed`: AC-117's counts of cards), for the session list and both pages' lines (AC-117: `lines` only those no human closed or saw); the `layout` it hears anyway gives a board its cards' session rows and its Sessions column, a row's plan carrying `doing`; `/sessions/?open=<key>` shows that session once and cleans its address (AC-134); `board.project` in the browser's storage keeps the project chosen (AC-135); `board.sort.<project>` keeps the columns' display sorts (`*` for All projects and multiple projects, AC-105).
 
 **MCP tools** added to `terminum mcp`'s catalog: `list_tasks`, `get_task`, `create_task`, `update_task` (AC-154), `take_task`, `move_task`, `ask_human` (terminum-dispatcher.md AC-157), `add_comment`, `attach_file`, `get_file`, `finish_task`; none is listed: each is found with `search_tools` and run with `execute_tool`, and terminum's own words write the call, `execute_tool("finish_task", {id, result})` (terminum-agents.md AC-155). `add_notes_for_user`, `update_notes_for_user`, `get_notes_for_user` and `delete_notes_for_user` go (AC-98).
 
