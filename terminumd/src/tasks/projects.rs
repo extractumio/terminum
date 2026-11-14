@@ -76,7 +76,12 @@ pub fn write(tx: &Transaction, saved: &Saved) -> Result<(), String> {
 }
 
 /// A deleted project's tasks stand in Default, each one's history saying so (AC-110). How many.
+/// Existing schedules refuse deletion; deleted ones keep their history in Default (terminum-schedules.md AC-160).
 pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i64) -> Result<usize, String> {
+    let schedules: Vec<String> = rows(tx, "SELECT 'SCH-' || number FROM schedules WHERE project = ?1 AND deleted_at IS NULL ORDER BY number", [project], |r| r.get(0))?;
+    if !schedules.is_empty() {
+        return Err(format!("{name} has schedules {}: move or delete them first.", schedules.join(", ")));
+    }
     let tasks: Vec<String> = rows(tx, "SELECT id FROM tasks WHERE project = ?1", [project], |r| r.get(0))?;
     for task in &tasks {
         log(tx, task, HUMAN, "project", &format!("Project {name} was deleted: moved to Default"), None, now)?;
@@ -87,6 +92,7 @@ pub fn move_tasks_to_default(tx: &Transaction, project: &str, name: &str, now: i
         super::slugs::assign(tx, task, DEFAULT_PROJECT, false)?;   // TASK-n; the ID it had still finds it (AC-148)
     }
     tx.execute("UPDATE runs SET project = ?1 WHERE project = ?2", (DEFAULT_PROJECT, project)).map_err(sql)?;   // they go with their tasks
+    tx.execute("UPDATE schedules SET project = ?1 WHERE project = ?2 AND deleted_at IS NOT NULL", (DEFAULT_PROJECT, project)).map_err(sql)?;
     Ok(tasks.len())
 }
 
