@@ -171,7 +171,9 @@ def main():
         check("AC-82 a host's file is read through the helper", st == 200 and body.get("text") == "# on the host\n", body)
 
         # AC-196: the actual Linux writer follows a rotation without another startup.
-        agent_pid = on_host("pidof terminumd-agent").strip()
+        def helper_pids():
+            return [v[0] for line in on_host(procs).splitlines() if len(v := line.split()) > 2 and v[2].startswith("terminumd-agent")]
+        agent_pids = helper_pids()
         on_host('dd if=/dev/zero bs=1024 count=1100 >> "$HOME/.terminum/logs/agent.log" 2>/dev/null')
         rotated = ""
         until = time.monotonic() + 75
@@ -182,7 +184,7 @@ def main():
                 break
             time.sleep(1)
         check("AC-196 the running Linux agent rotates at its size limit",
-              bool(agent_pid) and rotated == "yes" and on_host("pidof terminumd-agent").strip() == agent_pid)
+              bool(agent_pids) and rotated == "yes" and helper_pids() == agent_pids, (agent_pids, helper_pids(), rotated))
 
         # AC-84: the host's helper is of another build (a stand-in that says an old id)
         t.stop()
