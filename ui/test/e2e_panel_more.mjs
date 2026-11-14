@@ -52,20 +52,28 @@ export async function diagrams(context, base, SB, errors) {
   check("AC-54 nothing in a diagram runs: no dialog, no element of its label in the page", !errors.some((e) => e.startsWith("diagram dialog")) && !(await vp.$(".md-body img[src='x']")), errors.join(" | "));
   await vp.close();
 
-  // Mermaid's code failed to load once (a gap, a restart): the next render of the document loads it
-  // again. In WebKit (Safari): Chromium keeps a module that failed to load until the page reloads.
-  const { webkit } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
-  const wk = await webkit.launch(NO_SIGNALS);
-  try {
+  // Mermaid's code failed to load once (a gap, a restart): the fence says a reload helps. WebKit
+  // (Safari) also loads it again at the document's next render; Chromium keeps a module that
+  // failed to load until the page reloads, so no retry can help there.
+  const secret = await context.pages()[0].evaluate(() => localStorage.getItem("tm.session"));
+  const refuseOnce = async (gp) => {
     // the sign-in the run holds (signIn would set the password again and end it for the others)
-    const secret = await context.pages()[0].evaluate(() => localStorage.getItem("tm.session"));
-    const gp = await wk.newPage();
     await gp.goto(`${base}/custom.css`);
     await gp.evaluate((s) => localStorage.setItem("tm.session", s), secret);
     let refused = 0;
     await gp.route("**/chunks/mermaid.core-*.js", (route) => refused++ ? route.fallback() : route.abort("connectionreset"));
     await gp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
     await within("AC-54 Mermaid's code that did not load says so at the fence", (ms) => gp.waitForSelector(".md-diagram-error", { timeout: ms }));
+    const said = await gp.textContent(".md-diagram-error");
+    check("AC-54 … and that a reload helps", said === "Mermaid's code did not load: reload the page", said);
+  };
+  const cp = await context.newPage();
+  try { await refuseOnce(cp); } finally { await cp.close(); }
+  const { webkit } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
+  const wk = await webkit.launch(NO_SIGNALS);
+  try {
+    const gp = await wk.newPage();
+    await refuseOnce(gp);
     const now = new Date();
     fs.utimesSync(`${SB}/docs/diagram.md`, now, now);   // changed on disk: the clean document is drawn again
     await within("AC-54 … and the next render loads it and draws the diagrams (WebKit)", (ms) =>
