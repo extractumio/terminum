@@ -188,19 +188,21 @@ export async function liveHistory(page, opts) {
   await page.click('#dtabs [data-tab="system"]');
   // sessions of Dispatcher's that the suites before left can start meanwhile: the counts hold this one at least,
   // and the page shows what terminumd counts; each part said on its own, so a failure names it
-  const sys1 = async () => numbers("tab=system&period=year");
   check("AC-171 System: the tab is in the address", await until(async () => /tab=system/.test(page.url()), 6000), page.url());
-  check("AC-171 System: Dispatcher's sessions count this one, as terminumd counts them", await until(async () => {
-    const now = (await sys1()).tiles.sessions;
-    return now >= sys0.tiles.sessions + 1 && await tileOf("Sessions started") === String(now);
-  }, 6000), `before ${sys0.tiles.sessions}, now ${(await sys1()).tiles.sessions}, shown ${await tileOf("Sessions started")}`);
+  let sys1 = null;
+  const counted = await until(async () => {
+    sys1 = await numbers("tab=system&period=year");
+    return sys1.tiles.sessions >= sys0.tiles.sessions + 1 && await tileOf("Sessions started") === String(sys1.tiles.sessions);
+  }, 6000);
+  check("AC-171 System: Dispatcher's sessions count this one, as terminumd counts them", counted, `before ${sys0.tiles.sessions}, now ${sys1.tiles.sessions}, shown ${await tileOf("Sessions started")}`);
   // its failed write by its count: among the reasons shown it falls under Other once the suites before left ten kinds
-  check("AC-171 System: the failures by reason count its failed write", (await sys1()).tiles.failed_writes >= sys0.tiles.failed_writes + 1 && /Write: This pane has closed|Other \(\d+\)/.test(await page.textContent("#failures")),
-    `before ${sys0.tiles.failed_writes}, now ${(await sys1()).tiles.failed_writes} | ${await page.textContent("#failures")}`);
-  check("AC-171 System: the agents' load, its run's half hour busy", new RegExp(`Agent ${dash}\\d+%1$`).test(await rowOf("agents", dash)) && (await sys1()).agents.find((a) => a.id === dash)?.busy_ms === 1_800_000,
-    `${await rowOf("agents", dash)} | busy ${(await sys1()).agents.find((a) => a.id === dash)?.busy_ms}`);
-  const columns = async () => Promise.all(["ends", "load", "fires"].map(async (id) => (await page.$$(`#${id} rect.hit`)).length));
-  check("AC-171 System: a year in 12 columns on each chart", JSON.stringify(await columns()) === "[12,12,12]", JSON.stringify(await columns()));
+  const reasons = await page.textContent("#failures");
+  check("AC-171 System: the failures by reason count its failed write", sys1.tiles.failed_writes >= sys0.tiles.failed_writes + 1 && /Write: This pane has closed|Other \(\d+\)/.test(reasons),
+    `before ${sys0.tiles.failed_writes}, now ${sys1.tiles.failed_writes} | ${reasons}`);
+  const row = await rowOf("agents", dash), busy = sys1.agents.find((a) => a.id === dash)?.busy_ms;
+  check("AC-171 System: the agents' load, its run's half hour busy", new RegExp(`Agent ${dash}\\d+%1$`).test(row) && busy === 1_800_000, `${row} | busy ${busy}`);
+  const columns = JSON.stringify(await Promise.all(["ends", "load", "fires"].map(async (id) => (await page.$$(`#${id} rect.hit`)).length)));
+  check("AC-171 System: a year in 12 columns on each chart", columns === "[12,12,12]", columns);
   await page.click('#dtabs [data-tab="costs"]');
   const cost1 = await numbers("tab=costs&period=year");
   check("AC-172 Costs: dollars at list prices and tokens, by agent, project and model", Math.abs(cost1.tiles.usd - cost0.tiles.usd - 7) < 0.005 && cost1.tiles.counted - cost0.tiles.counted === 1_100_000

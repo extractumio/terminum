@@ -58,10 +58,14 @@ test("AC-152 a column chosen by the keys stays chosen when its focused plot is d
     pointer(box, s, plot(14).marks, { at: () => -1, select: (i) => said.push(i) });
     await null;
     assert.deepEqual(said, [13, 13, -1], "let go, a later drawing chooses nothing");
+    box.onkeydown({ key: "Home", preventDefault() {} });
+    pointer(box, s, plot(12).marks, { at: () => -1, select: (i) => said.push(i) });   // a heat map's 24 columns become 12
+    await null;
+    assert.deepEqual(said, [13, 13, -1, 0], "a plot of another shape keeps nothing");
     globalThis.document = { activeElement: null };
-    box.dataset.chosen = 5;
+    box.dataset.chosen = "5/14";
     pointer(box, s, plot(14).marks, { at: () => -1, select: (i) => said.push(i) });
     await null;
-    assert.deepEqual(said, [13, 13, -1], "a plot not focused keeps nothing");
+    assert.deepEqual(said, [13, 13, -1, 0], "a plot not focused keeps nothing");
   } finally { delete globalThis.document; }
 });

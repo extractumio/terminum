@@ -98,7 +98,7 @@ export function columns(box, bands, opts = {}) {
  *  drawn anew in a focused `box`. */
 export function pointer(box, s, marks, { at, select = () => {}, open = () => {}, cols = 0 }) {
   let i = -1;
-  const pick = (to) => { if (to === i) return; marks[i]?.classList.remove("on"); i = to; marks[i]?.classList.add("on"); box.dataset.chosen = i; select(i); };
+  const pick = (to) => { if (to === i) return; marks[i]?.classList.remove("on"); i = to; marks[i]?.classList.add("on"); box.dataset.chosen = `${i}/${marks.length}`; select(i); };
   const under = (e) => { const to = at(e); return to >= 0 && to < marks.length ? to : -1; };
   s.addEventListener("pointermove", (e) => { if (e.pointerType === "mouse" || e.buttons) pick(under(e)); });
   s.addEventListener("pointerdown", (e) => { if (e.pointerType !== "mouse") pick(under(e)); });
@@ -114,8 +114,8 @@ export function pointer(box, s, marks, { at, select = () => {}, open = () => {},
   box.onblur = () => pick(-1);
   // drawn anew while it holds the focus (its width changed: a scrollbar came or went): the column chosen stays
   // chosen, Enter still opens it; after the card's own drawing, which says its whole first
-  const kept = Number(box.dataset.chosen ?? -1);
-  if (globalThis.document?.activeElement === box && kept >= 0 && kept < marks.length) queueMicrotask(() => pick(kept));
+  const [kept, of] = (box.dataset.chosen ?? "-1/0").split("/").map(Number);   // a plot of another shape keeps nothing
+  if (globalThis.document?.activeElement === box && kept >= 0 && of === marks.length) queueMicrotask(() => pick(kept));
 }
 
 /** The trend of `values` (null: not measured): a least-squares line over the measured ones but the last, which is
