@@ -17,7 +17,7 @@ import { layoutTools, splitterCancel } from "./e2e_layout.mjs";
 import { panelReview } from "./e2e_panel_review.mjs";
 import { diagrams, embedTools, hostOffer, panelSort, viewerTools } from "./e2e_panel_more.mjs";
 import {
-  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, waitFor, within, wsKey,
+  base, bringBack, capture, check, cleanup, clearLine, PANE_A, PANE_B, panelUrl, PORT, restartServer, results, SB, signIn, stopServer, thrown, waitFor, within, wsKey,
 } from "./e2e_harness.mjs";
 import { panelMedia } from "./e2e_panel_media.mjs";
 import { panelDrop } from "./e2e_panel_drop.mjs";
@@ -34,7 +34,7 @@ const page = await context.newPage();
 const SECRET = await signIn(page).catch(async (e) => { await cleanup(); throw e; });
 const H = (extra = {}) => ({ "X-TM-Session": SECRET, ...extra });
 const errors = [];
-page.on("pageerror", (e) => errors.push(e.message));
+page.on("pageerror", (e) => errors.push(thrown(e)));
 page.on("dialog", (d) => { errors.push("dialog: " + d.message()); void d.dismiss(); });
 const toastText = () => page.textContent("#toast");
 const outside = [], blocked = [];
@@ -387,7 +387,7 @@ try {
     if (forge) check("AC 09 … the panel says it cannot trust the port", (await page.textContent("#notice")).includes("another program holds its port"), await page.textContent("#notice"));
     await new Promise((r) => { squatter.close(r); squatter.closeAllConnections(); });
     await bringBack();
-    check(`AC 09 a program on the port${forge ? " forging the proof" : ""} never gets the sign-in`, seen.length > 0 && !seen.some((x) => x.includes(SECRET)), `${seen.length} requests`);
+    check(`AC 09 a program on the port${forge ? " forging the proof" : ""} never gets the sign-in`, seen.length > 0 && !seen.some((x) => x.includes(SECRET)), `${seen.length} requests: ${seen.map((x) => x.split(" ")[0]).join(" ")}`);
     // had one of the panel's requests reached it before the panel noticed, it would hold a credential: the next terminumd refuses it
     const old = [...creds];
     const refused = await Promise.all(old.map((c) => fetch(`${base}/fb/api/ls?path=${encodeURIComponent(SB)}`, { headers: { "X-TM-Session": c } }).then((r) => r.status)));
@@ -396,6 +396,19 @@ try {
     await within("AC 09 … and the panel is back on terminumd", (ms) => page.waitForSelector("#dot:not(.off):not(.wait)", { timeout: ms }), 8000);
   }
   check("AC 09 … with the unsaved edit", (await page.textContent(".cm-content")).includes("# kept through a squatter"));
+
+  // AC 09 a pane's state read on the last proof as terminumd went, answered by another program on the
+  // port ({} here), is never taken: the panel proves the port again and reads it once more
+  for (const always of [false, true]) {
+    const fp = await context.newPage();
+    fp.on("pageerror", (e) => errors.push(`foreign: ${thrown(e)}`));
+    let reads = 0;
+    await fp.route("**/fb/api/workspace?*", (r) => (r.request().method() === "GET" && (always || !reads++) ? r.fulfill({ status: 200, contentType: "application/json", body: "{}" }) : r.fallback()));
+    await fp.goto(panelUrl());
+    if (!always) await within("AC 09 a pane's state another program answered is read again, from terminumd", (ms) => fp.waitForSelector(row("src"), { timeout: ms }));
+    else await within("AC 09 … answered so twice, it is said", (ms) => fp.waitForFunction(() => document.getElementById("toast").textContent === "Panel state not read: terminumd's answer is not a pane's state", null, { timeout: ms }));
+    await fp.close();
+  }
 
   // AC-53 only regular files are read; AC-56 a large text file saves, a body over the limit is 413
   const t0 = Date.now();
@@ -440,7 +453,7 @@ try {
 
   // AC-71, AC-52 the Panel's own writes refused or their answer lost: last, as it leaves the tree changed
   const sp = await context.newPage();                  // its own tab: the sign-in kept, the tree as the sandbox has it
-  sp.on("pageerror", (e) => errors.push(`saves: ${e.message}`));
+  sp.on("pageerror", (e) => errors.push(`saves: ${thrown(e)}`));
   await sp.goto(panelUrl());
   await sp.waitForSelector(row("src"));
   await panelSaves(sp);

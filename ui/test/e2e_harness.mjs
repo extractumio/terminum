@@ -146,6 +146,8 @@ export async function signIn(page) {
 }
 
 export const results = [];
+/** A page's uncaught error with its stack, so a failure says where it was thrown. */
+export const thrown = (e) => e.stack || e.message;
 export const check = (name, ok, extra = "") => { results.push(ok); console.log(`${ok ? "PASS" : "FAIL"} ${name}${extra ? " — " + extra : ""}`); };
 export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();

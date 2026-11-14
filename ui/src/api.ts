@@ -73,6 +73,15 @@ export interface Pane {
   rev: number; root: string; expanded: string[]; selected: string[]; scroll: number;
   tabs: Tab[]; active_tab: number | null; updated: number;
 }
+/** A pane's state as terminumd answers it: another program on its port answers what it likes (AC-09). */
+export const isPane = (p: unknown): p is Pane => {
+  const q = p as Partial<Pane> | null;
+  return typeof q?.root === "string" && [q.expanded, q.selected, q.tabs].every(Array.isArray);
+};
+/** A pane's state without its revision and time, its keys sorted: terminumd answers with sorted
+ *  keys, a snapshot has them in the order it built them. */
+export const content = (p: Pane) => JSON.stringify({ ...p, rev: 0, updated: 0 }, (_k, v: unknown) =>
+  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v);
 export interface Theme {
   bg?: string; fg?: string; sel?: string; selfg?: string; cursor?: string; link?: string;
   ansi?: string[]; font?: string | null; size?: number | null; dark?: boolean;

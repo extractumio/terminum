@@ -5,7 +5,8 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isUnder, proofRefusal, PROXIED, scope, setScope, SORTS, toast,
+  api, apiOrToast, ApiError, basename, CLIENT, content, copyText, DEFAULT_PREFS, dirname, forgetProof, isPane, isUnder,
+  proofRefusal, PROXIED, scope, setScope, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
 import { renderOffer } from "./host-offer";
@@ -73,11 +74,6 @@ function snapshot(): Pane | null {
   };
 }
 
-/** A pane's state without its revision and time, its keys sorted: terminumd answers with sorted
- *  keys, a snapshot has them in the order it built them. */
-const content = (p: Pane) => JSON.stringify({ ...p, rev: 0, updated: 0 }, (_k, v: unknown) =>
-  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) : v);
-
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => void saveNow(), 300);
@@ -133,7 +129,7 @@ async function saveOnce() {
   }
 }
 
-async function loadWorkspace(k: string) {
+async function loadWorkspace(k: string, again = false) {
   const run = ++workspaceRun;
   // a pinned panel names its pane's folder once: a later reconnect must not undo a newer cd
   const cwd = pinCwd;
@@ -148,7 +144,16 @@ async function loadWorkspace(k: string) {
     pinCwd ??= cwd;   // not named yet: the next load names it
     return;
   }
-  if (key === k && run === workspaceRun) await applyWorkspace(pane);
+  if (key !== k || run !== workspaceRun) return;
+  if (!isPane(pane)) {
+    // read on the last proof before the panel saw terminumd go, and answered by another program on
+    // its port (AC-09): the port proves itself again and the pane is read once more
+    pinCwd ??= cwd;
+    if (again) return failed("workspace", "Panel state not read: terminumd's answer is not a pane's state");
+    forgetProof();
+    return loadWorkspace(k, true);
+  }
+  await applyWorkspace(pane);
 }
 
 async function applyWorkspace(pane: Pane) {
