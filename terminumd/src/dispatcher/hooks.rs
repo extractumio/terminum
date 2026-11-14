@@ -54,11 +54,14 @@ pub(super) fn apply(tx: &rusqlite::Transaction, r: &mut Run, ev: &Value, typed: 
             active = true;
             r.new_work();
             r.turn_starts();
-            if r.status != "IN PROGRESS" && (r.ids.len() == 1 || !r.open.is_empty()) {
+            if r.ids.len() == 1 || !r.open.is_empty() {
                 for id in r.targets() {
-                    move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
+                    moved |= super::press::bring_back(tx, id)?;
+                    if r.status != "IN PROGRESS" {
+                        move_one(tx, id, "IN PROGRESS", "Dispatcher moved it: new work in its session")?;
+                        moved = true;
+                    }
                 }
-                moved = true;
             }
         }
         "Stop" => {
@@ -230,6 +233,64 @@ mod tests {
         }, move |_| *count.lock() += 1).await;
         assert_eq!(*seen.lock(), vec![false]);
         assert_eq!(*said.lock(), 1);
+    }
+
+    #[test]
+    fn ac122_a_humans_prompt_restores_an_archived_target_even_if_already_in_progress() {
+        let s = Store::open(crate::testutil::fresh_dir("hooks-archive").join("kanban.sqlite"));
+        for status in ["DONE", "FAILED", "WAIT FOR HUMAN", "IN PROGRESS"] {
+            s.with(|tx| {
+                let t = ops::create(tx, HUMAN, ops::NewTask { title: "archived".into(), ..Default::default() }, 1)?;
+                ops::move_to(tx, HUMAN, &t.id, status, 2)?;
+                ops::archive(tx, HUMAN, &t.id, true, 3)?;
+                let mut r = Run { state: Phase::Working, ids: vec![t.id.clone()], status: status.into(), ..Default::default() };
+                let prompt = |text: &str| serde_json::json!({"event": "UserPromptSubmit", "prompt": text});
+                let history = ops::history(tx, &t.id)?;
+                for (text, typed) in [("Dispatcher's prompt", true), ("<task-notification>an agent's turn", false)] {
+                    assert!(!apply(tx, &mut r, &prompt(text), typed)?.0);
+                    assert_eq!(ops::history(tx, &t.id)?, history, "no human asked for new work");
+                    assert!(ops::get(tx, &t.id)?.archived_at.is_some());
+                }
+                assert!(apply(tx, &mut r, &prompt("Please fix this too"), false)?.0, "the board must hear the restoration");
+                let restored = ops::get(tx, &t.id)?;
+                assert_eq!(restored.status, "IN PROGRESS");
+                assert!(restored.archived_at.is_none(), "new work must be on the board: {status}");
+                let history = ops::history(tx, &t.id)?;
+                assert_eq!(history.as_array().unwrap().iter().filter(|e| e["kind"] == "archive").count(), 2, "one archive, one return");
+                r.status = "IN PROGRESS".into();
+                assert!(!apply(tx, &mut r, &prompt("More detail"), false)?.0, "a visible task needs no extra refresh");
+                assert_eq!(ops::history(tx, &t.id)?, history, "no repeated restore or move");
+                Ok(())
+            }).unwrap();
+        }
+    }
+
+    #[test]
+    fn ac122_a_humans_prompt_restores_only_the_runs_open_targets() {
+        let s = Store::open(crate::testutil::fresh_dir("hooks-archive-many").join("kanban.sqlite"));
+        s.with(|tx| {
+            let mut ids = Vec::new();
+            for status in ["DONE", "WAIT FOR HUMAN", "WAIT FOR HUMAN"] {
+                let t = ops::create(tx, HUMAN, ops::NewTask { title: "archived".into(), ..Default::default() }, 1)?;
+                ops::move_to(tx, HUMAN, &t.id, status, 2)?;
+                ops::archive(tx, HUMAN, &t.id, true, 3)?;
+                ids.push(t.id);
+            }
+            let prompt = serde_json::json!({"event": "UserPromptSubmit", "prompt": "Go on"});
+            let mut r = Run { state: Phase::Working, ids: ids.clone(), status: "DONE".into(), ..Default::default() };
+            assert!(!apply(tx, &mut r, &prompt, false)?.0, "several finished tasks are ambiguous");
+            assert!(ids.iter().all(|id| ops::get(tx, id).unwrap().archived_at.is_some()));
+            r.open = ids[1..].to_vec();
+            r.status = "WAIT FOR HUMAN".into();
+            assert!(apply(tx, &mut r, &prompt, false)?.0);
+            assert!(ops::get(tx, &ids[0])?.archived_at.is_some(), "the finished task stays archived");
+            for id in &r.open {
+                let t = ops::get(tx, id)?;
+                assert!(t.archived_at.is_none());
+                assert_eq!(t.status, "IN PROGRESS");
+            }
+            Ok(())
+        }).unwrap();
     }
 
     #[test]

@@ -489,6 +489,12 @@ Scenario: AC-115 failure — another session's running task
   And before that run has its session: "API-13 is starting at a human's RUN. You can read it and comment."
   And once that run is over API-13 is moved as any other
 
+Scenario: AC-115 failure — archived
+  Given archived API-7 of the agent's project, held by any session or none
+  When the agent calls move_task or finish_task on it
+  Then it is refused: "API-7 is archived: a human brings it back from the Archived list."
+  And its status, archive and history stay as they were; reading and commenting still work
+
 Scenario: AC-115 happy path — taking a free task
   Given API-8 of its project in TODO with no session
   When the agent calls take_task {id: "API-8"}
@@ -1257,7 +1263,7 @@ Depends on: nothing more.
 - [x] AC-111 — `cargo test tasks::ops`, `web/test/e2e_liveboard.mjs`
 - [x] AC-112 — `cargo test tasks::ops`, `cargo test tasks::family`, `web/test/e2e_liveboardtasks.mjs`, `web/test/e2e_liveboardids.mjs`
 - [x] AC-113 — `cargo test tasks::ops` (a task whose session could not follow goes back), `web/test/e2e_liveboard.mjs`
-- [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`
+- [x] AC-115 — `cargo test tasks::tools`, `cargo test cli::mcp`, `web/test/e2e_livenotes.mjs`, `web/test/e2e_livearchived.mjs` (archived moves and results refused; unchanged history)
 - [x] AC-116 — `web/test/e2e_livenotes.mjs` (Convert to task from the list and the bar, Cancel, a refusal, Create, pressed twice, two tabs at once, the link to its line; `node web/test/e2e_live.mjs notes`)
 - [x] AC-117 — `cargo test tasks::marks`, `web/test/e2e_livedispatcher.mjs`, `web/test/e2e_tasklines.mjs`
 - [x] AC-118 — `cargo test tasks::archiving`, `web/test/e2e_liveboardtasks.mjs`
