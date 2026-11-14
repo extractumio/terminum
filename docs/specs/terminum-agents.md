@@ -754,7 +754,7 @@ All cases are shipped; nothing is staged.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`, `web/test/cardstate.test.mjs` (work it started runs on)
+- [x] AC-39 — `cargo test tmux::agentstate`, `cargo test tmux::hookstate`, `cargo test tmux::titles`, `cargo test cli::` (`terminumd/src/cli/tests/hooks_tests.rs`), `scripts/e2e_agentstate.py`, `scripts/e2e_hooks.py`, `web/test/e2e_app.mjs`, `web/test/e2e_rows.mjs`, `web/test/e2e_look.mjs`, `web/test/cardstate.test.mjs` (work it started runs on), `web/test/e2e_askfold.mjs` (reminders folded into a counter)
 - [x] AC-93 — `cargo test page::unread`, `cargo test page::turns`, `scripts/e2e_hooks.py`, `web/test/e2e_projects.mjs`
 - [x] AC-97 — `cargo test plans`, `cargo test page::plans`, `cargo test cli::` (`terminumd/src/cli/mcp_tests.rs`, `hookplan_tests.rs`, `tests/refresh_tests.rs`), `web/test/plans.test.mjs`, `web/test/e2e_plans.mjs`, `web/test/e2e_plansfind.mjs`, `web/test/e2e_planslook.mjs`, `web/test/e2e_liveplans.mjs`
 - [x] AC-98 — `cargo test agentapi`, `cargo test agentmarks`, `cargo test page::bookmarks`, `web/test/e2e_marksscope.mjs`

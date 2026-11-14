@@ -1471,7 +1471,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs
-- [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs, web/test/e2e_touchkeys.mjs (the keyboard's light, a hardware keyboard, the cursor)
+- [x] AC-18 — web/test/e2e_tmux.mjs, web/test/e2e_hold.mjs, web/test/e2e_phonerow.mjs, web/test/e2e_sheets.mjs, web/test/e2e_fold.mjs, web/test/onekbd.test.mjs, web/test/e2e_touchkeys.mjs (the keyboard's light, a hardware keyboard, the cursor), web/test/e2e_tabhead.mjs (a tablet's header)
 - [x] AC-19 — terminumd/src/settings_tests.rs, web/test/e2e_signin.mjs, web/test/e2e_live.mjs, web/test/e2e_tmux.mjs
 - [x] AC-20 — scripts/bench_load.py, scripts/bench_echo.py, terminumd/benches/frame.rs (`cargo bench frame`)
 - [x] AC-88 — web/test/e2e_split.mjs, web/test/e2e_livequick.mjs
