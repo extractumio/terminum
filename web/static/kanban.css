@@ -289,5 +289,7 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* what an agent's command must carry: it runs with no one watching (terminum-dispatcher.md AC-156) */
 #agentbox .hint { margin: 0; font-size: var(--fs-small); color: var(--muted-text); overflow-wrap: anywhere; }
 /* a project's integration (terminum-integration.md AC-186): what happens to a red batch, one group of fields */
-.integrationred { display: grid; gap: var(--sp-3); min-width: 0; margin: 0; padding: 0; border: 0; }
+.integrationgroup { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }   /* a dialog's rows' own gap, inside a group */
+.integrationgroup[hidden] { display: none; }
+.integrationred { margin: var(--sp-2) 0 0; padding: 0; border: 0; }
 #integrationruns { margin: var(--sp-2) 0 0; padding-left: var(--sp-4); }

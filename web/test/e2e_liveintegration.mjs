@@ -10,8 +10,10 @@ import { check, until } from "./check.mjs";
 const git = (dir, ...args) => execFileSync("git", ["-C", dir, "-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { stdio: "pipe" });
 
 /** In the open window of project `fresh`, with no folder and one agent, "Its first"; `work` a folder of the test's own. */
-export async function integrationChecks(page, { j, fresh, work, pressAt }) {
+export async function integrationChecks(page, { j, fresh, work, pressAt, shots }) {
   const url = `/api/task-projects/${fresh}/integration`;
+  const browser = page.context().browser()?.browserType().name() ?? "browser";
+  const shot = (name) => shots && page.locator("#integrationbox").screenshot({ path: `${shots}integration-${name}-${browser}.png` });
   await pressAt(page, "#projectintegration");
   await page.waitForSelector("#integrationbox[open]");
   check("AC-186 Integration… opens its window, off, with the defaults",
@@ -25,12 +27,20 @@ export async function integrationChecks(page, { j, fresh, work, pressAt }) {
     await page.isVisible("#integrationcheckhint") && await page.textContent("#integrationpublishhint") === "terminum pushes the candidate to origin/main, never forced." && await page.isVisible("#integrationafterhint"));
   check("AC-186 the prompt is the default", (await page.inputValue("#integrationprompt")).startsWith("Task {task}: integration batch {batch} of {project}"));
   await page.click("#integrationwhat summary");
+  await shot("defaults");
+  if (shots) {   // the window at a phone's width too, for its look (docs/UI-GUIDELINES.md §6)
+    const wide = page.viewportSize();
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.screenshot({ path: `${shots}integration-phone-${browser}.png`, fullPage: true });
+    await page.setViewportSize(wide);
+  }
   check("AC-186 What runs says where and how, in terminumd's words", /integration\/[^/]+\/tree: origin\/main/.test(await page.textContent("#integrationruns")) && /login shell/.test(await page.textContent("#integrationruns")));
 
   await page.check("#integrationon");
   await pressAt(page, "#integrationok");
   check("AC-186 on, a project with no folder is refused where it was pressed",
     await until(async () => (await page.textContent("#integrationerror")) === "Fresh has no folder: set it in its window.") && await page.isVisible("#integrationbox"));
+  await shot("refused");
   check("AC-186 nothing is kept", !(await j(url)).on);
 
   await page.uncheck("#integrationon");

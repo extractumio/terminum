@@ -381,7 +381,7 @@
     <div class="dhead"><h2 id="integrationhead">Integration</h2><button class="icon x" type="button" title="Close (Esc)" aria-label="Close"><svg class="lu" viewBox="0 0 24 24" aria-hidden="true" style="--s:16px"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
     <p id="integrationtext">Finished tasks queue their commits; terminum merges up to the batch's size that merge cleanly, runs Check once on the candidate, and publishes only a candidate whose check was green. A red one goes to the agent below.</p>
     <p id="integrationelsewhere" role="status" hidden>Integration runs for projects on this Mac.</p>
-    <div id="integrationfields">
+    <div id="integrationfields" class="integrationgroup">
       <label class="fieldrow checkrow">On: this project's tasks integrate by the queue <input id="integrationon" type="checkbox" role="switch"></label>
       <label class="fieldrow">Target <input id="integrationtarget" class="field" type="text" spellcheck="false" autocomplete="off"></label>
       <label class="fieldrow">Check <input id="integrationcheck" class="field" type="text" spellcheck="false" autocomplete="off"><span id="integrationcheckhint" class="colempty">No check: a candidate that merges is published.</span></label>
@@ -391,7 +391,7 @@
         <label class="fieldrow">Tasks in a batch, at most <input id="integrationbatch" class="field" type="number" min="1" max="8" step="1" inputmode="numeric"></label>
         <label class="fieldrow">Check ends after, minutes <input id="integrationminutes" class="field" type="number" min="1" max="1440" step="1" inputmode="numeric"></label>
       </div>
-      <fieldset class="integrationred"><legend>When a check is red</legend>
+      <fieldset class="integrationgroup integrationred"><legend>When a check is red</legend>
         <label class="fieldrow">Agent: reads the log and returns the task that caused it <select id="integrationagent" class="field"></select><span id="integrationnoagent" class="colempty">No agent: a red batch waits for you.</span></label>
         <div class="fieldgrid">
           <label class="fieldrow">Time budget, minutes <input id="integrationbudget" class="field" type="number" min="5" max="1440" step="1" inputmode="numeric"></label>
