@@ -44,10 +44,6 @@ def main():
     t.through_fake_ssh(home, REMOTE_SOCKET, os.path.join(t.root, "ssh-pids"), TMPDIR=home)
     end_tmux(REMOTE_SOCKET)
     try:
-        # The stand-in agent has no subscription: do not start the machine's real usage CLI.
-        os.makedirs(t.home, exist_ok=True)
-        with open(os.path.join(t.home, "settings.json"), "w", encoding="utf8") as f:
-            json.dump({"dispatcher": {"usageCommands": {"claude": ""}}}, f)
         t.start()
         secret = t.signin()
         call = lambda path, method="GET", body=None: api(t, secret, path, method=method, body=json.dumps(body).encode() if body is not None else None,  # noqa: E731
