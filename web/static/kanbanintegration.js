@@ -10,6 +10,15 @@ import { $, agentsOf, api, fillSelect, showError } from "./kanbanutil.js";
 const FIELDS = { target: "integrationtarget", check: "integrationcheck", publish: "integrationpublish", after: "integrationafter" };
 const NUMBERS = { batch_most: "integrationbatch", check_minutes: "integrationminutes", agent_budget_minutes: "integrationbudget", red_rounds_most: "integrationrounds" };
 
+/** The INTEGRATION column (terminum-integration.md AC-193) stands where a shown project's integration is on, or while a
+ *  task is in it; the board's columns and the Scheduled tracks follow how many stand. */
+export function showIntegration(part, meta, chosen, n) {
+  const on = n > 0 || meta.projects.some((p) => p.integration && (!chosen.length || chosen.includes(p.id)));
+  part.col.hidden = !on;
+  part.tab.hidden = !on;
+  document.body.style.setProperty("--cols", on ? "6" : "5");
+}
+
 export function integrationWindow({ getMeta }) {
   const box = $("integrationbox");
   let project = null, defaultPrompt = "";

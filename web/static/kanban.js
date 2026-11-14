@@ -28,6 +28,7 @@ import { sessionStarter } from "./kanbansession.js";
 import { taskLines } from "./tasklines.js";
 import { liveSession } from "./cardstate.js";
 import { el, iconButton, plural, projectInk, textKey } from "./listparts.js";
+import { showIntegration } from "./kanbanintegration.js";
 import { $, COLUMNS, agentChip, api, button, guardQueuedRun, hasFiles, placeChildren, say, sessionLine, showError, signInElsewhere, statusBox, underParents } from "./kanbanutil.js";
 
 const signIn = signInElsewhere();                  // with no sign-in the board goes to /sessions/, whose form signs in
@@ -285,6 +286,7 @@ function draw() {
   folds.keep(cards);
   const focused = document.activeElement?.closest?.(".card")?.dataset.id, filtered = narrowed(), one = filters().project.length === 1;
   const inks = new Map(meta.projects.map((p) => [p.id, [p.name, p.color]]));
+  showIntegration(columns.get("INTEGRATION"), meta, filters().project, counts.INTEGRATION ?? 0);
   for (const [column, part] of columns) {
     // a session's state changes on its card alone (sessionsCame): a column is drawn anew without it, a card with it
     const have = cards.get(column), n = counts[column] ?? 0, seen = have.map((t) => JSON.stringify([{ ...t, session: t.session?.key }, inks.get(t.project)]));

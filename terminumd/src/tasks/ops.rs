@@ -9,7 +9,9 @@ use serde_json::{json, Value};
 
 use super::store::{DEFAULT_PROJECT, HUMAN};
 
-pub const COLUMNS: [&str; 5] = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
+pub const COLUMNS: [&str; 6] = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "INTEGRATION", "FAILED", "DONE"];
+/// Queued for integration (terminum-integration.md AC-187): only integrate puts a task there.
+pub const INTEGRATION: &str = "INTEGRATION";
 pub const SEVERITIES: [&str; 4] = ["P0", "P1", "P2", "P3"];
 pub(crate) const TITLE_MOST: usize = 200;
 pub const TEXT_MOST: usize = 1 << 20;
@@ -27,6 +29,8 @@ pub(crate) fn rows<T>(tx: &Transaction, query: &str, params: impl Params, f: imp
 }
 
 pub use super::users::{agent_named, agent_user, pool_user, pool_user_id};
+pub use super::columns::move_to;
+pub(crate) use super::columns::{check_free, place};
 pub use super::comments::{answers, change_comment, comment, history, keep_human_comment, questions};
 pub(crate) use super::users::user_name;
 
@@ -134,7 +138,7 @@ pub(super) fn touch(tx: &Transaction, key: &str, at: i64) -> Result<(), String> 
 }
 
 /// The rank that stands above every card of a column's severity: new tasks and moves go on top.
-fn top_rank(tx: &Transaction, status: &str, severity: &str) -> Result<f64, String> {
+pub(super) fn top_rank(tx: &Transaction, status: &str, severity: &str) -> Result<f64, String> {
     let min: Option<f64> = tx.query_row("SELECT min(rank) FROM tasks WHERE status = ?1 AND severity = ?2 AND archived_at IS NULL", (status, severity), |r| r.get(0)).map_err(sql)?;
     Ok(min.map_or(0.0, |m| m - 1.0))
 }
@@ -251,48 +255,6 @@ pub fn create(tx: &Transaction, author: &str, new: NewTask, at: i64) -> Result<T
     let slug = super::slugs::assign(tx, &key, &project, new.scheduled)?;
     log(tx, &key, author, "made", &format!("{} made it", user_name(tx, author)?), None, at)?;
     get(tx, &slug)
-}
-
-/// A session works on one task at a time (AC-113), but for those one run gave it together (terminum-dispatcher.md
-/// AC-138): refused while another than `but` stands in IN PROGRESS.
-fn check_free(tx: &Transaction, session: &str, but: &str) -> Result<(), String> {
-    let still = crate::dispatcher::runs::STILL;
-    let other: Option<String> = tx.query_row(&format!("SELECT slug FROM tasks WHERE session_key = ?1 AND status = 'IN PROGRESS' AND id <> ?2 AND archived_at IS NULL
-         AND NOT EXISTS (SELECT 1 FROM run_tasks a JOIN run_tasks b ON a.run = b.run JOIN runs r ON r.id = a.run WHERE a.task = tasks.id AND b.task = ?2 AND {still})"), (session, but), |r| r.get(0))
-        .optional().map_err(sql)?;
-    match other {
-        Some(other) => Err(format!("Session {} already works on {other}. Finish or move {other} first.", pane_of(session))),
-        None => Ok(()),
-    }
-}
-
-/// Moves a task to a column, on top of its severity's cards; its history says who did it.
-pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) -> Result<(), String> {
-    if !COLUMNS.contains(&status) {
-        return Err(format!("Status: one of {}", COLUMNS.join(", ")));
-    }
-    let task = get(tx, id)?;
-    if task.status == status {
-        return Ok(());
-    }
-    // a schedule's task is a run from its first moment: it waits for a human, is done or failed, and runs again
-    if status == "TODO" && let Some(s) = super::schedules::of_task(tx, &task.key)? {
-        return Err(format!("{} is a run of schedule {}: it does not go to TODO.", task.id, s.key));
-    }
-    // Dispatcher's own move follows its run: another's task in that session is that task's matter
-    if status == "IN PROGRESS" && author != super::store::DISPATCHER
-        && let Some(session) = &task.session {
-            check_free(tx, session, &task.key)?;
-        }
-    let rank = top_rank(tx, status, &task.severity)?;
-    tx.execute("UPDATE tasks SET status = ?1, rank = ?2, updated_at = ?3 WHERE id = ?4", (status, rank, at, &task.key)).map_err(sql)?;
-    let who = user_name(tx, author)?;
-    log(tx, &task.key, author, "move", &format!("{who} moved it from {} to {status}", task.status), Some(&json!({"from": task.status, "to": status})), at)?;
-    // however it ended, what its session made stays named on it (terminum-dispatcher.md AC-166)
-    if matches!(status, "DONE" | "FAILED") && let Some(line) = super::closeout::made_line(tx, &task)? {
-        log(tx, &task.key, super::store::DISPATCHER, "told", &line, None, at)?;
-    }
-    Ok(())
 }
 
 /// A session in a refusal: its pane; the page says its title elsewhere.

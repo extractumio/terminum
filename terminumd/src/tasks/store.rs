@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use rusqlite::{Connection, ErrorCode, Transaction, TransactionBehavior};
 
 /// The schema's versions, oldest first: `PRAGMA user_version` says how many have run.
-const MIGRATIONS: [&str; 27] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql")];
+const MIGRATIONS: [&str; 28] = [include_str!("schema1.sql"), include_str!("schema2.sql"), include_str!("schema3.sql"), include_str!("schema4.sql"), include_str!("schema5.sql"), include_str!("schema6.sql"), include_str!("schema7.sql"), include_str!("schema8.sql"), include_str!("schema9.sql"), include_str!("schema10.sql"), include_str!("schema11.sql"), include_str!("schema12.sql"), include_str!("schema13.sql"), include_str!("schema14.sql"), include_str!("schema15.sql"), include_str!("schema16.sql"), include_str!("schema17.sql"), include_str!("schema18.sql"), include_str!("schema19.sql"), include_str!("schema20.sql"), include_str!("schema22.sql"), include_str!("schema23.sql"), include_str!("schema24.sql"), include_str!("schema21.sql"), include_str!("schema25.sql"), include_str!("schema26.sql"), include_str!("schema27.sql"), include_str!("schema28.sql")];
 
 /// The default project's and Dispatcher's fixed IDs, seeded by schema1.sql.
 pub const DEFAULT_PROJECT: &str = "default";
@@ -62,6 +62,11 @@ fn upgrade(conn: &mut Connection, path: &Path, migrations: &[&str]) -> rusqlite:
         tx.execute_batch(sql)?;
     }
     tx.pragma_update(None, "user_version", migrations.len() as i64)?;
+    // a schema's text changed in place (schema28.sql): its version moves, so no connection keeps the old one
+    if migrations[version..].iter().any(|m| m.contains("writable_schema")) {
+        let was: i64 = tx.query_row("PRAGMA schema_version", [], |r| r.get(0))?;
+        tx.pragma_update(None, "schema_version", was + 1)?;
+    }
     tx.commit()
 }
 

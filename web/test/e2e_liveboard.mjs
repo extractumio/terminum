@@ -36,8 +36,8 @@ export async function liveBoard(page, { base, tmux, work, shots }) {
   await page.click('.nav-head .sections a[href^="/kanban/"]');
   await page.waitForSelector("#board .col", { timeout: 5000 });
   check("AC-105 Kanban in the sections' switcher loads /kanban/ (AC-167)", new URL(page.url()).pathname === "/kanban/", page.url());
-  const heads = await page.evaluate(() => [...document.querySelectorAll('.col .colhead span:first-child')].map((h) => h.textContent));
-  check("AC-105 five columns", heads.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", heads.join());
+  const heads = await page.evaluate(() => [...document.querySelectorAll('.col:not([hidden]) .colhead span:first-child')].map((h) => h.textContent));
+  check("AC-105 five columns where no project shown integrates (terminum-integration.md AC-193)", heads.join() === "TODO,IN PROGRESS,WAIT FOR HUMAN,FAILED,DONE", heads.join());
 
   // the window: a title, Markdown, a file dropped in, in TODO
   await page.click("#newtask");

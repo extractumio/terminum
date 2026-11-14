@@ -334,3 +334,24 @@ fn ac148_an_older_store_s_tasks_keep_their_numbers_under_their_project_s_letters
     let next = s.with(|tx| crate::tasks::ops::create(tx, HUMAN, crate::tasks::ops::NewTask { title: "e".into(), project: Some("t".into()), ..Default::default() }, 90)).unwrap();
     assert_eq!(next.id, "TERM-4", "the project counts on from its highest");
 }
+
+#[test]
+fn integration_ac187_an_older_store_takes_the_integration_status_and_keeps_every_row() {
+    let path = crate::testutil::fresh_dir("store-schema28").join("kanban.sqlite");
+    let mut conn = Connection::open(&path).unwrap();
+    conn.pragma_update(None, "foreign_keys", "ON").unwrap();
+    upgrade(&mut conn, &path, &MIGRATIONS[..27]).unwrap();
+    conn.execute_batch("INSERT INTO tasks (id, number, project, status, severity, rank, owner, updated_at, title, body) VALUES ('k1', 1, 'default', 'IN PROGRESS', 'P2', 1, 'human', 1, 't', '');
+        INSERT INTO events (id, task, at, author, kind, text) VALUES ('e1', 'k1', 1, 'human', 'comment', 'kept');").unwrap();
+    assert!(conn.execute("UPDATE tasks SET status = 'INTEGRATION' WHERE id = 'k1'", []).is_err(), "the old schema refuses it");
+    upgrade(&mut conn, &path, &MIGRATIONS).unwrap();
+    conn.execute("UPDATE tasks SET status = 'INTEGRATION' WHERE id = 'k1'", []).unwrap();
+    assert!(conn.execute("UPDATE tasks SET status = 'NOWHERE' WHERE id = 'k1'", []).is_err(), "the CHECK still holds the rest out");
+    let comments: i64 = conn.query_row("SELECT count(*) FROM events WHERE task = 'k1'", [], |r| r.get(0)).unwrap();
+    let ok: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0)).unwrap();
+    assert_eq!((comments, ok.as_str()), (1, "ok"), "nothing cascaded away, the file whole");
+    // a connection opened later reads the widened CHECK from the file
+    drop(conn);
+    let again = Connection::open(&path).unwrap();
+    again.execute("UPDATE tasks SET status = 'INTEGRATION' WHERE id = 'k1'", []).unwrap();
+}

@@ -41,16 +41,24 @@ pub struct Settings {
     pub red_rounds_most: i64,
     /// Empty: DEFAULT_PROMPT.
     pub prompt: String,
+    /// The batch's size now: 4 at first, doubled after a green batch up to batch_most, halved after a red one
+    /// (AC-188); terminumd's, never a page's.
+    pub size: i64,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings { on: false, target: "origin/main".into(), check: String::new(), publish: String::new(), after: String::new(),
-            batch_most: 8, check_minutes: 90, agent: None, agent_budget_minutes: 60, red_rounds_most: 3, prompt: String::new() }
+            batch_most: 8, check_minutes: 90, agent: None, agent_budget_minutes: 60, red_rounds_most: 3, prompt: String::new(), size: 4 }
     }
 }
 
 impl Settings {
+    /// How many tasks the next batch takes at most.
+    pub fn size(&self) -> usize {
+        self.size.clamp(1, self.batch_most.max(1)) as usize
+    }
+
     fn shown(&self) -> Value {
         json!({"on": self.on, "target": self.target, "check": self.check, "publish": self.publish, "after": self.after,
             "batch_most": self.batch_most, "check_minutes": self.check_minutes, "agent": self.agent,
@@ -78,6 +86,7 @@ impl Settings {
             agent_budget_minutes: number("agent_budget_minutes", d.agent_budget_minutes, BUDGET)?,
             red_rounds_most: number("red_rounds_most", d.red_rounds_most, RED_ROUNDS)?,
             prompt: text("prompt", "")?,
+            size: d.size,
         })
     }
 }
@@ -108,12 +117,12 @@ pub fn check_fields(s: &Settings) -> Result<(), String> {
     Ok(())
 }
 
-fn not_a_target(target: &str) -> String {
+pub(crate) fn not_a_target(target: &str) -> String {
     format!("{}: name a remote's branch, as origin/main.", if target.is_empty() { "Target" } else { target })
 }
 
 /// `origin/main` as (origin, main).
-fn target_parts(target: &str) -> Option<(&str, &str)> {
+pub(crate) fn target_parts(target: &str) -> Option<(&str, &str)> {
     let (remote, branch) = target.split_once('/')?;
     let fine = |s: &str| !s.is_empty() && !s.starts_with('-') && s.chars().all(|c| c.is_ascii_alphanumeric() || "._-/".contains(c));
     (fine(remote) && fine(branch)).then_some((remote, branch))
@@ -141,11 +150,16 @@ pub fn check_place(dir: &FsPath, target: &str, git: &str) -> Result<(), String> 
 
 /// A project's settings; the defaults, off, when it has none.
 pub fn read(tx: &Transaction, project: &str) -> Result<Settings, String> {
-    tx.query_row("SELECT is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt
+    tx.query_row("SELECT is_on, target, check_line, publish_line, after_line, batch_most, check_minutes, agent, agent_budget_minutes, red_rounds_most, prompt, size
                   FROM project_integration WHERE project = ?1", [project], |r| Ok(Settings {
         on: r.get::<_, i64>(0)? != 0, target: r.get(1)?, check: r.get(2)?, publish: r.get(3)?, after: r.get(4)?, batch_most: r.get(5)?,
-        check_minutes: r.get(6)?, agent: r.get(7)?, agent_budget_minutes: r.get(8)?, red_rounds_most: r.get(9)?, prompt: r.get(10)?,
+        check_minutes: r.get(6)?, agent: r.get(7)?, agent_budget_minutes: r.get(8)?, red_rounds_most: r.get(9)?, prompt: r.get(10)?, size: r.get(11)?,
     })).optional().map_err(sql).map(Option::unwrap_or_default)
+}
+
+/// The projects whose integration is on, for the board's INTEGRATION column (AC-193).
+pub fn on_projects(tx: &Transaction) -> Result<std::collections::HashSet<String>, String> {
+    Ok(ops::rows(tx, "SELECT project FROM project_integration WHERE is_on = 1", [], |r| r.get(0))?.into_iter().collect())
 }
 
 /// Kept as given, its agent one of the project's own pool.
@@ -165,7 +179,7 @@ pub fn keep(tx: &Transaction, project: &str, s: &Settings) -> Result<(), String>
 }
 
 /// The project's folder on this Mac, `~` read as the home folder.
-fn local_dir(dir: &str) -> PathBuf {
+pub(crate) fn local_dir(dir: &str) -> PathBuf {
     PathBuf::from(super::folder::folder_in(&crate::config::home().to_string_lossy(), dir))
 }
 

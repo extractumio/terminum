@@ -72,7 +72,7 @@ fn ac107_any_column_to_any_column_with_its_history() {
     for to in ["WAIT FOR HUMAN", "DONE", "TODO", "FAILED", "IN PROGRESS"] {
         assert_eq!(moved(&s, &id, to).unwrap().status, to);
     }
-    assert_eq!(moved(&s, &id, "SOON").unwrap_err(), "Status: one of TODO, IN PROGRESS, WAIT FOR HUMAN, FAILED, DONE");
+    assert_eq!(moved(&s, &id, "SOON").unwrap_err(), "Status: one of TODO, IN PROGRESS, WAIT FOR HUMAN, INTEGRATION, FAILED, DONE");
     let h = s.with(|tx| history(tx, &id)).unwrap();
     let lines: Vec<&str> = h.as_array().unwrap().iter().map(|e| e["text"].as_str().unwrap()).collect();
     let me = s.with(|tx| user_name(tx, HUMAN)).unwrap();

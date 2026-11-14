@@ -8,7 +8,7 @@ import { askConfirm } from "./dialogs.js";
 import { dropLit } from "./droplit.js";
 import { cardState } from "./cardstate.js";
 
-export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "FAILED", "DONE"];
+export const COLUMNS = ["TODO", "IN PROGRESS", "WAIT FOR HUMAN", "INTEGRATION", "FAILED", "DONE"];
 export const SEVERITIES = ["P0", "P1", "P2", "P3"];
 export const THIS_MAC = "This Mac";
 export const AT_LIMIT = "at its limit: its queue";   // an agent with no room, in a list of agents: Run offers its queue (terminum-dispatcher.md AC-169)

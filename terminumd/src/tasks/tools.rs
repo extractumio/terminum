@@ -16,7 +16,7 @@ use super::query::{self, Query};
 use super::store::{Store, DEFAULT_PROJECT};
 use crate::plans::rules;
 
-pub const NAMES: [&str; 12] = ["list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "dispatch_task"];
+pub const NAMES: [&str; 15] = ["list_tasks", "get_task", "create_task", "update_task", "take_task", "move_task", "ask_human", "add_comment", "attach_file", "get_file", "finish_task", "integrate", "withdraw_integration", "integration_status", "dispatch_task"];
 /// All Auto-Dispatcher's round may call (terminum-dispatcher.md AC-170): it reads, starts by dispatch_task and finishes
 /// its own; a tool added later is not its until named here.
 const A_ROUNDS: [&str; 4] = ["list_tasks", "get_task", "get_file", "finish_task"];
@@ -79,7 +79,7 @@ fn own(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
 
 /// A task of its project to move or finish, whatever session made or holds it (AC-115): only what a
 /// human's RUN still holds in another session is that run's, which Dispatcher watches.
-fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
+pub(super) fn movable(tx: &Transaction, who: &Who, id: &str) -> Result<Task, String> {
     let t = visible(tx, who, id)?;
     if t.archived_at.is_some() {
         return Err(format!("{} is archived: a human brings it back from the Archived list.", t.id));
@@ -188,6 +188,10 @@ pub fn run(store: &Store, state_dir: &Path, who: &Who, tool: &str, args: &Value)
         "attach_file" => return attach_file(store, state_dir, who, args),
         "list_tasks" => return list_tasks(store, who, args).map(|text| (text, Vec::new())),
         "get_task" => return get_task(store, who, args).map(|text| (text, Vec::new())),
+        // git runs outside the store's transaction (terminum-integration.md AC-187)
+        "integrate" => return super::integration_queue::integrate(store, who, args),
+        "withdraw_integration" => return super::integration_queue::withdraw(store, who, args),
+        "integration_status" => return super::integration_queue::status(store, who, args).map(|text| (text, Vec::new())),
         _ => {}
     }
     let at = ops::now();

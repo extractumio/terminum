@@ -53,6 +53,12 @@ pub const CARDS: &[Card] = &[
         example: r#"{"task": "TERM-12", "name": "report.md"}"# },
     Card { name: "finish_task", area: "tasks", keywords: "finish my task, mark it done, complete, close, resolve, report the result, wrap up",
         example: r#"{"id": "TERM-12", "result": "Fixed in tasks/ops.rs; cargo test tasks passes; nothing left."}"# },
+    Card { name: "integrate", area: "tasks", keywords: "land, merge my work, integrate, ship, publish to main, push, queue for integration, make land, deliver the commit",
+        example: r#"{"id": "TERM-12", "result": "Outcome: Done ..."}"# },
+    Card { name: "withdraw_integration", area: "tasks", keywords: "take out of the integration queue, cancel the landing, withdraw, unqueue, stop integrating",
+        example: r#"{"id": "TERM-12"}"# },
+    Card { name: "integration_status", area: "tasks", keywords: "integration queue, landing queue, my place in the queue, batch, what is being checked, merge queue status",
+        example: r#"{"id": "TERM-12"}"# },
     Card { name: "dispatch_task", area: "tasks", keywords: "start a task on an agent, dispatch, Auto-Dispatcher's round, pick the next tasks, fill a free slot",
         example: r#"{"id": "TERM-12", "why": "RICE 8×2×0.8÷1 = 12.8; tasks/ops.rs moves; a small fix many sessions hit"}"# },
 ];
