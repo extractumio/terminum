@@ -58,17 +58,23 @@ export function signInElsewhere() {
 }
 
 /** A JSON route (a write always has a body: terminumd asks its type); a refusal throws terminumd's
- *  message, with its status. */
+ *  message, with its status. An empty answer is {}; one that cannot be read (cut off, as a navigation
+ *  leaves a read in WebKit) throws, never stands for an empty one. */
 export async function api(path, { method = "GET", body } = {}) {
   const sent = method === "GET" ? undefined : JSON.stringify(body ?? {});
   const r = await fetch(path, { method, headers: sent ? { "Content-Type": "application/json" } : undefined, body: sent });
-  const m = await r.json().catch(() => ({}));
+  let m = {}, unread = null;
+  try {
+    const text = await r.text();
+    if (text) m = JSON.parse(text);
+  } catch (e) { unread = e; }
   if (r.status === 401) refused();
   if (!r.ok) {
-    const e = new Error(m.error ?? `terminumd answered ${r.status}`);
+    const e = new Error(m?.error ?? `terminumd answered ${r.status}`);
     e.status = r.status;
     throw e;
   }
+  if (unread) throw new Error(`the answer was cut off or not JSON (${unread.message})`);
   return m;
 }
 
