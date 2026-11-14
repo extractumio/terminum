@@ -1,28 +1,38 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
-"""The real benchmark command with private, deterministic timing/process stand-ins."""
+"""The real benchmark command with private, deterministic timing/process stand-ins (AC-104)."""
 import os
 import signal
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "bench_ls.sh"
+SCRIPTS = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SCRIPTS))
+from testrun import short_tmp  # noqa: E402
+
+SCRIPT = SCRIPTS / "bench_ls.sh"
+# Process startup under parallel suites is not a measured benchmark sample.
+HARNESS_TIMEOUT = 180
 
 
 class BenchmarkExit(unittest.TestCase):
-    def run_benchmark(self, cold="0.001", warm="0.001", rss="1024", last_cold="", wait=30):
-        with tempfile.TemporaryDirectory(prefix="tm-bench-test-") as root:
+    def run_benchmark(self, cold="0.001", warm="0.001", rss="1024", last_cold="",
+                      wait=HARNESS_TIMEOUT, stall=False):
+        with tempfile.TemporaryDirectory(prefix="tm-bench-test-", dir=short_tmp()) as root:
             root = Path(root)
             bin_dir = root / "bin"
             bin_dir.mkdir()
             stubs = {
-                "daemon": '#!/bin/sh\nprintf "%s\\n" "$$" > "$BENCH_TEST_DAEMON_PID"\nexec sleep 60\n',
+                "daemon": '#!/bin/sh\nprintf "%s\\n" "$$" > "$BENCH_TEST_DAEMON_PID"\nexec sleep 300\n',
                 "ps": '#!/bin/sh\nprintf "%s\\n" "$BENCH_TEST_RSS"\n',
                 "tmux": "#!/bin/sh\nexit 0\n",
                 "curl": '''#!/usr/bin/env python3
-import json, os, pathlib, sys
+import json, os, pathlib, sys, time
+if os.environ['BENCH_TEST_STALL'] == '1':
+    time.sleep(300)
 args = sys.argv[1:]
 if '-w' in args:
     counter = pathlib.Path(os.environ['BENCH_TEST_COUNTER'])
@@ -45,13 +55,14 @@ elif 'limit=1' in args[-1]:
             env = {**os.environ, "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
                    "TERMINUMD_BIN": str(bin_dir / "daemon"), "BENCH_TEST_COUNTER": str(root / "counter"),
                    "BENCH_TEST_COLD": cold, "BENCH_TEST_WARM": warm, "BENCH_TEST_RSS": rss,
-                   "BENCH_TEST_LAST_COLD": last_cold, "BENCH_TEST_DAEMON_PID": str(root / "daemon.pid")}
+                   "BENCH_TEST_LAST_COLD": last_cold, "BENCH_TEST_DAEMON_PID": str(root / "daemon.pid"),
+                   "BENCH_TEST_STALL": "1" if stall else "0"}
             command = ["bash", str(SCRIPT), str(root), "10"]
             process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                        text=True, start_new_session=True)
             try:
                 # a short wait counts from the daemon's start: a loaded machine starts it late
-                started = time.monotonic() + 10
+                started = time.monotonic() + HARNESS_TIMEOUT
                 while wait < 1 and not (root / "daemon.pid").exists() and time.monotonic() < started:
                     try:
                         stdout, stderr = process.communicate(timeout=0.05)
@@ -76,12 +87,12 @@ elif 'limit=1' in args[-1]:
                 raise
 
     def test_within_all_budgets_succeeds(self):
-        out = self.run_benchmark()
+        out = self.run_benchmark(cold="2.499", warm="0.049", rss="153599")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn(" PASS", out.stdout)
 
     def test_any_missed_budget_fails_the_command(self):
-        for kwargs in ({"cold": "2.6"}, {"warm": "0.060"}, {"rss": "160000"}):
+        for kwargs in ({"cold": "2.5"}, {"warm": "0.050"}, {"rss": "153600"}):
             with self.subTest(kwargs=kwargs):
                 out = self.run_benchmark(**kwargs)
                 self.assertIn(" FAIL", out.stdout)
@@ -94,7 +105,7 @@ elif 'limit=1' in args[-1]:
 
     def test_timeout_ends_the_owned_benchmark_group(self):
         with self.assertRaises(subprocess.TimeoutExpired):
-            self.run_benchmark(wait=0.3)
+            self.run_benchmark(wait=0.3, stall=True)
         self.assertIsNotNone(self.timed_out_daemon, "the test must start a daemon before timing out")
         state = subprocess.run(["/bin/ps", "-o", "stat=", "-p", str(self.timed_out_daemon)],
                                capture_output=True, text=True, timeout=5).stdout.strip()
