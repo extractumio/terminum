@@ -785,7 +785,7 @@ Scenario: AC-133 edge — answers out of order, a drag under a change
   Then nothing is drawn over that edit; the closed editor's keys go off until the window is drawn anew
 
 Scenario: AC-133 edge — closing while a task is being read
-  Given a task's window open, with another read to open a task still waiting
+  Given a task's window open, with another read to open a task still waiting, and unrelated board reads in flight
   When the user closes it with ×, Esc or Back, confirming any edit to discard
   Then the window stays closed when that read answers
   And Back before the first read answers keeps the board without opening the window
