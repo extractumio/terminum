@@ -34,6 +34,8 @@ struct Asks {
     key: String,
     /// an agent or Dispatcher made the move and no human closed or saw its line
     due: bool,
+    /// a card of its own in its column: no main task of the same column holds it (AC-112)
+    card: bool,
 }
 
 /// WAIT FOR HUMAN and FAILED, or only task `one` (its store key) of them; the reason is the one its mover gave with
@@ -41,7 +43,8 @@ struct Asks {
 fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
     rows(tx, "SELECT t.slug, t.status = 'FAILED', COALESCE(m.author != 'human', 0),
             COALESCE((SELECT text FROM events e WHERE e.task = t.id AND e.kind = 'why' AND e.author = m.author AND e.rowid > m.rowid ORDER BY e.at DESC, e.rowid DESC LIMIT 1), m.text, ''),
-            COALESCE(m.rowid, 0), t.line_seen
+            COALESCE(m.rowid, 0), t.line_seen,
+            NOT EXISTS (SELECT 1 FROM tasks p WHERE p.id = t.parent AND p.status = t.status AND p.archived_at IS NULL)
         FROM tasks t LEFT JOIN events m ON m.rowid = (SELECT e.rowid FROM events e WHERE e.task = t.id AND e.kind = 'move' ORDER BY e.at DESC, e.rowid DESC LIMIT 1)
         WHERE t.status IN ('WAIT FOR HUMAN', 'FAILED') AND t.archived_at IS NULL AND (?1 IS NULL OR t.id = ?1) ORDER BY t.number DESC", [one], |r| {
         let (id, failed): (String, bool) = (r.get(0)?, r.get(1)?);
@@ -53,7 +56,7 @@ fn asks(tx: &Transaction, one: Option<&str>) -> Result<Vec<Asks>, String> {
         };
         let key = format!("{}|{words}", r.get::<_, i64>(4)?);
         let due = r.get::<_, bool>(2)? && r.get::<_, Option<String>>(5)?.as_deref() != Some(key.as_str());
-        Ok(Asks { id, failed, words, key, due })
+        Ok(Asks { id, failed, words, key, due, card: r.get(6)? })
     })
 }
 
@@ -145,7 +148,9 @@ impl Marks {
     fn message(&self) -> String {
         let held = self.held.lock();
         let lines: Vec<_> = held.attention.iter().filter(|a| a.due).map(|a| json!({"id": a.id, "failed": a.failed, "words": a.words, "key": a.key})).collect();
-        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "need": held.attention.len(), "lines": lines}).to_string()
+        // the Kanban key's counts, as the board's cards: what waits for a human, what failed
+        let cards = |failed: bool| held.attention.iter().filter(|a| a.card && a.failed == failed).count();
+        json!({"t": "taskmarks", "marks": held.sessions, "counts": held.counts, "waiting": cards(false), "failed": cards(true), "lines": lines}).to_string()
     }
 }
 
@@ -168,7 +173,7 @@ mod tests {
 
     fn lines(marks: &Marks) -> (Value, Value) {
         let told: Value = serde_json::from_str(&marks.message()).unwrap();
-        (told["need"].clone(), told["lines"].clone())
+        (json!(told["waiting"].as_u64().unwrap() + told["failed"].as_u64().unwrap()), told["lines"].clone())
     }
 
     #[test]
@@ -243,11 +248,11 @@ mod tests {
         assert!(marks.refresh(&store).unwrap());
         assert!(!marks.refresh(&store).unwrap(), "the same again is no change");
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
-        assert_eq!(told, json!({"t": "taskmarks", "marks": {key: [t.id]}, "counts": {"default": 1}, "need": 0, "lines": []}));
+        assert_eq!(told, json!({"t": "taskmarks", "marks": {key: [t.id]}, "counts": {"default": 1}, "waiting": 0, "failed": 0, "lines": []}));
         store.with(|tx| move_to(tx, HUMAN, &t.id, "DONE", 2)).unwrap();
         assert!(marks.refresh(&store).unwrap());
         let told: serde_json::Value = serde_json::from_str(&marks.message()).unwrap();
-        assert_eq!(told, json!({"t": "taskmarks", "marks": {}, "counts": {"default": 1}, "need": 0, "lines": []}), "DONE leaves its row, and still counts in its project");
+        assert_eq!(told, json!({"t": "taskmarks", "marks": {}, "counts": {"default": 1}, "waiting": 0, "failed": 0, "lines": []}), "DONE leaves its row, and still counts in its project");
     }
 
     #[test]
@@ -263,6 +268,29 @@ mod tests {
         store.with(|tx| ops::log(tx, &t.key, DISPATCHER, "why", "No result from the agent within an hour.", None, 3).map(drop)).unwrap();
         marks.refresh(&store).unwrap();
         assert_eq!(line(&marks), json!(format!("{} failed: No result from the agent within an hour.", t.id)), "what was said with its move there");
+    }
+
+    #[test]
+    fn ac117_kanban_counts_cards_waiting_and_failed_apart_a_subtask_under_its_main_task_once() {
+        let store = Store::open(crate::testutil::fresh_dir("marks-cards").join("kanban.sqlite"));
+        let marks = Marks::default();
+        let task = |tx: &Transaction, title: &str| create(tx, HUMAN, NewTask { title: title.into(), ..Default::default() }, 1);
+        let counts = |m: &Marks| {
+            let told: Value = serde_json::from_str(&m.message()).unwrap();
+            (told["waiting"].clone(), told["failed"].clone())
+        };
+        store.with(|tx| {
+            let (main, sub, other, alone) = (task(tx, "main")?, task(tx, "sub")?, task(tx, "other sub")?, task(tx, "alone")?);
+            crate::tasks::family::set_parent(tx, HUMAN, &sub.id, Some(&main.id), 1)?;
+            crate::tasks::family::set_parent(tx, HUMAN, &other.id, Some(&main.id), 1)?;
+            for (t, to) in [(&main, "FAILED"), (&sub, "FAILED"), (&other, "WAIT FOR HUMAN"), (&alone, "WAIT FOR HUMAN")] {
+                move_to(tx, DISPATCHER, &t.id, to, 2)?;
+            }
+            Ok(())
+        }).unwrap();
+        marks.refresh(&store).unwrap();
+        assert_eq!(counts(&marks), (json!(2), json!(1)), "a subtask in its main task's column counts once with it; in another it is a card");
+        assert_eq!(lines(&marks).1.as_array().unwrap().len(), 4, "every one of them still has its line");
     }
 
     #[test]
