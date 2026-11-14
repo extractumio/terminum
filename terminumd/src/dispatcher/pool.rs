@@ -140,7 +140,7 @@ fn kept_schedule(tx: &Transaction, agent: &str, task: &str) -> Result<Option<Str
     let integration: Option<i64> = tx.query_row("SELECT 1 FROM integration_batches b JOIN project_integration i ON i.project = b.project WHERE b.task = ?1 AND i.agent = ?2 AND i.is_on = 1",
         (task, agent), |r| r.get(0)).optional().map_err(super::super::tasks::ops::sql)?;
     if integration.is_some() {
-        return Ok(Some(schedules::INTEGRATION_SLOT.to_string()));
+        return Ok(Some(schedules::integration_slot(agent)));
     }
     Ok(rows(tx, "SELECT s.id FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
             (task, agent), |r| r.get(0))?.pop())
@@ -154,7 +154,7 @@ fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, String>, St
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
             [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
     // the run of a batch's integration task on its integration agent stands in the slot kept for integration
-    let integrating: Vec<(String, String)> = rows(tx, "SELECT r.id, 'integration' FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
+    let integrating: Vec<(String, String)> = rows(tx, "SELECT r.id, 'integration:' || r.agent_id FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
                  JOIN project_integration i ON i.project = b.project WHERE r.id IN (SELECT value FROM json_each(?1)) AND i.agent = r.agent_id AND i.is_on = 1 ORDER BY r.rowid",
             [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let mut seen = HashSet::new();

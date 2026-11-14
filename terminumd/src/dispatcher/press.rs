@@ -111,7 +111,7 @@ pub(super) struct Facts {
     /// the project's manager pressed, by its tool: the words say so
     pub(super) manager: bool,
     /// a batch's integration task: the project's Prompt with the batch's facts (terminum-integration.md AC-194)
-    integration: Option<String>,
+    pub(super) integration: Option<String>,
 }
 
 pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
@@ -139,7 +139,7 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts,
         round: crate::tasks::auto::round_of(tx, &t.key)?,
         auto: false,
         manager: false,
-        integration: super::integration_prompt(tx, &t.key)?,
+        integration: None,
     })
 }
 
@@ -150,9 +150,13 @@ impl Facts {
         let who = the_boss(self.manager);
         let said = message.map(|m| format!("{who}'s message: {m}"));
         let (t, body) = (&self.tasks[0], &self.texts[0]);
-        // a batch's integration task: the project's Prompt, the batch's facts in it, nothing of its tasks' words
+        // a batch's integration task: the project's Prompt, the batch's facts in it, nothing of its tasks' words;
+        // a human's RUN adds its message and the answers to what its agent asked (AC-194)
         if let Some(words) = &self.integration {
-            return words.clone();
+            let mut parts = vec![words.clone()];
+            parts.extend(said);
+            parts.extend(self.answers.iter().map(|(_, a)| format!("The human answered your questions, in the comments below. Take them into account.\n\n{}", a.join("\n\n---\n\n"))));
+            return parts.join("\n\n");
         }
         // Auto-Dispatcher's own words (AC-170): a round's, and those of a task a round started
         if let Some(round) = &self.round {

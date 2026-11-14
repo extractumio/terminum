@@ -33,8 +33,9 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
         return Err(format!("{} goes to INTEGRATION only by integrate: it queues its commit.", task.id));
     }
     // a batch's integration task ends with its batch (terminum-integration.md AC-194): its keys decide, not a move
-    let live: Option<i64> = tx.query_row("SELECT number FROM integration_batches WHERE task = ?1 AND state NOT IN ('ended', 'given up')", [&task.key], |r| r.get(0)).optional().map_err(sql)?;
-    if let Some(n) = live && author != super::store::DISPATCHER {
+    // Dispatcher's own moves of it: its run starting and waiting for a human
+    let runs_it = author == super::store::DISPATCHER && ["IN PROGRESS", "WAIT FOR HUMAN"].contains(&status);
+    if let Some(n) = crate::integrate::store::live_by_task(tx, &task.key)? && !runs_it {
         return Err(format!("{} is batch {n}'s integration task: it ends with its batch.", task.id));
     }
     // a schedule's task is a run from its first moment: it waits for a human, is done or failed, and runs again

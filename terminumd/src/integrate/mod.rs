@@ -42,17 +42,11 @@ pub async fn run(app: Shared) {
 /// batch to a human, saying why.
 async fn start_agents(app: &Shared) {
     use crate::tasks::api::store;
-    let Ok(wanted) = store(app, agent::wanted).await else { return };
-    for (batch, id, who, minutes) in wanted {
-        let task = id.clone();
-        let _ = store(app, move |tx| {
-            agent::set_agent_state(tx, batch, Some("pressed"))?;
-            tx.execute("UPDATE tasks SET budget_seconds = ?2 WHERE slug = ?1", rusqlite::params![task, minutes * 60]).map(drop).map_err(|e| e.to_string())
-        }).await;
+    let Ok(wanted) = store(app, |tx| agent::take_wanted(tx, crate::tasks::ops::now())).await else { return };
+    for (batch, id, who) in wanted {
         if let Err(why) = crate::dispatcher::press_integration(app, &id, &who).await {
             let _ = store(app, move |tx| {
                 let b = store::by_id(tx, batch)?;
-                agent::set_agent_state(tx, batch, None)?;
                 store::wait_for_human(tx, &b, &format!("Batch {}'s integration agent did not start: {why}", b.number), crate::tasks::ops::now())
             }).await;
         }

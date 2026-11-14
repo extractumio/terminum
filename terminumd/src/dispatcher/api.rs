@@ -102,6 +102,10 @@ impl Press {
     /// saw, as an agent may have changed a task meanwhile (AC-121).
     fn first_words(&self, tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts, String> {
         let mut goes = facts(tx, tasks)?;
+        // a batch's integration task speaks the project's Prompt with the batch's facts (terminum-integration.md AC-194)
+        if self.how == How::Integration {
+            goes.integration = crate::integrate::agent::prompt_of(tx, &tasks[0].key)?;
+        }
         goes.auto = self.auto;
         goes.manager = self.manager.is_some();
         if self.prompt_rev.as_ref().is_some_and(|rev| *rev != goes.rev()) {
@@ -338,8 +342,12 @@ async fn first_run(app: &Shared, tasks: &[Task], body: Press, kept: Press, comme
     let (all, said, attached, closing) = (tasks.to_vec(), comment, body.files.clone(), body.close.is_some());
     let (a, host, dir, server) = place(app, &t.project, body.agent.clone()).await?;
     // a batch's integration task runs in a worktree of its own at the candidate, never the project's folder (AC-194)
-    let key = t.key.clone();
-    let dir = store(app, move |tx| crate::integrate::agent::tree_of_task(tx, &key)).await?.unwrap_or(dir);
+    let dir = if body.how == How::Integration {
+        let key = t.key.clone();
+        store(app, move |tx| crate::integrate::agent::tree_of_task(tx, &key)).await?.unwrap_or(dir)
+    } else {
+        dir
+    };
     if let Some(holder) = &body.close {
         close_idle(app, holder, &tasks.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", ")).await?;
     }

@@ -40,7 +40,7 @@ const TOOLS: [Tool; 18] = [
     Tool { name: "integration_status", read_only: true, description: "The project's integration: on or off, its target and commands, the queue with each task's place; with an id, that task's.", fields: &[("id", false, 24)] },
     Tool { name: "integration_return", read_only: false, description: "A red batch's integration task only: returns a task of its batch that caused the red check to its agent, with an analysis in the sections Failing step, Evidence, Commit and lines, What to fix.", fields: &[("task", true, 24), ("analysis", true, COMMENT_MOST)] },
     Tool { name: "integration_recheck", read_only: false, description: "A red batch's integration task only: builds the batch anew without the tasks returned and checks it; with none returned, checks it again unchanged, once, why given (a flaky test, a cause mended outside).", fields: &[("why", false, COMMENT_MOST)] },
-    Tool { name: "integration_add_fix", read_only: false, description: "A red batch's integration task only: a commit of yours, in your worktree, joins the candidate first; then integration_recheck.", fields: &[("commit", true, 64)] },
+    Tool { name: "integration_add_fix", read_only: false, description: "A red batch's integration task only: a commit of yours, in your worktree: its own change, picked alone onto the target, joins the candidate first; then integration_recheck.", fields: &[("commit", true, 64)] },
     Tool { name: "dispatch_task", read_only: false, description: "Auto-Dispatcher's round only: starts one of the round's candidate tasks on its agent. why: its RICE score, the area it changes and its reason, one line.", fields: &[ID, ("why", false, 600)] },
 ];
 

@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use super::batch::choose;
+use super::batch::{choose, Queued};
 use super::git::{self, short};
 use super::runner::Runner;
 use super::store::{self as bs, Batch};
@@ -67,19 +67,23 @@ fn start_next(store: &Store, home: &Path, now: i64) -> Result<(), String> {
 
 /// The candidate's tree: a worktree of the project's repository, detached, kept for its caches (§9).
 fn tree_at(p: &Place, project: &str, candidate: &str) -> Result<PathBuf, String> {
-    let tree = integration::tree_in(&p.home, project);
+    worktree(p, integration::tree_in(&p.home, project), candidate).map_err(|e| format!("The candidate's tree could not be made: {e}"))
+}
+
+/// A detached worktree of the project's repository at `commit`, made or moved there, clean.
+fn worktree(p: &Place, tree: PathBuf, commit: &str) -> Result<PathBuf, String> {
     let made = if tree.join(".git").exists() {
-        git::run(&tree, &["checkout", "--quiet", "--detach", "--force", candidate]).and_then(|_| git::run(&tree, &["clean", "-fdq"]))
+        git::run(&tree, &["checkout", "--quiet", "--detach", "--force", commit]).and_then(|_| git::run(&tree, &["clean", "-fdq"]))
     } else {
         let _ = git::run(&p.repo, &["worktree", "prune"]);
         std::fs::create_dir_all(tree.parent().unwrap_or(&tree)).map_err(|e| e.to_string())
-            .and_then(|()| git::run(&p.repo, &["worktree", "add", "--quiet", "--detach", &tree.to_string_lossy(), candidate]))
+            .and_then(|()| git::run(&p.repo, &["worktree", "add", "--quiet", "--detach", &tree.to_string_lossy(), commit]))
     };
-    made.map(|_| tree).map_err(|e| format!("The candidate's tree could not be made: {e}"))
+    made.map(|_| tree)
 }
 
 fn log_of(p: &Place, project: &str, b: &Batch, step: &str) -> PathBuf {
-    integration::tree_in(&p.home, project).with_file_name(format!("batch-{}.{}.{step}.log", b.number, b.round))
+    integration::log_in(&p.home, project, b.number, b.round, step)
 }
 
 /// The variables every command gets (§9).
@@ -181,47 +185,37 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
 /// A red round: nothing published, the batch's size halved at its first; its integration agent analyses it while
 /// red rounds are left (AC-194), in a worktree of its own at the candidate; else, or with none, a human decides.
 fn red(store: &Store, p: &Place, b: &Batch, why: &str, now: i64) -> Result<(), String> {
-    let agent = p.s.agent.is_some() && b.red_rounds + 1 < p.s.red_rounds_most;
-    let tree = if agent { agent_tree(p, b) } else { Err(String::new()) };
+    let said = format!("Batch {}'s round {} is red: {why}", b.number, b.round);
+    // who decides, and the words for a human when it is one
+    let agent: Result<PathBuf, String> = match &p.s.agent {
+        None => Err(format!("{said} The project has no integration agent: decide by the batch's keys.")),
+        Some(_) if b.red_rounds + 1 >= p.s.red_rounds_most => Err(format!("{said} {} red rounds: decide by the batch's keys, or change Check.", p.s.red_rounds_most)),
+        Some(_) => worktree(p, integration::tree_in(&p.home, &b.project).with_file_name(format!("agent-{}", b.number)), b.candidate.as_deref().unwrap_or_default())
+            .map_err(|e| format!("{said} Its agent could not start: {e}")),
+    };
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
         bs::round_ends(tx, b, "red", Some(why), now)?;
         bs::red_round(tx, b)?;
         bs::set_state(tx, b.id, bs::RED, Some(why), now)?;
-        let said = format!("Batch {}'s round {} is red: {why}", b.number, b.round);
-        match (&tree, p.s.agent.is_some()) {
-            (Ok(t), _) => {
-                tx.execute("UPDATE integration_batches SET agent_state = 'wanted', agent_tree = ?2 WHERE id = ?1", rusqlite::params![b.id, t.display().to_string()]).map_err(|e| e.to_string())?;
+        match &agent {
+            Ok(tree) => {
+                tx.execute("UPDATE integration_batches SET agent_wanted = 1, agent_tree = ?2 WHERE id = ?1", rusqlite::params![b.id, tree.display().to_string()]).map_err(ops::sql)?;
                 bs::tell_task(tx, b, &format!("{said} Its integration agent analyses it."), now)
             }
-            (Err(e), true) if agent => bs::wait_for_human(tx, b, &format!("{said} Its agent could not start: {e}"), now),
-            (_, true) => bs::wait_for_human(tx, b, &format!("{said} {} red rounds: decide by the batch's keys, or change Check.", p.s.red_rounds_most), now),
-            (_, false) => bs::wait_for_human(tx, b, &format!("{said} The project has no integration agent: decide by the batch's keys."), now),
+            Err(words) => bs::wait_for_human(tx, b, words, now),
         }
     })
 }
 
-/// The integration agent's own worktree, at the candidate (§9): made anew for each red round.
-fn agent_tree(p: &Place, b: &Batch) -> Result<PathBuf, String> {
-    let tree = integration::tree_in(&p.home, &b.project).with_file_name(format!("agent-{}", b.number));
-    let candidate = b.candidate.clone().unwrap_or_default();
-    if tree.join(".git").exists() {
-        git::run(&tree, &["checkout", "--quiet", "--detach", "--force", &candidate])?;
-    } else {
-        let _ = git::run(&p.repo, &["worktree", "prune"]);
-        git::run(&p.repo, &["worktree", "add", "--quiet", "--detach", &tree.to_string_lossy(), &candidate])?;
-    }
-    Ok(tree)
-}
-
-/// An ended batch's agent worktree, removed with git.
+/// An ended batch's agent worktree removed with git; kept in the store while git could not remove it.
 fn tidy(store: &Store, home: &Path) -> Result<(), String> {
-    let done: Vec<(i64, String, String)> = store.with(|tx| ops::rows(tx, "SELECT b.id, b.project, b.agent_tree FROM integration_batches b WHERE b.state IN ('ended', 'given up') AND b.agent_tree IS NOT NULL", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
+    let done: Vec<(i64, String, String)> = store.with(|tx| ops::rows(tx, "SELECT id, project, agent_tree FROM integration_batches WHERE agent_tree IS NOT NULL AND state IN ('ended', 'given up')", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
     for (id, project, tree) in done {
-        if let Ok(p) = place(store, home, &project) {
-            let _ = git::run(&p.repo, &["worktree", "remove", "--force", &tree]);
+        let removed = place(store, home, &project).and_then(|p| git::run(&p.repo, &["worktree", "remove", "--force", &tree]));
+        if removed.is_ok() || !Path::new(&tree).exists() {
+            store.with(|tx| tx.execute("UPDATE integration_batches SET agent_tree = NULL WHERE id = ?1", [id]).map(drop).map_err(ops::sql))?;
         }
-        store.with(|tx| tx.execute("UPDATE integration_batches SET agent_tree = NULL WHERE id = ?1", [id]).map(drop).map_err(|e| e.to_string()))?;
     }
     Ok(())
 }
@@ -267,9 +261,21 @@ fn publish(store: &Store, p: &Place, b: Batch, now: i64) -> Result<(), String> {
 
 /// The target moved under a green batch, or a task left it: its tasks tried anew on `target`, a new round.
 fn again(store: &Store, p: &Place, b: &Batch, target: &str, now: i64) -> Result<(), String> {
-    let queue = store.with(|tx| bs::queued_of(tx, b))?;
-    let c = choose(&p.repo, target, &queue, queue.len().max(1))?;
+    // its agent's fixes first, each its own merge named by the integration task (AC-194), then its tasks
+    let (i_id, tasks) = store.with(|tx| Ok((bs::task_of(tx, b)?.unwrap_or_default(), bs::queued_of(tx, b)?)))?;
+    let fixes = b.fixes.iter().map(|f| Queued { task: format!("fix:{f}"), id: i_id.clone(), commit: f.clone() });
+    let queue: Vec<Queued> = fixes.chain(tasks).collect();
+    let mut c = choose(&p.repo, target, &queue, queue.len().max(1))?;
+    let is_fix = |q: &Queued| q.task.starts_with("fix:");
+    let fixed: Vec<String> = c.chosen.iter().filter(|q| is_fix(q)).map(|q| q.commit.clone()).collect();
+    let dropped: Vec<String> = queue.iter().filter(|q| is_fix(q) && !fixed.contains(&q.commit)).map(|q| short(&q.commit).to_string()).collect();
+    c.chosen.retain(|q| !is_fix(q));
+    c.returned.retain(|(q, _)| !is_fix(q));
+    c.held.retain(|(q, _)| !is_fix(q));
     store.with(|tx| {
+        if !dropped.is_empty() {
+            bs::tell_task(tx, b, &format!("Batch {}: its fix {} does not merge onto {} at {}: left out.", b.number, dropped.join(", "), p.s.target, short(target)), now)?;
+        }
         for (q, why) in &c.returned {
             bs::give_back(tx, &q.task, &bs::conflict_words(q, why, &p.s, target), now)?;
         }
@@ -282,7 +288,7 @@ fn again(store: &Store, p: &Place, b: &Batch, target: &str, now: i64) -> Result<
             bs::unbatch(tx, &q.task)?;
         }
         let state = if p.s.check.is_empty() { "green" } else { "checking" };
-        bs::new_round(tx, b, &c.chosen, target, c.candidate.as_deref(), state)
+        bs::new_round(tx, b, &c.chosen, &fixed, target, c.candidate.as_deref(), state)
     })
 }
 
