@@ -379,7 +379,7 @@ const project = projectWindow({ getMeta: () => meta, reload: loadMeta, agents, a
 /** What goes by the pool and the projects shown. */
 const drawPool = () => { agents.draw(); scheduled.draw(); project.refresh(); auto.draw(); };
 const auto = autoDispatcher({ getMeta: () => meta, chosen: () => filters().project, reload: loadMeta });
-const needs = taskLines($("asks"), (id) => openTask(id));
+const needs = taskLines($("asks"), (id) => openTask(id), say);
 const windowed = taskWindow({ getMeta: () => meta, runs, openTask, newSubtask: (t) => form.open({ parent: t.id, project: t.project }), openSchedule: (key) => scheduled.openKey(key) });
 const address = taskAddress({ windowed, needs });
 const form = taskForm({ getMeta: () => meta, getFilter: filters, onMade: madeHidden, onRun: runMade, slots: () => slots });

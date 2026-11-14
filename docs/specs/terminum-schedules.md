@@ -55,7 +55,7 @@ Open questions: none.
 
 | ID | Priority | Case |
 |---|---|---|
-| AC-160 | [MUST / P0] | A human makes a schedule in its window: title, text, project, severity, an agent of that project's pool (terminum-dispatcher.md AC-137), a cadence picked by kind (every N minutes or hours, daily, weekdays, weekly on days, monthly on a day, once, or five cron fields) in the Mac's local time, and a time budget; the window shows its next runs and the prompt that will go; it can be changed, paused or deleted at any time. |
+| AC-160 | [MUST / P0] | A human makes a schedule in its window: title, text, project, severity, an agent of that project's pool (terminum-dispatcher.md AC-137), a cadence picked by kind (every N minutes or hours, daily, weekdays, weekly on days, monthly on a day, once, or five cron fields) in the Mac's local time, and a time budget; the window shows its next runs and the prompt that will go; it can be changed, paused or deleted at any time; a project with schedules is kept until they move or are deleted. |
 | AC-161 | [MUST / P0] | A schedule not paused keeps one slot of its agent: other runs have the rest, every run of its own tasks takes the kept one; an agent with no slot left to keep is refused, as are an at once below its kept slots and deleting an agent with schedules. |
 | AC-162 | [MUST / P0] | When a schedule is due, terminumd makes a task from it as it is then, IN PROGRESS and named S_<its project's next ID>, and runs it on its agent in the project's folder, the agent told it is a scheduled run and how to give its result; such a task never stands in TODO; a firing while a task of it is IN PROGRESS is skipped; a firing over 2 minutes late is missed, never run later; a start that fails fails its task and the next firing tries again; each firing is written. |
 | AC-163 | [MUST / P0] | The board's Scheduled section stands between the pool and the columns, folded to its head by default, a press away; its cards stand four to a row on the columns' tracks, each with its cadence, next run, agent, last task and why that one did not start, every card whole; a schedule's tasks carry its name. |
@@ -105,6 +105,21 @@ Scenario: AC-160 happy path — paused and deleted
   When the user presses Delete and confirms "Delete SCH-1? Its tasks stay."
   Then it is gone from the board, its tasks and its firings in the Scheduled page stay under its name
   And a task of it waiting for room (AC-158) is called off and FAILED, saying "Its schedule was paused." or "was deleted."
+
+Scenario: AC-160 failure — deleting a project with schedules
+  Given Billing has SCH-1 and SCH-2, neither deleted, even if paused or already run once
+  When the user deletes Billing
+  Then it says "Billing has schedules SCH-1, SCH-2: move or delete them first."
+  And the project, sessions, tasks, agents and schedules stay as they are, so no schedule changes where it runs or which board it reaches
+
+Scenario: AC-160 edge — deleting a project after its schedules were deleted
+  Given Billing's schedules are all deleted
+  When the user deletes Billing
+  Then the deletion of terminum-kanban.md AC-110 succeeds and its deleted schedule records move to Default with its agents
+  And their keys, deleted state, saved text and firing history stay, with their tasks still linked
+  And another project's schedules stay as they are
+  When the store refuses the project deletion
+  Then none of those moves is kept
 
 Scenario: AC-160 failure — refused
   When Save has no title or one over 200 characters, a text over 1 MiB, no project chosen, no agent, no time budget or one over 24 hours
@@ -391,7 +406,7 @@ Single stage.
 
 ## 11. Checklist with Definition of Done
 
-- [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered)
+- [x] AC-160 — `cargo test tasks::cron`, `cargo test tasks::schedules`, `cargo test page::projects` (project deletion refuses existing schedules, keeps deleted schedules' history, rolls back on refusal), `web/test/e2e_liveschedules.mjs` (a choice in the page's own list clears the words it answered; project deletion before and after schedule deletion)
 - [x] AC-161 — `cargo test dispatcher::fire` (its task takes the kept slot), `cargo test tasks::schedules`, `cargo test tasks::agents`, `web/test/e2e_liveschedules.mjs`
 - [x] AC-162 — `cargo test dispatcher::fire` (made IN PROGRESS as S_<ID>, refused in TODO, missed, a start that fails, an older task's idle session in the kept slot closed), `web/test/e2e_liveschedules.mjs` (a firing on a fake agent)
 - [x] AC-163 — `web/test/e2e_liveschedules.mjs` (Chromium and WebKit, wide and phone; an isolated pool and no waiting lines, whole cards over empty columns and over 40 tasks that overflow their column)
