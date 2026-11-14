@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // Reminders of the other sessions whose coding agent waits for an answer or failed (AC-39): a line each
-// across the terminal's top (three at most on a computer, one on a phone), so a question asked in
+// across the terminal's top (three at most on a computer; where the buttons float all, folded: askfold.js), so a question asked in
 // another session is not missed. A card goes when the
 // user closes it, opens that session (from the card or the list), or the session stops waiting;
 // it comes back the next time that session asks. "Waiting" is read off the screen, and the
@@ -8,8 +8,8 @@
 // waited STEADY ms with no layout saying otherwise, and stops STEADY ms after one does.
 import { icon } from "./icons.js";
 import { textForm } from "./render.js";
+import { floats, FLOATING } from "./fold.js";
 
-const PHONE = matchMedia("(max-width: 860px)");
 const STEADY = 2500;
 
 export function waitingCards(box, onOpen) {
@@ -57,7 +57,7 @@ export function waitingCards(box, onOpen) {
     if (asking.has(shown) || leaving.has(shown)) seen.add(shown);
     const due = [...titles.keys()].filter((id) => !seen.has(id));
     for (const [id, c] of cards) if (!due.includes(id)) { c.remove(); cards.delete(id); }
-    const room = PHONE.matches ? 1 : 3;
+    const room = floats() ? due.length : 3;   // folded into a counter there, each in its list
     due.forEach((id, i) => {
       if (!cards.has(id)) { cards.set(id, card(id)); box.append(cards.get(id)); }
       const c = cards.get(id), title = textForm(titles.get(id) || "A session");
@@ -74,7 +74,7 @@ export function waitingCards(box, onOpen) {
     });
     put(box, "hidden", !box.childElementCount);   // tasks' lines share it (tasklines.js)
   }
-  PHONE.addEventListener("change", draw);
+  matchMedia(FLOATING).addEventListener("change", draw);
 
   return {
     /** A layout from the bridge: who waits now. */

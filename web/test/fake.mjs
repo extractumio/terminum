@@ -14,6 +14,7 @@ export const ORIGIN = "http://127.0.0.1:47999";
 const TYPES = { html: "text/html", css: "text/css", svg: "image/svg+xml", js: "text/javascript" };
 export const WIDE = { viewport: { width: 1400, height: 900 } };
 export const PHONE = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true };
+export const TABLET = { viewport: { width: 1180, height: 820 }, hasTouch: true };   /* an iPad's landscape: desktop-class Safari, a finger */
 /** The sizes a check runs at: [label, newPage options]. */
 export const SIZES = [["1400×900", WIDE], ["390×844", PHONE]];
 

@@ -184,8 +184,8 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 /* a computer: the title, ✎ and Plan are keys on the line of the header's keys, level with the list's and
    docked Files' heads (centred in --h-bar); the folder line hangs under them, 7 px from the title's text.
    The mark, the title and the folder start 7 px right of the terminal's text (#term's 16 px): the folder's
-   bar in the gutter before them, the agent's state after the title */
-@media (min-width: 861px) and (pointer: fine) {
+   bar in the gutter before them, the agent's state after the title; a tablet's: layout.css */
+@media (min-width: 861px) {
   :root { --h-head: 68px; }   /* the header there: its keys' line, then the folder line */
   #bar { align-items: flex-start; min-height: var(--h-head); padding-top: calc(env(safe-area-inset-top) + (var(--h-bar) - var(--icon-key)) / 2); }
   .nav-head { margin-bottom: calc(var(--h-head) - var(--h-bar)); }   /* the list's first group starts where the terminal does */
@@ -193,7 +193,7 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
   #current { align-items: flex-start; }
   #curstate { order: 1; }
   #curstate:empty { display: none; }
-  #current :is(#rename, #curplan) { order: 2; }
+  #current :is(#rename, #curplan, .tline .copydir) { order: 2; }
   #cursub { padding-left: 0; }
   #current .lines { gap: 3px; padding-left: 7px; }
   #current .tline { height: var(--icon-key); }
@@ -316,6 +316,8 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
 #term ::selection { background: var(--sel); color: var(--selfg); }
 #term:not(.focused) .cur { background: transparent !important; color: inherit !important;
   outline: 1px solid var(--accent); outline-offset: -1px; }
+/* a touch screen: a dim block, as a hollow box reads as a character the font lacks (AC-18) */
+@media (hover: none) { #term:not(.focused) .cur { outline: 0; background: color-mix(in srgb, var(--accent) 40%, transparent) !important; } }
 #note { margin: 4px 0 10px; color: var(--muted); font: 12px var(--ui); white-space: normal; }
 /* Output widgets (AC-56, widgets.css inside): a region's first row holds its widget and starts
    on a line of its own; its other rows are hidden while it is rendered */
@@ -386,8 +388,10 @@ svg.lu.two { width: calc(var(--s, 16px) * 50 / 24); }   /* two icons side by sid
   #term.hasbox .ln.keyhint { display: none; }
   #term .ln.ralign .lead { display: none; }
 }
-/* A mouse and a hardware keyboard need no keyboard button. */
+/* A mouse and a hardware keyboard need no keyboard button; nor does a touch screen while a hardware keyboard
+   types (onekbd.js), nor the hot keys' unless its panel is open (AC-18) */
 @media (hover: hover) { #fabs #kbdbtn, #fabs #copyfab { display: none; } }
+body.hwkbd #fabs #kbdbtn, body.hwkbd:has(#hotkeys[hidden]) #fabs #keysfab { display: none; }
 /* The context trace's copy button (?trace=2, tracebuf.js): left of ⓘ, alone on a computer */
 body.ctxtrace #fabs { display: flex; }
 #fabs #tracefab { width: auto; padding: 0 12px; font: 600 12px/1 ui-monospace, Menlo, monospace; }

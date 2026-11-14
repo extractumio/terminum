@@ -159,10 +159,7 @@ export class Input {
       this.type(k.value.replaceAll(KEEP, ""), "compose", e); k.value = "";
     });
     kbdTouch({ kbd: k, term: this.term, options: this.options, type: (text, path) => this.type(text, path), refill, touched: () => { touchedAt = performance.now(); } });
-    const typing = (on) => {
-      this.term.classList.toggle("focused", on);
-      this.kbdButton.setAttribute("aria-pressed", String(on));
-    };
+    const typing = (on) => this.term.classList.toggle("focused", on);   // the button's light: the on-screen keyboard's (onekbd.js)
     k.addEventListener("focus", () => typing(true));
     k.addEventListener("blur", () => typing(false));
     // The button never takes focus itself; iOS opens the keyboard for a focus() made in its click.

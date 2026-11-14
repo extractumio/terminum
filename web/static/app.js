@@ -341,7 +341,7 @@ bookmarks.onAsk = (text, line) => ask.open(text, line);
 const reminded = reminderBox({ marks: bookmarks });
 listFoot({ store });
 const fold = fabFold({ away: () => { $("kbd").blur(); if (!$("hotkeys").hidden) showKeys(false); } });   // a phone's floating buttons under ⟨…⟩ (AC-18)
-bookmarks.onPlaced = () => { fold.sync(); sent.place(); reminded.place(); };
+bookmarks.onPlaced = () => { fold.sync(); tasks.placeCounts(); sent.place(); reminded.place(); };
 const drawnGroups = () => ordered(st.groups, store.get("groupOrder", [])), place = listPlace({ sid: () => st.sid, parts: () => listParts(drawnGroups(), st.projects, st.listOrder) });
 function drawNav() {
   if (embedded) return showCurrent(findItem(st.groups, st.sid) || null);
@@ -487,7 +487,7 @@ function showKeys(on) {
   view.keepBottom(syncControls);
 }
 $("keysbtn").onclick = () => showKeys($("hotkeys").hidden);
-const keyboards = oneKeyboard({ kbd: $("kbd"), panel: $("hotkeys"), show: showKeys });   // the on-screen keyboard or the hot keys
+const keyboards = oneKeyboard({ kbd: $("kbd"), panel: $("hotkeys"), show: showKeys, button: $("kbdbtn") });   // the on-screen keyboard or the hot keys
 $("keysfab").onclick = () => keyboards.toggle();
 $("keysfab").onmousedown = (e) => e.preventDefault();      // the iOS keyboard stays up
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") { menu.close(); closeDrawer(); } });
