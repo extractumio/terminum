@@ -266,7 +266,7 @@ Scenario: AC-190 happy path — green
   Then a window "Integration: Billing, batch 7" opens in the project's place in terminum's tmux server, in the candidate's tree, and runs the line by the user's login shell with the variables of §9
   And the batch's group on the board says "checking, 12 min", a press showing that window (AC-193)
   When the line ends with status 0
-  Then the batch is green and is published (AC-191); terminumd closes the window 5 minutes later, as it closes a check's, a Publish's and an After's, their output kept in the batch's log
+  Then the batch is green and is published (AC-191); terminumd closes the window once its output is kept in the batch's log, as it closes a Publish's and an After's
 
 Scenario: AC-190 happy path — red
   When the line ends with another status
@@ -578,7 +578,11 @@ sequenceDiagram
 
 | AC | Gap | Evidence |
 |---|---|---|
-| AC-187 … AC-194 | Not built (the settings of AC-186 are kept, nothing runs from them): each tree lands by itself with the project's own `scripts/land.py` (`terminum-lifecycle.md` AC-104). | `scripts/land.py` |
+| AC-187 | `terminum integration queue|wait|status`, queueing with a title where a session has no task, a human's Integrate key and drop: not built; the tools are. | `terminumd/src/tasks/integration_queue.rs` |
+| AC-190 | A check's process group is ended by the runner, read from `ps`; nothing proves it ends a group that left its pane's tree. | `terminumd/src/integrate/runner.rs` |
+| AC-192 | Notices are comments: queued (the tool's answer), in a batch, held, returned, landed; overlaps while working, the hooks' context, the waiting command and the gate: not built. | `terminumd/src/integrate/store.rs` |
+| AC-193 | The column stands as a plain list where integration is on; the batch's group, its marks, Pause, Batches…: not built. The keys of AC-194 stand in the integration task's window. | `web/static/kanbanbatch.js` |
+| AC-194 | No agent analyses a red batch: it waits for a human, whose keys decide; the agent's tools, kept slot, prompt and red rounds' limit: not built. | `terminumd/src/integrate/engine.rs` |
 
 ## 8. Recommendation and ownership
 
@@ -725,11 +729,11 @@ Every page hears `{"t": "integration"}` when a batch or the queue changes.
 ## 11. Checklist with Definition of Done
 
 - [x] AC-186 — `cargo test tasks::integration` (defaults, kept and read back, the default prompt, the agent of its own pool, each refusal's words, a checkout, its target and git's version, What runs), `web/test/e2e_liveintegration.mjs` (the window from the project's, the pool's dropdown, refusals where pressed, what is kept, on for a git checkout)
-- [ ] AC-187 — `cargo test integration::queue` (queued, again, taken out, each refusal, a task made), `cargo test cli::integration` (the wait's exit statuses), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
-- [ ] AC-188 — `cargo test integration::batch` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
-- [ ] AC-189 — `cargo test integration::conflicts` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
-- [ ] AC-190 — `cargo test integration::check` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
-- [ ] AC-191 — `cargo test integration::publish` against a private bare remote (pushed never forced, the target moved, a refused push, the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
+- [ ] AC-187 — `cargo test tasks::integration_queue` (queued, again, taken out, a move out leaves the queue, none in by a move, each refusal, a red commit not again), `cargo test tasks::store::tests::integration_ac187` (an older store takes the status, keeps every row); to come: `cargo test tasks::integration_queue` (a task made), `cargo test cli::integration` (the wait's exit statuses), `cargo test dispatcher` (no budget, no idle clock, no closing in INTEGRATION)
+- [ ] AC-188 — `cargo test integrate::batch`, `cargo test integrate::engine` on private repositories (`crate::testutil::temp_root()`): the queue's order, the size's doubling and halving, two projects' turns, everything conflicting gives one task a round
+- [ ] AC-189 — `cargo test integrate::batch` and `integrate::engine::tests::ac189_…` (with the target, with a batch-mate, judged again after that batch, a foreseen one)
+- [ ] AC-190 — `cargo test integrate::engine` (green, red, over its time), `cargo test integrate::runner`; to come: `cargo test integration::check` with stand-in lines (green, red, over its time, not started, nothing published but a green candidate), `scripts/e2e_integration.py` (a check outlives a restart of a private terminumd, private tmux)
+- [ ] AC-191 — `cargo test integrate::engine` against a private bare remote (pushed never forced, the target moved, a refused push and Publish again, a publish terminumd did not see end, the folder fast-forwarded); to come (pushed never forced, the target moved, a refused push, the project's Publish that does not land, the folder left where it is, After's failure undoes nothing)
 - [ ] AC-192 — `cargo test integration::notices` (each notice's words, said once, what is compared), `scripts/e2e_integration.py` (a hook's context, the gate only in Dispatcher's pane), `web/test/e2e_liveintegration.mjs` (the comment on the card)
 - [ ] AC-193 — `web/test/e2e_liveintegration.mjs` (Chromium and WebKit, wide and phone: the column only where on, the batch's group, places and waits, each key and its refusal, Batches…)
 - [ ] AC-194 — `cargo test integration::task` (made with its batch, DONE on green with no agent, each tool and each refusal, the unchanged round once, 3 red rounds, no agent, everything returned, the kept slot), `cargo test dispatcher` (its budget counts the analysis alone), `scripts/e2e_integration.py` with `scripts/fake_agent.py` (a red round, a return with its analysis, round 2 green and published), `TM_TEST_REAL_INTEGRATION=1` (a Sonnet agent names the task whose change broke a stand-in check, three short runs)
