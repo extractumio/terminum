@@ -176,7 +176,7 @@ Scenario: AC-53 error — gone or not a regular file
 Scenario: AC-54 happy path — rendered by default, source on a click
   When the user clicks "README.md"
   Then the tab opens Rendered: proportional text, headings, tables, task lists, footnotes, fenced ```rust highlighted (as the editor highlights it), relative images shown
-  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it; Mermaid's code that did not load (a gap, a restart) is loaded again at the document's next render (Chrome keeps the failure until the page reloads); a theme changed twice while diagrams are drawn leaves them drawn for the last one
+  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it; Mermaid's code that did not load (a gap, a restart) says so at the fence, "Mermaid's code did not load: reload the page"; Safari loads it again at the document's next render, Chrome only after a reload (it keeps a failed module for the page's life); a theme changed twice while diagrams are drawn leaves them drawn for the last one
   When the user clicks "Source"
   Then Markdown source with Markdown highlighting; the choice is remembered for the tab
 
