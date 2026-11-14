@@ -107,6 +107,17 @@ class Turn:
             return False
         return True
 
+    def hold_as(self, name):
+        """Says who holds it, for those who find it held: written once taken."""
+        self.path.with_name(self.path.name + ".holder").write_text(name)
+
+    def holder(self, unknown="another tree"):
+        """Who holds it, as its holder said."""
+        try:
+            return self.path.with_name(self.path.name + ".holder").read_text().strip() or unknown
+        except OSError:
+            return unknown
+
 
 def mark_path(cwd):
     """The file a running release holds (scripts/release_turn.py): landings and installs leave main alone."""

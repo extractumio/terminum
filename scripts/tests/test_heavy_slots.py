@@ -29,11 +29,12 @@ class Slots(unittest.TestCase):
             with mock.patch.dict("os.environ", {"TM_HEAVY_SLOTS": value}), mock.patch("os.cpu_count", return_value=8):
                 self.assertEqual(heavy_slots.count(), slots, value)
 
-    def test_a_light_step_takes_no_slot(self):  # AC-104
+    def test_the_landing_has_a_slot_of_its_own_beside_the_trees_at_work(self):  # AC-104
         with mock.patch.dict("os.environ", {"TM_HEAVY_SLOTS": "1"}), Turn(self.repo, "terminum-heavy.0.slot") as held:
             self.assertTrue(held.take())
-            with heavy_slots.slot(self.repo, "e2e_core", sleep=self.fail):
-                pass
+            with heavy_slots.slot(self.repo, "cargo", landing=True, sleep=self.fail):
+                with Turn(self.repo, "terminum-heavy.land.slot") as other:
+                    self.assertFalse(other.take(), "its own, held while it builds")
 
     def test_a_cargo_step_waits_for_a_free_slot_says_who_holds_them_and_names_itself(self):  # AC-104
         said, inside = [], threading.Event()
@@ -41,12 +42,12 @@ class Slots(unittest.TestCase):
             other = Turn(self.repo, "terminum-heavy.0.slot")
             other.__enter__()
             self.assertTrue(other.take())
-            heavy_slots.holder(other).write_text("two cargo")
+            other.hold_as("two cargo")
 
             def build():
                 with heavy_slots.slot(self.repo, "cargo", say=said.append, sleep=lambda _: threading.Event().wait(0.05)):
                     inside.set()
-                    self.holder = heavy_slots.holder(other).read_text()
+                    self.holder = other.holder()
             runner = threading.Thread(target=build)
             runner.start()
             self.assertFalse(inside.wait(0.5), "waits while the only slot is held")

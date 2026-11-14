@@ -3,7 +3,6 @@
 import importlib.util
 from concurrent.futures import ThreadPoolExecutor
 import os
-import shutil
 from pathlib import Path
 import subprocess
 import sys
@@ -38,9 +37,8 @@ with land.Turn(sys.argv[2]):
 """
 
 
-class Landing(unittest.TestCase):
-    real_ci = staticmethod(land.ci_status)
-
+class Repos:
+    """An origin, a primary checkout and its trees in a temporary folder, with the checks stood in for."""
     def setUp(self):
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)
@@ -94,44 +92,9 @@ class Landing(unittest.TestCase):
     def on_origin(self):
         return git("rev-parse", "main", cwd=self.origin)
 
-    def ci(self, *, stdout="", code=0, error=None):
-        """land's ci_status over a stand-in for gh: its answer, or the error running it raised."""
-        def run(args, **kwargs):
-            self.assertEqual(args[:3], ["gh", "run", "list"])
-            if error:
-                raise error
-            return subprocess.CompletedProcess(args, code, stdout, "HTTP 401: Bad credentials\n" if code else "")
-        return self.real_ci(self.primary, run=run)
 
-    def test_the_last_ci_run_on_main_is_said_with_its_commit(self):  # AC-104
-        head = self.on_origin().strip()
-        said = self.ci(stdout=f'[{{"status":"completed","conclusion":"failure","headSha":"{head}","url":"https://ci.example/1"}}]')
-        self.assertEqual(said, f"CI on main: failure on {head[:9]}: https://ci.example/1")
 
-    def test_a_run_of_an_older_commit_or_one_still_running_says_so(self):  # AC-104
-        head = self.on_origin().strip()
-        said = self.ci(stdout='[{"status":"in_progress","conclusion":"","headSha":"abcdef0123456789","url":"u2"},'
-                              '{"status":"completed","conclusion":"failure","headSha":"0123456789abcdef","url":"u"}]')
-        self.assertEqual(said, f"CI on main: failure on 012345678, not origin/main's {head[:9]}: u; newer: in_progress on abcdef012")
-
-    def test_the_verdict_is_the_last_run_that_ended_a_newer_one_said_after_it(self):  # AC-104
-        head = self.on_origin().strip()
-        said = self.ci(stdout=f'[{{"status":"queued","conclusion":"","headSha":"{head}","url":"u3"}},'
-                              '{"status":"completed","conclusion":"cancelled","headSha":"1111111111","url":"u2"},'
-                              '{"status":"completed","conclusion":"success","headSha":"2222222222","url":"u1"}]')
-        self.assertEqual(said, f"CI on main: success on 222222222, not origin/main's {head[:9]}: u1; newer: queued on {head[:9]}")
-        only_cancelled = self.ci(stdout='[{"status":"completed","conclusion":"cancelled","headSha":"1111111111","url":"u2"}]')
-        self.assertEqual(only_cancelled, "CI on main: no verdict in the last 1 runs; newest: cancelled on 111111111: u2")
-
-    def test_without_gh_or_an_answer_the_status_is_unknown_and_never_an_error(self):  # AC-104
-        self.assertEqual(self.ci(error=FileNotFoundError(2, "No such file or directory", "gh")),
-                         "CI on main: unknown ([Errno 2] No such file or directory: 'gh')")
-        self.assertEqual(self.ci(code=1), "CI on main: unknown (HTTP 401: Bad credentials)")
-        self.assertIn("unknown (Command", self.ci(error=subprocess.TimeoutExpired("gh", 10)))
-        self.assertEqual(self.ci(stdout="[]"), "CI on main: no run")
-        self.assertIn("unknown (gh's answer: JSONDecodeError", self.ci(stdout="<html>rate limited</html>"))
-        self.assertIn("CI on main: unknown (gh's answer: KeyError(", self.ci(stdout='[{"status":"completed"}]'))
-
+class Landing(Repos, unittest.TestCase):
     def test_green_lands_and_the_primary_follows(self):
         tree = self.tree("one")
         made = self.commit(tree, "new.txt", "x\n")
@@ -177,7 +140,7 @@ class Landing(unittest.TestCase):
             return take(turn, wait=wait)
 
         with mock.patch.object(land.Turn, "take", taking), ThreadPoolExecutor(max_workers=1) as runner:
-            with land.TreeTurn(tree, "terminum-land.turn") as holder:
+            with land.TreeTurn(tree, land.LAND_TURN) as holder:
                 self.assertTrue(holder.take())
                 future = runner.submit(land.land, tree, check=self.green, say=lambda _: None)
                 self.assertTrue(waiting.wait(10), "landing reached its real turn wait")
@@ -187,7 +150,7 @@ class Landing(unittest.TestCase):
         self.assertEqual(stop.exception.code, 1)
         self.assertIn("changed while landing", str(stop.exception))
         self.assertEqual(self.on_origin(), before, "unchecked work never reaches origin")
-        self.assertEqual(self.checks, [], "seen in the turn, before any check")
+        self.assertEqual(self.checks, [slug], "its own content checked before the turn, its change seen in it")
         self.assertTrue(tree.is_dir())
         self.assertTrue(self.turn_is_free())
 
@@ -340,7 +303,7 @@ class Landing(unittest.TestCase):
             return True
         said = []
         land.land(one, check=check, smoke=smoke, say=said.append)
-        self.assertEqual(held, [True, True, True], "its targeted checks and both smoke sets in the turn")
+        self.assertEqual(held, [False, True, True], "its own targeted checks before the turn, both smoke sets in it")
         self.assertIn("origin/main moved while this tree was checked", said)
         self.assertIn("one.txt", git("ls-tree", "--name-only", "main", cwd=self.origin).split())
         self.assertTrue(self.turn_is_free(), "and lets it go once landed")
@@ -365,7 +328,7 @@ class Landing(unittest.TestCase):
             self.assertTrue(inside.wait(10))
             second = runner.submit(land.land, two, check=self.green, smoke=quick, say=lambda _: None)
             time.sleep(0.5)
-            self.assertEqual((self.checks, self.smokes), (["one"], []), "two waits for the turn, checking nothing")
+            self.assertEqual((self.checks, self.smokes), (["one", "two"], []), "two checks its own content, then waits for the turn")
             go.set()
             first.result(timeout=10)
             second.result(timeout=10)
@@ -381,7 +344,8 @@ class Landing(unittest.TestCase):
 
     def test_the_turn_names_its_holder_for_those_who_wait(self):  # AC-104
         with land.Turn(self.tree("one")):
-            self.assertEqual((git_dir(self.primary) / "terminum-land.holder").read_text(), "one")
+            with land.TreeTurn(self.primary, land.LAND_TURN) as other:
+                self.assertEqual(other.holder(), "one")
 
     def test_checks_over_their_time_are_ended_with_their_group_and_fail(self):  # AC-104
         tree = Path(self.home.name) / "slow"
@@ -434,60 +398,16 @@ class Landing(unittest.TestCase):
         self.assertFalse(land.has_code({"docs/USAGE.md", "README.md"}))
         self.assertTrue(land.has_code({"docs/USAGE.md", "terminumd/src/a.rs"}))
 
-    def installs(self, files, env="1"):
-        with mock.patch.dict(os.environ, {"TM_LAND_INSTALL": env}):
-            land.after_push(self.primary)(files)
-        return land.install_mark(self.primary).exists()
-
-    def made(self, ran):
-        def run(primary, target):
-            ran.append(target)
-            return subprocess.CompletedProcess([], 0, "terminumd: this checkout's build\n" if target == "installed" else "", "")
-        return run
-
-    def test_code_landed_marks_one_install_and_docs_none(self):  # AC-104
-        self.assertFalse(self.installs({"docs/USAGE.md"}))
-        self.assertFalse(self.installs({"terminumd/src/a.rs"}, env="0"))
-        self.assertTrue(self.installs({"terminumd/src/a.rs"}))
-
-    def test_the_install_runs_once_after_the_turn_for_all_that_landed(self):  # AC-104
-        self.installs({"one.rs"})
-        self.installs({"two.rs"})
-        ran, said = [], []
-        land.install_pending(self.primary, run=self.made(ran), say=said.append)
-        land.install_pending(self.primary, run=self.made(ran), say=said.append)
-        self.assertEqual(ran, ["build", "install", "installed"], "once for both")
-        self.assertIn("make installed: exit 0: terminumd: this checkout's build", said)
-        self.assertFalse(land.install_mark(self.primary).exists())
-
-    def test_a_landing_in_the_turn_is_left_the_install(self):  # AC-104
-        self.installs({"one.rs"})
-        ran, said = [], []
-        with land.Turn(self.tree("two")):
-            land.install_pending(self.primary, run=self.made(ran), say=said.append)
-        self.assertEqual((ran, said), ([], ["install: left to two's landing, which has the turn"]))
-        self.assertTrue(land.install_mark(self.primary).exists(), "kept for two, which installs after its own")
-        land.install_pending(self.primary, run=self.made(ran), say=said.append)
-        self.assertEqual(ran, ["build", "install", "installed"])
-
-    def test_a_failed_build_stops_the_install_and_is_said(self):  # AC-104
-        self.installs({"one.rs"})
-        said = []
-        failed = lambda primary, target: subprocess.CompletedProcess([], 2, "", "error[E0425]")
-        with mock.patch("sys.stderr"):
-            land.install_pending(self.primary, run=failed, say=said.append)
-        self.assertEqual(said, ["make build: exit 2"])
-
     def turn_is_free(self):
         """Whether another landing would get the turn now: the same call a landing makes, not a lock of the test's own."""
-        with land.TreeTurn(self.primary, "terminum-land.turn") as other:
+        with land.TreeTurn(self.primary, land.LAND_TURN) as other:
             return other.take()
 
     def test_a_turn_held_is_held_however_old_and_is_freed_with_its_holder(self):  # AC-104
         holder = subprocess.Popen([sys.executable, "-c", HOLDS, str(Path(land.__file__)), str(self.primary)], stdout=subprocess.PIPE, text=True)
         try:
             self.assertEqual(holder.stdout.readline().strip(), "holding")
-            os.utime(git_dir(self.primary) / "terminum-land.turn", (1, 1))
+            os.utime(git_dir(self.primary) / land.LAND_TURN, (1, 1))
             self.assertFalse(self.turn_is_free(), "no age frees it")
         finally:
             holder.kill()
@@ -512,7 +432,7 @@ class Landing(unittest.TestCase):
         self.assertEqual(stop.exception.code, 2)
         self.assertIn("a.txt", str(stop.exception))
         self.assertEqual(self.on_origin(), before)
-        self.assertEqual(self.checks, [])
+        self.assertEqual(self.checks, ["one"], "its own content checked before the turn and its merge")
         (one / "a.txt").write_text("both\n")
         git("add", "a.txt", cwd=one)
         git("-c", "core.editor=true", "commit", "-q", "--no-edit", cwd=one)
@@ -527,24 +447,6 @@ class Landing(unittest.TestCase):
         git("fetch", "-q", "origin", cwd=self.primary)
         self.assertIsNotNone(land.update_primary(self.primary))
         self.assertEqual((self.primary / "a.txt").read_text(), "the maintainer's work\n")
-
-
-class Said(unittest.TestCase):
-    def test_timed_checks_a_busy_machine_skipped_are_said_after_landed_though_the_install_took_the_tree(self):  # AC-146
-        with tempfile.TemporaryDirectory() as tmp:
-            primary = Path(tmp)
-            tree = primary / ".worktrees" / "x"
-            (tree / ".checks").mkdir(parents=True)
-            (tree / ".checks" / "skipped").write_text("targeted: SKIPPED timed checks, the machine busy for 15 minutes: page\n")
-            out = []
-            with mock.patch.object(land, "primary_of", return_value=primary), mock.patch.object(land, "git"), \
-                    mock.patch.object(land, "ci_status", return_value="CI on main: success on 0123456789: u"), \
-                    mock.patch.object(land, "land", lambda tree, after: after(["x.rs"]) or "abcdef0123456789"), \
-                    mock.patch.object(land, "after_push", lambda _: lambda files: shutil.rmtree(tree)), mock.patch.object(land.subprocess, "run", return_value=subprocess.CompletedProcess([], 0)), \
-                    mock.patch.object(land.os, "chdir"), mock.patch.object(land, "install_pending"), mock.patch("builtins.print", lambda *a, **_: out.append(" ".join(map(str, a)))):
-                self.assertEqual(land.main(["x"]), 0)
-        self.assertEqual(out[-2:], ["landed abcdef012 on origin/main",
-                                    "targeted: SKIPPED timed checks, the machine busy for 15 minutes: page"])
 
 
 if __name__ == "__main__":
