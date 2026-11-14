@@ -12,6 +12,7 @@ pub mod family;
 mod fileapi;
 pub mod files;
 pub mod folder;
+pub mod integration;
 mod groom;
 pub mod limits;
 pub mod marks;

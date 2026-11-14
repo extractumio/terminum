@@ -16,3 +16,4 @@ export const SIGNIN_ALONE = process.argv.includes("signin");  // delayed sign-in
 export const QUEUE_ALONE = process.argv.includes("queue");  // the agent queue, without the scheduling suites
 export const MAIN_ALONE = process.argv.includes("main");             // while working on a main task's run with its subtasks
 export const BACKGROUND_ALONE = process.argv.includes("background");
+export const ARCHIVED_ALONE = process.argv.includes("archived");     // archived tasks, their hooks and tools

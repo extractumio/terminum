@@ -8,6 +8,7 @@ import path from "node:path";
 import { boardKit, pressCard, pressRun } from "./boardkit.mjs";
 import { check, until } from "./check.mjs";
 import { agentPool } from "./e2e_liveboardpool.mjs";
+import { integrationChecks } from "./e2e_liveintegration.mjs";
 
 const COMMAND = "claude --model opus";
 
@@ -194,6 +195,7 @@ async function projectWindowChecks(page, opts) {
   check("AC-139 limits are kept from the project's window", await until(async () => (await j("/api/tasks/meta")).limits.some((l) => l.project === fresh && l.warn === 2 && l.end === 3)), JSON.stringify((await j("/api/tasks/meta")).limits));
   // terminumd keeps them before the page has its answer and closes the limits' window: a press meanwhile lands on it
   await page.waitForSelector("#limitsbox", { state: "hidden" });
+  await integrationChecks(page, { j, fresh, work, pressAt, shots: opts.shots && `${opts.shots}${opts.shots.endsWith("-") ? "" : "/"}` });
   const done = await pressAt(page, "#projectok");
   check("AC-139 Done keeps the project and closes its window", await until(() => page.isHidden("#projectbox"), 15000),
     `${done}; ${JSON.stringify(await page.evaluate(() => ({ says: document.getElementById("projecterror")?.textContent, open: [...document.querySelectorAll("dialog[open]")].map((d) => d.id), busy: document.getElementById("projectbox").dataset.busy ?? null, focus: document.activeElement?.id })))}`);

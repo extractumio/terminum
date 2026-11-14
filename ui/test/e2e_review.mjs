@@ -7,12 +7,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import { base, check, cleanup, panelUrl, results, SB, signIn, wsKey } from "./e2e_harness.mjs";
 import { hostRegressions } from "./e2e_review_hosts.mjs";
+import { thrown } from "../../web/test/check.mjs";
 const { chromium } = await import(process.env.PLAYWRIGHT_CORE ?? "playwright-core");
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 520, height: 900 } });
 const SECRET = await signIn(page).catch(async (e) => { await cleanup(); throw e; });
 const errors = [];
-page.on("pageerror", (e) => errors.push(e.message));
+page.on("pageerror", (e) => errors.push(thrown(e)));
 page.on("dialog", (d) => void d.accept());   // leaving a panel with unsaved edits for the next case
 await page.addInitScript(() => {
   const Native = window.WebSocket;

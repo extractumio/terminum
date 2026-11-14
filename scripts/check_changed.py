@@ -4,13 +4,14 @@
 acceptance cases it touches, and the critical functions; a pass is kept per content
 (.checks/changed-<id>.ok), so the same content runs once. Before its first timed step it waits for a
 quiet machine (scripts/load_gate.py, AC-146); still busy after 15 minutes, the timed steps are skipped and
-said in red last, here and by make land (.checks/skipped). --land: a landing's smoke set on its merged result, the
+said in red last, here and by make land (.checks/skipped). A cargo step holds a heavy-build slot (scripts/heavy_slots.py). --land: a landing's smoke set on its merged result, the
 basics on one platform, no timed check. The full run is the release's gate, not this (`make check`).
 
   check_changed.py [--print] [--force] [--base <ref>]   default origin/main; --print only says the plan
   check_changed.py --land | --passed | --tree-id        the smoke set; 0 if this content passed; its id
 Each step's output goes to .checks/changed.<step>.log, one line here, as scripts/check_all.sh does."""
 import argparse
+from contextlib import nullcontext
 import hashlib
 from pathlib import Path
 import re
@@ -20,6 +21,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
+import heavy_slots  # noqa: E402
 from check_cancel import run_guard  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
 from worktree import releasing  # noqa: E402
@@ -218,9 +220,10 @@ def say_skipped(root):
         print(red(note), flush=True)
 
 
-def run(steps, root=REPO, gate=True, nice=False):
+def run(steps, root=REPO, gate=True, nice=False, landing=False):
     """Returns the steps failed. gate: a quiet machine is waited for before the first timed step, and the timed
-    steps are skipped when it stays busy (AC-146); nice: every step yields (a release runs)."""
+    steps are skipped when it stays busy (AC-146); nice: every step yields (a release runs); a cargo step holds
+    a heavy-build slot, the landing's own when `landing`."""
     logs = root / ".checks"
     logs.mkdir(exist_ok=True)
     failed, skipped, busy, asked = [], [], None, False
@@ -234,9 +237,10 @@ def run(steps, root=REPO, gate=True, nice=False):
             skipped.append(name)
             continue
         optional = command.startswith("-")
-        started = time.monotonic()
         log = logs / f"changed.{name}.log"
-        with log.open("w") as out:
+        heavy = heavy_slots.slot(root, name, landing, lambda words: print(words, flush=True)) if "cargo " in command else nullcontext()
+        with heavy, log.open("w") as out:
+            started = time.monotonic()
             # under make check's guard (AC-102): a step that leaves a process or a file fails here too
             guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py")]
             code = run_guard(guarded, ["sh", "-c", command.lstrip("-")], cwd=root, stdout=out)
@@ -272,7 +276,7 @@ def main(argv):
         return 0 if (REPO / ".checks" / f"changed-{ident}.ok").exists() else 1
     files, merge_base = changed_files(args.base)
     if args.land:
-        failed = run(land_plan(files), gate=False, nice=releasing(REPO))
+        failed = run(land_plan(files), gate=False, nice=releasing(REPO), landing=True)
         print(f"smoke: FAIL {' '.join(failed)}" if failed else "smoke: PASS")
         return 1 if failed else 0
     steps = plan(files, touched_cases(files, merge_base))

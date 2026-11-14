@@ -32,6 +32,8 @@ import subprocess
 import sys
 import time
 
+from process_cwd import directories, InspectionError
+
 KINDS = ("feat", "fix", "test", "docs", "chore")
 SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,40}$")
 # the primary checkout's local files every tree uses as they are: linked, never copied
@@ -104,6 +106,17 @@ class Turn:
         except BlockingIOError:
             return False
         return True
+
+    def hold_as(self, name):
+        """Says who holds it, for those who find it held: written once taken."""
+        self.path.with_name(self.path.name + ".holder").write_text(name)
+
+    def holder(self, unknown="another tree"):
+        """Who holds it, as its holder said."""
+        try:
+            return self.path.with_name(self.path.name + ".holder").read_text().strip() or unknown
+        except OSError:
+            return unknown
 
 
 def mark_path(cwd):
@@ -282,39 +295,12 @@ def add(slug, kind="feat", base="origin/main", cwd="."):
     return path, lines
 
 
-def working_in(tree):
+def working_in(tree, snapshot=None):
     """{pid: command} of the processes whose current folder is in `tree`, this one excepted."""
-    tree, found = str(Path(tree).resolve()), {}
-    inside = lambda folder: folder == tree or folder.startswith(tree + os.sep)
-    if Path("/proc/self/cwd").exists():
-        for entry in Path("/proc").iterdir():
-            try:
-                if entry.name.isdigit() and inside(os.readlink(entry / "cwd")):
-                    found[int(entry.name)] = (entry / "comm").read_text().strip()
-            except (FileNotFoundError, ProcessLookupError):
-                continue
-            except PermissionError:
-                try:
-                    if entry.stat().st_uid != os.getuid():
-                        continue   # another user's protected process cannot belong to this run
-                except FileNotFoundError:
-                    continue
-                raise
-    elif shutil.which("lsof"):
-        out = subprocess.run(["lsof", "-a", "-d", "cwd", "-F", "pcn"], capture_output=True, text=True, check=True, timeout=15).stdout
-        pid = command = None
-        for line in out.splitlines():
-            tag, value = line[:1], line[1:]
-            if tag == "p":
-                pid = int(value)
-            elif tag == "c":
-                command = value
-            elif tag == "n" and inside(value):
-                found[pid] = command
-    else:
-        raise Refused("no /proc and no lsof: cannot tell which processes work in the tree")
-    found.pop(os.getpid(), None)
-    return found
+    tree = str(Path(tree).resolve())
+    snapshot = directories() if snapshot is None else snapshot
+    return {pid: command for pid, (command, folder) in snapshot.items()
+            if pid != os.getpid() and (folder == tree or folder.startswith(tree + os.sep))}
 
 
 def merged(rev, cwd):
@@ -418,7 +404,14 @@ def remove(target, discard=False, cwd="."):
 
 def listing(cwd="."):
     lines = []
-    for path, branch in list(trees(cwd).items())[1:]:
+    entries = list(trees(cwd).items())[1:]
+    snapshot, failure = None, None
+    if any(path.exists() for path, _ in entries):
+        try:
+            snapshot = directories()
+        except InspectionError as error:
+            failure = str(error)
+    for path, branch in entries:
         if not path.exists():
             lines.append(f"{path}\tmissing (git worktree prune clears it)")
             continue
@@ -429,8 +422,9 @@ def listing(cwd="."):
                  else "no commits of its own" if not ahead and not own
                  else "merged into origin/main or main: remove by hand" if in_main
                  else f"{'?' if ahead is None else ahead} commits not in origin/main")
+        processes = f"process count unknown: {failure}" if failure else f"{len(working_in(path, snapshot))} processes in it"
         lines.append(f"{path}\t{branch or '(detached)'}\t{dirty} uncommitted\t{len(kept_files(path))} ignored to keep\t"
-                     f"{state}\t{len(working_in(path))} processes in it")
+                     f"{state}\t{processes}")
     return lines or ["no worktrees besides the primary checkout"]
 
 
@@ -468,6 +462,6 @@ def main(argv):
 if __name__ == "__main__":
     try:
         sys.exit(main(sys.argv[1:]))
-    except Refused as refused:
+    except (Refused, InspectionError) as refused:
         print(f"worktree: {refused}", file=sys.stderr)
         sys.exit(1)

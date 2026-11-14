@@ -5,7 +5,8 @@
 
 import "./style.css";
 import {
-  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isUnder, proofRefusal, PROXIED, scope, setScope, SORTS, toast,
+  api, apiOrToast, ApiError, basename, CLIENT, copyText, DEFAULT_PREFS, dirname, isPane, isUnder,
+  proofRefusal, PROXIED, scope, setScope, SORTS, toast,
   type FsChange, type Pane, type Prefs, type TermState,
 } from "./api";
 import { renderOffer } from "./host-offer";
@@ -140,7 +141,7 @@ async function loadWorkspace(k: string) {
   pinCwd = null;
   let pane: Pane;
   try {
-    pane = await api<Pane>("GET", "/api/workspace", { query: { key: k, cwd: cwd ?? undefined } });
+    pane = await api<Pane>("GET", "/api/workspace", { query: { key: k, cwd: cwd ?? undefined }, is: isPane });
   } catch (e) {
     // a terminumd gone or unproven is the stream's notice, and its next open loads it again
     // (a load the stream's last open started met a program on the port: AC 09)

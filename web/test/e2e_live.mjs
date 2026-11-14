@@ -14,7 +14,7 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { check, playwright, ranToItsEnd, results, runningIn, shownPane, slack, until, within } from "./check.mjs";
+import { check, playwright, ranToItsEnd, recordLivePageError, results, runningIn, shownPane, slack, until, within } from "./check.mjs";
 import { freePort, own, shortTmp } from "./testrun.mjs";
 import { endOnSignal, NO_SIGNALS, stopChild } from "../../ui/test/process-stop.mjs";
 import { liveDrop, livePaste } from "./e2e_livepaste.mjs";
@@ -48,6 +48,7 @@ import { liveBoardIds } from "./e2e_liveboardids.mjs";
 import { liveDispatcher, liveDispatcherReal } from "./e2e_livedispatcher.mjs";
 import { liveBackground } from "./e2e_livebackground.mjs";
 import { layoutKept } from "./e2e_livelayout.mjs";
+import { liveArchived } from "./e2e_livearchived.mjs";
 import { liveWaitingRun } from "./e2e_livewaiting.mjs";
 import { liveHistory, liveHistoryPhone } from "./e2e_livehistory.mjs";
 import { liveFolded, liveSchedules } from "./e2e_liveschedules.mjs";
@@ -55,7 +56,7 @@ import { liveQueue } from "./e2e_livequeue.mjs";
 import { liveAuto } from "./e2e_liveauto.mjs";
 import { liveIconKeys } from "./e2e_liveiconkeys.mjs";
 import { SORT_ALONE, BOARD_ALONE, TASKS_ALONE, WAITING_ALONE, POOL_ALONE, SMOKE, HISTORY_ALONE,
-  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE, BACKGROUND_ALONE } from "./e2e_livemodes.mjs";
+  AUTO_ALONE, SCHEDULES_ALONE, NOTES_ALONE, ICONS_ALONE, REQUESTS_ALONE, SIGNIN_ALONE, QUEUE_ALONE, MAIN_ALONE, BACKGROUND_ALONE, ARCHIVED_ALONE } from "./e2e_livemodes.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const BIN = process.env.TERMINUMD_BIN ?? path.join(ROOT, "terminumd/target/debug/terminumd");
@@ -153,14 +154,6 @@ async function wide(browser, name) {
   runningIn(`${name} 1400×900`);
   // reduced motion: a window stands where a press lands (e2e_motion.mjs checks the motion)
   const errors = [];
-  // WebKit reports a load that failed as the page's error, "Fetch API cannot load … due to access control
-  // checks", though the code caught it (the Panel's reads while terminumd restarts: AC-14, AC-34); said, not counted
-  const onError = (e) => {
-    const said = String(e.stack ?? e);
-    // the stack's first line: Playwright cuts a message at its first colon, the one in "http:"
-    if (/^(Error: )?Fetch API cannot load \S+ due to access control checks\.?$/.test(said.split("\n")[0])) console.log(`NOTE [${name}] WebKit's own report of a failed load: ${said.split("\n")[0]}`);
-    else errors.push(said);
-  };
   let ctx, page;
   /** A page in a context of its own, signed in with the last one's storage, the last one closed: with one
    *  page through the whole run, Linux WebKit's web process reached 1.6 GB under CI's 2 GiB and was killed */
@@ -169,7 +162,7 @@ async function wide(browser, name) {
     await ctx?.close();
     ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, reducedMotion: "reduce", storageState });
     page = await ctx.newPage();
-    page.on("pageerror", onError);
+    page.on("pageerror", (e) => recordLivePageError(errors, name, e));
     if (!storageState) return signIn(page);
     await page.goto(`${BASE}/`);
     await page.waitForFunction(() => document.querySelectorAll("#sessions .item").length > 0, null, { timeout: 30000 });
@@ -177,7 +170,7 @@ async function wide(browser, name) {
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start, shots: process.env.TM_TEST_SHOTS };
   /** The board's suites, each on a page of its own */
   const edge = [0, 1].map((part) => (p, o) => liveBoardEdge(p, { ...o, part }));
-  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardSignin, liveBoardTasks, liveBoardIds, liveDispatcher, liveBackground, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
+  const boards = async (suites = [liveBoard, liveBoardSort, ...edge, liveBoardSessions, liveBoardAgents, liveBoardBusy, liveBoardSignin, liveBoardTasks, liveBoardIds, liveDispatcher, liveBackground, liveArchived, liveHistory, liveFolded, liveSchedules, liveQueue, liveAuto, liveMain, liveIconKeys, liveWaitingRun]) => {
     for (const suite of suites) { await renew(); await suite(page, live); }
   };
   await renew();
@@ -199,8 +192,9 @@ async function wide(browser, name) {
     await boards([liveAuto]);
     return ctx;
   }
-  if (WAITING_ALONE) {
-    await boards([liveWaitingRun]);
+  if (WAITING_ALONE || ARCHIVED_ALONE) {
+    const suite = ARCHIVED_ALONE ? liveArchived : liveWaitingRun;
+    await boards([suite]);
     return ctx;
   }
   if (MAIN_ALONE) {
@@ -406,8 +400,9 @@ async function phone(browser, name) {
   await signIn(page);
   const live = { base: BASE, tmux, work: WORK, bin: BIN, home: HOME, app: APP, stop, start };
   if (REQUESTS_ALONE) { await liveRequests(page, live); await ctx.close(); return; }
-  if (WAITING_ALONE) {
-    await liveWaitingRun(page, live);
+  if (WAITING_ALONE || ARCHIVED_ALONE) {
+    const suite = ARCHIVED_ALONE ? liveArchived : liveWaitingRun;
+    await suite(page, live);
     await ctx.close();
     return;
   }

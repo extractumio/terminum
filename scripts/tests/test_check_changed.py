@@ -3,6 +3,7 @@
 import importlib.util
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -133,6 +134,20 @@ class Run(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.root, self.events = Path(tmp.name), []
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)   # its cargo steps take a slot of its own repository
+
+    def test_a_cargo_step_runs_holding_a_heavy_build_slot_and_a_light_one_does_not(self):  # AC-104
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from worktree import Turn
+        held = {}
+        def fake(guard, command, **_):
+            with Turn(self.root, "terminum-heavy.0.slot") as other:
+                held[command[-1]] = not other.take()
+            return 0
+        with mock.patch.dict("os.environ", {"TM_HEAVY_SLOTS": "1"}), mock.patch.object(check_changed, "run_guard", fake), \
+                mock.patch("sys.stdout"):
+            check_changed.run([("cargo", "cargo test"), ("e2e_core", "python3 e2e"), ("debug-build", "cargo build")], root=self.root, gate=False)
+        self.assertEqual(held, {"cargo test": True, "python3 e2e": False, "cargo build": True})
 
     def run_steps(self, steps, busy=None, **kw):
         def fake(guard, command, **_):

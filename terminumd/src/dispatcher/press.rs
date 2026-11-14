@@ -383,11 +383,12 @@ pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent:
 }
 
 /// New work on an archived task returns it to the board (AC-122).
-pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<(), String> {
-    if ops::get(tx, id)?.archived_at.is_some() {
+pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<bool, String> {
+    let archived = ops::get(tx, id)?.archived_at.is_some();
+    if archived {
         ops::archive(tx, crate::tasks::store::HUMAN, id, false, ops::now())?;
     }
-    Ok(())
+    Ok(archived)
 }
 
 /// A press of several that goes on in its conversation names the tasks it reopens, a main task last (AC-185): the

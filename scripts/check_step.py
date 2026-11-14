@@ -17,6 +17,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from worktree import working_in  # noqa: E402
+from process_cwd import InspectionError  # noqa: E402
 import owned_children  # noqa: E402
 from check_cancel import Cancellation, unreaped_status  # noqa: E402
 
@@ -52,11 +53,27 @@ def listing():
             yield int(fields[0]), fields[1], fields[3]
 
 
+class OwnershipError(InspectionError):
+    """Directory discovery failed; only the group and registered identities are known."""
+    def __init__(self, error, processes):
+        super().__init__(str(error))
+        self.processes = processes
+
+
 def own_processes(folder, group):
     """(pid, command) of each process of our private group or working in our private folder."""
-    inside = working_in(folder)
+    try:
+        inside = working_in(folder)
+    except InspectionError as error:
+        raise OwnershipError(error, selected_processes(folder, group)) from error
+    return selected_processes(folder, group, inside)
+
+
+def selected_processes(folder, group, inside=()):
+    """Current group/registry members, plus any successfully inspected working-directory PIDs."""
     registered = owned_children.active(owned_children.path(folder))
-    return [(pid, text[:120]) for pid, pgid, text in listing() if pgid == str(group) or pid in inside or pid in registered]
+    return [(pid, text[:120]) for pid, pgid, text in listing()
+            if pgid == str(group) or pid in inside or pid in registered]
 
 
 def send(pid, number):
@@ -135,13 +152,28 @@ def main(command, folder=None):
 def check(command, folder, cancelled):
     private_group = folder is not None
     folder = folder or os.path.realpath(tempfile.mkdtemp(prefix="tmc.", dir="/tmp"))
+    inspected = False
+    cleaned = False
     try:
         child, status, group = run(command, folder, cancelled, private_group)
         end = time.monotonic() + SETTLE_S
         while True:
             if cancelled.forward(group):
                 end = time.monotonic() + SETTLE_S
-            processes = own_processes(folder, group)
+            try:
+                processes = own_processes(folder, group)
+                inspected = True
+            except OwnershipError as error:
+                inspected = False
+                processes = error.processes
+                print(f"ownership inspection failed: {error}; private root retained: {folder}", file=sys.stderr)
+                status = status or 1
+                if cancelled.forward(group):
+                    end = time.monotonic() + SETTLE_S
+                if cancelled.number:
+                    time.sleep(max(0, end - time.monotonic()))
+                    processes = selected_processes(folder, group)
+                break
             files = files_in(folder)
             if cancelled.number and not cancelled.forwarded:
                 continue  # a signal during metadata discovery gets its full grace too
@@ -157,9 +189,10 @@ def check(command, folder, cancelled):
         for name in files_in(folder)[:50]:
             left += 1
             print(f"LEFT {name}", file=sys.stderr)
+        cleaned = inspected
         return status or (LEFT if left else 0)
     finally:
-        if not private_group:
+        if not private_group and cleaned:
             shutil.rmtree(folder, ignore_errors=True)
 
 

@@ -4,13 +4,14 @@
 
 import fs from "node:fs";
 import { base, check, SB, within } from "./e2e_harness.mjs";
+import { thrown } from "../../web/test/check.mjs";
 import { NO_SIGNALS } from "./process-stop.mjs";
 
 /** AC-70 the View alone: renders the file, no tree, no secret in its URL, a path bar. */
 export async function viewerTools(context, base, SB, errors) {
   const vp = await context.newPage();
   await vp.setViewportSize({ width: 1200, height: 800 });
-  vp.on("pageerror", (e) => errors.push("viewer: " + e.message));
+  vp.on("pageerror", (e) => errors.push("viewer: " + thrown(e)));
   await vp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/README.md")}`);
   await within("AC-70 the View renders the file", (ms) => vp.waitForSelector(".md-body h1", { timeout: ms }));
   check("AC-70 the View has no tree", !(await vp.isVisible("#tree")));
@@ -33,7 +34,7 @@ export async function viewerTools(context, base, SB, errors) {
 export async function diagrams(context, base, SB, errors) {
   const vp = await context.newPage();
   await vp.setViewportSize({ width: 1200, height: 800 });
-  vp.on("pageerror", (e) => errors.push("diagram: " + e.message));
+  vp.on("pageerror", (e) => errors.push("diagram: " + thrown(e)));
   vp.on("dialog", (d) => { errors.push("diagram dialog: " + d.message()); void d.dismiss(); });
   await vp.goto(`${base}/fb/?view=${encodeURIComponent(SB + "/docs/diagram.md")}`);
   await within("AC-54 a mermaid fence is drawn as a diagram", (ms) => vp.waitForSelector(".md-diagram img.diagram", { timeout: ms }));
