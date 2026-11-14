@@ -261,7 +261,8 @@ async function wide(browser, name) {
     // a drop's own paths come from Finder's drag pasteboard (dragged.rs): macOS only, elsewhere terminumd says so
     if (process.platform === "darwin") await liveDrop(page, { home: HOME, work: WORK, drag: DRAG });
     else console.log("SKIP AC-36 files dropped from Finder: their own paths are found on macOS only (dragged.rs)");
-    const size = tmux("list-windows", "-F", "#{window_width}x#{window_height} #{window-size}");
+    // the shown pane's window: without -t tmux answers for its current session, maybe another browser's or Dispatcher's
+    const size = tmux("display", "-p", "-t", await shownPane(page, { tmux, work: WORK }), "#{window_width}x#{window_height} #{window-size}");
     check("AC-13 the pane is sized for this view (window-size manual)", /^\d+x\d+ manual/.test(size) && Number(size.split("x")[0]) > 80, size);
     await liveQuick(page, { tmux, work: WORK });
     await liveSplit(page, { tmux, work: WORK, socket: SOCKET });
