@@ -219,8 +219,8 @@ def main():
         for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
             direct_signal(t, home, sig)
         direct_signal(t, home, signal.SIGHUP, ignored=True)
-        direct_signal(t, home, signal.SIGINT, terminal=True)
         failed_reconciliation(t, home)
+        direct_signal(t, home, signal.SIGINT, terminal=True)
     finally:
         t.cleanup()
     summary()
