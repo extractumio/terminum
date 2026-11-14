@@ -243,8 +243,8 @@ pub fn red_round(tx: &Transaction, b: &Batch) -> Result<(), String> {
 
 /// Each task of a published batch DONE with its kept result, said where it landed; a task gone meanwhile skipped.
 pub fn done_all(tx: &Transaction, b: &Batch, target: &str, candidate: &str, at: i64) -> Result<Vec<String>, String> {
-    let ids: Vec<String> = b.tasks.iter().filter_map(|k| slug(tx, k).ok()).collect();
-    for (k, id) in b.tasks.iter().filter_map(|k| slug(tx, k).ok().map(|id| (k, id))) {
+    let ids: Vec<String> = b.tasks.iter().filter(|k| Some(k.as_str()) != b.task.as_deref()).filter_map(|k| slug(tx, k).ok()).collect();
+    for (k, id) in b.tasks.iter().filter(|k| Some(k.as_str()) != b.task.as_deref()).filter_map(|k| slug(tx, k).ok().map(|id| (k, id))) {
         let kept: Option<(String, String)> = tx.query_row("SELECT result, author FROM integration_entries WHERE task = ?1", [k], |r| Ok((r.get(0)?, r.get(1)?))).optional().map_err(sql)?;
         let Some((result, author)) = kept else { continue };
         ops::comment(tx, &author, &id, &result, at)?;
@@ -265,11 +265,17 @@ pub fn left(tx: &Transaction, key: &str, batch: i64, at: i64) -> Result<(), Stri
         return Ok(());
     }
     let rest: Vec<&String> = b.tasks.iter().filter(|k| *k != key).collect();
-    if rest.is_empty() {
+    if rest.iter().all(|k| Some(k.as_str()) == b.task.as_deref()) {
         set_state(tx, b.id, "given up", Some("its last task left"), at)?;
         return close_task(tx, &b, &format!("Batch {}: nothing published, its last task left the queue.", b.number), at);
     }
-    tx.execute("UPDATE integration_batches SET tasks = ?2, state = 'rebuild' WHERE id = ?1", (b.id, serde_json::to_string(&rest).unwrap_or_default())).map_err(sql)?;
+    // a red batch its agent decides for stays red: several may go back before one integration_recheck (AC-194)
+    let deciding: Option<String> = tx.query_row("SELECT agent_state FROM integration_batches WHERE id = ?1", [b.id], |r| r.get(0)).map_err(sql)?;
+    let state = if b.state == RED && deciding.as_deref() == Some("pressed") { RED } else { "rebuild" };
+    tx.execute("UPDATE integration_batches SET tasks = ?2, state = ?3 WHERE id = ?1", rusqlite::params![b.id, serde_json::to_string(&rest).unwrap_or_default(), state]).map_err(sql)?;
+    if state == RED {
+        return Ok(());
+    }
     if let Some(id) = task_of(tx, &b)? && ops::get(tx, &id)?.status != INTEGRATION {
         let t = ops::get(tx, &id)?;
         ops::place(tx, DISPATCHER, &t, INTEGRATION, at)?;

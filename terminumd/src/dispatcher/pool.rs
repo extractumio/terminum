@@ -5,7 +5,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
-use rusqlite::Transaction;
+use rusqlite::{OptionalExtension, Transaction};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -136,6 +136,12 @@ pub fn check_for(tx: &Transaction, agent: &Agent, project: &str, task: Option<&s
 
 /// The schedule of `agent` keeping a slot that task `task` (its key) was made by, if one (AC-161).
 fn kept_schedule(tx: &Transaction, agent: &str, task: &str) -> Result<Option<String>, String> {
+    // a batch's integration task on its project's integration agent takes the slot kept for integration (AC-194)
+    let integration: Option<i64> = tx.query_row("SELECT 1 FROM integration_batches b JOIN project_integration i ON i.project = b.project WHERE b.task = ?1 AND i.agent = ?2 AND i.is_on = 1",
+        (task, agent), |r| r.get(0)).optional().map_err(super::super::tasks::ops::sql)?;
+    if integration.is_some() {
+        return Ok(Some(schedules::INTEGRATION_SLOT.to_string()));
+    }
     Ok(rows(tx, "SELECT s.id FROM schedule_fires f JOIN schedules s ON s.id = f.schedule WHERE f.task = ?1 AND s.agent_id = ?2 AND s.paused = 0 AND s.deleted_at IS NULL",
             (task, agent), |r| r.get(0))?.pop())
 }
@@ -147,8 +153,12 @@ fn in_kept(tx: &Transaction, ids: &[&str]) -> Result<HashMap<String, String>, St
                  WHERE r.id IN (SELECT value FROM json_each(?1)) AND s.agent_id = r.agent_id AND s.paused = 0 AND s.deleted_at IS NULL
                    AND (SELECT count(*) FROM run_tasks x WHERE x.run = r.id) = 1 ORDER BY r.rowid",
             [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    // the run of a batch's integration task on its integration agent stands in the slot kept for integration
+    let integrating: Vec<(String, String)> = rows(tx, "SELECT r.id, 'integration' FROM runs r JOIN run_tasks rt ON rt.run = r.id JOIN integration_batches b ON b.task = rt.task
+                 JOIN project_integration i ON i.project = b.project WHERE r.id IN (SELECT value FROM json_each(?1)) AND i.agent = r.agent_id AND i.is_on = 1 ORDER BY r.rowid",
+            [runs::listed_keys(ids)], |r| Ok((r.get(0)?, r.get(1)?)))?;
     let mut seen = HashSet::new();
-    Ok(found.into_iter().filter(|(_, s)| seen.insert(s.clone())).collect())
+    Ok(found.into_iter().chain(integrating).filter(|(_, s)| seen.insert(s.clone())).collect())
 }
 
 /// The run standing in schedule `schedule`'s kept slot, of whichever of its tasks, if one (AC-161, AC-162).

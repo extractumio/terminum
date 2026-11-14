@@ -41,6 +41,7 @@ fn target_now(p: &Place) -> Result<String, String> {
 
 /// One step.
 pub fn step(store: &Store, runner: &dyn Runner, home: &Path, now: i64) -> Result<(), String> {
+    tidy(store, home)?;
     match store.with(bs::busy)? {
         Some(b) => advance(store, runner, home, b, now),
         None => start_next(store, home, now),
@@ -138,14 +139,14 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
             Some(f) => f,
             None => match tree_at(p, &b.project, &candidate) {
                 Ok(t) => t,
-                Err(why) => return red(store, &b, &why, now),
+                Err(why) => return red(store, p, &b, &why, now),
             },
         };
         let label = format!("batch-{}.{}.{step}", b.number, b.round);
         let v = vars(store, p, &b, &integration::tree_in(&p.home, &b.project));
         return match runner.start(&label, &folder, &line, &v) {
             Ok(pane) => store.with(|tx| bs::set_pane(tx, b.id, Some(&pane), now)),
-            Err(why) => red(store, &b, &format!("The {step} did not start: {why}"), now),
+            Err(why) => red(store, p, &b, &format!("The {step} did not start: {why}"), now),
         };
     };
     let log = log_of(p, &b.project, &b, step);
@@ -155,14 +156,14 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
         Ok(None) if step == "check" && now - b.step_started.unwrap_or(now) > p.s.check_minutes * 60 => {
             runner.stop(&pane);
             ended(runner, &pane, &log, -1);
-            return red(store, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now);
+            return red(store, p, &b, &format!("The check ran over {} minutes.", p.s.check_minutes), now);
         }
         Ok(None) => return Ok(()),
         Ok(Some(code)) => ended(runner, &pane, &log, code),
     };
     match (step, status) {
         ("check", 0) => store.with(|tx| { bs::set_pane(tx, b.id, None, now)?; bs::round_ends(tx, &b, "green", None, now)?; bs::set_state(tx, b.id, "green", None, now) }),
-        ("check", code) => red(store, &b, &format!("The check ended with status {code}. Its log: {}", log.display()), now),
+        ("check", code) => red(store, p, &b, &format!("The check ended with status {code}. Its log: {}", log.display()), now),
         ("publish", 0) => match target_now(p) {
             Ok(t) => landed(store, p, b, &t, now),
             Err(why) => not_published(store, &b, &why, now),
@@ -177,15 +178,52 @@ fn follow(store: &Store, runner: &dyn Runner, p: &Place, b: Batch, now: i64) -> 
     }
 }
 
-/// A red round: nothing published, the batch's size halved at its first, its integration task told why.
-fn red(store: &Store, b: &Batch, why: &str, now: i64) -> Result<(), String> {
+/// A red round: nothing published, the batch's size halved at its first; its integration agent analyses it while
+/// red rounds are left (AC-194), in a worktree of its own at the candidate; else, or with none, a human decides.
+fn red(store: &Store, p: &Place, b: &Batch, why: &str, now: i64) -> Result<(), String> {
+    let agent = p.s.agent.is_some() && b.red_rounds + 1 < p.s.red_rounds_most;
+    let tree = if agent { agent_tree(p, b) } else { Err(String::new()) };
     store.with(|tx| {
         bs::set_pane(tx, b.id, None, now)?;
         bs::round_ends(tx, b, "red", Some(why), now)?;
         bs::red_round(tx, b)?;
         bs::set_state(tx, b.id, bs::RED, Some(why), now)?;
-        bs::wait_for_human(tx, b, &format!("Batch {}'s round {} is red: {why}", b.number, b.round), now)
+        let said = format!("Batch {}'s round {} is red: {why}", b.number, b.round);
+        match (&tree, p.s.agent.is_some()) {
+            (Ok(t), _) => {
+                tx.execute("UPDATE integration_batches SET agent_state = 'wanted', agent_tree = ?2 WHERE id = ?1", rusqlite::params![b.id, t.display().to_string()]).map_err(|e| e.to_string())?;
+                bs::tell_task(tx, b, &format!("{said} Its integration agent analyses it."), now)
+            }
+            (Err(e), true) if agent => bs::wait_for_human(tx, b, &format!("{said} Its agent could not start: {e}"), now),
+            (_, true) => bs::wait_for_human(tx, b, &format!("{said} {} red rounds: decide by the batch's keys, or change Check.", p.s.red_rounds_most), now),
+            (_, false) => bs::wait_for_human(tx, b, &format!("{said} The project has no integration agent: decide by the batch's keys."), now),
+        }
     })
+}
+
+/// The integration agent's own worktree, at the candidate (§9): made anew for each red round.
+fn agent_tree(p: &Place, b: &Batch) -> Result<PathBuf, String> {
+    let tree = integration::tree_in(&p.home, &b.project).with_file_name(format!("agent-{}", b.number));
+    let candidate = b.candidate.clone().unwrap_or_default();
+    if tree.join(".git").exists() {
+        git::run(&tree, &["checkout", "--quiet", "--detach", "--force", &candidate])?;
+    } else {
+        let _ = git::run(&p.repo, &["worktree", "prune"]);
+        git::run(&p.repo, &["worktree", "add", "--quiet", "--detach", &tree.to_string_lossy(), &candidate])?;
+    }
+    Ok(tree)
+}
+
+/// An ended batch's agent worktree, removed with git.
+fn tidy(store: &Store, home: &Path) -> Result<(), String> {
+    let done: Vec<(i64, String, String)> = store.with(|tx| ops::rows(tx, "SELECT b.id, b.project, b.agent_tree FROM integration_batches b WHERE b.state IN ('ended', 'given up') AND b.agent_tree IS NOT NULL", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
+    for (id, project, tree) in done {
+        if let Ok(p) = place(store, home, &project) {
+            let _ = git::run(&p.repo, &["worktree", "remove", "--force", &tree]);
+        }
+        store.with(|tx| tx.execute("UPDATE integration_batches SET agent_tree = NULL WHERE id = ?1", [id]).map(drop).map_err(|e| e.to_string()))?;
+    }
+    Ok(())
 }
 
 fn not_published(store: &Store, b: &Batch, why: &str, now: i64) -> Result<(), String> {
@@ -283,5 +321,5 @@ fn folder_follows(p: &Place) -> Result<(), String> {
 
 #[cfg(test)]
 #[path = "engine_tests.rs"]
-mod tests;
+pub(crate) mod tests;
 

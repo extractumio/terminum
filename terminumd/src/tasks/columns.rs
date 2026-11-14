@@ -34,7 +34,7 @@ pub fn move_to(tx: &Transaction, author: &str, id: &str, status: &str, at: i64) 
     }
     // a batch's integration task ends with its batch (terminum-integration.md AC-194): its keys decide, not a move
     let live: Option<i64> = tx.query_row("SELECT number FROM integration_batches WHERE task = ?1 AND state NOT IN ('ended', 'given up')", [&task.key], |r| r.get(0)).optional().map_err(sql)?;
-    if let Some(n) = live {
+    if let Some(n) = live && author != super::store::DISPATCHER {
         return Err(format!("{} is batch {n}'s integration task: it ends with its batch.", task.id));
     }
     // a schedule's task is a run from its first moment: it waits for a human, is done or failed, and runs again
