@@ -25,13 +25,29 @@ pub fn arrived(page: &Page, k: Option<u64>) -> Option<KeyRec> {
     page.tracer.lock().key(k.map(|k| k as i64))
 }
 
-/// The keys went to tmux.
-pub fn typed(page: &Page, recs: Vec<Option<KeyRec>>, via: &str) {
-    let mut t = page.tracer.lock();
-    for mut r in recs {
-        t.step(&mut r, "to_tmux_ms", &[("via", json!(via))]);
-        t.typed(r);
+/// Register the key with its first input command, before awaiting tmux's reply. Capture
+/// timestamps use the same lock: an echo cannot reach the page ahead of its trace record.
+pub fn submit(page: &Page, client: &crate::tmux::control::Control, recs: &mut Vec<KeyRec>, lines: Vec<String>)
+    -> impl std::future::Future<Output = Vec<crate::tmux::control::Answer>> + Send + use<>
+{
+    if recs.is_empty() {
+        return client.submit_all(lines);
     }
+    let mut t = page.tracer.lock();
+    let pending = client.submit_all(lines);
+    for mut rec in recs.drain(..).map(Some) {
+        t.step(&mut rec, "to_tmux_ms", &[("via", json!("keys"))]);
+        t.typed(rec);
+    }
+    pending
+}
+
+/// Stamp and queue a capture together with respect to this page's traced input.
+pub fn capture(page: &Page, client: &crate::tmux::control::Control, lines: Vec<String>)
+    -> (Instant, impl std::future::Future<Output = Vec<crate::tmux::control::Answer>> + Send + use<>)
+{
+    let _t = page.tracer.lock();
+    (Instant::now(), client.submit_all(lines))
 }
 
 /// What woke the stream: "key", "output" or "poll".
@@ -79,3 +95,7 @@ pub async fn follow(page: Arc<Page>) {
         page.tracer.lock().probed(result);
     }
 }
+
+#[cfg(test)]
+#[path = "timing_tests.rs"]
+mod tests;
