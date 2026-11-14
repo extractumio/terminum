@@ -125,13 +125,16 @@ pub fn forget(store: &Store, dir: &Path, id: &str) {
     }
 }
 
+/// What `attach` says of a window's file the sweep took; the page knows these words (kanbanutil.js FILE_GONE).
+pub const FILE_GONE: &str = "A file of this window is gone: add it again";
+
 /// The files of a window not yet saved join a task, on `event` of its history.
 pub fn attach(tx: &Transaction, ids: &[String], task: &str, event: Option<&str>) -> Result<(), String> {
     let key = ops::key_of(tx, task)?;
     for id in ids {
         let done = tx.execute("UPDATE files SET task = ?1, event = ?2 WHERE id = ?3 AND task IS NULL", (&key, event, id)).map_err(sql)?;
         if done == 0 {
-            return Err("A file of this window is gone: add it again".into());
+            return Err(FILE_GONE.into());
         }
     }
     Ok(())
