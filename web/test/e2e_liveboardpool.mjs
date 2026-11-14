@@ -36,6 +36,8 @@ export async function agentPool(page, opts, pressAt) {
 
   const said = await page.textContent(pool);
   check("AC-138 a rectangle shows the agent's name, kind and effort", /Fast fixer/.test(said) && /Claude Code/.test(said) && /high/.test(said), said);
+  const meta = await page.evaluate(() => { const s = document.querySelector(".agents .agentcard .s"); return { h: s.getBoundingClientRect().height, lh: parseFloat(getComputedStyle(s).lineHeight) || 1.4 * parseFloat(getComputedStyle(s).fontSize) }; });
+  check("AC-138 its kind and effort stand on one line", meta.h < 1.5 * meta.lh, JSON.stringify(meta));
   check("AC-138 and no dot: nothing of it runs", (await dots()).length === 0, JSON.stringify(await dots()));
   await subscriptionStripes(page, { pool, cli, newPane, envOf, tmux, shots, home: opts.home });
   check("AC-138 a card names no project when one is chosen", !(await page.$(`${card(a)} .cproj`)));

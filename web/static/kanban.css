@@ -91,7 +91,8 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 /* a tick beside a field: centred on it; a touch screen's taller row reaches under it */
 .fieldgrid > .checkrow { margin-bottom: min(0px, (var(--field-h) - var(--key-h)) / 2); }
 .agentlist .item { position: relative; min-width: 0; background: var(--surface-1); border-radius: var(--r-sm); }
-.agentlist .item .s, /* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled by its use's level, the percent;
+.agentlist .item .s, .agentpick .item .s, .agline { padding-left: 20px; }
+/* its subscription's windows (terminum-dispatcher.md AC-168): a label, a thin track filled by its use's level, the percent;
    an old reading fades; in its window the reset time follows the percent */
 .agsubs { display: flex; flex-direction: column; gap: 3px; padding-left: 20px; font-size: var(--fs-meta); color: var(--muted); font-variant-numeric: tabular-nums; }
 .agsubs.stale { opacity: .55; }
@@ -301,6 +302,5 @@ body.board-page { margin: 0; overflow: hidden; background: var(--surface-0); col
 .agentpick .item { grid-template-columns: 10px minmax(0, 1fr); min-width: 0; min-height: 0; padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-1); background: var(--surface-2); border-radius: var(--r-sm); text-align: left; }
 @media (hover: hover) { .agentpick .item:hover { background: var(--surface-3); } }
 .agentpick .item:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); outline: none; }
-.agentpick .item .s, .agline { padding-left: 20px; }
 .agline { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--fs-meta) var(--term-font, monospace); color: var(--muted); }
 .aglast { margin-left: auto; flex: none; font-size: var(--fs-meta); color: var(--muted); }
