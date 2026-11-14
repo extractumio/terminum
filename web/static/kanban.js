@@ -237,6 +237,7 @@ function tabFor(name) {
   const tab = button(null, name, () => showColumn(name));
   tab.dataset.status = name;
   tab.setAttribute("role", "tab");
+  tab.hidden = name === "INTEGRATION";
   return tab;
 }
 
@@ -244,6 +245,7 @@ function tabFor(name) {
 const columns = new Map(COLUMNS.map((column) => {
   const col = el("section", "col"), head = el("h2", "colhead"), count = el("span", "count"), list = el("div", "cards");
   col.dataset.status = column;
+  col.hidden = column === "INTEGRATION";   // until showIntegration says it stands (terminum-integration.md AC-193)
   const keys = sorting.keys(column);
   head.append(el("span", "colname", column), keys, count);
   if (column === "TODO") keys.before(iconButton("icon new", "plus", "New task", "A new task in TODO", () => form.open()));   // AC-106

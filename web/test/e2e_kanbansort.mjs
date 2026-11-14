@@ -44,8 +44,8 @@ export async function webKanbanSort(browser, name) {
     const choose = async (words) => { await page.click("#fproject summary"); await (words === "All projects" ? page.getByRole("button", { name: words, exact: true }) : page.locator("#fproject .projname").filter({ hasText: words })).click(); };
     try {
       await go();
-      check("AC-105 default priority then recent; exactly two labelled keys per column", await first("API-1") && await page.locator('.colsort button').count() === 10 && await page.getAttribute(PRIORITY, "aria-pressed") === "true");
-      const head = await page.$$eval(".colhead", (heads) => heads.map((h) => {
+      check("AC-105 default priority then recent; exactly two labelled keys per column", await first("API-1") && await page.locator('.col:not([hidden]) .colsort button').count() === 10 && await page.getAttribute(PRIORITY, "aria-pressed") === "true");
+      const head = await page.$$eval(".col:not([hidden]) .colhead", (heads) => heads.map((h) => {
         const sort = h.querySelector(".colsort"), count = h.querySelector(".count"), box = h.getBoundingClientRect(), s = sort.getBoundingClientRect(), c = count.getBoundingClientRect();
         return { before: sort.nextElementSibling === count && s.right <= c.left, fits: s.top >= box.top && s.bottom <= box.bottom, keys: [...sort.children].map((b) => { const r = b.getBoundingClientRect(); return [r.width, r.height]; }) };
       }));
