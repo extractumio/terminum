@@ -107,6 +107,12 @@ def main():
     remote_home = os.path.join(t.root, "remote-home")
     os.makedirs(remote_home)
     open(os.path.join(remote_home, "notes.md"), "w").write("# on the host\n")
+    # This Files-only host has no coding agent; never discover the workstation's Claude.
+    stub = os.path.join(remote_home, ".local/bin/claude")
+    os.makedirs(os.path.dirname(stub))
+    with open(stub, "w", encoding="utf8") as f:
+        f.write("#!/bin/sh\nexit 1\n")
+    os.chmod(stub, 0o700)
     # a host's pictures: a PNG, and an SVG that holds script (AC-09: it must never run in terminum's origin)
     png = b"\x89PNG\r\n\x1a\n" + bytes(range(64))          # its bytes come back as they are
     open(os.path.join(remote_home, "shot.png"), "wb").write(png)
