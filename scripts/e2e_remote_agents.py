@@ -118,7 +118,7 @@ def hooks_known(sock, target, evdir, hb):
     out = os.path.join(evdir, "get.out")
     if os.path.exists(out):
         os.unlink(out)
-    stamp = f"{time.time():.0f}"           # the screen still shows the marker of an earlier call
+    stamp = str(time.time_ns())           # the screen still shows the marker of an earlier call
     in_pane(sock, target, f'({hb} mcp < get.in > get.out 2>&1; echo "get-done-"{stamp}) &', f"get-done-{stamp}")
     answers = [json.loads(x) for x in open(out) if x.startswith("{")]
     said = next((a for a in answers if a.get("id") == 2), {}).get("result", {})
@@ -134,7 +134,12 @@ def agents_only(t, home, hb, pane):
     up = until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 15)
     check("setup: agents on, files off, the link up", st == 200 and up.get("agents") == "up" and up.get("files") == "declined", (body, up))
     evdir = os.path.join(home, "proj")
-    in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; ({hb} hook claude < ev0.json; echo "hook-rc=$?") &', "hook-rc=0")
+    # Keep the same foreground program for hooks and MCP children throughout the idle check,
+    # as a real coding agent does. A foreground MCP call from the shell would drop its hooks.
+    open(os.path.join(evdir, "agent-only.sh"), "w").write(
+        f'{hb} hook claude < ev0.json; echo "hook-rc=$?"\n'
+        'while IFS= read -r cmd; do sh -c "$cmd"; done\n')
+    in_pane(REMOTE_SOCKET, pane, f'cd {evdir}; sh agent-only.sh', "hook-rc=0")
     check("AC-99 agents only: the pane's hook state is known", hooks_known(REMOTE_SOCKET, pane, evdir, hb), open(os.path.join(evdir, "get.out")).read()[-400:])
     error, text = file_said(evdir, hb, REMOTE_SOCKET, pane, "T-1")
     check("AC-120 files off: get_file says so, the other tools work", error is True and "Files are off for this host" in text, text)
@@ -176,7 +181,8 @@ def main():
     open(stub, "w").write(STUB)
     os.chmod(stub, stat.S_IRWXU)
     pids = os.path.join(t.root, "ssh-pids")
-    t.through_fake_ssh(home, REMOTE_SOCKET, pids)
+    # The stand-in host owns its shell-probe temporaries too, rather than the client's TMPDIR.
+    t.through_fake_ssh(home, REMOTE_SOCKET, pids, TMPDIR=home)
     os.system(f"tmux -L {REMOTE_SOCKET} kill-server 2>/dev/null")
     other = None
     try:
@@ -187,9 +193,12 @@ def main():
         groups = wait_layout(ws, lambda gs: any(g.get("host") == "devbox" and g["items"] for g in gs), 10) or []
         item = next((g["items"][0] for g in groups if g.get("host") == "devbox" and g["items"]), {})
         key = item.get("id", "")
-        until(lambda: host_rec(t), lambda h: h.get("files") == "enabled", 20)
-        auto = until(lambda: host_rec(t), lambda h: h.get("agents") == "up", 60)
-        check("AC-99 an added host, no click: its agents are turned on by themselves after its files", (auto or {}).get("agents") == "up", auto)
+        files = until(lambda: host_rec(t), lambda h: h.get("files") == "enabled" or h.get("agent") == "failed", 365)
+        check("setup: automatic files setup completes", files.get("files") == "enabled", files)
+        # These are setup operations, not timing budgets: use their CLI deadlines (AC-99),
+        # stopping early on a reported failure so a failed probe is never hidden by a retry.
+        auto = until(lambda: host_rec(t), lambda h: h.get("agents") == "up" or str(h.get("agents", "")).startswith("failed:"), 635)
+        check("AC-99 an added host, no click: its agents are turned on by themselves after its files", (auto or {}).get("agents") == "up", (auto, t.log()))
 
         # 2. agents on, by the user: the same result lines
         st, body = unix_request(t.sock, "POST", "/hosts/agents-on", {"name": "devbox"})
