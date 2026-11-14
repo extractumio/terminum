@@ -17,7 +17,7 @@ import time
 from functools import partial
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_layout  # noqa: E402
+from e2e_ws import Terminumd, check, results, summary, tmux_on, wait_for, wait_layout  # noqa: E402
 from testrun import free_port, own, short_tmp  # noqa: E402
 
 PORT, SOCKET = free_port(), own("tm-test-core")
@@ -147,13 +147,14 @@ def main():
         # AC-07 Clone and AC-92 projects: a window right after the row's in its folder; a project's
         # Clone and [+] join it; a closed pane leaves it, an empty project goes
         win_of = lambda k: tmux("display", "-p", "-t", k.rsplit(":", 1)[-1], "#{session_name}:#{window_index}").strip()
+        path_of = lambda k: tmux("display", "-p", "-t", k.rsplit(":", 1)[-1], "#{pane_current_path}").strip()
         time.sleep(1.1)
         ws.send({"t": "clone", "id": created["id"]})
         twin = ws.until(lambda m: m["t"] in ("created", "error"), 5)
         before, after = win_of(created["id"]), twin and win_of(twin.get("id", "x:%0"))
         check("AC-07 Clone opens a window right after the row's, in its folder",
               twin and twin["t"] == "created" and after == f"{before.split(':')[0]}:{int(before.split(':')[1]) + 1}"
-              and tmux("display", "-p", "-t", twin["id"].rsplit(":", 1)[-1], "#{pane_current_path}").strip() == os.path.realpath(odd), (before, after, twin))
+              and path_of(twin["id"]) == os.path.realpath(odd), (before, after, twin))
         ws.send({"t": "project", "action": "add", "id": created["id"]})
         made = ws.until(lambda m: m["t"] == "projects" and m["items"], 5)
         pj = (made or {"items": [{}]})["items"][0]
@@ -168,12 +169,25 @@ def main():
         wait_layout(ws, lambda gs: win_of(twin["id"]).endswith(":0"), 5)
         check("AC-92 a tmux group's reorder leaves a project's window in its place", win_of(twin["id"]).endswith(":0") and win_of(created["id"]) == place,
               (place, win_of(created["id"]), win_of(twin["id"])))
+        # the session moves out of the project's folder: its Clone follows the session, the [+] the project
+        tmux("send-keys", "-t", created["id"].rsplit(":", 1)[-1], f"cd {work}", "Enter")
+        moved_off = wait_for(lambda: path_of(created["id"]), lambda v: v == os.path.realpath(work), 5, last=True) == os.path.realpath(work)
         time.sleep(1.1)
         ws.send({"t": "clone", "id": created["id"]})
         joined = ws.until(lambda m: m["t"] == "projects" and len(m["items"][0]["members"]) == 2, 5)
         third = ws.until(lambda m: m["t"] in ("created", "error"), 5)
-        check("AC-92 a project's session cloned: the window joins the project after it", joined and third and joined["items"][0]["members"] == [created["id"], third["id"]], joined)
+        third_at = third and third["t"] == "created" and path_of(third["id"])
+        check("AC-92 a project's session cloned: the window joins the project after it, in the session's folder, not the project's",
+              moved_off and joined and third and joined["items"][0]["members"] == [created["id"], third["id"]]
+              and third_at == os.path.realpath(work), (joined, third_at))
+        time.sleep(1.1)
+        ws.send({"t": "clone", "id": created["id"], "project": pj.get("id")})
+        fourth = ws.until(lambda m: m["t"] in ("created", "error"), 5)
+        fourth_at = fourth and fourth["t"] == "created" and path_of(fourth["id"])
+        check("AC-92 the project's [+] after its session opens in the project's folder", fourth_at == os.path.realpath(odd), (fourth, fourth_at))
         tmux("kill-pane", "-t", third["id"].rsplit(":", 1)[-1])
+        if fourth and fourth["t"] == "created":
+            tmux("kill-pane", "-t", fourth["id"].rsplit(":", 1)[-1])
         # a member added a moment ago is kept 5 s (its window may not be listed yet), then the list is read again
         left = ws.until(lambda m: m["t"] == "projects" and m["items"] and m["items"][0]["members"] == [created["id"]], 8)
         check("AC-92 a pane closed leaves its project", left is not None)
@@ -202,18 +216,24 @@ def main():
 
         # AC-38: ?trace=1 times a key from its arrival to the frame that shows it, into logs/
         ws.send({"t": "trace", "on": True})
-        on = ws.until(lambda m: m["t"] == "trace" and "on" in m, 5)
+        on = ws.until(lambda m: m["t"] == "trace" and "on" in m, 15)
         ws.send({"t": "in", "data": "z", "k": 77})
-        traced = ws.until(lambda m: m["t"] == "screen" and any(k.get("k") == 77 for k in (m.get("tr") or {}).get("ks", [])), 5)
+        traced = ws.until(lambda m: m["t"] == "screen" and any(k.get("k") == 77 for k in (m.get("tr") or {}).get("ks", [])), 15)
         ws.send({"t": "in", "data": "\x15"})
         ws.send({"t": "trace", "on": False})
-        ws.until(lambda m: m["t"] == "trace", 5)
+        off = ws.until(lambda m: m["t"] == "trace" and m.get("on") is False, 15)
         logs = os.path.join(t.home, "logs")
-        files = [f for f in os.listdir(logs) if f.startswith("trace-")] if os.path.isdir(logs) else []
-        body = open(os.path.join(logs, files[0])).read() if files else ""
-        check("AC-38 a traced key comes back with its stages in the frame", on and on.get("on") and traced is not None,
-              traced and traced["tr"]["ks"][0])
-        check("AC-38 the trace is written without typed text", files and '"k":77' in body.replace(" ", "") and '"z"' not in body, files)
+        path = os.path.join(logs, (on or {}).get("file", ""))
+
+        def recorded(text):
+            return any(r.get("ev") == "key" and r.get("k") == 77
+                       for r in (json.loads(line) for line in text.splitlines(keepends=True) if line.endswith("\n")))
+
+        body = wait_for(lambda: open(path).read() if os.path.isfile(path) else "", recorded, 15, last=True)
+        stages = next((k for k in (traced or {}).get("tr", {}).get("ks", []) if k.get("k") == 77), {})
+        check("AC-38 a traced key comes back with its stages in the frame", on and on.get("on") and
+              all(type(stages.get(k)) in (int, float) for k in ("to_tmux_ms", "until_change_ms", "capture_ms", "encode_ms", "total_ms")), stages)
+        check("AC-38 the trace is written without typed text", off and recorded(body) and '"z"' not in body, path)
 
         # AC-06: a program that asked for the mouse gets SGR reports for clicks and the wheel (a
         # page's frame of wheel steps as one message with their count), in order with the keys

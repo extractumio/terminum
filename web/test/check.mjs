@@ -24,6 +24,14 @@ export const ranToItsEnd = (e, name = "ran to its end") => {
   const lines = String(e.stack ?? e).split("\n"), at = lines.findIndex((l) => /^\s+at /.test(l));
   check(name, false, lines.slice(0, at < 0 ? undefined : at + 1).join(" | "));
 };
+/** WebKit reports a load that failed as the page's error, "Fetch API cannot load … due to access control
+ *  checks", though the code caught it (the Panel's reads while terminumd restarts: AC-14, AC-34); said, not counted. */
+export const recordLivePageError = (errors, name, e) => {
+  const said = String(e.stack ?? e);
+  // the stack's first line: Playwright cuts a message at its first colon, the one in "http:"
+  if (/^(Error: )?Fetch API cannot load \S+ due to access control checks\.?$/.test(said.split("\n")[0])) console.log(`NOTE [${name}] WebKit's own report of a failed load: ${said.split("\n")[0]}`);
+  else errors.push(said);
+};
 export const within = async (name, fn, ms = 5000) => {
   const t0 = Date.now();
   try { await fn(ms); check(name, true, `${Date.now() - t0} ms`); } catch (e) { check(name, false, e.message.split("\n")[0]); }

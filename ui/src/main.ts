@@ -156,7 +156,7 @@ async function applyWorkspace(pane: Pane) {
   const sameTree = ws?.root === pane.root && tree.root?.path === pane.root &&
     JSON.stringify([...tree.expanded].sort()) === JSON.stringify([...pane.expanded].sort());
   ws = pane; // restoring it below is then a no-op for saveNow
-  if (sameTree) { tree.selected = new Set(pane.selected); tree.queue(); }
+  if (sameTree) { tree.pick(); tree.selected = new Set(pane.selected); tree.queue(); }
   else await tree.setRoot(pane.root, pane.expanded, pane.selected, pane.scroll);
   if (key !== paneKey || ws !== pane) return;
   viewer.refreshTools();
@@ -370,9 +370,11 @@ const viewer = new Viewer($("tabs"), $("tools"), $("vbody"), {
 });
 let pathBar: PathBar | null = null; // viewer window only
 let pageRoot: { path: string; host: string | null } | null = null; // View: the folder the page's Files shows (the page says)
-/** Reveal in tree: its folders expand, it is selected; a file outside the tree's folder (the pane's) says so. */
+/** Reveal in tree: its folders expand, it is selected; a file outside the tree's folder (the pane's) says so.
+ *  A newer selection or root meanwhile wins, silently. */
 function revealInTree(p: string) {
-  void tree.reveal(p, true).then((found) => {
+  void tree.reveal(p, true, tree.pick()).then((found) => {
+    if (found === null) return;
     if (!found) return toast(tree.root && !isUnder(p, tree.root.path) ? `Not in this tree: ${p} is outside ${tree.root.path}` : `Not found in the tree: ${p}`);
     tree.selected = new Set([p]);
     tree.queue();

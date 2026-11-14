@@ -397,7 +397,7 @@ Scenario: AC-07 happy path — Clone and the row's menu
   And a tmux session's group has a menu as a row's, on a right click on its header and on its ⋯ (a host's or an attached session's ⋯ keeps its own menu): New Window (a window after its last row, as Clone), Rename… (asks with the group's name; renames its tmux session, the name taken literally, `:` and `.` refused in words; the group keeps its fold, its place: AC-92), Move to the Top, Up, Down, to the Bottom (among the list's projects and groups, every page's, as a drag; AC-92), Close Group… (red: asks "Close the group <name> and its N sessions? …", then closes each); collapsed or filtered, the group keeps them: its sessions come from the list, not from its rows drawn
   And a pane under its window (a coding agent's subagent, a quick shell) has none: the pointer over it shows no Clone, its window's stays on that window's own row, at its middle
   When the user presses Clone on window "api" (or picks Clone in its menu)
-  Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane within 2 s (the `new` message, a group's window after the shown pane's, stays for scripts); a session of a project gives the project's window (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
+  Then terminumd runs "new-window -a -t @2 -c '/Users/alex/work/api'" (right after it, in its folder, a shell: its program is not copied) and the page shows the new pane within 2 s (the `new` message, a group's window after the shown pane's, stays for scripts); a session of a project gives the project's window, in the session's own folder, not the project's (AC-92); one a second per client, as New window; a host that is not attached offers no Clone
   When the user right-clicks a row, or rests a finger on it (0.35 s) and lifts it without moving
   Then a modal menu opens there (the page shaded behind it; a press outside closes it and reaches nothing under it; Esc too; below the finger; from the keyboard's menu key or ⇧F10 at the row, ↑ ↓ through it): Close Session first (asked first: "Close the session api? The program running in it (claude) ends."; the keys' focus starts on the item after it), then Clone, Add to Project…, Remove from <project> (in one), Move to the Top, Move Up, Move Down, Move to the Bottom (those its place allows); its head names the session and has × to close it
   And a move reorders the row among its group's rows: a tmux session's windows in tmux ("swap-window"), a project's sessions in the project
@@ -711,7 +711,7 @@ Scenario: AC-92 happy path — a project
   Then "docs" joins Group 1 (a session is in one project at most: added to another, it moves); Group 2 takes the next color
 Scenario: AC-92 happy path — new sessions, order, names
   When the user presses the project's [+]
-  Then the window opens as above (the session's own folder when the project's is gone; a project of a host's, in the one session terminumd holds there, terminum-remote.md OQ-81) and joins the project; Clone of a project's session joins it right after that session
+  Then the window opens as above (the session's own folder when the project's is gone; a project of a host's, in the one session terminumd holds there, terminum-remote.md OQ-81) and joins the project; Clone of a project's session joins it right after that session, in that session's folder ("Clone: a new window in its folder"), whatever the project's
   When the user drags a session in it (as a row is dragged, AC-07), or picks a move in a session's menu
   Then its sessions are in that order
   When a session's coding agent takes a message (its main agent's prompt, from the user or Dispatcher: its hooks' UserPromptSubmit; never its own turns or a subagent's, AC-90)
@@ -725,7 +725,7 @@ Scenario: AC-92 failure — a folder that is not there
   Given project "api" on host devbox.example with no session, its folder /srv/api gone there
   When the user presses its [+]
   Then no window opens and the list says "The folder /srv/api does not exist on devbox.example.", as on this Mac it says "The folder /srv/api does not exist."
-  And Clone of a session of a project whose folder is gone opens in that session's own folder, on a host as here
+  And the [+] of a project whose folder is gone, with a session, opens in its last session's own folder, on a host as here
 Scenario: AC-92 edge — the shown session closes
   When the session or pane a page shows closes (from any page, or its program ended)
   Then the page shows the first session the list has in the same project, top to bottom; outside projects the first of the same tmux group
@@ -954,6 +954,11 @@ Scenario: AC-152 edge — nothing in the period
 Scenario: AC-152 failure — the numbers cannot be read
   When terminumd cannot read the store
   Then the page says "The numbers could not be read: <terminumd's message>" over the tab last drawn
+
+Scenario: AC-152 failure — the projects cannot be read
+  When the answer of the projects fails, is cut off or holds no projects
+  Then the page says "The projects could not be read: <why>", draws the numbers of all projects, and throws nothing
+  And the next numbers read the projects again; once read, the message goes and the menu holds them
 ```
 
 ### AC-165 — One question at a time [MUST / P0]
@@ -1457,7 +1462,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-05 — web/test/e2e_screen.mjs, web/test/e2e_appscreen.mjs, web/test/e2e_codex.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_sizing.py
 - [x] AC-06 — web/test/e2e_screen.mjs, web/test/e2e_progcopy.mjs, web/test/e2e_liveclip.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_core.py
 - [x] AC-07 — web/test/e2e_tmux.mjs, web/test/e2e_move.mjs, web/test/e2e_listdrag.mjs, web/test/e2e_foot.mjs, web/test/e2e_idekeys.mjs, web/test/recent.test.mjs, scripts/e2e_core.py
-- [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
+- [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, `node web/test/e2e_live.mjs signin` (a renewed context, delayed sign-in installation and a genuine refusal), web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs

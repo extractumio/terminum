@@ -122,7 +122,10 @@ export async function agentPool(page, opts, pressAt) {
   const offered = async () => (await j(`/api/tasks/${c}/run`)).agents?.find((x) => x.id === fixer)?.full?.close;
   check("AC-141 once two walks are quiet the idle holder can be closed", await until(offered, 15000), JSON.stringify(await offered()));
   const idlePane = await paneOf(a);
+  // each press only once the agent has drawn its box: a screen read before the redraw sees the box as it was
+  const screen = () => tmux("capture-pane", "-p", "-t", idlePane);
   tmux("send-keys", "-t", idlePane, "-l", "a draft in its box");
+  check("AC-141 the draft is in its box", await until(() => screen().includes("a draft in its box")), screen());
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   check("AC-141 the window says what holds it and names the key", /at its limit of 1: [^;]+ (is|are) idle\./.test(await page.textContent("#runnone")) && /Close .*'s session and run/.test(await page.textContent("#rungo")), await page.textContent("#rungo"));
@@ -131,12 +134,15 @@ export async function agentPool(page, opts, pressAt) {
   check("AC-141 a draft in its box stops it: said, nothing closed", await until(async () => /no longer idle/.test(await page.textContent("#runerror"))) && paneAlive(tmux, idlePane), await page.textContent("#runerror"));
   await page.click('#runbox button[value="cancel"]');
   tmux("send-keys", "-t", idlePane, "C-u");
+  check("AC-141 Ctrl+U empties its box", await until(() => !screen().includes("a draft in its box")), screen());
   await pressRun(page, c);
   await page.waitForSelector("#runbox[open]");
   await page.fill("#runmessage", "WORKS");
   await page.click("#rungo");
   check("AC-141 with its box empty it closes the holder", await until(() => !paneAlive(tmux, idlePane), 15000));
-  check("AC-141 and says so on its task", await until(async () => /Session ended: closed for/.test(JSON.stringify((await j(`/api/tasks/${a}`)).history))));
+  const historyOfA = async () => (await j(`/api/tasks/${a}`)).history.map((e) => e.text).join(" | ");
+  // "closed 5 minutes after DONE" instead: AC-125's close came first, the press too late for TM_TEST_CLOSE_AFTER
+  check("AC-141 and says so on its task", await until(async () => /Session ended: closed for/.test(await historyOfA())), await historyOfA());
   check("AC-141 and the third starts in the slot", await hasStatus(c, "IN PROGRESS"), await status(c));
   check("AC-138 a dot for it", await dotted((d) => d.length === 1 && d[0].includes(c)), JSON.stringify(await dots()));
   tmux("kill-pane", "-t", await paneOf(c));

@@ -200,7 +200,8 @@ pub(super) fn claude(ctx: &Ctx, wait: std::time::Duration, args: &[&str]) -> Res
     let prog = on_path(ctx, "claude").ok_or("claude is not on PATH")?;
     let mut cmd = std::process::Command::new(prog);
     cmd.args(args).env("PATH", ctx.var("PATH").unwrap_or(""));
-    let out = super::launch::run_timeout(cmd, wait).map_err(|e| format!("claude {}: {e}", args.join(" ")))?;
+    let run = if ctx.host_mode { super::launch::run_host_timeout } else { super::launch::run_timeout };
+    let out = run(cmd, wait).map_err(|e| format!("claude {}: {e}", args.join(" ")))?;
     let said = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr)).trim().to_string();
     if out.status.success() { Ok(said) } else { Err(format!("claude {}: {said}", args.join(" "))) }
 }

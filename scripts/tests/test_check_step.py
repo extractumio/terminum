@@ -8,11 +8,13 @@ import os
 from pathlib import Path
 import signal
 import shlex
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock, patch
 
 GUARD = str(Path(__file__).resolve().parents[1] / "check_step.py")
 GUARD_WAIT_S = 60   # 15 s settling, bounded native directory queries, and process termination
@@ -50,7 +52,86 @@ class OwnSockets(unittest.TestCase):
         self.assertFalse(self.run_child("pass"))
 
 
+class SignalForwarding(unittest.TestCase):
+    """AC-102: a ready child may run before Popen returns its process group to the guard."""
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("check_step_signal", GUARD)
+        self.step = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.step)
+
+    def test_a_signal_during_spawn_reaches_only_the_new_group(self):
+        for number in (signal.SIGTERM, signal.SIGHUP, signal.SIGINT):
+            for ended in (False, True):
+                with self.subTest(signal=number, group_already_ended=ended):
+                    child = Mock(pid=421)
+                    kill = Mock(side_effect=ProcessLookupError if ended else None)
+
+                    def spawn(*args, **kwargs):
+                        signal.getsignal(number)(number, None)
+                        signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
+                        kill.assert_not_called()
+                        self.assertTrue(kwargs["start_new_session"])
+                        return child
+
+                    with patch.object(self.step.subprocess, "Popen", side_effect=spawn), \
+                         patch.object(self.step.owned_children, "register"), patch.object(self.step.os, "killpg", kill):
+                        with self.assertRaises(SystemExit) as exit_:
+                            with self.step.GuardCancellation() as cancelled:
+                                self.assertEqual(self.step.run(["unused"], "unused", cancelled),
+                                                 (child, 128 + number, child.pid))
+                                self.assertTrue(cancelled.forward(child.pid))
+                                self.assertFalse(cancelled.forward(child.pid))
+                    self.assertEqual(exit_.exception.code, 128 + number)
+                    kill.assert_called_once_with(child.pid, number)
+
+    def test_a_signal_while_waiting_reaches_the_child_group(self):
+        child = Mock(pid=422)
+
+        def waiting(_):
+            signal.getsignal(signal.SIGINT)(signal.SIGINT, None)
+            return None
+
+        with patch.object(self.step.subprocess, "Popen", return_value=child), \
+             patch.object(self.step.owned_children, "register"), patch.object(self.step, "unreaped_status", side_effect=waiting), \
+             patch.object(self.step.os, "killpg") as kill:
+            with self.assertRaises(SystemExit) as exit_:
+                with self.step.GuardCancellation() as cancelled:
+                    self.assertEqual(self.step.run(["unused"], "unused", cancelled),
+                                     (child, 128 + signal.SIGINT, child.pid))
+                    cancelled.forward(child.pid)
+            self.assertEqual(exit_.exception.code, 130)
+        kill.assert_called_once_with(child.pid, signal.SIGINT)
+
+
 class Guard(unittest.TestCase):
+    def test_failed_directory_inspection_reports_files_ends_known_children_and_keeps_root(self):  # AC-102
+        harness = (f"import sys\nsys.path.insert(0, {str(Path(GUARD).parent)!r})\n"
+                   "import check_step\nfrom process_cwd import InspectionError\n"
+                   "def failed_inspection(_):\n raise InspectionError('lsof timed out')\n"
+                   "check_step.working_in=failed_inspection\n"
+                   "sys.exit(check_step.main(sys.argv[1:]))")
+        folder = None
+        pid = None
+        with tempfile.NamedTemporaryFile("r", suffix=".where") as where:
+            try:
+                command = f'touch "$TMPDIR/x"; sleep 61 >/dev/null 2>&1 & echo "$TMPDIR $!" > {where.name}'
+                run = subprocess.run([sys.executable, "-I", "-c", harness, "sh", "-c", command],
+                                     capture_output=True, text=True, timeout=GUARD_WAIT_S)
+                folder, pid_text = where.read().strip().split()
+                pid = int(pid_text)
+                self.assertNotEqual(run.returncode, 0, run.stderr)
+                self.assertIn("ownership inspection failed", run.stderr)
+                self.assertIn("lsof timed out", run.stderr)
+                self.assertIn("LEFT x", run.stderr)
+                self.assertIn(f"LEFT process {pid}", run.stderr)
+                self.assertTrue(Path(folder, "x").exists(), "unknown ownership must retain the root")
+                self.assertTrue(gone(pid), f"known child {pid} still runs")
+            finally:
+                if pid is not None and not gone(pid, seconds=0.1):
+                    os.kill(pid, signal.SIGKILL)
+                if folder:
+                    shutil.rmtree(folder)
+
     def test_a_clean_run_passes(self):
         status, err, folder = guarded('[ "$TMUX_TMPDIR" = "$TMPDIR" ] && mkdir "$TMPDIR/d" && touch "$TMPDIR/d/f" && rm -r "$TMPDIR/d"')
         self.assertEqual((status, err), (0, ""))

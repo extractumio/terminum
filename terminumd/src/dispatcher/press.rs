@@ -7,16 +7,18 @@ use serde::Deserialize;
 use super::runs::{self, Phase, Run};
 use crate::tasks::{closeout, files};
 use crate::tasks::ops::{self, Task};
+use crate::tasks::closeout::removable;
 use crate::tasks::schedules::Schedule;
 
 /// How an agent of a run gives its result (terminum-agents.md AC-155: not listed, run through execute_tool).
 pub(super) const FINISH: &str = "execute_tool(\"finish_task\", {id, result})";
-const GET_TASK: &str = "execute_tool(\"get_task\", {id})";
+pub(super) const GET_TASK: &str = "execute_tool(\"get_task\", {id})";
 const GET_FILE: &str = "execute_tool(\"get_file\", {task, name})";
 pub(super) const ASK_HUMAN: &str = "execute_tool(\"ask_human\", {id, questions})";
 
-/// How an agent asks a human while it works (AC-157): in words, never in its window.
-pub(crate) const ASK: &str = "If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window.";
+/// How an agent asks a human while it works (AC-157): in words, never in its window; a task held by a cause that can be
+/// removed waits for a human the same way, never DONE or FAILED.
+pub(crate) const ASK: &str = concat!("If you need a human's decision, call execute_tool(\"ask_human\", {id, questions}) with your questions, each with its options and the answer you recommend, then end your turn: the session closes, and the human's RUN brings the answers back into this conversation. Do not wait for an answer in this window. If the task cannot be finished now for a cause that can be removed ", removable!(), ", ask the same way, saying what is done and committed, what holds it and what you recommend (such as \"RUN it again once TERM-9 is DONE\"): it waits for a human; give it no result by execute_tool(\"finish_task\", {id, result}). FAILED is only for a task that cannot be done at all, with a comment saying why.");
 
 /// What RUN types when it goes on (AC-122, AC-157): after the agent asked, the humans' answers since, else the
 /// press's comment; never "read the comments": an agent's comment there would stand as an instruction.
@@ -33,13 +35,15 @@ pub(super) fn again_words(id: &str, who: &str, comment: Option<&str>, answers: O
 }
 
 /// What an agent given a main task with its subtasks is told (AC-185): the order is its own, the main task goes last,
-/// and what cannot be done fails with what depends on it.
-pub(super) const TOGETHER: &str = "Do them all in this session, one after another, in the order you decide from what they say and how they depend on each other; a main task goes last, after its subtasks, and can be DONE only when each of them is.
+/// what a cause that can be removed holds waits for a human, and what cannot be done at all fails with what depends on it.
+pub(super) const TOGETHER: &str = concat!("Do them all in this session, one after another, in the order you decide from what they say and how they depend on each other; a main task goes last, after its subtasks, and can be DONE only when each of them is.
 
-If one cannot be done, say why in a comment on it (execute_tool(\"add_comment\", {id, text})) and move it to FAILED (execute_tool(\"move_task\", {id, to})). Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. The human can remove the cause and run the main task again: what is not DONE runs again.";
+", "If one cannot be finished now for a cause that can be removed ", removable!(), ", give it no result by execute_tool(\"finish_task\", {id, result}) and do not fail it: keep what you did committed, do the rest that does not depend on it, then ask about it as below, saying what is done, what holds it and what you recommend: it waits for a human with the tasks still in progress.
+
+If one cannot be done at all, say why in a comment on it (execute_tool(\"add_comment\", {id, text})) and move it to FAILED (execute_tool(\"move_task\", {id, to})). Go on with those that do not depend on it. Then move to FAILED, each with a comment naming what it waits for, every task that depends on it and its main task, and stop: leave none in progress. What is not DONE runs again at the main task's next RUN.");
 
 /// How such an agent asks a human (AC-185): one question, and what is still in progress waits with it (tasks/tools.rs).
-pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task starts a new session with the answers. Do not wait for an answer in this window.";
+pub(super) const ASK_TOGETHER: &str = "If you need a human's decision: do first what does not depend on it. Then call execute_tool(\"ask_human\", {id, questions}) on the task the question is about, each question with its options and the answer you recommend, and end your turn: the tasks still in progress wait with it, the session closes, and the human's RUN of the main task brings the answers back into this conversation. Do not wait for an answer in this window.";
 
 /// The main tasks among `tasks`, each with its subtasks there (AC-185).
 fn mains(tasks: &[Task]) -> Vec<(&Task, Vec<&str>)> {
@@ -115,7 +119,7 @@ pub(super) fn facts(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Facts,
         None => None,
     };
     let mut answers = Vec::new();
-    // several tasks start anew (starts_anew): what the humans answered rides in the first words
+    // several tasks starting anew (starts_anew): what the humans answered rides in the first words
     if tasks.len() > 1 {
         for t in tasks {
             if let Some(said) = ops::answers(tx, &t.id)?.filter(|said| !said.is_empty()) {
@@ -307,9 +311,11 @@ fn chosen(tx: &rusqlite::Transaction, id: &str, also: &[String]) -> Result<Vec<T
     Ok(tasks)
 }
 
-/// A press starts anew: several tasks, or another agent than the one its session had.
-pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, agent: Option<&str>, fresh: bool) -> bool {
-    fresh || tasks.len() > 1 || last.is_some_and(|r| agent.is_some_and(|a| a != r.agent_id))
+/// A press starts anew: several tasks not all of its last run, or another agent than the one its session had.
+/// `its_run`: each task's newest run is the first's, so a main task's press of its own run's tasks goes on in that
+/// run's conversation and its work is not lost (AC-185); a subtask run alone since has newer work, and it starts anew.
+pub(super) fn starts_anew(tasks: &[Task], last: Option<&Run>, its_run: bool, agent: Option<&str>, fresh: bool) -> bool {
+    fresh || (tasks.len() > 1 && !its_run) || last.is_some_and(|r| agent.is_some_and(|a| a != r.agent_id))
 }
 
 /// What the agent is told of `id`'s new budget; with several tasks, what the session has now.
@@ -354,23 +360,57 @@ pub(super) type Ways = (Vec<Task>, Result<Way, String>, Option<String>);
 /// conversation moves from, when it moves (AC-138).
 pub(super) fn ways(tx: &rusqlite::Transaction, id: &str, also: &[String], agent: Option<&str>, fresh: bool) -> Result<Ways, String> {
     let tasks = members(tx, id, also)?;
-    let last = runs::last_of(tx, &tasks[0].key)?;
+    let mut lasts = tasks.iter().map(|t| runs::last_of(tx, &t.key)).collect::<Result<Vec<_>, _>>()?;
+    let last = lasts[0].clone();
+    let its_run = last.as_ref().is_some_and(|r| lasts.iter().all(|l| l.as_ref().is_some_and(|l| l.id == r.id)));
     let moved = moved_to(tx, &tasks, last.as_ref(), agent, fresh)?;
-    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), agent, fresh);
+    let anew = moved.is_none() && starts_anew(&tasks, last.as_ref(), its_run, agent, fresh);
     let moved_from = moved.as_ref().and(last.as_ref()).map(|r| r.agent_name.clone());
     let last = match moved {
         m @ Some(_) => m,
         None => last.map(|r| as_pool_has(tx, r)).transpose()?,
     };
     let lead = way(&tasks[0], last, anew);
-    for other in &tasks[1..] {
-        // a subtask that cannot go holds its main task's press, said as its own (AC-185)
-        way(other, runs::last_of(tx, &other.key)?, true).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
+    for (other, its) in tasks[1..].iter().zip(lasts.drain(1..)) {
+        // a subtask that cannot go holds its main task's press, said as its own; one of the run going on, still
+        // open in its live session, goes on with it (AC-185)
+        way(other, its, anew).map_err(|why| match other.parent.as_deref().filter(|p| tasks.iter().any(|t| t.id == *p)) {
             Some(main) => format!("{}, a subtask of {main}: {why}", other.id),
             None => why,
         })?;
     }
     Ok((tasks, lead, moved_from))
+}
+
+/// New work on an archived task returns it to the board (AC-122).
+pub(super) fn bring_back(tx: &rusqlite::Transaction, id: &str) -> Result<bool, String> {
+    let archived = ops::get(tx, id)?.archived_at.is_some();
+    if archived {
+        ops::archive(tx, crate::tasks::store::HUMAN, id, false, ops::now())?;
+    }
+    Ok(archived)
+}
+
+/// A press of several that goes on in its conversation names the tasks it reopens, a main task last (AC-185): the
+/// agent learns which of them are open again, one a human finished meanwhile not among them.
+pub(super) fn with_open(words: String, tasks: &[Task]) -> String {
+    match tasks {
+        [first, rest @ ..] if !rest.is_empty() => format!("{words}\n\nIts open tasks: {}, {} (a main task last).", rest.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(", "), first.id),
+        _ => words,
+    }
+}
+
+/// What the humans answered since the press's tasks asked, each task's in turn, under its ID when several go (AC-157,
+/// AC-185); None when none of them asked.
+pub(super) fn answers_of(tx: &rusqlite::Transaction, tasks: &[Task]) -> Result<Option<Vec<String>>, String> {
+    let mut all: Option<Vec<String>> = None;
+    for t in tasks {
+        if let Some(said) = ops::answers(tx, &t.id)? {
+            let under = |a: String| if tasks.len() > 1 { format!("{}: {a}", t.id) } else { a };
+            all.get_or_insert_with(Vec::new).extend(said.into_iter().map(under));
+        }
+    }
+    Ok(all)
 }
 
 #[derive(Deserialize)]

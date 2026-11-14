@@ -42,6 +42,19 @@ export async function pressCard(page, id) {
   }
   throw new Error(`three presses on ${id}'s card opened no window`);
 }
+/** terminumd's answers to `method` on `url` held until `release()`, or lost by `release("abort")`; `sent()` counts
+ *  the requests. */
+export async function hold(page, url, method) {
+  let release, sent = 0;
+  const gate = new Promise((r) => { release = r; });
+  const handler = async (route) => {
+    if (route.request().method() !== method) return route.fallback();
+    sent++;
+    return await gate === "abort" ? route.abort() : route.continue();
+  };
+  await page.route(url, handler);
+  return { sent: () => sent, release, end: () => page.unroute(url, handler) };
+}
 /** A press on a card's Run key: a folded card no agent ran shows the key only when whole (terminum-kanban.md AC-159). */
 export async function pressRun(page, id) {
   await showRun(page, id);
@@ -54,6 +67,16 @@ export async function showRun(page, id) {
 }
 /** A key's focus ring as the page draws it (docs/UI-GUIDELINES.md "Focus"): lit, focused, matching :focus-visible. */
 export const ring = (page, sel) => page.$eval(sel, (b) => ({ lit: getComputedStyle(b).outlineStyle !== "none", focused: document.activeElement === b, visible: b.matches(":focus-visible") }));
+/** A press on `sel`; `close` shuts what it opened (Esc by default); then a key typed: Chrome lights a focused key's
+ *  ring by either. Answers `ring`. */
+export async function pressed(page, sel, close = () => page.keyboard.press("Escape")) {
+  await page.click(sel);
+  await nap(250);
+  await close();
+  await nap(250);
+  await page.keyboard.press("Shift+ArrowRight");
+  return ring(page, sel);
+}
 /** Tab as a Mac's browser takes it to a key: WebKit with Option, as Safari. */
 export const tabKey = (page) => page.keyboard.press(page.context().browser().browserType().name() === "webkit" ? "Alt+Tab" : "Tab");
 export const rpc = (id, method, params) => JSON.stringify({ jsonrpc: "2.0", ...(id === null ? {} : { id }), method, ...(params ? { params } : {}) });
@@ -63,11 +86,11 @@ export const mcpOpening = [rpc(1, "initialize", { protocolVersion: "2025-06-18",
 export function boardKit(page, { base, tmux, work, bin, home, app }) {
   const cli = path.join(ownTmp("tmb-"), "terminum");
   fs.symlinkSync(bin, cli);
-  /** A request by the page's own fetch, which signs in (signin.js): right after a navigation the browser's may
-   *  still stand, and its request goes out signed out (seen once in WebKit). A 401 throws terminumd's words. */
+  /** A request by this document's signed fetch: await its module rather than guessing readiness from
+   *  the function's source or sending unsigned after a polling deadline. A 401 throws terminumd's words. */
   const j = async (p, method = "GET", body) => {
     const r = await page.evaluate(async ([p, method, body]) => {
-      for (let i = 0; i < 100 && /\[native code\]/.test(String(window.fetch)); i++) await new Promise((ok) => setTimeout(ok, 100));
+      await import("/signin.js");
       const r = await fetch(p, { method, headers: method === "GET" ? undefined : { "Content-Type": "application/json" }, body: method === "GET" ? undefined : JSON.stringify(body ?? {}) });
       return { code: r.status, ...(await r.json().catch(() => ({}))) };
     }, [p, method, body]);

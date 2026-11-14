@@ -176,7 +176,7 @@ Scenario: AC-53 error — gone or not a regular file
 Scenario: AC-54 happy path — rendered by default, source on a click
   When the user clicks "README.md"
   Then the tab opens Rendered: proportional text, headings, tables, task lists, footnotes, fenced ```rust highlighted (as the editor highlights it), relative images shown
-  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it; Mermaid's code that did not load (a gap, a restart) is loaded again at the document's next render (Chrome keeps the failure until the page reloads); a theme changed twice while diagrams are drawn leaves them drawn for the last one
+  And a ```mermaid fence is drawn as its diagram (Mermaid in strict mode, as the terminal's widgets draw one, `terminum-terminal.md` AC-31; in the theme's light or dark), with "Source" over it to show its highlighted text and "Diagram" back; a fence Mermaid cannot draw shows its source with Mermaid's message above it; Mermaid's code that did not load (a gap, a restart) says so at the fence, "Mermaid's code did not load: reload the page"; Safari loads it again at the document's next render, Chrome only after a reload (it keeps a failed module for the page's life); a theme changed twice while diagrams are drawn leaves them drawn for the last one
   When the user clicks "Source"
   Then Markdown source with Markdown highlighting; the choice is remembered for the tab
 
@@ -365,7 +365,7 @@ Scenario Outline: AC-62 happy path — shortcuts in the tree
     | ⌥→ / ⌥←   | expand all / collapse all below (AC-68)         |
 
 Scenario: AC-62 edge — shortcuts stay in the panel
-  Then keys pressed in the panel never reach the terminal, and ⌘N, ⌘W, ⌘T are left to the browser; End or PageDown on an unloaded page selects the loaded target row and Delete cannot delete the previous one; ← on a file selects its folder only if the tree still shows that folder's root and no other selection came meanwhile
+  Then keys pressed in the panel never reach the terminal, and ⌘N, ⌘W, ⌘T are left to the browser; End or PageDown on an unloaded page selects the loaded target row and Delete cannot delete the previous one; ← on a file selects its folder only if the tree still shows that folder's root and no other selection came meanwhile; likewise Reveal in tree, a new or renamed item's selection and a re-root's restored cursor never replace a selection or cursor the user picked after they started, while folders opening or refreshing meanwhile do not stop them
 ```
 
 ### AC-63 — Filter [SHOULD / P1]
@@ -796,7 +796,7 @@ Logs as `terminum.md` §9 Logging and observability; no metrics are exported. Ev
 - [x] AC-59 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_review.mjs`
 - [x] AC-60 — `ui/test/e2e_panel.mjs`, `cargo test termtext`
 - [x] AC-61 — `ui/test/e2e_panel.mjs`, `ui/test/stream.test.mjs`, `ui/test/viewer-save.test.mjs`, `ui/test/tree-load.test.mjs`, `cargo test watcher`
-- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/tree-input.test.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
+- [x] AC-62 — `ui/test/e2e_panel.mjs`, `ui/test/tree-input.test.mjs`, `ui/test/tree-reveal.test.mjs`, `ui/test/e2e_panel_review.mjs`, `ui/test/e2e_review.mjs`
 - [x] AC-63 — `ui/test/e2e_panel.mjs`, `cargo test listing`
 - [x] AC-64 — `ui/test/e2e_panel.mjs`, `ui/test/e2e_panel_media.mjs`, `ui/test/pcm.test.mjs`, `web/test/e2e_liveview.mjs`, `cargo test midi`, `cargo test raw_body`
 - [x] AC-65 — `ui/test/e2e_panel.mjs`
