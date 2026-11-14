@@ -228,3 +228,23 @@ fn ac196_legacy_cleanup_has_a_fixed_delete_budget() {
     sweep.tick().unwrap();
     assert_eq!(fs::read_dir(&project).unwrap().count(), 0);
 }
+
+#[test]
+fn ac196_exit_flush_works_after_rust_thread_locals_are_destroyed() {
+    let dir = Temp::new();
+    let output = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "logs::tests::ac196_exit_child"])
+        .env("TM_TEST_EXIT_LOG", dir.path()).output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("panicked"));
+    assert!(fs::read_to_string(dir.path()).unwrap().contains("kept at exit"));
+}
+
+#[test]
+fn ac196_exit_child() {
+    let Some(path) = std::env::var_os("TM_TEST_EXIT_LOG") else { return };
+    let writer = writer::Writer::start(PathBuf::from(path), DAEMON, None).unwrap();
+    writer::install(writer.clone());
+    writeln!(writer.make_writer(), "kept at exit").unwrap();
+    // Return normally: Rust tears down main's TLS before libc invokes atexit.
+}

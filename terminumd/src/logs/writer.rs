@@ -1,35 +1,42 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 //! Tracing's formatted records go to one bounded blocking writer (AC-196).
 
+use std::cell::Cell;
 use std::io::{self, Write};
 use std::path::PathBuf;
-use std::sync::{OnceLock, mpsc};
+use std::sync::{Arc, OnceLock, mpsc};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::{Log, Policy, EVERY};
 
-enum Message {
-    Record(Vec<u8>),
-    Flush(mpsc::Sender<()>),
-}
-
 #[derive(Clone)]
-pub struct Writer(mpsc::SyncSender<Message>);
+pub struct Writer {
+    send: mpsc::SyncSender<Vec<u8>>,
+    pending: Arc<AtomicUsize>,
+}
 static WRITER: OnceLock<Writer> = OnceLock::new();
+thread_local! { static IN_WORKER: Cell<bool> = const { Cell::new(false) }; }
 const FLUSH_LIMIT: Duration = Duration::from_secs(2);
 
 impl Writer {
     pub fn start(path: PathBuf, policy: Policy, home: Option<PathBuf>) -> io::Result<Self> {
         let mut log = Log::open(path, policy)?;
-        let (send, recv) = mpsc::sync_channel(256);
+        let (send, recv) = mpsc::sync_channel::<Vec<u8>>(256);
+        let pending = Arc::new(AtomicUsize::new(0));
+        let completed = pending.clone();
         std::thread::Builder::new().name("terminum-logs".into()).spawn(move || {
+            IN_WORKER.set(true);
             let mut checked = Instant::now() - EVERY;
             let mut sweep = home.map(super::Sweeper::new);
             let mut complained = None;
             loop {
                 let result = match recv.recv_timeout(EVERY.saturating_sub(checked.elapsed())) {
-                    Ok(Message::Record(bytes)) => log.append(&bytes),
-                    Ok(Message::Flush(done)) => { let _ = done.send(()); Ok(()) }
+                    Ok(bytes) => {
+                        let result = log.append(&bytes);
+                        completed.fetch_sub(1, Ordering::Release);
+                        result
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => log.maintain(),
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 };
@@ -45,26 +52,27 @@ impl Writer {
                 }
             }
         })?;
-        Ok(Self(send))
+        Ok(Self { send, pending })
     }
 
-    /// A barrier after all preceding records; no unbounded exit wait for a blocked disk.
+    /// No thread::current or channel parking here: atexit may run after Rust destroys TLS.
     pub fn flush(&self) {
-        if std::thread::current().name() == Some("terminum-logs") { return }
+        if IN_WORKER.try_with(Cell::get).unwrap_or(false) { return }
         let deadline = Instant::now() + FLUSH_LIMIT;
-        let (done, wait) = mpsc::channel();
-        let mut message = Message::Flush(done);
-        loop {
-            match self.0.try_send(message) {
-                Ok(()) => break,
-                Err(mpsc::TrySendError::Full(m)) if Instant::now() < deadline => {
-                    message = m;
-                    std::thread::sleep(Duration::from_millis(5));
-                }
-                Err(_) => return,
-            }
+        while self.pending.load(Ordering::Acquire) > 0 && Instant::now() < deadline {
+            // SAFETY: usleep has no pointer arguments; unlike Rust's channel wait it needs no TLS.
+            unsafe { libc::usleep(5000); }
         }
-        let _ = wait.recv_timeout(deadline.saturating_duration_since(Instant::now()));
+    }
+
+    fn record(&self, bytes: Vec<u8>) {
+        self.pending.fetch_add(1, Ordering::Relaxed);
+        if self.send.send(bytes).is_err() { self.pending.fetch_sub(1, Ordering::Release); }
+    }
+
+    fn panic_record(&self, bytes: Vec<u8>) {
+        self.pending.fetch_add(1, Ordering::Relaxed);
+        if self.send.try_send(bytes).is_err() { self.pending.fetch_sub(1, Ordering::Release); }
     }
 }
 
@@ -75,24 +83,17 @@ pub fn install(writer: Writer) {
     unsafe { libc::atexit(at_exit); }
     let original = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        // A failing worker cannot log to itself or wait for itself to drain.
-        if std::thread::current().name() != Some("terminum-logs") && let Some(w) = WRITER.get() {
-                let _ = w.0.try_send(Message::Record(format!("{info}\n").into_bytes()));
-                w.flush();
+        if !IN_WORKER.try_with(Cell::get).unwrap_or(false) && let Some(w) = WRITER.get() {
+            w.panic_record(format!("{info}\n").into_bytes());
+            w.flush();
         }
         original(info);
     }));
 }
 
-pub fn flush() {
-    if let Some(w) = WRITER.get() { w.flush(); }
-}
+pub fn flush() { if let Some(w) = WRITER.get() { w.flush(); } }
 
-pub struct Record {
-    writer: Writer,
-    bytes: Vec<u8>,
-}
-
+pub struct Record { writer: Writer, bytes: Vec<u8> }
 impl Write for Record {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
         self.bytes.extend_from_slice(bytes);
@@ -100,15 +101,11 @@ impl Write for Record {
     }
     fn flush(&mut self) -> io::Result<()> { Ok(()) }
 }
-
 impl Drop for Record {
     fn drop(&mut self) {
-        if !self.bytes.is_empty() {
-            let _ = self.writer.0.send(Message::Record(std::mem::take(&mut self.bytes)));
-        }
+        if !self.bytes.is_empty() { self.writer.record(std::mem::take(&mut self.bytes)); }
     }
 }
-
 impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Writer {
     type Writer = Record;
     fn make_writer(&'a self) -> Record { Record { writer: self.clone(), bytes: Vec::new() } }
