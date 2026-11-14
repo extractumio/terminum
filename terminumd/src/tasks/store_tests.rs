@@ -348,7 +348,7 @@ fn ac195_a_write_that_waited_for_its_turn_names_its_caller_and_is_kept() {
     holder.join().unwrap();
     assert!(made.is_ok(), "a write waits its turn, never refused: {made:?}");
     let said = lines.text();
-    assert!(said.contains("event=\"store.slow\"") && said.contains("store_tests.rs") && said.contains("kind=\"write\""), "{said}");
+    assert!(said.contains("event=\"store.slow\"") && said.contains("store_tests.rs"), "{said}");
     let waited: u64 = said.split("wait_ms=").nth(1).and_then(|r| r.split(' ').next()).and_then(|n| n.parse().ok()).unwrap_or(0);
     assert!(waited >= 100, "its wait is said: {said}");
     // a quick call says nothing

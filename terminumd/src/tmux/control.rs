@@ -74,9 +74,9 @@ type Line = (String, oneshot::Sender<Answer>, bool, Instant);
 struct Pending {
     reply: oneshot::Sender<Answer>,
     at: Instant,
-    /// when it was queued, and its command's first word, for `tmux.slow` (AC-195)
+    /// when it was queued, and its line, whose first word names it in `tmux.slow` (AC-195)
     queued: Instant,
-    word: String,
+    line: String,
     /// an `if-shell -F` with both branches: its own empty answer is passed over, the branch's is the reply
     nested: bool,
 }
@@ -144,9 +144,8 @@ impl Control {
                 while let Some((line, reply, nested, queued)) = next {
                     q.fetch_sub(line.len(), Ordering::Relaxed);
                     if a.load(Ordering::Relaxed) {
-                        let word = line.split(' ').next().unwrap_or_default().to_string();
-                        p.lock().push_back(Pending { reply, at: Instant::now(), nested, queued, word });
                         bytes.extend_from_slice(line.as_bytes());
+                        p.lock().push_back(Pending { reply, at: Instant::now(), nested, queued, line });
                         bytes.push(b'\n');
                     } else {
                         let _ = reply.send(Err(NOT_CONNECTED.into()));
@@ -211,7 +210,7 @@ impl Control {
                             // the branch tmux runs next, before any other line of ours, answers it
                             Some(w) if w.nested && ok => waiting.push_front(Pending { nested: false, at: Instant::now(), ..w }),
                             Some(w) => {
-                                said_slow(&slow, &label, &w.word, w.queued.elapsed());
+                                said_slow(&slow, &label, w.line.split(' ').next().unwrap_or_default(), w.queued.elapsed());
                                 drop(w.reply.send(if ok { Ok(taken) } else { Err(taken.join("\n")) }));
                             }
                             None => {}

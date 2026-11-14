@@ -10,10 +10,10 @@ The loops end by themselves after `--seconds` + 30 and are ended by pid on pass,
     python3 scripts/bench_busy.py [--seconds 30] [--loops <4 x cores>] [--printers 8] [--tasks 200] [--nice 0] [--installed]
 """
 import argparse
+import collections
 import json
 import math
 import os
-import re
 import statistics
 import subprocess
 import sys
@@ -41,10 +41,8 @@ def p95(xs):
 
 def timed(times, f):
     t0 = time.perf_counter()
-    ok = f()
-    if ok:
+    if f():
         times.append((time.perf_counter() - t0) * 1000)
-    return ok
 
 
 def board(call, until, times):
@@ -70,21 +68,21 @@ def echo(ws, until, times, stages):
             ws.send({"t": "in", "data": "\x15"})
         t0 = time.perf_counter()
         ws.send({"t": "in", "data": "abcdefghijklmnopqrstuvwxyz"[i % 26], "k": i})
-        m = ws.until(lambda m: m["t"] == "screen" and any(k.get("k") == i for k in shown(m)), 10)
+        mine = lambda m: next((k for k in shown(m) if k.get("k") == i), None) if m["t"] == "screen" else None  # noqa: E731
+        m = ws.until(mine, 10)
         times.append((time.perf_counter() - t0) * 1000 if m else 10000.0)   # never shown: the wait's end
         if m:
-            stages.append(next(k for k in shown(m) if k.get("k") == i))
+            stages.append(mine(m))
 
 
 def phase(name, call, ws, ids, seconds, installed):
     got = {"board list": [], "card edit": [], "key echo": []}
-    if installed:
-        got["installed /health"] = []
     stages = []
     until = time.time() + seconds
     workers = [threading.Thread(target=board, args=(call, until, got["board list"])),
                threading.Thread(target=edits, args=(call, ids, until, got["card edit"]))]
     if installed:
+        got["installed /health"] = []
         workers.append(threading.Thread(target=live, args=(until, got["installed /health"])))
     for w in workers:
         w.start()
@@ -98,10 +96,7 @@ def phase(name, call, ws, ids, seconds, installed):
         xs = [k[stage] for k in stages if isinstance(k.get(stage), (int, float))]
         if xs:
             print(f"{name:6}   key {stage:15} median {statistics.median(xs):7.1f}  p95 {p95(xs):7.1f}  max {max(xs):7.1f}")
-    woken = {}
-    for k in stages:
-        woken[k.get("woken")] = woken.get(k.get("woken"), 0) + 1
-    print(f"{name:6}   key woken by {woken}")
+    print(f"{name:6}   key woken by {dict(collections.Counter(k.get('woken') for k in stages))}")
 
 
 def loops(n, seconds, nice):
@@ -156,10 +151,10 @@ def main():
         printers(SOCKET, a.printers)
         time.sleep(2)
         phase("busy", call, ws, ids, a.seconds, a.installed)
-        said = [ln for ln in open(t.log_path) if any(f'event="{e}"' in ln or f"event={e}" in ln for e in LINES)]
+        logged = open(t.log_path).readlines()
         for e in LINES:
-            mine = [ln for ln in said if e in ln]
-            print(f"{e}: {len(mine)} lines" + "".join("\n  " + re.sub(r"^\S+\s+", "", ln.strip())[:220] for ln in mine[-5:]))
+            mine = [ln for ln in logged if f'event="{e}"' in ln]
+            print(f"{e}: {len(mine)} lines" + "".join("\n  " + ln.strip().split(" ", 1)[-1][:220] for ln in mine[-5:]))
     finally:
         for p in busy:
             if p.poll() is None:

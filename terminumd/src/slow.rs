@@ -50,15 +50,14 @@ fn late(due: Instant, now: Instant) -> Option<Duration> {
 /// A tick every 100 ms on the async workers: one that comes 200 ms late or more says so.
 pub async fn watch_runtime() {
     let throttle = Throttle::default();
-    let mut due = Instant::now() + TICK;
+    let mut tick = tokio::time::interval(TICK);
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
-        tokio::time::sleep_until(due.into()).await;
-        let now = Instant::now();
-        if let Some(d) = late(due, now)
+        let due = tick.tick().await.into_std();
+        if let Some(d) = late(due, Instant::now())
             && let Some(more) = throttle.pass() {
                 tracing::warn!(event = "runtime.lag", ms = ms(d), more);
             }
-        due = now + TICK;
     }
 }
 
@@ -73,7 +72,7 @@ mod tests {
         assert_eq!(t.pass(), Some(0));
         assert_eq!(t.pass(), None);
         assert_eq!(t.pass(), None);
-        t.0.lock().0 = Some(Instant::now() - Duration::from_secs(2));
+        t.reset();
         assert_eq!(t.pass(), Some(2));
         assert_eq!(t.pass(), None);
     }

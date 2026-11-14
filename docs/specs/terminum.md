@@ -1182,7 +1182,7 @@ Scenario: AC-195 happy path — writes take turns
 
 Scenario: AC-195 happy path — the log says who waited
   When a call of the tasks' store waits 100 ms or more for its turn, counted from its call with the blocking threads' queue, or holds its transaction that long
-  Then one line says so: event="store.slow", the caller (file and line of the call), kind, wait_ms, hold_ms
+  Then one line says so: event="store.slow", the caller (file and line of the call), wait_ms, hold_ms
   When a tmux command is answered 500 ms or more after it was queued
   Then one line: event="tmux.slow", the client (its server, bulk or session), the command's first word, ms
   When terminumd's async workers run a 100 ms tick 200 ms or more late
@@ -1506,7 +1506,7 @@ Logs go to stderr, the install's log file, by `tracing` (`TM_LOG`), each with an
 2026-10-15T09:14:10.001Z  WARN terminumd::tmux::control: control client timed out event="tmux.timeout" pid=Some(4242)
 ```
 
-Who waited for whom (AC-195): `store.slow` (`caller`, `kind`, `wait_ms`, `hold_ms`), `tmux.slow` (`client`, `cmd`, `ms`), `runtime.lag` (`ms`), each with `more` for the lines it held back.
+Who waited for whom (AC-195): `store.slow` (`caller`, `wait_ms`, `hold_ms`), `tmux.slow` (`client`, `cmd`, `ms`), `runtime.lag` (`ms`), each with `more` for the lines it held back.
 
 `/health` on the socket: `build`, `pid`, `uptime_s`, `port`, `password`, `servers`, `hosts`, `pages`, `tmux` (`ok`, `message`, `started_by`), `service`, `signins`, `workspaces`, `denied_requests`, `rss_mb`, `hooks`.
 

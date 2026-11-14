@@ -163,14 +163,20 @@ impl Store {
         self.with_from(Location::caller(), Instant::now(), f)
     }
 
-    /// `with` for `caller`, who asked at `asked`: a wait for its turn or a hold of 100 ms or more is said (AC-195).
+    /// `with` for `caller`, who asked at `asked`.
     pub fn with_from<T>(&self, caller: &'static Location<'static>, asked: Instant, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
-        let mut state = self.state.lock();
-        let got = Instant::now();
-        let out = Self::write(&self.path, &mut state, f);
-        drop(state);
-        self.said(caller, "write", got - asked, got.elapsed());
-        out
+        Self::write(&self.path, &mut self.turn(caller, asked).state, f)
+    }
+
+    /// The store's turn for `caller`, who asked at `asked`: a wait for it or a hold of 100 ms or more is said (AC-195).
+    fn turn(&self, caller: &'static Location<'static>, asked: Instant) -> Turn<'_> {
+        let state = self.state.lock();
+        Turn { state, slow: &self.slow, caller, asked, got: Instant::now() }
+    }
+
+    #[track_caller]
+    fn turn_now(&self) -> Turn<'_> {
+        self.turn(Location::caller(), Instant::now())
     }
 
     fn write<T>(path: &Path, state: &mut State, f: impl FnOnce(&Transaction) -> Result<T, String>) -> Result<T, String> {
@@ -189,17 +195,11 @@ impl Store {
         Ok(out)
     }
 
-    /// One `store.slow` line a second at most (AC-195).
-    fn said(&self, caller: &Location, kind: &str, wait: Duration, hold: Duration) {
-        if (wait >= slow::STORE_SLOW || hold >= slow::STORE_SLOW)
-            && let Some(more) = self.slow.pass() {
-                tracing::warn!(event = "store.slow", caller = %format_args!("{}:{}", caller.file(), caller.line()), kind, wait_ms = slow::ms(wait), hold_ms = slow::ms(hold), more);
-            }
-    }
 
     /// Why it cannot be used, for the board's banner.
+    #[track_caller]
     pub fn problem(&self) -> Option<String> {
-        match &*self.state.lock() {
+        match &*self.turn_now().state {
             State::Open(_) | State::Absent => None,
             State::Failed(why) | State::SetAside(why) => Some(why.clone()),
         }
@@ -208,7 +208,7 @@ impl Store {
     /// SQLite's quick check, once after the start, on a connection of its own: it holds up no
     /// list. A corrupt file goes aside.
     pub fn quick_check(&self) {
-        if !matches!(*self.state.lock(), State::Open(_)) {
+        if !matches!(*self.turn_now().state, State::Open(_)) {
             return;
         }
         let verdict = Connection::open_with_flags(&self.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -222,41 +222,63 @@ impl Store {
             }
         };
         if let Some(why) = bad {
-            let mut state = self.state.lock();
-            *state = State::Failed(String::new());     // closes the file before it moves
+            let mut turn = self.turn_now();
+            let state = &mut turn.state;
+            **state = State::Failed(String::new());     // closes the file before it moves
             let aside = set_aside(&self.path);
             tracing::warn!(event = "tasks.broken", why = %why, aside = %aside);
-            *state = State::SetAside(aside_message(&aside));
+            **state = State::SetAside(aside_message(&aside));
         }
     }
 
     /// After a purge: what the write-ahead log still holds of the old text goes too (AC-109).
     pub fn checkpoint(&self) {
-        if let State::Open(conn) = &*self.state.lock()
+        if let State::Open(conn) = &*self.turn_now().state
             && let Err(e) = conn.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(())) {
                 tracing::warn!(event = "tasks.checkpoint", error = %e);
             }
     }
 
     /// Whether a store was set aside and waits for the user's Start empty.
+    #[track_caller]
     pub fn is_set_aside(&self) -> bool {
-        matches!(*self.state.lock(), State::SetAside(_))
+        matches!(*self.turn_now().state, State::SetAside(_))
     }
 
     /// The user's press after a store went aside (AC-119).
     pub fn start_empty(&self) -> Result<(), String> {
-        let mut state = self.state.lock();
-        if !matches!(*state, State::SetAside(_)) {
+        let mut turn = self.turn_now();
+        let state = &mut turn.state;
+        if !matches!(**state, State::SetAside(_)) {
             return Err("The tasks' store was not set aside.".into());
         }
         crate::config::remove_if_there(&marker(&self.path)).map_err(|e| message(&e))?;
-        *state = state_of(&self.path);
-        match &mut *state {
+        **state = state_of(&self.path);
+        match &mut **state {
             // an older projects.json is no copy of what was set aside: the user asked for empty
             State::Open(c) => c.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('projects_imported', '1')", []).map(|_| ()).map_err(|e| message(&e)),
             State::Absent => Ok(()),
             State::Failed(why) | State::SetAside(why) => Err(why.clone()),
         }
+    }
+}
+
+/// A caller's turn at the store: when it ends, a wait for it or a hold of 100 ms or more is said, one line a second (AC-195).
+struct Turn<'a> {
+    state: parking_lot::MutexGuard<'a, State>,
+    slow: &'a slow::Throttle,
+    caller: &'static Location<'static>,
+    asked: Instant,
+    got: Instant,
+}
+
+impl Drop for Turn<'_> {
+    fn drop(&mut self) {
+        let (wait, hold) = (self.got - self.asked, self.got.elapsed());
+        if (wait >= slow::STORE_SLOW || hold >= slow::STORE_SLOW)
+            && let Some(more) = self.slow.pass() {
+                tracing::warn!(event = "store.slow", caller = %format_args!("{}:{}", self.caller.file(), self.caller.line()), wait_ms = slow::ms(wait), hold_ms = slow::ms(hold), more);
+            }
     }
 }
 
