@@ -15,11 +15,30 @@ export async function liveTaskClose(page, opts) {
     await open(`?project=${project}`);
     await pressCard(page, parent);
     await page.waitForSelector("#taskbox[open]");
-    let release;
-    const held = new Promise((done) => { release = done; });
-    const handler = async (r) => { await held; await r.continue(); };
-    await page.route(route, handler);
+    const held = await hold(page, route, "GET");
+    // Unrelated traffic must not hold this check: the board can still be reading while a task closes.
+    const backgroundPath = "/api/tasks/meta?close-check=1", background = await hold(page, `**${backgroundPath}`, "GET");
     try {
+      const backgroundAsked = page.waitForRequest(`**${backgroundPath}`);
+      await page.evaluate(([child, backgroundPath]) => {
+        const fetch = window.fetch;
+        const read = window.taskCloseRead = { consumed: false, restore: () => { window.fetch = fetch; } };
+        window.fetch = async (...args) => {
+          const response = await fetch(...args);
+          if (new URL(response.url).pathname === `/api/tasks/${child}`) {
+            const text = response.text.bind(response);
+            response.text = async () => {
+              const body = await text();
+              // api() parses text, then open() checks cancellation in microtasks. A later task sees their result.
+              setTimeout(() => { read.consumed = true; }, 0);
+              return body;
+            };
+          }
+          return response;
+        };
+        window.taskCloseBackground = fetch(backgroundPath).then((r) => r.text());
+      }, [child, backgroundPath]);
+      await backgroundAsked;
       const asked = page.waitForRequest(route);
       await page.locator("#taskbody .subname").click();
       await asked;
@@ -31,15 +50,22 @@ export async function liveTaskClose(page, opts) {
       await page.waitForSelector("#taskbox[open]", { state: "hidden" });
       await page.waitForFunction(() => location.pathname === "/kanban/");
       const answered = page.waitForResponse(route);
-      release();
+      held.release();
       const response = await answered, task = await response.json();
-      await page.waitForLoadState("networkidle");
+      await page.waitForFunction(() => window.taskCloseRead.consumed);
       check(`AC-133 live ${how}: the real delayed subtask cannot reopen the closed window`,
-        response.ok() && task.id === child && !await page.$eval("#taskbox", (b) => b.open) && new URL(page.url()).pathname === "/kanban/",
+        background.sent() === 1 && response.ok() && task.id === child && !await page.$eval("#taskbox", (b) => b.open) && new URL(page.url()).pathname === "/kanban/",
         `read status ${response.status()}, task ${task.id}`);
     } finally {
-      release();
-      await page.unroute(route, handler);
+      held.release();
+      background.release();
+      await page.evaluate(async () => {
+        window.taskCloseRead.restore();
+        try { await window.taskCloseBackground; }
+        finally { delete window.taskCloseRead; delete window.taskCloseBackground; }
+      });
+      await background.end();
+      await held.end();
     }
   }
   await open(`?project=${project}`);
