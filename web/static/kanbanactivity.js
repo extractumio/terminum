@@ -31,9 +31,9 @@ function reactsTo(t) {
   return null;
 }
 
-/** `refresh(saved)` reads the task again; `confirmed(question, yes, run)` asks, then runs. Answers `lead`: the part
- *  that stands first, or null (always with `leads` off: all of it reads in order); and `rest`: the conversation,
- *  without what leads. */
+/** `refresh(ended)` reads the task again, `ended` the part whose editor closed; `confirmed(question, yes, run)`
+ *  asks, then runs. Answers `lead`: the part that stands first, or null (always with `leads` off: all of it reads
+ *  in order); and `rest`: the conversation, without what leads. */
 export function activity(t, { refresh, confirmed, leads = true }) {
   /** A human's own comment changes or goes (AC-108): small keys on its head's line. */
   function commentActions(e, said) {
@@ -43,10 +43,10 @@ export function activity(t, { refresh, confirmed, leads = true }) {
       const save = button("primary", "Save", async () => {
         try {
           await api(route, { method: "PATCH", body: { text: area.value } });
-          refresh(true);
+          refresh(said);
         } catch (err) { say(err.message); }
       });
-      said.replaceChildren(expandable(area), row(button(null, "Cancel", () => refresh(true)), save));
+      said.replaceChildren(expandable(area), row(button(null, "Cancel", () => refresh(said)), save));
       area.focus();
     });
     const del = iconButton("icon", "x", "Delete", "Delete this comment", () => confirmed("Delete this comment?", "Delete", () => api(route, { method: "DELETE" })));

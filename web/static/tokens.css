@@ -48,7 +48,7 @@
   /* ---- components: one look per kind (controls.css reads only these; change a look here) ---- */
   --key-h: 32px;  --key-h-lg: 36px;  --key-h-touch: 44px;  --key-px: 12px;  --key-r: var(--r-sm);  --key-gap: 8px;   /* a text key: primary or secondary */
   --key-fill: var(--surface-3);  --key-fill-hover: var(--surface-4);  --key-ink: var(--t-fg);  --key-weight: 600;
-  --key-primary-fill: var(--accent);  --key-primary-ink: var(--t-bg);   /* a container sets these to its verb's hue */
+  --key-primary-fill: var(--accent);  --key-primary-ink: var(--t-bg);   /* 4.5:1 (contrast.js); a container sets these to its verb's hue */
   --key-disabled: .4;
   --icon-key: 30px;  --icon-key-sm: 24px;  --icon-key-touch: 44px;  --icon-gap: 8px;   /* an icon key, a bar's small one; between them */
   --icon-key-list: var(--icon-key-sm);   /* the session list's: a group header's, a row's Clone */
@@ -66,9 +66,9 @@
   /* ---- fixed hues by meaning (§2.2); text in a hue is mixed with --t-fg so it reads on a light theme ---- */
   --local: #4f9dff; --remote: #a98bff; --host-label: cornflowerblue;
   --said-human: cornflowerblue; --said-agent: #6fa8a1; --said-system: #8e96b5;   /* who wrote a task's comment: its bar (taskwin.css) */
-  --danger: #ff6b5e; --danger-fill: #b3372e; --danger-ink: #ffffff; --ok: #5cc285; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020;
+  --danger: #ff6b5e; --danger-fill: #b3372e; --danger-ink: #ffffff; --ok: #5cc285; --ok-fill: #2f7d4f; --warn-fill: #9a6a12; --waiting: #ffb020; --waiting-ink: #1f1300;
   --danger-text: color-mix(in srgb, var(--danger) 80%, var(--t-fg));
-  --ring: var(--accent);   /* the focus ring: app.js sets the theme's text color when the accent hides (contrast.js) */
+  --ring: var(--accent);   /* the focus ring: the accent reads on --t-bg (contrast.js), so it shows */
   /* a folder's bar (dircolors.js gives the hue): pastel on a dark theme, deeper on a light one (3:1) */
   --dir-l: .80; --dir-c: .085;
 

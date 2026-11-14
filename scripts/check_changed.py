@@ -20,6 +20,7 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from check_docs import AC  # noqa: E402
+from check_cancel import run_guard  # noqa: E402
 from load_gate import for_task, MINUTES  # noqa: E402
 from worktree import releasing  # noqa: E402
 
@@ -237,8 +238,8 @@ def run(steps, root=REPO, gate=True, nice=False):
         log = logs / f"changed.{name}.log"
         with log.open("w") as out:
             # under make check's guard (AC-102): a step that leaves a process or a file fails here too
-            guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py"), "sh", "-c", command.lstrip("-")]
-            code = subprocess.run(guarded, cwd=root, stdout=out, stderr=subprocess.STDOUT).returncode
+            guarded = (NICE.split() if nice else []) + [sys.executable, "-I", str(root / "scripts" / "check_step.py")]
+            code = run_guard(guarded, ["sh", "-c", command.lstrip("-")], cwd=root, stdout=out)
         seconds = round(time.monotonic() - started)
         if code == 0 or optional:
             print(f"{'ok  ' if code == 0 else 'note'} {name} ({seconds} s)" + ("" if code == 0 else f": {log}"), flush=True)

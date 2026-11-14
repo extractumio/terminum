@@ -356,6 +356,21 @@ Scenario: AC-102 happy path — a run leaves nothing
   When the step passes, fails or gets a signal
   Then its folders, tmux servers, tmux socket files and processes have gone and that folder is removed
 
+Scenario Outline: AC-102 edge — cancel the outer targeted runner
+  Given scripts/check_changed.py has an active private guard, a foreground child that ignores signals, and a registered detached child outside the private folder
+  When the outer runner receives <signal>, and another signal during cleanup
+  Then it forwards cancellation to its guard once and waits for owned-child cleanup before exiting with <status>
+  And the guard notifies its private process group once so shell descendants can finish orderly cleanup; cancellation first received during settling starts a fresh 15 s grace period, and repeated signals neither notify again nor extend it
+  And both children and the private folder are gone, an unrelated process is untouched, no later step starts, and no passing result is recorded
+  And a guard that fails or exceeds the 60 s cancellation wait is recovered using its private group, folder and registered children, with PID start identities checked before each signal and the guard kept unreaped until its children are ended
+  And failed metadata queries fail cleanup visibly and retain the private folder for diagnosis
+
+  Examples:
+    | signal  | status |
+    | SIGTERM | 143    |
+    | SIGINT  | 130    |
+    | SIGHUP  | 129    |
+
 Scenario: AC-102 edge — a signal while the guarded command starts
   Given the guarded command starts before its parent has returned from starting it
   When the guard receives SIGTERM, SIGHUP or SIGINT
@@ -366,6 +381,18 @@ Scenario: AC-102 failure — a step that leaves something fails
   Given a step that passes but leaves a file in its folder, or a process in its private process group or working in that folder or a folder under it
   When it ends
   Then each is printed as "LEFT …", the process is ended by its pid (SIGTERM, then SIGKILL when it is still there 2 s later: an interactive shell ignores SIGTERM), the folder is removed and the step fails
+
+Scenario: AC-102 failure — working-directory inspection times out
+  Given macOS working-directory inspection exceeds its 15 s deadline twice or fails
+  When guarded cleanup runs
+  Then the inspection error fails the check visibly, leftover files are reported and processes proven owned by the private group or registry are ended by identity
+  And the private folder stays for diagnosis; unknown directory ownership is never an empty process set
+  And one timed-out inspection is retried once, without using its partial output or retrying other errors
+
+Scenario: AC-102 edge — real pane programs keep temporary files inside the run's cleanup
+  Given the Linux live Chromium suite runs under scripts/check_step.py with Midnight Commander installed
+  When its private tmux pane runs mc and the suite passes, fails or gets a signal
+  Then the pane's TMPDIR is inside the live run's own folder, its mc cache goes with that folder, and the guard reports no leftovers
 
 Scenario: AC-102 edge — a pane's program that ignores SIGHUP does not outlive its test
   Given a test's private tmux server whose pane runs a program that ignores SIGHUP, as macOS's bash does when it spins on a terminal gone
@@ -440,6 +467,13 @@ Scenario: AC-103 happy path — a review before a minor release
 ### AC-104 — A green worktree lands by itself [SHOULD / P1]
 
 ```gherkin
+Scenario: AC-104 edge — worktree inventory survives unknown process ownership
+  Given working-directory inspection times out twice or fails
+  When scripts/worktree.py list runs
+  Then every worktree's branch, changes and merge state remain listed with an explicit unknown process count and the inspection error
+  And removal and sweeping keep any tree whose process ownership cannot be inspected, even with discard requested
+  And a listing takes one shared working-directory snapshot for all its trees
+
 Scenario: AC-104 happy path — targeted checks green, the tree lands
   Given the worktree fix-paste has its work committed, and scripts/check_changed.py passed on it: the security scan, the tests of the changed files, the tests citing the acceptance cases on the changed lines, and the critical functions, recorded as .checks/changed-<id>.ok, <id> naming the tree's content
   When the agent runs make land SLUG=fix-paste from the primary checkout
@@ -475,6 +509,13 @@ Scenario: AC-104 edge — builds leave room for others
   And while a release runs, the whole smoke set runs under nice -n 10
   And no landing builds the release build in its tree: the primary checkout's install builds it
   And scripts/worktree.py add gives a new tree copy-on-write clones of the primary checkout's debug and release dependencies' builds, so its first build compiles terminumd alone
+
+Scenario: AC-104 edge — deterministic benchmark verdicts under concurrent checks
+  Given concurrent script suites delay the startup of the listing benchmark's private stand-ins
+  When the harness checks the benchmark command with supplied timing and RSS samples
+  Then its bounded execution deadline allows for startup independently of the measured listing budgets in terminum-files.md section 9
+  And samples just below each budget pass; a sample at any budget fails, and the slowest of ten samples counts toward p95
+  And an explicitly stalled stand-in still hits the cleanup test's short deadline and leaves no running process in the harness's own group
 
 Scenario: AC-104 edge — a session hears of a changed pipeline
   Given origin/main changed scripts/land.py since a tree's base
@@ -868,7 +909,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-16 — `scripts/e2e_install.sh`; `ui/test/e2e_panel.mjs` (a Files panel's held reload); `cargo test cli::tests` (`install_tests`, `upgrade_tests`, `refresh_tests`, `import_tests`)
 - [x] AC-17 — `cargo test update::`; `web/test/e2e_tmux.mjs`
 - [x] AC-96 — `scripts/e2e_lastlines.py`; `cargo test lastlines` (a failed write tried again); `web/test/e2e_lastlines.mjs`
-- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
+- [x] AC-102 — `scripts/check_step.py` guards each step of `scripts/check_all.sh` and `scripts/check_changed.py`; `scripts/tests/test_check_step.py`; `scripts/tests/test_check_cancel.py` (outer cancellation and guard recovery); `scripts/tests/test_process_ownership.py` (metadata only, directory boundaries and query failures on both platforms); `scripts/tests/test_leftovers.py`; `cargo test cli::tests::the_fake_terminumd_ends_when_its_home_goes`; `scripts/tests/test_testrun.py` (`WithItsFolder`)
 - [x] AC-104 — `scripts/tests/test_land.py`, `scripts/tests/test_check_changed.py`, `scripts/tests/test_package.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_release.py`, `scripts/tests/test_ci_mac.py`, `scripts/tests/test_check_docker.py`, `scripts/tests/test_worktree_fresh.py`
 - [x] AC-146 — `scripts/tests/test_load_gate.py`, `scripts/tests/test_release_turn.py`, `scripts/tests/test_check_changed.py`
 - [x] AC-103 — `scripts/tests/test_check_docs.py`; `python3 scripts/check_docs.py`

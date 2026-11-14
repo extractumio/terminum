@@ -1,7 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 """AC-102: cleanup queries metadata, never environments or path mentions in commands."""
 import os
+import contextlib
+import io
 from pathlib import Path
+import signal
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -11,6 +14,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import check_step
 import worktree
+import process_cwd
 
 
 class Ownership(unittest.TestCase):
@@ -49,8 +53,75 @@ class Ownership(unittest.TestCase):
         with mock.patch.object(worktree.Path, "exists", return_value=False), \
                 mock.patch.object(worktree.shutil, "which", return_value="/usr/sbin/lsof"), \
                 mock.patch.object(worktree.subprocess, "run", side_effect=subprocess.CalledProcessError(1, "lsof")):
-            with self.assertRaises(subprocess.CalledProcessError):
+            with self.assertRaises(process_cwd.InspectionError):
                 worktree.working_in("/tmp/private")
+
+    def test_a_timeout_retries_once_and_discards_partial_output(self):
+        folder = Path("/tmp/private").resolve()
+        timeout = subprocess.TimeoutExpired("lsof", 15, output=f"p42\ncworker\nn{folder}\n")
+        complete = subprocess.CompletedProcess([], 0, f"p43\ncworker\nn{folder}\n")
+        with mock.patch.object(process_cwd.Path, "exists", return_value=False), \
+                mock.patch.object(process_cwd.shutil, "which", return_value="lsof"), \
+                mock.patch.object(process_cwd.subprocess, "run", side_effect=[timeout, complete]) as run:
+            self.assertEqual(worktree.working_in("/tmp/private"), {43: "worker"})
+            self.assertEqual(run.call_count, 2)
+            self.assertTrue(all(call.kwargs["timeout"] == 15 for call in run.call_args_list))
+
+    def test_two_timeouts_are_an_explicit_unknown_state(self):
+        with mock.patch.object(process_cwd.Path, "exists", return_value=False), \
+                mock.patch.object(process_cwd.shutil, "which", return_value="lsof"), \
+                mock.patch.object(process_cwd.subprocess, "run", side_effect=subprocess.TimeoutExpired("lsof", 15)) as run:
+            with self.assertRaisesRegex(process_cwd.InspectionError, "timed out"):
+                worktree.working_in("/tmp/private")
+            self.assertEqual(run.call_count, 2)
+
+    def test_empty_or_invalid_metadata_never_authorizes_cleanup(self):
+        for output in ("", "n/tmp/private\n", "p42\nn/tmp/private\n", "p42\ncworker\nnrelative\n"):
+            with self.subTest(output=output), \
+                    mock.patch.object(process_cwd.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, output)) as run:
+                with self.assertRaises(process_cwd.InspectionError):
+                    process_cwd.mac_directories()
+                run.assert_called_once()
+
+    def test_directory_failure_preserves_only_proven_group_and_registered_processes(self):
+        with mock.patch.object(check_step, "listing", return_value=[
+                (42, "7", "group"), (43, "8", "unrelated /tmp/private"), (44, "8", "registered")]), \
+                mock.patch.object(check_step, "working_in", side_effect=process_cwd.InspectionError("query failed")), \
+                mock.patch.object(check_step.owned_children, "active", return_value={44}):
+            with self.assertRaisesRegex(check_step.OwnershipError, "query failed") as error:
+                check_step.own_processes("/tmp/private", 7)
+            self.assertEqual(error.exception.processes, [(42, "group"), (44, "registered")])
+
+    def test_failed_inspection_preserves_cancellation_grace_and_rechecks_ownership(self):
+        for before_query in (False, True):
+            with self.subTest(cancellation_already_forwarded=before_query):
+                events = []
+                clock = [100]
+                cancelled = check_step.GuardCancellation()
+                if before_query:
+                    cancelled.receive(signal.SIGHUP, None)
+                def fail(_folder):
+                    clock[0] += 2
+                    cancelled.receive(signal.SIGHUP, None)
+                    raise process_cwd.InspectionError("query timed out")
+                # The first group member's PID is reused by an unrelated process during grace.
+                snapshots = [[(42, "7", "owned")], [(42, "8", "unrelated")]]
+                with mock.patch.object(check_step, "run", return_value=(mock.Mock(), 0, 7)), \
+                        mock.patch.object(check_step, "working_in", side_effect=fail), \
+                        mock.patch.object(check_step, "listing", side_effect=snapshots), \
+                        mock.patch.object(check_step.owned_children, "active", return_value={}), \
+                        mock.patch.object(check_step.owned_children, "cleanup_identities", side_effect=lambda pids, _: dict.fromkeys(pids, "start")), \
+                        mock.patch.object(check_step.os, "killpg", side_effect=lambda group, number: events.append((group, number))), \
+                        mock.patch.object(check_step.time, "monotonic", side_effect=lambda: clock[0]), \
+                        mock.patch.object(check_step.time, "sleep", side_effect=lambda seconds: events.append(("grace", seconds))), \
+                        mock.patch.object(check_step, "end_pids", side_effect=lambda pids, _: events.append(("end", pids))), \
+                        mock.patch.object(check_step, "files_in", return_value=["x"]), \
+                        mock.patch.object(check_step.shutil, "rmtree") as remove, contextlib.redirect_stderr(io.StringIO()) as err:
+                    self.assertNotEqual(check_step.check(["unused"], "private", cancelled), 0)
+                    self.assertEqual(events, [(7, signal.SIGHUP), ("grace", 13 if before_query else 15), ("end", [])])
+                    self.assertIn("LEFT x", err.getvalue())
+                    self.assertIn("inspection failed", err.getvalue())
+                    remove.assert_not_called()
 
     def test_linux_directory_lookup_preserves_boundaries_and_excludes_itself(self):
         folder = Path("/tmp/private").resolve()
@@ -76,7 +147,7 @@ class Ownership(unittest.TestCase):
                     mock.patch.object(worktree.os, "readlink", side_effect=error), \
                     mock.patch.object(worktree.Path, "stat", return_value=SimpleNamespace(st_uid=uid)):
                 if fails:
-                    with self.assertRaises(type(error)):
+                    with self.assertRaises(process_cwd.InspectionError):
                         worktree.working_in(folder)
                 else:
                     self.assertEqual(worktree.working_in(folder), {})

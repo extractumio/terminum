@@ -21,6 +21,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -163,6 +164,56 @@ def run_links():
                    "[ -L \"$f\" ] && readlink \"$f\" || { [ -S \"$f\" ] && echo socket || echo other; }; done").strip()
 
 
+def cancel_operations(t):
+    """AC-99: a real sshd's stdin-close WATCH ends a detached plugin group in both orders."""
+    stub = r'''#!/bin/sh
+case "$1 $2" in
+  'plugin install') value=on ;;
+  'plugin uninstall') value=off ;;
+  *) exit 0 ;;
+esac
+if [ -f "$HOME/gate" ] && [ "$(cat "$HOME/gate")" = "$1 $2" ]; then
+  mv "$HOME/gate" "$HOME/blocked"
+  sh -c 'trap "" TERM; while [ -f "$HOME/blocked" ]; do sleep 0.05; done; echo "$1" > "$HOME/plugin-state"' sh "$value" &
+  echo "$$ $!" > "$HOME/started"
+  wait
+else
+  echo "$value" > "$HOME/plugin-state"
+fi
+'''
+    subprocess.run(["docker", "exec", "-i", "-u", "alex", NAME, "sh", "-c",
+                    'cat > "$HOME/.nvm/versions/node/v22.0.0/bin/claude"'], input=stub, text=True, check=True)
+    def ask(action):
+        return unix_request(t.sock, "POST", "/hosts/agents-" + action, {"name": "devbox"})
+    for first, second, held, want in (("on", "off", "install", "off"), ("off", "on", "uninstall", "on")):
+        if first == "off":
+            assert ask("on")[0] == 200
+        on_host(f'rm -f "$HOME/started"; echo "plugin {held}" > "$HOME/gate"')
+        answers = []
+        worker = threading.Thread(target=lambda: answers.append(ask(first)))
+        worker.start()
+        try:
+            pids = wait_for(lambda: on_host('cat "$HOME/started" 2>/dev/null').strip(), bool, 30)
+            assert len(pids.split()) == 2 and all(p.isdigit() for p in pids.split()), pids
+            states = lambda: on_host(f"ps -o stat= -p {','.join(pids.split())}").splitlines()
+            running = lambda: [s for s in states() if not s.strip().startswith("Z")]
+            check(f"[{VARIANT}] AC-99 {first} then {second}: plugin and descendant run before takeover",
+                  worker.is_alive() and len(running()) == 2, pids)
+            st, body = ask(second)
+            worker.join(10)
+            check(f"[{VARIANT}] AC-99 {first} then {second}: the newer operation answers, the older stops",
+                  st == 200 and not worker.is_alive() and bool(answers) and "took over" in str(answers[0]), (body, answers))
+            left = wait_for(running, lambda v: not v, 5, last=True)
+            check(f"[{VARIANT}] AC-99 {first} then {second}: the plugin group ends with real ssh stdin", not left, left)
+            on_host('rm -f "$HOME/blocked"')
+            wait_for(running, lambda v: not v, 5)
+            got = on_host('cat "$HOME/plugin-state"').strip()
+            check(f"[{VARIANT}] AC-99 {first} then {second}: releasing the old mutation keeps {want}", got == want, got)
+        finally:
+            on_host('rm -f "$HOME/blocked" "$HOME/gate"')
+            worker.join(30)
+
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__.split("\n\n")[1])
@@ -279,6 +330,7 @@ def main():
         left = on_host("ls $HOME/.terminum/bin/terminum-host 2>&1; grep -l terminum-host $HOME/.codex/hooks.json $HOME/.codex/config.toml 2>/dev/null; tail -2 $HOME/claude-argv.log")
         check(f"[{v}] AC-99 disabling removes terminum-host and the agents' entries", st == 200 and "No such file" in left and ".codex" not in left
               and "plugin uninstall terminum@terminum-local" in left, [body, left])
+        cancel_operations(t)
     finally:
         if t:
             if not all(results):

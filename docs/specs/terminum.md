@@ -954,6 +954,11 @@ Scenario: AC-152 edge — nothing in the period
 Scenario: AC-152 failure — the numbers cannot be read
   When terminumd cannot read the store
   Then the page says "The numbers could not be read: <terminumd's message>" over the tab last drawn
+
+Scenario: AC-152 failure — the projects cannot be read
+  When the answer of the projects fails, is cut off or holds no projects
+  Then the page says "The projects could not be read: <why>", draws the numbers of all projects, and throws nothing
+  And the next numbers read the projects again; once read, the message goes and the menu holds them
 ```
 
 ### AC-165 — One question at a time [MUST / P0]
@@ -1457,7 +1462,7 @@ All cases are shipped; nothing is staged.
 - [x] AC-05 — web/test/e2e_screen.mjs, web/test/e2e_appscreen.mjs, web/test/e2e_codex.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_sizing.py
 - [x] AC-06 — web/test/e2e_screen.mjs, web/test/e2e_progcopy.mjs, web/test/e2e_liveclip.mjs, web/test/e2e_liveprogs.mjs, scripts/e2e_core.py
 - [x] AC-07 — web/test/e2e_tmux.mjs, web/test/e2e_move.mjs, web/test/e2e_listdrag.mjs, web/test/e2e_foot.mjs, web/test/e2e_idekeys.mjs, web/test/recent.test.mjs, scripts/e2e_core.py
-- [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
+- [x] AC-09 — scripts/e2e_access.py, scripts/e2e_ws.py, web/test/e2e_signin.mjs, `node web/test/e2e_live.mjs signin` (a renewed context, delayed sign-in installation and a genuine refusal), web/test/proof.test.mjs, terminumd/src/auth/web_tests.rs, terminumd/src/auth/signin_tests.rs, terminumd/src/auth/credential_tests.rs, terminumd/src/auth/checks_tests.rs, terminumd/src/auth/websignin_tests.rs, terminumd/src/umask_tests.rs
 - [x] AC-10 — terminumd/src/auth/checks_tests.rs, scripts/e2e_access.py
 - [x] AC-12 — terminumd/src/theme_tests.rs, web/test/e2e_live.mjs, web/test/e2e_split.mjs, web/test/e2e_liveprogs.mjs
 - [x] AC-13 — `cargo test page::zoom`, `cargo test page::sizing` (a refused resize undone), scripts/e2e_sizing.py, scripts/e2e_attach.py, scripts/e2e_sizestale.py, scripts/e2e_core.py, web/test/e2e_screen.mjs, web/test/e2e_livesplit.mjs, web/test/e2e_live.mjs

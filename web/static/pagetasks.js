@@ -10,7 +10,7 @@ export function pageTasks({ box, embedded, say, show }) {
   let asked = addressedSession(), then = new URLSearchParams(location.search).get("then");
   // Back and Forward go through the sessions pressed
   if (!embedded) addEventListener("popstate", () => { const id = addressedSession(); if (id) show(id); });
-  const lines = taskLines(box, (id) => { location.href = taskUrl(id); });
+  const lines = taskLines(box, (id) => { location.href = taskUrl(id); }, (text) => say(text, 6000));
   return {
     /** The session asked for, before any list. */
     asked,
