@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Commercial
 // What the board's parts share: terminumd's routes, small DOM helpers, dialogs and files.
 import * as signin from "./signin.js";
-import { PROJECT_HUES, el, hueColor, iconButton, when } from "./listparts.js";
+import { PROJECT_HUES, el, hueColor, iconButton, textKey, when } from "./listparts.js";
 import { renderers } from "./renderlib.js";
 import { toast } from "./toast.js";
 import { askConfirm } from "./dialogs.js";
@@ -128,8 +128,9 @@ export function guardQueuedRun(key, waits) {
   return key;
 }
 
+/** A text key; a pointer's press leaves it unfocused (textKey). */
 export function button(cls, text, onClick) {
-  const b = el("button", cls, text);
+  const b = textKey(el("button", cls, text));
   b.type = "button";
   if (onClick) b.addEventListener("click", onClick);
   return b;
